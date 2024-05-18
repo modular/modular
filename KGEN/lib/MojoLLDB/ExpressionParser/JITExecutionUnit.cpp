@@ -72,62 +72,62 @@ getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
   }
 
   if (!name.empty()) {
-    if (name.equals("__text") || name.equals(".text") ||
-        name.equals("__data") || name.equals(".data")) {
+    if (name == "__text" || name == ".text" || name == "__data" ||
+        name == ".data") {
       sectType = lldb::eSectionTypeCode;
     } else if (name.starts_with("__debug_") || name.starts_with(".debug_")) {
       const uint32_t name_idx = name[0] == '_' ? 8 : 7;
       StringRef dwarf_name(name.substr(name_idx));
       switch (dwarf_name[0]) {
       case 'a':
-        if (dwarf_name.equals("abbrev"))
+        if (dwarf_name == "abbrev")
           sectType = lldb::eSectionTypeDWARFDebugAbbrev;
-        else if (dwarf_name.equals("aranges"))
+        else if (dwarf_name == "aranges")
           sectType = lldb::eSectionTypeDWARFDebugAranges;
-        else if (dwarf_name.equals("addr"))
+        else if (dwarf_name == "addr")
           sectType = lldb::eSectionTypeDWARFDebugAddr;
         break;
 
       case 'f':
-        if (dwarf_name.equals("frame"))
+        if (dwarf_name == "frame")
           sectType = lldb::eSectionTypeDWARFDebugFrame;
         break;
 
       case 'i':
-        if (dwarf_name.equals("info"))
+        if (dwarf_name == "info")
           sectType = lldb::eSectionTypeDWARFDebugInfo;
         break;
 
       case 'l':
-        if (dwarf_name.equals("line"))
+        if (dwarf_name == "line")
           sectType = lldb::eSectionTypeDWARFDebugLine;
-        else if (dwarf_name.equals("loc"))
+        else if (dwarf_name == "loc")
           sectType = lldb::eSectionTypeDWARFDebugLoc;
-        else if (dwarf_name.equals("loclists"))
+        else if (dwarf_name == "loclists")
           sectType = lldb::eSectionTypeDWARFDebugLocLists;
         break;
 
       case 'm':
-        if (dwarf_name.equals("macinfo"))
+        if (dwarf_name == "macinfo")
           sectType = lldb::eSectionTypeDWARFDebugMacInfo;
         break;
 
       case 'p':
-        if (dwarf_name.equals("pubnames"))
+        if (dwarf_name == "pubnames")
           sectType = lldb::eSectionTypeDWARFDebugPubNames;
-        else if (dwarf_name.equals("pubtypes"))
+        else if (dwarf_name == "pubtypes")
           sectType = lldb::eSectionTypeDWARFDebugPubTypes;
         break;
 
       case 's':
-        if (dwarf_name.equals("str"))
+        if (dwarf_name == "str")
           sectType = lldb::eSectionTypeDWARFDebugStr;
-        else if (dwarf_name.equals("str_offsets"))
+        else if (dwarf_name == "str_offsets")
           sectType = lldb::eSectionTypeDWARFDebugStrOffsets;
         break;
 
       case 'r':
-        if (dwarf_name.equals("ranges"))
+        if (dwarf_name == "ranges")
           sectType = lldb::eSectionTypeDWARFDebugRanges;
         break;
 
@@ -136,7 +136,7 @@ getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
       }
     } else if (name.starts_with("__apple_") || name.starts_with(".apple_")) {
       sectType = lldb::eSectionTypeInvalid;
-    } else if (name.equals("__objc_imageinfo")) {
+    } else if (name == "__objc_imageinfo") {
       sectType = lldb::eSectionTypeOther;
     }
   }
