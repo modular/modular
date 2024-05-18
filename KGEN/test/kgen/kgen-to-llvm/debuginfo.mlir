@@ -14,10 +14,10 @@
 // CHECK-DAG: ![[MEMBER1:.*]] = !debuginfo.member<m1: ![[INDEX]]>
 // CHECK-DAG: ![[PACK:.*]] = !debuginfo.struct<"!kgen.pack<[index, index]>"(![[MEMBER0]], ![[MEMBER1]])>
 
-// CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[INDEX]] {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[INDEX]] {sizeInBits = 64, alignInBits = 64, addressSpace = 0}>
 
 // CHECK-DAG: ![[NONE:.*]] = !debuginfo.struct<"!kgen.none"()>
-// CHECK-DAG: ![[VOID_PTR:.*]] = !debuginfo.ptr<![[NONE]] {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: ![[VOID_PTR:.*]] = !debuginfo.ptr<![[NONE]] {sizeInBits = 64, alignInBits = 64, addressSpace = 0}>
 
 // CHECK-DAG: ![[INNER_STRUCT:.*]] = !debuginfo.struct<"!kgen.struct<(index)>"(![[MEMBER0]])>
 // CHECK-DAG: ![[STRUCT_MEMBER:.*]] = !debuginfo.member<m1: ![[INNER_STRUCT]]>

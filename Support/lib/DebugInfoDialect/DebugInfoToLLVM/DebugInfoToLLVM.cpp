@@ -308,7 +308,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIPointerType type) {
   return LLVM::DIDerivedTypeAttr::get(
       type.getContext(), llvm::dwarf::DW_TAG_pointer_type,
       /*name=*/nullptr, convertType(type.getElementType()),
-      type.getSizeInBits(), type.getAlignInBits(), /*offsetInBits=*/0, {}, {});
+      type.getSizeInBits(), type.getAlignInBits(), /*offsetInBits=*/0,
+      type.getAddressSpace(), {});
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
@@ -513,8 +514,8 @@ struct DebugInfoToLLVMTypeConverter : public DebugInfo::DebugInfoTypeConverter {
       size_t size = dataLayout.getPointerSizeInBits();
       llvm::Align align =
           dataLayout.getPointerPrefAlignment(type.getAddressSpace());
-      return DebugInfo::DIPointerType::get(diEltType, size,
-                                           align.value() * CHAR_BIT);
+      return DebugInfo::DIPointerType::get(
+          diEltType, size, align.value() * CHAR_BIT, type.getAddressSpace());
     });
     addConversion([&](LLVM::LLVMStructType structType) {
       MLIRContext *ctx = structType.getContext();
