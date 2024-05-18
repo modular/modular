@@ -73,7 +73,7 @@ fn test_frexp[type: DType](atol: Float32, rtol: Float32) raises:
             SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
             atol=atol,
             rtol=rtol,
-        )
+        ).reduce_and()
     )
     assert_true(
         isclose(
@@ -81,7 +81,7 @@ fn test_frexp[type: DType](atol: Float32, rtol: Float32) raises:
             SIMD[DType.float32, 4](-0.0, 2.0, 3.0, 3.0),
             atol=atol,
             rtol=rtol,
-        )
+        ).reduce_and()
     )
 
 
@@ -113,7 +113,7 @@ fn test_log[type: DType](atol: Float32, rtol: Float32) raises:
             SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
             atol=atol,
             rtol=rtol,
-        )
+        ).reduce_and()
     )
 
     var res3 = log[type, 1](2.7182818284590452353602874713526624977572)
@@ -138,7 +138,7 @@ fn test_log2[type: DType](atol: Float32, rtol: Float32) raises:
             6.9477,
             atol=atol,
             rtol=rtol,
-        )
+        ).reduce_and()
     )
 
     var res1 = log2(Scalar[type](0.1))
@@ -158,7 +158,7 @@ fn test_log2[type: DType](atol: Float32, rtol: Float32) raises:
             SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
             atol=atol,
             rtol=rtol,
-        )
+        ).reduce_and()
     )
 
 

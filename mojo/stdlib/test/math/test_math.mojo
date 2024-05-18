@@ -79,7 +79,7 @@ def test_isclose():
             SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
             SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
             equal_nan=True,
-        )
+        ).reduce_and()
     )
 
     assert_false(
@@ -87,7 +87,7 @@ def test_isclose():
             SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 3),
             SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 4),
             equal_nan=True,
-        )
+        ).reduce_and()
     )
 
 
