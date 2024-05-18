@@ -306,6 +306,8 @@ private:
   DebugInfo::DIType buildDebugSubroutineType(FunctionType type);
   /// Build a pointer type.
   DebugInfo::DIType buildPointerType(DebugInfo::DIType type);
+  DebugInfo::DIType buildPointerType(DebugInfo::DIType type,
+                                     std::optional<unsigned> addressSpace);
 
   /// Build fully resolved debug type from partially resolved ones.
   DebugInfo::DIType

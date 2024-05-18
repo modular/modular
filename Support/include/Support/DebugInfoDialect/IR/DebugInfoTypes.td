@@ -149,19 +149,22 @@ def DebugInfo_PointerType : DIType<"DIPointer", "ptr"> {
   let parameters = (ins
     "DIType":$elementType,
     "unsigned":$sizeInBits,
-    "unsigned":$alignInBits
+    "unsigned":$alignInBits,
+    OptionalParameter<"std::optional<unsigned>">:$addressSpace
   );
   let builders = [
     TypeBuilderWithInferredContext<(ins
       "DIType":$elementType, "unsigned":$sizeInBits,
-      "unsigned":$alignInBits
+      "unsigned":$alignInBits, "std::optional<unsigned>":$addressSpace
     ), [{
       return $_get(elementType.getContext(), elementType, sizeInBits,
-                   alignInBits);
+                   alignInBits, addressSpace);
     }]>
   ];
   let assemblyFormat = [{
-    `<` custom<DIType>($elementType) ` ` `{` struct($sizeInBits, $alignInBits)
+    `<` custom<DIType>($elementType) ` ` `{` `sizeInBits` `=` $sizeInBits `` `,`
+    `alignInBits` `=` $alignInBits
+    (`` `,` `addressSpace` `=` $addressSpace^)?
     `}` `>`
   }];
 }

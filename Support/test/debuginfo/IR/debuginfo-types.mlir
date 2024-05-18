@@ -13,6 +13,9 @@
 // CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[BASIC]] {sizeInBits = 64, alignInBits = 64}>
 !pointerType = !debuginfo.ptr<!f32Type {sizeInBits = 64, alignInBits = 64}>
 
+// CHECK-DAG: ![[PTR2:.*]] = !debuginfo.ptr<![[BASIC]] {sizeInBits = 64, alignInBits = 64, addressSpace = 4}>
+!pointerType2 = !debuginfo.ptr<!f32Type {sizeInBits = 64, alignInBits = 64, addressSpace = 4}>
+
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<Foo(![[MEMBER]])>
 !structType = !debuginfo.struct<"Foo"(!memberType)>
 
@@ -52,5 +55,8 @@ module attributes {
   test.type7 = !unspecifiedType,
 
   // CHECK-SAME: test.type8 = ![[VECTOR]]
-  test.type8 = !vectorType
+  test.type8 = !vectorType,
+
+  // CHECK-SAME: test.type9 = ![[PTR2]]
+  test.type9 = !pointerType2
 } {}

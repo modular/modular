@@ -131,8 +131,12 @@ KGEN::DebugInfoTypeConverter::buildDebugSubroutineType(FunctionType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildPointerType(DIType type) {
+  return buildPointerType(type, /*addressSpace=*/std::nullopt);
+}
+DIType KGEN::DebugInfoTypeConverter::buildPointerType(
+    DIType type, std::optional<unsigned> addressSpace) {
   return DIPointerType::get(type, tc.getPointerBitwidth(),
-                            tc.getPointerBitwidth());
+                            tc.getPointerBitwidth(), addressSpace);
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(
@@ -213,7 +217,8 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
-  return buildPointerType(convertDebugType(type.getElementType()));
+  return buildPointerType(convertDebugType(type.getElementType()),
+                          cast<IntegerAttr>(type.getAddressSpace()).getInt());
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {

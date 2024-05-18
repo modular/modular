@@ -6,8 +6,8 @@
 // CHECK-DAG: #[[ARRAY:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[BASIC]], sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !arrayType = !debuginfo.array<10 x !f32Type>
 
-// CHECK-DAG: #[[PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[BASIC]], sizeInBits = 64, alignInBits = 64>
-!pointerType = !debuginfo.ptr<!f32Type {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: #[[PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[BASIC]], sizeInBits = 64, alignInBits = 64, dwarfAddressSpace = 5>
+!pointerType = !debuginfo.ptr<!f32Type {sizeInBits = 64, alignInBits = 64, addressSpace = 5}>
 
 // CHECK-DAG: #[[MEMBER1:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "first", baseType = #[[BASIC]], sizeInBits = 32, alignInBits = 32>
 !memberType1 = !debuginfo.member<first: !f32Type>

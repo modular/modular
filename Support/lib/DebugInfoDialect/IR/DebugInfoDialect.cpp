@@ -76,6 +76,26 @@ struct DebugInfoOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;
+using OptionalUnsigned = std::optional<unsigned>;
+
+static LogicalResult readOptionalUnsigned(DialectBytecodeReader &reader,
+                                          std::optional<unsigned> &value) {
+  bool hasValue;
+  uint64_t val;
+  if (failed(reader.readVarIntWithFlag(val, hasValue)))
+    return failure();
+  if (!hasValue)
+    return success();
+  value = val;
+  return success();
+}
+
+static void writeOptionalUnsigned(DialectBytecodeWriter &writer,
+                                  const std::optional<unsigned> &value) {
+  if (!value)
+    return writer.writeVarIntWithFlag(0, /*flag=*/false);
+  return writer.writeVarIntWithFlag(value.value(), /*flag=*/true);
+}
 
 #include "Support/DebugInfoDialect/IR/DebugInfoDialectBytecode.cpp.inc"
 

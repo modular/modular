@@ -33,7 +33,8 @@ def DIMemberType : DialectType<(type
 def DIPointerType : DialectType<(type
   ConcreteType<"DIType">:$elementType,
   VarInt:$sizeInBits,
-  VarInt:$alignInBits
+  VarInt:$alignInBits,
+  Custom<"OptionalUnsigned">:$addressSpace
 )>;
 
 def DIStructType : DialectType<(type
