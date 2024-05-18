@@ -74,7 +74,7 @@ fn test_async_copy() raises:
     var kernel = Function[__type_of(kernel_type), kernel_type]()
 
     kernel(
-        input,
+        input.tensor.ptr,
         grid_dim=(M // BM, N // BN),
         block_dim=(BM, BN),
     )

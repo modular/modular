@@ -76,9 +76,9 @@ fn test_naive_matmul_kernel() raises:
 
     var kernel = Function[__type_of(naive_matmul_kernel), naive_matmul_kernel]()
     kernel(
-        mat_c,
-        mat_a,
-        mat_b,
+        mat_c.tensor.ptr,
+        mat_a.tensor.ptr,
+        mat_b.tensor.ptr,
         grid_dim=(M // BM, N // BN),
         block_dim=(BM, BN),
     )
@@ -221,9 +221,9 @@ fn test_sram_blocked_matmul() raises:
         __type_of(sram_blocked_matmul_kernel), sram_blocked_matmul_kernel
     ]()
     kernel(
-        mat_c,
-        mat_a,
-        mat_b,
+        mat_c.tensor.ptr,
+        mat_a.tensor.ptr,
+        mat_b.tensor.ptr,
         grid_dim=(N // BN, M // BM),
         block_dim=(thread_layout.size()),
     )
@@ -331,9 +331,9 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
         single_warp_mma_sync_m16n8k8_kernel_kernel,
     ]()
     kernel(
-        mat_c,
-        mat_a,
-        mat_b,
+        mat_c.tensor.ptr,
+        mat_a.tensor.ptr,
+        mat_b.tensor.ptr,
         grid_dim=(1, 1),
         block_dim=(32),
     )
