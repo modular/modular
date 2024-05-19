@@ -260,7 +260,7 @@ struct CModelInferResponse:
     alias _FreeFnName = "M_freeModelInferResponse"
 
     @staticmethod
-    fn new(lib: DLHandle, address: StringRef) -> CModelInferResponse:
+    fn new(lib: DLHandle) -> CModelInferResponse:
         return call_dylib_func[CModelInferResponse](lib, Self._NewFnName)
 
     fn free(owned self, lib: DLHandle):
