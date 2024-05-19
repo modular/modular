@@ -250,7 +250,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   } else
     hasRegisterResult = true;
 
-  CValue callResult = emitter.emitCallUnchecked(
+  CValue callResult = emitter.emitIndirectCall(
       PValue(callee), CallOperands(posOperands, &kwOperands), dest, node);
   if (!callResult)
     return;
