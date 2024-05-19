@@ -107,11 +107,10 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
 };
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                              PogListAttr paramListAttr,
-                              ParameterInferenceHookTy parameterInferenceHook,
-                              const DiagEmitter &diagEmitter,
-                              Boundness boundness) const {
+ParamBindings::verifyBindingsImpl(
+    ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
+    ParameterInferenceHookTy parameterInferenceHook,
+    const DiagEmitter *diagEmitter, Boundness boundness) const {
   size_t numParams = expectedParamTypes.size();
 
   // Handle *_ if it is present expanding posBindings into unpackedPosBindings.
@@ -128,16 +127,16 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // UnpackedAttr is aka "*_": it fills up all remaining positional slots and
     // must be at the end of the parameter list.
     if (idx != posBindings.size() - 1) {
-      if (diagEmitter.emitUnboundPackNotEnd)
-        diagEmitter.emitUnboundPackNotEnd(binding);
+      if (diagEmitter)
+        diagEmitter->emitUnboundPackNotEnd(binding);
       return {{}, fitness};
     }
 
     // *_ doesn't work with variadic parameter lists.
     // TODO: Why not? It should expand to a variadic on the enclosing context.
     if (paramListAttr.hasVariadic()) {
-      if (diagEmitter.emitUnboundPackInVariadic)
-        diagEmitter.emitUnboundPackInVariadic(binding);
+      if (diagEmitter)
+        diagEmitter->emitUnboundPackInVariadic(binding);
       return {{}, fitness};
     }
 
@@ -145,9 +144,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     size_t numPosPassable = countNumPositional(paramListAttr);
     size_t numUnpackedPositionals = unpackedPosBindings.size();
     if (unpackedPosBindings.size() > numPosPassable) {
-      if (diagEmitter.emitTooManyPositional) {
-        diagEmitter.emitTooManyPositional(numPosPassable,
-                                          numUnpackedPositionals);
+      if (diagEmitter) {
+        diagEmitter->emitTooManyPositional(numPosPassable,
+                                           numUnpackedPositionals);
       }
       return {{}, fitness};
     }
@@ -176,16 +175,16 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   if (kwDiagRes != KwDiagResult::kValid) {
     switch (kwDiagRes) {
     case KwDiagResult::kMissingKwOnly:
-      if (diagEmitter.emitMissing)
-        diagEmitter.emitMissing(kwDiagNames, "keyword-only");
+      if (diagEmitter)
+        diagEmitter->emitMissing(kwDiagNames, "keyword-only");
       break;
     case KwDiagResult::kPosOnlyPassedByKw:
-      if (diagEmitter.emitPosOnlyPassedByKw)
-        diagEmitter.emitPosOnlyPassedByKw(kwDiagNames);
+      if (diagEmitter)
+        diagEmitter->emitPosOnlyPassedByKw(kwDiagNames);
       break;
     case KwDiagResult::kUnknownKeywords:
-      if (diagEmitter.emitUnknownKeywords)
-        diagEmitter.emitUnknownKeywords(kwDiagNames);
+      if (diagEmitter)
+        diagEmitter->emitUnknownKeywords(kwDiagNames);
       break;
     default:
       llvm_unreachable("unknown KwDiagResult");
@@ -196,8 +195,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   auto [posDiagRes, posDiagNames] =
       diagnosePosOperands(paramListAttr, operands, /*allowCountMismatch=*/true);
   if (posDiagRes == PosDiagResult::kByPosAndKw) {
-    if (diagEmitter.emitRedundantKeywords)
-      diagEmitter.emitRedundantKeywords(posDiagNames);
+    if (diagEmitter)
+      diagEmitter->emitRedundantKeywords(posDiagNames);
     return {{}, fitness};
   }
 
@@ -303,8 +302,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                                  fitness.numImplicitConversions,
                                                  emitter, evaluator);
         if (!pValue) {
-          if (diagEmitter.emitKwType)
-            diagEmitter.emitKwType(paramName, *binding, expectedType);
+          if (diagEmitter)
+            diagEmitter->emitKwType(paramName, *binding, expectedType);
           return {{}, fitness};
         }
         setParamValue(pValue);
@@ -323,8 +322,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
       if (passingKind == PassingKind::Implicit ||
           passingKind == PassingKind::Inferred) {
-        if (diagEmitter.emitInferOnlyFailure)
-          diagEmitter.emitInferOnlyFailure(idx);
+        if (diagEmitter)
+          diagEmitter->emitInferOnlyFailure(idx);
         return {{}, fitness};
       }
 
@@ -339,9 +338,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       if (!fitness.lastExpectedType)
         fitness.lastExpectedType = expectedType;
 
-      if (diagEmitter.emitParamCount) {
-        diagEmitter.emitParamCount(numPosBindings,
-                                   passingKind == PassingKind::PosOnly);
+      if (diagEmitter) {
+        diagEmitter->emitParamCount(numPosBindings,
+                                    passingKind == PassingKind::PosOnly);
       }
       return {{}, fitness};
     }
@@ -358,8 +357,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
 
         // We tried but couldn't infer an unbound parameter, we must error.
-        if (diagEmitter.emitDeductionFailure)
-          diagEmitter.emitDeductionFailure(idx);
+        if (diagEmitter)
+          diagEmitter->emitDeductionFailure(idx);
         return {{}, fitness};
       }
     }
@@ -386,8 +385,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                                fitness.numImplicitConversions,
                                                emitter, evaluator);
       if (!pValue)
-        if (diagEmitter.emitPosType)
-          diagEmitter.emitPosType(index, binding, expectedType);
+        if (diagEmitter)
+          diagEmitter->emitPosType(index, binding, expectedType);
       return pValue;
     };
 
@@ -425,15 +424,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   // Complain if we collected any missing keyword-only parameters.
   if (!kwDiagNames.empty()) {
-    if (diagEmitter.emitMissing)
-      diagEmitter.emitMissing(kwDiagNames, "keyword-only");
+    if (diagEmitter)
+      diagEmitter->emitMissing(kwDiagNames, "keyword-only");
     return {{}, fitness};
   }
 
   // Check and complain if we have bindings that didn't get used.
   if (posBindingIdx != numPosBindings) {
-    if (diagEmitter.emitParamCount)
-      diagEmitter.emitParamCount(numPosBindings, /*posOnly=*/false);
+    if (diagEmitter)
+      diagEmitter->emitParamCount(numPosBindings, /*posOnly=*/false);
     return {{}, fitness};
   }
 
@@ -442,10 +441,39 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(LITSignatureType sig,
+                              const DiagEmitter *diagEmitter,
+                              ParameterInferenceHookTy parameterInferenceHook,
+                              Boundness boundness) const {
+  return verifyBindingsImpl(sig.getParamTypes(), sig.getParamListAttrs(),
+                            parameterInferenceHook, diagEmitter, boundness);
+}
+
+ParameterExprArrayAttr
+ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
+                              SMLoc exprLoc, Boundness boundness) const {
+  auto [bindingValuesAttr, _] =
+      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+                     Twine("'") + structOp.getName() + "'", exprLoc,
+                     structOp.getLoc(), boundness);
+  return bindingValuesAttr;
+}
+
+ParameterExprArrayAttr
+ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
+                              SMLoc exprLoc,
+                              std::optional<Location> opLoc) const {
+  auto [newBindings, _] = verifyBindings(
+      sig.getParamTypes(), sig.getParamListAttrs(),
+      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
+      opLoc ? Boundness::Partial : Boundness::Explicit);
+  return newBindings;
+}
+
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               PogListAttr paramListAttr, const Twine &baseName,
-                              llvm::SMLoc exprLoc,
-                              std::optional<Location> opLoc,
+                              SMLoc exprLoc, std::optional<Location> opLoc,
                               Boundness boundness) const {
   size_t maxAllowed = expectedParamTypes.size() -
                       countNumImplicitKinds(paramListAttr) -
@@ -553,45 +581,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag.attachNote(*opLoc) << baseName << " declared here";
       }};
 
-  return verifyBindings(expectedParamTypes, paramListAttr,
-                        /*parameterInferenceHook=*/{}, diagEmitter, boundness);
-}
-
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(
-    LITSignatureType sig, const DiagEmitter &diagEmitter,
-    ParameterInferenceHookTy parameterInferenceHook) const {
-  return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                        parameterInferenceHook, diagEmitter, Boundness::Full);
-}
-
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(LITSignatureType sig) const {
-  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                          nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
-  return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                        /*parameterInferenceHook=*/{}, diagEmitter);
-}
-
-ParameterExprArrayAttr
-ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
-                              llvm::SMLoc exprLoc, Boundness boundness) const {
-  auto [bindingValuesAttr, _] =
-      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                     Twine("'") + structOp.getName() + "'", exprLoc,
-                     structOp.getLoc(), boundness);
-  return bindingValuesAttr;
-}
-
-ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
-                              llvm::SMLoc exprLoc,
-                              std::optional<Location> opLoc) const {
-  auto [newBindings, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(),
-      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
-      opLoc ? Boundness::Partial : Boundness::Explicit);
-  return newBindings;
+  return verifyBindingsImpl(expectedParamTypes, paramListAttr,
+                            /*parameterInferenceHook=*/{}, &diagEmitter,
+                            boundness);
 }
 
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,

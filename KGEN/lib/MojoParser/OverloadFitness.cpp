@@ -765,7 +765,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     return PValue();
   };
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
-      signature, bindingDiag, parameterInferenceHook);
+      signature, &bindingDiag, parameterInferenceHook,
+      ParamBindings::Boundness::Full);
 
   // If there is an error, we just forward the diagnostics.
   if (!newBindings)
