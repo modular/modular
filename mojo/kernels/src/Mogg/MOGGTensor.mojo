@@ -447,7 +447,7 @@ struct Tensor[
                         coords_static
                     )
                 )
-                var val = func[width, dims](coords)
+                var val = func[width](coords)
                 self.store(coords, val)
 
             elementwise[
@@ -479,7 +479,7 @@ struct Tensor[
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
-                var out = func[width, indices.static_values](indices)
+                var out = func[width](indices)
                 self.store(indices, out)
 
             # We vectorize over the innermost dimension.
