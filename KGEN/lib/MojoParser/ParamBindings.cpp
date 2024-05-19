@@ -58,13 +58,6 @@ void ParamBindings::addPrechecked(TypedAttr precheckedBinding) {
   posBindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
 }
 
-void ParamBindings::addPrechecked(TypedAttr precheckedBinding,
-                                  StringAttr name) {
-  auto [_, addedNew] = kwBindings.try_emplace(
-      name, Binding{nullptr, precheckedBinding, /*typeChecked=*/true});
-  assert(addedNew && "duplicate keyword parameter");
-}
-
 void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
   posBindings.push_back({expr, value, /*typeChecked=*/false});
 }
