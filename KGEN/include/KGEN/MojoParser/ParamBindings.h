@@ -95,8 +95,6 @@ public:
   /// Add a bound value for pre-checked positional parameter binding. The caller
   /// is responsible for ensuring the keyword is not already present.
   void addPrechecked(TypedAttr precheckedBinding);
-  /// Add a bound value for pre-checked keyword parameter binding.
-  void addPrechecked(TypedAttr precheckedBinding, StringAttr name);
 
   /// Add a bound value for a positional parameter binding.
   void add(const ExprNode *expr, TypedAttr value);
