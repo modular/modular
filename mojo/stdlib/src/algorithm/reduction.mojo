@@ -511,7 +511,6 @@ fn _reduce_generator[
         output_0_fn,
         reduce_function,
         single_thread_blocking_override,
-        shape.size,
     ](shape, init, reduce_dim)
 
 
