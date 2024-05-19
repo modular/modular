@@ -444,9 +444,7 @@ fn mgp_tensor_spec_create[
 @mogg_register("mgp.tensor_spec.size")
 @always_inline
 @export
-fn mgp_tensor_spec_size[
-    rank: Int
-](borrowed spec: StaticTensorSpec[rank]) -> Int:
+fn mgp_tensor_spec_size[rank: Int](spec: StaticTensorSpec[rank]) -> Int:
     return spec.bytecount()
 
 
