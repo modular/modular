@@ -146,7 +146,6 @@ std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
   // Return the pair.
   return std::pair<std::string, std::string>(machine_id, session_id);
 }
-#endif // MODULAR_ENABLE_TELEMETRY
 
 static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
   auto limitsOr = CPULimits::get();
@@ -157,6 +156,7 @@ static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
   }
   return hostInfo.numPhysicalCores;
 }
+#endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::~TelemetryContext() { flush(kShutdownFlushTimeout); }
 
@@ -178,7 +178,7 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
 
 TelemetryContext::TelemetryContext(
     Settings &settings, const llvm::StringMap<AttributeValue> &resources) {
-  bool isProdBuild = false;
+  [[maybe_unused]] bool isProdBuild = false;
 #ifdef MODULAR_PRODUCTION
   isProdBuild = true;
 #endif
