@@ -23,11 +23,11 @@ struct MemExample:
   fn mutate(inout self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt> borrow)
-fn borrow[lt: ImmLifetime](a: Reference[MemExample, False.__mlir_i1__(), lt]._mlir_type):
+fn borrow[lt: ImmutableLifetime](a: Reference[MemExample, False.__mlir_i1__(), lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt> borrow)
-fn mutate[lt: MutLifetime](a: Reference[MemExample, True.__mlir_i1__(), lt]._mlir_type):
+fn mutate[lt: MutableLifetime](a: Reference[MemExample, True.__mlir_i1__(), lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_borrow
@@ -43,7 +43,7 @@ fn implicit_owned(owned a: MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"addrSpaces
-fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: AddressSpace]():
+fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
   var ref1 : Reference[MemExample, True.__mlir_i1__(), lt1, as1]._mlir_type
 
@@ -273,11 +273,11 @@ fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[__lifetime_of(a), __lifetime_of(b)]:
   return TwoLifetimes[__lifetime_of(a), __lifetime_of(b)]()
 
-struct OneLifetime[a_lifetime: ImmLifetime]:
+struct OneLifetime[a_lifetime: ImmutableLifetime]:
   fn __init__(inout self): pass
 
-struct TwoLifetimes[a_lifetime: ImmLifetime,
-                    b_lifetime: ImmLifetime]:
+struct TwoLifetimes[a_lifetime: ImmutableLifetime,
+                    b_lifetime: ImmutableLifetime]:
   fn __init__(inout self): pass
 
 # Crash converting mvalue of #lit.lifetime lifetime to Reference with specific one.
@@ -348,7 +348,7 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
 
 
 @value
-struct HeterogenousList[elt_lifetime: ImmLifetime]:
+struct HeterogenousList[elt_lifetime: ImmutableLifetime]:
     var storage: VariadicListMem[MemExample, False.__mlir_i1__(), elt_lifetime]._mlir_type
 
 fn make_het_list(*elts: MemExample) -> HeterogenousList[__lifetime_of(elts)]:
@@ -371,7 +371,7 @@ fn test_heterogenous_list():
     var list3 = make_het_list(i, j, k)
 
 # Issue #37659: Parameter inference doesn't work with force-immut lifetimes
-fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmLifetime](a: Reference[T, False.__mlir_i1__(), value_lifetime]): pass
+fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Reference[T, False.__mlir_i1__(), value_lifetime]): pass
 fn test_passing_mutable_ref(inout i: String):
     thing_taking_immutable_ref(i)
 
