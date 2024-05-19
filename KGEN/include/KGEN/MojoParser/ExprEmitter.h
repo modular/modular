@@ -362,11 +362,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Function Calls
 
-  /// Emit call to a resolved and /already type checked/ callee. This does not,
-  /// check for compatibility and isn't prepared to emit errors.
-  CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
-                           ValueDest &dest, const ExprNode *callExpr);
-
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
@@ -554,6 +549,11 @@ public:
   // Emit the vardecl shadow for an OwnedInReg argument.
   VarDeclOp makeArgLValueVarSlot(SRValue argValue, StringAttr argName,
                                  SMLoc loc);
+
+  /// Internal implementation of call emission, use emitCall/emitIndirectCall
+  /// or higher level wrappers instead.
+  CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
+                           ValueDest &dest, const ExprNode *callExpr);
 };
 
 } // namespace M::KGEN::LIT

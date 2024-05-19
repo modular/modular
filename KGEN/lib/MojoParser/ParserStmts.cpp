@@ -1339,10 +1339,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  if (PValue enterMethod =
-          OverloadSet::lookup(getScopeInfo(), contextRVType, "__enter__",
-                              CallOperands({{contextVal, contextExp}}),
-                              contextExp, CallSyntax::kMethodCall)) {
+  if (PValue enterMethod = OverloadSet::lookupAndResolve(
+          getScopeInfo(), contextRVType, "__enter__",
+          CallOperands({{contextVal, contextExp}}), contextExp,
+          CallSyntax::kMethodCall)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self byref.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());

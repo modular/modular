@@ -177,18 +177,20 @@ public:
   /// single callee. If non-null, it invokes lookupFailureErrorHandler if the
   /// lookup of the named method fails.  If that succeeds, it will complain
   /// about overload resolution when 'shouldPrintOverloadErrors' is true.
-  static PValue lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
-                       StringRef methodName, const CallOperands &callOperands,
-                       const ExprNode *callExpr, CallSyntax syntax,
-                       function_ref<void()> lookupFailureErrorHandler,
-                       bool shouldPrintOverloadErrors);
+  static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
+                                 ASTType type, StringRef methodName,
+                                 const CallOperands &callOperands,
+                                 const ExprNode *callExpr, CallSyntax syntax,
+                                 function_ref<void()> lookupFailureErrorHandler,
+                                 bool shouldPrintOverloadErrors);
 
   /// Same as the above but a convenience when never emitting an error.
-  static PValue lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
-                       StringRef methodName, const CallOperands &callOperands,
-                       const ExprNode *callExpr, CallSyntax syntax) {
-    return lookup(scopeInfo, type, methodName, callOperands, callExpr, syntax,
-                  {}, false);
+  static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
+                                 ASTType type, StringRef methodName,
+                                 const CallOperands &callOperands,
+                                 const ExprNode *callExpr, CallSyntax syntax) {
+    return lookupAndResolve(scopeInfo, type, methodName, callOperands, callExpr,
+                            syntax, {}, false);
   }
 
   bool isNull() const { return fnDecls.empty(); }
@@ -214,10 +216,6 @@ public:
   /// arguments.  If so, return the single entry that works.  If not, generate a
   /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
   PValue filterOverloadSet(const CallOperands &operands,
-                           bool allowImplicitConversions,
-                           bool emitDiagnosticOnFailure) const;
-  PValue filterOverloadSet(const CallOperands &operands,
-                           SmallVectorImpl<ASTDecl *> &newFnDecls,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure) const;
 

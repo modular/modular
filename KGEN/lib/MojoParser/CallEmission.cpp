@@ -143,14 +143,6 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
   return bestFitness;
 }
 
-PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
-                                      bool allowImplicitConversions,
-                                      bool emitDiagnosticOnFailure) const {
-  SmallVector<ASTDecl *, 1> newFnDecls;
-  return filterOverloadSet(operands, newFnDecls, allowImplicitConversions,
-                           emitDiagnosticOnFailure);
-}
-
 enum class CallKind { kMethod, kFunction, kIndirect };
 
 static CallKind getCallKind(CallSyntax syntax) {
@@ -175,7 +167,6 @@ static CallKind getCallKind(CallSyntax syntax) {
 }
 
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
-                                      SmallVectorImpl<ASTDecl *> &newFnDecls,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure) const {
   // Evaluate the fitness of each candidate in our overload set.
@@ -299,6 +290,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   }
 
   // Ok, we have at least one valid candidate, so filter for the best matches.
+  SmallVector<ASTDecl *> newFnDecls;
   const OverloadFitness *bestFitness =
       selectBestCandidates(fnDecls, evaluations, newFnDecls);
 
@@ -567,12 +559,11 @@ OverloadSet OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo,
 /// Lookup of a named named method on the specified type, filtered to match a
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
-PValue OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
-                           StringRef methodName,
-                           const CallOperands &callOperands,
-                           const ExprNode *callExpr, CallSyntax syntax,
-                           function_ref<void()> lookupFailureErrorHandler,
-                           bool shouldPrintOverloadErrors) {
+PValue OverloadSet::lookupAndResolve(
+    const TypeCheckScopeInfo &scopeInfo, ASTType type, StringRef methodName,
+    const CallOperands &callOperands, const ExprNode *callExpr,
+    CallSyntax syntax, function_ref<void()> lookupFailureErrorHandler,
+    bool shouldPrintOverloadErrors) {
   auto ovSet = OverloadSet::lookup(scopeInfo, type, methodName, callExpr,
                                    syntax, lookupFailureErrorHandler);
 
@@ -815,8 +806,8 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   // If the type doesn't have the specified method, emit an error.
   PValue callee =
-      OverloadSet::lookup(getScopeInfo(), type, methodName, operands, callNode,
-                          syntax, emitNoMethodError, true);
+      OverloadSet::lookupAndResolve(getScopeInfo(), type, methodName, operands,
+                                    callNode, syntax, emitNoMethodError, true);
   if (!callee) {
     dest.resetForError();
     return {};

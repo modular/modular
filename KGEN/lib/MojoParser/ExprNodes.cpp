@@ -2188,7 +2188,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     CallOperands operands(argValues);
-    if (PValue callee = OverloadSet::lookup(
+    if (PValue callee = OverloadSet::lookupAndResolve(
             emitter.getScopeInfo(), lhsCV.getRValueType(emitter.shared),
             specialFnInfo.name, operands, callExpr, CallSyntax::kOperator))
       return emitter.emitIndirectCall(callee, operands, dest, callExpr);
@@ -2201,7 +2201,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     std::swap(argValues[0], argValues[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       CallOperands operands(argValues);
-      if (PValue callee = OverloadSet::lookup(
+      if (PValue callee = OverloadSet::lookupAndResolve(
               emitter.getScopeInfo(), rhsCV.getRValueType(emitter.shared),
               reversedFnInfo.name, operands, callExpr,
               CallSyntax::kReversedOperator))
