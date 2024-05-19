@@ -91,19 +91,19 @@ struct TensorDict(Sized):
         return len(self._items)
 
     fn items(
-        borrowed self: Reference[Self, _, _]
+        self: Reference[Self, _, _]
     ) -> _DictEntryIter[
         String, CheckpointTensor, self.is_mutable, self.lifetime
     ]:
         return _DictEntryIter(0, 0, self[]._items)
 
     fn keys(
-        borrowed self: Reference[Self, _, _]
+        self: Reference[Self, _, _]
     ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     def __iter__(
-        borrowed self: Reference[Self, _, _]
+        self: Reference[Self, _, _]
     ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 

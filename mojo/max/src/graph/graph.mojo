@@ -458,7 +458,7 @@ struct Graph(CollectionElement, Stringable):
 
     def quantize[
         encoding: QuantizationEncoding
-    ](borrowed self, owned value: Tensor[DType.float32]) -> Symbol:
+    ](self, owned value: Tensor[DType.float32]) -> Symbol:
         """Quantizes a tensor using a specific quantization encoding.
 
         This takes the full-precision `value` as owned data and frees it.
