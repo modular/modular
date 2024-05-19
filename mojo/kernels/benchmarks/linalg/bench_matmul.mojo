@@ -62,7 +62,9 @@ fn bench_matmul_spec(inout m: Bench, spec: MatmulSpec) raises:
     )
 
 
-fn bench_matmul(inout bencher: Bencher, spec: MatmulSpec) capturing:
+fn bench_matmul[
+    static: MatmulSpecStatic
+](inout bencher: Bencher, spec: MatmulSpec[static]) capturing:
     alias a_type = spec.static_info.a_type
     alias b_type = spec.static_info.b_type
     alias c_type = spec.static_info.c_type
