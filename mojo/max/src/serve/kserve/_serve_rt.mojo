@@ -153,10 +153,10 @@ struct AsyncCBatch:
     alias _GetFnName = "M_asyncBatchGet"
     alias _FreeValueFnName = "M_freeAsyncBatch"
 
-    fn get(self, borrowed lib: DLHandle) -> CBatch:
+    fn get(self, lib: DLHandle) -> CBatch:
         return call_dylib_func[CBatch](lib, Self._GetFnName, self)
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self._FreeValueFnName, self)
 
 
@@ -317,7 +317,7 @@ struct ClientResult:
     alias _FreeValueFnName = "M_freeClientResult"
 
     @staticmethod
-    fn free(borrowed lib: DLHandle, ptr: Pointer[ClientResult]):
+    fn free(lib: DLHandle, ptr: Pointer[ClientResult]):
         call_dylib_func(lib, Self._FreeValueFnName, ptr)
 
 
