@@ -277,6 +277,12 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     implicit_params_with_others[42](one, two)
 
+    # CHECK: alias.decl [[PARTIAL:.*]]: !lit.signature<<?, !Int, !Int, !Int, !Int>
+    # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
+    alias partial_bind = implicit_params_with_others[1]
+    # CHECK: call[{{.*}}: bind_signature(:{{.*}} [[PARTIAL]], {1}, {2}, {3}, {4})]
+    partial_bind(one, two)
+
 fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1]): pass
 
 # CHECK-LABEL: lit.func @"test_implicit_params_with_var_params
@@ -1120,7 +1126,7 @@ fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
     # CHECK: !lit.signature<<"u": !T>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.signature<<"s": !T>() -> !kgen.none>
     # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> F, x, ?))>
-    alias H: fn[u: T] () -> None = F[x, _]
+    alias H: fn[u: T] () -> None = F[x]
 
 
 ##===----------------------------------------------------------------------===##

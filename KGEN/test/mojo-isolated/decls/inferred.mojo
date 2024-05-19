@@ -51,6 +51,10 @@ fn inferred_dependent_param[
     pass
 
 
+fn inferred_partial[inferred x: int, y: int](owned z: ParamType[x]):
+    pass
+
+
 # CHECK-LABEL: lit.func @"test_inferred_params
 fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_param_from_arg{{.*}}<x>(%0)
@@ -67,3 +71,9 @@ fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
     inferred_with_default[y, `2`]()
     # CHECK: inferred_dependent_param{{.*}}<x, :[[PARAMTYPE]]<x> y, :{{@.*DependentParam}}<x, :[[PARAMTYPE]]<x> y> z>
     inferred_dependent_param[z]()
+
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.signature<<+ "x": index, |>("z": !lit.declref<#ParamType <*(0,0)>>)
+    alias partially_bound = inferred_partial[`1`]
+    # CHECK: call[!lit.signature<("z": !lit.declref<#ParamType <x>>) -> !kgen.none>:
+    # CHECK-SAME: bind_signature(:{{.*}} [[PARTIALLY_BOUND]], x)]
+    partially_bound(y)
