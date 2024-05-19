@@ -201,6 +201,7 @@ public:
   explicit operator bool() const { return !isNull(); }
 
   BaseDLValue *operator->() const { return &*storage; }
+  BaseDLValue &operator*() const { return *storage; }
 
 private:
   RCRef<BaseDLValue> storage;
@@ -712,6 +713,11 @@ public:
   virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const = 0;
+
+  /// If this is a def argument shadow whose argument is backed by an MBValue,
+  /// return it.
+  virtual MBValue getMBValueFromDefArgument() const { return MBValue(); }
+  virtual bool isDefArgument() const { return false; }
 };
 
 /// This DLValue implementation represents a discard pattern of _.  It discards
@@ -787,6 +793,30 @@ public:
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
   void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+};
+
+/// This DLValue is used to lazily synthesize a def argument box the first time
+/// the argument is mutated.  When this happens, it replaces itself in the
+/// ASTDecl with a direct reference to the box.
+class DefArgumentWrapperDLValue : public BaseDLValue {
+public:
+  DefArgumentWrapperDLValue(ASTDecl *argDecl, BValue argRef, ASTType eltType,
+                            size_t argIndex);
+
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+
+  /// If this is a def argument shadow whose argument is backed by an MBValue,
+  /// return it.
+  MBValue getMBValueFromDefArgument() const override;
+  bool isDefArgument() const override { return true; }
+
+  /// This is the argument decl we're the representation of.
+  ASTDecl *argDecl;
+  // This is the MBValue or SBValue for the argument.
+  BValue argRef;
+  size_t argIndex;
 };
 
 } // namespace M::KGEN::LIT

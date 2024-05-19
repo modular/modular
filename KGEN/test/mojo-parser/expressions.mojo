@@ -669,69 +669,51 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = Int(5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, mut {{.*}}> owned_in_mem,
-def defTests(a: Int, b: Int, untyped) -> None:
-  # CHECK: %a_0 = lit.var.decl "a" arg
-  # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.var.decl "b" arg
-  # CHECK: lit.ref.store %b, %b_1
-  # CHECK: %[[B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.ref.store %[[B]], %a_0
-  a = b # Parameters are mutable!
-
 ##===----------------------------------------------------------------------===##
 # Augmented Assignments
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"basic_assignments
-def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
-  # CHECK:      %a_0 = lit.var.decl "a" arg
-  # CHECK:      %b_1 = lit.var.decl "b" arg
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}(%a_0, %[[LOAD_B]])
+fn basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
+  var a = a0
+  # CHECK-NEXT:      %a = lit.var.decl "a" var
+  # CHECK-NEXT: lit.ref.store %a0, %a
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}(%a, %b)
   a += b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__isub__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__isub__{{.*}}(%a, %b)
   a -= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__imul__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__imul__{{.*}}(%a, %b)
   a *= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ifloordiv__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ifloordiv__{{.*}}(%a, %b)
   a //= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__imod__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__imod__{{.*}}(%a, %b)
   a %= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ipow__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ipow__{{.*}}(%a, %b)
   a **= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__irshift__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__irshift__{{.*}}(%a, %b)
   a >>= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ilshift__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ilshift__{{.*}}(%a, %b)
   a <<= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__iand__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__iand__{{.*}}(%a, %b)
   a &= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ixor__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ixor__{{.*}}(%a, %b)
   a ^= b
-  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ior__{{.*}}(%a_0, %[[LOAD_B]])
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ior__{{.*}}(%a, %b)
   a |= b
 
+  var x: Int
+  # CHECK-NEXT: %x = lit.var.decl
   # CHECK-NEXT: %[[FOUR:.*]] = kgen.param.constant: !Int = <{4}>
-  # CHECK-NEXT: lit.ref.store %[[FOUR]], %b_1
-  # CHECK-NEXT: lit.ref.store %[[FOUR]], %a_0
-  a = b = 4
+  # CHECK-NEXT: lit.ref.store %[[FOUR]], %x
+  # CHECK-NEXT: lit.ref.store %[[FOUR]], %a
+  a = x = 4
 
   # Walrus
   # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: !Int = <{7}>
-  # CHECK-NEXT: lit.ref.store %[[SEVEN]], %b_1
-  # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a_0
+  # CHECK-NEXT: lit.ref.store %[[SEVEN]], %x
+  # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a
   # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVEN]])
-  _ = simpleMath(a, b := 7)
+  _ = simpleMath(a, x := 7)
 
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
 # CHECK-LABEL: lit.func @"walrus_implicit_decl
@@ -1128,7 +1110,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) async|capturing -> !kgen.none
   float6: async fn(Int) capturing -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, mut *[0,0]>, owned_in_mem> borrow|var, ?, {{.*}}) throws -> i1
+  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow|var, ?, {{.*}}) throws -> i1
   float7: def(*Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = {10}, !StringLiteral borrow = {:string "foo"}, |) -> !kgen.none>

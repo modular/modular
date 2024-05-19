@@ -1142,9 +1142,11 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [argIdx, bbArg, convention] :
+  for (auto [argIdxX, bbArg, convention] :
        llvm::enumerate(funcOp.getBody()->getArguments(),
                        funcSignature.getArgConventions())) {
+    size_t argIdx = argIdxX;
+
     StringAttr argName = funcSignature.getArgName(argIdx);
     // Don't bind byref-result, it is handled specially by 'return'.
     if (SignatureType::isResultSlot(convention))
@@ -1164,7 +1166,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // This function sets the argument decl to be fully resolved with the
     // specified IR representation.
     auto setDecl = [&](DeclIRValue value) {
-      argDecl.setIRValue(value);
+      argDecl.setIRValue(std::move(value));
       shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
     };
 
@@ -1184,10 +1186,26 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     if (convention == ArgConvention::OwnedInReg) {
       VarDeclOp declOp = emitter.makeArgLValueVarSlot(SRValue(bbArg), argName,
                                                       argDecl.getLoc());
-      declOp.setArgShadowIndex(bbArg.getArgNumber());
-      setDecl(declOp.getOperation());
+      if (declOp) {
+        declOp.setArgShadowIndex(bbArg.getArgNumber());
+        setDecl(MLValue(declOp));
+      } else {
+        argDecl.setErroneous();
+      }
       continue;
     }
+
+    // Borrowed arguments in 'def's get a special wrapper that allows them to be
+    // mutable.
+    auto setBorrowedDecl = [&](auto argBValue) {
+      // Don't bother 'fn' arguments.
+      if (!funcOp.isDef())
+        return setDecl(argBValue);
+
+      // Insert the def argument wrapper to make it lazily mutable on demand.
+      setDecl(RCRef<DefArgumentWrapperDLValue>::create(
+          &argDecl, argBValue, argBValue.getRValueType(shared), argIdx));
+    };
 
     // If this is an MValue argument whose underlying type could be a register
     // type (e.g. because it is generic) then we cannot allow arbitrary user
@@ -1206,16 +1224,26 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
             InvalidRefLifetimeAttr::get(argRefType.isMutable()));
         Value castedArg = emitter.builder->create<RebindOp>(
             emitter.translateLocation(argDecl.getLoc()), expectedType, bbArg);
-        if (convention == ArgConvention::BorrowedInMem)
-          setDecl(MBValue(castedArg));
-        else
-          setDecl(MLValue(castedArg));
+        if (convention != ArgConvention::BorrowedInMem) {
+          setDecl(MLValue(castedArg)); // owned or inout
+          continue;
+        }
+
+        // Otherwise normal MBValue argument.
+        setBorrowedDecl(MBValue(castedArg));
         continue;
       }
+
+      if (convention == ArgConvention::BorrowedInMem)
+        setBorrowedDecl(MBValue(bbArg)); // borrowed
+      else
+        setDecl(MLValue(bbArg)); // owned or inout
+      continue;
     }
 
-    // Otherwise, nothing fancy is needed.
-    shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
+    // Otherwise, this is a borrowed register value.
+    assert(convention == ArgConvention::BorrowedInReg);
+    setBorrowedDecl(SBValue(bbArg));
   }
 
   Block *body = funcOp.getBody();
@@ -1277,6 +1305,56 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   });
 
   return success();
+}
+
+DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
+                                                     BValue argRef,
+                                                     ASTType eltType,
+                                                     size_t argIndex)
+    : BaseDLValue(eltType), argDecl(argDecl), argRef(argRef),
+      argIndex(argIndex) {}
+
+MBValue DefArgumentWrapperDLValue::getMBValueFromDefArgument() const {
+  return argRef.getIfMBValue();
+}
+
+void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
+  os << "def argument wrapper";
+}
+
+CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
+                                           ExprEmitter &emitter) const {
+  // Loads of the def argument wrapper are simple enough.
+  SyntheticNode expr(argDecl->getLoc());
+  return emitter.emitCResult(argRef, &expr, dest);
+}
+
+void DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
+                                          ExprEmitter &emitter) const {
+  // Okay, if the def argument is mutated, we need to snap into action and
+  // lazily build a shadow in the function entry.
+  auto func = cast<FuncOp>(argDecl->getParentDecl());
+  ExprEmitter entryEmitter(emitter.shared, *argDecl->getParentDecl(),
+                           OpBuilder::atBlockBegin(func.getBody()));
+  StringAttr argName = func.getSignature().getArgName(argIndex);
+
+  // Create the shadow box and copy the argument into it.  This will emit an
+  // error if the underlying type isn't copyable.
+  VarDeclOp declOp =
+      entryEmitter.makeArgLValueVarSlot(argRef, argName, value.expr->getLoc());
+
+  // Emission can fail when the type is non-copyable.
+  if (!declOp) {
+    argDecl->setErroneous();
+    return;
+  }
+
+  declOp.setArgShadowIndex(argIndex);
+  // Update the representation so we don't do this again.
+  argDecl->setIRValue(MLValue(declOp));
+
+  // Ok, now emit a normal store.
+  emitter.emitStoreToLValue(value, MLValue(declOp), ExprContext::EC_Assignment);
 }
 
 //===----------------------------------------------------------------------===//

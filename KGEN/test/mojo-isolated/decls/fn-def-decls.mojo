@@ -102,3 +102,58 @@ fn inferred_params_pos_only[inferred x: int, y: int = `1`, /]():
 # CHECK-SAME: <+ x, |, *, y>
 fn inferred_params_kw_only[inferred x: int, *, y: int]():
     pass
+    
+# ===----------------------------------------------------------------------=== #
+# Test that def arguments are assignable and we get the right number of copies.
+# ===----------------------------------------------------------------------=== #
+
+@value
+struct MemoryOnly:
+    pass
+@value
+@register_passable
+struct NonTrivialReg:
+    pass
+
+
+
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, imm {{.*}}> borrow_in_mem,
+def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> None:
+  # CHECK-NEXT: %reg_0 = lit.var.decl "reg" arg(3)
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}NonTrivialReg::@"__copyinit__{{.*}}(%reg)
+  # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
+
+  # CHECK-NEXT: %mem_1 = lit.var.decl "mem" arg(2) 
+  # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__copyinit__{{.*}}(%mem_1, %mem)
+
+  # CHECK-NEXT: %a_2 = lit.var.decl "a" arg
+  # CHECK-NEXT: lit.ref.store %a, %a_2
+  
+  # CHECK-NEXT: lit.ref.store %b, %a_2
+  a = b # Arguments are mutable!
+
+  # CHECK-NEXT: lit.ref.store %b, %a_2
+  a = b # Subsequent arguments don't re-make the box.
+
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
+  # CHECK-NEXT: lit.ref.store [[TMP]], %mem_1
+  mem = MemoryOnly()
+
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !NonTrivialReg = <{}> 
+  # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
+  reg = NonTrivialReg()
+
+
+
+struct TypeWithParametricSelf:
+    fn method(self: Reference[Self, _, _]): pass
+
+# CHECK-LABEL: test_def_arg_box_mbvalue
+def test_def_arg_box_mbvalue(a: TypeWithParametricSelf):
+    # CHECK-NEXT: %xyz = lit.var.decl "xyz"
+    # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} : !lit.ref<@stdlib::@builtin::@stubs::@Reference
+    # CHECK-NEXT: lit.call {{.*}}@Reference::@"__init__{{.*}}(%anonymous2A, %a)
+
+    # CHECK-NEXT: %1 = lit.ref.load %anonymous2A
+    # CHECK-NEXT: lit.call {{.*}}method
+    var xyz = a.method()

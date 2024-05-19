@@ -217,8 +217,8 @@ public:
   unsigned getNextUniqueID() { return counter++; }
 
 private:
-  /// This is set to true if there is an entry for body-decorators in a backing
-  /// hashtable.  Clients should use "getBodyDecorators().
+  /// This is set to true if there is an entry for body-decorators in a
+  /// backing hashtable.  Clients should use "getBodyDecorators().
   bool hasBodyDecorators = false;
 
   /// This is set to true when the declaration was loaded from bytecode, not

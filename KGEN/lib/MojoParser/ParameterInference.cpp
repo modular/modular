@@ -587,6 +587,20 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
     if (expectedConvention == ArgConvention::BorrowedInReg &&
         !isa<RefType>(argType)) {
+
+      // As a special hack, look through DefArgumentWrapperDLValue to the
+      // underlying MBValue that it may contain.  This is for two reasons:
+      //  1) We don't want to infer mutability from the argument even though
+      //     it is a DLValue, because we'd force copy-out + writeback,
+      //     materializing the def argument box.
+      //  2) We have significant bugs around lifetime inference from SBValues
+      //     and DLValues because we're not materializing the box in time.  This
+      //     is tracked by MOCO-684.
+      // Solve this by hacking this important case specifically.
+      if (auto dlValue = value.getIfDLValue())
+        if (auto mbValue = dlValue->getMBValueFromDefArgument())
+          value = mbValue;
+
       RefType valueRefType;
       if (value.isMValue())
         valueRefType = cast<RefType>(value.getMValueReference().getType());

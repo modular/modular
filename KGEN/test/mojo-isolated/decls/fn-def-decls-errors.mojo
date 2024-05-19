@@ -100,3 +100,14 @@ fn invalid_inferred_argument(inferred x: int):
 # expected-error @below {{inferred parameters may not have defaults}}
 fn invalid_inferred_default[inferred x: int = `1`]():
     pass
+    
+struct NonCopyable:
+    fn __init__(inout self):
+       pass
+
+def test_non_copyable_def_arg(arg: NonCopyable, arg2: int):
+    # expected-error @+1 {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
+    arg = NonCopyable()
+
+    # OK!
+    arg2 = arg2
