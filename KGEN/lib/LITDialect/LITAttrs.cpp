@@ -681,18 +681,35 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
 TypedAttr LifetimeUnionAttr::get(MLIRContext *ctx,
                                  ArrayRef<TypedAttr> lifetimes) {
+  // In the empty case, the lifetime is mutable.
+  if (lifetimes.empty())
+    return LifetimeUnionAttr::get({}, LifetimeType::get(ctx, /*mutable=*/true));
+
+  auto getMut = [](TypedAttr lifetime) {
+    return ::cast<LifetimeType>(lifetime.getType()).getIsMutable();
+  };
+
+  // If all the parametric mutabilities of the lifetimes are the same, then use
+  // that mutability. Otherwise, the overall lifetime is immutable.
+  TypedAttr mutability = getMut(lifetimes.front());
+  bool needMutCast = false;
+  for (TypedAttr other : lifetimes.drop_front()) {
+    TypedAttr otherMut = getMut(other);
+    if (otherMut == mutability)
+      continue;
+    mutability = BoolAttr::get(ctx, false);
+    needMutCast = true;
+    break;
+  }
+
   SmallVector<TypedAttr> newLifetimes;
-  bool anyImm = false;
-  for (TypedAttr lifetime : lifetimes) {
-    anyImm |= ::cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
-    newLifetimes.push_back(lifetime);
+  if (needMutCast) {
+    for (TypedAttr lifetime : lifetimes)
+      newLifetimes.push_back(LifetimeMutCastAttr::get(lifetime, mutability));
+    lifetimes = newLifetimes;
   }
-  if (anyImm) {
-    for (TypedAttr &lifetime : newLifetimes)
-      lifetime = LifetimeMutCastAttr::get(lifetime, /*isMut=*/false);
-  }
-  return LifetimeUnionAttr::get(
-      newLifetimes, LifetimeType::get(ctx, !anyImm || newLifetimes.empty()));
+
+  return LifetimeUnionAttr::get(lifetimes, LifetimeType::get(mutability));
 }
 
 //===----------------------------------------------------------------------===//
