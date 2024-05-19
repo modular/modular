@@ -18,6 +18,7 @@ class ParameterExprArrayAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+using llvm::SMLoc;
 class ExprNode;
 class FuncOp;
 class LITSignatureType;
@@ -166,49 +167,32 @@ public:
     std::function<void(size_t, size_t)> emitTooManyPositional;
   };
 
+  /// Verify the parameter bindings for the given signature. If the signature
+  /// doesn't match and a DiagEmitter was provided, it will be used to emit
+  /// diagnostics. An optional hook can be provided to infer parameters.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(LITSignatureType sig, const DiagEmitter *diagEmitter = nullptr,
+                 ParameterInferenceHookTy parameterInferenceHook = {},
+                 Boundness boundness = Boundness::Explicit) const;
+
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
-                                        TypeSignatureType sig,
-                                        llvm::SMLoc exprLoc,
+                                        TypeSignatureType sig, SMLoc exprLoc,
                                         Boundness boundness) const;
-
-  /// Verify the parameter bindings for the given signature. If the signature
-  /// doesn't match no diagnostics will be emitted.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig) const;
-
-  /// Verify the parameter bindings for the given signature. If the signature
-  /// doesn't match, the provided DiagEmitter will be used to emit diagnostics.
-  /// An optional hook can be provided to infer parameters.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, const DiagEmitter &diagEmitter,
-                 ParameterInferenceHookTy parameterInferenceHook = {}) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
   ParameterExprArrayAttr
-  verifyBindings(LITSignatureType sig, StringRef baseName, llvm::SMLoc exprLoc,
+  verifyBindings(LITSignatureType sig, StringRef baseName, SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
 
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;
 
 private:
-  /// Check that our set of parameter bindings work with the specified input
-  /// parameters. If so, return a checked ParameterExprArrayAttr, along with
-  /// information on how closely the bindings fit the parameters, or why
-  /// they don't. The setEvaluator hook is used to install the parameter value
-  /// in the evaluator used by the implementation. This overload allows
-  /// customizing diagnostics by passing a custom DiagEmitter.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
-                 ParameterInferenceHookTy parameterInferenceHook,
-                 const DiagEmitter &diagEmitter,
-                 Boundness boundness = Boundness::Explicit) const;
-
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the parameters, or why
@@ -220,6 +204,19 @@ private:
                  const Twine &baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt,
                  Boundness boundness = Boundness::Explicit) const;
+
+  /// Check that our set of parameter bindings work with the specified input
+  /// parameters. If so, return a checked ParameterExprArrayAttr, along with
+  /// information on how closely the bindings fit the parameters, or why
+  /// they don't. The setEvaluator hook is used to install the parameter value
+  /// in the evaluator used by the implementation. This overload allows
+  /// customizing diagnostics by passing a custom DiagEmitter.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindingsImpl(ArrayRef<Type> expectedParamTypes,
+                     PogListAttr paramListAttr,
+                     ParameterInferenceHookTy parameterInferenceHook,
+                     const DiagEmitter *diagEmitter,
+                     Boundness boundness = Boundness::Explicit) const;
 
   /// This contains a list of bound parameters given positionally.
   SmallVector<Binding> posBindings;
