@@ -789,11 +789,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
   }
 
-  // If no convention was explicitly specified, provide a default.  We default
-  // to borrowed in an 'fn' or owned in a 'def'.
+  // If no convention was explicitly specified, default to 'borrowed'.
   if (arg.convention == ParsedArgument::kConventionUnspec) {
     // TODO: enable other conventions for **kwargs.
-    arg.convention = (isDef || arg.vararg == VarArgKind::KWVarArg)
+    arg.convention = arg.vararg == VarArgKind::KWVarArg
                          ? ParsedArgument::kConventionOwned
                          : ParsedArgument::kConventionBorrowed;
   }
@@ -938,7 +937,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
   // Create the block argument that will eventually represent this function
   // argument.  If we're generating this argument for a function, put it into
-  // its entry block. Otherwise it is a function type:We allocate the argument
+  // its entry block. Otherwise it is a function type: We allocate the argument
   // into a holding block owned by SharedState so it isn't leaked.
   Block &blockOwningArg = fnDecl ? *cast<LIT::FuncOp>(fnDecl).getBody()
                                  : shared.getArgumentOwningBlock();

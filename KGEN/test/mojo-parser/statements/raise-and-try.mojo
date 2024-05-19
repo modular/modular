@@ -119,9 +119,6 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %err_0 = lit.var.decl "err"
-    # CHECK: lit.ref.store %err, %err_0
-    # CHECK: %[[ERRVAL:.*]] = lit.ref.load %err_0
     # CHECK: %[[ERRVALCOPY:.*]] = lit.call {{.*}}@Error::@"__copyinit__
     # CHECK-NEXT: lit.ref.store %[[ERRVALCOPY]], %__error__
     # CHECK-NEXT: lit.raise

@@ -25,7 +25,7 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3{{.*}}(%self: !lit.ref<{{.*}}> owned_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
+    # CHECK: lit.func @"f3{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass

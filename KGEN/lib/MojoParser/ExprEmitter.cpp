@@ -2177,16 +2177,18 @@ VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
-VarDeclOp ExprEmitter::makeArgLValueVarSlot(SRValue argValue,
-                                            StringAttr argName, SMLoc loc) {
+VarDeclOp ExprEmitter::makeArgLValueVarSlot(CValue argValue, StringAttr argName,
+                                            SMLoc loc) {
   // Emit the initializer expression into the slot.
-  VarDeclOp varDecl = emitVarDecl(argName, argValue.getType(),
+  VarDeclOp varDecl = emitVarDecl(argName, argValue.getRValueType(shared),
                                   translateLocation(loc), VarDeclKind::Arg);
 
   // Expr to provide location information.
   ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
-  if (!emitBValue({argValue, SyntheticNode(loc)}, dest))
-    dest.resetForError();
+  if (emitBValue({argValue, SyntheticNode(loc)}, dest))
+    return varDecl;
 
-  return varDecl;
+  // This can fail if not copyable/movable.
+  dest.resetForError();
+  return {};
 }

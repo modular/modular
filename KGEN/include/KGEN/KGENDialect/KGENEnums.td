@@ -154,11 +154,11 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// slot that may be read but not mutated by the callee.
   I32EnumAttrCase<"BorrowedInMem", 4, "borrow_in_mem">,
 
-  /// This is used for by-ref arguments like `fn x(a&: Int)`.
+  /// This is used for inout arguments like `fn x(inout a: Int)`.
   ///
-  /// The MLIR type is always a PointerType, and the underlying type can be
-  /// anything.  The value is initialized before entry to the function and must
-  /// be initialized when the function returns.
+  /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
+  /// type can be anything.  The value is initialized before entry to the
+  /// function and must be initialized when the function returns.
   I32EnumAttrCase<"ByRef", 5, "byref">,
 
   /// This is used on the last argument of a function that returns a

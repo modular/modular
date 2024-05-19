@@ -101,7 +101,6 @@ fn use_int(x: Int): pass
 
 # CHECK-LABEL: lit.func @"walrus_control_flow
 def walrus_control_flow(a: Int):
-   # CHECK: %a_0 = lit.var.decl
    # CHECK: %b = lit.var.decl
    # CHECK: %curr = lit.var.decl "curr"
    curr = a
@@ -117,24 +116,23 @@ def walrus_control_flow(a: Int):
 # Check that we only get one implicit declaration and all three scopes use it.
 # CHECK-LABEL: lit.func @"reuse_implicit
 def reuse_implicit(a: Int, cond: __mlir_type.i1):
-  # CHECK: %a_0 = lit.var.decl
   # CHECK: %implicit = lit.var.decl
 
   # CHECK: hlcf.elif
   if cond:
-      # CHECK: lit.ref.store {{.*}}, %implicit :
+      # CHECK: lit.ref.store %a, %implicit :
       implicit = a
       # CHECK: lit.ref.load %implicit :
       use_int(implicit)
 
   # CHECK: hlcf.elif
   if cond:
-      # CHECK: lit.ref.store {{.*}}, %implicit :
+      # CHECK: lit.ref.store %a, %implicit :
       implicit = a
       # CHECK: lit.ref.load %implicit :
       use_int(implicit)
 
-  # CHECK: lit.ref.store {{.*}}, %implicit :
+  # CHECK: lit.ref.store %a, %implicit :
   implicit = a
   # CHECK: lit.ref.load %implicit :
   use_int(implicit)

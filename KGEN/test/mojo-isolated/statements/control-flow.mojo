@@ -284,15 +284,12 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
-    # CHECK: %a_0 = lit.var.decl "a" arg
-    # CHECK: lit.ref.store %a, %a_0
     # CHECK: hlcf.elif {
     # CHECK:   hlcf.elif.yield
     # CHECK: } then {
     if b:
         # CHECK: lit.loop cond {
-        # CHECK:   [[V0:%.*]] = lit.ref.load %a_0
-        # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"([[V0]])
+        # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
         # CHECK:   lit.loop.condition [[V1]] : i1
         # CHECK: } body {
         while a:
@@ -314,13 +311,11 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
 # CHECK-LABEL: lit.func @"test_break_continue_inside_while
 def test_break_continue_inside_while(a: Bool) -> Bool:
     # CHECK: lit.loop cond {
-    # CHECK:   [[V0:%.*]] = lit.ref.load %a_0
-    # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"([[V0]])
+    # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
     # CHECK:   lit.loop.condition [[V1]] : i1
     # CHECK: } body {
     while a:
         # CHECK:      hlcf.elif {
-        # CHECK-NEXT:   lit.ref.load
         # CHECK-NEXT:   lit.call {{.*}}__mlir_i1__
         # CHECK-NEXT:   hlcf.elif.yield
         # CHECK-NEXT: } then {

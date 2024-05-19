@@ -228,6 +228,26 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return nullptr;
   }
 
+  // Handle def argument shadows, the parser produces these as
+  // DefArgumentWrapperDLValue so we need to dig through them to find the
+  // underlying BlockArgument for the function.
+  if (auto lvalue = decl->getIfLValue()) {
+    // Unresolved to mutable.
+    if (auto dlvalue = lvalue.getIfDLValue()) {
+      if (dlvalue->isDefArgument()) {
+        auto &defArgDLVal = ((DefArgumentWrapperDLValue &)*dlvalue);
+        return createArgumentDeclView(*this, defArgDLVal.argIndex);
+      }
+    }
+    // Resolved to mutable.
+    if (auto mlValue = lvalue.getIfMLValue()) {
+      if (auto var = mlValue.getDefiningOp<VarDeclOp>()) {
+        if (var.getArgShadowIndex().has_value())
+          return createArgumentDeclView(*this, var.getArgShadowIndex().value());
+      }
+    }
+  }
+
   // Now we inspect the IR checking for a parameter.
   if (ParamDeclRefAttr param = getIfParameter(*this)) {
     auto name = demangleIfNeeded(param).getName().getValue();

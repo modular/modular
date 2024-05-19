@@ -547,7 +547,7 @@ public:
                         VarDeclKind kind);
 
   // Emit the vardecl shadow for an OwnedInReg argument.
-  VarDeclOp makeArgLValueVarSlot(SRValue argValue, StringAttr argName,
+  VarDeclOp makeArgLValueVarSlot(CValue argValue, StringAttr argName,
                                  SMLoc loc);
 
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
