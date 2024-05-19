@@ -82,10 +82,6 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   # expected-error @+1 {{cannot pass 'scalar<f32>' value, expected 'scalar<f64>' in call parameter}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
-fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.index]():
-  # expected-error @below {{parametric callable expects 2 parameters}}
-  return callable[a]
-
 # expected-note @+1 {{function declared here}}
 def generic_fn[a: FloatLiteral, b: Int](c : Int):
   pass
@@ -203,8 +199,6 @@ fn indirect_callable_pos_only[
     _ = callable[0, b=1, c=2]
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     _ = callable[b=1, a=3, c=2]
-    # expected-error @below {{parametric callable expects at least 2 positional parameters, but 1 was specified}}
-    _ = callable[1, c=9]
 
 ##===----------------------------------------------------------------------===##
 # Struct keyword parameters

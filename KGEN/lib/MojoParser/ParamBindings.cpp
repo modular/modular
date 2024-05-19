@@ -231,10 +231,7 @@ ParamBindings::verifyBindingsImpl(
   size_t posBindingIdx = 0;
   size_t numPosBindings = operands.posOperands.size();
 
-  DefaultValueHandler defaultHandler(paramListAttr);
-  auto fulfillValue = [&](Type requestedType) -> PValue {
-    // If we have a method to infer parameter values, invoke it to see if we
-    // can get an inferred value for the parameter.
+  auto inferParameter = [&](Type requestedType) {
     if (parameterInferenceHook) {
       if (PValue value = parameterInferenceHook(newBindings, evaluator)) {
         assert(value.getType().mlirType == requestedType &&
@@ -242,6 +239,15 @@ ParamBindings::verifyBindingsImpl(
         return value;
       }
     }
+    return PValue();
+  };
+
+  DefaultValueHandler defaultHandler(paramListAttr);
+  auto fulfillValue = [&](Type requestedType) -> PValue {
+    // If we have a method to infer parameter values, invoke it to see if we
+    // can get an inferred value for the parameter.
+    if (PValue value = inferParameter(requestedType))
+      return value;
 
     // If the parameter decl is a variadic parameter list, and do not have
     // pack operands that could be used to infer those parameters, then we can
@@ -285,9 +291,7 @@ ParamBindings::verifyBindingsImpl(
     // Implicit parameters are infer-only. They cannot be explicitly passed.
     PassingKind passingKind = pogAttr.getPassingKind();
     StringAttr paramName = pogAttr.getName();
-    if (posBindingIdx == numPosBindings ||
-        (parameterInferenceHook && (passingKind == PassingKind::Implicit ||
-                                    passingKind == PassingKind::Inferred))) {
+    if (posBindingIdx == numPosBindings) {
       // We first check if we have a keyword parameter.
       if (std::optional<Binding> binding = operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
@@ -310,16 +314,22 @@ ParamBindings::verifyBindingsImpl(
         continue;
       }
 
+      // If we couldn't find a keyword binding for this parameter, then we must
+      // be able to infer it or otherwise provide a default value.
       if (PValue value = fulfillValue(requestedType)) {
         setParamValue(value);
         continue;
       }
 
+      // If this is a partial binding context, then we don't have a full binding
+      // list. Allow parameters to be missing.
       if (boundness == Boundness::Partial) {
         setParamValue(UnboundAttr::get(requestedType));
         continue;
       }
 
+      // Otherwise, if this is a parameter that we expected to be inferred, emit
+      // an inference failure.
       if (passingKind == PassingKind::Implicit ||
           passingKind == PassingKind::Inferred) {
         if (diagEmitter)
@@ -368,6 +378,37 @@ ParamBindings::verifyBindingsImpl(
       setParamValue(binding.value);
       ++posBindingIdx;
       continue;
+    }
+
+    // Disallow implicit parameters to be explicit specified. If we see one,
+    // complain about too many parameters.
+    if (passingKind == PassingKind::Implicit) {
+      if (diagEmitter) {
+        diagEmitter->emitParamCount(numPosBindings,
+                                    passingKind == PassingKind::PosOnly);
+      }
+      return {{}, fitness};
+    }
+
+    // Otherwise, if this is an inferred parameter, a value could not have been
+    // explicitly provided and we must have an inference hook.
+    if (passingKind == PassingKind::Inferred) {
+      // TODO: Enable this assert. We always need to be able to infer these.
+      // assert(parameterInferenceHook &&
+      //        "require parmeter inference in this context");
+      if (PValue value = inferParameter(requestedType)) {
+        setParamValue(value);
+        continue;
+      }
+      // If this context allows partial binding, leave the value as unbound.
+      if (boundness == Boundness::Partial) {
+        setParamValue(UnboundAttr::get(requestedType));
+        continue;
+      }
+      // Otherwise, emit an inference failure.
+      if (diagEmitter)
+        diagEmitter->emitInferOnlyFailure(idx);
+      return {{}, fitness};
     }
 
     // This lambda hides the diagnostic and error handling logic for checking a
@@ -463,10 +504,10 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                               SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
-  auto [newBindings, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(),
-      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
-      opLoc ? Boundness::Partial : Boundness::Explicit);
+  auto [newBindings, _] =
+      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+                     opLoc ? Twine("'") + baseName + "'" : Twine(baseName),
+                     exprLoc, opLoc, Boundness::Partial);
   return newBindings;
 }
 
