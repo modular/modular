@@ -696,6 +696,57 @@ lit.func @breakAndContinueInElif(
   kgen.return
 }
 
+// COM: Check that `kgen.param.for` behaves like a loop in check-lifetimes.
+
+lit.func @breakAndContinueInElifParamFor(
+     %s1: i1 borrow,
+     %A: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
+     %B: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
+     %C: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
+     %D: !lit.ref<@S, mut #lit.lifetime> owned_in_mem) {
+  // CHECK: %0 = lit.call @S::@__del__[mut #lit.lifetime](%B)
+  // CHECK-NEXT: kgen.param.for
+  kgen.param.for i in 5 iter :!lit.signature<()->()> *? {
+    hlcf.elif {
+      hlcf.elif.yield %s1 : i1
+    } then {
+      hlcf.yield
+    } else {
+      // CHECK: lit.call @S::@__del__[mut #lit.lifetime](%A)
+      // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%D)
+      // CHECK-NEXT: kgen.param.for.break
+      kgen.param.for.break
+    }
+    lit.call @print(%D) : !lit.signature<(!lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none>
+    hlcf.elif {
+      hlcf.elif.yield %s1 : i1
+    } then {
+      kgen.param.for.continue
+    } else {
+      hlcf.yield
+    }
+    lit.call @print(%A) : !lit.signature<(!lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none>
+    %local = lit.var.decl "c" var : !lit.ref<@S, mut *"life">
+    %0 = lit.call @S::@__init__[mut life](%local) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> init_self) -> !kgen.none>
+    // CHECK: lit.call @S::@__del__[mut life](%c) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>
+    // CHECK-NEXT: kgen.param.for.continue
+    kgen.param.for.continue
+  // CHECK-NEXT: } else {
+  } else {
+    // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%A)
+    // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%D)
+    // CHECK-NEXT: kgen.param.yield
+    kgen.param.yield
+  }
+
+  // CHECK: lit.call @print(%C) : !lit.signature<(!lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none>
+  // CHECK: lit.call @S::@__del__[mut #lit.lifetime](%C) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>
+  // CHECK: kgen.return
+  lit.call @print(%C) : !lit.signature<(!lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none>
+  kgen.return
+}
+
+
 // -----
 
 !S = !lit.declref<@S>

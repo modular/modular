@@ -836,7 +836,7 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkAcyclicControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
-  void checkLoopOp(HLCF::LoopOp loopOp);
+  void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
   void diagnoseUsageError(ValueRef valueRef, Operation &op, bool isDef);
@@ -1293,7 +1293,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
       checkAcyclicControlFlowOp(op);
       break;
     case OverallOpValueEffect::loopOp:
-      checkLoopOp(cast<HLCF::LoopOp>(op));
+      checkLoopOp(op);
       break;
     case OverallOpValueEffect::tryOp:
       checkTryOp(cast<LIT::TryOp>(op));
@@ -1349,10 +1349,10 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 /// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
 /// perform local control flow.
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp>(op)) {
+  if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     *breakSet &= liveValues;
-  } else if (isa<HLCF::ContinueOp>(op)) {
+  } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     *continueSet &= liveValues;
   } else {
@@ -1439,7 +1439,7 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   liveValues &= liveValuesCopy;
 }
 
-void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
+void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   UninitializedValueScan bodySets(valueSet);
   // Loops are transparent to raise.
   bodySets.raiseSet = raiseSet;
@@ -1451,11 +1451,10 @@ void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
   bodySets.continueSet = &continueSet;
 
   // The 'breakSet' of the loop body will be the live outs of the loop.  We
-  // use the existing liveValues that we'll continue with for that set, but
   // need to start it out thinking that everything is live so intersections
   // from the body work correctly.
-  liveValues.set();
-  bodySets.breakSet = &liveValues;
+  BitVector breakSet(liveValues.size(), true);
+  bodySets.breakSet = &breakSet;
 
   // Iteratively scan the loop body until the live-in set converges.  This is
   // a trivial lattice with each bit converging to "not live in", so we know
@@ -1467,11 +1466,20 @@ void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
     // 'breakSet', and any continues will intersect their live-out set with
     // 'continueSet'.
     bodySets.liveValues = continueSet;
-    bodySets.scanBlock(loopOp.getBody().front());
+    bodySets.scanBlock(loopOp.getRegion(0).front());
 
     // If any bits got cleared from the continueSet then we need to iterate.
   } while (continueSet.count() != numLiveIn);
   // Any code after the loop continues on with the breaks valid.
+
+  // If the loop has an 'else' region, scan it and then intersect with the loop
+  // region.
+  if (loopOp.getNumRegions() == 2) {
+    scanBlock(loopOp.getRegion(1).front());
+    liveValues &= breakSet;
+  } else {
+    liveValues = std::move(breakSet);
+  }
 }
 
 void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
@@ -1537,8 +1545,11 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
   void checkAcyclicControlFlowOp(Operation &op);
-  void checkLoopOp(HLCF::LoopOp loopOp);
+  void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
+
+  /// Unify consumed sets across two branches of a conditional operation.
+  void unifyConsumedSets(Operation &condOp, BitVector &thenConsumedValues);
 
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, Operation &op, bool isDeref);
@@ -1706,7 +1717,7 @@ void DestructorInsertion::scanBlock(Block &block) {
       checkAcyclicControlFlowOp(op);
       break;
     case OverallOpValueEffect::loopOp:
-      checkLoopOp(cast<HLCF::LoopOp>(op));
+      checkLoopOp(op);
       break;
     case OverallOpValueEffect::tryOp:
       checkTryOp(cast<LIT::TryOp>(op));
@@ -1807,12 +1818,12 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
   }
 }
 void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp>(op)) {
+  if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     consumedValues = *breakSet;
     return;
   }
-  if (isa<HLCF::ContinueOp>(op)) {
+  if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     consumedValues = *continueSet;
     return;
@@ -1855,10 +1866,10 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
       if (isa<LIT::ErrorReturnOp>(term))
         errorRegions.insert(curr);
 
-      if (isa<HLCF::ContinueOp>(term))
+      if (isa<HLCF::ContinueOp, ParamForContinueOp>(term))
         succ[curr].push_back(Continue);
 
-      if (isa<HLCF::BreakOp>(term))
+      if (isa<HLCF::BreakOp, ParamForBreakOp>(term))
         succ[curr].push_back(Break);
 
       if (isa<LIT::TryRaiseOp>(term)) {
@@ -2058,6 +2069,12 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
   // Scan 'else' block.
   thenConsumedValues.swap(consumedValues);
   scanBlock(ifElseOp.getRegion(1).front());
+
+  unifyConsumedSets(ifElseOp, thenConsumedValues);
+}
+
+void DestructorInsertion::unifyConsumedSets(Operation &condOp,
+                                            BitVector &thenConsumedValues) {
   // At this point, 'thenConsumedValues' is the set of upwardly consumed
   // values from the 'then' block and 'consumedValues' is the set of upwardly
   // consumed values from the else branch.  See if they agree already, then
@@ -2127,7 +2144,7 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
       // If this is the init_self argument, its full object is consumed on an
       // error return, so don't propagate that out of the conditional.
       if (valueInfo.isFullObjectLiveOnEntry &&
-          isa<LIT::ErrorReturnOp>(ifElseOp.getRegion(0).front().back())) {
+          isa<LIT::ErrorReturnOp>(condOp.getRegion(0).front().back())) {
         upwardConsumeSet.reset(valueInfo.endValueBit - 1);
         continue;
       }
@@ -2153,16 +2170,16 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
   // needToConsumeInElse = upwardConsumeSet & ~consumedValues.
   BitVector needToConsumeInElse = upwardConsumeSet;
   needToConsumeInElse.reset(consumedValues);
-  destroyValuesAtEntry(needToConsumeInElse, ifElseOp.getRegion(1).front(),
-                       ifElseOp.getLoc());
+  destroyValuesAtEntry(needToConsumeInElse, condOp.getRegion(1).front(),
+                       condOp.getLoc());
 
   // Next handle the "then" set.
 
   //    needToConsumeInThen = upwardConsumeSet & ~thenConsumedValues.
   BitVector needToConsumeInThen = upwardConsumeSet;
   needToConsumeInThen.reset(thenConsumedValues);
-  destroyValuesAtEntry(needToConsumeInThen, ifElseOp.getRegion(0).front(),
-                       ifElseOp.getLoc());
+  destroyValuesAtEntry(needToConsumeInThen, condOp.getRegion(0).front(),
+                       condOp.getLoc());
 
   // Restore consumedValues to the merged set.
   consumedValues = upwardConsumeSet;
@@ -2170,17 +2187,18 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
 
 /// For a loop, we know the consume sets for any break statements, but need
 /// to iterate the loop to find the right continue sets to use.
-void DestructorInsertion::checkLoopOp(HLCF::LoopOp loopOp) {
+void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   auto loopBodySets = DestructorInsertion::copy(*this);
   // Any 'break's within the loop will produce the consume set for the
   // statement immediately after the loop.
-  loopBodySets.breakSet = &consumedValues;
+  BitVector breakSet(consumedValues);
+  loopBodySets.breakSet = &breakSet;
 
   // We start the continueSet with no values set to be consumed, and with
   // sentinel slot #0 unset indicating that the continue point isn't
   // reachable.  This will cause the first iteration to propagate values up
   // from the 'break' points to the consume set.
-  BitVector continueSet(consumedValues.size());
+  BitVector continueSet(breakSet.size());
   loopBodySets.continueSet = &continueSet;
 
   // We need to dry run the body evaluation until we get to a stable
@@ -2193,7 +2211,7 @@ void DestructorInsertion::checkLoopOp(HLCF::LoopOp loopOp) {
     // Scan the body: any breaks will intersect their live-out set with
     // 'breakSet', and any continues will intersect their live-out set with
     // 'continueSet'.
-    loopBodySets.scanBlock(loopOp.getBody().front());
+    loopBodySets.scanBlock(loopOp.getRegion(0).front());
 
     // If we scanned the body and didn't find any live code, then we know
     // there must not be any break statements in it.  Just consider the
@@ -2229,13 +2247,13 @@ void DestructorInsertion::checkLoopOp(HLCF::LoopOp loopOp) {
     for (auto [index, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
       ValueRef valueRef(index, valueInfo.startValueBit, valueInfo.endValueBit,
                         valueInfo.isIndirect);
-      bool isMissingInUpwardConsumeSet = valueRef.isAllMissing(consumedValues);
+      bool isMissingInUpwardConsumeSet = valueRef.isAllMissing(breakSet);
       bool isPartialSetInLoop = false;
       if (isMissingInUpwardConsumeSet &&
           !loopBodySets.continueSet->test(valueInfo.endValueBit - 1)) {
         BitVector justMe(*loopBodySets.continueSet);
         justMe.reset(0, valueInfo.startValueBit);
-        justMe.reset(valueInfo.endValueBit - 1, consumedValues.size());
+        justMe.reset(valueInfo.endValueBit - 1, breakSet.size());
         isPartialSetInLoop = justMe.any();
       }
 
@@ -2243,9 +2261,17 @@ void DestructorInsertion::checkLoopOp(HLCF::LoopOp loopOp) {
         loopBodySets.continueSet->set(valueInfo.startValueBit,
                                       valueInfo.endValueBit);
     }
-    loopBodySets.scanBlock(loopOp.getBody().front());
+    loopBodySets.scanBlock(loopOp.getRegion(0).front());
   }
-  consumedValues = std::move(loopBodySets.consumedValues);
+
+  // If the loop has an else region, scan it and unify the consumed sets
+  // between the two regions.
+  if (loopOp.getNumRegions() == 2) {
+    scanBlock(loopOp.getRegion(1).front());
+    unifyConsumedSets(loopOp, loopBodySets.consumedValues);
+  } else {
+    consumedValues = std::move(loopBodySets.consumedValues);
+  }
 }
 
 void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {

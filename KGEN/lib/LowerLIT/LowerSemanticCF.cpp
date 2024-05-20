@@ -43,7 +43,7 @@ struct LowerSemanticCF {
   SymbolRefAttr theFuncSymbol;
 
   // This is the current loop that a break or continue should exit from.
-  HLCF::LoopOp currentLoop;
+  Operation *currentLoop = nullptr;
 
   // Each lowered hlcf.loop gets its own unique ID so we can break out of it if
   // needed.
@@ -325,7 +325,7 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // Now that the else logic is set, lower the entire loop body to handle the
   // control flow in the body.  This is done with the loop set to the nested
   // loop so that breaks and continues get wired up to it.
-  llvm::SaveAndRestore currentLoopSaver(currentLoop, newLoop);
+  llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, newLoop);
   lowerBlock(*newBody, blockRaises, blockBreaks, blockFallThroughs);
   enclosingBlockDoesRaise |= blockRaises;
 
@@ -414,7 +414,10 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
       doesBreak = true;
       auto b = handleSemanticTerminatorOp(op, "break statement");
-      b.create<HLCF::BreakOp>(ValueRange{}, currentLoop.getLabelAttr());
+      if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
+        b.create<HLCF::BreakOp>(ValueRange{}, hlcfLoop.getLabelAttr());
+      else
+        b.create<ParamForBreakOp>();
       op.erase();
       return;
     }
@@ -428,7 +431,10 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       }
 
       auto b = handleSemanticTerminatorOp(op, "continue statement");
-      b.create<HLCF::ContinueOp>(ValueRange{}, currentLoop.getLabelAttr());
+      if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
+        b.create<HLCF::ContinueOp>(ValueRange{}, hlcfLoop.getLabelAttr());
+      else
+        b.create<ParamForContinueOp>();
       op.erase();
       return;
     }
@@ -560,6 +566,25 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       continue;
     }
 
+    // Process a ParamForOp
+    if (auto paramFor = dyn_cast<ParamForOp>(op)) {
+      // The 'else' region is not inside the loop. It is transparent to raises
+      // and breaks.
+      bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
+      lowerBlock(paramFor.getElseRegion().front(), elseRaises, elseBreaks,
+                 elseFallsThrough);
+      doesRaise |= elseRaises;
+      doesBreak |= elseBreaks;
+
+      // The loop is only transparent to raises.
+      bool loopRaises = false, loopBreaks = false, loopFallsThrough = false;
+      llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, paramFor);
+      lowerBlock(paramFor.getBody().front(), loopRaises, loopBreaks,
+                 loopFallsThrough);
+      doesRaise |= loopRaises;
+      continue;
+    }
+
     // Process a HLCF::ElifOp
     if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
       lowerElif(elifOp, doesRaise, doesBreak, doesFallThrough);
@@ -629,13 +654,14 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
   }
 
   auto *terminator = &block.back();
-  if (isa<HLCF::BreakOp>(terminator)) {
+  if (isa<HLCF::BreakOp, ParamForBreakOp>(terminator)) {
     doesBreak = true;
     return;
   }
 
   // These are not fallthroughs.
-  if (isa<KGEN::ReturnOp, HLCF::ContinueOp, KGEN::UnreachableOp>(terminator))
+  if (isa<KGEN::ReturnOp, HLCF::ContinueOp, ParamForContinueOp,
+          KGEN::UnreachableOp>(terminator))
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
