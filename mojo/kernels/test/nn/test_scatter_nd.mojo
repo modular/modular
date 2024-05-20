@@ -5,18 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo  -I %S/.. %s | FileCheck %s
 
-from buffer import NDBuffer
+from buffer import DimList
 from nn.gather_scatter import scatter_nd_generator
-from tensor import Tensor, TensorShape
+from closed_source_utils._test_utils import TestTensor, array_equal
 
 
 fn test_case[
     type: DType,
 ](
-    data: Tensor[type],
-    indices: Tensor[DType.int64],
-    updates: Tensor[type],
-    output: Tensor[type],
+    data: TestTensor[type, 3],
+    indices: TestTensor[DType.int64, 2],
+    updates: TestTensor[type, 3],
+    output: TestTensor[type, 3],
 ) raises:
     @always_inline
     @parameter
@@ -36,10 +36,10 @@ fn test_case[
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
 ](
-    data: Tensor[type],
-    indices: Tensor[DType.int64],
-    updates: Tensor[type],
-    output: Tensor[type],
+    data: TestTensor[type, 3],
+    indices: TestTensor[DType.int64, 2],
+    updates: TestTensor[type, 3],
+    output: TestTensor[type, 3],
 ) raises:
     var output_ref = output
 
@@ -49,23 +49,21 @@ fn test_case[
     scatter_nd_generator[
         type, DType.int64, 3, 2, 3, False, reduce_fn=reduce_fn
     ](
-        data._to_ndbuffer[3](),
-        indices._to_ndbuffer[2](),
-        updates._to_ndbuffer[3](),
-        output._to_ndbuffer[3](),
+        data.ndbuffer,
+        indices.ndbuffer,
+        updates.ndbuffer,
+        output.ndbuffer,
     )
 
-    for i in range(output.num_elements()):
-        if output_ref._to_buffer()[i] != output._to_buffer()[i]:
-            print("FAIL: Mismatch at idx: ", end="")
-            print(i)
+    if not array_equal(output, output_ref):
+        print("FAIL")
 
 
 fn main() raises:
     fn test_scatternd() raises:
         print("== test_scatternd")
-        var data = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var data = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Scalar[DType.float32]](
                 1,
                 2,
@@ -134,10 +132,12 @@ fn main() raises:
             ),
         )
 
-        var indices = Tensor[DType.int64](TensorShape(2, 1), List[Int64](0, 2))
+        var indices = TestTensor[DType.int64, 2](
+            DimList(2, 1), List[Int64](0, 2)
+        )
 
-        var updates = Tensor[DType.float32](
-            TensorShape(2, 4, 4),
+        var updates = TestTensor[DType.float32, 3](
+            DimList(2, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -174,8 +174,8 @@ fn main() raises:
             ),
         )
 
-        var output_ref = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var output_ref = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -257,8 +257,8 @@ fn main() raises:
 
     fn test_scatternd_add() raises:
         print("== test_scatternd_add")
-        var data = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var data = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 1,
                 2,
@@ -327,10 +327,12 @@ fn main() raises:
             ),
         )
 
-        var indices = Tensor[DType.int64](TensorShape(2, 1), List[Int64](0, 0))
+        var indices = TestTensor[DType.int64, 2](
+            DimList(2, 1), List[Int64](0, 0)
+        )
 
-        var updates = Tensor[DType.float32](
-            TensorShape(2, 4, 4),
+        var updates = TestTensor[DType.float32, 3](
+            DimList(2, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -367,8 +369,8 @@ fn main() raises:
             ),
         )
 
-        var output_ref = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var output_ref = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 7,
                 8,
@@ -452,8 +454,8 @@ fn main() raises:
 
     fn test_scatternd_max() raises:
         print("== test_scatternd_max")
-        var data = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var data = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 1,
                 2,
@@ -522,10 +524,12 @@ fn main() raises:
             ),
         )
 
-        var indices = Tensor[DType.int64](TensorShape(2, 1), List[Int64](0, 0))
+        var indices = TestTensor[DType.int64, 2](
+            DimList(2, 1), List[Int64](0, 0)
+        )
 
-        var updates = Tensor[DType.float32](
-            TensorShape(2, 4, 4),
+        var updates = TestTensor[DType.float32, 3](
+            DimList(2, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -562,8 +566,8 @@ fn main() raises:
             ),
         )
 
-        var output_ref = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var output_ref = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -647,8 +651,8 @@ fn main() raises:
 
     fn test_scatternd_min() raises:
         print("== test_scatternd_min")
-        var data = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var data = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 1,
                 2,
@@ -717,10 +721,12 @@ fn main() raises:
             ),
         )
 
-        var indices = Tensor[DType.int64](TensorShape(2, 1), List[Int64](0, 0))
+        var indices = TestTensor[DType.int64, 2](
+            DimList(2, 1), List[Int64](0, 0)
+        )
 
-        var updates = Tensor[DType.float32](
-            TensorShape(2, 4, 4),
+        var updates = TestTensor[DType.float32, 3](
+            DimList(2, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -757,8 +763,8 @@ fn main() raises:
             ),
         )
 
-        var output_ref = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var output_ref = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 1,
                 1,
@@ -842,8 +848,8 @@ fn main() raises:
 
     fn test_scatternd_multiply() raises:
         print("== test_scatternd_multiply")
-        var data = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var data = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 1,
                 2,
@@ -912,10 +918,12 @@ fn main() raises:
             ),
         )
 
-        var indices = Tensor[DType.int64](TensorShape(2, 1), List[Int64](0, 0))
+        var indices = TestTensor[DType.int64, 2](
+            DimList(2, 1), List[Int64](0, 0)
+        )
 
-        var updates = Tensor[DType.float32](
-            TensorShape(2, 4, 4),
+        var updates = TestTensor[DType.float32, 3](
+            DimList(2, 4, 4),
             List[Float32](
                 5,
                 5,
@@ -952,8 +960,8 @@ fn main() raises:
             ),
         )
 
-        var output_ref = Tensor[DType.float32](
-            TensorShape(4, 4, 4),
+        var output_ref = TestTensor[DType.float32, 3](
+            DimList(4, 4, 4),
             List[Float32](
                 5,
                 10,
