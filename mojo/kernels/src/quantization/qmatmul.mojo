@@ -9,7 +9,7 @@ from buffer.list import DimList
 from LinAlg.accumulate import _Accumulator
 from LinAlg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
-from math import align_down, ceildiv
+from math import ceildiv
 from memory.unsafe import DTypePointer
 from sys.info import (
     has_avx512f,
@@ -21,6 +21,10 @@ from sys.info import (
 from sys.intrinsics import llvm_intrinsic
 from utils import InlineArray
 from utils.index import Index
+
+
+alias K_BATCH_SIZE = 512
+"""Defines the batch size of K used to pack A and unpack B weights."""
 
 
 def matmul_qint4_pack_b[
@@ -58,15 +62,12 @@ def matmul_qint4_pack_b[
                 var b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
 
                 @parameter
-                @always_inline
-                fn repack_fn[i: Int]():
-                    var b_tuple_lo = b_data_i8.slice[4, offset = i * 8]()
-                    var b_tuple_hi = b_data_i8.slice[4, offset = i * 8 + 4]()
+                for i in range(0, group_size, 8):
+                    var b_tuple_lo = b_data_i8.slice[4, offset=i]()
+                    var b_tuple_hi = b_data_i8.slice[4, offset = i + 4]()
                     var b_tuple = (b_tuple_lo << 0) + (b_tuple_hi << 4)
                     dst_k_ptr.offset(4 * nn).store(b_tuple)
                     dst_k_ptr += 4 * n_groups
-
-                unroll[repack_fn, group_size // 8]()
 
         dst_ptr += n_groups * k_groups * bytes_per_group_int4
 
@@ -94,9 +95,7 @@ fn _quantize_a_block[
             var x_i32 = SIMD[DType.int32, group_size]()
 
             @parameter
-            @always_inline
-            fn cvtps2dq_fn[idx: Int]():
-                alias i = idx * simd_width
+            for i in range(0, group_size, simd_width):
                 var part = llvm_intrinsic[
                     "llvm.x86.avx512.mask.cvtps2dq.512",
                     SIMD[DType.int32, simd_width],
@@ -109,7 +108,6 @@ fn _quantize_a_block[
                 )
                 x_i32 = x_i32.insert[offset=i](part)
 
-            unroll[cvtps2dq_fn, group_size // simd_width]()
             return x_i32
 
         # Use the NEON instruction `fcvtns` to fuse the conversion to int32
@@ -120,9 +118,7 @@ fn _quantize_a_block[
             var x_i32 = SIMD[DType.int32, group_size]()
 
             @parameter
-            @always_inline
-            fn fcvtns_fn[idx: Int]():
-                alias i = idx * simd_width
+            for i in range(0, group_size, simd_width):
                 var part = llvm_intrinsic[
                     "llvm.aarch64.neon.fcvtns.v4i32.v4f32",
                     SIMD[DType.int32, simd_width],
@@ -130,7 +126,6 @@ fn _quantize_a_block[
                 ](x.slice[simd_width, offset=i]())
                 x_i32 = x_i32.insert[offset=i](part)
 
-            unroll[fcvtns_fn, group_size // simd_width]()
             return x_i32
 
         return x.roundeven().cast[DType.int32]()
@@ -149,33 +144,79 @@ fn _quantize_a_block[
 
 
 fn _quantize_a_buffer[
-    group_size: Int, type: DType, aq_type: DType
+    group_size: Int,
+    type: DType,
+    aq_type: DType,
+    *,
+    aq_interleave: Int = group_size,
 ](
     a: NDBuffer[type, 2],
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
 ):
+    """Converts a floating point buffer to a symmetrically quantized
+    representation. The data is in a packed layout that can be efficiently
+    indexed by the matrix multiply kernels.
+    """
+    constrained[
+        (group_size % aq_interleave) == 0,
+        "interleave must be a factor of group size",
+    ]()
+
     var M = a.dim[0]()
     var K = a.dim[1]()
 
-    var a_ptr = a.data
     var a_quant_ptr = a_quant.data
     var a_scale_ptr = a_scale.data
 
-    # Dynamically quantize the input in blocks of 32 bytes. Uses symmetric
-    # quantization.
-    for m in range(M):
-        for k in range(0, K, group_size):
-            var quant_data: SIMD[aq_type, group_size]
-            var scale: Scalar[DType.float32]
-            (quant_data, scale) = _quantize_a_block[group_size, aq_type](a_ptr)
+    # Pack the quantized integers and scales in batches of K.
+    for ko in range(0, K, K_BATCH_SIZE):
+        var ko_count = min(K_BATCH_SIZE, K - ko)
 
-            a_quant_ptr.store(quant_data)
-            a_scale_ptr.store(scale)
+        var am_ptr = a.data + ko
 
-            a_ptr += group_size
-            a_quant_ptr += group_size
-            a_scale_ptr += 1
+        @parameter
+        @always_inline
+        fn process_rows[tile_m: Int](m: Int):
+            for row in range(tile_m):
+                var ak_quant_ptr = a_quant_ptr + row * aq_interleave
+                var ak_scale_ptr = a_scale_ptr + row
+
+                for ki in range(0, ko_count, group_size):
+                    var quant_data: SIMD[aq_type, group_size]
+                    var scale: Scalar[DType.float32]
+                    (quant_data, scale) = _quantize_a_block[
+                        group_size, aq_type
+                    ](am_ptr.offset(ki))
+
+                    # Interleave this local block to the output buffer.
+                    #
+                    # This supports the i8mm use case where the instruction
+                    # expects a 2x8 matrix of data loaded from two rows. This
+                    # loop slices and outputs data at the `tile_m` stride.
+                    #
+                    # For the non-i8mm use case, no interleaving occurs and
+                    # this is a simple store.
+                    #
+                    # For either case, when M=1, the data layout is effectively
+                    # a flat array of data. The M=1 kernels assume this and
+                    # ignore the K batching and interleave concepts.
+                    @parameter
+                    for i in range(0, group_size, aq_interleave):
+                        ak_quant_ptr.store(
+                            quant_data.slice[aq_interleave, offset=i](),
+                        )
+                        ak_quant_ptr += tile_m * aq_interleave
+
+                    ak_scale_ptr.store(scale)
+                    ak_scale_ptr += tile_m
+
+                am_ptr += K
+
+            a_quant_ptr += tile_m * ko_count
+            a_scale_ptr += tile_m * (ko_count // group_size)
+
+        tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
 
 
 fn _unpack_weights[
@@ -286,7 +327,6 @@ fn _scale_and_accumulate[
     tile_n: Int,
     simd_width: Int,
 ](
-    K: Int,
     a_scale_ptr: DTypePointer[DType.float32],
     b_scale_ptr: DTypePointer[b_scale_type],
     inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -301,17 +341,33 @@ fn _scale_and_accumulate[
             col * simd_width
         ).cast[DType.float32]()
 
-    # Convert and rescale the integer accumulators and accumulate to the output
-    # float accumulators.
     @parameter
-    for row in range(tile_m):
-        var a_scale = a_scale_ptr.load(row * (K // group_size))
-
+    @always_inline
+    fn apply_a_scale[row: Int](a_scale: Float32):
         @parameter
         for col in range(tile_n):
             c_float[row, col] += (
                 c_int32[row, col].cast[DType.float32]() * a_scale * b_scale[col]
             )
+
+    # Convert and rescale the integer accumulators and accumulate to the output
+    # float accumulators.
+    @parameter
+    if has_neon():
+        # NEON supports a multiply instruction that can broadcast from a
+        # vector element, so help the compiler produce that by doing a vector
+        # load.
+        var a_scale = a_scale_ptr.load[width=tile_m]()
+
+        @parameter
+        for row in range(tile_m):
+            apply_a_scale[row](a_scale[row])
+
+    else:
+
+        @parameter
+        for row in range(tile_m):
+            apply_a_scale[row](a_scale_ptr.load(row))
 
 
 trait _MatmulQInt4Kernel:
@@ -324,10 +380,6 @@ trait _MatmulQInt4Kernel:
     fn aq_tuple_type() -> DType:
         """Returns the type to use for representing tuples of quantized A data.
         """
-        ...
-
-    @staticmethod
-    fn aq_row_interleave[tile_m: Int]() -> Int:
         ...
 
     @staticmethod
@@ -344,7 +396,6 @@ trait _MatmulQInt4Kernel:
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -356,11 +407,10 @@ trait _MatmulQInt4Kernel:
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_base_ptr: DTypePointer[DType.int8],
-        b_scale_ptr: DTypePointer[DType.float32],
+        b_ptr: DTypePointer[DType.float32],
         b_correction_ptr: DTypePointer[DType.int32],
         inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
@@ -380,11 +430,6 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
 
     @always_inline
     @staticmethod
-    fn aq_row_interleave[tile_m: Int]() -> Int:
-        return 1
-
-    @always_inline
-    @staticmethod
     fn quantize_a_buffer[
         group_size: Int, type: DType, aq_type: DType
     ](
@@ -398,7 +443,6 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -461,7 +505,7 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
         var b_scale_ptr = b_ptr.bitcast[DType.float16]()
 
         _scale_and_accumulate[group_size](
-            K, a_scale_ptr, b_scale_ptr, c_int32, c_float
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
         )
 
     @always_inline
@@ -469,7 +513,6 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -506,7 +549,7 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
                 for row in range(tile_m):
                     var a_val = SIMD[DType.int32, simd_width](
                         bitcast[DType.int32, 1](
-                            a_ptr.load[width=4](row * K + k)
+                            a_ptr.load[width=4](row * group_size + k)
                         )
                     )
                     c_int32[row, col] = dot_i8_to_i32_saturated_x86(
@@ -514,7 +557,7 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
                     )
 
         _scale_and_accumulate[group_size](
-            K, a_scale_ptr, b_scale_ptr, c_int32, c_float
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
         )
 
 
@@ -531,11 +574,6 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
     @always_inline
     @staticmethod
-    fn aq_row_interleave[tile_m: Int]() -> Int:
-        return 1
-
-    @always_inline
-    @staticmethod
     fn quantize_a_buffer[
         group_size: Int, type: DType, aq_type: DType
     ](
@@ -549,7 +587,6 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -567,8 +604,8 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
             var a_val = a_ptr.load[width=16](k)
 
             @parameter
-            @always_inline
-            fn dotprod_fn[idx: Int]():
+            for lane in range(0, 4, 2):
+
                 @parameter
                 for col in range(tile_n):
                     var b_data_packed = b_ptr.load[width = simd_width * 4](
@@ -583,19 +620,17 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
                         DType.int8
                     ]() - 8
 
-                    c_int32[0, col] = _neon_dotprod_lane[idx * 2](
+                    c_int32[0, col] = _neon_dotprod_lane[lane](
                         c_int32[0, col], b_data_i4_lo, a_val
                     )
-                    c_int32[0, col] = _neon_dotprod_lane[idx * 2 + 1](
+                    c_int32[0, col] = _neon_dotprod_lane[lane + 1](
                         c_int32[0, col], b_data_i4_hi, a_val
                     )
-
-            unroll[dotprod_fn, 2]()
 
         var b_scale_ptr = b_ptr.bitcast[DType.float16]()
 
         _scale_and_accumulate[group_size](
-            K, a_scale_ptr, b_scale_ptr, c_int32, c_float
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
         )
 
     @always_inline
@@ -603,7 +638,6 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -623,11 +657,11 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
             @parameter
             for row in range(tile_m):
-                a_tile[row] = a_ptr.load[width=16](K * row + k)
+                a_tile[row] = a_ptr.load[width=16](row * group_size + k)
 
             @parameter
-            @always_inline
-            fn dotprod_fn[idx: Int]():
+            for lane in range(4):
+
                 @parameter
                 for col in range(tile_n):
                     var b_val = b_ptr.load[width = simd_width * 4](b_offset)
@@ -635,14 +669,12 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
                     @parameter
                     for row in range(tile_m):
-                        c_int32[row, col] = _neon_dotprod_lane[idx](
+                        c_int32[row, col] = _neon_dotprod_lane[lane](
                             c_int32[row, col], b_val, a_tile[row]
                         )
 
-            unroll[dotprod_fn, 4]()
-
         _scale_and_accumulate[group_size](
-            K, a_scale_ptr, b_scale_ptr, c_int32, c_float
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
         )
 
 
@@ -657,11 +689,6 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     fn aq_tuple_type() -> DType:
         return DType.int64
 
-    @always_inline
-    @staticmethod
-    fn aq_row_interleave[tile_m: Int]() -> Int:
-        return tile_m
-
     @staticmethod
     fn quantize_a_buffer[
         group_size: Int, type: DType, aq_type: DType
@@ -670,58 +697,16 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
-        var M = a.dim[0]()
-        var K = a.dim[1]()
-
-        var a_ptr = a.data
-        var a_quant_ptr = a_quant.data
-        var a_scale_ptr = a_scale.data
-
-        @parameter
-        @always_inline
-        fn process_rows[tile_m: Int](m: Int):
-            alias aq_tuple_type = DType.int64
-            alias aq_tuple_size = aq_tuple_type.sizeof()
-            alias aq_tuple_stride = tile_m * aq_tuple_size
-
-            for row in range(tile_m):
-                var ak_quant_ptr = a_quant_ptr + row * aq_tuple_size
-
-                for k in range(0, K, group_size):
-                    var quant_data: SIMD[aq_type, group_size]
-                    var scale: Scalar[DType.float32]
-                    (quant_data, scale) = _quantize_a_block[
-                        group_size, aq_type
-                    ](a_ptr)
-
-                    var quant_data_tuple = bitcast[
-                        aq_tuple_type, group_size // aq_tuple_size
-                    ](quant_data)
-
-                    @parameter
-                    @always_inline
-                    fn store_strided_tuple[idx: Int]():
-                        ak_quant_ptr.bitcast[aq_tuple_type]().store(
-                            quant_data_tuple[idx]
-                        )
-                        ak_quant_ptr += aq_tuple_stride
-
-                    unroll[store_strided_tuple, group_size // aq_tuple_size]()
-
-                    a_scale_ptr.store(scale)
-
-                    a_ptr += group_size
-                    a_scale_ptr += 1
-
-            a_quant_ptr += tile_m * K
-
-        tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        # Interleave the quantized data to produce the block format required
+        # for the NEON `smmla` instruction.
+        return _quantize_a_buffer[group_size, aq_interleave=8](
+            a, a_quant, a_scale
+        )
 
     @staticmethod
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -730,7 +715,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         # The data layout for quantized A data is identical for the NEON dot
         # product kernel when M=1, so delegate to that implementation.
         _MatmulQInt4Kernel_neon_dotprod.process_group_packed[group_size](
-            K, a_ptr, a_scale_ptr, b_ptr, c_float
+            a_ptr, a_scale_ptr, b_ptr, c_float
         )
 
     @always_inline
@@ -738,7 +723,6 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        K: Int,
         a_ptr: DTypePointer[DType.int8],
         a_scale_ptr: DTypePointer[DType.float32],
         b_ptr: DTypePointer[DType.int8],
@@ -810,7 +794,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
                     c_int32[row + 1, col] = c_val_0.shuffle[2, 3, 6, 7](c_val_1)
 
         _scale_and_accumulate[group_size](
-            K, a_scale_ptr, b_scale_ptr, c_int32, c_float
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
         )
 
 
@@ -859,7 +843,7 @@ fn _matmul_qint4_m_1[
 
             for k in range(0, K, group_size):
                 kernel.process_group_packed[group_size](
-                    K, ak_ptr, ak_scale_ptr, bk_ptr, c_float
+                    ak_ptr, ak_scale_ptr, bk_ptr, c_float
                 )
 
                 ak_ptr += group_size
@@ -905,22 +889,21 @@ fn _matmul_qint4_m_any[
         var task_n_start = task_id * grain_size
         var task_n_count = min(N - task_n_start, grain_size)
 
-        alias k_batch = 512
-        alias k_batch_groups = k_batch // group_size
-
         var b_ptr = b.data
 
-        for ko in range(0, K, k_batch):
+        for ko in range(0, K, K_BATCH_SIZE):
+            var ko_count = min(K_BATCH_SIZE, K - ko)
             var ko_group = ko // group_size
-            var k_unpack_count = min(k_batch, K - ko)
 
             @parameter
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
                 var n = task_n_start + n_idx * simd_width
 
+                alias k_batch_groups = K_BATCH_SIZE // group_size
+
                 var b_s8_buf = stack_allocation[
-                    k_batch * tile_n * simd_width,
+                    K_BATCH_SIZE * tile_n * simd_width,
                     DType.int8,
                     alignment=alignment,
                 ]()
@@ -954,8 +937,11 @@ fn _matmul_qint4_m_any[
                     * bytes_per_group_int4,
                     b_scale_buf,
                     b_correction_buf,
-                    k_unpack_count,
+                    ko_count,
                 )
+
+                var ak_ptr = a_quant.data + ko * M
+                var ak_scale_ptr = a_scale.data + ko_group * M
 
                 @parameter
                 @always_inline
@@ -970,20 +956,12 @@ fn _matmul_qint4_m_any[
                     else:
                         c_float.load(c_ptr, N)
 
-                    # Some kernels (i8mm) may interleave the quantized A data,
-                    # so this scales the starting offset and strides to access
-                    # the current position.
-                    alias aq_row_interleave = kernel.aq_row_interleave[tile_m]()
-
-                    var ak_ptr = a_quant.data + m * K + aq_row_interleave * ko
-                    var ak_scale_ptr = a_scale.data + m * k_groups + ko_group
                     var bk_s8_ptr = b_s8_buf
                     var bk_scale_ptr = b_scale_buf
                     var bk_correction_ptr = b_correction_buf
 
-                    for ki in range(0, k_unpack_count, group_size):
+                    for ki in range(0, ko_count, group_size):
                         kernel.process_group_unpacked[group_size](
-                            K,
                             rebind[DTypePointer[DType.int8]](ak_ptr),
                             ak_scale_ptr,
                             bk_s8_ptr,
@@ -992,8 +970,8 @@ fn _matmul_qint4_m_any[
                             c_float,
                         )
 
-                        ak_ptr += aq_row_interleave * group_size
-                        ak_scale_ptr += 1
+                        ak_ptr += tile_m * group_size
+                        ak_scale_ptr += tile_m
                         bk_s8_ptr += group_size * tile_n * simd_width
                         bk_scale_ptr += tile_n * simd_width
                         bk_correction_ptr += tile_n * simd_width
