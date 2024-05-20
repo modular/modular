@@ -3893,10 +3893,10 @@ fn reduce_min_and_max_shape_func[
 
 
 # MHA Kernels:
-@mogg_register("mo.multi_head_flash_attention")
+@mogg_register("mo.gpu_multi_head_flash_attention")
 @always_inline
 @export
-fn multi_head_flash_attention[
+fn gpu_multi_head_flash_attention[
     rank: Int,
     input_0_static_shape: DimList,
     input_1_static_shape: DimList,
