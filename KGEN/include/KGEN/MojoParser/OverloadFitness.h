@@ -18,6 +18,7 @@
 namespace M::KGEN::LIT {
 class CallOperands;
 class LITSignatureType;
+class PogListAttr;
 struct TypeCheckScopeInfo;
 
 /// This struct indicates whether a signature can be successfully applied to a
@@ -70,6 +71,13 @@ struct OverloadFitness {
                                   ASTDecl *funcIfDirect,
                                   const OverloadSet &callable,
                                   const CallOperands &callOperands,
+                                  bool allowImplicitConversions);
+
+  /// Determine whether the specified signature can be invoked with the
+  /// parameter bindings specified in `callable`.
+  static OverloadFitness evaluate(ArrayRef<Type> paramTypes,
+                                  PogListAttr paramListAttr,
+                                  const OverloadSet &callable,
                                   bool allowImplicitConversions);
 
   enum ArgTypeMismatchKind {

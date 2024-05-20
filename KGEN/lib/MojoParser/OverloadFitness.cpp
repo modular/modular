@@ -591,6 +591,19 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
   return 2 * passesVarArgArgument + 1 * hasVariadicParams;
 }
 
+OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
+                                          PogListAttr paramListAttr,
+                                          const OverloadSet &callable,
+                                          bool allowImplicitConversions) {
+  auto [bindings, fitness, diag] = callable.paramBindings.verifyBindings(
+      paramTypes, paramListAttr, callable.baseName, callable.expr->getLoc(),
+      /*opLoc=*/{}, /*partial=*/true);
+  if (!bindings)
+    return std::move(*diag);
+  return {bindings, Payload{fitness.numImplicitConversions, 0, 0,
+                            fitness.hasVariadicParams}};
+}
+
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,

@@ -166,6 +166,72 @@ static CallKind getCallKind(CallSyntax syntax) {
   llvm_unreachable("invalid call syntax");
 }
 
+PValue OverloadSet::filterOverloadSetForParamBindings(
+    bool allowImplicitConversions) const {
+  SmallVector<OverloadFitness> evaluations;
+  bool anyValid = false;
+  for (ASTDecl *candidate : fnDecls) {
+    auto func = cast<LIT::FuncOp>(*candidate);
+    LITSignatureType sig = func.getFullSignature();
+    evaluations.push_back(OverloadFitness::evaluate(
+        sig.getParamTypes(), sig.getParamListAttrs(), *this,
+        /*allowImplicitConversions=*/true));
+    anyValid |= evaluations.back().isValid();
+  }
+
+  // If none are valid, emit an error.
+  if (!anyValid) {
+    if (isErroneous())
+      return {};
+    auto diag = getShared().emitError(
+                    expr->getLoc(),
+                    "cannot form a reference to overloaded declaration of '")
+                << baseName << "'" << expr->getRange();
+    for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+      diag.attachNote(candidate->getLoc())
+          << "candidate not viable: " << eval.takeDiag();
+      auto func = cast<LIT::FuncOp>(candidate);
+      if (func.getIsSynthetic()) {
+        diag.attachNote(candidate->getLoc())
+            << "generated function with type "
+            << ASTType(func.getFullSignature());
+      }
+    }
+    return {};
+  }
+
+  // Ok, we have at least one valid candidate, so filter for the best matches.
+  SmallVector<ASTDecl *> newFnDecls;
+  const OverloadFitness *bestFitness =
+      selectBestCandidates(fnDecls, evaluations, newFnDecls);
+  if (newFnDecls.size() == 1) {
+    // On success, wrap things up into one callee.
+    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
+    for (TypedAttr bind : bestFitness->getParamBindings())
+      newBindings.addPrechecked(bind);
+    return getCallee(getShared(), newFnDecls[0], baseName, newBindings, expr);
+  }
+  if (isErroneous())
+    return {};
+
+  size_t minConversions = bestFitness->getNumImplicitConversions() / 2;
+  auto diag = getShared().emitError(expr->getLoc(), "ambiguous reference to '")
+              << baseName << "', each candidate requires " << minConversions
+              << " implicit conversion" << plural(minConversions)
+              << ", disambiguate with an explicit cast" << expr->getRange();
+  for (ASTDecl *candidate : newFnDecls) {
+    auto func = cast<LIT::FuncOp>(candidate);
+    InflightDiag &note = diag.attachNote(candidate->getLoc());
+    if (func.getIsSynthetic()) {
+      note << "candidate generated with type "
+           << ASTType(func.getFullSignature());
+    } else {
+      note << "candidate declared here";
+    }
+  }
+  return {};
+}
+
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure) const {
@@ -601,6 +667,12 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType) const {
     return filterOverloadSetForValueType(expectedType,
                                          /*emitDiagnosticOnFailure=*/true);
   }
+
+  // If the overload set has parameter bindings, try to resolve the candidates
+  // using them.
+  if (!paramBindings.empty())
+    return filterOverloadSetForParamBindings(/*allowImplicitConversions=*/true);
+
   // Otherwise, emit the "cannot form a reference to overloaded decl" error.
   return getBoundConstantAttr();
 }

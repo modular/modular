@@ -626,6 +626,29 @@ struct MyList[T: Copyable]:
     fn __init__(inout self, *values: T): pass
 
 
+##===----------------------------------------------------------------------===##
+# Function Overloading on Parameters
+##===----------------------------------------------------------------------===##
+
+
+fn parameter_overloading[param: Int]():
+    pass
+
+fn parameter_overloading[param: DType]():
+    pass
+
+fn partial_parameter_overloading[param: Int, other: Int]():
+    pass
+
+fn partial_parameter_overloading[param: DType, other: DType]():
+    pass
+
+# CHECK-LABEL: lit.func @"form_reference_to_overloaded
+fn form_reference_to_overloaded():
+    # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
+    alias ref = parameter_overloading[1]
+    # CHECK-NEXT: !lit.signature<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
+    alias partial = partial_parameter_overloading[1]
 
 ##===----------------------------------------------------------------------===##
 # Parameter Inference

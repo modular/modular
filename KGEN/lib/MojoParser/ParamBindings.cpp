@@ -491,7 +491,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
                                                      TypeSignatureType sig,
                                                      SMLoc exprLoc,
                                                      bool partial) const {
-  auto [bindingValuesAttr, _] =
+  auto [bindingValuesAttr, _, diag] =
       verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      Twine("'") + structOp.getName() + "'", exprLoc,
                      structOp.getLoc(), partial);
@@ -502,14 +502,15 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                               SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
-  auto [newBindings, _] =
+  auto [newBindings, _, diag] =
       verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      opLoc ? Twine("'") + baseName + "'" : Twine(baseName),
                      exprLoc, opLoc, /*partial=*/true);
   return newBindings;
 }
 
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+std::tuple<ParameterExprArrayAttr, ParamBindings::Fitness,
+           std::optional<InflightDiag>>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               PogListAttr paramListAttr, const Twine &baseName,
                               SMLoc exprLoc, std::optional<Location> opLoc,
@@ -518,116 +519,114 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                       countNumImplicitKinds(paramListAttr) -
                       countNumInferredKinds(paramListAttr);
   ParameterInferenceDiagnostics inferenceDiags;
+  std::optional<InflightDiag> diag;
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
-        InflightDiag diag = shared.emitError(exprLoc, baseName);
+        diag = shared.emitError(exprLoc, baseName);
         if (posOnly) {
           emitWrongArgOrParamCount(
-              diag, /*minRequired=*/countNumPosOnly(paramListAttr), maxAllowed,
+              *diag, /*minRequired=*/countNumPosOnly(paramListAttr), maxAllowed,
               numActual, "positional parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() -
                                paramListAttr.getDefaultPos().size() -
                                paramListAttr.getDefaultKwOnly().size();
-          emitWrongArgOrParamCount(diag, minRequired, maxAllowed, numActual,
+          emitWrongArgOrParamCount(*diag, minRequired, maxAllowed, numActual,
                                    "parameter");
         }
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
-        inferenceDiags.attach(paramListAttr, diag, numActual);
+          diag->attachNote(*opLoc) << baseName << " declared here";
+        inferenceDiags.attach(paramListAttr, *diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t index, const Binding &binding, ASTType expectedType) {
-        auto diag = shared.emitError(binding.expr->getLoc(), baseName)
-                    << " parameter #" << index << " has " << expectedType
-                    << " type, but value has type "
-                    << ASTType(binding.getValue().getType())
-                    << binding.expr->getRange();
+        diag = shared.emitError(binding.expr->getLoc(), baseName)
+               << " parameter #" << index << " has " << expectedType
+               << " type, but value has type "
+               << ASTType(binding.getValue().getType())
+               << binding.expr->getRange();
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitKwType=*/
       [&](StringAttr paramName, const Binding &binding, ASTType expectedType) {
-        auto diag = shared.emitError(binding.expr->getLoc(), baseName)
-                    << " parameter " << paramName << " has " << expectedType
-                    << " type, but value has type "
-                    << ASTType(binding.getValue().getType())
-                    << binding.expr->getRange();
+        diag = shared.emitError(binding.expr->getLoc(), baseName)
+               << " parameter " << paramName << " has " << expectedType
+               << " type, but value has type "
+               << ASTType(binding.getValue().getType())
+               << binding.expr->getRange();
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitUnknownKeywords=*/
       [&](ArrayRef<StringAttr> unknownKeywords) {
-        InflightDiag diag = shared.emitError(exprLoc);
-        emitUnknownKeywords(diag, unknownKeywords, "parameter");
+        diag = shared.emitError(exprLoc);
+        emitUnknownKeywords(*diag, unknownKeywords, "parameter");
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitRedundantKeywords=*/
       [&](ArrayRef<StringAttr> names) {
-        InflightDiag diag = shared.emitError(exprLoc);
-        emitByPosAndKw(diag, names, "parameter");
+        diag = shared.emitError(exprLoc);
+        emitByPosAndKw(*diag, names, "parameter");
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitPosOnlyPassedByKw=*/
       [&](ArrayRef<StringAttr> names) {
-        InflightDiag diag = shared.emitError(exprLoc);
-        emitPosOnlyPassedByKw(diag, names, "parameter");
+        diag = shared.emitError(exprLoc);
+        emitPosOnlyPassedByKw(*diag, names, "parameter");
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
         assert(!partial && "parameter deduction failure in a context that "
                            "doesn't allow deduction");
         if (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred) {
-          InflightDiag diag = shared.emitError(exprLoc, baseName)
-                              << " missing required ";
+          diag = shared.emitError(exprLoc, baseName) << " missing required ";
           if (StringAttr name = paramListAttr.getName(paramIdx); !name.empty())
-            diag << "parameter " << name;
+            *diag << "parameter " << name;
           else
-            diag << nameForPosOnly(paramIdx, "parameter");
+            *diag << nameForPosOnly(paramIdx, "parameter");
         } else {
-          InflightDiag diag = shared.emitError(exprLoc)
-                              << "failed to infer parameter ";
-          printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, diag);
-          inferenceDiags.attach(paramListAttr, diag);
+          diag = shared.emitError(exprLoc) << "failed to infer parameter ";
+          printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, *diag);
+          inferenceDiags.attach(paramListAttr, *diag);
         }
       },
       /*emitUnboundPackInVariadic=*/
       [&](const Binding &binding) {
-        InflightDiag diag = shared.emitError(binding.expr->getLoc());
-        diag << "unbound pack syntax cannot be used where variadic parameters "
-                "are expected";
+        diag = shared.emitError(binding.expr->getLoc());
+        *diag << "unbound pack syntax cannot be used where variadic parameters "
+                 "are expected";
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitUnboundPackNotEnd=*/
       [&](const Binding &binding) {
-        InflightDiag diag = shared.emitError(binding.expr->getLoc());
-        diag << "unbound pack must be at the end of the parameter list";
+        diag = shared.emitError(binding.expr->getLoc());
+        *diag << "unbound pack must be at the end of the parameter list";
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
-        InflightDiag diag = shared.emitError(exprLoc)
-                            << "failed to infer parameter ";
-        printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, diag);
-        inferenceDiags.attach(paramListAttr, diag);
+        diag = shared.emitError(exprLoc) << "failed to infer parameter ";
+        printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, *diag);
+        inferenceDiags.attach(paramListAttr, *diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
-        InflightDiag diag = shared.emitError(exprLoc);
-        emitMissing(diag, names, kindStr + " parameter");
+        diag = shared.emitError(exprLoc);
+        emitMissing(*diag, names, kindStr + " parameter");
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitTooManyPositional=*/
       [&](size_t numMaxAllowed, size_t numActual) {
-        InflightDiag diag = shared.emitError(exprLoc);
-        emitTooManyPositional(diag, numMaxAllowed, numActual, "parameter");
+        diag = shared.emitError(exprLoc);
+        emitTooManyPositional(*diag, numMaxAllowed, numActual, "parameter");
         if (opLoc)
-          diag.attachNote(*opLoc) << baseName << " declared here";
+          diag->attachNote(*opLoc) << baseName << " declared here";
       }};
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
@@ -650,8 +649,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               InferenceFailure::NotFoundFailure());
     return PValue();
   };
-  return verifyBindingsImpl(expectedParamTypes, paramListAttr,
-                            parameterInferenceHook, &diagEmitter, partial);
+  auto [bindings, fitness] =
+      verifyBindingsImpl(expectedParamTypes, paramListAttr,
+                         parameterInferenceHook, &diagEmitter, partial);
+  return {bindings, fitness, std::move(diag)};
 }
 
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
