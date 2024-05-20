@@ -75,7 +75,8 @@ static int test(const State &subcommandState) {
     return *exitCode;
 
   // Create our context.
-  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
@@ -100,8 +101,9 @@ static int test(const State &subcommandState) {
   } else {
     testID = TestID(std::filesystem::current_path().string());
   }
+  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
   ErrorOr<std::optional<Test>> testOr =
-      Test::discoverFromID(testID, additionalImportPaths);
+      Test::discoverFromID(runtime, testID, additionalImportPaths);
   if (testOr.isError())
     return state.reportError(testOr.getError());
   std::optional<Test> test = std::move(*testOr);
@@ -134,7 +136,7 @@ static int test(const State &subcommandState) {
   }
 
   // Execute the test and print the results.
-  TestExecutionResult result = test->execute(additionalImportPaths);
+  TestExecutionResult result = test->execute(runtime, additionalImportPaths);
   emitOutput(result);
   return result.getKind() == TestExecutionResult::kSuccess ? 0 : 1;
 }
