@@ -132,3 +132,19 @@ kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
   kgen.param.declare relative: <type, <!kgen.paramref<*(1,0)>>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
   kgen.unreachable
 }
+
+// -----
+
+kgen.generator @f<a, b, c: array<b, index>>() {
+  kgen.return
+}
+
+
+// COM: Partially bind a function with dependent parameters.
+
+// CHECK-LABEL: @partially_bind_dependent
+kgen.generator @partially_bind_dependent() {
+  // CHECK-NEXT: partial: <index, array<*(0,0), index>>() -> () = <@f<1, ?, :array<?, index> ?>>
+  kgen.param.declare partial: <index, array<*(0,0), index>>() -> () = <@f<1, ?, :array<?, index> ?>>
+  kgen.return
+}
