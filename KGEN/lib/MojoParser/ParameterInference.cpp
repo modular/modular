@@ -62,7 +62,7 @@ void InferenceFailure::emitSpecificNote(
 // ParameterInferenceDiagnostics
 //===----------------------------------------------------------------------===//
 
-void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
+void ParameterInferenceDiagnostics::attach(PogListAttr params,
                                            InflightDiag &diag,
                                            size_t numActual) {
   // Pick the first diagnostic for the earliest parameter after numActual.
@@ -88,8 +88,7 @@ void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
   best->info.emitSpecificNote([&]() -> InflightDiag & {
     diag.attachNote(best->argExpr->getLoc())
         << best->argExpr->getRange() << "failed to infer parameter ";
-    printNameOrIdx(signature.getParamName(best->paramIdx), best->paramIdx,
-                   diag);
+    printNameOrIdx(params.getName(best->paramIdx), best->paramIdx, diag);
     return diag << ", ";
   });
 }
@@ -720,12 +719,12 @@ ParameterInferenceState::inferOneParam(const ParamBindings::Binding &binding,
 /// Given a signature type that has some of its parameter bindings known, burn
 /// the values for those parameters in, leaving the rest untouched so we can
 /// infer them.
-static LITSignatureType
-getPartiallySpecializedSignature(LITSignatureType signature,
-                                 ArrayRef<TypedAttr> bindingsSoFar,
-                                 ParserParamEvaluator &evaluator) {
+template <typename... Ts>
+static std::tuple<Ts...>
+getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
+                                 ParserParamEvaluator &evaluator, Ts... args) {
   if (bindingsSoFar.empty())
-    return signature;
+    return std::make_tuple(args...);
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
@@ -750,124 +749,163 @@ getPartiallySpecializedSignature(LITSignatureType signature,
     ParserParamEvaluator &evaluator;
   } substitutor(bindingsSoFar, evaluator);
 
-  auto newSignature = substitutor.replace(signature);
-  if (newSignature == signature)
-    return signature;
+  auto refine = [&](auto arg) {
+    auto newArg = substitutor.replace(arg);
+    if (newArg == arg)
+      return arg;
+    // If we changed something, then we substituted constants into the type
+    // tree. This can cause some expressions to fold with the interpreter, so
+    // see if we can simplify the result.
+    return cast<decltype(arg)>(evaluator.refine(newArg));
+  };
 
-  // If we changed something, then we substituted constants into the type tree.
-  // This can cause some expressions to fold with the interpreter, so see if we
-  // can simplify the result.
-  return cast<LITSignatureType>(evaluator.refine(newSignature));
+  return std::make_tuple(refine(args)...);
 }
 
-/// Given an incomplete parameter binding set for a call to the specified
-/// signature, try to infer the value of the next 'decl' parameter.  This
-/// should always return null /without/ an error if it cannot be inferred, and
-/// return a specific value if unambiguously determined.
+/// Apply the bindings so far (plus a distinct new attribute relating
+/// back to the original decls for ones that are missing) to the signature with
+/// getSpecializedSignature so we benefit from the already-fixed substitutions
+/// being applied to the input types.  This can make them more concrete and
+/// help with inferring dependent types based on already-bound parameters.
+template <typename... Ts>
+static bool partiallySpecializeIfNeeded(ArrayRef<TypedAttr> inferredParams,
+                                        ParserParamEvaluator &evaluator,
+                                        size_t &numAlreadySpecialized,
+                                        Ts &...args) {
+  // If we inferred a value for the parameter from previous arguments,
+  // substitute it into the expected types of subsequent arguments.  This
+  // allows us to handle dependent argument types like:
+  //    fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
+  // where the type of 'v' depends on 'dt' being inferred.
+  //
+  // FIXME: Don't do this, it makes it more difficult to diagnose conflicting
+  // values.  We should switch over to using the evaluator instead.
+  if (numAlreadySpecialized < inferredParams.size() &&
+      inferredParams[numAlreadySpecialized]) {
+    // Take all the bindings that are now known.  Be careful about gaps.
+    SmallVector<TypedAttr> effectiveBindings(inferredParams);
+    for (auto it = effectiveBindings.begin(), e = effectiveBindings.end();
+         it != e; ++it) {
+      // Drop any unknown parameter values and everything after it.
+      if (!*it) {
+        effectiveBindings.erase(it, effectiveBindings.end());
+        break;
+      }
+    }
+
+    std::tie(args...) =
+        getPartiallySpecializedSignature(effectiveBindings, evaluator, args...);
+    numAlreadySpecialized = effectiveBindings.size();
+    return true;
+  }
+  return false;
+}
+
+/// Helper that returns true if the parameter list has any inferred parameters.
+static bool hasInferredParams(PogListAttr paramListAttr) {
+  ArrayRef<PogMetadataAttr> params = paramListAttr.getPogs();
+  return !params.empty() &&
+         params.front().getPassingKind() == PassingKind::Inferred;
+}
+
+LogicalResult ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
+                                             PogListAttr paramListAttr) {
+  // If the parameter list has any inferred parameters, then we have to infer
+  // against the provided binding list, since we might infer parameters from
+  // other parameters. Otherwise, just exit early.
+  if (!hasInferredParams(paramListAttr))
+    return success();
+
+  auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
+
+  size_t numAlreadySpecialized = inferredParams.size();
+  DefaultValueHandler defaultHandler(paramListAttr);
+  std::tie(types, paramListAttr) = getPartiallySpecializedSignature(
+      inferredParams, evaluator, types, paramListAttr);
+  auto rebindPartialTypes = [&]() {
+    if (partiallySpecializeIfNeeded(inferredParams, evaluator,
+                                    numAlreadySpecialized, types,
+                                    paramListAttr))
+      defaultHandler = DefaultValueHandler(paramListAttr);
+  };
+
+  size_t posIdx = 0, numPosParams = givenBindings.posOperands.size();
+  for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
+    // Inferred parameters won't have supplied values because they cannot be
+    // specified by the user. We want to infer them from other parameters.
+    if (pog.getPassingKind() == PassingKind::Inferred)
+      continue;
+    rebindPartialTypes();
+
+    // Note that 'signature' changes the type as we go, so don't use
+    // llvm::enumerate on the argument type list!
+    Type expectedType = types[idx];
+
+    // If we have a varargs parameters, then it will eat the rest of the
+    // parameters, but we have to check each of them.
+    if (paramListAttr.isVariadic(idx)) {
+      auto expectedVariadic = cast<VariadicType>(expectedType);
+      Type varArgsEltType = expectedVariadic.getElementType();
+      while (posIdx != numPosParams) {
+        if (failed(inferOneParam(givenBindings.posOperands[posIdx++],
+                                 varArgsEltType)))
+          return failure();
+      }
+      continue;
+    }
+
+    // If we're out of positional bindings, try looking for a provided keyword
+    // parameter binding.
+    if (posIdx == numPosParams) {
+      if (std::optional<ParamBindings::Binding> param =
+              givenBindings.findKwArg(paramListAttr.getName(idx))) {
+        if (failed(inferOneParam(*param, expectedType)))
+          return failure();
+        continue;
+      }
+
+      // If not, and this parameter has a default value, then just skip it. We
+      // can't infer from default values.
+      if (defaultHandler.getDefault(idx))
+        continue;
+
+      // Otherwise, this is a missing parameter.
+      return failure();
+    }
+
+    // In the typical case, this isn't a variadic or keyword parameter. It
+    // must be a positional binding.
+    if (failed(
+            inferOneParam(givenBindings.posOperands[posIdx++], expectedType)))
+      return failure();
+  }
+
+  return success();
+}
+
 LogicalResult
 ParameterInferenceState::infer(LITSignatureType signature,
                                const CallOperands &callOperands,
                                const KeywordOperands &variadicKwOperands) {
+  // First try to infer parameters from parameters.
+  if (failed(infer(signature.getParamTypes(), signature.getParamListAttrs())))
+    return failure();
+
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
 
-  // Apply the bindings so far (plus a distinct new attribute relating
-  // back to the original decls for ones that are missing) to the signature with
-  // getSpecializedSignature so we benefit from the already-fixed substitutions
-  // being applied to the input types.  This can make them more concrete and
-  // help with inferring dependent types based on already-bound parameters.
-  signature =
-      getPartiallySpecializedSignature(signature, inferredParams, evaluator);
   size_t numAlreadySpecialized = inferredParams.size();
-  DefaultValueHandler defaultHandler({}, {}, {});
-
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
+  std::tie(signature) =
+      getPartiallySpecializedSignature(inferredParams, evaluator, signature);
   auto rebindPartialSignature = [&](bool isParam = false) {
-    // If we inferred a value for the parameter from previous arguments,
-    // substitute it into the expected types of subsequent arguments.  This
-    // allows us to handle dependent argument types like:
-    //    fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
-    // where the type of 'v' depends on 'dt' being inferred.
-    //
-    // FIXME: Don't do this, it makes it more difficult to diagnose conflicting
-    // values.  We should switch over to using the evaluator instead.
-    if (numAlreadySpecialized < inferredParams.size() &&
-        inferredParams[numAlreadySpecialized]) {
-      // Take all the bindings that are now known.  Be careful about gaps.
-      SmallVector<TypedAttr> effectiveBindings(inferredParams);
-      for (auto it = effectiveBindings.begin(), e = effectiveBindings.end();
-           it != e; ++it) {
-        // Drop any unknown parameter values and everything after it.
-        if (!*it) {
-          effectiveBindings.erase(it, effectiveBindings.end());
-          break;
-        }
-      }
-
-      signature = getPartiallySpecializedSignature(signature, effectiveBindings,
-                                                   evaluator);
-      defaultHandler = isParam
-                           ? DefaultValueHandler(signature.getParamListAttrs())
-                           : DefaultValueHandler(signature.getArgListAttrs());
-      numAlreadySpecialized = effectiveBindings.size();
+    if (partiallySpecializeIfNeeded(inferredParams, evaluator,
+                                    numAlreadySpecialized, signature)) {
+      defaultHandler =
+          DefaultValueHandler(isParam ? signature.getParamListAttrs()
+                                      : signature.getArgListAttrs());
     }
   };
-
-  // If the signature has any inferred parameters, then we have to infer against
-  // the provided binding list, since we might infer parameters from other
-  // parameters.
-  if (signature.hasInferredParams()) {
-    size_t posIdx = 0, numPosParams = givenBindings.posOperands.size();
-    for (auto [idx, pog] :
-         llvm::enumerate(signature.getParamListAttrs().getPogs())) {
-      // Inferred parameters won't have supplied values because they cannot be
-      // specified by the user. We want to infer them from other parameters.
-      if (pog.getPassingKind() == PassingKind::Inferred)
-        continue;
-      rebindPartialSignature(/*isParam=*/true);
-
-      // Note that 'signature' changes the type as we go, so don't use
-      // llvm::enumerate on the argument type list!
-      Type expectedType = signature.getParamTypes()[idx];
-
-      // If we have a varargs parameters, then it will eat the rest of the
-      // parameters, but we have to check each of them.
-      if (signature.isParamVarArg(idx)) {
-        auto expectedVariadic = cast<VariadicType>(expectedType);
-        Type varArgsEltType = expectedVariadic.getElementType();
-        while (posIdx != numPosParams) {
-          if (failed(inferOneParam(givenBindings.posOperands[posIdx++],
-                                   varArgsEltType)))
-            return failure();
-        }
-        continue;
-      }
-
-      // If we're out of positional bindings, try looking for a provided keyword
-      // parameter binding.
-      if (posIdx == numPosParams) {
-        if (std::optional<ParamBindings::Binding> param =
-                givenBindings.findKwArg(signature.getParamName(idx))) {
-          if (failed(inferOneParam(*param, expectedType)))
-            return failure();
-          continue;
-        }
-
-        // If not, and this parameter has a default value, then just skip it. We
-        // can't infer from default values.
-        if (defaultHandler.getDefault(idx))
-          continue;
-
-        // Otherwise, this is a missing parameter.
-        return failure();
-      }
-
-      // In the typical case, this isn't a variadic or keyword parameter. It
-      // must be a positional binding.
-      if (failed(
-              inferOneParam(givenBindings.posOperands[posIdx++], expectedType)))
-        return failure();
-    }
-  }
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be

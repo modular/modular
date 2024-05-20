@@ -1011,7 +1011,7 @@ ArgConvention LITSignatureType::getPackVarArgConvention(size_t index) {
 }
 
 bool LITSignatureType::isParamVarArg(size_t index) {
-  return getParamListAttrs().getPogs()[index].isVariadic();
+  return getParamListAttrs().isVariadic(index);
 }
 
 bool LITSignatureType::hasParamVarArgs() {
@@ -1023,12 +1023,6 @@ bool LITSignatureType::hasPackVarArgs() {
 }
 
 bool LITSignatureType::hasKwVarArgs() { return getMetadata().hasKwVarArgs(); }
-
-bool LITSignatureType::hasInferredParams() {
-  ArrayRef<PogMetadataAttr> params = getParamListAttrs().getPogs();
-  return !params.empty() &&
-         params.front().getPassingKind() == PassingKind::Inferred;
-}
 
 unsigned LITSignatureType::getErrorSlotOffset() {
   assert(isThrows() && "signature does not refer to a throwing function");

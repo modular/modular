@@ -9,8 +9,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
-#include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ParameterInference.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 
@@ -516,6 +517,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   size_t maxAllowed = expectedParamTypes.size() -
                       countNumImplicitKinds(paramListAttr) -
                       countNumInferredKinds(paramListAttr);
+  ParameterInferenceDiagnostics inferenceDiags;
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         InflightDiag diag = shared.emitError(exprLoc, baseName);
@@ -532,6 +534,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
+        inferenceDiags.attach(paramListAttr, diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t index, const Binding &binding, ASTType expectedType) {
@@ -578,12 +581,19 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](size_t paramIdx) {
         assert(!partial && "parameter deduction failure in a context that "
                            "doesn't allow deduction");
-        InflightDiag diag = shared.emitError(exprLoc, baseName)
-                            << " missing required ";
-        if (StringAttr name = paramListAttr.getName(paramIdx); !name.empty())
-          diag << "parameter " << name;
-        else
-          diag << nameForPosOnly(paramIdx, "parameter");
+        if (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred) {
+          InflightDiag diag = shared.emitError(exprLoc, baseName)
+                              << " missing required ";
+          if (StringAttr name = paramListAttr.getName(paramIdx); !name.empty())
+            diag << "parameter " << name;
+          else
+            diag << nameForPosOnly(paramIdx, "parameter");
+        } else {
+          InflightDiag diag = shared.emitError(exprLoc)
+                              << "failed to infer parameter ";
+          printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, diag);
+          inferenceDiags.attach(paramListAttr, diag);
+        }
       },
       /*emitUnboundPackInVariadic=*/
       [&](const Binding &binding) {
@@ -600,8 +610,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
-        llvm_unreachable("parameter deduction failure in a context that "
-                         "doesn't allow deduction");
+        InflightDiag diag = shared.emitError(exprLoc)
+                            << "failed to infer parameter ";
+        printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, diag);
+        inferenceDiags.attach(paramListAttr, diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
@@ -618,9 +630,28 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag.attachNote(*opLoc) << baseName << " declared here";
       }};
 
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
+                                    const ParserParamEvaluator &evaluator) {
+    ParameterInferenceState inferrence(*this, bindingsSoFar, evaluator,
+                                       inferenceDiags,
+                                       /*allowImplicitConversions=*/true);
+
+    // Infer information from the current parameter list.
+    if (failed(inferrence.infer(expectedParamTypes, paramListAttr)))
+      return PValue();
+
+    // See if we inferred information about the next value.
+    if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
+      return PValue(result);
+
+    // If we succeeded inference but didn't get a value for this parameter, then
+    // the parameter must not be present: complain.
+    inferenceDiags.addFailure(bindingsSoFar.size(), SyntheticNode(exprLoc),
+                              InferenceFailure::NotFoundFailure());
+    return PValue();
+  };
   return verifyBindingsImpl(expectedParamTypes, paramListAttr,
-                            /*parameterInferenceHook=*/{}, &diagEmitter,
-                            partial);
+                            parameterInferenceHook, &diagEmitter, partial);
 }
 
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
