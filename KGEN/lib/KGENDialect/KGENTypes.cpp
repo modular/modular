@@ -330,18 +330,6 @@ SignatureType SignatureType::getSpecializedSignature(
     // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
     // the second parameter will be refined when the first parameter is bound.
     auto remappedDeclType = remapType(type);
-    // We must remap the value type being provided as well, because it may be
-    // referring to outer-context indexed parameters, whose depth will be
-    // increased when substituted into this signature.
-    Type reboundType = adjuster.replace(value.getType());
-    if (reboundType != remappedDeclType) {
-      assert(emitErrorFn && "unexpected invalid signature");
-      emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                    << reboundType << " but callee expected type "
-                    << remappedDeclType;
-      return SignatureType();
-    }
-
     // If we're attempting to bind to an unknown attribute, we need to update
     // the decl, and keep it around so that we can continue to use it (as in a
     // partial bind).
@@ -354,6 +342,18 @@ SignatureType SignatureType::getSpecializedSignature(
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.addInputValue(value);
     } else {
+      // We must remap the value type being provided as well, because it may be
+      // referring to outer-context indexed parameters, whose depth will be
+      // increased when substituted into this signature.
+      Type reboundType = adjuster.replace(value.getType());
+      if (reboundType != remappedDeclType) {
+        assert(emitErrorFn && "unexpected invalid signature");
+        emitErrorFn() << "caller input parameter #" << paramNo << " has type "
+                      << reboundType << " but callee expected type "
+                      << remappedDeclType;
+        return SignatureType();
+      }
+
       evaluator.addInputValue(value);
       boundParams.set(paramNo);
     }
