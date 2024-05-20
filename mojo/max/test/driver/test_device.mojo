@@ -37,14 +37,20 @@ def test_device_tensor():
         str(dt2), "DeviceTensor(Device(type=CPU,numa_id=2),Spec(3x2xfloat32))"
     )
 
-    var tensor = (dt1^).get_tensor[DType.float32]()
-    tensor[Index(0, 0)] = 0
-    tensor[Index(0, 1)] = 1
-    tensor[Index(1, 0)] = 2
-    tensor[Index(1, 1)] = 3
-    print(tensor)
+
+def test_tensor():
+    var dev = Device(CPUDescriptor(numa_id=2))
+
+    var dt = dev.allocate(
+        TensorSpec(DType.float32, 2, 2),
+    )
+    var tensor = dt^.get_tensor[DType.float32, 2]()
+
+    assert_equal(tensor.get_rank(), 2)
+    assert_equal(tensor.get_dtype(), DType.float32)
 
 
 def main():
     test_device()
     test_device_tensor()
+    test_tensor()
