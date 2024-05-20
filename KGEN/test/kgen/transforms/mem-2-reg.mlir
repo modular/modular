@@ -491,3 +491,27 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   %res2 = index.add %res1, %7
   kgen.return %res2 : index
 }
+
+// CHECK-LABEL: kgen.generator @param_for
+kgen.generator @param_for() -> index {
+  %mem = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %idx0 = index.constant 0
+  %idx0 = index.constant 0
+  pop.store %idx0, %mem : !kgen.pointer<index>
+  // CHECK-NEXT: %0 = kgen.param.for
+  // CHECK-NEXT: (%arg0 = %idx0 : index) -> index
+  kgen.param.for decl: index in :index 2 iter :(index, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @wrapper {
+    // CHECK-NEXT: %index = kgen.param.constant
+    %0 = kgen.param.constant = <decl>
+    %1 = pop.load %mem : !kgen.pointer<index>
+    // CHECK-NEXT: %1 = index.add %arg0, %index
+    %2 = index.add %1, %0
+    pop.store %2, %mem : !kgen.pointer<index>
+    // CHECK-NEXT: kgen.param.for.continue %1
+    kgen.param.for.continue
+  // CHECK-NEXT: }
+  }
+  %1 = pop.load %mem : !kgen.pointer<index>
+  // CHECK-NEXT: return %0
+  kgen.return %1 : index
+}

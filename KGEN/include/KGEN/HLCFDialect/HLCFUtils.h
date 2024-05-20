@@ -26,6 +26,13 @@ Operation *getParentNode(HLCF::ControlFlowTerminator term);
 /// Given an elif op, transform into multiple IfOps. Return top IfOp.
 IfOp replaceElifWithIfOps(ElifOp elifOp);
 
+ParseResult parseLoop(OpAsmParser &p,
+                      SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+                      SmallVectorImpl<Type> &operandTypes,
+                      SmallVectorImpl<Type> &resultTypes, Region &body);
+void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
+               TypeRange operandTypes, TypeRange resultTypes, Region &body);
+
 } // namespace M::HLCF
 
 #endif // KGEN_HLCFDIALECT_HLCFUTILS_H

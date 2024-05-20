@@ -20,11 +20,11 @@ using namespace HLCF;
 /// arrow-type-list ::= `->` (`(` (type (`,` type)*)? `)`) | type
 /// loop-arg ::= value `=` value `:` type
 /// loop ::= (`(` (loop-arg (`,` loop-arg)*)? `)` arrow-type-list)? region
-static ParseResult
-parseLoop(OpAsmParser &p,
-          SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-          SmallVectorImpl<Type> &operandTypes,
-          SmallVectorImpl<Type> &resultTypes, Region &body) {
+ParseResult
+HLCF::parseLoop(OpAsmParser &p,
+                SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+                SmallVectorImpl<Type> &operandTypes,
+                SmallVectorImpl<Type> &resultTypes, Region &body) {
   SmallVector<OpAsmParser::Argument> loopArgs;
 
   // Parse the optional loop signature.
@@ -50,9 +50,9 @@ parseLoop(OpAsmParser &p,
   return p.parseRegion(body, loopArgs);
 }
 
-static void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
-                      TypeRange operandTypes, TypeRange resultTypes,
-                      Region &body) {
+void HLCF::printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
+                     TypeRange operandTypes, TypeRange resultTypes,
+                     Region &body) {
   if (!operandTypes.empty() || !resultTypes.empty()) {
     p << " (";
     llvm::interleaveComma(llvm::enumerate(operands), p, [&](auto it) {

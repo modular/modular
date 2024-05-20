@@ -230,10 +230,16 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     OpBuilder<(ins CArg<"Attribute", "{}">:$level), [{
       build($_builder, $_state, {}, {}, {}, level);
     }]>,
+    OpBuilder<(ins "StringAttr":$label), [{
+      build($_builder, $_state, {}, {}, label, {});
+    }]>,
     OpBuilder<(ins "TypeRange":$results, "ValueRange":$operands,
                    "StringAttr":$label), [{
       build($_builder, $_state, results, operands, label, {});
     }]>,
+    OpBuilder<(ins "TypeRange":$results, CArg<"StringAttr", "{}">:$label), [{
+      build($_builder, $_state, results, {}, label, {});
+    }]>
   ];
 
   let extraClassDeclaration = [{
@@ -473,7 +479,9 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
                        OptionalAttr<StrAttr>:$label);
 
   let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>,
+    OpBuilder<(ins CArg<"StringAttr", "{}">:$label), [{
+      build($_builder, $_state, ValueRange(), label);
+    }]>,
     OpBuilder<(ins "ValueRange":$operands), [{
       build($_builder, $_state, operands, {});
     }]>,

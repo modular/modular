@@ -184,6 +184,9 @@ inline void printColonTypeParamValue(AsmPrinter &p, Operation *,
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);
 void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
+inline void printParamDecl(AsmPrinter &p, Operation *, ParamDeclAttr decl) {
+  printParamDecl(p, decl);
+}
 
 /// Type of hooks that customize parameter declaration printing.
 using ParamDeclPrintHookTy = function_ref<void(ParamDeclAttr decl)>;
