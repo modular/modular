@@ -180,21 +180,21 @@ public:
   verifyBindings(LITSignatureType sig, StringRef baseName, SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
 
-  /// Method for debugging.
-  LLVM_DUMP_METHOD void dump() const;
-
-private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. If the parameters do not
   /// work, this emits diagnostics using the locations and `baseName` provided.
-  std::pair<ParameterExprArrayAttr, Fitness>
+  std::tuple<ParameterExprArrayAttr, Fitness, std::optional<InflightDiag>>
   verifyBindings(ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
                  const Twine &baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc, bool partial) const;
 
+  /// Method for debugging.
+  LLVM_DUMP_METHOD void dump() const;
+
+private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the parameters, or why

@@ -122,6 +122,37 @@ fn variadic_int_params[*a: Int]():
 fn callVariadic():
   variadic_int_params[1.0]() # expected-error {{callee parameter #0 has 'Int' type, but value has type 'FloatLiteral'}}
 
+##===----------------------------------------------------------------------===##
+# Function Overloading on Parameters
+##===----------------------------------------------------------------------===##
+
+struct ConvertibleFromInt:
+    fn __init__(inout self, value: Int):
+        pass
+
+struct AlsoConvertibleFromInt:
+    fn __init__(inout self, value: Int):
+        pass
+
+struct NotConvertible:
+    pass
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: parameter_overloading parameter #0 has 'ConvertibleFromInt' type, but value has type 'NotConvertible'}}
+fn parameter_overloading[param: ConvertibleFromInt]():
+    pass
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: parameter_overloading parameter #0 has 'AlsoConvertibleFromInt' type, but value has type 'NotConvertible'}}
+fn parameter_overloading[param: AlsoConvertibleFromInt]():
+    pass
+
+fn form_reference_to_overloaded[value: NotConvertible]():
+    # expected-error @below {{ambiguous reference to 'parameter_overloading', each candidate requires 1 implicit conversion}}
+    alias ambiguous = parameter_overloading[1]
+    # expected-error @below {{cannot form a reference to overloaded declaration of 'parameter_overloading'}}
+    alias none_valid = parameter_overloading[value]
+
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

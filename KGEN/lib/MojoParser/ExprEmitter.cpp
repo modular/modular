@@ -856,8 +856,10 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   if (auto result = value.ir.getIfPValue())
     return result;
 
-  // Otherwise diagnose this as "not a parameter".
-  emitErrorForDynamicValueInParameter(value.expr);
+  // Otherwise diagnose this as "not a parameter" unless the value failed to
+  // emit entirely.
+  if (value.ir)
+    emitErrorForDynamicValueInParameter(value.expr);
   return {};
 }
 
