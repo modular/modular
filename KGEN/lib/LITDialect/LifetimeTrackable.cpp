@@ -609,7 +609,8 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   // Local control flow ops.
-  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp>(op))
+  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ParamForBreakOp,
+          ParamForContinueOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
 
   // If-like operations.
@@ -628,7 +629,7 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   /// This is HLCF::LoopOp.
-  if (isa<HLCF::LoopOp>(op))
+  if (isa<HLCF::LoopOp, ParamForOp>(op))
     return OverallOpValueEffect::loopOp;
 
   if (isa<LIT::TryOp>(op))
