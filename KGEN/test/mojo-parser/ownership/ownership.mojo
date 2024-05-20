@@ -43,7 +43,7 @@ struct MemPair:
 @register_passable
 struct RegExample:
   fn __init__(inout self):
-    return 
+    return
   fn __copyinit__(inout self, existing: Self): # CHECK: lit.func @"__copyinit__
     return
 
@@ -707,8 +707,10 @@ fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
   # CHECK-SAME: <:!AnyType #MemExample{{.*}} :lifetime<1> *"mems`">(%mems_0, %mems)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
-  # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
-  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMMREF]], [[ZERO]])
+  # CHECK: [[ZERO:%.*]] = kgen.param.constant
+  # CHECK-NEXT: lit.ref.store [[ZERO]], [[LT:%.*]] : <!Int,
+  # CHECK-NEXT: [[ZERO_REF:%.*]] = lit.ref.immut [[LT]]
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMMREF]], [[ZERO_REF]])
   # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
   # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
