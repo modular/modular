@@ -53,13 +53,9 @@ fn compare[
 
 fn array_equal[
     type: DType, rank: Int, output_shape: DimList
-](
-    output_x: DTypePointer[type],
-    output_y: DTypePointer[type],
-    num_elements: Int,
-) -> Bool:
+](x: DTypePointer[type], y: DTypePointer[type], num_elements: Int,) -> Bool:
     for i in range(num_elements):
-        if not isclose(output_x[i], output_y[i]):
+        if not isclose(x[i], y[i]):
             print("FAIL: mismatch at idx ", end="")
             print(i)
             return False
@@ -68,33 +64,51 @@ fn array_equal[
 
 # TODO: call the above function in this
 fn array_equal[
-    type: DType, rank: Int, output_shape: DimList
-](
-    output_x: NDBuffer[type, rank, output_shape],
-    output_y: NDBuffer[type, rank, output_shape],
-) -> Bool:
-    for i in range(output_x.num_elements()):
-        if not isclose(output_x.data[i], output_y.data[i]):
+    type: DType, rank: Int
+](x: NDBuffer[type, rank], y: NDBuffer[type, rank]) -> Bool:
+    for i in range(x.num_elements()):
+        if not isclose(x.data[i], y.data[i]):
             print("FAIL: mismatch at idx ", end="")
-            print(output_x.get_nd_index(i))
+            print(x.get_nd_index(i))
             return False
     return True
 
 
-fn ndbuffer_from_list[
-    dtype: DType, rank: Int
-](shape: DimList, values: List[Scalar[dtype]]) -> NDBuffer[dtype, rank]:
-    var N = len(values)
-    # assert_equal(N, int(shape.product[rank]()))
-    var buffer = DTypePointer[dtype].alloc(N)
-    for i in range(N):
-        buffer[i] = values[i]
-    return NDBuffer[dtype, rank](buffer, shape)
+fn array_equal[
+    type: DType, rank: Int
+](x: TestTensor[type, rank], y: TestTensor[type, rank]) -> Bool:
+    return array_equal(x.ndbuffer, y.ndbuffer)
 
 
-fn ndbuffer_from_shape[
-    dtype: DType, rank: Int
-](shape: DimList) -> NDBuffer[dtype, rank]:
-    var N = int(shape.product[rank]())
-    var buffer = DTypePointer[dtype].alloc(N)
-    return NDBuffer[dtype, rank](buffer, shape)
+# TODO: add address_space: AddressSpace = AddressSpace.GENERIC
+@value
+struct TestTensor[type: DType, rank: Int]:
+    var ndbuffer: NDBuffer[type, rank]
+    var shape: DimList
+    var num_elements: Int
+
+    fn __init__(
+        inout self,
+        shape: DimList,
+        values: List[Scalar[type]] = List[Scalar[type]](),
+    ):
+        self.num_elements = int(shape.product[rank]())
+        self.shape = shape
+        self.ndbuffer = NDBuffer[type, rank](
+            DTypePointer[type].alloc(self.num_elements), shape
+        )
+        if len(values) == self.num_elements:
+            for i in range(self.num_elements):
+                self.ndbuffer.data[i] = values[i]
+
+    fn __copyinit__(inout self, other: Self):
+        self.num_elements = other.num_elements
+        self.shape = other.shape
+        self.ndbuffer = NDBuffer[type, rank](
+            DTypePointer[type].alloc(self.num_elements), self.shape
+        )
+        for i in range(self.num_elements):
+            self.ndbuffer.data[i] = other.ndbuffer.data[i]
+
+    fn __del__(owned self):
+        self.ndbuffer.data.free()
