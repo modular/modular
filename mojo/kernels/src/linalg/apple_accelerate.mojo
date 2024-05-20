@@ -26,6 +26,23 @@ from .BatchedMatmul import (
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from pathlib import Path
 
+alias cblas_gemm_type = fn (
+    _CBLASOrder,
+    _CBLASTranspose,
+    _CBLASTranspose,
+    Int32,
+    Int32,
+    Int32,
+    Float32,
+    DTypePointer[DType.float32],
+    Int32,
+    DTypePointer[DType.float32],
+    Int32,
+    Float32,
+    DTypePointer[DType.float32],
+    Int32,
+) -> NoneType
+
 # ===----------------------------------------------------------------------===#
 # Constants
 # ===----------------------------------------------------------------------===#
@@ -66,6 +83,25 @@ fn _get_dylib_function[
     ]()
 
 
+@always_inline
+fn get_cblas_f32_function() -> cblas_gemm_type:
+    # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
+    #                  const enum CBLAS_TRANSPOSE TRANSA,
+    #                  const enum CBLAS_TRANSPOSE TRANSB,
+    #                  const int M,
+    #                  const int N,
+    #                  const int K,
+    #                  const float ALPHA,
+    #                  const float *A,
+    #                  const int LDA,
+    #                  const float *B,
+    #                  const int LDB,
+    #                  const float BETA,
+    #                  float *C,
+    #                  const int LDC);
+    return _get_dylib_function["cblas_sgemm", cblas_gemm_type]()
+
+
 # ===----------------------------------------------------------------------===#
 # CBLAS
 # ===----------------------------------------------------------------------===#
@@ -97,6 +133,50 @@ struct _CBLASTranspose:
     alias CONJ_TRANSPOSE = _CBLASTranspose(113)
 
 
+# _cblas_f32 used by apple_batched_matmul (via the corresponding apple_matmul)
+@always_inline
+fn _cblas_f32[
+    *,
+    transpose_b: Bool = False,
+](
+    cblas_gemm_fn: cblas_gemm_type,
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    lda: Int32,
+    ldb: Int32,
+    ldc: Int32,
+    alpha: Float32,
+    beta: Float32,
+    c_ptr: DTypePointer,
+    a_ptr: DTypePointer,
+    b_ptr: DTypePointer,
+):
+    constrained[
+        a_ptr.type == b_ptr.type == c_ptr.type == DType.float32,
+        "input and output types must be float32",
+    ]()
+
+    cblas_gemm_fn(
+        _CBLASOrder.ROW_MAJOR,
+        _CBLASTranspose.NO_TRANSPOSE,
+        _CBLASTranspose.TRANSPOSE if transpose_b else _CBLASTranspose.NO_TRANSPOSE,
+        m,
+        n,
+        k,
+        alpha,
+        rebind[DTypePointer[DType.float32]](a_ptr),
+        lda,
+        rebind[DTypePointer[DType.float32]](b_ptr),
+        ldb,
+        beta,
+        rebind[DTypePointer[DType.float32]](c_ptr),
+        ldc,
+    )
+
+
+# _cblas_f32 used by apple_matmul (except via the apple_matmul in
+# apple_batched_matmul)
 @always_inline
 fn _cblas_f32[
     *,
@@ -119,54 +199,21 @@ fn _cblas_f32[
         "input and output types must be float32",
     ]()
 
-    # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
-    #                  const enum CBLAS_TRANSPOSE TRANSA,
-    #                  const enum CBLAS_TRANSPOSE TRANSB,
-    #                  const int M,
-    #                  const int N,
-    #                  const int K,
-    #                  const float ALPHA,
-    #                  const float *A,
-    #                  const int LDA,
-    #                  const float *B,
-    #                  const int LDB,
-    #                  const float BETA,
-    #                  float *C,
-    #                  const int LDC);
-    var cblas_gemm = _get_dylib_function[
-        "cblas_sgemm",
-        fn (
-            _CBLASOrder,
-            _CBLASTranspose,
-            _CBLASTranspose,
-            Int32,
-            Int32,
-            Int32,
-            Float32,
-            DTypePointer[DType.float32],
-            Int32,
-            DTypePointer[DType.float32],
-            Int32,
-            Float32,
-            DTypePointer[DType.float32],
-            Int32,
-        ) -> NoneType,
-    ]()
-    cblas_gemm(
-        _CBLASOrder.ROW_MAJOR,
-        _CBLASTranspose.NO_TRANSPOSE,
-        _CBLASTranspose.TRANSPOSE if transpose_b else _CBLASTranspose.NO_TRANSPOSE,
+    var cblas_gemm = get_cblas_f32_function()
+
+    _cblas_f32[transpose_b=transpose_b](
+        cblas_gemm,
         m,
         n,
         k,
-        alpha,
-        rebind[DTypePointer[DType.float32]](a_ptr),
         lda,
-        rebind[DTypePointer[DType.float32]](b_ptr),
         ldb,
+        ldc,
+        alpha,
         beta,
         rebind[DTypePointer[DType.float32]](c_ptr),
-        ldc,
+        rebind[DTypePointer[DType.float32]](a_ptr),
+        rebind[DTypePointer[DType.float32]](b_ptr),
     )
 
 
@@ -291,12 +338,13 @@ fn apple_gemv[
 # ===----------------------------------------------------------------------===#
 
 
+# apple_matmul used by apple_batched_matmul
 @always_inline
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+](cblas_gemm_fn: cblas_gemm_type, c: NDBuffer, a: NDBuffer, b: NDBuffer):
     @parameter
     if a.type == b.type == c.type == DType.float32:
         var m = Int32(a.dim[0]())
@@ -311,7 +359,18 @@ fn apple_matmul[
         var beta = 0.0
 
         _cblas_f32[transpose_b=transpose_b](
-            m, n, k, lda, ldb, ldc, alpha, beta, c.data, a.data, b.data
+            cblas_gemm_fn,
+            m,
+            n,
+            k,
+            lda,
+            ldb,
+            ldc,
+            alpha,
+            beta,
+            c.data,
+            a.data,
+            b.data,
         )
 
         @parameter
@@ -338,6 +397,26 @@ fn apple_matmul[
     constrained[False, "unsupported type in apple accelerate"]()
 
 
+# apple_matmul used by all matmuls except apple_batched_matmul
+@always_inline
+fn apple_matmul[
+    *,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+    @parameter
+    if a.type == b.type == c.type == DType.float32:
+        var cblas_gemm = get_cblas_f32_function()
+
+        apple_matmul[
+            transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
+        ](cblas_gemm, c, a, b)
+
+        return
+
+    constrained[False, "unsupported type in apple accelerate"]()
+
+
 # ===----------------------------------------------------------------------===#
 # Batched Matmul
 # ===----------------------------------------------------------------------===#
@@ -359,6 +438,8 @@ fn apple_batched_matmul[
     var c_shape = Index(c3.dim[1](), c3.dim[2]())
     var a_shape = Index(a3.dim[1](), a3.dim[2]())
     var b_shape = Index(b3.dim[1](), b3.dim[2]())
+
+    var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
         var c2 = NDBuffer[c.type, 2, address_space = c.address_space](
@@ -393,4 +474,4 @@ fn apple_batched_matmul[
             elementwise_lambda_fn = OptionalReg[
                 matmul_elementwise_epilogue_type
             ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
-        ](c2, a2, b2)
+        ](cblas_gemm, c2, a2, b2)
