@@ -39,9 +39,14 @@ public:
                                             ArrayRef<Attribute> arguments);
 
   /// Evaluate all constant 'apply' expressions within a type.
-  Type refineType(Type type);
+  Type refine(Type type);
+  /// Evaluate all constant 'apply' expressions within an attribute.
+  Attribute refine(Attribute attr);
 
 private:
+  template <typename T>
+  T refineImpl(T arg);
+
   DeclResolver &resolver;
 };
 

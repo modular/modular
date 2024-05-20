@@ -1299,7 +1299,7 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
 
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
   Type valueType = cValue.getType();
-  Type refinedType = evaluator.refineType(valueType);
+  Type refinedType = evaluator.refine(valueType);
   if (refinedType == valueType)
     return value;
 

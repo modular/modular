@@ -161,7 +161,14 @@ ParserParamEvaluator::evaluateExpression(ParamOperatorAttr op) {
   return evaluateFunctionCall(ref.getSymbol(), arguments);
 }
 
-Type ParserParamEvaluator::refineType(Type type) {
+Type ParserParamEvaluator::refine(Type type) { return refineImpl(type); }
+
+Attribute ParserParamEvaluator::refine(Attribute attr) {
+  return refineImpl(attr);
+}
+
+template <typename T>
+T ParserParamEvaluator::refineImpl(T arg) {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](ParamOperatorAttr op) -> TypedAttr {
     FailureOr<TypedAttr> result = evaluateExpression(op);
@@ -169,5 +176,5 @@ Type ParserParamEvaluator::refineType(Type type) {
       return op;
     return *result;
   });
-  return replacer.replace(type);
+  return replacer.replace(arg);
 }

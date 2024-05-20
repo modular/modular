@@ -757,7 +757,7 @@ getPartiallySpecializedSignature(LITSignatureType signature,
   // If we changed something, then we substituted constants into the type tree.
   // This can cause some expressions to fold with the interpreter, so see if we
   // can simplify the result.
-  return cast<LITSignatureType>(evaluator.refineType(newSignature));
+  return cast<LITSignatureType>(evaluator.refine(newSignature));
 }
 
 /// Given an incomplete parameter binding set for a call to the specified

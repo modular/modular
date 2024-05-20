@@ -109,7 +109,7 @@ MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
       cast<StructDeclOp>(base.getDecl(getSharedState()).decl).getInputParams(),
       params);
 
-  return evaluator.refineType(evaluator.getReboundType(type.getMLIRType()));
+  return evaluator.refine(evaluator.getReboundType(type.getMLIRType()));
 }
 
 //===----------------------------------------------------------------------===//
