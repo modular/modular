@@ -380,6 +380,9 @@ bool hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation);
 bool hasAnyDecorator(ArrayRef<TypedAttr> decorators,
                      ArrayRef<StringLiteral> annotations);
 
+ParseResult parseRegionWithArgs(OpAsmParser &p, Region &region);
+void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H

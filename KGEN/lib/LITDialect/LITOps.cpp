@@ -1596,27 +1596,6 @@ TraitType TraitDeclOp::bindReference() {
 // TryOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseRegionWithArgs(OpAsmParser &p, Region &region) {
-  SmallVector<OpAsmParser::Argument> args;
-  if (p.parseArgumentList(args, AsmParser::Delimiter::OptionalParen,
-                          /*allowType=*/true) ||
-      p.parseRegion(region, args))
-    return failure();
-  return success();
-}
-
-static void printRegionWithArgs(OpAsmPrinter &p, Operation *op,
-                                Region &region) {
-  if (!region.getArguments().empty()) {
-    p << '(';
-    llvm::interleaveComma(region.getArguments(), p, [&](BlockArgument arg) {
-      p.printRegionArgument(arg);
-    });
-    p << ") ";
-  }
-  p.printRegion(region, /*printEntryBlockArgs=*/false);
-}
-
 void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
                             SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());

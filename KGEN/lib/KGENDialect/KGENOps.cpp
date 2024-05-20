@@ -743,13 +743,16 @@ void ParamForOp::getEntryTargets(
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
   targets.emplace_back(0, getOperands());
+  targets.emplace_back(1, getOperands());
 }
 
 ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
-  assert(*target == 0);
-  return getBody().getArguments();
+  if (*target == 0)
+    return getBody().getArguments();
+  assert(*target == 1);
+  return getElseRegion().getArguments();
 }
 
 ArrayRef<ParamDeclAttr> ParamForOp::getInputParams() {
@@ -780,6 +783,20 @@ void ParamForOp::collectParameterUsesBelow(
     function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
 }
 
+bool ParamForOp::isIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return getBodyIsolated();
+  assert(regionNum == 1);
+  return getElseIsolated();
+}
+
+void ParamForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return setBodyIsolated(true);
+  assert(regionNum == 1);
+  return setElseIsolated(true);
+}
+
 bool ParamForBreakOp::isParentNode(Operation *op) {
   return isa<ParamForOp>(op);
 }
@@ -802,6 +819,7 @@ void ParamForContinueOp::getBranchTargets(
   assert(operands.size() == getNumOperands());
   // Branch to the beginning of the body region.
   targets.emplace_back(0, getOperands());
+  targets.emplace_back(1, getOperands());
 }
 
 //===----------------------------------------------------------------------===//
@@ -890,12 +908,9 @@ void ParamIfOp::collectParameterUsesBelow(
 // ParamYieldOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult ParamYieldOp::verify() {
-  return checkOperandTypes(
-      *this, cast<ParamIfOp>((*this)->getParentOp()).getResultTypes());
+bool ParamYieldOp::isParentNode(Operation *op) {
+  return isa<ParamForOp, ParamIfOp>(op);
 }
-
-bool ParamYieldOp::isParentNode(Operation *op) { return isa<ParamIfOp>(op); }
 
 void ParamYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,

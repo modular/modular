@@ -1841,3 +1841,23 @@ bool KGEN::hasAnyDecorator(ArrayRef<TypedAttr> decorators,
     return hasDecorator(decorators, annot);
   });
 }
+
+ParseResult KGEN::parseRegionWithArgs(OpAsmParser &p, Region &region) {
+  SmallVector<OpAsmParser::Argument> args;
+  if (p.parseArgumentList(args, AsmParser::Delimiter::OptionalParen,
+                          /*allowType=*/true) ||
+      p.parseRegion(region, args))
+    return failure();
+  return success();
+}
+
+void KGEN::printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region) {
+  if (!region.getArguments().empty()) {
+    p << '(';
+    llvm::interleaveComma(region.getArguments(), p, [&](BlockArgument arg) {
+      p.printRegionArgument(arg);
+    });
+    p << ") ";
+  }
+  p.printRegion(region, /*printEntryBlockArgs=*/false);
+}

@@ -509,6 +509,14 @@ kgen.generator @param_for() -> index {
     pop.store %2, %mem : !kgen.pointer<index>
     // CHECK-NEXT: kgen.param.for.continue %1
     kgen.param.for.continue
+  // CHECK-NEXT: } else (%arg0: index) {
+  } else {
+    %0 = pop.load %mem : !kgen.pointer<index>
+    // CHECK-NEXT: %1 = index.add %arg0, %idx0
+    %1 = index.add %0, %idx0
+    pop.store %1, %mem : !kgen.pointer<index>
+    // CHECK-NEXT: kgen.param.yield %1 : index
+    kgen.param.yield
   // CHECK-NEXT: }
   }
   %1 = pop.load %mem : !kgen.pointer<index>

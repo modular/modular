@@ -381,9 +381,13 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
   llvm::append_range(opsToRewrite, defOps.getArrayRef());
 }
 
-static void collectOpsToProcessInside(Region &toProcess,
-                                      const ParameterUseDefGraph &uses,
+static void collectOpsToProcessInside(Region &toProcess, ImplNode *parent,
                                       std::vector<Operation *> &opsToRewrite) {
+  auto &nestedScopes = parent->paramGraph.nestedScopes;
+  auto it = nestedScopes.find(&toProcess);
+  assert(it != nestedScopes.end());
+  const ParameterUseDefGraph &uses = it->second;
+
   // Only process the ops in the branch that we ended up taking.
   for (Operation *paramOp : llvm::reverse(uses.paramOps)) {
     // Check if this op is in a region that is a child of the region we care
@@ -967,44 +971,52 @@ static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
   return failure();
 };
 
+static LogicalResult
+concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
+  for (Operation &op : scope) {
+    op.walk([&](Operation *op) {
+      if (failed(concretizeLocOf(*op, inode)))
+        return WalkResult::interrupt();
+
+      // Update the ValueInfo attr since they contain types.
+      if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
+        op->setAttrs(
+            concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode));
+        return WalkResult::advance();
+      }
+
+      // To be defensive, we only concretize location attributes if we know
+      // what we are dealing with.
+      if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
+        if (LocationAttr callLoc = inlined.getCallLocAttr()) {
+          inlined.setCallLocAttr(
+              concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
+        }
+      }
+
+      // When elaboration is complete, only the first block in any region is
+      // valid (any other block may be illegal, e.g. due to how kgen.param.if
+      // is handled). So we only need to go through the region arguments.
+      for (Region &r : op->getRegions()) {
+        for (BlockArgument arg : r.getArguments())
+          if (failed(concretizeLocOf(arg, inode)))
+            return WalkResult::interrupt();
+      }
+
+      // Walk over nested scopes.
+      if (isa<DeclInterface>(op))
+        return WalkResult::skip();
+
+      return WalkResult::advance();
+    });
+  }
+  return success(!inode->error);
+}
+
 /// Concretizes the locations of all operations within scope bound by the
 /// specified block.
-static void concretizeLocsInScope(Block &scope, ImplNode *inode) {
-  scope.walk([&](Operation *op) {
-    if (failed(concretizeLocOf(*op, inode)))
-      return WalkResult::interrupt();
-
-    // Update the ValueInfo attr since they contain types.
-    if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-      op->setAttrs(
-          concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode));
-      return WalkResult::advance();
-    }
-
-    // To be defensive, we only concretize location attributes if we know
-    // what we are dealing with.
-    if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
-      if (LocationAttr callLoc = inlined.getCallLocAttr()) {
-        inlined.setCallLocAttr(
-            concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
-      }
-    }
-
-    // When elaboration is complete, only the first block in any region is
-    // valid (any other block may be illegal, e.g. due to how kgen.param.if
-    // is handled). So we only need to go through the region arguments.
-    for (Region &r : op->getRegions()) {
-      for (BlockArgument arg : r.getArguments())
-        if (failed(concretizeLocOf(arg, inode)))
-          return WalkResult::interrupt();
-    }
-
-    // Walk over nested scopes.
-    if (isa<DeclInterface>(op))
-      return WalkResult::skip();
-
-    return WalkResult::advance();
-  });
+static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
+  return concretizeLocsInScope({scope.begin(), scope.end()}, inode);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1050,15 +1062,9 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
   // Get the appropriate region.
   Region &toProcess = op->getRegion(!resultBool);
 
-  auto it = parent->paramGraph.nestedScopes.find(&toProcess);
-  assert(it != parent->paramGraph.nestedScopes.end());
-  const ParameterUseDefGraph &uses = it->second;
-  std::vector<Operation *> opsToRewrite;
-  collectOpsToProcessInside(toProcess, uses, opsToRewrite);
-
   // Push a new node and skip over the current frame until it completes.
-  ImplNode::WorkItem item{std::move(opsToRewrite), nullptr,
-                          parent->getEvaluator()};
+  ImplNode::WorkItem item{{}, nullptr, parent->getEvaluator()};
+  collectOpsToProcessInside(toProcess, parent, item.ops);
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
@@ -1075,11 +1081,8 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
     Block &block = op->getRegion(!resultBool).front();
 
     // First update the locations if necessary
-    if (debug) {
-      concretizeLocsInScope(block, node);
-      if (node->error)
-        return failure();
-    }
+    if (debug && failed(concretizeLocsInScope(block, node)))
+      return failure();
 
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
@@ -1124,11 +1127,13 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 
 ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
                                                    ParamForOp op) {
+  // First, concretize the initializer and sequence generator expressions.
   Attribute initial;
   HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
   Attribute iterate;
   HANDLE_EVALUATOR_CONC(iterate, parent, op.getLoc(), op.getIterate());
 
+  // Concretize the sequence generator function.
   ErrorTreeOr<FuncOp> func = getConcreteFunction(
       parent, op.getLoc(), cast<SymbolConstantAttr>(iterate));
   if (func.isError()) {
@@ -1138,14 +1143,6 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   if (!*func)
     return ElaborationState::skipNode();
 
-  auto &nestedScopes = parent->paramGraph.nestedScopes;
-  auto it = nestedScopes.find(&op.getBody());
-  assert(it != nestedScopes.end());
-  const ParameterUseDefGraph &uses = it->second;
-  std::vector<Operation *> opsToRewrite;
-  collectOpsToProcessInside(op.getBody(), uses, opsToRewrite);
-
-  // Compute the series of values.
   if (LLVM_UNLIKELY(!FuncOp(*func).getSignature().hasMemoryOnlyResult())) {
     parent->setToError(
         ErrorTree(op.getLoc(),
@@ -1153,6 +1150,7 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
     return failure();
   }
 
+  // Generate the series of values.
   auto iterator = cast<TypedAttr>(initial);
   SmallVector<TypedAttr> values;
   while (true) {
@@ -1174,43 +1172,72 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
     iterator = structAttr.getValues()[0];
   }
 
-  // Sequence is empty: just delete the op.
+  // Now generate the loop bodies and set up their elaboration at the same time.
+  // Start by taking the current op off the worklist. It will be deleted by the
+  // end of this function.
+  parent->stack.back().ops.pop_back();
+
+  // Schedule the ops in the else region, which are always generated. They are
+  // processed in the same scope as the parent.
+  Block *elseBlock = &op.getElseRegion().front();
+  auto yield = cast<ParamYieldOp>(elseBlock->getTerminator());
+  auto onElseComplete = [debug = config.elaborateDebugInfo,
+                         begin = elseBlock->begin(), end = elseBlock->end(),
+                         yield](ImplNode *node) mutable -> LogicalResult {
+    if (debug && failed(concretizeLocsInScope({begin, end}, node)))
+      return failure();
+    // Erase the terminator when elaboration of the else region is done.
+    yield.erase();
+    return success();
+  };
+  ImplNode::WorkItem elseItem{
+      {}, std::move(onElseComplete), parent->getEvaluator()};
+  collectOpsToProcessInside(op.getElseRegion(), parent, elseItem.ops);
+  parent->stack.push_back(std::move(elseItem));
+
+  // Sequence is empty: just inline the else region and delete the op.
+  mlir::IRRewriter b{OpBuilder(op)};
   if (values.empty()) {
-    // Forward the arguments into the results.
-    op.replaceAllUsesWith(op.getOperands());
+    // Forward the arguments into the else region.
+    b.inlineBlockBefore(elseBlock, op->getBlock(), op->getIterator(),
+                        op.getOperands());
+    // Forward the results of the else as the op's results.
+    op.replaceAllUsesWith(yield.getOperands());
     op.erase();
-    return ElaborationState::advance();
+    return ElaborationState::skipFrame();
   }
 
   // Lower the `kgen.param.for` into an outer loop and wrapper loops for each
   // generated iteration. This way, we can lower `continue` to a break to the
   // wrapper loop to model exiting a single iteration and lower `break` to a
   // break to the outer loop to model exiting the whole loop.
-  OpBuilder b(op);
   StringAttr outerLabel = b.getStringAttr("param_for_outer");
+  auto outerLoop =
+      b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes(), outerLabel);
+  b.createBlock(&outerLoop.getBody());
+
+  // Upon completion of elaboration of each such generated loop, replace the
+  // `kgen.param.for` terminators with the appropriate HLCF ones.
   auto makeCompletion =
       [debug = config.elaborateDebugInfo,
        outerLabel](Region &region) -> std::function<LogicalResult(ImplNode *)> {
     return [debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
-      if (debug) {
-        concretizeLocsInScope(region.front(), node);
-        if (node->error)
-          return failure();
-      }
+      if (debug && failed(concretizeLocsInScope(region.front(), node)))
+        return failure();
+
       // Replace the `kgen.param.for` terminators with the HLCF equivalent.
       region.walk([&](Operation *op) {
         if (isa<ParamForOp>(op))
           return WalkResult::skip();
         if (isa<ParamForBreakOp>(op)) {
-          OpBuilder b(op);
-          b.create<HLCF::BreakOp>(op->getLoc(), op->getOperands(), outerLabel);
-          op->erase();
+          mlir::IRRewriter b{OpBuilder(op)};
+          b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
+                                              outerLabel);
           return WalkResult::advance();
         }
         if (isa<ParamForContinueOp>(op)) {
-          OpBuilder b(op);
-          b.create<HLCF::BreakOp>(op->getLoc(), op->getOperands());
-          op->erase();
+          mlir::IRRewriter b{OpBuilder(op)};
+          b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands());
           return WalkResult::advance();
         }
         return WalkResult::advance();
@@ -1219,10 +1246,9 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
     };
   };
 
-  parent->stack.back().ops.pop_back();
-  auto outerLoop =
-      b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes(), outerLabel);
-  b.createBlock(&outerLoop.getBody());
+  // Compute the ops that need to be processed in the body.
+  std::vector<Operation *> opsToRewrite;
+  collectOpsToProcessInside(op.getBody(), parent, opsToRewrite);
 
   // Optimize by moving the ops for the first region.
   auto firstLoop = b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes());
@@ -1240,18 +1266,25 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   };
 
   IRMapping mapping;
-  // Forward the result of one iterating into the next.
+  // Forward the result of one iteration into the next.
   HLCF::LoopOp prevLoop = firstLoop;
+  auto &nestedScopes = parent->paramGraph.nestedScopes;
   for (TypedAttr value : llvm::drop_begin(values)) {
     mapping.clear();
 
+    // Create the loop op for this iteration and clone the body into it.
     auto loop = b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes());
     Region &body = loop.getBody();
     op.getBody().cloneInto(&body, mapping);
+    replaceArgs(body, prevLoop.getResults());
+    prevLoop = loop;
 
+    // Map the ops to rewrite from the original body into the clone one.
     opsToRewrite.reserve(item.ops.size());
     for (Operation *op : item.ops) {
       Operation *cloned = mapping.lookup(op);
+      // If a DeclInterface got cloned, we also have to make sure to clone use
+      // parameter use-def list.
       if (isa<DeclInterface>(op)) {
         for (auto [region, clonedRegion] :
              llvm::zip(op->getRegions(), cloned->getRegions())) {
@@ -1261,13 +1294,12 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
       }
       opsToRewrite.push_back(cloned);
     }
-    replaceArgs(body, prevLoop.getResults());
 
+    // Now schedule the work item for this body.
     ImplNode::WorkItem nextItem{std::move(opsToRewrite), makeCompletion(body),
                                 item.evaluator};
     nextItem.evaluator.setParameterValue(decl, value);
     parent->stack.push_back(std::move(nextItem));
-    prevLoop = loop;
   }
 
   // Update the first work item here. We do this after so we can copy from it
@@ -1277,7 +1309,9 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   parent->stack.push_back(std::move(item));
   replaceArgs(firstLoop.getBody(), op.getOperands());
 
-  b.create<HLCF::BreakOp>(op.getLoc(), prevLoop->getResults(), outerLabel);
+  b.inlineBlockBefore(elseBlock, b.getInsertionBlock(), b.getInsertionPoint(),
+                      prevLoop->getResults());
+  b.create<HLCF::BreakOp>(op.getLoc(), yield.getOperands(), outerLabel);
   op.replaceAllUsesWith(outerLoop.getResults());
   recursivelyEraseFromNestedScopes(parent, op);
   op.erase();
@@ -1629,8 +1663,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     onComplete = [](ImplNode *inode) -> LogicalResult {
       if (failed(concretizeLocOf(*inode->func, inode)))
         return failure();
-      concretizeLocsInScope(*inode->func.getBody(), inode);
-      if (inode->error)
+      if (failed(concretizeLocsInScope(*inode->func.getBody(), inode)))
         return failure();
       return success();
     };
