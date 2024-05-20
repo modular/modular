@@ -1772,16 +1772,16 @@ kgen.generator @conflicting_values() {
 // -----
 
 // CHECK-LABEL: kgen.func export @param_for
-kgen.generator export @param_for(%arg0: i1) {
-  // CHECK-NEXT: call @"sum_from_zero,upper=0"
+kgen.generator export @param_for(%arg0: i1, %arg1: index) {
   kgen.call @sum_from_zero<0>() : () -> ()
-  // CHECK-NEXT: call @"sum_from_zero,upper=1"
   kgen.call @sum_from_zero<1>() : () -> ()
-  // CHECK-NEXT: call @"sum_from_zero,upper=2"
   kgen.call @sum_from_zero<2>() : () -> ()
 
   kgen.call @terminators(%arg0) : (i1) -> ()
   kgen.call @nested_param_for() : () -> ()
+
+  kgen.call @for_else<0>(%arg1) : (index) -> index
+  kgen.call @for_else<1>(%arg1) : (index) -> index
   kgen.return
 }
 
@@ -1825,6 +1825,8 @@ kgen.generator @sum_from_zero<upper>() -> index {
     %1 = kgen.param.constant = <i>
     %2 = index.add %arg0, %1
     kgen.param.for.continue %2 : index
+  } else (%arg1: index) {
+    kgen.param.yield %arg1 : index
   }
   kgen.return %0 : index
 }
@@ -1849,6 +1851,8 @@ kgen.generator @terminators(%arg0: i1) {
       kgen.param.for.continue
     }
     kgen.param.for.break
+  } else {
+    kgen.param.yield
   }
   kgen.return
 }
@@ -1863,6 +1867,8 @@ kgen.generator @nested_param_for() {
     kgen.param.for j in 2 iter :(index, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
       kgen.param.constant: struct<(index, index)> = <{ i, j }>
       kgen.param.for.continue
+    } else {
+      kgen.param.yield
     }
     kgen.param.if <0> {
       kgen.param.yield
@@ -1870,8 +1876,39 @@ kgen.generator @nested_param_for() {
       kgen.param.yield
     }
     kgen.param.for.continue
+  } else {
+    kgen.param.yield
   }
   kgen.return
+}
+
+// CHECK-LABEL: kgen.func @"for_else,upper=0"
+// CHECK-NEXT:    %index1 = kgen.param.constant = <1>
+// CHECK-NEXT:    %0 = index.add %index1, %arg0
+// CHECK-NEXT:    return %0
+
+// CHECK-LABEL: kgen.func @"for_else,upper=1"
+// CHECK-NEXT:    %0 = hlcf.loop "param_for_outer" () -> index
+// CHECK-NEXT:      %1 = hlcf.loop () -> index
+// CHECK-NEXT:        break %arg0
+// CHECK-NEXT:      }
+// CHECK-NEXT:      %index2 = kgen.param.constant = <2>
+// CHECK-NEXT:      %2 = index.add %index2, %1
+// CHECK-NEXT:      break "param_for_outer" %2
+// CHECK-NEXT:    }
+// CHECK-NEXT:    return %0
+
+kgen.generator @for_else<upper>(%arg0: index) -> index {
+  kgen.param.declare param = <add(upper, 1)>
+  %0 = kgen.param.for i in upper iter :(index, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+    (%arg1 = %arg0 : index) -> index {
+    kgen.param.for.continue %arg1 : index
+  } else (%arg1: index) {
+    %1 = kgen.param.constant = <param>
+    %2 = index.add %1, %arg1
+    kgen.param.yield %2 : index
+  }
+  kgen.return %0 : index
 }
 
 kgen.generator @count_to_zero(%arg0: index, %arg1: !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none {
