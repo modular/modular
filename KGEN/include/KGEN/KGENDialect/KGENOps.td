@@ -683,6 +683,88 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert",
 }
 
 //===----------------------------------------------------------------------===//
+// ParamForOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
+    DeclareOpInterfaceMethods<ControlFlowNode>,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
+      "collectParameterUsesBelow"]>]>, NoParamDecls {
+  let summary = "compile-time for loop";
+  let description = [{
+    The `kgen.param.for` operation instantiates its body with values according
+    to its iterator. It takes an initial value, an iterate method that takes an
+    iterator instance and returns the next value plus the next iterator.
+  }];
+
+  let arguments = (ins TypedAttrInterface:$initial,
+                       AttrOfType<KGEN_SignatureType>:$iterate,
+                       KGEN_ParamDeclAttr:$paramDecl,
+                       Variadic<AnyType>:$operands,
+                       UnitAttr:$isolated);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$body);
+
+  let assemblyFormat = [{
+    custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)
+    `iter` custom<ColonTypeParamValue>($iterate) `\n`
+    custom<Loop>($operands, type($operands), type($results), $body) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    bool isIsolatedFromAbove(unsigned regionNum) { return getIsolated(); }
+    void notifyKnownIsolatedFromAbove(unsigned regionNum) { setIsolated(true); }
+
+    ArrayRef<ParamDeclAttr> getInputParams();
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ParamForBreakOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamForBreakOp : KGENOp<"param.for.break", [Terminator,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "param loop exit operation";
+  let description = [{
+    The `kgen.param.for.break` operation represents an exit from a
+    `kgen.param.for`, branching to the end of all generated iterations.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
+}
+
+//===----------------------------------------------------------------------===//
+// ParamForContinueOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "param loop exit operation";
+  let description = [{
+    The `kgen.param.for.break` operation represents an exit from a
+    `kgen.param.for`, branching to the end of the current generated iteration.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
+}
+
+//===----------------------------------------------------------------------===//
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 

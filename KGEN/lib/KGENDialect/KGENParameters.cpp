@@ -845,6 +845,7 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
 
   auto remapRegion = [&](Region *region) {
     // Look up the first remapped block in the region, and return that region.
+    assert(!region->empty());
     Block *remappedBlock = map.lookupOrDefault(&region->front());
     return remappedBlock->getParent();
   };

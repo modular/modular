@@ -255,6 +255,11 @@ int main(int argc, char **argv) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
+  if (llclSingleThread) {
+    // Defend against upstream errors.
+    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<LLCL::Runtime>();
+    assert(runtime.getWorkQueue()->getParallelismLevel() == 1);
+  }
   registerContext(registry, *ctxOr);
 
   // Register passes.

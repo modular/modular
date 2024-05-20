@@ -13,6 +13,7 @@
 #include "IREvaluator.h"
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -380,6 +381,21 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
   llvm::append_range(opsToRewrite, defOps.getArrayRef());
 }
 
+static void collectOpsToProcessInside(Region &toProcess,
+                                      const ParameterUseDefGraph &uses,
+                                      std::vector<Operation *> &opsToRewrite) {
+  // Only process the ops in the branch that we ended up taking.
+  for (Operation *paramOp : llvm::reverse(uses.paramOps)) {
+    // Check if this op is in a region that is a child of the region we care
+    // about. If not, don't process it.
+    if (!toProcess.isAncestor(paramOp->getParentRegion()))
+      continue;
+
+    opsToRewrite.push_back(paramOp);
+  }
+  collectOpsToProcess(&toProcess, uses, opsToRewrite);
+}
+
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -495,6 +511,8 @@ private:
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
   ElaborationState processParamIfOp(ImplNode *parent, ParamIfOp op);
+
+  ElaborationState processParamForOp(ImplNode *parent, ParamForOp op);
 
   /// Schedule an implementation node on the LLCL work queue and increment the
   /// initial counters.
@@ -993,6 +1011,31 @@ static void concretizeLocsInScope(Block &scope, ImplNode *inode) {
 // ElaboratorImpl::processParamIfOp
 //===----------------------------------------------------------------------===//
 
+/// We always erase this op and its nested scopes from the parameter graph -
+/// it's been handled, and we don't want anyone else touching it later
+/// considering we're about to delete the op itself.
+static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
+  ParameterUseDefGraph &paramGraph = node->paramGraph;
+  auto eraseScopes = [op](ParameterUseDefGraph &graph) mutable {
+    // Erase any regions from the nested scopes that belong either to this op
+    // or under this op.
+    for (auto &[r, _] : graph.nestedScopes)
+      if (op->isAncestor(r->getParentOp()))
+        graph.nestedScopes.erase(r);
+
+    // Do the same for nested decls. These two are somehow not always in sync,
+    // so we have to check both separately.
+    auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
+      return op->isAncestor(r->getParentOp());
+    });
+    graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
+  };
+  // Delete references to this nested declaration from all nested graphs.
+  eraseScopes(paramGraph);
+  for (auto &[scope, graph] : paramGraph.nestedScopes)
+    eraseScopes(graph);
+}
+
 ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
                                                   ParamIfOp op) {
   // Check the condition expression.
@@ -1007,27 +1050,11 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
   // Get the appropriate region.
   Region &toProcess = op->getRegion(!resultBool);
 
-  auto foundNestedScope = parent->paramGraph.nestedScopes.find(&toProcess);
-  if (foundNestedScope == parent->paramGraph.nestedScopes.end()) {
-    parent->setToError(ErrorTree(
-        op.getLoc(),
-        "expected a nested parameter scope (compiler bug, please report!)"));
-    return ElaborationState::error();
-  }
-
-  ParameterUseDefGraph &uses = foundNestedScope->getSecond();
-
-  // Only process the ops in the branch that we ended up taking.
+  auto it = parent->paramGraph.nestedScopes.find(&toProcess);
+  assert(it != parent->paramGraph.nestedScopes.end());
+  const ParameterUseDefGraph &uses = it->second;
   std::vector<Operation *> opsToRewrite;
-  for (Operation *paramOp : llvm::reverse(uses.paramOps)) {
-    // Check if this op is in a region that is a child of the region we care
-    // about. If not, don't process it.
-    if (!toProcess.isAncestor(paramOp->getParentRegion()))
-      continue;
-
-    opsToRewrite.push_back(paramOp);
-  }
-  collectOpsToProcess(&toProcess, uses, opsToRewrite);
+  collectOpsToProcessInside(toProcess, uses, opsToRewrite);
 
   // Push a new node and skip over the current frame until it completes.
   ImplNode::WorkItem item{std::move(opsToRewrite), nullptr,
@@ -1079,37 +1106,181 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
       return failure();
     }
 
-    // We always erase this op and its nested scopes from the parameter graph -
-    // it's been handled, and we don't want anyone else touching it later
-    // considering we're about to delete the op itself.
-    ParameterUseDefGraph &paramGraph = node->paramGraph;
-    auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
-      // Erase any regions from the nested scopes that belong either to this op
-      // or under this op.
-      for (auto &[r, _] : graph.nestedScopes)
-        if (op->isAncestor(r->getParentOp()))
-          graph.nestedScopes.erase(r);
-
-      // Do the same for nested decls. These two are somehow not always in sync,
-      // so we have to check both separately.
-      auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
-        return op->isAncestor(r->getParentOp());
-      });
-      graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
-    };
-    // Delete references to this nested declaration from all nested graphs.
-    eraseIfScopes(paramGraph);
-    for (auto &[scope, graph] : paramGraph.nestedScopes)
-      eraseIfScopes(graph);
-
     // The callback to the current frame finishes processing the current
     // operation, so take it off the parent frame's worklist.
+    recursivelyEraseFromNestedScopes(node, op);
     op->erase();
     parentFrame.ops.pop_back();
     return success();
   };
 
   parent->stack.push_back(std::move(item));
+  return ElaborationState::skipFrame();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::processParamForOp
+//===----------------------------------------------------------------------===//
+
+ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
+                                                   ParamForOp op) {
+  Attribute initial;
+  HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
+  Attribute iterate;
+  HANDLE_EVALUATOR_CONC(iterate, parent, op.getLoc(), op.getIterate());
+
+  ErrorTreeOr<FuncOp> func = getConcreteFunction(
+      parent, op.getLoc(), cast<SymbolConstantAttr>(iterate));
+  if (func.isError()) {
+    parent->setToError(func.takeError());
+    return failure();
+  }
+  if (!*func)
+    return ElaborationState::skipNode();
+
+  auto &nestedScopes = parent->paramGraph.nestedScopes;
+  auto it = nestedScopes.find(&op.getBody());
+  assert(it != nestedScopes.end());
+  const ParameterUseDefGraph &uses = it->second;
+  std::vector<Operation *> opsToRewrite;
+  collectOpsToProcessInside(op.getBody(), uses, opsToRewrite);
+
+  // Compute the series of values.
+  if (LLVM_UNLIKELY(!FuncOp(*func).getSignature().hasMemoryOnlyResult())) {
+    parent->setToError(
+        ErrorTree(op.getLoc(),
+                  "INTERNAL ERROR: iterator should have memory-only result"));
+    return failure();
+  }
+
+  auto iterator = cast<TypedAttr>(initial);
+  SmallVector<TypedAttr> values;
+  while (true) {
+    ErrorTreeOr<TypedAttr> result =
+        parent->getEvaluator().evaluateFunctionWithResultSlot(*func, iterator);
+    if (result.isError()) {
+      parent->setToError(result.takeError());
+      return failure();
+    }
+    auto structAttr = dyn_cast<StructAttr>(*result);
+    if (LLVM_UNLIKELY(!structAttr || structAttr.getValues().size() != 3)) {
+      parent->setToError(ErrorTree(
+          op.getLoc(), "INTERNAL ERROR: expected a struct of 3 elements"));
+      return failure();
+    }
+    if (cast<BoolAttr>(structAttr.getValues()[2]).getValue())
+      break;
+    values.push_back(structAttr.getValues()[1]);
+    iterator = structAttr.getValues()[0];
+  }
+
+  // Sequence is empty: just delete the op.
+  if (values.empty()) {
+    // Forward the arguments into the results.
+    op.replaceAllUsesWith(op.getOperands());
+    op.erase();
+    return ElaborationState::advance();
+  }
+
+  // Lower the `kgen.param.for` into an outer loop and wrapper loops for each
+  // generated iteration. This way, we can lower `continue` to a break to the
+  // wrapper loop to model exiting a single iteration and lower `break` to a
+  // break to the outer loop to model exiting the whole loop.
+  OpBuilder b(op);
+  StringAttr outerLabel = b.getStringAttr("param_for_outer");
+  auto makeCompletion =
+      [debug = config.elaborateDebugInfo,
+       outerLabel](Region &region) -> std::function<LogicalResult(ImplNode *)> {
+    return [debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
+      if (debug) {
+        concretizeLocsInScope(region.front(), node);
+        if (node->error)
+          return failure();
+      }
+      // Replace the `kgen.param.for` terminators with the HLCF equivalent.
+      region.walk([&](Operation *op) {
+        if (isa<ParamForOp>(op))
+          return WalkResult::skip();
+        if (isa<ParamForBreakOp>(op)) {
+          OpBuilder b(op);
+          b.create<HLCF::BreakOp>(op->getLoc(), op->getOperands(), outerLabel);
+          op->erase();
+          return WalkResult::advance();
+        }
+        if (isa<ParamForContinueOp>(op)) {
+          OpBuilder b(op);
+          b.create<HLCF::BreakOp>(op->getLoc(), op->getOperands());
+          op->erase();
+          return WalkResult::advance();
+        }
+        return WalkResult::advance();
+      });
+      return success();
+    };
+  };
+
+  parent->stack.back().ops.pop_back();
+  auto outerLoop =
+      b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes(), outerLabel);
+  b.createBlock(&outerLoop.getBody());
+
+  // Optimize by moving the ops for the first region.
+  auto firstLoop = b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes());
+  ImplNode::WorkItem item{std::move(opsToRewrite),
+                          makeCompletion(firstLoop.getBody()),
+                          parent->getEvaluator()};
+  ParamDeclAttr decl = op.getParamDecl();
+
+  auto replaceArgs = [](Region &body, ValueRange values) {
+    // Replace the arguments with the results of the previous loop. Then erase
+    // the arguments.
+    for (auto [arg, res] : llvm::zip(body.getArguments(), values))
+      arg.replaceAllUsesWith(res);
+    body.front().eraseArguments(0, body.getNumArguments());
+  };
+
+  IRMapping mapping;
+  // Forward the result of one iterating into the next.
+  HLCF::LoopOp prevLoop = firstLoop;
+  for (TypedAttr value : llvm::drop_begin(values)) {
+    mapping.clear();
+
+    auto loop = b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes());
+    Region &body = loop.getBody();
+    op.getBody().cloneInto(&body, mapping);
+
+    opsToRewrite.reserve(item.ops.size());
+    for (Operation *op : item.ops) {
+      Operation *cloned = mapping.lookup(op);
+      if (isa<DeclInterface>(op)) {
+        for (auto [region, clonedRegion] :
+             llvm::zip(op->getRegions(), cloned->getRegions())) {
+          nestedScopes.try_emplace(&clonedRegion,
+                                   nestedScopes.at(&region).copy(mapping));
+        }
+      }
+      opsToRewrite.push_back(cloned);
+    }
+    replaceArgs(body, prevLoop.getResults());
+
+    ImplNode::WorkItem nextItem{std::move(opsToRewrite), makeCompletion(body),
+                                item.evaluator};
+    nextItem.evaluator.setParameterValue(decl, value);
+    parent->stack.push_back(std::move(nextItem));
+    prevLoop = loop;
+  }
+
+  // Update the first work item here. We do this after so we can copy from it
+  // in the above loop.
+  firstLoop.getBody().takeBody(op.getBody());
+  item.evaluator.setParameterValue(decl, values.front());
+  parent->stack.push_back(std::move(item));
+  replaceArgs(firstLoop.getBody(), op.getOperands());
+
+  b.create<HLCF::BreakOp>(op.getLoc(), prevLoop->getResults(), outerLabel);
+  op.replaceAllUsesWith(outerLoop.getResults());
+  recursivelyEraseFromNestedScopes(parent, op);
+  op.erase();
   return ElaborationState::skipFrame();
 }
 
@@ -1214,7 +1385,7 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
     }
     if (result.shouldSkipFrame()) {
       // Skip indicates we need to move to another frame first.
-      assert(inode->stack.size() == size + 1 && "skip with no new frame");
+      assert(inode->stack.size() > size && "skip with no new frame");
       continue;
     }
     if (result.shouldSkipNode()) {
@@ -1269,6 +1440,8 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
     return processParamAssertOp(node, assertOp);
   } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
     return processParamIfOp(node, ifOp);
+  } else if (auto forOp = dyn_cast<ParamForOp>(op)) {
+    return processParamForOp(node, forOp);
   } else if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
     return processCallOp(node, call);
   } else if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {

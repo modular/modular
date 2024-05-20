@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -30,6 +31,9 @@
 
 using namespace M;
 using namespace KGEN;
+
+using HLCF::parseLoop;
+using HLCF::printLoop;
 
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
@@ -711,6 +715,93 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
                                    SymbolConstantAttr callee) {
   b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// ParamForOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ParamForOp::verify() {
+  if (getNumOperands() != getNumResults()) {
+    return emitOpError("has ")
+           << getNumOperands() << " operands but " << getNumResults()
+           << " results; it should be the same";
+  }
+  for (auto [i, argTy, resTy] :
+       llvm::enumerate(getOperandTypes(), getResultTypes())) {
+    if (argTy == resTy)
+      continue;
+    return emitOpError("operand #")
+           << i << " has type " << argTy
+           << " but corresponding result has type " << resTy;
+  }
+  return success();
+}
+
+void ParamForOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(0, getOperands());
+}
+
+ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target == 0);
+  return getBody().getArguments();
+}
+
+ArrayRef<ParamDeclAttr> ParamForOp::getInputParams() {
+  // HACK: The interface requires an ArrayRef, but we only have a single
+  // element. Returning `getParamDecl` will cause a reference to a temporary to
+  // be formed. Grab the reference directly from the DictionaryAttr. We know
+  // alphabetically it will be last attribute.
+  assert((*this)->getRegisteredInfo()->getAttributeNames().back() ==
+         getParamDeclAttrName());
+  static_assert(sizeof(std::pair<Attribute, ParamDeclAttr>) ==
+                        sizeof(NamedAttribute) &&
+                    alignof(std::pair<Attribute, ParamDeclAttr>) ==
+                        alignof(NamedAttribute),
+                "hack doesn't work");
+  return {&((const std::pair<Attribute, ParamDeclAttr> *)&(*this)
+                ->getAttrs()
+                .back())
+               ->second,
+          1};
+}
+
+void ParamForOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
+
+bool ParamForOp::isImplicitlyParametric() { return true; }
+
+void ParamForOp::collectParameterUsesBelow(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
+
+bool ParamForBreakOp::isParentNode(Operation *op) {
+  return isa<ParamForOp>(op);
+}
+
+void ParamForBreakOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the loop operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+bool ParamForContinueOp::isParentNode(Operation *op) {
+  return isa<ParamForOp>(op);
+}
+
+void ParamForContinueOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to the beginning of the body region.
+  targets.emplace_back(0, getOperands());
 }
 
 //===----------------------------------------------------------------------===//
