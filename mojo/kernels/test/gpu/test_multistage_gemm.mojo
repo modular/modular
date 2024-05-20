@@ -696,7 +696,6 @@ fn multistage_gemm[
 
 
 fn test[type: DType, transpose_b: Bool]() raises:
-    alias num_threads = 128
     alias num_pipeline_stages = 4
     alias M = 8192
     alias N = 8192
@@ -707,6 +706,8 @@ fn test[type: DType, transpose_b: Bool]() raises:
     alias WM = 64
     alias WN = 64
     alias shared_mem_bytes = 80 * 1024
+
+    alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
     var stream = Stream()
 
