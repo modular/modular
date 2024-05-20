@@ -49,6 +49,13 @@ def test_tensor():
     assert_equal(tensor.get_rank(), 2)
     assert_equal(tensor.get_dtype(), DType.float32)
 
+    tensor[Index(0, 0)] = 0
+    tensor[Index(0, 1)] = 1
+    tensor[Index(1, 0)] = 2
+    tensor[Index(1, 1)] = 3
+
+    assert_equal(tensor[0, 0], 0)
+
 
 def main():
     test_device()
