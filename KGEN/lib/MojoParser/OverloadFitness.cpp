@@ -640,10 +640,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // diagnostic handlers to capture any issues.
   InflightDiag diag = shared.emitError(callLoc);
   ParameterInferenceDiagnostics inferenceDiags;
+  PogListAttr paramListAttr = signature.getParamListAttrs();
   ParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
-        PogListAttr paramListAttr = signature.getParamListAttrs();
         if (posOnly) {
           size_t numPosOnly = countNumPosOnly(paramListAttr);
           diag =
@@ -661,7 +661,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         }
         // For each of the missing parameters, attach any parameter inference
         // diagnostics.
-        inferenceDiags.attach(signature, diag, numActual);
+        inferenceDiags.attach(paramListAttr, diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t paramIdx, const ParamBindings::Binding &binding,
@@ -704,11 +704,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
             diag << " of parent struct '" << structOp.getDeclName().getValue()
                  << "'";
             diag.attachNote(structOp.getLoc()) << " struct declared here";
+            inferenceDiags.attach(paramListAttr, diag);
             return;
           }
         }
         emitMessage(signature);
         diag << " of callee '" << callable.baseName << "'";
+        inferenceDiags.attach(paramListAttr, diag);
       },
       /*emitUnboundPackInVariadic=*/
       [&](const ParamBindings::Binding &binding) {
@@ -728,7 +730,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
             PassingKind::Inferred) {
           diag << "failed to infer parameter ";
           printNameOrIdx(signature.getParamName(paramIdx), paramIdx, diag);
-          inferenceDiags.attach(signature, diag, /*numActual=*/0);
+          inferenceDiags.attach(paramListAttr, diag);
           return;
         }
 
@@ -759,7 +761,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           if (walker.walk(argType).wasInterrupted())
             break;
         }
-        inferenceDiags.attach(signature, diag, /*numActual=*/0);
+        inferenceDiags.attach(paramListAttr, diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
@@ -773,10 +775,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    // Infer information from this signature holistically.
     ParameterInferenceState inferrence(callable.paramBindings, bindingsSoFar,
                                        evaluator, inferenceDiags,
                                        allowImplicitConversions);
+
+    // Infer information from this signature holistically.
     if (failed(inferrence.infer(signature, callOperands, variadicKwOperands)))
       return PValue();
 

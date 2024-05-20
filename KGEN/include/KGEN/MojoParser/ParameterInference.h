@@ -58,7 +58,7 @@ public:
 
   /// Attach failed parameter inference diagnostics for parameters with no
   /// values to the overload resolution diagnostic.
-  void attach(LITSignatureType signature, InflightDiag &diag, size_t numActual);
+  void attach(PogListAttr params, InflightDiag &diag, size_t numActual = 0);
 
   struct FailedInference {
     size_t paramIdx;
@@ -92,6 +92,15 @@ public:
         inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
         diags(diags), allowImplicitConversions(allowImplicitConversions) {}
 
+  /// Given an incomplete parameter binding set for a parameter list, try to
+  /// infer the value of the next parameter. We only do this if there are any
+  /// inferred parameters present.
+  LogicalResult infer(ArrayRef<Type> paramTypes, PogListAttr paramListAttr);
+
+  /// Given an incomplete parameter binding set and the arguments for a call to
+  /// the specified signature, try to infer the value of the next 'decl'
+  /// parameter. This should always return failure /without/ an error if it
+  /// cannot be inferred, and return success if a value was determined.
   LogicalResult infer(LITSignatureType signature,
                       const CallOperands &callOperands,
                       const KeywordOperands &variadicKwOperands);

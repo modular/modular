@@ -114,9 +114,6 @@ public:
   /// Returns true if the signature has keyword variadic arguments.
   bool hasKwVarArgs();
 
-  /// Return true if the signature has inferred parameters.
-  bool hasInferredParams();
-
   /// Return the offset of the error slot argument from the back of the argument
   /// list, if the signature is raising.
   unsigned getErrorSlotOffset();

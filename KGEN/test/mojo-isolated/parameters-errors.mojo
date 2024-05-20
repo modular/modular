@@ -249,6 +249,7 @@ fn test_pos_only_struct():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
     # expected-error @below {{could not deduce parameter 'b' of parent struct 'PosOnlyStruct'}}
+    # expected-note @below {{parameter isn't used in any argument}}
     _ = PosOnlyStruct[1, c=9]()
 
 
@@ -264,6 +265,7 @@ struct CtadStruct[a: Int]:
 
 fn test_implicitly_parametric_static_methods_fails():
     # expected-error @below {{could not deduce parameter 'a' of parent struct 'CtadStruct'}}
+    # expected-note @below {{parameter isn't used in any argument}}
     CtadStruct.foo[5]()
 
 ##===----------------------------------------------------------------------===##

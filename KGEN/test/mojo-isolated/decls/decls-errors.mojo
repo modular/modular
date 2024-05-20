@@ -184,7 +184,8 @@ fn badCalls(arg: Int):
   # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
   # expected-note @below {{failed to infer parameter 'T', parameter isn't used in any argument}}
   parameterizedVariadic()
-  # expected-error @+1 {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
+  # expected-error @below {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
+  # expected-note @below {{parameter isn't used in any argument}}
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
