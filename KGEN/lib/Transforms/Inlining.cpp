@@ -482,8 +482,9 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     });
     cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
 
-    // At this point, the only nested op that declares parameters in its scope
-    // is ParamDeclareRegionOp, whose declarations need special treatment.
+    // At this point, the only nested ops that declares parameters in their
+    // scope are ParamDeclareRegionOp and ParamForOp, whose declarations need
+    // special treatment.
     if (needsMangling) {
       if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(cloned)) {
         SmallVector<ParamDeclAttr> newInputDecls;
@@ -497,6 +498,11 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           newResDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
         regionDecl.setResultParams(newResDecls);
         newDecls.append(newResDecls);
+      } else if (auto paramFor = dyn_cast<ParamForOp>(cloned)) {
+        ParamDeclAttr newDecl =
+            mangler.mangleDecl(paramFor.getParamDecl(), needsMangling);
+        paramFor.setParamDeclAttr(newDecl);
+        newDecls.push_back(newDecl);
       }
     }
 

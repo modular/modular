@@ -414,6 +414,27 @@ kgen.generator @callee<A>() always_inline {
 
 // -----
 
+// CHECK-LABEL: @parent
+kgen.generator @parent<A>() {
+  // CHECK: kgen.param.for A0 in
+  // CHECK: kgen.param.constant = <A0>
+  kgen.call @callee() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee() always_inline {
+  kgen.param.for A in ? iter :() -> () ? {
+    kgen.param.constant = <A>
+    kgen.param.for.continue
+  } else {
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() {
   // CHECK: declare A = <1>
