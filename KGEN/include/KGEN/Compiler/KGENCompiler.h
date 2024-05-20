@@ -95,15 +95,6 @@ private:
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
 
-/// Given the pre-elaboration function `func` belonging to a module with the
-/// symbol table `symtab`, slice out a standalone module rooted at `func` and
-/// elaborate it and compile to assembly for the provided `target.
-ErrorOr<CrossDeviceFunction>
-compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
-                     StringAttr name, const SymbolTable &symtab,
-                     TargetInfoAttr target, EmissionKind emissionKind,
-                     CompilationOptions options);
-
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles
 /// initializing the target machine, the cache backends, and the execution
 /// engine itself. On success, the execution engine is returned.

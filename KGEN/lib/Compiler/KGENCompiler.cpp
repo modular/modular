@@ -39,10 +39,6 @@
 using namespace M;
 using namespace KGEN;
 
-//===----------------------------------------------------------------------===//
-// compileElaboratorAsm
-//===----------------------------------------------------------------------===//
-
 /// Generate a stub function that calls into the sliced function with input
 /// parameters, then rename it to match the expected symbol name and export it
 /// This is how compilation is rooted at instantiations of parametric functions.
@@ -208,11 +204,18 @@ static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
   return CrossDeviceFunction{contents, (unsigned)numCaptures, std::move(func)};
 }
 
-ErrorOr<CrossDeviceFunction>
-KGEN::compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
-                           StringAttr name, const SymbolTable &symtab,
-                           TargetInfoAttr target, EmissionKind emissionKind,
-                           CompilationOptions options) {
+//===----------------------------------------------------------------------===//
+// compileElaboratorAsm
+//===----------------------------------------------------------------------===//
+
+/// Given the pre-elaboration function `func` belonging to a module with the
+/// symbol table `symtab`, slice out a standalone module rooted at `func` and
+/// elaborate it and compile to assembly for the provided `target.
+static ErrorOr<CrossDeviceFunction>
+compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
+                     StringAttr name, const SymbolTable &symtab,
+                     TargetInfoAttr target, EmissionKind emissionKind,
+                     CompilationOptions options) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();

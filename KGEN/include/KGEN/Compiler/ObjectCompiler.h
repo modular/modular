@@ -41,15 +41,6 @@ public:
                                         CompilationOptions options, bool isJIT,
                                         bool isSearch = false);
 
-  /// Allow the user to update the pass manager. This is useful when you'd like
-  /// to use the same ObjectCompiler instance with multiple PassManager objects.
-  /// This applies to the elaboration pipeline because we'd like to share the
-  /// ObjectCompiler between during-elaboration and post-elaboration
-  /// compilation, but need different pass managers for each.
-  /// TODO: Remove me in favor of restoring the state of the pass manager after
-  /// the LLVM compile.
-  void updatePassManager(mlir::PassManager &newPM) { mgr = &newPM; }
-
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
   std::unique_ptr<llvm::Module>
@@ -67,16 +58,6 @@ public:
   OwningOpRef<ModuleOp>
   produceStandaloneModule(const SymbolTable &symtab,
                           const ExportMap &exportedSymbols, IRMapping &mapping);
-  OwningOpRef<ModuleOp>
-  produceStandaloneModule(const SymbolTable &symtab,
-                          const ExportMap &exportedSymbols);
-
-  /// Slices the call graph for all exported symbols to produce an archive.
-  /// The `standalone` argument is false by default, but if set to true, then
-  /// dependent libraries are pulled into the archive itself.
-  ErrorOr<BufferRef> produceArchive(const SymbolTable &symtab,
-                                    const ExportMap &exportedSymbols,
-                                    bool standalone = false);
 
   /// Slices the call graph for all exported symbols to produce a "standalone"
   /// archive, meaning all external libraries the archive depends upon are
@@ -127,6 +108,17 @@ private:
   lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
                            MLIRContext *mlirContext, bool parLLC,
                            std::optional<size_t> moduleIdx = std::nullopt);
+
+  /// Slices the call graph for all exported symbols to produce an archive.
+  /// The `standalone` argument is false by default, but if set to true, then
+  /// dependent libraries are pulled into the archive itself.
+  ErrorOr<BufferRef> produceArchive(const SymbolTable &symtab,
+                                    const ExportMap &exportedSymbols,
+                                    bool standalone = false);
+
+  OwningOpRef<ModuleOp>
+  produceStandaloneModule(const SymbolTable &symtab,
+                          const ExportMap &exportedSymbols);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
