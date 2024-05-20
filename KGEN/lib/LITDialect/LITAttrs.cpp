@@ -539,9 +539,8 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   for (auto [type, value] : llvm::zip(inputTypes, values)) {
     if (::isa<UnboundAttr>(value)) {
       expected.push_back(typeSubst.getReboundType(type));
-      typeSubst.addInputValue(ParamIndexRefAttr::get(
-          /*depth=*/0, /*isResult=*/false, expected.size() - 1,
-          expected.back()));
+      typeSubst.addInputValue(
+          ParamIndexRefAttr::get(expected.size() - 1, expected.back()));
     } else {
       typeSubst.addInputValue(value);
     }
