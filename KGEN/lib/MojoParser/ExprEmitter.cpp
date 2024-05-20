@@ -1795,8 +1795,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // Check the existing bindings against the full signature of the type and make
   // sure it is fully bound.
   ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
-      structDecl, structDecl.getSignature(), expr->getLoc(),
-      ParamBindings::Boundness::Full);
+      structDecl, structDecl.getSignature(), expr->getLoc(), /*partial=*/false);
   if (!bindingValuesAttr)
     return {};
 
@@ -1897,8 +1896,8 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 
   // Check the bindings.
   auto metaType = cast<AnyStructType>(tupleType.getMetaType());
-  auto bindingsAttr = bindings.verifyBindings(
-      structOp, metaType.getSignature(), loc, ParamBindings::Boundness::Full);
+  auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
+                                              loc, /*partial=*/false);
   if (!bindingsAttr)
     return {};
 
