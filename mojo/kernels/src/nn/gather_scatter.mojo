@@ -55,7 +55,7 @@ fn normalize_neg_index[
 
 @value
 @register_passable("trivial")
-struct Axis(Intable):
+struct Axis(Intable, Indexer):
     var axis: Int
 
     @always_inline
@@ -67,6 +67,10 @@ struct Axis(Intable):
     @always_inline
     fn __int__(self) -> Int:
         return self.axis
+
+    @always_inline
+    fn __index__(self) -> Int:
+        return int(self)
 
 
 @always_inline
