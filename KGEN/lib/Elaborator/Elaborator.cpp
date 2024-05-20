@@ -1154,6 +1154,8 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   auto iterator = cast<TypedAttr>(initial);
   SmallVector<TypedAttr> values;
   while (true) {
+    iterator =
+        StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
     ErrorTreeOr<TypedAttr> result =
         parent->getEvaluator().evaluateFunctionWithResultSlot(*func, iterator);
     if (result.isError()) {
