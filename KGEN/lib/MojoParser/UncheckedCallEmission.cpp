@@ -515,7 +515,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
                        argListAttr.getPogs())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
-    Type expectedType = evaluator.refineType(expectedTypeX);
+    Type expectedType = evaluator.refine(expectedTypeX);
 
     // If this is the return slot for a call, we need a temporary to emit into,
     // but don't know the type until the arguments (and their lifetimes) are all

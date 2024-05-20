@@ -854,7 +854,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
        llvm::enumerate(signature.getArguments(),
                        signature.getArgConventions())) {
     // Ignore the return slot if present.
-    Type expectedType = evaluator.refineType(unboundExpectedType);
+    Type expectedType = evaluator.refine(unboundExpectedType);
     if (expectedConvention == ArgConvention::ByRefError)
       continue;
     if (expectedConvention == ArgConvention::ByRefResult) {
