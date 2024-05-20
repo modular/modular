@@ -285,6 +285,20 @@ struct ModelInferResponse(InferenceResponse):
         self._session = session^
         self._owning = owning
 
+    fn __init__(
+        inout self,
+        inout ptr: DTypePointer[DType.invalid],
+        lib: DLHandle,
+        owned session: InferenceSession,
+        owning: Bool = False,
+    ):
+        self._ptr = ptr
+        # TODO - SERV-119 - Fix ownership of response ptr
+        ptr = DTypePointer[DType.invalid]()
+        self._lib = lib
+        self._session = session^
+        self._owning = owning
+
     fn __moveinit__(inout self, owned existing: Self):
         self._ptr = exchange[CModelInferResponse](
             existing._ptr, DTypePointer[DType.invalid]()
