@@ -124,17 +124,6 @@ public:
     Type lastExpectedType = {};
   };
 
-  /// This enum represents how bound a parameter list must be.
-  enum class Boundness {
-    /// The parameter list can be implicitly partially bound.
-    /// FIXME(#32612): Require explicit unbinding.
-    Partial,
-    /// The parameter list can be explicitly partially bound.
-    Explicit,
-    /// The parameter list must be fully bound.
-    Full
-  };
-
   /// Helper class to customizing diagnostic emission for verification. The
   /// default implementation suppresses all diagnostics.
   struct DiagEmitter {
@@ -169,18 +158,20 @@ public:
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match and a DiagEmitter was provided, it will be used to emit
-  /// diagnostics. An optional hook can be provided to infer parameters.
+  /// diagnostics. An optional hook can be provided to infer parameters. If
+  /// `partial` is true, then we allow the signature to be partially bound: it
+  /// can be missing parameters.
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(LITSignatureType sig, const DiagEmitter *diagEmitter = nullptr,
                  ParameterInferenceHookTy parameterInferenceHook = {},
-                 Boundness boundness = Boundness::Explicit) const;
+                 bool partial = true) const;
 
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
                                         TypeSignatureType sig, SMLoc exprLoc,
-                                        Boundness boundness) const;
+                                        bool partial) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
@@ -202,8 +193,7 @@ private:
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
                  const Twine &baseName, llvm::SMLoc exprLoc,
-                 std::optional<Location> opLoc = std::nullopt,
-                 Boundness boundness = Boundness::Explicit) const;
+                 std::optional<Location> opLoc, bool partial) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -215,8 +205,7 @@ private:
   verifyBindingsImpl(ArrayRef<Type> expectedParamTypes,
                      PogListAttr paramListAttr,
                      ParameterInferenceHookTy parameterInferenceHook,
-                     const DiagEmitter *diagEmitter,
-                     Boundness boundness = Boundness::Explicit) const;
+                     const DiagEmitter *diagEmitter, bool partial) const;
 
   /// This contains a list of bound parameters given positionally.
   SmallVector<Binding> posBindings;

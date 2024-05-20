@@ -110,7 +110,7 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
     ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
     ParameterInferenceHookTy parameterInferenceHook,
-    const DiagEmitter *diagEmitter, Boundness boundness) const {
+    const DiagEmitter *diagEmitter, bool partial) const {
   size_t numParams = expectedParamTypes.size();
 
   // Handle *_ if it is present expanding posBindings into unpackedPosBindings.
@@ -168,8 +168,7 @@ ParamBindings::verifyBindingsImpl(
   OperandContainer<Binding> operands(unpackedPosBindings, &kwBindings);
 
   KeywordOperandContainer<Binding> variadicKwOperands;
-  bool allowMissingKwOnly =
-      boundness == Boundness::Partial || parameterInferenceHook;
+  bool allowMissingKwOnly = partial || parameterInferenceHook;
   auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
       paramListAttr, variadicKwOperands, operands, allowMissingKwOnly);
   if (kwDiagRes != KwDiagResult::kValid) {
@@ -323,7 +322,7 @@ ParamBindings::verifyBindingsImpl(
 
       // If this is a partial binding context, then we don't have a full binding
       // list. Allow parameters to be missing.
-      if (boundness == Boundness::Partial) {
+      if (partial) {
         setParamValue(UnboundAttr::get(requestedType));
         continue;
       }
@@ -358,19 +357,16 @@ ParamBindings::verifyBindingsImpl(
     // If we still have positional bindings left, first check if we are dealing
     // with an UnboundAttr we might have to deduce.
     const Binding &binding = operands.posOperands[posBindingIdx];
-    if (isa<UnboundAttr>(binding.value)) {
-      if (boundness == Boundness::Full) {
-        if (PValue value = fulfillValue(requestedType)) {
-          setParamValue(value);
-          ++posBindingIdx;
-          continue;
-        }
-
-        // We tried but couldn't infer an unbound parameter, we must error.
-        if (diagEmitter)
-          diagEmitter->emitDeductionFailure(idx);
-        return {{}, fitness};
+    if (!partial && isa<UnboundAttr>(binding.value)) {
+      if (PValue value = fulfillValue(requestedType)) {
+        setParamValue(value);
+        ++posBindingIdx;
+        continue;
       }
+      // We tried but couldn't infer an unbound parameter, we must error.
+      if (diagEmitter)
+        diagEmitter->emitDeductionFailure(idx);
+      return {{}, fitness};
     }
 
     // If this value was already bound and checked, use it.
@@ -401,7 +397,7 @@ ParamBindings::verifyBindingsImpl(
         continue;
       }
       // If this context allows partial binding, leave the value as unbound.
-      if (boundness == Boundness::Partial) {
+      if (partial) {
         setParamValue(UnboundAttr::get(requestedType));
         continue;
       }
@@ -485,18 +481,19 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig,
                               const DiagEmitter *diagEmitter,
                               ParameterInferenceHookTy parameterInferenceHook,
-                              Boundness boundness) const {
+                              bool partial) const {
   return verifyBindingsImpl(sig.getParamTypes(), sig.getParamListAttrs(),
-                            parameterInferenceHook, diagEmitter, boundness);
+                            parameterInferenceHook, diagEmitter, partial);
 }
 
-ParameterExprArrayAttr
-ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
-                              SMLoc exprLoc, Boundness boundness) const {
+ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
+                                                     TypeSignatureType sig,
+                                                     SMLoc exprLoc,
+                                                     bool partial) const {
   auto [bindingValuesAttr, _] =
       verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      Twine("'") + structOp.getName() + "'", exprLoc,
-                     structOp.getLoc(), boundness);
+                     structOp.getLoc(), partial);
   return bindingValuesAttr;
 }
 
@@ -507,7 +504,7 @@ ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
   auto [newBindings, _] =
       verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      opLoc ? Twine("'") + baseName + "'" : Twine(baseName),
-                     exprLoc, opLoc, Boundness::Partial);
+                     exprLoc, opLoc, /*partial=*/true);
   return newBindings;
 }
 
@@ -515,7 +512,7 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               PogListAttr paramListAttr, const Twine &baseName,
                               SMLoc exprLoc, std::optional<Location> opLoc,
-                              Boundness boundness) const {
+                              bool partial) const {
   size_t maxAllowed = expectedParamTypes.size() -
                       countNumImplicitKinds(paramListAttr) -
                       countNumInferredKinds(paramListAttr);
@@ -579,9 +576,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
-        assert(boundness == Boundness::Full &&
-               "parameter deduction failure in a context that doesn't allow "
-               "deduction");
+        assert(!partial && "parameter deduction failure in a context that "
+                           "doesn't allow deduction");
         InflightDiag diag = shared.emitError(exprLoc, baseName)
                             << " missing required ";
         if (StringAttr name = paramListAttr.getName(paramIdx); !name.empty())
@@ -624,7 +620,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   return verifyBindingsImpl(expectedParamTypes, paramListAttr,
                             /*parameterInferenceHook=*/{}, &diagEmitter,
-                            boundness);
+                            partial);
 }
 
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,

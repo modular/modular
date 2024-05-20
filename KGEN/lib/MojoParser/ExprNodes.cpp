@@ -835,9 +835,8 @@ static PValue substituteParametersIntoUserDefinedType(
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
-  ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings->verifyBindings(structOp, metaType.getSignature(), loc,
-                                    ParamBindings::Boundness::Partial);
+  ParameterExprArrayAttr bindingValuesAttr = paramBindings->verifyBindings(
+      structOp, metaType.getSignature(), loc, /*partial=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -850,7 +849,9 @@ static PValue substituteParametersIntoUserDefinedType(
 static Type getNextParamType(ASTDecl *fnDecl,
                              const ParamBindings &paramBindings) {
   LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] = paramBindings.verifyBindings(signature);
+  const auto &[_, fitness] = paramBindings.verifyBindings(
+      signature, /*diagEmitter=*/{}, /*parameterInferenceHook=*/{},
+      /*partial=*/false);
   return fitness.lastExpectedType;
 }
 
