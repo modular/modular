@@ -719,7 +719,7 @@ struct Test::TestDiscovery {
           std::move(result).emplace(
               Test(TestID(path.string()), std::move(children)));
         });
-    return result;
+    return std::move(result);
   }
 
   LLCL::Runtime &runtime;
