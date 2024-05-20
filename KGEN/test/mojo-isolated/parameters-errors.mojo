@@ -291,11 +291,20 @@ fn pass_no_traits(x: NoTraitsType):
 struct ParamType[p: Int]:
     pass
 
+struct MemParamType[p: Int]:
+    pass
 
 # expected-note @below {{function declared here}}
 fn autoparams[a: Int](x: ParamType):
     pass
 
+# expected-note @below {{function declared here}}
+fn autoparams_mem(x: MemParamType):
+    pass
+
+# expected-note @below {{function declared here}}
+fn autoparams_variadic(*x: MemParamType):
+    pass
 
 fn invalid_params[f: fn(ParamType) -> None]():
   # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
@@ -306,6 +315,12 @@ fn invalid_params[f: fn(ParamType) -> None]():
   # expected-error @below {{failed to infer implicit parameter 'p' of argument 'x' type 'ParamType'}}
   # expected-note @below {{parameter isn't used in any argument}}
   autoparams[1](1)
+  # expected-error @below {{failed to infer implicit parameter}}
+  # expected-note @below {{parameter isn't used in any argument}}
+  autoparams_mem(1)
+  # expected-error @below {{failed to infer implicit parameter}}
+  # expected-note @below {{parameter isn't used in any argument}}
+  autoparams_variadic(1)
 
   # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
   # expected-note @below {{parameter isn't used in any argument}}

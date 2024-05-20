@@ -724,27 +724,40 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
+        if (signature.getParamListAttrs().getPassingKind(paramIdx) ==
+            PassingKind::Inferred) {
+          diag << "failed to infer parameter ";
+          printNameOrIdx(signature.getParamName(paramIdx), paramIdx, diag);
+          inferenceDiags.attach(signature, diag, /*numActual=*/0);
+          return;
+        }
+
         // Find the parameter number and potentially name of the type of the
         // argument that failed to be inferred.
-        for (auto [idx, argType] : llvm::enumerate(signature.getArguments())) {
-          if (auto type = dyn_cast<DeclRefType>(argType)) {
-            for (auto [i, value] : llvm::enumerate(type.getParamValues())) {
-              if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value);
-                  indexRef && !indexRef.getDepth() &&
-                  indexRef.getIndex() == paramIdx) {
-                diag << "failed to infer implicit parameter ";
-                auto structDecl =
-                    cast<StructDeclOp>(ASTType(type).getDecl(shared));
-                printNameOrIdx(structDecl.getSignature().getParamName(i), i,
-                               diag);
-                diag << " of argument ";
-                printNameOrIdx(signature.getArgName(idx), idx, diag);
-                diag << " type '" << structDecl.getSymName() << "'";
-                inferenceDiags.attach(signature, diag, /*numActual=*/0);
-                return;
-              }
+        mlir::AttrTypeWalker walker;
+        size_t idx;
+        walker.addWalk([&](DeclRefType type) {
+          for (auto [i, value] : llvm::enumerate(type.getParamValues())) {
+            if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value);
+                indexRef && !indexRef.getDepth() &&
+                indexRef.getIndex() == paramIdx) {
+              diag << "failed to infer implicit parameter ";
+              auto structDecl =
+                  cast<StructDeclOp>(ASTType(type).getDecl(shared));
+              printNameOrIdx(structDecl.getSignature().getParamName(i), i,
+                             diag);
+              diag << " of argument ";
+              printNameOrIdx(signature.getArgName(idx), idx, diag);
+              diag << " type '" << structDecl.getSymName() << "'";
+              return WalkResult::interrupt();
             }
           }
+          return WalkResult::advance();
+        });
+        for (auto [i, argType] : llvm::enumerate(signature.getArguments())) {
+          idx = i;
+          if (walker.walk(argType).wasInterrupted())
+            break;
         }
         inferenceDiags.attach(signature, diag, /*numActual=*/0);
       },
