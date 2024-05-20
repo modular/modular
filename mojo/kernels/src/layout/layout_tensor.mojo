@@ -1150,6 +1150,49 @@ fn copy_dram_to_sram[
     dst_framgents.copy_from(src_framgents)
 
 
+# Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline
+fn copy_dram_to_sram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    src_mask: Bool,
+    dst_mask: Bool,
+    swizzle: OptionalReg[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+        masked=dst_mask,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+        masked=src_mask,
+    ],
+):
+    copy_dram_to_sram[
+        src_layout,
+        dst_layout,
+        dtype,
+        thread_layout,
+        thread_layout,
+        src_element_layout,
+        dst_element_layout,
+        src_mask,
+        dst_mask,
+        swizzle,
+    ](dst, src)
+
+
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
 @always_inline
@@ -1185,6 +1228,49 @@ fn copy_dram_to_sram_async[
         ThreadIdx.x()
     )
     dst_framgents.copy_from_async(src_framgents)
+
+
+# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline
+fn copy_dram_to_sram_async[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    src_mask: Bool,
+    dst_mask: Bool,
+    swizzle: OptionalReg[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+        masked=dst_mask,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+        masked=src_mask,
+    ],
+):
+    copy_dram_to_sram_async[
+        src_layout,
+        dst_layout,
+        dtype,
+        thread_layout,
+        thread_layout,
+        src_element_layout,
+        dst_element_layout,
+        src_mask,
+        dst_mask,
+        swizzle,
+    ](dst, src)
 
 
 # Copy from SRAM to local memory.
