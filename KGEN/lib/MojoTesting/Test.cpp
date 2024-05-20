@@ -14,7 +14,9 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
@@ -304,13 +306,27 @@ static bool definesTestSuite(Operation *op) {
   return llvm::isa_and_present<FileModuleOp, PackageOp>(op);
 }
 
+/// A type corresponding to an async test discovery result.
+using AsyncOptionalTest = LLCL::AsyncValueRef<std::optional<Test>>;
+
+/// Await the result of an async result, returning an easier to manipulate
+/// form.
+static ErrorOr<std::optional<Test>> awaitTest(AnyAsyncValueRef result) {
+  await(result);
+  if (result.isError())
+    return std::move(result.takeDiagnostic().getMessage());
+  return std::move(result.get<std::optional<Test>>());
+}
+
 /// This class is used to discover tests from within a specific Mojo file.
 struct Test::TestDiscovery {
-  TestDiscovery(ArrayRef<std::string> additionalImportPaths)
-      : additionalImportPaths(additionalImportPaths) {
+  TestDiscovery(LLCL::Runtime &runtime,
+                ArrayRef<std::string> additionalImportPaths)
+      : runtime(runtime), additionalImportPaths(additionalImportPaths) {
     DialectRegistry registry;
     registerAllKGENDialects(registry);
     ctx.appendDialectRegistry(registry);
+    ctx.loadAllAvailableDialects();
   }
 
   //===--------------------------------------------------------------------===//
@@ -557,9 +573,27 @@ struct Test::TestDiscovery {
     }
   }
 
+  AsyncOptionalTest discoverTestsInMojoSource(const std::filesystem::path &path,
+                                              StringRef suiteName = {}) {
+    auto asyncResult = AsyncOptionalTest::allocate(runtime);
+    LLCL::addTask(runtime, [this, path, suiteName,
+                            asyncResult = asyncResult.copy()]() mutable {
+      ErrorOr<std::optional<Test>> result =
+          discoverTestsInMojoSourceSync(path, suiteName);
+      if (result.isError()) {
+        return std::move(asyncResult)
+            .setToError(EncodedDiagnostic(
+                result.takeError(),
+                LLCL::UnknownLocationDecoder::getEncodedLocation()));
+      }
+      std::move(asyncResult).emplace(std::move(*result));
+    });
+    return asyncResult;
+  }
+
   ErrorOr<std::optional<Test>>
-  discoverTestsInMojoSource(const std::filesystem::path &path,
-                            StringRef suiteName = {}) {
+  discoverTestsInMojoSourceSync(const std::filesystem::path &path,
+                                StringRef suiteName = {}) {
     KGEN::CompilationOptions compilationOptions;
     ParserConfig parserConfig(&ctx, compilationOptions);
 
@@ -631,8 +665,7 @@ struct Test::TestDiscovery {
   // Discover: FileSystem
 
   /// Discovers tests defined within in the given directory.
-  ErrorOr<std::optional<Test>>
-  discoverTestsInDirectory(const std::filesystem::path &path) {
+  AnyAsyncValueRef discoverTestsInDirectory(const std::filesystem::path &path) {
     // If the path is a mojo source package, we parse can directly parse out
     // the tests from the package.
     if (Filesystem::isMojoSourcePackagePath(path))
@@ -640,43 +673,62 @@ struct Test::TestDiscovery {
 
     // Otherwise, recursively discover tests in the directory.
     std::error_code ec;
-    std::vector<Test> children;
+    std::vector<AnyAsyncValueRef> asyncChildren;
     for (const std::filesystem::directory_entry &entry :
          std::filesystem::directory_iterator(path, ec)) {
       if (ec)
-        return std::nullopt;
+        return AsyncOptionalTest::createReady(runtime, std::nullopt);
 
-      if (entry.is_directory(ec)) {
-        auto child = discoverTestsInDirectory(entry.path());
-        if (!child.isError() && *child)
-          children.emplace_back(std::move(**child));
-      } else if (Filesystem::isMojoSourceFile(entry.path())) {
-        auto child = discoverTestsInMojoSource(entry.path());
-        if (!child.isError() && *child)
-          children.emplace_back(std::move(**child));
-      }
+      if (entry.is_directory(ec))
+        asyncChildren.emplace_back(discoverTestsInDirectory(entry.path()));
+      else if (Filesystem::isMojoSourceFile(entry.path()))
+        asyncChildren.emplace_back(discoverTestsInMojoSource(entry.path()));
     }
 
     // If there are no children, we're done.
-    if (children.empty())
-      return std::nullopt;
+    if (asyncChildren.empty())
+      return AsyncOptionalTest::createReady(runtime, std::nullopt);
     // If there is only one child, return it directly.
-    if (children.size() == 1)
-      return std::move(children.front());
-    // Otherwise, build a suite for this directory. To keep tests in a stable
-    // order, we sort them by their ID.
-    llvm::sort(children, [](const Test &lhs, const Test &rhs) {
-      return lhs.getTestID() < rhs.getTestID();
-    });
-    return Test(TestID(path.string()), std::move(children));
+    if (asyncChildren.size() == 1)
+      return std::move(asyncChildren.front());
+
+    auto result = AsyncOptionalTest::allocate(runtime);
+    LLCL::andThenAsyncMoving(
+        asyncChildren,
+        [path, result = result.copy()](
+            MutableArrayRef<AnyAsyncValueRef> asyncChildren) mutable {
+          // Otherwise, await the children and extract out the discovered tests.
+          std::vector<Test> children;
+          for (AnyAsyncValueRef &asyncChild : asyncChildren) {
+            if (asyncChild.isError())
+              return std::move(result).setToError(asyncChild.takeDiagnostic());
+            if (auto &test = asyncChild.get<std::optional<Test>>())
+              children.emplace_back(std::move(*test));
+          }
+          if (children.empty())
+            return std::move(result).emplace(std::nullopt);
+          // If there is only one child, return it directly.
+          if (children.size() == 1)
+            return std::move(result).emplace(std::move(children.front()));
+
+          // Build a suite for this directory. To keep tests in a stable order,
+          // we sort them by their ID.
+          llvm::sort(children, [](const Test &lhs, const Test &rhs) {
+            return lhs.getTestID() < rhs.getTestID();
+          });
+          std::move(result).emplace(
+              Test(TestID(path.string()), std::move(children)));
+        });
+    return result;
   }
 
+  LLCL::Runtime &runtime;
   mlir::MLIRContext ctx{mlir::MLIRContext::Threading::DISABLED};
   ArrayRef<std::string> additionalImportPaths;
 };
 
 ErrorOr<std::optional<Test>>
-Test::discoverFromID(const TestID &testID,
+Test::discoverFromID(LLCL::Runtime &runtime, const TestID &testID,
                      ArrayRef<std::string> additionalImportPaths) {
   std::filesystem::path path = testID.getFilePath();
 
@@ -684,7 +736,7 @@ Test::discoverFromID(const TestID &testID,
   std::error_code ec;
   if (!std::filesystem::exists(path, ec))
     return std::nullopt;
-  TestDiscovery testDiscovery(additionalImportPaths);
+  TestDiscovery testDiscovery(runtime, additionalImportPaths);
 
   // Check if the test specifies a specific suite within the path. In this
   // case the path should be some mojo source.
@@ -699,8 +751,8 @@ Test::discoverFromID(const TestID &testID,
 
     // Read the test suite from the mojo source.
     ErrorOr<std::optional<Test>> testSuite =
-        testDiscovery.discoverTestsInMojoSource(path,
-                                                testSuiteName.value_or(""));
+        testDiscovery.discoverTestsInMojoSourceSync(path,
+                                                    testSuiteName.value_or(""));
     if (testSuite.isError() || !*testSuite || !testName)
       return testSuite;
 
@@ -713,11 +765,11 @@ Test::discoverFromID(const TestID &testID,
   // If not, the file path either refers to a test suite for a file or a
   // directory.
   if (std::filesystem::is_directory(path, ec))
-    return testDiscovery.discoverTestsInDirectory(path);
+    return awaitTest(testDiscovery.discoverTestsInDirectory(path));
 
   // The path is a mojo source file.
   if (Filesystem::isMojoSourceFile(path))
-    return testDiscovery.discoverTestsInMojoSource(path);
+    return testDiscovery.discoverTestsInMojoSourceSync(path);
 
   // TODO: Support doc tests defined in jupyter notebooks.
   return std::nullopt;
@@ -952,7 +1004,8 @@ executeTests(ArrayRef<Test> tests,
 
 /// Execute the given doc test, returning the result.
 static MaybeResolvedResult
-executeDocTest(const Test &test, ArrayRef<std::string> additionalImportPaths) {
+executeDocTest(LLCL::Runtime &runtime, const Test &test,
+               ArrayRef<std::string> additionalImportPaths) {
   // Doc tests are unique compare to unit tests in that they are execution
   // dependent on the previous tests in the same suite. As a result, we need to
   // execute all of the previous tests in the suite together with `test`.
@@ -967,7 +1020,7 @@ executeDocTest(const Test &test, ArrayRef<std::string> additionalImportPaths) {
 
   // Pull in the parent doc test suite.
   ErrorOr<std::optional<Test>> parentTestOr = Test::discoverFromID(
-      test.getTestID().withTest(""), additionalImportPaths);
+      runtime, test.getTestID().withTest(""), additionalImportPaths);
   if (parentTestOr || !*parentTestOr ||
       (**parentTestOr).getChildren().size() <= index)
     return TestExecutionResult::buildInitError(
@@ -979,13 +1032,13 @@ executeDocTest(const Test &test, ArrayRef<std::string> additionalImportPaths) {
 
 /// Execute the given test or suite, returning the result.
 static MaybeResolvedResult
-executeTestOrSuite(const Test &test,
+executeTestOrSuite(LLCL::Runtime &runtime, const Test &test,
                    ArrayRef<std::string> additionalImportPaths) {
   // If this is a test, execute it directly.
   const TestID &testID = test.getTestID();
   if (testID.getTest()) {
     if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
-      return executeDocTest(test, additionalImportPaths);
+      return executeDocTest(runtime, test, additionalImportPaths);
     return executeTests(test, additionalImportPaths);
   }
   // If this is a doc test suite, we can execute all of the tests together
@@ -997,8 +1050,10 @@ executeTestOrSuite(const Test &test,
   // Otherwise, this is a suite. Execute each of the children, and collect the
   // results.
   std::vector<MaybeResolvedResult> results;
-  for (const Test &child : test.getChildren())
-    results.push_back(executeTestOrSuite(child, additionalImportPaths));
+  for (const Test &child : test.getChildren()) {
+    results.push_back(
+        executeTestOrSuite(runtime, child, additionalImportPaths));
+  }
 
   auto now = std::chrono::steady_clock::now();
   auto resolveFn = [&, now = now, results = std::move(results)]() mutable {
@@ -1026,11 +1081,13 @@ executeTestOrSuite(const Test &test,
 }
 
 TestExecutionResult
-Test::execute(ArrayRef<std::string> additionalImportPaths) const {
+Test::execute(LLCL::Runtime &runtime,
+              ArrayRef<std::string> additionalImportPaths) const {
   // Execute this test and wait for it to resolve. We don't block here because
   // resolution of the result may involve communicating with multiple
   // test-executor processes.
-  MaybeResolvedResult result = executeTestOrSuite(*this, additionalImportPaths);
+  MaybeResolvedResult result =
+      executeTestOrSuite(runtime, *this, additionalImportPaths);
   while (failed(result.resolve()))
     ;
   return result.takeResolvedResult();

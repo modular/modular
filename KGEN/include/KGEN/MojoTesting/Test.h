@@ -17,6 +17,10 @@
 #include <chrono>
 #include <filesystem>
 
+namespace M::LLCL {
+class Runtime;
+} // namespace M::LLCL
+
 namespace M::KGEN::Mojo {
 //===----------------------------------------------------------------------===//
 // TestID
@@ -236,7 +240,7 @@ public:
   /// `additionalImportPaths` is a list of additional include paths to use when
   /// resolving mojo imports.
   static ErrorOr<std::optional<Test>>
-  discoverFromID(const TestID &testID,
+  discoverFromID(LLCL::Runtime &runtime, const TestID &testID,
                  ArrayRef<std::string> additionalImportPaths);
 
   //===--------------------------------------------------------------------===//
@@ -252,7 +256,8 @@ public:
   /// `additionalImportPaths` is a list of additional include paths to use when
   /// resolving mojo imports.
   TestExecutionResult
-  execute(ArrayRef<std::string> additionalImportPaths) const;
+  execute(LLCL::Runtime &runtime,
+          ArrayRef<std::string> additionalImportPaths) const;
 
 private:
   friend bool fromJSON(const llvm::json::Value &value, Test &result,
