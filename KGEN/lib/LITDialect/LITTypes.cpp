@@ -448,9 +448,8 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
         else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
           newKwOnlyDefaults.push_back(defaultOr);
 
-        evaluator.addInputValue(ParamIndexRefAttr::get(
-            /*depth=*/0, /*isResult=*/false, newParamTypes.size() - 1,
-            newParamTypes.back()));
+        evaluator.addInputValue(ParamIndexRefAttr::get(newParamTypes.size() - 1,
+                                                       newParamTypes.back()));
       } else {
         evaluator.addInputValue(val);
       }

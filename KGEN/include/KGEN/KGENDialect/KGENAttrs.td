@@ -259,6 +259,10 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
     AttrBuilderWithInferredContext<(ins "size_t":$depth, "bool":$isResult,
                                         "size_t":$index, "Type":$type), [{
       return $_get(type.getContext(), depth, isResult, index, type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "size_t":$index, "Type":$type), [{
+      return $_get(type.getContext(), /*depth=*/0, /*isResult=*/false, index,
+                   type);
     }]>
   ];
 }
