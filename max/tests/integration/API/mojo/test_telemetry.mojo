@@ -15,7 +15,7 @@ from testing import assert_true
 from pathlib import Path
 
 from max.engine import InferenceSession, InputSpec
-from max.tensor import TensorSpec
+from tensor import TensorSpec
 
 
 fn test_model_execute() raises:

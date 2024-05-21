@@ -13,7 +13,7 @@ from pathlib import Path
 
 from max.engine import InferenceSession, SessionOptions
 from max.engine._context import _Device
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 
 fn test_model_metadata() raises:
