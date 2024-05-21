@@ -24,7 +24,7 @@ fn test_gpu_printf() raises:
 
     fn do_print(x: Int, y: Float64):
         # CHECK: printf printed 98 123.456!
-        _printf("printf printed %ld %g!\n", x, y)
+        _printf["printf printed %ld %g!\n"](x, y)
 
     with Context() as ctx:
         var func = Function[do_print]()

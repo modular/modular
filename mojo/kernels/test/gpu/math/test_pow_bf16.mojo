@@ -6,25 +6,19 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import exp, isclose, pow
-from sys.info import has_neon, triple_is_nvidia_cuda
-
 from algorithm.functional import _elementwise_impl
-from benchmark._cuda import run
 from buffer import NDBuffer, DimList
-from builtin.io import _printf
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream
+from gpu.host import Context
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
-    _memset,
 )
 from gpu.host.sync import synchronize
-from testing import *
+from testing import assert_almost_equal
 
 alias type = DType.float32
 

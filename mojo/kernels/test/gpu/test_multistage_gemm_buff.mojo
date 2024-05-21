@@ -9,7 +9,6 @@
 from math import ceildiv, isclose
 from buffer import NDBuffer
 from buffer.list import DimList
-from builtin.io import _printf
 from collections.optional import OptionalReg
 from memory.unsafe import DTypePointer
 from memory.reference import _GPUAddressSpace as AddressSpace
@@ -41,17 +40,8 @@ from testing import assert_almost_equal
 from sys import argv
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensor,
-    copy_dram_to_sram_async,
-    _swizzle_signature,
-)
-from layout.nd_buffer_stub import (
-    copy_from_nd_buffer,
-    copy_to_nd_buffer,
-    distribute,
-    vectorize,
-)
+from layout.layout_tensor import LayoutTensor, _swizzle_signature
+from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.swizzle import Swizzle
 from layout.tensor_core import get_accum_type, get_mma_shape, get_fragment_size
 

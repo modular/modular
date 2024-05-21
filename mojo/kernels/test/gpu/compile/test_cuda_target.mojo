@@ -86,7 +86,7 @@ def test_parameterized_on_cuda_sm90():
 
 
 fn hello_mojo():
-    _printf("Hello")
+    _printf["Hello"]()
 
 
 @always_inline

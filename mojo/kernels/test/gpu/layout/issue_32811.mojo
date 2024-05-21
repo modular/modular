@@ -7,9 +7,8 @@
 # RUN: %mojo-no-debug %s
 
 
-from builtin.io import _printf
 from gpu.host import Context, Function, Device, CudaInstance
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.id import BlockIdx, ThreadIdx
 from layout import *
 
 

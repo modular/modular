@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
-
+from os.atomic import Atomic
 from buffer import NDBuffer, DimList
 
 from gpu import *
