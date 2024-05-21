@@ -83,7 +83,7 @@ struct Stream(CollectionElement):
         existing.owning = False
         existing.cuda_dll = Pointer[CudaDLL]()
 
-    fn synchronize(inout self) raises:
+    fn synchronize(self) raises:
         """Wait until a CUDA stream's tasks are completed."""
         if self.stream:
             var cuStreamSynchronize = self.cuda_dll[].cuStreamSynchronize if self.cuda_dll else cuStreamSynchronize.load()

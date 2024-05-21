@@ -8,15 +8,11 @@ from gpu.host.cuda_instance import CudaInstance
 from gpu.host.device import Device
 from gpu.host.context import Context
 from gpu.host.function import Function
-
-
-trait DeviceBufferBase:
-    fn get_ptr(self) -> Pointer[NoneType]:
-        pass
+from gpu.host.stream import Stream
 
 
 @register_passable
-struct DeviceBuffer[type: AnyRegType](DeviceBufferBase, Sized):
+struct DeviceBuffer[type: AnyRegType](Sized):
     var ptr: Pointer[type]
     var ctx_ptr: Pointer[DeviceContext]
     var size: Int
@@ -46,9 +42,6 @@ struct DeviceBuffer[type: AnyRegType](DeviceBufferBase, Sized):
     fn __len__(self) -> Int:
         return self.size
 
-    fn get_ptr(self) -> Pointer[NoneType]:
-        return Pointer[NoneType]()
-
 
 struct DeviceFunction[inferred func_type: AnyRegType, func: func_type]:
     var ctx_ptr: Pointer[DeviceContext]
@@ -60,16 +53,20 @@ struct DeviceFunction[inferred func_type: AnyRegType, func: func_type]:
 
 
 struct DeviceContext:
-    var cuda_instance: CudaInstance
+    # NOTE: The fields' declaration order matches the destruction order
+    var cuda_stream: Stream
     var cuda_context: Context
+    var cuda_instance: CudaInstance
 
     fn __init__(inout self) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance))
+        self.cuda_stream = Stream(self.cuda_context)
 
     fn __copyinit__(inout self, existing: Self):
         self.cuda_instance = existing.cuda_instance
         self.cuda_context = existing.cuda_context
+        self.cuda_stream = existing.cuda_stream
 
     fn create_buffer[
         type: AnyRegType
@@ -81,27 +78,46 @@ struct DeviceContext:
     ](self) raises -> DeviceFunction[func]:
         return DeviceFunction[func](self)
 
-    fn enqueue_function(
+    fn enqueue_function[
+        *Ts: AnyType
+    ](
         self,
         f: DeviceFunction,
-        *args: FunctionArgument,
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
     ) raises:
-        var stream = Stream(self.cuda_context)
-        var arg_list = List[FunctionArgument](capacity=len(args))
-        for e in args:
-            arg_list.append(e[])
-        f.cuda_function(
-            arg_list, grid_dim=grid_dim, block_dim=block_dim, stream=stream
+        pass
+        f.cuda_function._call_pack(
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            stream=self.cuda_stream,
         )
 
     fn enqueue_copy_to_device[
         type: AnyRegType
     ](self, buf: DeviceBuffer[type], ptr: Pointer[type]) raises:
-        self.cuda_context.copy_host_to_device(buf.ptr, ptr, len(buf))
+        self.cuda_context.copy_host_to_device_async(
+            buf.ptr, ptr, len(buf), self.cuda_stream
+        )
 
     fn enqueue_copy_from_device[
         type: AnyRegType
     ](self, ptr: Pointer[type], buf: DeviceBuffer[type]) raises:
+        self.cuda_context.copy_device_to_host_async(
+            ptr, buf.ptr, len(buf), self.cuda_stream
+        )
+
+    fn copy_to_device_sync[
+        type: AnyRegType
+    ](self, buf: DeviceBuffer[type], ptr: Pointer[type]) raises:
+        self.cuda_context.copy_host_to_device(buf.ptr, ptr, len(buf))
+
+    fn copy_from_device_sync[
+        type: AnyRegType
+    ](self, ptr: Pointer[type], buf: DeviceBuffer[type]) raises:
         self.cuda_context.copy_device_to_host(ptr, buf.ptr, len(buf))
+
+    fn synchronize(self) raises:
+        self.cuda_stream.synchronize()

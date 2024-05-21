@@ -168,26 +168,6 @@ struct _GlobalPayload:
 # ===----------------------------------------------------------------------===#
 
 
-# Function __call__ parameters wrapper, adding some introspection into CUDA
-# kernel invocations.
-@value
-@register_passable
-struct FunctionArgument:
-    var ptr: Pointer[NoneType]
-
-    fn __init__[type: AnyType](inout self, owned value: type):
-        # Type erased pointer to the actual value
-        self.ptr = Pointer[type].address_of(value).bitcast[NoneType]()
-
-    fn __init__[type: AnyRegType](inout self, owned ptr: Pointer[type]):
-        # Support for legacy pointers
-        self.ptr = Pointer.address_of(ptr).bitcast[NoneType]()
-
-    fn __init__[type: AnyRegType](inout self, owned buffer: DeviceBuffer[type]):
-        # DeviceBuffer support
-        self.ptr = Pointer.address_of(buffer.ptr).bitcast[NoneType]()
-
-
 @value
 @register_passable
 struct Function[
@@ -329,20 +309,18 @@ struct Function[
 
     @always_inline
     @parameter
-    fn __call__(
+    fn __call__[
+        *Ts: AnyType
+    ](
         self,
-        *args: FunctionArgument,
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
-        var args_list = List[FunctionArgument](capacity=len(args))
-        for e in args:
-            args_list.append(e[])
-
-        self.__call__(
-            args_list,
+        self._call_pack(
+            args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             shared_mem_bytes=shared_mem_bytes,
@@ -351,9 +329,13 @@ struct Function[
 
     @always_inline
     @parameter
-    fn __call__(
+    fn _call_pack[
+        *Ts: AnyType,
+        elt_is_mutable: __mlir_type.i1,
+        lifetime: AnyLifetime[Bool {value: elt_is_mutable}].type,
+    ](
         self,
-        args: List[FunctionArgument],
+        args: VariadicPack[elt_is_mutable, lifetime, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
@@ -368,11 +350,13 @@ struct Function[
 
         populate(args_stack.bitcast[NoneType]())
 
-        for i in range(len(args)):
+        @parameter
+        fn unrolled[i: Int]():
             var arg_offset = num_captures + i
-            args_stack[arg_offset] = UnsafePointer[NoneType](
-                address=int(args[i].ptr)
-            )
+            var elt_addr = UnsafePointer.address_of(args[i])
+            args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
+
+        unroll[unrolled, args.__len__()]()
 
         self.__call_impl(
             args_stack,
