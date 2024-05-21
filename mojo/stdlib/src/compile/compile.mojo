@@ -76,7 +76,7 @@ fn _compile_info_asm_failable_impl[
         return result
     alias result = Info(
         impl.asm,
-        get_linkage_name[target, func_type, func](),
+        get_linkage_name[target, func](),
         impl.num_captures,
         rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
         "",
@@ -107,7 +107,7 @@ fn _compile_info_asm_non_failable_impl[
 
     alias result = Info(
         cls.asm,
-        get_linkage_name[target, func_type, func](),
+        get_linkage_name[target, func](),
         cls.num_captures,
         rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
         "",
@@ -142,7 +142,7 @@ fn _compile_info_llvm_failable_impl[
         return result
     alias result = Info(
         impl.asm,
-        get_linkage_name[target, func_type, func](),
+        get_linkage_name[target, func](),
         impl.num_captures,
         rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
         "",
@@ -173,7 +173,7 @@ fn _compile_info_llvm_non_failable_impl[
 
     alias result = Info(
         cls.asm,
-        get_linkage_name[target, func_type, func](),
+        get_linkage_name[target, func](),
         cls.num_captures,
         rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
         "",
@@ -184,7 +184,7 @@ fn _compile_info_llvm_non_failable_impl[
 
 @always_inline
 fn compile_info[
-    func_type: AnyRegType,
+    inferred func_type: AnyRegType,
     func: func_type,
     /,
     *,
@@ -224,7 +224,7 @@ fn compile_info[
 
 
 fn compile_code[
-    func_type: AnyRegType,
+    inferred func_type: AnyRegType,
     func: func_type,
     /,
     *,
@@ -235,6 +235,6 @@ fn compile_code[
     useful to take a peak into the function assembly without requiring one to
     invoke kgen on a file."""
     alias info = compile_info[
-        func_type, func, target=target, emission_kind=emission_kind
+        func, target=target, emission_kind=emission_kind
     ]()
     return info.asm

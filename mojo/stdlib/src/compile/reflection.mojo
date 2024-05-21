@@ -6,13 +6,15 @@
 
 
 fn get_linkage_name[
-    target: __mlir_type.`!kgen.target`, func_type: AnyRegType, func: func_type
+    inferred func_type: AnyRegType,
+    target: __mlir_type.`!kgen.target`,
+    func: func_type,
 ]() -> StringLiteral:
     """Returns `func` symbol name.
 
     Parameters:
-        target: The compilation target.
         func_type: Type of func.
+        target: The compilation target.
         func: A mojo function.
 
     Returns:
