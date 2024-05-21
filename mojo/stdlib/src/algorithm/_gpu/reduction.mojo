@@ -7,7 +7,6 @@
 from math import align_up
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
     BlockDim,
@@ -19,7 +18,7 @@ from gpu import (
     shuffle_down,
     warp_reduce,
 )
-from gpu.host import Context, Device, DeviceAttribute, Dim, Function, Stream
+from gpu.host import Device, DeviceAttribute, Function, Stream
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 
