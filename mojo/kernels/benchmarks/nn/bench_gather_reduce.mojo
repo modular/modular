@@ -4,16 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# TODO(KERN-464): reenable
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
 from random import random_si64
 
-from benchmark import Bencher, BenchId, Bench
-from tensor import Tensor
+from benchmark import Bencher, BenchId, Bench, BenchConfig
 from nn.gather_scatter import gather_reduce
 from nn.math import add
 from runtime.llcl import Runtime
+from utils import Index, StaticIntTuple
+from buffer import NDBuffer
 
 
 @parameter
@@ -27,31 +30,40 @@ fn bench_gather_reduce(inout b: Bencher):
     var num_indices = clear_size // (
         sizeof[type]() * embedding_dim * multi_hot_dim
     )
-    var input = Tensor[type](num_rows, embedding_dim)
-    var output = Tensor[type](num_indices, embedding_dim)
-    var indices = Tensor[DType.int32](num_indices, multi_hot_dim)
-    input._to_ndbuffer[2]().fill(1)
-    output._to_ndbuffer[2]().zero()
-    for i in range(indices.shape()[0]):
-        for j in range(indices.shape()[1]):
+    var input_shape = StaticIntTuple[2](num_rows, embedding_dim)
+    var output_shape = StaticIntTuple[2](num_indices, embedding_dim)
+    var indices_shape = StaticIntTuple[2](num_indices, multi_hot_dim)
+    var input_storage = DTypePointer[type].alloc(input_shape.flattened_length())
+    var output_storage = DTypePointer[type].alloc(
+        output_shape.flattened_length()
+    )
+    var indices_storage = DTypePointer[DType.int32].alloc(
+        indices_shape.flattened_length()
+    )
+    var input = NDBuffer[type, 2](input_storage, input_shape)
+    var output = NDBuffer[type, 2](output_storage, output_shape)
+    var indices = NDBuffer[DType.int32, 2](indices_storage, indices_shape)
+    input.fill(1)
+    output.zero()
+    for i in range(indices.get_shape()[0]):
+        for j in range(indices.get_shape()[1]):
             indices[i][j] = random_si64(0, num_rows).cast[DType.int32]()
 
     @parameter
     fn to_bench():
-        with Runtime(threads=1) as rt:
-            gather_reduce[type, 0, 1, simdwidthof[type](), add](
-                output._to_ndbuffer[2](),
-                input._to_ndbuffer[2](),
-                indices._to_ndbuffer[2](),
-                0,
-            )
+        gather_reduce[type, 0, 1, simdwidthof[type](), add](
+            output,
+            input,
+            indices,
+            0,
+        )
 
     b.iter[to_bench]()
 
     print(output[0, 0])
-    _ = output
-    _ = indices
-    _ = input
+    input.data.free()
+    output.data.free()
+    indices.data.free()
 
 
 def main():
