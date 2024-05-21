@@ -87,6 +87,10 @@ cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/LLCL/Support/*.h"]),
+    local_defines = select({
+        "//:llcl_no_affinity_setting": ["LLCL_NO_AFFINITY"],
+        "//conditions:default": [],
+    }),
     strip_include_prefix = "include",
     deps = [
         "//Support:MArchTarget",
