@@ -34,7 +34,7 @@ fn print_buffer[rank: Int](buf: NDBuffer[DType.float32, 4]):
         s *= buf.dim(i)
 
     for j in range(s):
-        builtin.io._printf("%.4f\n", buf.flatten()[j].cast[DType.float64]())
+        builtin.io._printf["%.4f\n"](buf.flatten()[j].cast[DType.float64]())
 
 
 fn pool[count_boundary: Bool = False](pool_method: PoolMethod):
