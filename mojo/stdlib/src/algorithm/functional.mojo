@@ -21,7 +21,6 @@ from gpu.host import Device, Function, Stream
 from runtime import tracing
 from runtime.llcl import Runtime, TaskGroup, TaskGroupTaskList
 from runtime.tracing import Trace, TraceLevel
-from builtin._stubs import parameter_for
 
 from utils.numerics import FlushDenormals
 from utils.index import Index, StaticIntTuple
