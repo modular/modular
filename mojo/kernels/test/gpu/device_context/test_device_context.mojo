@@ -8,8 +8,6 @@
 
 from gpu.host.device_context import DeviceContext, DeviceBuffer, DeviceFunction
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream
-from utils.variant import Variant
 
 
 fn vec_func(
@@ -17,12 +15,12 @@ fn vec_func(
     in1: DTypePointer[DType.float32],
     out: DTypePointer[DType.float32],
     len: Int,
-    addition: Int,
+    supplement: Int,
 ):
     var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + addition
+    out[tid] = in0[tid] + in1[tid] + supplement
 
 
 fn test(ctx: DeviceContext) raises:
@@ -46,7 +44,7 @@ fn test(ctx: DeviceContext) raises:
     var func = ctx.compile_function[vec_func]()
 
     var block_dim = 32
-    var addition = 5
+    var supplement = 5
 
     ctx.enqueue_function(
         func,
@@ -54,12 +52,14 @@ fn test(ctx: DeviceContext) raises:
         in1_device,
         out_device,
         length,
-        addition,
+        supplement,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
 
     ctx.enqueue_copy_from_device(out_host, out_device)
+
+    ctx.synchronize()
 
     # CHECK: at index 0 the value is 7.0
     # CHECK: at index 1 the value is 8.0
