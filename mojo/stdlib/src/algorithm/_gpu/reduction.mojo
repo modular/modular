@@ -356,11 +356,7 @@ fn reduce_launch[
     alias packing_factor = 1
 
     var func = Function[
-        fn (
-            StaticIntTuple[rank],
-            Int,
-            StaticTuple[Scalar[type], num_reductions],
-        ) capturing -> None, reduce_kernel[
+        reduce_kernel[
             rank,
             num_reductions,
             BLOCK_SIZE,

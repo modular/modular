@@ -1475,16 +1475,11 @@ fn _elementwise_impl_gpu[
 
     try:
         # TODO cleanup after #26672
-        alias func_type = fn () capturing -> None
         if shape[rank - 1] % simd_width == 0:
-            var gpu_func = Function[
-                __type_of(_invoke_without_edge_case), _invoke_without_edge_case
-            ]()
+            var gpu_func = Function[_invoke_without_edge_case]()
             gpu_func(grid_dim=num_blocks, block_dim=block_size, stream=stream)
         else:
-            var gpu_func = Function[
-                __type_of(_invoke_with_edge_case), _invoke_with_edge_case
-            ]()
+            var gpu_func = Function[_invoke_with_edge_case]()
             gpu_func(grid_dim=num_blocks, block_dim=block_size, stream=stream)
 
     except e:
