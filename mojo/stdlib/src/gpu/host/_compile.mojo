@@ -25,7 +25,7 @@ fn _get_nvptx_target() -> __mlir_type.`!kgen.target`:
 
 @always_inline
 fn _compile_code[
-    func_type: AnyRegType,
+    inferred func_type: AnyRegType,
     func: func_type,
     /,
     *,
@@ -34,7 +34,6 @@ fn _compile_code[
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
 ]() -> Info:
     return compile_info[
-        func_type,
         func,
         emission_kind=emission_kind,
         is_failable=is_failable,
@@ -43,6 +42,6 @@ fn _compile_code[
 
 
 fn _get_nvptx_fn_name[
-    func_type: AnyRegType, func: func_type
+    inferred func_type: AnyRegType, func: func_type
 ]() -> StringLiteral:
-    return get_linkage_name[_get_nvptx_target(), func_type, func]()
+    return get_linkage_name[_get_nvptx_target(), func]()

@@ -191,13 +191,13 @@ struct FunctionArgument:
 @value
 @register_passable
 struct Function[
-    func_type: AnyRegType, func: func_type, _is_failable: Bool = False
+    inferred func_type: AnyRegType, func: func_type, _is_failable: Bool = False
 ](Boolable):
     var info: _CachedFunctionInfo
     var cuda_dll: Pointer[CudaDLL]
 
     alias _impl = _compile_code[
-        func_type, func, is_failable=_is_failable, emission_kind="asm"
+        func, is_failable=_is_failable, emission_kind="asm"
     ]()
 
     @always_inline
@@ -311,9 +311,7 @@ struct Function[
                 print(ptx)
 
         if dump_q(dump_llvm):
-            alias llvm = _compile_code[
-                func_type, func, emission_kind="llvm"
-            ]().asm
+            alias llvm = _compile_code[func, emission_kind="llvm"]().asm
 
             if dump_llvm.isa[Path]():
                 with open(dump_llvm[Path], "w") as f:
@@ -424,8 +422,8 @@ struct Function[
         try:
             var payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
-            alias _impl = _compile_code[func_type, func, emission_kind="asm"]()
-            alias fn_name = _get_nvptx_fn_name[func_type, func]()
+            alias _impl = _compile_code[func, emission_kind="asm"]()
+            alias fn_name = _get_nvptx_fn_name[func]()
 
             var module = Module(
                 _impl.asm,
@@ -484,7 +482,7 @@ struct Function[
         cache_config: Int32 = -1,
         func_attribute: FuncAttribute = FuncAttribute.NULL,
     ) -> _CachedFunctionInfo:
-        alias fn_name = _get_nvptx_fn_name[func_type, func]()
+        alias fn_name = _get_nvptx_fn_name[func]()
 
         var payload = _GlobalPayload(
             debug,

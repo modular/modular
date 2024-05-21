@@ -50,15 +50,13 @@ struct DeviceBuffer[type: AnyRegType](DeviceBufferBase, Sized):
         return Pointer[NoneType]()
 
 
-struct DeviceFunction[func_type: AnyRegType, func: func_type]:
+struct DeviceFunction[inferred func_type: AnyRegType, func: func_type]:
     var ctx_ptr: Pointer[DeviceContext]
-    var cuda_function: Function[func_type, func]
+    var cuda_function: Function[func]
 
     fn __init__(inout self, ctx: DeviceContext) raises:
         self.ctx_ptr = Pointer[DeviceContext].address_of(ctx)
-        self.cuda_function = Function[func_type, func](
-            self.ctx_ptr[].cuda_context
-        )
+        self.cuda_function = Function[func](self.ctx_ptr[].cuda_context)
 
 
 struct DeviceContext:
@@ -79,15 +77,13 @@ struct DeviceContext:
         return DeviceBuffer[type](self, size)
 
     fn compile_function[
-        func_type: AnyRegType, func: func_type
-    ](self) raises -> DeviceFunction[func_type, func]:
-        return DeviceFunction[func_type, func](self)
+        inferred func_type: AnyRegType, func: func_type
+    ](self) raises -> DeviceFunction[func]:
+        return DeviceFunction[func](self)
 
-    fn enqueue_function[
-        func_type: AnyRegType, func: func_type
-    ](
+    fn enqueue_function(
         self,
-        f: DeviceFunction[func_type, func],
+        f: DeviceFunction,
         *args: FunctionArgument,
         grid_dim: Dim,
         block_dim: Dim,
