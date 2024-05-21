@@ -286,7 +286,7 @@ struct Function[
             alias ptx = Self._impl.asm
             if dump_ptx.isa[Path]():
                 with open(dump_ptx[Path], "w") as f:
-                    f.write(ptx)
+                    f.write(StringRef(ptx))
             else:
                 print(ptx)
 
@@ -295,7 +295,7 @@ struct Function[
 
             if dump_llvm.isa[Path]():
                 with open(dump_llvm[Path], "w") as f:
-                    f.write(llvm)
+                    f.write(StringRef(llvm))
             else:
                 print(llvm)
 
