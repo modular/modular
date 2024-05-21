@@ -17,7 +17,7 @@ fn empty_kernel():
 
 @parameter
 fn bench_empty_async(inout b: Bencher) raises:
-    var func = Function[__type_of(empty_kernel), empty_kernel]()
+    var func = Function[empty_kernel]()
     var stream = Stream()
 
     @parameter
@@ -29,7 +29,7 @@ fn bench_empty_async(inout b: Bencher) raises:
 
 @parameter
 fn bench_empty_sync(inout b: Bencher) raises:
-    var func = Function[__type_of(empty_kernel), empty_kernel]()
+    var func = Function[empty_kernel]()
 
     @parameter
     fn launch() raises:
