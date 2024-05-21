@@ -1104,7 +1104,7 @@ fn _matmul_gpu_dispatch[
                     NUM_THREADS,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
-                var gpu_func = Function[__type_of(dbuffgemm), dbuffgemm](
+                var gpu_func = Function[dbuffgemm](
                     threads_per_block=NUM_THREADS
                 )
                 gpu_func(
@@ -1151,9 +1151,7 @@ fn _matmul_gpu_dispatch[
                 NUM_THREADS=NUM_THREADS,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
-            var gpu_func = Function[__type_of(mm), mm](
-                threads_per_block=NUM_THREADS
-            )
+            var gpu_func = Function[mm](threads_per_block=NUM_THREADS)
             gpu_func(
                 c,
                 a,
@@ -1167,14 +1165,7 @@ fn _matmul_gpu_dispatch[
         elif n == 1:
             alias WARPS_PER_BLOCK = 32
             var gpu_func = Function[
-                fn (
-                    DTypePointer[c_type],
-                    DTypePointer[a_type],
-                    DTypePointer[b_type],
-                    Int,
-                    Int,
-                    Int,
-                ) capturing -> None, gemv_kernel[
+                gemv_kernel[
                     c_type,
                     a_type,
                     b_type,
@@ -1196,14 +1187,7 @@ fn _matmul_gpu_dispatch[
             # k should be a multiple of warps per block
             alias WARPS_PER_BLOCK = 32
             var gpu_func = Function[
-                fn (
-                    DTypePointer[c_type],
-                    DTypePointer[a_type],
-                    DTypePointer[b_type],
-                    Int,
-                    Int,
-                    Int,
-                ) capturing -> None, gevm_kernel[
+                gevm_kernel[
                     c_type,
                     a_type,
                     b_type,
@@ -1229,14 +1213,7 @@ fn _matmul_gpu_dispatch[
             alias tile_size = 16
             if k >= tile_size:
                 var gpu_func = Function[
-                    fn (
-                        DTypePointer[c_type],
-                        DTypePointer[a_type],
-                        DTypePointer[b_type],
-                        Int,
-                        Int,
-                        Int,
-                    ) capturing -> None, matmul_kernel[
+                    matmul_kernel[
                         c_type,
                         a_type,
                         b_type,
@@ -1258,14 +1235,7 @@ fn _matmul_gpu_dispatch[
             else:
                 alias BLOCK_DIM = 16
                 var gpu_func = Function[
-                    fn (
-                        DTypePointer[a_type],
-                        DTypePointer[b_type],
-                        DTypePointer[c_type],
-                        Int,
-                        Int,
-                        Int,
-                    ) capturing -> None, matmul_kernel_naive[
+                    matmul_kernel_naive[
                         a_type,
                         b_type,
                         c_type,

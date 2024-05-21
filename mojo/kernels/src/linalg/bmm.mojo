@@ -530,7 +530,7 @@ fn _batched_matmul_gpu[
             unkown_shape,
             elementwise_epilogue_fn,
         ]
-        var gpu_func = Function[__type_of(bmm), bmm]()
+        var gpu_func = Function[bmm]()
         gpu_func(
             c_buf_reshaped,
             a_buf_reshaped,
