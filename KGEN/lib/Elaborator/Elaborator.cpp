@@ -1127,11 +1127,16 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 
 ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
                                                    ParamForOp op) {
-  // First, concretize the initializer and sequence generator expressions.
-  Attribute initial;
+  // First, concretize the initializer and sequence generator expressions and
+  // result types.
+  Attribute initial, iterate;
+  SmallVector<Type> resultTypes;
   HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
-  Attribute iterate;
   HANDLE_EVALUATOR_CONC(iterate, parent, op.getLoc(), op.getIterate());
+  for (Type type : op.getResultTypes()) {
+    HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
+                          type);
+  }
 
   // Concretize the sequence generator function.
   ErrorTreeOr<FuncOp> func = getConcreteFunction(
@@ -1180,16 +1185,20 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   parent->stack.back().ops.pop_back();
 
   // Schedule the ops in the else region, which are always generated. They are
-  // processed in the same scope as the parent.
+  // processed in the same scope as the parent. The else job is responsible for
+  // cleaning up dead IR because it runs last.
   Block *elseBlock = &op.getElseRegion().front();
   auto yield = cast<ParamYieldOp>(elseBlock->getTerminator());
   auto onElseComplete = [debug = config.elaborateDebugInfo,
-                         begin = elseBlock->begin(), end = elseBlock->end(),
-                         yield](ImplNode *node) mutable -> LogicalResult {
-    if (debug && failed(concretizeLocsInScope({begin, end}, node)))
+                         begin = &*elseBlock->begin(), yield, op,
+                         parent](ImplNode *node) mutable -> LogicalResult {
+    if (debug && failed(concretizeLocsInScope(
+                     {begin->getIterator(), yield->getIterator()}, node)))
       return failure();
     // Erase the terminator when elaboration of the else region is done.
     yield.erase();
+    recursivelyEraseFromNestedScopes(parent, op);
+    op.erase();
     return success();
   };
   ImplNode::WorkItem elseItem{
@@ -1197,25 +1206,13 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   collectOpsToProcessInside(op.getElseRegion(), parent, elseItem.ops);
   parent->stack.push_back(std::move(elseItem));
 
-  // Sequence is empty: just inline the else region and delete the op.
-  mlir::IRRewriter b{OpBuilder(op)};
-  if (values.empty()) {
-    // Forward the arguments into the else region.
-    b.inlineBlockBefore(elseBlock, op->getBlock(), op->getIterator(),
-                        op.getOperands());
-    // Forward the results of the else as the op's results.
-    op.replaceAllUsesWith(yield.getOperands());
-    op.erase();
-    return ElaborationState::skipFrame();
-  }
-
   // Lower the `kgen.param.for` into an outer loop and wrapper loops for each
   // generated iteration. This way, we can lower `continue` to a break to the
   // wrapper loop to model exiting a single iteration and lower `break` to a
   // break to the outer loop to model exiting the whole loop.
+  mlir::IRRewriter b{OpBuilder(op)};
   StringAttr outerLabel = b.getStringAttr("param_for_outer");
-  auto outerLoop =
-      b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes(), outerLabel);
+  auto outerLoop = b.create<HLCF::LoopOp>(op.getLoc(), resultTypes, outerLabel);
   b.createBlock(&outerLoop.getBody());
 
   // Upon completion of elaboration of each such generated loop, replace the
@@ -1251,12 +1248,6 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   // Compute the ops that need to be processed in the body.
   std::vector<Operation *> opsToRewrite;
   collectOpsToProcessInside(op.getBody(), parent, opsToRewrite);
-
-  // Optimize by moving the ops for the first region.
-  auto firstLoop = b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes());
-  ImplNode::WorkItem item{std::move(opsToRewrite),
-                          makeCompletion(firstLoop.getBody()),
-                          parent->getEvaluator()};
   ParamDeclAttr decl = op.getParamDecl();
 
   auto replaceArgs = [](Region &body, ValueRange values) {
@@ -1268,55 +1259,44 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
   };
 
   IRMapping mapping;
-  // Forward the result of one iteration into the next.
-  HLCF::LoopOp prevLoop = firstLoop;
   auto &nestedScopes = parent->paramGraph.nestedScopes;
-  for (TypedAttr value : llvm::drop_begin(values)) {
-    mapping.clear();
+  SmallVector<DeclInterface> nestedDecls;
+  op.getBody().walk([&](DeclInterface decl) { nestedDecls.push_back(decl); });
+  IREvaluator evaluator = parent->getEvaluator();
 
+  // Forward the result of one iteration into the next.
+  ValueRange nextOperands = op.getOperands();
+  for (TypedAttr value : values) {
     // Create the loop op for this iteration and clone the body into it.
-    auto loop = b.create<HLCF::LoopOp>(op.getLoc(), op.getResultTypes());
-    Region &body = loop.getBody();
-    op.getBody().cloneInto(&body, mapping);
-    replaceArgs(body, prevLoop.getResults());
-    prevLoop = loop;
+    auto loop = b.create<HLCF::LoopOp>(op.getLoc(), resultTypes);
+    mapping.clear();
+    op.getBody().cloneInto(&loop.getBody(), mapping);
+    replaceArgs(loop.getBody(), nextOperands);
+    nextOperands = loop.getResults();
 
     // Map the ops to rewrite from the original body into the clone one.
-    opsToRewrite.reserve(item.ops.size());
-    for (Operation *op : item.ops) {
-      Operation *cloned = mapping.lookup(op);
-      // If a DeclInterface got cloned, we also have to make sure to clone use
-      // parameter use-def list.
-      if (isa<DeclInterface>(op)) {
-        for (auto [region, clonedRegion] :
-             llvm::zip(op->getRegions(), cloned->getRegions())) {
-          nestedScopes.try_emplace(&clonedRegion,
-                                   nestedScopes.at(&region).copy(mapping));
-        }
-      }
-      opsToRewrite.push_back(cloned);
+    ImplNode::WorkItem nextItem{{}, makeCompletion(loop.getBody()), evaluator};
+    for (Operation *op : opsToRewrite)
+      nextItem.ops.push_back(mapping.lookup(op));
+    // If any DeclInterface got cloned, we also have to make sure to clone its
+    // parameter use-def list.
+    for (DeclInterface decl : nestedDecls) {
+      Operation *cloned = mapping.lookup(decl);
+      for (auto [declRegion, clonedRegion] :
+           llvm::zip(decl->getRegions(), cloned->getRegions()))
+        nestedScopes.try_emplace(&clonedRegion,
+                                 nestedScopes.at(&declRegion).copy(mapping));
     }
 
     // Now schedule the work item for this body.
-    ImplNode::WorkItem nextItem{std::move(opsToRewrite), makeCompletion(body),
-                                item.evaluator};
     nextItem.evaluator.setParameterValue(decl, value);
     parent->stack.push_back(std::move(nextItem));
   }
 
-  // Update the first work item here. We do this after so we can copy from it
-  // in the above loop.
-  firstLoop.getBody().takeBody(op.getBody());
-  item.evaluator.setParameterValue(decl, values.front());
-  parent->stack.push_back(std::move(item));
-  replaceArgs(firstLoop.getBody(), op.getOperands());
-
   b.inlineBlockBefore(elseBlock, b.getInsertionBlock(), b.getInsertionPoint(),
-                      prevLoop->getResults());
+                      nextOperands);
   b.create<HLCF::BreakOp>(op.getLoc(), yield.getOperands(), outerLabel);
   op.replaceAllUsesWith(outerLoop.getResults());
-  recursivelyEraseFromNestedScopes(parent, op);
-  op.erase();
   return ElaborationState::skipFrame();
 }
 
