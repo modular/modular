@@ -540,27 +540,11 @@ struct MojoCallContextPtr:
         return CUDADeviceStream(stream)
 
     @always_inline
-    fn set_to_error(self, message: StringLiteral):
-        """Indicates to the C++ runtime that the kernel has failed."""
-        var strref = StringRef(message)
-        external_call[
-            "KGEN_CompilerRT_LLCL_MojoCallContext_SetToError", NoneType
-        ](
-            self.ptr,
-            strref.data,
-            strref.length,
-        )
-
-    @always_inline
     fn set_to_error(self, err: Error):
         """Indicates to the C++ runtime that the kernel has failed."""
         var str = err.__str__()
         var strref = str._strref_dangerous()
         external_call[
             "KGEN_CompilerRT_LLCL_MojoCallContext_SetToError", NoneType
-        ](
-            self.ptr,
-            strref.data,
-            strref.length,
-        )
+        ](self.ptr, strref.data, strref.length)
         str._strref_keepalive()
