@@ -9,7 +9,7 @@ Implements the `Tensor` type.
 Example:
 
 ```mojo
-from tensor import Tensor, TensorSpec, TensorShape, rand
+from tensor import Tensor, TensorSpec, TensorShape
 from utils.index import Index
 
 var height = 256
@@ -18,7 +18,7 @@ var channels = 3
 
 # Create the tensor of dimensions height, width, channels
 # and fill with random values.
-var image = rand[DType.float32](height, width, channels)
+var image = Tensor.rand[DType.float32](TensorShape(height, width, channels))
 
 # Declare the grayscale image.
 var spec = TensorSpec(DType.float32, height, width)
@@ -39,6 +39,7 @@ print(gray_scale_image.shape())
 import math
 from collections import List
 from pathlib import Path
+from random import rand, randn
 
 from algorithm.functional import elementwise, vectorize
 from algorithm.reduction import argmax, argmin
@@ -383,6 +384,45 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         self._ptr = existing._ptr
         existing._spec = TensorSpec()
         existing._ptr = DTypePointer[type]()
+
+    @staticmethod
+    fn rand(owned shape: TensorShape) -> Tensor[type]:
+        """Constructs a new tensor with the specified shape and fills it with
+        random elements.
+
+        Args:
+            shape: The tensor shape.
+
+        Returns:
+            A new tensor of specified shape and filled with random elements.
+        """
+        var tensor = Tensor[type](shape^)
+        rand(tensor.unsafe_ptr(), tensor.num_elements())
+        return tensor
+
+    @staticmethod
+    fn randn(
+        owned shape: TensorShape, mean: Float64 = 0.0, variance: Float64 = 1.0
+    ) -> Tensor[type]:
+        """Constructs a new Tensor from the shape and fills it with random
+        values from a Normal(mean, variance) distribution.
+
+        Constraints:
+            The type should be floating point.
+
+        Args:
+            shape: The shape of the Tensor to fill with random values.
+            mean: Normal distribution mean.
+            variance: Normal distribution variance.
+
+        Returns:
+            A Tensor filled with random dtype samples from Normal(mean,
+            variance).
+        """
+
+        var tensor = Tensor[type](shape^)
+        randn(tensor.unsafe_ptr(), tensor.num_elements(), mean, variance)
+        return tensor
 
     fn _take_data_ptr(inout self) -> DTypePointer[type]:
         """Return ownership of the data pointer from within the Tensor.
