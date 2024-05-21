@@ -92,7 +92,7 @@ collectParametricAncestors(Operation *op) {
 
   auto isRelevantAncestor = [](Operation *op) {
     auto decl = dyn_cast_or_null<DeclInterface>(op);
-    return decl && !isa<FuncInterface>(*decl);
+    return decl && !isa<FuncInterface, ParamForOp>(*decl);
   };
   while (isRelevantAncestor(op)) {
     ancestors.push_back(op);

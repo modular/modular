@@ -708,6 +708,13 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$elseRegion);
 
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$initial, "TypedAttr":$iterate,
+                   "ParamDeclAttr":$paramDecl), [{
+      build($_builder, $_state, {}, initial, iterate, paramDecl, {}, {}, {});
+    }]>
+  ];
+
   let assemblyFormat = [{
     custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)
     `iter` custom<ColonTypeParamValue>($iterate) `\n`
