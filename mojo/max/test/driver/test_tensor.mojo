@@ -59,6 +59,11 @@ def test_tensor_slice():
     # 0 1 2
     # 1 2 3
 
+    var slice_spec = slice.get_static_spec()
+    assert_equal(slice_spec.get_rank(), 2)
+    assert_equal(slice_spec[0], 2)
+    assert_equal(slice_spec[1], 3)
+
     assert_equal(slice[0, 0], 0)
     assert_equal(slice[1, 2], 3)
 
@@ -68,10 +73,97 @@ def test_tensor_slice():
     # 1
     # 2
 
+    var inner_slice_spec = inner_slice.get_static_spec()
+    assert_equal(inner_slice_spec.get_rank(), 2)
+    assert_equal(inner_slice_spec[0], 2)
+    assert_equal(inner_slice_spec[1], 1)
+
     assert_equal(inner_slice[0, 0], 1)
     assert_equal(inner_slice[1, 0], 2)
+
+
+def test_slice_with_step():
+    var dev = Device(CPUDescriptor(numa_id=2))
+
+    var dt = dev.allocate(
+        TensorSpec(DType.float32, 18),
+    )
+    var tensor = dt^.get_tensor[DType.float32, 1]()
+
+    var index = 0
+    for _ in range(3):
+        for j in range(6):
+            tensor[index] = j
+            index += 1
+
+    assert_equal(tensor[1], 1)
+
+    var stepped_slice = tensor[0:18:3]
+    assert_equal(stepped_slice[1], 3)
+
+
+def test_2dslice_with_step():
+    var dev = Device(CPUDescriptor(numa_id=2))
+
+    var dt = dev.allocate(
+        TensorSpec(DType.float32, 10, 2),
+    )
+    var tensor = dt^.get_tensor[DType.float32, 2]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(2):
+            tensor[Index(i, j)] = val
+            val += 1
+
+    assert_equal(tensor[1, 0], 3)
+
+    var stepped_slice = tensor[::2, :]
+    assert_equal(stepped_slice[1, 0], 5)
+
+
+def test_2dslice_with_step_row_column():
+    var dev = Device(CPUDescriptor(numa_id=2))
+
+    var dt = dev.allocate(
+        TensorSpec(DType.float32, 10, 10),
+    )
+    var tensor = dt^.get_tensor[DType.float32, 2]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(10):
+            tensor[Index(i, j)] = val
+            val += 1
+
+    assert_equal(tensor[1, 0], 11)
+    assert_equal(tensor[1, 1], 12)
+    assert_equal(tensor[2, 2], 23)
+
+    var stepped_slice = tensor[1::2, 1::2]
+    assert_equal(stepped_slice[0, 0], 12)
+    assert_equal(stepped_slice[0, 1], 14)
+    assert_equal(stepped_slice[1, 1], 34)
+
+    var slice_spec = stepped_slice.get_static_spec()
+    assert_equal(slice_spec.get_rank(), 2)
+    assert_equal(slice_spec.dtype(), DType.float32)
+    assert_equal(slice_spec[0], 5)
+    assert_equal(slice_spec[1], 5)
+
+    var inner_slice = tensor[1::3, 1::3]
+    var inner_slice_spec = inner_slice.get_static_spec()
+    assert_equal(inner_slice_spec.get_rank(), 2)
+    assert_equal(inner_slice_spec.dtype(), DType.float32)
+    assert_equal(inner_slice_spec[0], 3)
+    assert_equal(inner_slice_spec[1], 3)
+    assert_equal(inner_slice[0, 0], 12)
+    assert_equal(inner_slice[1, 1], 45)
 
 
 def main():
     test_tensor()
     test_tensor_slice()
+    test_slice_with_step()
+    test_2dslice_with_step()
+    test_2dslice_with_step_row_column()
