@@ -35,6 +35,9 @@ lit_tests(
         "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
     },
+    exec_properties = {
+        "test.EstimatedComputeUnits": "10",
+    },
     mojo_deps = [
         "//Kernels/mojo/stdlib",
     ],
