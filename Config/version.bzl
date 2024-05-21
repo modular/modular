@@ -8,7 +8,7 @@ def _status_template_impl(ctx):
             ctx.files.src[0].path,
             ctx.outputs.out.path,
         ],
-        command = 'cp -a "$1" "$2"',
+        command = 'cp "$1" "$2"',
         inputs = [
             ctx.files.src[0],
         ],

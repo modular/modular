@@ -5,9 +5,8 @@ cc_library(
     srcs = glob(["lib/**/*.cpp"]) + [
         ":GeneratedVersion",
     ],
-    hdrs = glob(["include/**/*.h"]) + [
-        ":GeneratedVersion",
-    ],
+    hdrs = glob(["include/**/*.h"]),
+    copts = ["-I$(GENDIR)/Config"],
     defines = [
         # FIXME(amscanne): These are non-hermetic. These will automatically
         # propagate to all dependent targets and be defined universally.
@@ -27,5 +26,5 @@ status_template(
     # Note that this still incldues the include/ prefix, which will be stripped
     # above. This can only be used via a dependency on the Config library.
     src = "include/GeneratedVersion.h.tmpl",
-    out = "include/GeneratedVersion.h",
+    out = "GeneratedVersion.h",
 )
