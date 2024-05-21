@@ -422,16 +422,13 @@ struct KServeClientAsync:
     ):
         _ = await ChainPromise(self._ptr.model_infer(self._lib, request._ptr)[])
         var result_ptr = self._ptr.take_infer_result(self._lib, request._ptr)
-        if result_ptr[].code != 0:
-            response.set[Error](Error(result_ptr[].error))
+        var result = result_ptr[]
+        if result.code != 0:
+            response.set[Error](Error(result.error))
         else:
-            # TODO - SERV-119.
-            # Transfer ownership of result[].response to ModelInferResponse,
-            # which means clearing the result[].response prior to calling free
-            # to avoid double free
             response.set[ModelInferResponse](
                 ModelInferResponse(
-                    result_ptr[].response, self._lib, self._session, True
+                    result.response, self._lib, self._session, True
                 )
             )
         ClientResult.free(self._lib, result_ptr)
