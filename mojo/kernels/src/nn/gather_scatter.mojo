@@ -1168,12 +1168,7 @@ fn gather_nd_shape[
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
-    if indices_shape[indices_rank - 1] == input_rank - batch_dims:
-        return output_shape
-
-    for i in range(
-        batch_dims + indices_shape[indices_rank - 1], len(input_shape)
-    ):
+    for i in range(batch_dims + index_size, input_rank):
         output_shape[next_out_dim] = input_shape[i]
         next_out_dim += 1
 
