@@ -339,6 +339,28 @@ struct Function[
         shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
+        var args_list = List[FunctionArgument](capacity=len(args))
+        for e in args:
+            args_list.append(e[])
+
+        self.__call__(
+            args_list,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            stream=stream,
+        )
+
+    @always_inline
+    @parameter
+    fn __call__(
+        self,
+        args: List[FunctionArgument],
+        grid_dim: Dim,
+        block_dim: Dim,
+        shared_mem_bytes: Int = 0,
+        stream: Optional[Stream] = None,
+    ) raises:
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 

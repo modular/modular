@@ -7,6 +7,7 @@
 from gpu.host.cuda_instance import CudaInstance
 from gpu.host.device import Device
 from gpu.host.context import Context
+from gpu.host.function import Function
 
 
 trait DeviceBufferBase:
@@ -49,6 +50,17 @@ struct DeviceBuffer[type: AnyRegType](DeviceBufferBase, Sized):
         return Pointer[NoneType]()
 
 
+struct DeviceFunction[func_type: AnyRegType, func: func_type]:
+    var ctx_ptr: Pointer[DeviceContext]
+    var cuda_function: Function[func_type, func]
+
+    fn __init__(inout self, ctx: DeviceContext) raises:
+        self.ctx_ptr = Pointer[DeviceContext].address_of(ctx)
+        self.cuda_function = Function[func_type, func](
+            self.ctx_ptr[].cuda_context
+        )
+
+
 struct DeviceContext:
     var cuda_instance: CudaInstance
     var cuda_context: Context
@@ -66,8 +78,27 @@ struct DeviceContext:
     ](self, size: Int) raises -> DeviceBuffer[type]:
         return DeviceBuffer[type](self, size)
 
-    fn enqueue[func_type: AnyRegType, func: func_type](self) raises:
-        var f = Function[func_type, func](self.cuda_context)
+    fn compile_function[
+        func_type: AnyRegType, func: func_type
+    ](self) raises -> DeviceFunction[func_type, func]:
+        return DeviceFunction[func_type, func](self)
+
+    fn enqueue_function[
+        func_type: AnyRegType, func: func_type
+    ](
+        self,
+        f: DeviceFunction[func_type, func],
+        *args: FunctionArgument,
+        grid_dim: Dim,
+        block_dim: Dim,
+    ) raises:
+        var stream = Stream(self.cuda_context)
+        var arg_list = List[FunctionArgument](capacity=len(args))
+        for e in args:
+            arg_list.append(e[])
+        f.cuda_function(
+            arg_list, grid_dim=grid_dim, block_dim=block_dim, stream=stream
+        )
 
     fn enqueue_copy_to_device[
         type: AnyRegType
