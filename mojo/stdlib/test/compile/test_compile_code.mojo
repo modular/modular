@@ -17,9 +17,7 @@ def test_compile_llvm():
         return x + y
 
     alias func = my_add_function[DType.float32, 4]
-    var asm: String = compile_code[
-        __type_of(func), func, emission_kind="llvm"
-    ]()
+    var asm: String = compile_code[func, emission_kind="llvm"]()
 
     assert_true("fadd" in asm)
 
@@ -29,10 +27,7 @@ def test_compile_failure():
         constrained[False, "always fails"]()
 
     alias compiled = compile_info[
-        __type_of(always_fails),
-        always_fails,
-        is_failable=True,
-        emission_kind="llvm",
+        always_fails, is_failable=True, emission_kind="llvm"
     ]()
     alias is_error = compiled.is_error
     alias error_msg = compiled.error_msg
