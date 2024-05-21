@@ -345,15 +345,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto engineOr = initializeExecutionEngine(
       pm, options, std::move(eeOptions),
       /*isJIT=*/clOptions.cmd == Command::kExecute, target);
+
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-  auto &objLayer = engine->getLayer<ObjectCompilerLayer>();
-  auto &compileLayer = engine->getLayer<KGENCompilerLayer>();
+  auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
 
-  // This currently compiles the module, so we don't need to try to look
-  // anything up.
-  if (ErrorOrSuccess err = compileLayer.add("exec", *theModule))
+  // Compiles the module through KGEN compiler pipeline.
+  // We don't need to try to look anything up.
+  if (ErrorOrSuccess err = KGEN::runKGENPipeline(
+          pm, *theModule, options, clOptions.cmd == Command::kExecute, target))
     return failure(clOptions.reportError(err.getError()));
 
   // If all we're doing is generating a library file or elaborating, we're done
@@ -368,7 +369,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Handle LLVM output.
   if (clOptions.cmd == Command::kEmitLLVM) {
     llvm::LLVMContext llvmCtx;
-    auto llvmModule = objLayer.getRawCompiler().lowerAllFuncsToLLVM(
+    auto llvmModule = objectCompilerLayer.getRawCompiler().lowerAllFuncsToLLVM(
         symtab, exportedSymbols, llvmCtx);
     if (!llvmModule)
       return failure(clOptions.reportError("could not lower funcs to LLVM"));
@@ -387,8 +388,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .s output file"));
 
-    auto standaloneOr = objLayer.getRawCompiler().produceStandaloneAssembly(
-        symtab, exportedSymbols, outFile->os());
+    auto standaloneOr =
+        objectCompilerLayer.getRawCompiler().produceStandaloneAssembly(
+            symtab, exportedSymbols, outFile->os());
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +
@@ -401,7 +403,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kEmitHeader) {
     LogicalResult result = failure();
     auto writeFn = [&](raw_ostream &os) {
-      result = objLayer.getRawCompiler().produceFunctionDecls(
+      result = objectCompilerLayer.getRawCompiler().produceFunctionDecls(
           symtab, exportedSymbols, clOptions.outputFilename, os);
     };
     if (clOptions.outputFilename == "-") {
@@ -441,8 +443,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .o output file"));
 
-    auto standaloneOr = objLayer.getRawCompiler().produceStandaloneArchive(
-        symtab, exportedSymbols);
+    auto standaloneOr =
+        objectCompilerLayer.getRawCompiler().produceStandaloneArchive(
+            symtab, exportedSymbols);
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +
@@ -472,6 +475,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     }
     return mlir::success();
   };
+
+  // Add theModule to ObjectCompilerLayer for compiling to binary and ORC JIT
+  // management when we need to do some lookups.
+  if (ErrorOrSuccess err = objectCompilerLayer.add("exec", *theModule))
+    return failure(clOptions.reportError(err.getError()));
 
   // Loop over the functions, executing as necessary.
   llvm::DenseSet<StringRef> foundFuncs;

@@ -542,153 +542,6 @@ ErrorOr<RCRef<Cache::BlobCacheBackend>> KGEN::getMojoCacheBackend() {
 }
 
 //===----------------------------------------------------------------------===//
-// KGENCompilerMaterializationUnit
-//===----------------------------------------------------------------------===//
-
-/// Produce an ExportMap with every symbol in the module.
-static ExportMap getAllSymbols(ModuleOp theModule) {
-  ExportMap exports;
-  for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
-    exports.insert({sym.getNameAttr(), {ExportKind::Exported}});
-  return exports;
-}
-
-class KGENCompilerLayer::KGENCompilerMaterializationUnit
-    : public llvm::orc::MaterializationUnit {
-public:
-  KGENCompilerMaterializationUnit(KGENCompilerLayer &layer, SymbolTable s,
-                                  ExportMap e)
-      : MaterializationUnit(layer.getInterface(e)), genLayer(layer),
-        symtab(std::move(s)), exports(std::move(e)) {}
-
-  /// Provide a name for this MU that will show up in ORC debug logs.
-  StringRef getName() const override {
-    return "KGEN::KGENCompilerMaterializationUnit";
-  }
-
-  /// Given a MaterializationResponsibility, materialize the code for those
-  /// symbols and forward them to the next layer.
-  void materialize(
-      std::unique_ptr<llvm::orc::MaterializationResponsibility> mr) override {
-    genLayer.emit(std::move(mr), symtab, exports);
-  }
-
-  /// Notify that the symbol `name` has been overridden and this MU should
-  /// remove it from the source. This removes the symbol from the module.
-  void discard(const llvm::orc::JITDylib &jd,
-               const llvm::orc::SymbolStringPtr &name) override {
-    // If the operation exists, erase it. Otherwise, do nothing.
-    if (auto sym = symtab.lookup<mlir::SymbolOpInterface>(*name))
-      symtab.erase(sym);
-  }
-
-private:
-  KGENCompilerLayer &genLayer;
-  SymbolTable symtab;
-  ExportMap exports;
-};
-
-//===----------------------------------------------------------------------===//
-// KGENCompilerLayer
-//===----------------------------------------------------------------------===//
-
-KGENCompilerLayer::KGENCompilerLayer(
-    mlir::PassManager &pm, TargetInfoAttr target,
-    const CompilationOptions &options, ObjectCompilerLayer &base,
-    RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-    llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
-    MaterializationLayer::AddToSearchOrderFn add)
-    : MaterializationLayer(LayerKind::kKGENCompilerLayer, sess, dl,
-                           std::move(add)),
-      pm(pm), target(target), options(options), baseLayer(base) {
-  // Construct the caches.
-  transformCache =
-      RCRef<Cache::TransformCache>::create(std::move(transformCacheBackend));
-}
-
-ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
-  CompilerTimeTraceScope traceScope("KGENCompilerLayer::add(" + libName.str() +
-                                    ")");
-  auto dylibOr = getOrCreateDylib(libName);
-  if (dylibOr.isError())
-    return dylibOr.takeError();
-
-  llvm::orc::JITDylib *dylib = *dylibOr;
-  llvm::orc::ResourceTrackerSP resourceTracker =
-      dylib->getDefaultResourceTracker();
-
-  // Set the target now, so it's included in the cache key.
-  setTargetInfo(theModule, target);
-
-  // Populate the passes.
-  buildGenerateLibraryPipeline(pm, options);
-  populateElaborateModulePasses(pm, target, options);
-
-  llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
-  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
-  if (fileLine)
-    attrs["filename"] = fileLine.getFilename().str();
-
-  // Run the passes as a cached transform.
-  {
-    ContextRef ctx = loadContext(target.getContext());
-    [[maybe_unused]] auto timeScope =
-        ctx->get<M::Telemetry::TelemetryContext>()
-            ->createUInt64Timer<std::chrono::milliseconds>(
-                "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
-
-    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-        theModule, transformCache.copy(),
-        ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm,
-        Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-            "KGENCompilerLayer::add", "mojo.compiler.cache.miss.time",
-            {{"pipeline", "KGEN"}}),
-        Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-            "KGENCompilerLayer::add"));
-    LLCL::await(ready);
-    if (ready.isError())
-      return ready.takeDiagnostic().getMessage().copy();
-  }
-
-  // Add the materialization unit by computing the exports and the symbol
-  // table, and passing those off.
-  SymbolTable st(theModule);
-  ExportMap ex = getExportedSymbols(theModule);
-  if (ex.empty())
-    ex = getAllSymbols(theModule);
-
-  return toModularErrorOr(
-      dylib->define(std::make_unique<KGENCompilerMaterializationUnit>(
-                        *this, std::move(st), std::move(ex)),
-                    resourceTracker));
-}
-
-void KGENCompilerLayer::emit(
-    std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-    SymbolTable &symtab, const ExportMap &exports) {
-  // Delegate all requested symbols to the base layer.
-  baseLayer.emit(std::move(mr), symtab, exports);
-}
-
-llvm::orc::MaterializationUnit::Interface
-KGENCompilerLayer::getInterface(const ExportMap &exports) {
-  llvm::orc::MangleAndInterner mangler(session, dataLayout);
-  llvm::orc::SymbolFlagsMap symbols;
-
-  for (auto &[name, symbol] : exports)
-    symbols[mangler(name)] = getFlagsForExportedSymbol(symbol);
-
-  if (baseLayer.getRawCompiler().getIsJIT()) {
-    symbols[mangler(ExecutionEngine::getGlobalCtorFnName())] =
-        getGlobalFnSymbolFlags();
-    symbols[mangler(ExecutionEngine::getGlobalDtorFnName())] =
-        getGlobalFnSymbolFlags();
-  }
-
-  return {std::move(symbols), /*InitSymbol=*/nullptr};
-}
-
-//===----------------------------------------------------------------------===//
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
 
@@ -714,16 +567,56 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   if (failed(compiler))
     return compiler.takeError();
 
-  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
-      std::move(*compiler), engine->getLinkingLayer());
+  engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
+                                        engine->getLinkingLayer());
 
-  // Add the KGEN compiler layer. First though, get the backend chains to pass
-  // into the compile layer.
+  return std::move(engine);
+}
+
+ErrorOrSuccess
+KGEN::runKGENPipeline(mlir::PassManager &pm, ModuleOp theModule,
+                      const KGEN::CompilationOptions &compilationOptions,
+                      bool isJIT, TargetInfoAttr target, bool isSearch) {
+
+  // Set the target now, so it's included in the cache key.
+  setTargetInfo(theModule, target);
+
+  // Populate the passes.
+  buildGenerateLibraryPipeline(pm, compilationOptions);
+  populateElaborateModulePasses(pm, target, compilationOptions);
+
+  llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
+  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
+  if (fileLine)
+    attrs["filename"] = fileLine.getFilename().str();
+
   auto cacheBackend = getMojoCacheBackend();
   if (cacheBackend.isError())
     return cacheBackend.takeError();
 
-  engine->addLayer<KGENCompilerLayer>(pm, target, compilationOptions, objLayer,
-                                      std::move(*cacheBackend));
-  return std::move(engine);
+  // Run the passes as a cached transform.
+  {
+    ContextRef ctx = loadContext(target.getContext());
+    [[maybe_unused]] auto timeScope =
+        ctx->get<M::Telemetry::TelemetryContext>()
+            ->createUInt64Timer<std::chrono::milliseconds>(
+                "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
+
+    auto transformCache =
+        RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
+
+    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+        theModule, transformCache.copy(),
+        ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm,
+        Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
+            "KGEN::runKGENPipeline", "mojo.compiler.cache.miss.time",
+            {{"pipeline", "KGEN"}}),
+        Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
+            "KGEN::runKGENPipeline"));
+    LLCL::await(ready);
+    if (ready.isError())
+      return ready.takeDiagnostic().getMessage().copy();
+  }
+
+  return ErrorOrSuccess();
 }

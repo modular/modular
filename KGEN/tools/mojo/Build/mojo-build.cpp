@@ -139,19 +139,14 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
                        BufferRef &archive) {
   mlir::PassManager pm(&context);
   configurePassManager(pm);
-  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(pm, options, ExecutionEngineOptions(),
-                                /*isJIT=*/false, target);
-  if (failed(execEngineOr))
-    return state.reportError(execEngineOr.getError());
-  std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
-  auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
-  auto &compilerLayer = engine->getLayer<KGENCompilerLayer>();
 
-  // Add the module into the layer. This will actually compile it down to the
-  // post-elaboration phase, because before that phase we don't have flat
-  // symbols.
-  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp))
+  // Compile the moduleOp down to the post-elaboration phase, because before
+  // that phase we don't have flat symbols.
+  auto objectCompiler =
+      ObjectCompiler::create(pm, ".mojo_cache", options, false);
+
+  if (ErrorOrSuccess err =
+          KGEN::runKGENPipeline(pm, moduleOp, options, false, target))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.
@@ -160,9 +155,9 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
     return state.reportError("module does not contain a 'main' function");
 
   // Generate an archive for the module.
-  auto standaloneOr =
-      objectCompilerLayer.getRawCompiler().produceStandaloneArchive(
-          symtab, getExportedSymbols(moduleOp));
+  auto standaloneOr = objectCompiler->produceStandaloneArchive(
+      symtab, getExportedSymbols(moduleOp));
+
   if (failed(standaloneOr))
     return state.reportError("failed to produce an archive for the module: " +
                              Twine(standaloneOr.getError()));

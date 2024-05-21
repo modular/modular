@@ -471,8 +471,8 @@ class ObjectCompilerLayer::ObjectCompilerMaterializationUnit
     : public llvm::orc::MaterializationUnit {
 public:
   ObjectCompilerMaterializationUnit(ObjectCompilerLayer &layer,
-                                    const SymbolTable &symtab,
-                                    ExportMap &exports)
+                                    SymbolTable symtab,
+                                    const ExportMap &exports)
       : MaterializationUnit(layer.getInterface(symtab, exports)),
         genLayer(layer), symtab(symtab), exports(exports) {}
 
@@ -497,8 +497,8 @@ public:
   }
 
   ObjectCompilerLayer &genLayer;
-  const SymbolTable &symtab;
-  ExportMap &exports;
+  SymbolTable symtab;
+  ExportMap exports;
 };
 
 //===----------------------------------------------------------------------===//
@@ -514,9 +514,15 @@ ObjectCompilerLayer::ObjectCompilerLayer(ObjectCompiler &&objCompiler,
                            std::move(add)),
       objectCompiler(std::move(objCompiler)), baseLayer(base) {}
 
-ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName,
-                                        const SymbolTable &symtab,
-                                        ExportMap &exports) {
+/// Produce an ExportMap with every symbol in the module.
+static ExportMap getAllSymbols(ModuleOp theModule) {
+  ExportMap exports;
+  for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
+    exports.insert({sym.getNameAttr(), {ExportKind::Exported}});
+  return exports;
+}
+
+ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   auto dylibOr = getOrCreateDylib(libName);
   if (dylibOr.isError())
     return dylibOr.takeError();
@@ -525,19 +531,18 @@ ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName,
   llvm::orc::ResourceTrackerSP resourceTracker =
       dylib->getDefaultResourceTracker();
 
+  // Add the materialization unit by computing the exports and the symbol
+  // table, and passing those off.
+  SymbolTable symtab(theModule);
+  ExportMap exports = getExportedSymbols(theModule);
+  if (exports.empty())
+    exports = getAllSymbols(theModule);
+
   // Add the materialization unit.
   return toModularErrorOr(
       dylib->define(std::make_unique<ObjectCompilerMaterializationUnit>(
                         *this, symtab, exports),
                     resourceTracker));
-}
-
-/// Produce an ExportMap with every symbol in the module.
-static ExportMap getAllSymbols(ModuleOp theModule) {
-  ExportMap exports;
-  for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
-    exports.insert({sym.getNameAttr(), {ExportKind::Exported}});
-  return exports;
 }
 
 void ObjectCompilerLayer::emit(

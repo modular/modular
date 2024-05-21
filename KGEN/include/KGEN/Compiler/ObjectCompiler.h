@@ -165,15 +165,8 @@ public:
                       llvm::orc::ExecutionSession &sess,
                       const llvm::DataLayout &dl, AddToSearchOrderFn add);
 
-  /// Add a module to the JIT. The module must stay alive long enough for
-  /// codegen to happen (so long enough for a `lookup` call), but after that the
-  /// object code generated is fully stable, save for the `lookupArchive`
-  /// operation below.
-  ///
-  /// If the export map is empty, then exports are regenerated
-  /// by inspecting the module. Otherwise, the exports provided are used.
-  ErrorOrSuccess add(StringRef libName, const SymbolTable &symtab,
-                     ExportMap &exports);
+  /// Add a module after KGEN pipeline to the JIT.
+  ErrorOrSuccess add(StringRef libName, ModuleOp theModule);
 
   /// Emit a given module. This will immediately run the materialization.
   void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,

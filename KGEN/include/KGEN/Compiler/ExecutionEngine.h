@@ -99,7 +99,6 @@ public:
   enum LayerKind {
     kStaticArchiveLayer,
     kObjectCompilerLayer,
-    kKGENCompilerLayer
   };
   virtual ~MaterializationLayer() = default;
 
@@ -360,10 +359,9 @@ private:
   std::mutex mu;
 
   /// List of materialization layers the JIT has. The base is *always* the
-  /// object linking layer. We are not likely to have more than 5 layers total:
+  /// object linking layer. We are having more than 2 layers total:
   /// (1) StaticArchiveLayer, (2) KGEN object generation,
-  /// (3) KGEN compilation pipeline
-  SmallVector<std::unique_ptr<MaterializationLayer>, 3> layers;
+  SmallVector<std::unique_ptr<MaterializationLayer>, 2> layers;
 
   /// Keep a set of known dylibs and a dylib search order - this will make it
   /// easy to (a) make sure we only have unique dylibs and (b) cache the
