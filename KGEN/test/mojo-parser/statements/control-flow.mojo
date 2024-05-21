@@ -125,16 +125,14 @@ fn use(value: MyType):
 # CHECK-LABEL: lit.func @"parameter_for
 # CHECK-SAME: [mut [[LT:.*]]]<a: !Int>(%value: !lit.ref<!MyType, mut [[LT]]>
 fn parameter_for[a: Int](owned value: MyType):
-    # CHECK-NEXT: lit.func [[BODY:.*]]<[""][[I:.*]]: !Int, |>() capturing -> !kgen.none always_inline
+    # CHECK-NEXT: kgen.param.for [[i:.*]]: !Int in :!ZeroStartingRange apply
+    # CHECK-SAME: iter :{{.*}}parameter_for_generator{{.*}}<:!IntIterable #ZeroStartingRange
     @parameter
     for i in range(a):
         # CHECK: [[IMM:%.*]] = lit.ref.immut %value
         # CHECK: use{{.*}}[muttoimm [[LT]]]([[IMM]])
         use(value)
-        # CHECK: return %none
-
-    # CHECK: call {{.*}}parameter_for{{.*}}<:!IntIterable #ZeroStartingRange{{.*}}, :!ZeroStartingRange apply({{.*}}store_to_mem(a){{.*}}[[BODY]]
-    # CHECK-NEXT: lit.ownership.use_lifetime mut [[LT]]
+        # CHECK: kgen.param.for.continue
 
 ##===----------------------------------------------------------------------===##
 

@@ -973,84 +973,63 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
                                       StringAttr target, SMLoc smLoc,
                                       SMLoc targetLoc) {
-  // To codegen an `@parameter for`, we'll parse the body of the loop into a
-  // lambda and then simply emit a call to the `parameter_for` genereator
-  // defined in the builtins, passing the sequence value as a PValue.
   Location forLoc = translateLocation(targetLoc);
   ASTDecl &scope = getParentDecl();
 
-  // Declare a nested function of type `fn[Int]() -> None`.
-  Type intType = shared.lookupNamedType("Int", scope, smLoc);
-  if (!intType)
-    return failure();
-  auto funcType =
-      builder.getFunctionType({}, KGEN::NoneType::get(getContext()));
-  auto indVarDecl =
-      ParamDeclAttr::get(scope.mangleParamName(target.getValue()), intType);
-  StringRef name = "__parmeter_for_body";
-  auto bodyFunc = builder.create<LIT::FuncOp>(
-      forLoc, scope.mangleParamName(name), name, funcType, indVarDecl,
-      FnEffects().setCapturing(), InlineLevel::Always);
-  builder.setInsertionPointToStart(bodyFunc.getBody());
-
-  // Make sure to generate a new subprogram scope for the function and parse its
-  // body with it.
-  {
-    shared.setLocationDebugScope(bodyFunc);
-    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (shared.diBuilder)
-      diScopeGuard = shared.diBuilder->pushScopeGuard(bodyFunc.getLocScope());
-
-    // Bind the induction variable to the param decl in the function.
-    if (parseLocalScopeSuite(
-            curIndent, ScopeDecl{PValue(ParamDeclRefAttr::get(indVarDecl)),
-                                 targetLoc, target}))
-      return failure();
-    builder.create<LIT::ReturnOp>(
-        bodyFunc.getLoc(), Value(builder.create<ParamConstantOp>(
-                               bodyFunc.getLoc(), shared.getNoneAttr())));
-    builder.create<LIT::EndFuncOp>(bodyFunc.getLoc());
-  }
-
   // Emit the sequence as a PValue parameter.
-  builder.setInsertionPointAfter(bodyFunc);
   PValue seqPValue = getEmitter().emitExprPValue(seqExpr, EC_ForParamSeq);
   if (!seqPValue)
     return failure();
 
-  // Bind the sequence PValue and the body function to `parameter_for` and emit
-  // a call.
+  // Bind the sequence initial value to the parameter for iterator generator.
+  // Start by looking up the builtin generator.
   ArrayRef<ASTDecl *> paramForImpl = shared.getBuiltinFunction(
-      scope, "builtin._stubs", "parameter_for", smLoc);
+      scope, "builtin._stubs", "parameter_for_generator", smLoc);
   if (paramForImpl.empty())
     return failure();
+
+  // Resolve the overload with the sequence's type. This succeeds if the
+  // iterator type is currently supported.
   ParamBindings bindings(
       TypeCheckScopeInfo{scope, /*isParamContext=*/false, shared});
-  bindings.add(seqExpr, seqPValue);
-  bindings.add(seqExpr, ParamDeclRefAttr::get(bodyFunc.getParamDeclAttr()));
-  OverloadSet call("parameter_for", paramForImpl, std::move(bindings), seqExpr,
-                   CallSyntax::kDirectCall);
-  ValueDest dest(EC_ForParamSeq);
-  ExprEmitter emitter = getEmitter();
-  if (!call.emitCall(CallOperands(), dest, emitter))
+  bindings.add(seqExpr, PValue(seqPValue.getType()));
+  OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
+                   seqExpr, CallSyntax::kDirectCall);
+  PValue iterate = call.getDirectSymbol(/*expectedType=*/{});
+  if (!iterate)
     return failure();
 
-  // FIXME: SignatureType needs to have a lifetime parameter! CheckLifetimes
-  // can't reason about parameter closures, so manually extend the lifetimes of
-  // any values used within the body.
-  mlir::AttrTypeWalker walker;
-  SmallVector<TypedAttr> lifetimes;
-  walker.addWalk([&](TypedAttr value) {
-    if (isa<LifetimeType>(value.getType()))
-      lifetimes.push_back(value);
-  });
-  mlir::visitUsedValuesDefinedAbove(
-      bodyFunc.getBodyRegion(),
-      [&](OpOperand *value) { walker.walk(value->get().getType()); });
-  if (!lifetimes.empty()) {
-    builder.create<OwnershipUseLifetimeOp>(
-        forLoc, LifetimeUnionAttr::get(getContext(), lifetimes));
+  // Sniff the type of the induction variable and create its declaration.
+  // TODO: Expand the induction variable to support other types.
+  Type intType = shared.lookupNamedType("Int", scope, smLoc);
+  if (!intType)
+    return failure();
+  auto indVarDecl =
+      ParamDeclAttr::get(scope.mangleParamName(target.getValue()), intType);
+
+  // Create the loop and parse the body into it.
+  auto paramFor =
+      builder.create<ParamForOp>(forLoc, seqPValue, iterate, indVarDecl);
+  builder.createBlock(&paramFor.getBody());
+  if (parseLocalScopeSuite(curIndent,
+                           ScopeDecl{PValue(ParamDeclRefAttr::get(indVarDecl)),
+                                     targetLoc, target}))
+    return failure();
+  builder.create<ParamForContinueOp>(forLoc);
+
+  // Parse the else region if present.
+  builder.createBlock(&paramFor.getElseRegion());
+  // The 'else' block is executed only when the condition check fails.
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after else") ||
+        parseLocalScopeSuite(curIndent))
+      return failure();
   }
+  builder.create<ParamYieldOp>(forLoc);
+
+  // Advance the insertion point.
+  builder.setInsertionPointAfter(paramFor);
   return success();
 }
 
