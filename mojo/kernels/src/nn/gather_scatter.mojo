@@ -34,13 +34,11 @@ fn normalize_neg_index[
 
     Returns val + dim if val < 0 else val
     """
+
     debug_assert(
         (
-            # TODO: no way to do `__neg__` on `Bool` today
-            # See https://github.com/modularml/modular/pull/39750
-            -SIMD[type, width](dim_size).reduce_and()
-            <= int(idx.reduce_and())
-            < int(SIMD[type, width](dim_size).reduce_and())
+            (-SIMD[type, width](dim_size) <= idx).reduce_and()
+            and (idx < SIMD[type, width](dim_size)).reduce_and()
         ),
         "indices must be in range [-dim_size, dim_size)",
     )
