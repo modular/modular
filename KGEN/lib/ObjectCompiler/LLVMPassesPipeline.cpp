@@ -86,12 +86,36 @@
 using namespace llvm;
 using namespace M::KGEN;
 
+static bool isGPUBackend(const CompilationOptions &options) {
+  llvm::Triple triple(options.targetTriple);
+  return llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
+                            triple.getArch());
+}
+
+static SimplifyCFGOptions
+adjustSimplifyCFGOptions(SimplifyCFGOptions simplifyCFGOptions,
+                         const CompilationOptions &options) {
+  if (!isGPUBackend(options))
+    return simplifyCFGOptions;
+
+  // On GPUs the branch cost is much larger than that of the CPU, so increase
+  // the threshold. E.g. if we have
+  //
+  // if (cond0) return
+  // if (cond1) return
+  // <<stuff>>
+  //
+  // then we want to simplify this to
+  //
+  // if (cond0 | cond1) return
+  // <<stuff>>
+  return simplifyCFGOptions.bonusInstThreshold(2);
+}
+
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
   // LLVM's sanitizer instrumentation is not supported for NVPTX.
-  llvm::Triple triple(options.targetTriple);
-  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                         triple.getArch()))
+  if (isGPUBackend(options))
     return;
 
   if (options.sanitizers.has(M::Sanitizers::kThread)) {
@@ -109,7 +133,8 @@ static void addSanitizers(ModulePassManager &modulePassManager,
   }
 }
 
-static FunctionPassManager buildFunctionSimplificationPipeline() {
+static FunctionPassManager
+buildFunctionSimplificationPipeline(const CompilationOptions &options) {
   FunctionPassManager FPM;
   // Form SSA out of local memory accesses after breaking apart aggregates into
   // scalars.
@@ -125,8 +150,10 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
   FPM.addPass(JumpThreadingPass());
   FPM.addPass(CorrelatedValuePropagationPass());
 
-  FPM.addPass(
-      SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+  SimplifyCFGOptions simplifyCFGOptions = adjustSimplifyCFGOptions(
+      SimplifyCFGOptions().convertSwitchRangeToICmp(true), options);
+
+  FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
   FPM.addPass(InstCombinePass());
   FPM.addPass(AggressiveInstCombinePass());
 
@@ -135,8 +162,7 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
   FPM.addPass(LibCallsShrinkWrapPass());
 
   FPM.addPass(TailCallElimPass());
-  FPM.addPass(
-      SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+  FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
 
   // Form canonically associated expression trees, and simplify the trees using
   // basic mathematical properties. For example, this will form (nearly)
@@ -186,8 +212,8 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
   FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM1),
                                               /*UseMemorySSA=*/true,
                                               /*UseBlockFrequencyInfo=*/true));
-  FPM.addPass(
-      SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+
+  FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
   FPM.addPass(InstCombinePass());
   // The loop passes in LPM2 (LoopIdiomRecognizePass, IndVarSimplifyPass,
   // LoopDeletionPass and LoopFullUnrollPass) do not preserve MemorySSA.
@@ -240,16 +266,19 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
 
   FPM.addPass(CoroElidePass());
 
-  FPM.addPass(SimplifyCFGPass(SimplifyCFGOptions()
-                                  .convertSwitchRangeToICmp(true)
-                                  .hoistCommonInsts(true)
-                                  .sinkCommonInsts(true)));
+  FPM.addPass(SimplifyCFGPass(
+      adjustSimplifyCFGOptions(SimplifyCFGOptions()
+                                   .convertSwitchRangeToICmp(true)
+                                   .hoistCommonInsts(true)
+                                   .sinkCommonInsts(true),
+                               options)));
   FPM.addPass(InstCombinePass());
 
   return FPM;
 }
 
-static void addInlinerPasses(ModulePassManager &MPM) {
+static void addInlinerPasses(ModulePassManager &MPM,
+                             const CompilationOptions &options) {
   ModuleInlinerWrapperPass MIWP(
       getInlineParams(/*speed*/ 3, /*size*/ 0),
       /*PerformMandatoryInliningsFirst*/ true,
@@ -285,7 +314,7 @@ static void addInlinerPasses(ModulePassManager &MPM) {
   // Lastly, add the core function simplification pipeline nested inside the
   // CGSCC walk.
   MainCGPipeline.addPass(createCGSCCToFunctionPassAdaptor(
-      buildFunctionSimplificationPipeline(),
+      buildFunctionSimplificationPipeline(options),
       /*EagerlyInvalidateAnalyses*/ true,
       /*EnableNoRerunSimplificationPipeline*/ true));
 
@@ -293,7 +322,8 @@ static void addInlinerPasses(ModulePassManager &MPM) {
   MPM.addPass(std::move(MIWP));
 }
 
-static void addVectorPasses(FunctionPassManager &FPM) {
+static void addVectorPasses(FunctionPassManager &FPM,
+                            const CompilationOptions &options) {
   // Eliminate loads by forwarding stores from the previous iteration to loads
   // of the current iteration.
   FPM.addPass(LoopLoadEliminationPass());
@@ -310,13 +340,15 @@ static void addVectorPasses(FunctionPassManager &FPM) {
   // convert to more optimized IR using more aggressive simplify CFG options.
   // The extra sinking transform can create larger basic blocks, so do this
   // before SLP vectorization.
-  FPM.addPass(SimplifyCFGPass(SimplifyCFGOptions()
-                                  .forwardSwitchCondToPhi(true)
-                                  .convertSwitchRangeToICmp(true)
-                                  .convertSwitchToLookupTable(true)
-                                  .needCanonicalLoops(false)
-                                  .hoistCommonInsts(true)
-                                  .sinkCommonInsts(true)));
+  FPM.addPass(SimplifyCFGPass(
+      adjustSimplifyCFGOptions(SimplifyCFGOptions()
+                                   .forwardSwitchCondToPhi(true)
+                                   .convertSwitchRangeToICmp(true)
+                                   .convertSwitchToLookupTable(true)
+                                   .needCanonicalLoops(false)
+                                   .hoistCommonInsts(true)
+                                   .sinkCommonInsts(true),
+                               options)));
 
   FPM.addPass(SLPVectorizerPass());
   // Enhance/cleanup vector code.
@@ -378,13 +410,15 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   FunctionPassManager GlobalCleanupPM;
   GlobalCleanupPM.addPass(InstCombinePass());
 
-  GlobalCleanupPM.addPass(
-      SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+  SimplifyCFGOptions simplifyCFGOptions = adjustSimplifyCFGOptions(
+      SimplifyCFGOptions().convertSwitchRangeToICmp(true), options);
+
+  GlobalCleanupPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
   MPM.addPass(
       createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
-  addInlinerPasses(MPM);
+  addInlinerPasses(MPM, options);
 
   MPM.addPass(CoroCleanupPass());
 
@@ -439,7 +473,7 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   // from the TargetLibraryInfo.
   OptimizePM.addPass(InjectTLIMappings());
 
-  addVectorPasses(OptimizePM);
+  addVectorPasses(OptimizePM, options);
 
   // LoopSink pass sinks instructions hoisted by LICM, which serves as a
   // canonicalization pass that enables other optimizations. As a result,
@@ -460,8 +494,8 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
 
   // LoopSink (and other loop passes since the last simplifyCFG) might have
   // resulted in single-entry-single-exit or empty blocks. Clean up the CFG.
-  OptimizePM.addPass(
-      SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+
+  OptimizePM.addPass(SimplifyCFGPass(simplifyCFGOptions));
 
   // Add the core optimizing pipeline.
   MPM.addPass(

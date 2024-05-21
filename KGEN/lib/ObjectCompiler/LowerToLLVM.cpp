@@ -66,7 +66,7 @@ static void attachInstrumentationAttributes(llvm::Module &module,
 /// DebugDirectives instead for equivalent performance to no-debug.
 static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
                                    DebugInfo::EmissionKind debugLevel) {
-  bool generatingPtx = targetTriple.find("nvptx") != std::string::npos;
+  bool generatingPtx = targetTriple.contains("nvptx");
   if (generatingPtx && debugLevel == DebugInfo::EmissionKind::LineTablesOnly) {
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
