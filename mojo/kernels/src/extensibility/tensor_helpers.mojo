@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from os.atomic import Atomic
+
 
 @value
 @register_passable("trivial")
