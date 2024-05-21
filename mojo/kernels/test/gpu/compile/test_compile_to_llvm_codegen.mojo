@@ -19,7 +19,7 @@ fn tese_cse_thread_id():
         return ThreadIdx.x() + ThreadIdx.x() + ThreadIdx.x()
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
-    print(_compile_code[__type_of(kernel), kernel, emission_kind="llvm"]().asm)
+    print(_compile_code[kernel, emission_kind="llvm"]().asm)
 
 
 # CHECK-LABEL: test_dynamic_shared_mem
@@ -39,7 +39,7 @@ fn test_dynamic_shared_mem():
             + dynamic_sram_ptr_2.offset(1).load()
         )
 
-    print(_compile_code[__type_of(kernel), kernel, emission_kind="llvm"]().asm)
+    print(_compile_code[kernel, emission_kind="llvm"]().asm)
 
 
 fn main():

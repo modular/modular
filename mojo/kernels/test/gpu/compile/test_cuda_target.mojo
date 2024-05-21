@@ -66,11 +66,7 @@ fn _verify_parameterized_on_cuda(asm: String) raises -> None:
 
 def test_parameterized_on_cuda_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(parameterized_on_cuda),
-            parameterized_on_cuda,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[parameterized_on_cuda, target = _get_nvptx_target()]().asm
     )
     _verify_parameterized_on_cuda(asm)
 
@@ -78,9 +74,7 @@ def test_parameterized_on_cuda_sm80():
 def test_parameterized_on_cuda_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(parameterized_on_cuda),
-            parameterized_on_cuda,
-            target = _get_nvptx_target_sm90(),
+            parameterized_on_cuda, target = _get_nvptx_target_sm90()
         ]().asm
     )
     _verify_parameterized_on_cuda(asm)
@@ -103,22 +97,14 @@ fn _verify_hello(asm: String) raises -> None:
 
 def test_hello_mojo_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(hello_mojo),
-            hello_mojo,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[hello_mojo, target = _get_nvptx_target()]().asm
     )
     _verify_hello(asm)
 
 
 def test_hello_mojo_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(hello_mojo),
-            hello_mojo,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[hello_mojo, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_hello(asm)
 
@@ -158,22 +144,14 @@ fn _verify_erf_elementwise(asm: String) raises -> None:
 
 def test_erf_elementwise_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(erf_elementwise),
-            erf_elementwise,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[erf_elementwise, target = _get_nvptx_target()]().asm
     )
     _verify_erf_elementwise(asm)
 
 
 def test_erf_elementwise_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(erf_elementwise),
-            erf_elementwise,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[erf_elementwise, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_erf_elementwise(asm)
 
@@ -202,22 +180,14 @@ fn _verify_erf_kernel(asm: String) raises -> None:
 
 def test_erf_kernel_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(erf_kernel),
-            erf_kernel,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[erf_kernel, target = _get_nvptx_target()]().asm
     )
     _verify_erf_kernel(asm)
 
 
 def test_erf_kernel_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(erf_kernel),
-            erf_kernel,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[erf_kernel, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_erf_kernel(asm)
 
@@ -244,9 +214,7 @@ fn _verify_shared_stack_allocation(asm: String) raises -> None:
 def test_shared_stack_allocation_sm80():
     alias asm = str(
         _compile_code[
-            __type_of(test_shared_stack_allocation),
-            test_shared_stack_allocation,
-            target = _get_nvptx_target(),
+            test_shared_stack_allocation, target = _get_nvptx_target()
         ]().asm
     )
     _verify_shared_stack_allocation(asm)
@@ -255,9 +223,7 @@ def test_shared_stack_allocation_sm80():
 def test_shared_stack_allocation_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(test_shared_stack_allocation),
-            test_shared_stack_allocation,
-            target = _get_nvptx_target_sm90(),
+            test_shared_stack_allocation, target = _get_nvptx_target_sm90()
         ]().asm
     )
     _verify_shared_stack_allocation(asm)
@@ -280,22 +246,14 @@ fn _verify_barrier(asm: String) raises -> None:
 
 def test_barrier_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(test_barrier),
-            test_barrier,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[test_barrier, target = _get_nvptx_target()]().asm
     )
     _verify_barrier(asm)
 
 
 def test_barrier_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(test_barrier),
-            test_barrier,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[test_barrier, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_barrier(asm)
 
@@ -402,23 +360,13 @@ fn _verify_gemm(asm: String) raises -> None:
 
 
 def test_gemm_sm80():
-    alias asm = str(
-        _compile_code[
-            __type_of(gemm),
-            gemm,
-            target = _get_nvptx_target(),
-        ]().asm
-    )
+    alias asm = str(_compile_code[gemm, target = _get_nvptx_target()]().asm)
     _verify_gemm(asm)
 
 
 def test_gemm_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(gemm),
-            gemm,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[gemm, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_gemm(asm)
 
@@ -457,22 +405,14 @@ fn _verify_shuffle_up(asm: String) raises -> None:
 
 def test_shuffle_up_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(test_shuffle_up),
-            test_shuffle_up,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[test_shuffle_up, target = _get_nvptx_target()]().asm
     )
     _verify_shuffle_up(asm)
 
 
 def test_shuffle_up_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(test_shuffle_up),
-            test_shuffle_up,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[test_shuffle_up, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_shuffle_up(asm)
 
@@ -496,11 +436,7 @@ fn _verify_shuffle_down(asm: String) raises -> None:
 
 def test_shuffle_down_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(test_shuffle_down),
-            test_shuffle_down,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[test_shuffle_down, target = _get_nvptx_target()]().asm
     )
     _verify_shuffle_down(asm)
 
@@ -508,9 +444,7 @@ def test_shuffle_down_sm80():
 def test_shuffle_down_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(test_shuffle_down),
-            test_shuffle_down,
-            target = _get_nvptx_target_sm90(),
+            test_shuffle_down, target = _get_nvptx_target_sm90()
         ]().asm
     )
     _verify_shuffle_down(asm)
@@ -540,22 +474,14 @@ fn _verify_warp_sum_reduce(asm: String) raises -> None:
 
 def test_warp_sum_reduce_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(warp_sum_reduce),
-            warp_sum_reduce,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[warp_sum_reduce, target = _get_nvptx_target()]().asm
     )
     _verify_warp_sum_reduce(asm)
 
 
 def test_warp_sum_reduce_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(warp_sum_reduce),
-            warp_sum_reduce,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[warp_sum_reduce, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_warp_sum_reduce(asm)
 
@@ -590,22 +516,14 @@ fn _verify_block_reduce(asm: String) raises -> None:
 
 def test_block_reduce_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(block_reduce),
-            block_reduce,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[block_reduce, target = _get_nvptx_target()]().asm
     )
     _verify_block_reduce(asm)
 
 
 def test_block_reduce_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(block_reduce),
-            block_reduce,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[block_reduce, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_block_reduce(asm)
 

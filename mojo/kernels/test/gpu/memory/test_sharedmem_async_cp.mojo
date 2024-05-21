@@ -53,12 +53,7 @@ fn run_copy_via_shared() raises:
         in_data[i] = i + 1
         out_data[i] = 0
 
-    var copy_via_shared_gpu = gpu_host.Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-        ) -> None, copy_via_shared
-    ]()
+    var copy_via_shared_gpu = gpu_host.Function[copy_via_shared]()
 
     var stream = gpu_host.Stream()
     copy_via_shared_gpu(

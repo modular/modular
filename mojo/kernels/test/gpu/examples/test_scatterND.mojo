@@ -228,10 +228,7 @@ fn scatter_nd[
 
     var num_updates_elements = count_copy
 
-    var func = Function[
-        __type_of(scatter_nd_gpu[type=type, indices_type=indices_type]),
-        scatter_nd_gpu[type=type, indices_type=indices_type],
-    ]()
+    var func = Function[scatter_nd_gpu[type=type, indices_type=indices_type],]()
 
     func(
         output_device,

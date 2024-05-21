@@ -48,7 +48,7 @@ fn run_vec_add(ctx: Context) raises:
     ctx.copy_host_to_device(in0_device, in0_host, length)
     ctx.copy_host_to_device(in1_device, in1_host, length)
 
-    var func = Function[__type_of(vec_func), vec_func](ctx)
+    var func = Function[vec_func](ctx)
 
     var block_dim = 32
 

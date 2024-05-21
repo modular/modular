@@ -61,11 +61,7 @@ fn _verify_register_intrinsics(asm: String) raises -> None:
 
 def test_register_intrinsics_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(register_intrinsics),
-            register_intrinsics,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[register_intrinsics, target = _get_nvptx_target()]().asm
     )
     _verify_register_intrinsics(asm)
 
@@ -73,9 +69,7 @@ def test_register_intrinsics_sm80():
 def test_register_intrinsics_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(register_intrinsics),
-            register_intrinsics,
-            target = _get_nvptx_target_sm90(),
+            register_intrinsics, target = _get_nvptx_target_sm90()
         ]().asm
     )
     _verify_register_intrinsics(asm)

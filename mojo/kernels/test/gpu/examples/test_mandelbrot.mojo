@@ -90,7 +90,7 @@ fn run_mandelbrot() raises:
 
     var out_device = _malloc[int_type](width * height)
 
-    var func = Function[__type_of(mandelbrot), mandelbrot]()
+    var func = Function[mandelbrot]()
 
     @always_inline
     @parameter

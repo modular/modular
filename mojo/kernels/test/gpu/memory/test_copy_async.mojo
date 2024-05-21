@@ -48,22 +48,14 @@ fn _verify_mbarrier(asm: String) raises -> None:
 
 def test_mbarrier_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(test_mbarrier),
-            test_mbarrier,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[test_mbarrier, target = _get_nvptx_target()]().asm
     )
     _verify_mbarrier(asm)
 
 
 def test_mbarrier_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(test_mbarrier),
-            test_mbarrier,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[test_mbarrier, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_mbarrier(asm)
 
@@ -83,11 +75,7 @@ fn _verify_mbarrier_init(asm: String) raises -> None:
 
 def test_mbarrier_init_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(test_mbarrier_init),
-            test_mbarrier_init,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[test_mbarrier_init, target = _get_nvptx_target()]().asm
     )
     _verify_mbarrier_init(asm)
 
@@ -95,9 +83,7 @@ def test_mbarrier_init_sm80():
 def test_mbarrier_init_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(test_mbarrier_init),
-            test_mbarrier_init,
-            target = _get_nvptx_target_sm90(),
+            test_mbarrier_init, target = _get_nvptx_target_sm90()
         ]().asm
     )
     _verify_mbarrier_init(asm)
@@ -119,9 +105,7 @@ fn _verify_mbarrier_test_wait(asm: String) raises -> None:
 def test_mbarrier_test_wait_sm80():
     alias asm = str(
         _compile_code[
-            __type_of(test_mbarrier_test_wait),
-            test_mbarrier_test_wait,
-            target = _get_nvptx_target(),
+            test_mbarrier_test_wait, target = _get_nvptx_target()
         ]().asm
     )
     _verify_mbarrier_test_wait(asm)
@@ -130,9 +114,7 @@ def test_mbarrier_test_wait_sm80():
 def test_mbarrier_test_wait_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(test_mbarrier_test_wait),
-            test_mbarrier_test_wait,
-            target = _get_nvptx_target_sm90(),
+            test_mbarrier_test_wait, target = _get_nvptx_target_sm90()
         ]().asm
     )
     assert_true("mbarrier.test_wait.shared.b64" in asm)
@@ -157,22 +139,14 @@ fn _verify_async_copy(asm: String) raises -> None:
 
 def test_async_copy_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(test_async_copy),
-            test_async_copy,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[test_async_copy, target = _get_nvptx_target()]().asm
     )
     _verify_async_copy(asm)
 
 
 def test_async_copy_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(test_async_copy),
-            test_async_copy,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[test_async_copy, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_async_copy(asm)
 

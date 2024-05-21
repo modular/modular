@@ -51,7 +51,7 @@ fn run_vec_add() raises:
     _copy_host_to_device(in0_device, in0_host, length)
     _copy_host_to_device(in1_device, in1_host, length)
 
-    var func = Function[__type_of(vec_func), vec_func](debug=True)
+    var func = Function[vec_func](debug=True)
 
     var block_dim = 32
 

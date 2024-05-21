@@ -105,10 +105,7 @@ fn test_concat_4_inputs_rank5() raises:
     alias B_SIZE = 32
 
     var func = Function[
-        fn (
-            NDBuffer[dtype, rank],
-            StaticTuple[NDBuffer[dtype, rank], 4],
-        ) -> None, _concat_inner_most_single_dim[
+        _concat_inner_most_single_dim[
             rank=rank, type=dtype, num_inputs=4, block_size=B_SIZE
         ]
     ]()

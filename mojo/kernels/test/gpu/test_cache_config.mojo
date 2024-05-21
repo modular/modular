@@ -22,7 +22,7 @@ def main():
             var buff = ctx.malloc_managed[DType.int64](16)
             for i in range(16):
                 buff[i] = 0
-            var kernel = Function[__type_of(gpu_kernel), gpu_kernel](
+            var kernel = Function[gpu_kernel](
                 ctx, cache_config=CacheConfig.PREFER_SHARED
             )
             kernel(buff, block_dim=(4), grid_dim=(4))

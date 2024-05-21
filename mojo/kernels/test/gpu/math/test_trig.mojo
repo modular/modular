@@ -31,7 +31,7 @@ fn run_func[
         var result = kernel_fn(lhs)
         out[0] = result
 
-    var func = Function[__type_of(kernel), kernel]()
+    var func = Function[kernel]()
 
     func(val, grid_dim=1, block_dim=1)
     synchronize()

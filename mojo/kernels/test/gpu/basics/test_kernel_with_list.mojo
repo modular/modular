@@ -31,9 +31,7 @@ fn test_kernel_with_list() raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    var kernel = Function[__type_of(kernel_with_list), kernel_with_list](
-        dump_ptx=True
-    )
+    var kernel = Function[kernel_with_list](dump_ptx=True)
     kernel(res, block_dim=(1), grid_dim=(1))
     # CHECK: 16.0
     print("Res=", res[0])

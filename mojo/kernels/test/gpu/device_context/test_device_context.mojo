@@ -43,7 +43,7 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(in0_device, in0_host)
     ctx.enqueue_copy_to_device(in1_device, in1_host)
 
-    var func = ctx.compile_function[__type_of(vec_func), vec_func]()
+    var func = ctx.compile_function[vec_func]()
 
     var block_dim = 32
     var addition = 5

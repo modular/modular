@@ -14,11 +14,7 @@ fn outer[y: Int]():
     fn param[x: Int](y: SIMD[DType.float32, y], /):
         pass
 
-    print(
-        _compile_code[
-            fn (SIMD[DType.float32, y]) capturing -> None, param[y]
-        ]().asm
-    )
+    print(_compile_code[param[y]]().asm)
 
 
 fn main():

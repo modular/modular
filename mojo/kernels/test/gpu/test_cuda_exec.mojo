@@ -47,14 +47,7 @@ fn run_vec_add(ctx: Context) raises:
 
     var module = Module(ctx, (Path(CURRENT_DIR) / "vec_add.ptx"))
 
-    var func = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-        ) -> None, vec_func
-    ](module, "vec_add")
+    var func = Function[vec_func](module, "vec_add")
 
     alias length = 1024
 

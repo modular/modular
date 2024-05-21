@@ -24,11 +24,7 @@ fn SM80_16x8x8_F16F16F16F16_TN(
 
 
 def test_SM80_16x8x8_F16F16F16F16_TN():
-    alias asm = str(
-        _compile_code[
-            __type_of(SM80_16x8x8_F16F16F16F16_TN), SM80_16x8x8_F16F16F16F16_TN
-        ]().asm
-    )
+    alias asm = str(_compile_code[SM80_16x8x8_F16F16F16F16_TN]().asm)
     assert_true("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16" in asm)
     assert_true("{%r10, %r11}," in asm)
     assert_true("{%r5, %r6}," in asm)
@@ -48,12 +44,7 @@ fn SM80_m16n8k4_F32TF32TF32F32_TN(
 
 
 def test_SM80_m16n8k4_F32TF32TF32F32_TN():
-    alias asm = str(
-        _compile_code[
-            __type_of(SM80_m16n8k4_F32TF32TF32F32_TN),
-            SM80_m16n8k4_F32TF32TF32F32_TN,
-        ]().asm
-    )
+    alias asm = str(_compile_code[SM80_m16n8k4_F32TF32TF32F32_TN,]().asm)
     assert_true("mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32" in asm)
     assert_true("{%f7, %f8, %f9, %f10}," in asm)
     assert_true("{%r2, %r1}," in asm)
@@ -72,12 +63,7 @@ fn SM80_m16n8k8_F32TF32TF32F32_TN(
 
 
 def test_SM80_m16n8k8_F32TF32TF32F32_TN():
-    alias asm = str(
-        _compile_code[
-            __type_of(SM80_m16n8k8_F32TF32TF32F32_TN),
-            SM80_m16n8k8_F32TF32TF32F32_TN,
-        ]().asm
-    )
+    alias asm = str(_compile_code[SM80_m16n8k8_F32TF32TF32F32_TN,]().asm)
     assert_true("mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32" in asm)
     assert_true("{%f5, %f6, %f7, %f8}," in asm)
     assert_true("{%r1, %r2, %r3, %r4}," in asm)

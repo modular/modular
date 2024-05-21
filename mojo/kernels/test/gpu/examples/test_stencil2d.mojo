@@ -142,7 +142,7 @@ fn run_stencil2d[smem: Bool]() raises:
 
     alias func_select = stencil2d_smem if smem == True else stencil2d
 
-    var func = Function[__type_of(func_select), func_select]()
+    var func = Function[func_select]()
 
     for i in range(iterations):
         func(

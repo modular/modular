@@ -38,7 +38,7 @@ def main():
                 vec_a[i] = i
                 vec_b[i] = i
                 vec_c[i] = 0
-            var kernel = Function[__type_of(gpu_kernel), gpu_kernel](ctx)
+            var kernel = Function[gpu_kernel](ctx)
             kernel(vec_c, vec_a, vec_b, block_dim=(4), grid_dim=(4))
 
             for i in range(16):

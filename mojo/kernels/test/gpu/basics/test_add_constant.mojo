@@ -38,14 +38,7 @@ def run_add_constant(ctx: Context):
 
     ctx.copy_host_to_device(in_device, in_host, length)
 
-    var func = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Float32,
-            Int,
-        ) -> None, add_constant_fn
-    ](ctx)
+    var func = Function[add_constant_fn](ctx)
 
     var block_dim = 32
     # FIXME: why did this have FloatLiteral here?

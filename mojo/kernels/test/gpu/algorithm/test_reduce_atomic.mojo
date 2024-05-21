@@ -52,7 +52,7 @@ fn run_reduce() raises:
     _copy_host_to_device(vec_device, vec_host.data, n)
     _memset(res_device, 0, 1)
 
-    var func = Function[__type_of(reduce), reduce](verbose=True)
+    var func = Function[reduce](verbose=True)
 
     func(
         res_device,

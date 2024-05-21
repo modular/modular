@@ -65,14 +65,7 @@ fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
 
     alias BLOCK_DIM = 16
     var func_gemm_bf16 = Function[
-        fn (
-            DTypePointer[DType.bfloat16],
-            DTypePointer[DType.bfloat16],
-            DTypePointer[DType.bfloat16],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
@@ -106,14 +99,7 @@ fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
     _copy_host_to_device(b_device_n, b_host_n, K * N)
 
     var func_gemm_fp32 = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -232,14 +218,12 @@ fn run_matmul[
 
     alias BLOCK_DIM = 16
     var func_gemm_naive = Function[
-        fn (
-            DTypePointer[type],
-            DTypePointer[type],
-            DTypePointer[type],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[type, type, type, BLOCK_DIM,]
+        matmul_kernel_naive[
+            type,
+            type,
+            type,
+            BLOCK_DIM,
+        ]
     ]()
 
     @always_inline

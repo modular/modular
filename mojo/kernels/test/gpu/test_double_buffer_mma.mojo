@@ -481,7 +481,7 @@ fn test(ctx: Context) raises:
         WN,
         NUM_THREADS,
     ]
-    var func = Function[__type_of(gemm), gemm](
+    var func = Function[gemm](
         ctx,
         threads_per_block=NUM_THREADS,  # dump_ptx=Path("./mm.ptx")
         cache_config=CacheConfig.PREFER_SHARED,
@@ -531,9 +531,7 @@ fn test(ctx: Context) raises:
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = Function[__type_of(gemm_naive), gemm_naive](
-        ctx, threads_per_block=NUM_THREADS
-    )
+    var func_naive = Function[gemm_naive](ctx, threads_per_block=NUM_THREADS)
     var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](c_device_ref)
     func_naive(
         c_buffer_ref,

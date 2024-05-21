@@ -492,11 +492,7 @@ fn run_matmul_mma_warptiling() raises:
     var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device)
 
     var func = Function[
-        fn (
-            NDBuffer[DType.float32, 2, DimList(M, N)],
-            NDBuffer[DType.float32, 2, DimList(M, K)],
-            NDBuffer[DType.float32, 2, DimList(K, N)],
-        ) capturing -> None, sgemm_warp_tiling_kernel[
+        sgemm_warp_tiling_kernel[
             DType.float32,
             DimList(M, N),
             DType.float32,
@@ -544,14 +540,7 @@ fn run_matmul_mma_warptiling() raises:
     _copy_host_to_device(b_device, b_host, K * N)
 
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             c_type = DType.float32,
             a_type = DType.float32,
             b_type = DType.float32,

@@ -24,7 +24,7 @@ fn test_dynamic_shared_mem(ctx: Context) raises:
         data[ThreadIdx.x()] = dynamic_sram[ThreadIdx.x()]
 
     # The default limitation is < 48KB for sm_80, 86, 89.
-    var func = Function[__type_of(dynamc_smem_kernel), dynamc_smem_kernel](
+    var func = Function[dynamc_smem_kernel](
         ctx,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024),
     )

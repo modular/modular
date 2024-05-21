@@ -27,7 +27,7 @@ fn test_gpu_printf() raises:
         _printf("printf printed %ld %g!\n", x, y)
 
     with Context() as ctx:
-        var func = Function[__type_of(do_print), do_print]()
+        var func = Function[do_print]()
         func(Int(98), Float64(123.456), grid_dim=1, block_dim=1)
 
 
@@ -65,7 +65,7 @@ fn test_gpu_print_formattable() raises:
         _print_fmt("layout from GPU: ", layout_str)
 
     with Context() as ctx:
-        var func = Function[__type_of(do_print), do_print]()
+        var func = Function[do_print]()
         func(Int(42), Float64(7.2), grid_dim=1, block_dim=1)
 
 

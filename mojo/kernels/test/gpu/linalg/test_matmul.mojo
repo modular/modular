@@ -141,7 +141,7 @@ fn run_matmul() raises:
     _copy_host_to_device(a_device, a_host.data, m * k)
     _copy_host_to_device(b_device, b_host.data, k * n)
 
-    var func = Function[__type_of(matmul), matmul]()
+    var func = Function[matmul]()
 
     func(
         a_device,
@@ -215,16 +215,7 @@ fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[type],
-            DTypePointer[type],
-            DTypePointer[type],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
-            type, type, type, BLOCK_DIM, True
-        ]
+        matmul_kernel_naive[type, type, type, BLOCK_DIM, True]
     ]()
 
     func_naive(
@@ -310,14 +301,7 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[type],
-            DTypePointer[type],
-            DTypePointer[type],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[type, type, type, BLOCK_DIM,]
+        matmul_kernel_naive[type, type, type, BLOCK_DIM]
     ]()
 
     func_naive(
@@ -426,14 +410,7 @@ fn run_matmul_from_mogg_interface_with_epilogue[
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[type],
-            DTypePointer[type],
-            DTypePointer[type],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             type,
             type,
             type,

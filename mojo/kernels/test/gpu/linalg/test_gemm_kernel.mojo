@@ -215,9 +215,9 @@ fn test_gemm_kernel_dynamic() raises:
 
     synchronize()
 
-    var gemm_kernel_func = Function[
-        __type_of(gemm_kernel_func_t), gemm_kernel_func_t
-    ](dump_ptx=dump_ptx(), dump_llvm=dump_llvm())
+    var gemm_kernel_func = Function[gemm_kernel_func_t](
+        dump_ptx=dump_ptx(), dump_llvm=dump_llvm()
+    )
 
     var mat_a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_device, dynamic_shape=Index(M, K)
@@ -245,9 +245,7 @@ fn test_gemm_kernel_dynamic() raises:
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = Function[__type_of(gemm_naive), gemm_naive](
-        threads_per_block=NUM_THREADS
-    )
+    var func_naive = Function[gemm_naive](threads_per_block=NUM_THREADS)
     var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](c_device_ref)
     func_naive(
         c_buffer_ref,

@@ -263,9 +263,7 @@ fn run_mma_fp32_tf32(
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_mma = Function[
-        __type_of(mma_kernel_fp32_tf32), mma_kernel_fp32_tf32
-    ](dump_ptx=False)
+    var func_mma = Function[mma_kernel_fp32_tf32](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -306,14 +304,7 @@ fn run_mma_fp32_tf32(
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
@@ -428,9 +419,7 @@ fn run_mma_fp32_bf16(
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_mma = Function[
-        __type_of(mma_kernel_fp32_bf16), mma_kernel_fp32_bf16
-    ](dump_ptx=False)
+    var func_mma = Function[mma_kernel_fp32_bf16](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -471,14 +460,7 @@ fn run_mma_fp32_bf16(
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
@@ -593,9 +575,7 @@ fn run_mma_fp32_bf16_2(
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_mma = Function[
-        __type_of(mma_kernel_fp32_bf16_2), mma_kernel_fp32_bf16_2
-    ](dump_ptx=False)
+    var func_mma = Function[mma_kernel_fp32_bf16_2](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -636,14 +616,7 @@ fn run_mma_fp32_bf16_2(
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
@@ -758,9 +731,7 @@ fn run_mma_fp32_fp16(
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_mma = Function[
-        __type_of(mma_kernel_fp32_fp16), mma_kernel_fp32_fp16
-    ](dump_ptx=False)
+    var func_mma = Function[mma_kernel_fp32_fp16](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -801,14 +772,7 @@ fn run_mma_fp32_fp16(
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
@@ -923,9 +887,7 @@ fn run_mma_fp16_fp16(
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_mma = Function[
-        __type_of(mma_kernel_fp16_fp16), mma_kernel_fp16_fp16
-    ](dump_ptx=False)
+    var func_mma = Function[mma_kernel_fp16_fp16](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -966,14 +928,7 @@ fn run_mma_fp16_fp16(
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()

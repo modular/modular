@@ -64,14 +64,7 @@ fn run_binary_add(ctx: Context, capture: Float32) raises:
     fn add(lhs: Float32, rhs: Float32) -> Float32:
         return capture + lhs + rhs
 
-    var func = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-        ) capturing -> None, vec_func[add]
-    ](ctx)
+    var func = Function[vec_func[add]](ctx)
 
     var block_dim = 32
     func(

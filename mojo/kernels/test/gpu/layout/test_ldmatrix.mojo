@@ -169,8 +169,9 @@ fn check_ldmatrix_transposed_bf16[
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    alias kernel = test_ldmatrix_transposed[input_type, output_type]
-    var func = Function[__type_of(kernel), kernel](dump_ptx=False)
+    var func = Function[test_ldmatrix_transposed[input_type, output_type]](
+        dump_ptx=False
+    )
 
     func(
         c_device,
@@ -185,10 +186,9 @@ fn check_ldmatrix_transposed_bf16[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
-        output_type, input_type, input_type, BLOCK_DIM
-    ]
-    var func_naive = Function[__type_of(gemm_naive), gemm_naive]()
+    var func_naive = Function[
+        matmul_kernel_naive[output_type, input_type, input_type, BLOCK_DIM]
+    ]()
     func_naive(
         c_device_ref,
         a_device,
@@ -257,9 +257,7 @@ fn check_ldmatrix(
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_ldmatrix = Function[
-        __type_of(test_ldmatrix_fp32), test_ldmatrix_fp32
-    ](dump_ptx=False)
+    var func_ldmatrix = Function[test_ldmatrix_fp32](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -290,14 +288,7 @@ fn check_ldmatrix(
     # Run naive matmul.
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()

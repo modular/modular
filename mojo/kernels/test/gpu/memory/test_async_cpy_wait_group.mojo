@@ -53,9 +53,7 @@ fn run_copy_via_shared(ctx: Context) raises:
         in_data[i] = i + 1
         out_data[i] = 0
 
-    var copy_via_shared_gpu = Function[
-        __type_of(copy_via_shared), copy_via_shared
-    ](ctx)
+    var copy_via_shared_gpu = Function[copy_via_shared](ctx)
 
     var stream = Stream(ctx)
     copy_via_shared_gpu(
@@ -115,7 +113,7 @@ fn test_copy_with_src_size(ctx: Context) raises:
     ctx.copy_host_to_device(a_device, a_host, size)
 
     alias kernel = copy_with_src_size
-    var func = Function[__type_of(kernel), kernel](ctx, threads_per_block=1)
+    var func = Function[kernel](ctx, threads_per_block=1)
 
     alias src_size = 3 * sizeof[DType.float32]()
 

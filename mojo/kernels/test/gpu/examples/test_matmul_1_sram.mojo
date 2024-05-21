@@ -161,15 +161,7 @@ fn run_matmul() raises:
     _copy_host_to_device(a_device, a_host.data, M * K)
     _copy_host_to_device(b_device, b_host.data, K * N)
 
-    var func = Function[
-        # fmt: off
-      fn (DTypePointer[DType.float32],
-          DTypePointer[DType.float32],
-          DTypePointer[DType.float32],
-          Int, Int, Int) -> None,
-        # fmt: on
-        matmul_sram
-    ]()
+    var func = Function[matmul_sram]()
 
     func(
         a_device,

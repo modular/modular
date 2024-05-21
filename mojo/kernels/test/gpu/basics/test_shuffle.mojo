@@ -43,7 +43,7 @@ fn _kernel_launch_helper[
 
         device_ptr.store(ThreadIdx.x() * simd_width, result)
 
-    var gpu_func = Function[__type_of(kernel_wrapper), kernel_wrapper]()
+    var gpu_func = Function[kernel_wrapper]()
 
     var stream = Stream.get_current_stream()
     gpu_func(grid_dim=1, block_dim=block_size, stream=stream)

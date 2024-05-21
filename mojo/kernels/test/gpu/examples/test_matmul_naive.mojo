@@ -82,7 +82,7 @@ fn run_matmul() raises:
     _copy_host_to_device(a_device, a_host.data, m * k)
     _copy_host_to_device(b_device, b_host.data, k * n)
 
-    var func = Function[__type_of(matmul), matmul](debug=True)
+    var func = Function[matmul](debug=True)
 
     func(
         a_device,

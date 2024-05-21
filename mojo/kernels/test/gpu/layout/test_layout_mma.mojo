@@ -132,7 +132,7 @@ fn test_layout_mma[
         out_type, in_type, shape, layout_c, layout_a, layout_b
     ]
 
-    var mma_kernel = Function[__type_of(mma_func), mma_func]()
+    var mma_kernel = Function[mma_func]()
     mma_kernel(
         mat_c.tensor.ptr,
         mat_a.tensor.ptr,
@@ -148,7 +148,7 @@ fn test_layout_mma[
     alias naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
-    var naive_kernel = Function[__type_of(naive_func), naive_func]()
+    var naive_kernel = Function[naive_func]()
     naive_kernel(
         mat_c_n.tensor.ptr,
         mat_a_n.tensor.ptr,

@@ -746,7 +746,7 @@ fn test[type: DType, transpose_b: Bool]() raises:
         num_pipeline_stages,
     ]
     # TODO: The cache config doesn't really help here, see #38391.
-    var func = Function[__type_of(gemm), gemm](
+    var func = Function[gemm](
         threads_per_block=num_threads,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             shared_mem_bytes
@@ -816,9 +816,7 @@ fn test[type: DType, transpose_b: Bool]() raises:
     # Naive gemm.
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
-    var func_naive = Function[__type_of(gemm_naive), gemm_naive](
-        threads_per_block=256
-    )
+    var func_naive = Function[gemm_naive](threads_per_block=256)
     var c_buffer_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
     func_naive(
         c_buffer_ref,

@@ -193,9 +193,7 @@ fn bench_matmuls(inout m: Bench) raises:
         TN=K10_TN,
         NUM_THREADS=K10_NUM_THREADS,
     ]
-    var func = Function[__type_of(sgemm_type), sgemm_type](
-        threads_per_block=K10_NUM_THREADS
-    )
+    var func = Function[sgemm_type](threads_per_block=K10_NUM_THREADS)
 
     @parameter
     fn bench_matmul_10(inout b: Bencher):
@@ -227,7 +225,7 @@ fn bench_matmuls(inout m: Bench) raises:
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    var func_naive = Function[__type_of(matmul_naive), matmul_naive]()
+    var func_naive = Function[matmul_naive]()
 
     @parameter
     fn bench_naive(inout b: Bencher):

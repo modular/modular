@@ -36,7 +36,6 @@ fn _verify_clock_functions(asm: String) raises -> None:
 def test_clock_functions_sm80():
     alias asm = str(
         _compile_code[
-            __type_of(clock_functions),
             clock_functions,
             target = _get_nvptx_target(),
         ]().asm
@@ -46,11 +45,7 @@ def test_clock_functions_sm80():
 
 def test_clock_functions_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(clock_functions),
-            clock_functions,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[clock_functions, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_clock_functions(asm)
 
@@ -76,22 +71,14 @@ fn _verify_time_functions(asm: String) raises -> None:
 
 def test_time_functions_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(time_functions),
-            time_functions,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[time_functions, target = _get_nvptx_target()]().asm
     )
     _verify_time_functions(asm)
 
 
 def test_time_functions_sm90():
     alias asm = str(
-        _compile_code[
-            __type_of(time_functions),
-            time_functions,
-            target = _get_nvptx_target_sm90(),
-        ]().asm
+        _compile_code[time_functions, target = _get_nvptx_target_sm90()]().asm
     )
     _verify_time_functions(asm)
 

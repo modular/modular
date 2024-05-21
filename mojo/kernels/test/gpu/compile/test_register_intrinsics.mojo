@@ -28,11 +28,7 @@ fn register_intrinsics():
 
 def test_register_intrinsics_sm80():
     alias asm = str(
-        _compile_code[
-            __type_of(register_intrinsics),
-            register_intrinsics,
-            target = _get_nvptx_target(),
-        ]().asm
+        _compile_code[register_intrinsics, target = _get_nvptx_target()]().asm
     )
     assert_false("setmaxnreg.inc.sync.aligned.u32" in asm)
     assert_false("setmaxnreg.dec.sync.aligned.u32" in asm)
@@ -41,9 +37,7 @@ def test_register_intrinsics_sm80():
 def test_register_intrinsics_sm90():
     alias asm = str(
         _compile_code[
-            __type_of(register_intrinsics),
-            register_intrinsics,
-            target = _get_nvptx_target_sm90(),
+            register_intrinsics, target = _get_nvptx_target_sm90()
         ]().asm
     )
     assert_true("setmaxnreg.inc.sync.aligned.u32" in asm)

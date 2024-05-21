@@ -62,14 +62,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
 
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, gemv_kernel[
+        gemv_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -77,14 +70,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     ]()
 
     var func_gevm = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, gevm_kernel[
+        gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -152,14 +138,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel[
+        matmul_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -276,14 +255,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
 
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, gemv_kernel[
+        gemv_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -292,14 +264,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     ]()
 
     var func_gevm = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, gevm_kernel[
+        gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -372,14 +337,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
