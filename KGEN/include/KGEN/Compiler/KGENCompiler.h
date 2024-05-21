@@ -38,60 +38,6 @@ void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
 ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend();
 
 //===----------------------------------------------------------------------===//
-// KGENCompilerLayer
-//===----------------------------------------------------------------------===//
-
-/// Forward declarations for the KGENCompilerLayer.
-class ObjectCompilerLayer;
-
-/// Provide an ExecutionEngine layer for the KGEN compiler. This wraps a call to
-/// the pass manager, and on materialization, it will run compilation and then
-/// delegate the rest to the base layer. Under the hood it also defines a
-/// MaterializationUnit and uses that to emit symbols on-demand.
-class KGENCompilerLayer : public MaterializationLayer {
-public:
-  KGENCompilerLayer(mlir::PassManager &pm, TargetInfoAttr target,
-                    const CompilationOptions &options,
-                    ObjectCompilerLayer &base,
-                    RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-                    llvm::orc::ExecutionSession &sess,
-                    const llvm::DataLayout &dl, AddToSearchOrderFn add);
-
-  /// Add a module to the JIT. This module will be modified in-place as
-  /// compilation occurs, and will be forwarded to the ObjectCompilerLayer.
-  ErrorOrSuccess add(StringRef libName, ModuleOp theModule);
-
-  /// Given a library name and a module, emit the code for it. This runs
-  /// the passes in `populateElaborateModulePasses` and calls `emit` on the
-  /// ObjectCompilerLayer with the result.
-  void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-            SymbolTable &symtab, const ExportMap &exportMap);
-
-  static bool classof(const MaterializationLayer *layer) {
-    return layer->getKind() == LayerKind::kKGENCompilerLayer;
-  }
-
-private:
-  /// Conform to the ORC's interface and return a map of the exported symbols.
-  /// Uses the export map that is built during `add` to provide the set of
-  /// symbols that can be materialized.
-  llvm::orc::MaterializationUnit::Interface
-  getInterface(const ExportMap &exports);
-
-  /// Provide KGENCompilerMaterializationUnit so that we can do codegen
-  /// on-demand.
-  class KGENCompilerMaterializationUnit;
-
-private:
-  mlir::PassManager &pm;
-  TargetInfoAttr target;
-  CompilationOptions options;
-  ObjectCompilerLayer &baseLayer;
-
-  RCRef<Cache::TransformCache> transformCache;
-};
-
-//===----------------------------------------------------------------------===//
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
 
@@ -102,6 +48,14 @@ ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>> initializeExecutionEngine(
     mlir::PassManager &pm, const KGEN::CompilationOptions &compilationOptions,
     KGEN::ExecutionEngineOptions executionEngineOptions, bool isJIT,
     TargetInfoAttr target, bool isSearch = false);
+
+/// Run KGEN compilation pipeline, including pre-elaboration passes,
+/// elaboration, and post-elaboration pass. Get the theModule ready before llvm
+/// lowering.
+ErrorOrSuccess
+runKGENPipeline(mlir::PassManager &pm, ModuleOp theModule,
+                const KGEN::CompilationOptions &compilationOptions, bool isJIT,
+                TargetInfoAttr target, bool isSearch = false);
 
 /// Run the library generation pipeline on the given module. If
 /// `materializeDependencies` is true, the pipeline will ensure all dependencies

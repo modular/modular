@@ -289,12 +289,15 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   if (auto errOr = insertMaxContextInGlobals(*engine, maxContext))
     return state.reportError(errOr.getError());
 
-  auto &compilerLayer = engine->getLayer<KGENCompilerLayer>();
+  auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
 
-  // Add the module into the layer. This will actually compile it down to the
-  // post-elaboration phase, because before that phase we don't have flat
-  // symbols.
-  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp))
+  // Compile the moduleOp down to the post-elaboration phase,
+  // because before that phase we don't have flat symbols.
+  if (ErrorOrSuccess err =
+          KGEN::runKGENPipeline(pm, moduleOp, options, true, target))
+    return state.reportError(err.getError());
+
+  if (ErrorOrSuccess err = objectCompilerLayer.add("exec", moduleOp))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.
@@ -306,7 +309,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   // Trigger compilation so we can pull out the archive.
   // Start with `main` because mojo-run should always have `main`, and this
   // sets up ORC JIT first query to be pending on the root of the function call
-  // stack so that meterialization ordering is correct.
+  // stack so that materialization ordering is correct.
   if (exports.find(StringAttr::get(&context, Twine("main"))) == exports.end())
     return state.reportError("could not find a 'main' function to execute");
   ErrorOr<CompiledFunc> funcOr = engine->lookup("main");
