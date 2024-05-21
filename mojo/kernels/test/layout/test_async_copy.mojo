@@ -71,7 +71,7 @@ fn test_async_copy() raises:
 
     alias kernel_type = async_copy_kernel[input_layout, BM, BN]
 
-    var kernel = Function[__type_of(kernel_type), kernel_type]()
+    var kernel = Function[kernel_type]()
 
     kernel(
         input.tensor.ptr,
@@ -210,7 +210,7 @@ fn test_multistage_copy() raises:
         num_threads,
         num_pipeline_stages,
     ]
-    var func = Function[__type_of(copy), copy](
+    var func = Function[copy](
         threads_per_block=num_threads, dump_ptx=Path("./copy.ptx")
     )
 
@@ -328,7 +328,7 @@ fn test_swizzle_copy() raises:
         BK,
         num_threads,
     ]
-    var func = Function[__type_of(copy), copy](threads_per_block=num_threads)
+    var func = Function[copy](threads_per_block=num_threads)
 
     func(
         a_tensor,

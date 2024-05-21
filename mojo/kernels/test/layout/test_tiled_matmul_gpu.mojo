@@ -74,7 +74,7 @@ fn test_naive_matmul_kernel() raises:
         layout_c, layout_a, layout_b, BM, BN
     ]
 
-    var kernel = Function[__type_of(naive_matmul_kernel), naive_matmul_kernel]()
+    var kernel = Function[naive_matmul_kernel]()
     kernel(
         mat_c.tensor.ptr,
         mat_a.tensor.ptr,
@@ -217,9 +217,7 @@ fn test_sram_blocked_matmul() raises:
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
     ]
 
-    var kernel = Function[
-        __type_of(sram_blocked_matmul_kernel), sram_blocked_matmul_kernel
-    ]()
+    var kernel = Function[sram_blocked_matmul_kernel]()
     kernel(
         mat_c.tensor.ptr,
         mat_a.tensor.ptr,
@@ -326,10 +324,7 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
         layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
-    var kernel = Function[
-        __type_of(single_warp_mma_sync_m16n8k8_kernel_kernel),
-        single_warp_mma_sync_m16n8k8_kernel_kernel,
-    ]()
+    var kernel = Function[single_warp_mma_sync_m16n8k8_kernel_kernel,]()
     kernel(
         mat_c.tensor.ptr,
         mat_a.tensor.ptr,
@@ -474,10 +469,7 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer() raises:
         thread_layout, BM, BN, BK
     ]
 
-    var kernel = Function[
-        __type_of(sram_blocked_matmul_dynamic_nd_buffer_kernel),
-        sram_blocked_matmul_dynamic_nd_buffer_kernel,
-    ]()
+    var kernel = Function[sram_blocked_matmul_dynamic_nd_buffer_kernel]()
     kernel(
         mat_c,
         mat_a,
