@@ -70,7 +70,7 @@ fn bench_concat[
 
         b.iter_custom[time_async_cuda_kernel[kernel_launch]]()
 
-    b.bench_with_input[bench_func](
+    b.bench_with_input[__type_of(out_shape), bench_func](
         BenchId("concat", name),
         out_shape,
         throughput_elems=out_shape.flattened_length() * sizeof[type]() * 2,
