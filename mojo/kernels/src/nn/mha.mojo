@@ -279,16 +279,7 @@ fn flash_attention[
         # Use fast kernel for context encoding benchmark.
         if seq_len == num_keys and seq_len % 128 == 0:
             var func = Function[
-                fn (
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    Float32,
-                    Int,
-                    Int,
-                ) -> None, flash_attention_kernel[
+                flash_attention_kernel[
                     BM=qtile_num_rows,
                     BN=ktile_num_rows,
                     BK=16,
@@ -321,17 +312,7 @@ fn flash_attention[
         # seq_len % 128 != 0.
         else:
             var func = Function[
-                fn (
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    DTypePointer[DType.float32],
-                    Float32,
-                    Int,
-                    Int,
-                    Int,
-                ) -> None, flash_attention_kernel_flexible_seqlen[
+                flash_attention_kernel_flexible_seqlen[
                     BM=qtile_num_rows,
                     BN=ktile_num_rows,
                     BK=16,

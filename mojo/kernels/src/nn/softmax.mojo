@@ -780,11 +780,7 @@ fn _softmax_gpu[
     alias BLOCK_SIZE = 128
     var stream = Stream.get_current_stream()
     var func = Function[
-        fn (
-            StaticIntTuple[rank],
-            NDBuffer[type, rank],
-            Int,
-        ) capturing -> None, softmax_kernel[
+        softmax_kernel[
             BLOCK_SIZE,
             input_fn_wrapper,
             type,

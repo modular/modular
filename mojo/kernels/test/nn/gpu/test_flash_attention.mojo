@@ -112,16 +112,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
 
     if seq_len == num_keys and seq_len % 128 == 0:
         var func = Function[
-            fn (
-                DTypePointer[type],
-                DTypePointer[type],
-                DTypePointer[type],
-                DTypePointer[type],
-                DTypePointer[type],
-                Float32,
-                Int,
-                Int,
-            ) -> None, flash_attention_kernel[
+            flash_attention_kernel[
                 BM=32,  # q_tile_num_rows,
                 BN=128,  # kv_tile_num_rows,
                 BK=16,
@@ -186,17 +177,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
 
     else:
         var func = Function[
-            fn (
-                DTypePointer[type],
-                DTypePointer[type],
-                DTypePointer[type],
-                DTypePointer[type],
-                DTypePointer[type],
-                Float32,
-                Int,
-                Int,
-                Int,
-            ) -> None, flash_attention_kernel_flexible_seqlen[
+            flash_attention_kernel_flexible_seqlen[
                 BM=32,  # q_tile_num_rows,
                 BN=128,  # kv_tile_num_rows,
                 BK=16,

@@ -1409,13 +1409,7 @@ fn _concat_gpu[
         if inner_most_unit_dim:
             alias block_size = 32
             var func = Function[
-                fn (
-                    NDBuffer[type, rank],
-                    StaticTuple[
-                        NDBuffer[type, rank],
-                        num_inputs,
-                    ],
-                ) -> None, _concat_inner_most_single_dim[
+                _concat_inner_most_single_dim[
                     rank, type, num_inputs, block_size
                 ]
             ]()
