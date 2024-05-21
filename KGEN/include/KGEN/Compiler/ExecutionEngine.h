@@ -97,7 +97,6 @@ private:
 class MaterializationLayer {
 public:
   enum LayerKind {
-    kStaticSymbolLayer,
     kStaticArchiveLayer,
     kObjectCompilerLayer,
     kKGENCompilerLayer
@@ -156,29 +155,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// StaticSymbolLayer
-//===----------------------------------------------------------------------===//
-
-/// This layer provides a way to add a static symbol to the ExecutionEngine. The
-/// symbol must have a static name (which is mangled for you) and resolve to an
-/// address within the binary.
-class StaticSymbolLayer : public MaterializationLayer {
-public:
-  /// The StaticSymbolLayer doesn't require anything extra to construct, just
-  /// the `MaterializationLayer` arguments.
-  StaticSymbolLayer(llvm::orc::ExecutionSession &sess,
-                    const llvm::DataLayout &dl, AddToSearchOrderFn add);
-
-  /// Add a function named `funcName` with address `fn` to the library
-  /// `libName`.
-  ErrorOrSuccess add(StringRef libName, StringRef funcName, void *fn);
-
-  static bool classof(const MaterializationLayer *layer) {
-    return layer->getKind() == LayerKind::kStaticSymbolLayer;
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // StaticArchiveLayer
 //===----------------------------------------------------------------------===//
 
@@ -230,9 +206,8 @@ public:
   static ErrorOr<std::unique_ptr<ExecutionEngine>>
   create(ExecutionEngineOptions options, const llvm::TargetMachine &tm);
 
-  /// Create an ExecutionEngine with the 2 standard layers: StaticSymbolLayer
-  /// and StaticArchiveLayer. These two enable the user to expose
-  /// current-process symbols into the JIT and load static archives, which is
+  /// Create an ExecutionEngine with StaticArchiveLayer.
+  /// This enables the user to load static archives, which is
   /// pretty much the base requirement.
   static ErrorOr<std::unique_ptr<ExecutionEngine>>
   createWithStandardLayers(ExecutionEngineOptions options,
@@ -386,9 +361,9 @@ private:
 
   /// List of materialization layers the JIT has. The base is *always* the
   /// object linking layer. We are not likely to have more than 5 layers total:
-  /// (1) StaticSymbolLayer, (2) StaticArchiveLayer, (3) KGEN object generation,
-  /// (4) KGEN compilation pipeline, and (5) mojo parsing.
-  SmallVector<std::unique_ptr<MaterializationLayer>, 5> layers;
+  /// (1) StaticArchiveLayer, (2) KGEN object generation,
+  /// (3) KGEN compilation pipeline
+  SmallVector<std::unique_ptr<MaterializationLayer>, 3> layers;
 
   /// Keep a set of known dylibs and a dylib search order - this will make it
   /// easy to (a) make sure we only have unique dylibs and (b) cache the

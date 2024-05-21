@@ -75,29 +75,6 @@ MaterializationLayer::mangleAndIntern(StringRef name) {
 }
 
 //===----------------------------------------------------------------------===//
-// StaticSymbolLayer
-//===----------------------------------------------------------------------===//
-
-StaticSymbolLayer::StaticSymbolLayer(llvm::orc::ExecutionSession &sess,
-                                     const llvm::DataLayout &dl,
-                                     AddToSearchOrderFn add)
-    : MaterializationLayer(MaterializationLayer::LayerKind::kStaticSymbolLayer,
-                           sess, dl, std::move(add)) {}
-
-ErrorOrSuccess StaticSymbolLayer::add(StringRef libName, StringRef funcName,
-                                      void *fn) {
-  auto dylibOr = getOrCreateDylib(libName);
-  if (dylibOr.isError())
-    return dylibOr.takeError();
-
-  llvm::orc::JITDylib *dylib = *dylibOr;
-  return toModularErrorOr(dylib->define(llvm::orc::absoluteSymbols(
-      {{mangleAndIntern(funcName),
-        {llvm::orc::ExecutorAddr::fromPtr(fn),
-         llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute}}})));
-}
-
-//===----------------------------------------------------------------------===//
 // StaticArchiveObjectMaterializationUnit
 //===----------------------------------------------------------------------===//
 
@@ -516,7 +493,6 @@ ExecutionEngine::createWithStandardLayers(ExecutionEngineOptions options,
     return engineOr.takeError();
 
   // Add the standard layers.
-  (*engineOr)->addLayer<StaticSymbolLayer>();
   (*engineOr)->addLayer<StaticArchiveLayer>((*engineOr)->getLinkingLayer());
 
   return std::move(*engineOr);
