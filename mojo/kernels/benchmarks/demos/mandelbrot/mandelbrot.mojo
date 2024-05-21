@@ -43,7 +43,7 @@ fn draw_mandelbrot(inout out: Tensor[int_type]):
             var v: Int = out[row, col].value
             if v > 0:
                 var p = charset[v % len(charset)]
-                _printf("%c", p)
+                _printf["%c"](p)
             else:
                 print("0", end="")
         print("")
