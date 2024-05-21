@@ -405,22 +405,22 @@ fn print_layout(layout: Layout):
     var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
     var delim = "+-----------------------"
     print(layout)
-    _printf("    ")
+    _printf["    "]()
     for n in range(layout[1].size()):
-        _printf("  %*d ", idx_width - 2, n)
-    _printf("\n")
+        _printf["  %*d "](idx_width - 2, n)
+    _printf["\n"]()
 
     for m in range(layout[0].size()):
-        _printf("    ")
+        _printf["    "]()
         for n in range(layout[1].size()):
-            _printf("%.*s", idx_width + 1, delim)
-        _printf("+\n")
+            _printf["%.*s"](idx_width + 1, delim)
+        _printf["+\n"]()
 
-        _printf("%2d  ", m)
+        _printf["%2d  "](m)
         for n in range(layout[1].size()):
-            _printf("| %*d ", idx_width - 2, int(layout(IntTuple(m, n))))
-        _printf("|\n")
-    _printf("    ")
+            _printf["| %*d "](idx_width - 2, int(layout(IntTuple(m, n))))
+        _printf["|\n"]()
+    _printf["    "]()
     for n in range(layout[1].size()):
-        _printf("%.*s", idx_width + 1, delim)
-    _printf("+\n")
+        _printf["%.*s"](idx_width + 1, delim)
+    _printf["+\n"]()
