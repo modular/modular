@@ -7,6 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
+import math
 from utils import Index, StaticTuple
 
 from layout import LayoutTensor, Layout, IntTuple
