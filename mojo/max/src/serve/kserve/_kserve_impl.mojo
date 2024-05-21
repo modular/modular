@@ -15,7 +15,7 @@ from max.engine._utils import (
     exchange,
 )
 from max.serve.service import InferenceRequest, InferenceResponse
-from max.tensor import TensorSpec
+from tensor import TensorSpec
 
 from ._serve_rt import TensorView
 

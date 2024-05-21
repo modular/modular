@@ -16,7 +16,7 @@ from ._utils import call_dylib_func, exchange
 from ._status import Status
 from .tensor_map import CTensorMap
 
-from max.tensor import Tensor
+from tensor import Tensor
 
 
 @value

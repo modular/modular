@@ -18,7 +18,7 @@ from ._utils import call_dylib_func, exchange, OwningVector
 from ._tensor_spec_impl import CTensorSpec
 from ._dtypes import EngineDType
 
-from max.tensor import TensorSpec
+from tensor import TensorSpec
 
 
 @value

@@ -17,7 +17,7 @@ the tensor shape and its corresponding quantized buffer shape.
 For example consider the following:
 
 ```mojo
-from max.tensor import Tensor
+from tensor import Tensor
 from max.graph.quantization import Q4_0Encoding
 
 var dequantized: Tensor[DType.float32]
@@ -31,7 +31,7 @@ var quantized: Tensor[DType.uint8] = Q4_0Encoding.quantize(dequantized)
 ```
 """
 
-from max.tensor import Tensor
+from tensor import Tensor
 
 
 trait QuantizationEncoding:

@@ -8,7 +8,7 @@
 from ..error import error
 from _mlir import Identifier, NamedAttribute
 from _mlir.builtin_attributes import BoolAttr
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 
 def _padded_dimensions(

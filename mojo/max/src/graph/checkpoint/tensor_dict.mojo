@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Structs used for maintaining a collection of tensors."""
-from max.tensor import Tensor, TensorSpec
+from tensor import Tensor, TensorSpec
 from collections.dict import _DictKeyIter, _DictEntryIter
 
 
@@ -52,7 +52,7 @@ struct TensorDict(Sized):
 
     ```mojo
     from max.graph.checkpoint import TensorDict
-    from max.tensor import Tensor, TensorShape
+    from tensor import Tensor, TensorShape
     tensors = TensorDict()
     tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
     tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))

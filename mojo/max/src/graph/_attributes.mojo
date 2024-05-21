@@ -21,7 +21,7 @@ import _mlir
 from .type import TensorType
 import ._c
 
-from max.tensor import Tensor
+from tensor import Tensor
 
 
 # ===------------------------------------------------------------------=== #

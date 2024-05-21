@@ -16,7 +16,7 @@ from ._dtypes import EngineDType
 from .session import InferenceSession
 from ._tensor_spec_impl import CTensorSpec
 
-from max.tensor import TensorSpec
+from tensor import TensorSpec
 
 
 struct EngineTensorSpec(Stringable, CollectionElement):

@@ -16,7 +16,7 @@ from ._dtypes import EngineDType
 from ._tensor_spec_impl import CTensorSpec
 from ._utils import call_dylib_func, exchange
 
-from max.tensor import Tensor
+from tensor import Tensor
 
 
 @value

@@ -8,7 +8,7 @@
 from ..error import error
 from ..type import Dim
 
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
 

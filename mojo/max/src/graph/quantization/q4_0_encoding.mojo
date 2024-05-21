@@ -15,7 +15,7 @@ Then, within that block of 8 elements, the elements are packed as follows:
 
     eeeeaaaa|ffffbbbb|ggggcccc|hhhhdddd
 """
-from max.tensor import Tensor
+from tensor import Tensor
 
 from .quantization_encoding import QuantizationEncoding
 

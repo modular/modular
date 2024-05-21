@@ -10,7 +10,7 @@ This defines an API for quantization to bfloat16, which is a direct elementwise
 cast.
 The API is useful because it conforms to the QuantizationEncoding trait.
 """
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 from .quantization_encoding import QuantizationEncoding
 

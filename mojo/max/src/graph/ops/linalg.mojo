@@ -8,7 +8,7 @@
 from .casting import reshape
 from ..error import error
 from ..type import Dim, TensorType
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:

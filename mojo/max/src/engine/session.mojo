@@ -29,7 +29,7 @@ from ._status import Status
 from ._utils import call_dylib_func
 
 from max.graph import Graph
-from max.tensor import Tensor, TensorSpec
+from tensor import Tensor, TensorSpec
 
 
 struct _InferenceSessionImpl(Movable):

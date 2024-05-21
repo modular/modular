@@ -8,7 +8,7 @@ from pathlib import Path
 from testing import assert_almost_equal, assert_equal
 
 from max.engine import InferenceSession, TensorMap
-from max.tensor import Tensor
+from tensor import Tensor
 
 
 fn assert_tensors_almost_equal[

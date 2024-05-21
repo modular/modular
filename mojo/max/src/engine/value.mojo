@@ -12,7 +12,7 @@ from ._tensor_impl import EngineTensor
 from ._utils import call_dylib_func, exchange
 from ._value_impl import CValue, CList
 
-from max.tensor import Tensor
+from tensor import Tensor
 
 
 struct Value:

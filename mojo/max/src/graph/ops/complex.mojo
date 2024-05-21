@@ -14,7 +14,7 @@ parts respectively.
 # and imaginary parts.
 
 from max.graph.type import Dim
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 
 # ===----------------------------------------------------------------------=== #

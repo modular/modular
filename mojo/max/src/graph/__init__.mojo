@@ -20,7 +20,7 @@ For example:
 
 ```mojo
 from max.graph import Graph, TensorType, ops
-from max.tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape
 
 def build_model() -> Graph:
     var graph = Graph(
