@@ -165,8 +165,6 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,
-        # Skip the output c space boundary check if True.
-        skip_boundary_check: Bool,
     ](
         self,
         c: NDBuffer,
@@ -175,6 +173,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
+        skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
@@ -200,11 +199,12 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
             if global_offset.K == 0:
                 acc.init(0)
             else:
-                acc.load[skip_boundary_check](
+                acc.load(
                     rebind[DTypePointer[c.type]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
+                    skip_boundary_check,
                 )
 
             # Iterate on tile K dimension.
@@ -229,6 +229,10 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                     Index(idx_n, kl),
                     tile_n_k,
                 )
-            acc.store[skip_boundary_check](
-                rebind[DTypePointer[c.type]](c_ptr), c_stride, idx_n, c_bound
+            acc.store(
+                rebind[DTypePointer[c.type]](c_ptr),
+                c_stride,
+                idx_n,
+                c_bound,
+                skip_boundary_check,
             )

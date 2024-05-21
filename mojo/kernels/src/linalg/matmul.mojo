@@ -54,8 +54,6 @@ trait InnerMatmulKernel(Copyable):
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,
-        # Skip the output c space boundary check if True.
-        skip_boundary_check: Bool,
     ](
         self,
         c: NDBuffer,
@@ -64,6 +62,7 @@ trait InnerMatmulKernel(Copyable):
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
+        skip_boundary_check: Bool,
     ):
         ...
 
@@ -201,17 +200,19 @@ struct TiledMatmul[
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
 
     fn _outer_m_loop[
-        last_n_tile: Bool,
+        tile_kernel_cols: Int
+    ](
+        self,
+        global_offset: GemmShape,
+        sub_tile_n: Int,
+        sub_tile_k: Int,
         last_k_tile: Bool,
-        tile_kernel_cols: Int,
-    ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int):
+    ):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
             of C.
 
         Parameters:
-            last_n_tile: The last n tile.
-            last_k_tile: The last k tile.
             tile_kernel_cols: Inner dimension of the packed data layout.
 
         Args:
@@ -219,97 +220,81 @@ struct TiledMatmul[
                 matmul problem space.
             sub_tile_n: Dynamic tile size to use on N dimension.
             sub_tile_k: Dynamic tile size to use on K dimension.
+            last_k_tile: The last k tile.
         """
         # valid distance in each dimension from the current offset to the end of the matrix
         var knm_bounds = (
             self.global_tile_shape + self.global_tile_offset - global_offset
         )
 
-        @__copy_capture(knm_bounds)
+        var b_packed_tile = self.b_tile_generator.get_tile[tile_kernel_cols](
+            global_offset,
+            Index(sub_tile_n, sub_tile_k),
+            Index(knm_bounds.N, knm_bounds.K),
+        )
+
+        # Launch the MLoop
+        # The upper bounds apply to runtime packing. For pre-packing, the
+        # tile has been padded to fit (sub_tile_n, sub_tile_k).
+        var sub_tile_n_k = Index(
+            min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
+        )
+
+        @__copy_capture(sub_tile_n_k, b_packed_tile)
         @parameter
         @always_inline
-        fn unswitch_residual_n[skip_boundary_check: Bool]():
-            var b_packed_tile = self.b_tile_generator.get_tile[
-                tile_kernel_cols
+        fn row_iteration[tile_kernel_rows: Int](row_offset: Int):
+            var skip_boundary_check = knm_bounds[1] > sub_tile_n
+            self.alg.__inner_matmul__[
+                tile_kernel_rows,
+                tile_kernel_cols,
+                config.simd_size,
             ](
-                global_offset,
-                Index(sub_tile_n, sub_tile_k),
-                Index(knm_bounds.N, knm_bounds.K),
+                self.c,
+                self.a,
+                b_packed_tile,
+                global_offset + GemmShape(row_offset, 0, 0),
+                self.global_tile_offset + self.global_tile_shape,
+                sub_tile_n_k,
+                skip_boundary_check,
             )
 
-            # Launch the MLoop
-            # The upper bounds apply to runtime packing. For pre-packing, the
-            # tile has been padded to fit (sub_tile_n, sub_tile_k).
-            var sub_tile_n_k = Index(
-                min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
-            )
-
-            @__copy_capture(sub_tile_n_k, b_packed_tile)
-            @parameter
-            @always_inline
-            fn row_iteration[tile_kernel_rows: Int](row_offset: Int):
-                self.alg.__inner_matmul__[
-                    tile_kernel_rows,
-                    tile_kernel_cols,
-                    config.simd_size,
-                    skip_boundary_check,
-                ](
-                    self.c,
-                    self.a,
-                    b_packed_tile,
+            if elementwise_epilogue_enabled and last_k_tile:
+                self.elementwise_epilogue_fn(
                     global_offset + GemmShape(row_offset, 0, 0),
-                    self.global_tile_offset + self.global_tile_shape,
-                    sub_tile_n_k,
-                )
-
-                @parameter
-                if elementwise_epilogue_enabled and last_k_tile:
-                    self.elementwise_epilogue_fn(
-                        global_offset + GemmShape(row_offset, 0, 0),
-                        GemmShape {
-                            M: tile_kernel_rows,
-                            N: sub_tile_n_k[0],
-                            K: sub_tile_n_k[1],
-                        },
-                    )
-
-            @parameter
-            if kernel_id == InnerKernelID.I8MM:
-                tile[
-                    row_iteration,
-                    VariadicList[Int](2 * config.kernel_rows, 8, 6, 4, 2, 1),
-                ](
-                    0,  # starting row offset
-                    knm_bounds.M,  # row bound
-                )
-            else:
-                tile[
-                    row_iteration,
-                    VariadicList[Int](config.kernel_rows, 4, 3, 2, 1),
-                ](
-                    0,  # starting row offset
-                    knm_bounds.M,  # row bound
+                    GemmShape {
+                        M: tile_kernel_rows,
+                        N: sub_tile_n_k[0],
+                        K: sub_tile_n_k[1],
+                    },
                 )
 
         @parameter
-        if has_neon():
-            # The performance of the skip_boundary_check=True path is the same as
-            # skip_boundary_check=False, so reduce code size and emit only the
-            # skip_boundary_check=False path.
-            unswitch_residual_n[False]()
+        if kernel_id == InnerKernelID.I8MM:
+            tile[
+                row_iteration,
+                VariadicList[Int](2 * config.kernel_rows, 8, 6, 4, 2, 1),
+            ](
+                0,  # starting row offset
+                knm_bounds.M,  # row bound
+            )
         else:
-            unswitch[unswitch_residual_n](knm_bounds[1] > sub_tile_n)
+            tile[
+                row_iteration,
+                VariadicList[Int](config.kernel_rows, 4, 3, 2, 1),
+            ](0, knm_bounds.M)
 
     # Iterate on the N dimension of the gemm space.
-    fn _outer_n_loop[
-        last_k_tile: Bool
-    ](self, global_offset: GemmShape, sub_tile_k: Int):
+    fn _outer_n_loop(
+        self, global_offset: GemmShape, sub_tile_k: Int, last_k_tile: Bool
+    ):
         """Iterate on the N dimension of the whole problem space.
 
         Args:
             global_offset: 3D global offset within the whole matmul problem
                 space.
             sub_tile_k: Dynamic tile size to use on K dimension.
+            last_k_tile: The last k tile.
         """
         var valid_col_count: Int = (
             self.global_tile_shape.N
@@ -321,20 +306,11 @@ struct TiledMatmul[
         @parameter
         @always_inline
         fn m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
-            @parameter
-            @always_inline
-            fn m_loop_switch[last_n_tile: Bool]():
-                self._outer_m_loop[
-                    last_n_tile, last_k_tile, secondary_tile_size
-                ](
-                    global_offset + GemmShape(0, col_idx, 0),
-                    tile_size_n,
-                    sub_tile_k,
-                )
-
-            unswitch[m_loop_switch](
-                self.global_tile_offset.N + col_idx + tile_size_n
-                >= self.global_tile_shape.N
+            self._outer_m_loop[secondary_tile_size](
+                global_offset + GemmShape(0, col_idx, 0),
+                tile_size_n,
+                sub_tile_k,
+                last_k_tile,
             )
 
         # if b is packed, the packing was performed offline using a single inner
@@ -369,17 +345,11 @@ struct TiledMatmul[
         @always_inline
         @parameter
         fn k_iteration(k_offset: Int, k_tile_size: Int):
-            @always_inline
-            @parameter
-            fn outer_n_loop[last_k_tile: Bool]():
-                self._outer_n_loop[last_k_tile](
-                    GemmShape(0, 0, k_offset) + self.global_tile_offset,
-                    k_tile_size,
-                )
-
-            unswitch[outer_n_loop](
-                k_offset + k_tile_size + self.global_tile_offset.K
-                == self.global_tile_shape.K
+            var last_k_tile = k_offset + k_tile_size + self.global_tile_offset.K == self.global_tile_shape.K
+            self._outer_n_loop(
+                GemmShape(0, 0, k_offset) + self.global_tile_offset,
+                k_tile_size,
+                last_k_tile,
             )
 
         tile[k_iteration](

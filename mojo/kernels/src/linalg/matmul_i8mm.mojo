@@ -31,7 +31,6 @@ from utils.loop import unroll
 struct LoadStore_i8mm[
     type: DType,
     simd_size: Int,
-    skip_boundary_check: Bool,
     single_row: Bool,
     tile_rows: Int,
     tile_columns: Int,
@@ -40,12 +39,14 @@ struct LoadStore_i8mm[
     var output_tile: _Accumulator[
         type, tile_rows, Self.num_simd_cols, simd_size
     ]
+    var skip_boundary_check: Bool
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(inout self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
             type, tile_rows, Self.num_simd_cols, simd_size
         ]()
+        self.skip_boundary_check = skip_boundary_check
 
     @always_inline
     fn _initialize_c_tile(inout self):
@@ -65,7 +66,9 @@ struct LoadStore_i8mm[
         @parameter
         fn body[idx0: Int, idx1: Int]():
             var c_data: SIMD[type, simd_size] = 0
-            if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
+            if self.skip_boundary_check or (
+                idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
+            ):
                 var t0 = c_ptr_loc.load[width=2](
                     c_stride * (2 * idx0 + 0) + 2 * idx1
                 )
@@ -106,7 +109,9 @@ struct LoadStore_i8mm[
         @parameter
         fn body[idx0: Int, idx1: Int]():
             var c_data = self.output_tile[idx0, idx1]
-            if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
+            if self.skip_boundary_check or (
+                idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
+            ):
                 c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1).store[
                     width=2
                 ](c_data.slice[2]())
@@ -211,8 +216,6 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,
-        # Skip the output c space boundary check if True.
-        skip_boundary_check: Bool,
     ](
         self,
         c: NDBuffer,
@@ -221,6 +224,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
+        skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
@@ -240,11 +244,10 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         var acc = LoadStore_i8mm[
             c.type,
             simd_size,
-            skip_boundary_check,
             single_row,
             kernel_rows2,
             kernel_cols,
-        ]()
+        ](skip_boundary_check)
 
         for idx_n in range(0, tile_n_k[0], kernel_cols // 2):
             if global_offset.K == 0:

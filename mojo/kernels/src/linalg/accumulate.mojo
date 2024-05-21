@@ -126,47 +126,44 @@ struct _Accumulator[
         self._transfer[do_transfer](base_ptr, stride)
 
     @always_inline
-    fn load[
-        skip_boundary_check: Bool = False
-    ](
+    fn load(
         inout self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
+        skip_boundary_check: Bool = False,
     ):
-        self._transfer[skip_boundary_check, True](
-            c_ptr, c_stride, tile_n_idx, c_bound
+        self._transfer[True](
+            c_ptr, c_stride, tile_n_idx, c_bound, skip_boundary_check
         )
 
     @always_inline
-    fn store[
-        skip_boundary_check: Bool = False
-    ](
+    fn store(
         inout self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
+        skip_boundary_check: Bool = False,
     ):
-        self._transfer[skip_boundary_check, False](
-            c_ptr, c_stride, tile_n_idx, c_bound
+        self._transfer[False](
+            c_ptr, c_stride, tile_n_idx, c_bound, skip_boundary_check
         )
 
     @always_inline
     fn _transfer[
-        skip_boundary_check: Bool,
-        is_load: Bool,
+        is_load: Bool
     ](
         inout self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
+        skip_boundary_check: Bool,
     ):
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
-        @parameter
         if skip_boundary_check:
 
             @parameter

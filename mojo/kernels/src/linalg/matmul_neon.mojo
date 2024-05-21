@@ -100,8 +100,6 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,
-        # Skip the output c space boundary check if True.
-        skip_boundary_check: Bool,
     ](
         self,
         c: NDBuffer,
@@ -110,6 +108,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
+        skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
