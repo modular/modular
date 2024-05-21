@@ -132,6 +132,15 @@ fn ld_mma[
     )
 
 
+@always_inline
+fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
+    @parameter
+    if swap:
+        return Tuple(arg_1, arg_0)
+    else:
+        return Tuple(arg_0, arg_1)
+
+
 fn multistage_gemm[
     c_type: DType,
     c_layout: Layout,
@@ -198,9 +207,14 @@ fn multistage_gemm[
         num_threads * simd_size // BK, BK // simd_size
     )
 
-    alias b_smem_layout = Layout.row_major(
-        BN, BK
-    ) if transpose_b else Layout.row_major(BK, BN)
+    alias BD_0 = BN if transpose_b else BK
+    alias BD_1 = BK if transpose_b else BN
+
+    alias b_smem_layout = Layout.row_major(BD_0, BD_1)
+
+    alias async_copy_b_layout = Layout.row_major(
+        num_threads * simd_size // BD_1, BD_1 // simd_size
+    )
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
@@ -218,35 +232,21 @@ fn multistage_gemm[
         ](b_smem + stage * BN * BK)
 
         copy_dram_to_sram_async[
-            src_thread_layout=async_copy_a_layout,
-            dst_thread_layout=async_copy_a_layout,
+            thread_layout=async_copy_a_layout,
             swizzle=xor_2bits_per8T,
         ](
             a_smem_tile.vectorize[1, simd_size](),
             a.tile[BM, BK](BlockIdx.y(), stage).vectorize[1, simd_size](),
         )
 
-        # fmt: off
-        @parameter
-        if transpose_b:
-            copy_dram_to_sram_async[
-                src_thread_layout=Layout.row_major(num_threads * simd_size // BK, BK // simd_size),
-                dst_thread_layout=Layout.row_major(num_threads * simd_size // BK, BK // simd_size),
-                swizzle= xor_2bits_per8T,
-            ](
-                b_smem_tile.vectorize[1, simd_size](),
-                b.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
-            )
-        else:
-            copy_dram_to_sram_async[
-                src_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
-                dst_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
-                swizzle= xor_3bits_per16T if b_type == DType.bfloat16 else identity,
-            ](
-                b_smem_tile.vectorize[1, simd_size](),
-                b.tile[BK, BN](stage, BlockIdx.x()).vectorize[1, simd_size](),
-            )
-        # fmt: on
+        var b_tile_coords = args_to_tuple[transpose_b](stage, BlockIdx.x())
+
+        copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
+            b_smem_tile.vectorize[1, simd_size](),
+            b.tile[BD_0, BD_1](b_tile_coords[0], b_tile_coords[1]).vectorize[
+                1, simd_size
+            ](),
+        )
 
         async_copy_commit_group()
 
@@ -544,8 +544,7 @@ fn multistage_gemm[
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
                     # prefetch for the three two iterations should be dummy.
                     copy_dram_to_sram_async[
-                        src_thread_layout=async_copy_a_layout,
-                        dst_thread_layout=async_copy_a_layout,
+                        thread_layout=async_copy_a_layout,
                         swizzle=xor_2bits_per8T,
                     ](
                         a_smem_prefetch_tile.vectorize[1, simd_size](),
@@ -554,38 +553,16 @@ fn multistage_gemm[
                         ).vectorize[1, simd_size](),
                     )
 
-                    @parameter
-                    if transpose_b:
-                        copy_dram_to_sram_async[
-                            src_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BK, BK // simd_size
-                            ),
-                            dst_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BK, BK // simd_size
-                            ),
-                            swizzle=xor_2bits_per8T,
-                        ](
-                            b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            b.tile[BN, BK](
-                                BlockIdx.x(), prefetch_tile_id % num_k_tiles
-                            ).vectorize[1, simd_size](),
-                        )
-                    else:
-                        copy_dram_to_sram_async[
-                            src_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BN, BN // simd_size
-                            ),
-                            dst_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BN, BN // simd_size
-                            ),
-                            swizzle = xor_3bits_per16T if b_type
-                            == DType.bfloat16 else identity,
-                        ](
-                            b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            b.tile[BK, BN](
-                                prefetch_tile_id % num_k_tiles, BlockIdx.x()
-                            ).vectorize[1, simd_size](),
-                        )
+                    var b_tile_coords = args_to_tuple[transpose_b](
+                        prefetch_tile_id % num_k_tiles, BlockIdx.x()
+                    )
+
+                    copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
+                        b_smem_prefetch_tile.vectorize[1, simd_size](),
+                        b.tile[BD_0, BD_1](
+                            b_tile_coords[0], b_tile_coords[1]
+                        ).vectorize[1, simd_size](),
+                    )
 
                 async_copy_commit_group()
 
