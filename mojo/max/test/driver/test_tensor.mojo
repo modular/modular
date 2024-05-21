@@ -161,9 +161,35 @@ def test_2dslice_with_step_row_column():
     assert_equal(inner_slice[1, 1], 45)
 
 
+def test_round_trip():
+    var dev = Device(CPUDescriptor(numa_id=2))
+
+    var dt = dev.allocate(
+        TensorSpec(DType.float32, 10, 2),
+    )
+    var tensor = dt^.get_tensor[DType.float32, 2]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(2):
+            tensor[Index(i, j)] = val
+            val += 1
+
+    assert_equal(tensor[1, 0], 3)
+
+    var dt2 = tensor^.get_device_tensor()
+    assert_equal(
+        str(dt2), "DeviceTensor(Device(type=CPU,numa_id=2),Spec(10x2xfloat32))"
+    )
+
+    var tensor2 = dt2^.get_tensor[DType.float32, 2]()
+    assert_equal(tensor2[1, 0], 3)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
     test_slice_with_step()
     test_2dslice_with_step()
     test_2dslice_with_step_row_column()
+    test_round_trip()
