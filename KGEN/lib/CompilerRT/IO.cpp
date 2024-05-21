@@ -190,6 +190,8 @@ struct FileHandle {
       *errMsg = copyString(err.message());
   }
 
+  int getHandle() { return handle; }
+
 private:
   FileHandle(int handle) : handle(handle) {}
   FileHandle(const FileHandle &other) = delete;
@@ -228,6 +230,11 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT FileHandleWrapper
 KGEN_CompilerRT_IO_FileOpen(llvm::StringRef path, llvm::StringRef mode,
                             llvm::StringRef *errMsg) {
   return wrap(FileHandle::get(path, mode, errMsg));
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT int64_t
+KGEN_CompilerRT_IO_GetFD(FileHandleWrapper file) {
+  return unwrap(file)->getHandle();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
