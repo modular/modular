@@ -36,7 +36,7 @@ fn main():
         print("second had an error")
 
     # CHECK-NEXT: third: 0
-    _printf("third: ")
+    _printf["third: "]()
     try:
         print(raiseErrorIf(False))
     except e2:
