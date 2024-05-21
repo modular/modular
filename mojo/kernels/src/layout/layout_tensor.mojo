@@ -86,11 +86,10 @@ fn _need_mask[*tile_sizes: Int](shape: IntTuple) -> Bool:
     var no_mask = True
 
     @parameter
-    fn dim_masked[i: Int]():
+    for i in range(__get_len[tile_sizes]()):
         alias tile_size = tile_sizes[i]
         no_mask = no_mask and (to_int(shape[i]) % tile_size == 0)
 
-    unroll[dim_masked, __get_len[tile_sizes]()]()
     return not no_mask
 
 
@@ -166,14 +165,13 @@ struct LayoutTensor[
         alias rank = len(idx)
 
         @parameter
-        fn can_access_dim[i: Int]():
+        for i in range(rank):
             alias dim = to_int(idx[i])
             var tile_offset_i = self.dim_offset[i]
             var tile_stride_i = self.dim_stride[i]
             var offset = tile_offset_i + dim * tile_stride_i
             can_access = can_access and offset < self.max_dim[i]
 
-        unroll[can_access_dim, rank]()
         return can_access
 
     @always_inline
@@ -189,13 +187,11 @@ struct LayoutTensor[
         # TODO: We should vectorize the reads of contiguous loads this just stash
         # scalar elements.
         @parameter
-        fn fill_vec_res[idx: Int]():
+        for idx in range(Self.element_size):
             alias element_offset = self.element_layout(idx)
             vec_res[idx] = self.ptr.load(
                 Self._getOffset(strides, dims) + element_offset
             )
-
-        unroll[fill_vec_res, Self.element_size]()
 
         return vec_res
 
@@ -205,7 +201,7 @@ struct LayoutTensor[
 
         # TODO: We should vectorize contiguous stores this just stash scalars.
         @parameter
-        fn store_element[i: Int]():
+        for i in range(Self.element_size):
             alias element_offset = self.element_layout(i)
             self.ptr.store(
                 Self._getOffset(strides, VariadicList[Int](d0))
@@ -213,14 +209,12 @@ struct LayoutTensor[
                 val[i],
             )
 
-        unroll[store_element, Self.element_size]()
-
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
         alias strides = Self._toStatic[flatten(layout.stride)]()
 
         @parameter
-        fn store_element[i: Int]():
+        for i in range(Self.element_size):
             alias element_offset = self.element_layout(i)
             self.ptr.store(
                 Self._getOffset(strides, VariadicList[Int](d0, d1))
@@ -228,22 +222,18 @@ struct LayoutTensor[
                 val[i],
             )
 
-        unroll[store_element, Self.element_size]()
-
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
         alias strides = Self._toStatic[flatten(layout.stride)]()
 
         @parameter
-        fn store_element[i: Int]():
+        for i in range(Self.element_size):
             alias element_offset = self.element_layout(i)
             self.ptr.store(
                 Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
                 + element_offset,
                 val[i],
             )
-
-        unroll[store_element, Self.element_size]()
 
     @always_inline
     fn __setitem__(
@@ -252,15 +242,13 @@ struct LayoutTensor[
         alias strides = Self._toStatic[flatten(layout.stride)]()
 
         @parameter
-        fn store_element[i: Int]():
+        for i in range(Self.element_size):
             alias element_offset = self.element_layout(i)
             self.ptr.store(
                 Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
                 + element_offset,
                 val[i],
             )
-
-        unroll[store_element, Self.element_size]()
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
@@ -416,11 +404,9 @@ struct LayoutTensor[
         var offset = 0
 
         @parameter
-        fn compute_offset[i: Int]():
+        for i in range(num_tiles):
             alias stride = to_int(__tiled_layout[1].stride[i])
             offset += tile_coords[i] * stride
-
-        unroll[compute_offset, num_tiles]()
 
         var res = LayoutTensor[
             dtype,
@@ -435,12 +421,10 @@ struct LayoutTensor[
         if not Self.masked and __need_mask:
 
             @parameter
-            fn fill_mask_bounds[i: Int]():
+            for i in range(Self.rank):
                 res.max_dim[i] = to_int(Self.layout.shape[i])
                 alias tile_size_i = tile_sizes[i]
                 res.dim_offset[i] = tile_size_i * tile_coords[i]
-
-            unroll[fill_mask_bounds, Self.rank]()
 
         return res
 
@@ -569,7 +553,7 @@ struct LayoutTensor[
         ](self.ptr.offset(offset))
 
         @parameter
-        fn compute_offset[i: Int]():
+        for i in range(len(fragments_layout_stride)):
             alias fragments_stride_i = to_int(fragments_layout_stride[i])
             alias shape_i = to_int(thread_projected_shape[i])
             alias stride_i = to_int(thread_projected_stride[i])
@@ -582,8 +566,6 @@ struct LayoutTensor[
                 res.max_dim[i] = self.max_dim[i]
                 res.dim_offset[i] = self.dim_offset[i] + thread_coord_i
                 res.dim_stride[i] = shape_i
-
-        unroll[compute_offset, len(fragments_layout_stride)]()
 
         # Swizzling applies to the index of elements rather than scalars because
         # the former is the unit in distribution.
@@ -765,7 +747,7 @@ struct LayoutTensor[
         ):
 
             @parameter
-            fn copy_vector_to_vector[i: Int]():
+            for i in range(dst_size):
                 alias src_idx = make_layout(other.element_layout, other_layout)(
                     i * src_element_size
                 )
@@ -783,7 +765,6 @@ struct LayoutTensor[
                     alignment = alignof[self.element_type](),
                 ](dst_idx, src_vec)
 
-            unroll[copy_vector_to_vector, dst_size]()
         # Vector read scalar writes.
         elif (
             other_element_layout.rank() == 1
@@ -793,7 +774,7 @@ struct LayoutTensor[
         ):
 
             @parameter
-            fn copy_vector_to_scalars[i: Int]():
+            for i in range(src_size):
                 alias src_idx = make_layout(other.element_layout, other_layout)(
                     i * src_element_size
                 )
@@ -806,15 +787,12 @@ struct LayoutTensor[
                 )
 
                 @parameter
-                fn store_vector[e_i: Int]():
+                for e_i in range(src_element_size):
                     alias dst_idx = make_layout(
                         self.element_layout, self.layout
                     )(i * dst_element_size + e_i)
                     self.ptr.store[width=1](dst_idx, src_vec[e_i])
 
-                unroll[store_vector, src_element_size]()
-
-            unroll[copy_vector_to_scalars, src_size]()
         # Vector write scalar reads.
         elif (
             other_element_layout.rank() == 1
@@ -824,7 +802,7 @@ struct LayoutTensor[
         ):
 
             @parameter
-            fn copy_scalars_to_vectors[i: Int]():
+            for i in range(dst_size):
                 alias dst_idx = make_layout(self.element_layout, self.layout)(
                     i * dst_element_size
                 )
@@ -832,16 +810,14 @@ struct LayoutTensor[
                 var src_vec = self.element_type()
 
                 @parameter
-                fn fill_vector[e_i: Int]():
+                for e_i in range(src_element_size):
                     alias src_idx = make_layout(
                         other_element_layout, other.layout
                     )(i * src_element_size + e_i)
                     src_vec[e_i] = other.ptr.load[width=1](src_idx)
 
-                unroll[fill_vector, src_element_size]()
                 self.ptr.store[width = self.element_size](dst_idx, src_vec)
 
-            unroll[copy_scalars_to_vectors, dst_size]()
         # Vectorized copy between 2D row-major elements, used for C in gemm.
         elif (
             # Not trivial element
@@ -853,7 +829,7 @@ struct LayoutTensor[
         ):
             # Copy an element tensor.
             @parameter
-            fn copy_by_element[i: Int]():
+            for i in range(dst_size):
                 # Offset to the current element.
                 alias src_offset = other_layout(i)
                 alias dst_offset = self.layout(i)
@@ -861,7 +837,7 @@ struct LayoutTensor[
                 alias vec_width = self.element_layout.shape[1].value()
 
                 @parameter
-                fn copy_by_vec[j: Int]():
+                for j in range(num_copies):
                     alias src_idx = src_offset + other_element_layout(j)
                     alias dst_idx = dst_offset + self.element_layout(j)
 
@@ -874,15 +850,10 @@ struct LayoutTensor[
                         width=vec_width,
                         alignment = alignof[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
-
-                unroll[copy_by_vec, num_copies]()
-
-            unroll[copy_by_element, dst_size]()
-
         else:
 
             @parameter
-            fn copy_element[i: Int]():
+            for i in range(dst_size * dst_element_size):
                 alias src_idx = make_layout(other.element_layout, other_layout)(
                     i
                 )
@@ -905,8 +876,6 @@ struct LayoutTensor[
                         self.ptr[dst_idx] = other.ptr[src_idx]
                 else:
                     self.ptr[dst_idx] = other.ptr[src_idx]
-
-            unroll[copy_element, dst_size * dst_element_size]()
 
     @always_inline
     fn copy_from_async[
@@ -966,7 +935,7 @@ struct LayoutTensor[
         ):
 
             @parameter
-            fn copy_vector_to_vector[i: Int]():
+            for i in range(dst_size):
                 alias src_idx = make_layout(src.element_layout, src_layout)(
                     i * src_element_size
                 )
@@ -978,18 +947,14 @@ struct LayoutTensor[
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
 
-            unroll[copy_vector_to_vector, dst_size]()
-
         else:
 
             @parameter
-            fn copy_element[i: Int]():
+            for i in range(dst_size * dst_element_size):
                 alias src_idx = make_layout(src.element_layout, src_layout)(i)
                 alias dst_idx = make_layout(self.element_layout, self.layout)(i)
 
                 async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
-
-            unroll[copy_element, dst_size * dst_element_size]()
 
     fn linspace(self):
         @parameter
@@ -1040,13 +1005,12 @@ struct LayoutTensor[
                 var vec = SIMD[dtype, Self.element_size]()
 
                 @parameter
-                fn fill_vec[idx: Int]():
+                for idx in range(Self.element_size):
                     alias element_offset = self.element_layout(idx)
                     vec[idx] = self.ptr.load[width=1](
                         vec_offset + element_offset
                     )
 
-                unroll[fill_vec, Self.element_size]()
                 print(vec)
 
 
