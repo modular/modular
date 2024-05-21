@@ -95,6 +95,14 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
         size is larger than this value, the launch will fail."""
         return FuncAttribute(8, val)
 
+    @always_inline
+    @staticmethod
+    fn PREFERRED_SHARED_MEMORY_CARVEOUT(val: Int32) -> FuncAttribute:
+        """On devices where the L1 cache and shared memory use the same hardware
+        resources, this sets the shared memory carveout preference, in percent
+        of the total shared memory."""
+        return FuncAttribute(9, val)
+
 
 # ===----------------------------------------------------------------------===#
 # Cached Function Info
