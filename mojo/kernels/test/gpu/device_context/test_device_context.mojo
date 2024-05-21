@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host.device_context import DeviceContext, DeviceBuffer
+from gpu.host.device_context import DeviceContext, DeviceBuffer, DeviceFunction
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream
 from utils.variant import Variant
@@ -43,13 +43,13 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(in0_device, in0_host)
     ctx.enqueue_copy_to_device(in1_device, in1_host)
 
-    var func = Function[__type_of(vec_func), vec_func](ctx.cuda_context)
+    var func = ctx.compile_function[__type_of(vec_func), vec_func]()
 
     var block_dim = 32
     var addition = 5
 
-    var stream = Stream(ctx.cuda_context)
-    func(
+    ctx.enqueue_function(
+        func,
         in0_device,
         in1_device,
         out_device,
@@ -57,7 +57,6 @@ fn test(ctx: DeviceContext) raises:
         addition,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
-        stream=stream,
     )
 
     ctx.enqueue_copy_from_device(out_host, out_device)
@@ -79,14 +78,7 @@ fn test(ctx: DeviceContext) raises:
     in1_host.free()
     out_host.free()
 
-    _ = in0_device^
-    _ = in1_device^
-    _ = out_device^
-
-    _ = ctx
-
 
 def main():
     var ctx = DeviceContext()
     test(ctx)
-    _ = ctx
