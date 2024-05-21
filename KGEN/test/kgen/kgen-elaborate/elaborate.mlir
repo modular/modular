@@ -1779,6 +1779,7 @@ kgen.generator export @param_for(%arg0: i1, %arg1: index) {
 
   kgen.call @terminators(%arg0) : (i1) -> ()
   kgen.call @nested_param_for() : () -> ()
+  kgen.call @parametric_result() : () -> ()
 
   kgen.call @for_else<0>(%arg1) : (index) -> index
   kgen.call @for_else<1>(%arg1) : (index) -> index
@@ -1786,8 +1787,11 @@ kgen.generator export @param_for(%arg0: i1, %arg1: index) {
 }
 
 // CHECK-LABEL: kgen.func @"sum_from_zero,upper=0"
-// CHECK-NEXT: %idx0 = index.constant 0
-// CHECK-NEXT: return %idx0
+// CHECK-NEXT:    %idx0 = index.constant 0
+// CHECK-NEXT:    %0 = hlcf.loop "param_for_outer" () -> index
+// CHECK-NEXT:      hlcf.break "param_for_outer" %idx0
+// CHECK-NEXT:    }
+// CHECK-NEXT:    return %0
 
 // CHECK-LABEL: kgen.func @"sum_from_zero,upper=1"
 // CHECK-NEXT:   %idx0 = index.constant 0
@@ -1883,8 +1887,11 @@ kgen.generator @nested_param_for() {
 }
 
 // CHECK-LABEL: kgen.func @"for_else,upper=0"
-// CHECK-NEXT:    %index1 = kgen.param.constant = <1>
-// CHECK-NEXT:    %0 = index.add %index1, %arg0
+// CHECK-NEXT:    %0 = hlcf.loop "param_for_outer" () -> index
+// CHECK-NEXT:      %index1 = kgen.param.constant = <1>
+// CHECK-NEXT:      %1 = index.add %index1, %arg0
+// CHECK-NEXT:      hlcf.break "param_for_outer" %1
+// CHECK-NEXT:    }
 // CHECK-NEXT:    return %0
 
 // CHECK-LABEL: kgen.func @"for_else,upper=1"
@@ -1909,6 +1916,19 @@ kgen.generator @for_else<upper>(%arg0: index) -> index {
     kgen.param.yield %2 : index
   }
   kgen.return %0 : index
+}
+
+// COM: Just check that this passes the verifier.
+kgen.generator @parametric_result() {
+  kgen.param.declare a = <1>
+  %0 = kgen.param.constant: array<a, i1> = <?>
+  %1 = kgen.param.for i in 1 iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+    (%arg0 = %0 : !pop.array<a, i1>) -> !pop.array<a, i1> {
+    kgen.param.for.continue %arg0 : !pop.array<a, i1>
+  } else (%arg0: !pop.array<a, i1>) {
+    kgen.param.yield %arg0 : !pop.array<a, i1>
+  }
+  kgen.return
 }
 
 kgen.generator @count_to_zero(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none {
