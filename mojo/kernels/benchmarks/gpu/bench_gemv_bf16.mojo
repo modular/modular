@@ -63,14 +63,7 @@ fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
 
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.bfloat16],
-            DTypePointer[DType.bfloat16],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, gemv_tc_kernel[
+        gemv_tc_kernel[
             DType.float32,
             DType.bfloat16,
             DType.bfloat16,
@@ -130,14 +123,7 @@ fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
 
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.bfloat16],
-            DTypePointer[DType.bfloat16],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, gemv_kernel[
+        gemv_kernel[
             DType.float32,
             DType.bfloat16,
             DType.bfloat16,
@@ -198,14 +184,7 @@ fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
-        fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None, matmul_kernel_naive[
+        matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
