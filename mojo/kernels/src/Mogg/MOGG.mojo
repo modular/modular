@@ -3389,9 +3389,8 @@ fn print_buffer_info[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
 @always_inline
 @export
 fn return_error[
-    type: DType,
-    rank: Int,
-](input: NDBuffer[type, rank], ctx: MojoCallContextPtr,):
+    type: DType, rank: Int
+](input: NDBuffer[type, rank], ctx: MojoCallContextPtr):
     ctx.set_to_error("This is an error")
 
 
