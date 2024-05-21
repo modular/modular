@@ -7,7 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from utils import Index
+from utils import Index, StaticTuple
 
 from layout import LayoutTensor, Layout, IntTuple
 from layout.layout import LayoutList
@@ -19,6 +19,10 @@ from layout.nd_buffer_stub import (
     ElementLayout,
     _copy_nd_buffer_to_layout_tensor,
     _copy_layout_tensor_to_nd_buffer,
+    _tile_mask,
+    _vectorize_mask,
+    _distribute_mask,
+    TileMask,
 )
 
 
@@ -43,6 +47,23 @@ fn print_buff[
     for m in range(buff.dim(0)):
         for n in range(buff.dim(1)):
             print(buff[m, n], end=" ")
+        print("")
+
+
+fn print_tile_mask[*tile_sizes: Int](mask: TileMask):
+    for i in range(tile_sizes[0]):
+        for j in range(tile_sizes[1]):
+            var mas_val = mask.access_mask((i, j))
+            print(and_all(mas_val), end=" ")
+        print("")
+
+
+fn print_tile_mask_with_size[*tile_sizes: Int](mask: TileMask):
+    for i in range(tile_sizes[0]):
+        for j in range(tile_sizes[1]):
+            var mas_val = mask.access_mask((i, j))
+            var size = mask.access_size((i, j), mas_val)
+            print(and_all(mas_val), ":", size[0], "x", size[1], end=" ")
         print("")
 
 
@@ -79,6 +100,17 @@ fn print_vectorized_buff[
         for n in range(buff.dim(1)):
             print_element(buff._offset((m, n)), element_layout)
         print("")
+
+
+fn and_all[rank: Int](mask: StaticTuple[Bool, rank]) -> Bool:
+    var res = True
+
+    @parameter
+    fn _and_mask[i: Int]():
+        res &= mask[i]
+
+    unroll[_and_mask, rank]()
+    return res
 
 
 # CHECK-LABEL: test_copy_from_nd_buffer_scalars
@@ -590,6 +622,506 @@ fn test_copy_layout_tensor_to_buffer():
     )
 
 
+# CHECK-LABEL: test_tile_mask
+fn test_tile_mask():
+    print("test_tile_mask")
+    # CHECK: ---tile[ 0 0 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: ---tile[ 0 1 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: ---tile[ 0 2 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: ---tile[ 0 3 ]---
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: ---tile[ 1 0 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: ---tile[ 1 1 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: ---tile[ 1 2 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: ---tile[ 1 3 ]---
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: ---tile[ 2 0 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: False False False False
+    # CHECK: ---tile[ 2 1 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: False False False False
+    # CHECK: ---tile[ 2 2 ]---
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: True True True True
+    # CHECK: False False False False
+    # CHECK: ---tile[ 2 3 ]---
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: True True True False
+    # CHECK: False False False False
+    for tile_i in range(math.ceildiv(11, 4)):
+        for tile_j in range(math.ceildiv(15, 4)):
+            print("---tile[", tile_i, tile_j, "]---")
+            var tile_mas = _tile_mask[4, 4](
+                StaticIntTuple[2](11, 15), StaticIntTuple[2](tile_i, tile_j)
+            )
+            print_tile_mask[4, 4](tile_mas)
+
+
+# CHECK-LABEL: test_vectorize_mask
+fn test_vectorize_mask():
+    print("test_vectorize_mask")
+    # CHECK: ---tile[ 0 0 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: ---tile[ 0 1 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: ---tile[ 0 2 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: ---tile[ 0 3 ]---
+    # CHECK: True x (2, 2) False x (2, 1)
+    # CHECK: True x (2, 2) False x (2, 1)
+    # CHECK: ---tile[ 1 0 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: ---tile[ 1 1 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: ---tile[ 1 2 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: ---tile[ 1 3 ]---
+    # CHECK: True x (2, 2) False x (2, 1)
+    # CHECK: True x (2, 2) False x (2, 1)
+    # CHECK: ---tile[ 2 0 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: False x (1, 2) False x (1, 2)
+    # CHECK: ---tile[ 2 1 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: False x (1, 2) False x (1, 2)
+    # CHECK: ---tile[ 2 2 ]---
+    # CHECK: True x (2, 2) True x (2, 2)
+    # CHECK: False x (1, 2) False x (1, 2)
+    # CHECK: ---tile[ 2 3 ]---
+    # CHECK: True x (2, 2) False x (2, 1)
+    # CHECK: False x (1, 2) False x (1, 1)
+    for tile_i in range(math.ceildiv(11, 4)):
+        for tile_j in range(math.ceildiv(15, 4)):
+            print("---tile[", tile_i, tile_j, "]---")
+            var tile_mas = _tile_mask[4, 4](
+                StaticIntTuple[2](11, 15), StaticIntTuple[2](tile_i, tile_j)
+            )
+
+            var vec_mas = _vectorize_mask[sizes= (2, 2)](tile_mas)
+            for i in range(2):
+                for j in range(2):
+                    var mask = vec_mas.access_mask((i, j))
+                    print(
+                        and_all(mask),
+                        "x",
+                        vec_mas.access_size((i, j), mask),
+                        end=" ",
+                    )
+                print("")
+
+
+# CHECK-LABEL: test_distribute_mask
+fn test_distribute_mask():
+    print("test_distribute_mask")
+    var tile_mask = TileMask[2]((3, 5))
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True True True
+    # CHECK: True True True
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: True True False
+    # CHECK: True True False
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True True True
+    # CHECK: False False False
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: True True False
+    # CHECK: False False False
+    for th_id in range(4):
+        var dist_mask = _distribute_mask[
+            thread_layout = Layout.row_major(2, 2)
+        ](tile_mask, th_id)
+        print("---thread-[", th_id, "]-mask---")
+        print_tile_mask[2, 3](dist_mask)
+
+
+# CHECK-LABEL: test_composed_tile_vectorize_distribute
+fn test_composed_tile_vectorize_distribute():
+    print("test_composed_tile_vectorize_distribute")
+    alias M = 19
+    alias N = 21
+    alias BM = 16
+    alias BN = 16
+    alias TM = 4
+    alias TN = 4
+    # CHECK: ---tile[ 0 0 ]---
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: vectorized-access:
+    # CHECK: True  :  4 x 4 True  :  4 x 4 True  :  4 x 4 True  :  4 x 4
+    # CHECK: True  :  4 x 4 True  :  4 x 4 True  :  4 x 4 True  :  4 x 4
+    # CHECK: True  :  4 x 4 True  :  4 x 4 True  :  4 x 4 True  :  4 x 4
+    # CHECK: True  :  4 x 4 True  :  4 x 4 True  :  4 x 4 True  :  4 x 4
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True True
+    # CHECK: True True
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: True True
+    # CHECK: True True
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True True
+    # CHECK: True True
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: True True
+    # CHECK: True True
+    # CHECK: ---tile[ 0 1 ]---
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: True  :  4 x 4 False  :  4 x 1 False  :  4 x 0 False  :  4 x 0
+    # CHECK: True  :  4 x 4 False  :  4 x 1 False  :  4 x 0 False  :  4 x 0
+    # CHECK: True  :  4 x 4 False  :  4 x 1 False  :  4 x 0 False  :  4 x 0
+    # CHECK: True  :  4 x 4 False  :  4 x 1 False  :  4 x 0 False  :  4 x 0
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True False
+    # CHECK: True False
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True False
+    # CHECK: True False
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---tile[ 1 0 ]---
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: True True True True True True True True True True True True True True True True
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: False  :  3 x 4 False  :  3 x 4 False  :  3 x 4 False  :  3 x 4
+    # CHECK: False  :  0 x 4 False  :  0 x 4 False  :  0 x 4 False  :  0 x 4
+    # CHECK: False  :  0 x 4 False  :  0 x 4 False  :  0 x 4 False  :  0 x 4
+    # CHECK: False  :  0 x 4 False  :  0 x 4 False  :  0 x 4 False  :  0 x 4
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---tile[ 1 1 ]---
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: True True True True True False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: False False False False False False False False False False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: False  :  3 x 4 False  :  3 x 1 False  :  3 x 0 False  :  3 x 0
+    # CHECK: False  :  0 x 4 False  :  0 x 1 False  :  0 x 0 False  :  0 x 0
+    # CHECK: False  :  0 x 4 False  :  0 x 1 False  :  0 x 0 False  :  0 x 0
+    # CHECK: False  :  0 x 4 False  :  0 x 1 False  :  0 x 0 False  :  0 x 0
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: False False
+    # CHECK: False False
+    for tile_m in range(math.ceildiv(M, BM)):
+        for tile_n in range(math.ceildiv(N, BN)):
+            print("---tile[", tile_m, tile_n, "]---")
+            var tile_mask = _tile_mask[BM, BN](
+                StaticIntTuple[2](M, N), StaticIntTuple[2](tile_m, tile_n)
+            )
+            print_tile_mask[BM, BN](tile_mask)
+            print("vectorized-access:")
+            var vectoize_mask = _vectorize_mask[sizes= (TM, TN)](tile_mask)
+            for i in range(BM // TM):
+                for j in range(BN // TN):
+                    var mask = vectoize_mask.access_mask((i, j))
+                    print(
+                        and_all(mask),
+                        " : ",
+                        vectoize_mask.access_size((i, j), mask)[0],
+                        "x",
+                        vectoize_mask.access_size((i, j), mask)[1],
+                        end=" ",
+                    )
+                print("")
+            print("thread-local-access:")
+            for th_id in range(4):
+                print("---thread-[", th_id, "]-mask---")
+                var dist_mask = _distribute_mask[
+                    thread_layout = Layout.row_major(2, 2)
+                ](vectoize_mask, th_id)
+                print_tile_mask[BM // TM, BN // TN](dist_mask)
+
+
+# CHECK-LABEL: test_composed_tile_vectorize_distribute_small
+fn test_composed_tile_vectorize_distribute_small():
+    print("test_composed_tile_vectorize_distribute_small")
+    alias M = 15
+    alias N = 17
+    alias BM = 8
+    alias BN = 8
+    alias TM = 4
+    alias TN = 4
+    # CHECK: ---tile[ 0 0 ]---
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: vectorized-access:
+    # CHECK: True  :  4 x 4 True  :  4 x 4
+    # CHECK: True  :  4 x 4 True  :  4 x 4
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---tile[ 0 1 ]---
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: vectorized-access:
+    # CHECK: True  :  4 x 4 True  :  4 x 4
+    # CHECK: True  :  4 x 4 True  :  4 x 4
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---tile[ 0 2 ]---
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: False  :  4 x 1 False  :  4 x 0
+    # CHECK: False  :  4 x 1 False  :  4 x 0
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: False : 4 x 1
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: False : 4 x 0
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: False : 4 x 1
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: False : 4 x 0
+    # CHECK: ---tile[ 1 0 ]---
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: False False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: True  :  4 x 4 True  :  4 x 4
+    # CHECK: False  :  3 x 4 False  :  3 x 4
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---tile[ 1 1 ]---
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: True True True True True True True True
+    # CHECK: False False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: True  :  4 x 4 True  :  4 x 4
+    # CHECK: False  :  3 x 4 False  :  3 x 4
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: True : 4 x 4
+    # CHECK: ---tile[ 1 2 ]---
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: True False False False False False False False
+    # CHECK: False False False False False False False False
+    # CHECK: vectorized-access:
+    # CHECK: False  :  4 x 1 False  :  4 x 0
+    # CHECK: False  :  3 x 1 False  :  3 x 0
+    # CHECK: thread-local-access:
+    # CHECK: ---thread-[ 0 ]-mask---
+    # CHECK: False : 4 x 1
+    # CHECK: ---thread-[ 1 ]-mask---
+    # CHECK: False : 4 x 0
+    # CHECK: ---thread-[ 2 ]-mask---
+    # CHECK: False : 4 x 1
+    # CHECK: ---thread-[ 3 ]-mask---
+    # CHECK: False : 4 x 0
+
+    for tile_m in range(math.ceildiv(M, BM)):
+        for tile_n in range(math.ceildiv(N, BN)):
+            print("---tile[", tile_m, tile_n, "]---")
+            var tile_mask = _tile_mask[BM, BN](
+                StaticIntTuple[2](M, N), StaticIntTuple[2](tile_m, tile_n)
+            )
+            print_tile_mask[BM, BN](tile_mask)
+            print("vectorized-access:")
+            var vectoize_mask = _vectorize_mask[sizes= (TM, TN)](tile_mask)
+            for i in range(BM // TM):
+                for j in range(BN // TN):
+                    var mask = vectoize_mask.access_mask((i, j))
+                    print(
+                        and_all(mask),
+                        " : ",
+                        vectoize_mask.access_size((i, j), mask)[0],
+                        "x",
+                        vectoize_mask.access_size((i, j), mask)[1],
+                        end=" ",
+                    )
+                print("")
+            print("thread-local-access:")
+            for th_id in range(4):
+                print("---thread-[", th_id, "]-mask---")
+                var dist_mask = _distribute_mask[
+                    thread_layout = Layout.row_major(2, 2)
+                ](vectoize_mask, th_id)
+                print_tile_mask_with_size[1, 1](dist_mask)
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
@@ -601,3 +1133,8 @@ fn main():
     test_vectorize_and_distribute()
     test_copy_nd_buffer_to_layout_tensor()
     test_copy_layout_tensor_to_buffer()
+    test_tile_mask()
+    test_vectorize_mask()
+    test_distribute_mask()
+    test_composed_tile_vectorize_distribute()
+    test_composed_tile_vectorize_distribute_small()

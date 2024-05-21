@@ -20,6 +20,175 @@ from utils import StaticTuple, StaticIntTuple
 alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 
 
+# TileMask holds information collected by composed tile operations to
+# determine per dim mask.
+# Note: The reason we want per-dim mask is because vectorized `non-scalar`
+# elements are n-d, and it can be OOB only with respect to a specific axis.
+#
+@value
+struct TileMask[
+    rank: Int,
+    element_size: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+    element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+]:
+    var max_dim: StaticIntTuple[rank]
+    var offset: StaticIntTuple[rank]
+
+    fn __init__(
+        inout self,
+        max_dim: StaticIntTuple[rank],
+        offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
+    ):
+        self.max_dim = max_dim
+        self.offset = offset
+
+    # Returns a Tuple[rank] where particular axis is true if the tile can be
+    # accessed at the given `point` at this axis.
+    #
+    @always_inline
+    fn access_mask(
+        self, point: StaticIntTuple[rank]
+    ) -> StaticTuple[Bool, rank]:
+        var mask = StaticTuple[Bool, rank]()
+
+        @parameter
+        fn _compute_in_bound[axis: Int]():
+            @parameter
+            if element_size[axis] == 1:
+                mask[axis] = (
+                    self.offset[axis] + point[axis] * element_stride[axis]
+                ) < self.max_dim[axis]
+            else:
+                mask[axis] = (
+                    self.offset[axis]
+                    + point[axis] * element_size[axis] * element_stride[axis]
+                    + element_size[axis]
+                ) < self.max_dim[axis]
+
+        unroll[_compute_in_bound, rank]()
+
+        return mask
+
+    # Returns the element size can be accessed.
+    #
+    @always_inline
+    fn access_size(
+        self, point: StaticIntTuple[rank], dim_mask: StaticTuple[Bool, rank]
+    ) -> StaticIntTuple[rank]:
+        var size = StaticIntTuple[rank]()
+
+        @parameter
+        fn _compute_size[i: Int]():
+            if dim_mask[i]:
+                size[i] = element_size[i]
+            else:
+                var start_index = self.offset[i] + point[i] * element_size[
+                    i
+                ] * element_stride[i]
+                size[i] = max(0, self.max_dim[i] - start_index)
+
+        unroll[_compute_size, rank]()
+
+        return size
+
+
+# Computes the mask resulting tiling buffer with the `tile sizes`.
+#
+@always_inline
+fn _tile_mask[
+    *tile_sizes: Dim,
+    rank: Int,
+    __sizes: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+    __element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+](shape: StaticIntTuple[rank], tile_coords: StaticIntTuple[rank]) -> TileMask[
+    rank, __sizes, __element_stride
+]:
+    var tile_offset = StaticIntTuple[rank]()
+
+    @parameter
+    fn _fill_tile_offset[i: Int]():
+        tile_offset[i] = tile_sizes[i].get() * tile_coords[i]
+
+    unroll[_fill_tile_offset, rank]()
+
+    return TileMask[rank, __sizes, __element_stride](shape, tile_offset)
+
+
+fn __to_static_tuple[
+    rank: Int
+](sizes: VariadicList[Int]) -> StaticIntTuple[rank]:
+    var res = StaticIntTuple[rank]()
+
+    @parameter
+    fn _fill_res[i: Int]():
+        res[i] = sizes[i]
+
+    unroll[_fill_res, rank]()
+    return res
+
+
+# Computes the mask resulting vectorizing buffer with the `sizes`.
+#
+@always_inline
+fn _vectorize_mask[
+    rank: Int,
+    sizes: StaticIntTuple[rank],
+    element_stride: StaticIntTuple[rank],
+    mask_sizes: StaticIntTuple[rank],
+](mask: TileMask[rank, mask_sizes, element_stride]) -> TileMask[
+    rank, sizes, element_stride
+]:
+    var res = TileMask[rank, sizes, element_stride](mask.max_dim, mask.offset)
+    return res
+
+
+# Returns the shaep of the `thread_layout` as tuple.
+#
+fn __get_shape_as_tuple[
+    rank: Int,
+](thread_layout: Layout) -> StaticIntTuple[rank]:
+    var res = StaticIntTuple[rank]()
+
+    @parameter
+    fn _fill_shape[i: Int]():
+        res[i] = to_int(thread_layout.shape[i])
+
+    unroll[_fill_shape, rank]()
+
+    return res
+
+
+# Computes the mask resulting distributing to `thread_layout`.
+#
+@always_inline
+fn _distribute_mask[
+    thread_layout: Layout,
+    rank: Int,
+    element_size: StaticIntTuple[rank],
+    element_stride: StaticIntTuple[rank],
+    __element_stride: StaticIntTuple[rank] = __get_shape_as_tuple[rank](
+        thread_layout
+    ),
+](
+    mask: TileMask[rank, element_size, element_stride],
+    thread_id: Int,
+) -> TileMask[rank, element_size, __element_stride]:
+    var res = TileMask[rank, element_size, __element_stride](
+        mask.max_dim, mask.offset
+    )
+
+    @parameter
+    fn _compute_offset[i: Int]():
+        alias shape_i = to_int(thread_layout.shape[i])
+        alias stride_i = to_int(thread_layout.stride[i])
+        var thread_coord_i = (thread_id // stride_i) % shape_i
+        res.offset[i] += thread_coord_i
+
+    unroll[_compute_offset, rank]()
+
+    return res
+
+
 # Returns the shape of distribute `thread_layout` into `shape`.
 #
 fn __distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
