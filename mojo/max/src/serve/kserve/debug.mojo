@@ -15,10 +15,28 @@ struct ColoredTextCodes:
 
     @staticmethod
     fn code(idx: Int) -> String:
+        """Returns a colored ASCII string based on the index.
+
+        This is used to display the different batch sizes processed by the
+        server in different colors. Each batch size is used as the `idx` value
+        to generate the color.
+
+        Args:
+            idx: The index of the color to be used.
+        Returns:
+            The ASCII color coded string.
+        """
         return chr(27) + "[37;4" + min(max(0, idx), 7) + "m"
 
     @staticmethod
     fn reset() -> String:
+        """Resets the ASCII color code.
+
+        This resets the output to stop using the color codes.
+
+        Returns:
+            The ASCII string that terminates the color coded region.
+        """
         return chr(27) + "[0m"
 
 

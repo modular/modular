@@ -20,10 +20,20 @@ from ._serve_rt import Batch
 @value
 @register_passable
 struct ServerStatsOptions:
+    """Structure representing the options used to display server statistics."""
+
     var printAtEnd: Bool
+    """A boolean controlling whether the statistics are printed when the server
+    stops (`on_server_stop`).
+    """
     var printAtInterval: Bool
+    """A boolean controlling whether the statistics are periodically printed
+    (`on_batch_receive`)  when the batches processed are a multiple of 1024.
+    """
 
     fn __init__(inout self):
+        """Initializes options with `printAtEnd` set to `True` and
+        `printAtInterval` set to `True`."""
         self.printAtEnd = True
         self.printAtInterval = True
 
@@ -32,17 +42,27 @@ struct ServerStats(ServerCallbacks):
     """Tracks various statistics about server performance."""
 
     var options: ServerStatsOptions
+    """The options for printing server stats."""
     var lock: BlockingSpinLock
-
+    """A blocking spin lock to ensure atomic updates of the statistics."""
     var total_batches: Int
+    """The total number of batches processed."""
     var total_requests: Int
+    """The total number of requests processed."""
     var total_ok_requests: Int
+    """The total number of requests succesfully processed."""
     var total_failed_requests: Int
+    """The total number requests that were not processed succesfully."""
     var total_request_ns: Int
+    """The total time spent in nanoseconds spent processing requests."""
 
     fn __init__(
         inout self, owned options: ServerStatsOptions = ServerStatsOptions()
     ):
+        """Initialize the server stats with the given options.
+        Args:
+            options: The ServerStatsOptions to be used to configure printing the statistics.
+        """
         self.options = options
         self.lock = BlockingSpinLock()
         self.total_batches = 0
@@ -52,6 +72,10 @@ struct ServerStats(ServerCallbacks):
         self.total_request_ns = 0
 
     fn __moveinit__(inout self: Self, owned existing: Self):
+        """Move initialize the server stats from a given ServerStats instance.
+        Args:
+            existing: The existin ServerStats isntance.
+        """
         self.options = existing.options^
         self.lock = BlockingSpinLock()
         self.total_batches = existing.total_batches
@@ -97,6 +121,8 @@ struct ServerStats(ServerCallbacks):
     fn print(inout self, unit: String = Unit.ms):
         """
         Prints out a summary of collected statistics.
+        Args:
+            unit: The unit used to display the time measurement.
         """
         with BlockingScopedLock(self.lock):
             var divisor = Unit._divisor(unit)

@@ -107,7 +107,11 @@ struct FileModel:
     """File-backed model artifact details."""
 
     var name: String
+    """The name of the model."""
     var version: String
+    """The version of the model."""
 
     var path: String
+    """A string representing the path of the model file."""
     var input_specs: Optional[List[InputSpec]]
+    """ The input specification of the model."""
