@@ -21,7 +21,7 @@ from math import (
 from builtin.simd import UInt8, UInt64, Int64, _pow
 from random import randn, seed
 from sys import external_call
-from sys.info import simdwidthof
+from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
 from utils import StaticTuple
@@ -4656,3 +4656,73 @@ fn vroom_q4_0_repack_weights_func[
     single_thread_blocking_override: Bool
 ](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
     return b.get_shape()
+
+
+@mogg_register_override("ggml_q4_0_matmul", 1)
+@always_inline
+@export
+fn ggml_q4_0_matmul[
+    float_dtype: DType
+](
+    a: NDBuffer[float_dtype, 2],
+    b: NDBuffer[DType.uint8, 2],
+    c: NDBuffer[float_dtype, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained[
+        (a.type == c.type) and a.type.is_floating_point(),
+        "expected float inputs and outputs",
+    ]()
+    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+
+    with Trace[TraceLevel.OP]("mojo.ggml_q4_0_matmul"):
+        ggml_q4_0_matmul_impl[group_size=32, type=float_dtype](a, b, c)
+
+
+@mogg_register_shape_func("ggml_q4_0_matmul")
+@always_inline
+@export
+fn ggml_q4_0_matmul_shape_func[
+    float_dtype: DType, single_thread_blocking_override: Bool
+](a: NDBuffer[float_dtype, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
+    2
+]:
+    constrained[
+        a.type.is_floating_point(), "expected float inputs and outputs"
+    ]()
+    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+    constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
+
+    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+
+
+@mogg_register_override("ggml_q4_0_dequantize", 1)
+@always_inline
+@export
+fn ggml_q4_0_dequantize(
+    input: NDBuffer[DType.uint8, 2],
+    output: NDBuffer[DType.float32, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    with Trace[TraceLevel.OP]("mojo.ggml_q4_0_dequantize"):
+        Q4sym[group_size=32].dequantize_and_write_to_tensor[rank=2](
+            input, output, output.dynamic_shape
+        )
+
+
+@mogg_register_shape_func("ggml_q4_0_dequantize")
+@always_inline
+@export
+fn ggml_q4_0_dequantize_shape_func[
+    single_thread_blocking_override: Bool
+](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+    constrained[input.type == DType.uint8, "expected uint8 input"]()
+
+    alias block_nbytes = sizeof[Q4sym[group_size=32]]()
+    alias quants_per_block = 32
+
+    var num_block_per_batch = (
+        input.size() // input.dynamic_shape[0]
+    ) // block_nbytes
+
+    return (input.dynamic_shape[0], quants_per_block * num_block_per_batch)
