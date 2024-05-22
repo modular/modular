@@ -372,7 +372,7 @@ struct Graph(CollectionElement, Stringable):
 
         var output_op = self._body().terminator()
         if output_op:
-            self._body().insert_before(output_op._value_copy(), op)
+            self._body().insert_before(output_op.value()[], op)
         else:
             self._body().append(op)
 

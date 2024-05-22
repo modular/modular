@@ -18,7 +18,7 @@ fn test_tensor_spec_basic() raises:
     var spec = TensorSpec(DType.float32, 1, 2, 3)
     var engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
 
-    assert_equal(engine_spec[0]._value_copy(), 1)
+    assert_equal(engine_spec[0].value()[], 1)
 
     assert_equal(engine_spec.get_name(), "tensor")
 
@@ -36,7 +36,7 @@ fn test_tensor_spec_basic() raises:
 
     assert_false(dynamic_dim_spec[0])
 
-    assert_equal(dynamic_dim_spec.rank()._value_copy(), 3)
+    assert_equal(dynamic_dim_spec.rank().value()[], 3)
 
     assert_true(dynamic_dim_spec.has_rank())
 
@@ -61,8 +61,8 @@ fn test_engine_tensor_spec_static_dim_copy() raises:
     var static_engine_spec_copy = static_engine_spec
 
     assert_equal(
-        static_engine_spec_copy[0]._value_copy(),
-        static_engine_spec[0]._value_copy(),
+        static_engine_spec_copy[0].value()[],
+        static_engine_spec[0].value()[],
     )
 
     assert_equal(
@@ -94,8 +94,8 @@ fn test_engine_tensor_spec_dynamic_dim_copy() raises:
     )
 
     assert_equal(
-        dynamic_dim_shape_spec_copy.rank()._value_copy(),
-        dynamic_dim_spec.rank()._value_copy(),
+        dynamic_dim_shape_spec_copy.rank().value()[],
+        dynamic_dim_spec.rank().value()[],
     )
 
     assert_equal(

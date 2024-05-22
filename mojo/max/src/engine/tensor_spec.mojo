@@ -155,11 +155,11 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             )
         else:
             var casted_shape = List[Optional[Int64]]()
-            for dim in shape._value_copy():
+            for dim in shape.value()[]:
                 if not dim[]:
                     casted_shape.append(None)
                 else:
-                    casted_shape.append(Int64(dim[]._value_copy()))
+                    casted_shape.append(Int64(dim[].value()[]))
             self = Self(name, casted_shape, dtype, lib, session)
 
     fn __init__(
@@ -186,7 +186,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         """
         var name_str = name.unsafe_ptr()
         if shape:
-            var inner_shape = shape._value_copy()
+            var inner_shape = shape.value()[]
             var rank = len(inner_shape)
             var adjusted_shape = List[Int64]()
             adjusted_shape.reserve(rank)
@@ -196,7 +196,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 if not dim:
                     adjusted_shape.append(dynamic_value)
                 else:
-                    adjusted_shape.append(dim._value_copy())
+                    adjusted_shape.append(dim.value()[])
             self._ptr = call_dylib_func[CTensorSpec](
                 lib,
                 Self._NewTensorSpecFnName,
@@ -273,9 +273,9 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             raise "tensors with dynamic rank cannot be converted to Mojo TensorSpec."
 
         var shape = List[Int]()
-        var rank = rank_or._value_copy()
+        var rank = rank_or.value()[]
         for i in range(rank):
-            shape.append(self[i]._value_copy())
+            shape.append(self[i].value()[])
         var dtype = self._ptr.get_dtype(self._lib)
         var spec = TensorSpec(dtype.to_dtype(), shape)
         return spec
@@ -307,7 +307,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             return None
 
         var shape_list = List[Optional[Int]]()
-        var rank = rank_or._value_copy()
+        var rank = rank_or.value()[]
         for i in range(rank):
             var dim: Optional[Int]
             try:
@@ -320,7 +320,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             if not dim:
                 shape_list.append(None)
             else:
-                shape_list.append(dim._value_copy())
+                shape_list.append(dim.value()[])
 
         return shape_list
 
@@ -339,11 +339,11 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         if not shape_list:
             _repr += "None x "
         else:
-            for dim in shape_list._value_copy():
+            for dim in shape_list.value()[]:
                 if not dim[]:
                     _repr += "-1"
                 else:
-                    _repr += str(dim[]._value_copy())
+                    _repr += str(dim[].value()[])
                 _repr += "x"
         _repr += str(self.get_dtype())
         _repr += "}"
