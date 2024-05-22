@@ -330,10 +330,10 @@ fn sgemm_warp_tiling_kernel[
                 for w_sub_col_idx in range(WNITER):
                     # MMA_M*MMA_N*MMA_K mma library function call.
                     mma(
-                        c_reg[w_sub_row_idx * WNITER + w_sub_col_idx],
+                        c_reg[int(w_sub_row_idx * WNITER + w_sub_col_idx)],
                         a_reg[w_sub_row_idx],
                         b_reg[w_sub_col_idx],
-                        c_reg[w_sub_row_idx * WNITER + w_sub_col_idx],
+                        c_reg[int(w_sub_row_idx * WNITER + w_sub_col_idx)],
                     )
 
         # Move BK columns to right.
@@ -354,7 +354,7 @@ fn sgemm_warp_tiling_kernel[
             )
 
             # Load from c_reg to vec register vec[0-3].
-            var vec = c_reg[w_sub_row_idx * WNITER + w_sub_col_idx]
+            var vec = c_reg[int(w_sub_row_idx * WNITER + w_sub_col_idx)]
 
             @parameter
             if elementwise_lambda_fn:
@@ -373,10 +373,10 @@ fn sgemm_warp_tiling_kernel[
                 )
             else:
                 # Store result.
-                C_interim[row_cd0_cd1 * N + col_cd0] = vec[0]
-                C_interim[row_cd0_cd1 * N + col_cd1] = vec[1]
-                C_interim[row_cd2_cd3 * N + col_cd2] = vec[2]
-                C_interim[row_cd2_cd3 * N + col_cd3] = vec[3]
+                C_interim[int(row_cd0_cd1 * N + col_cd0)] = vec[0]
+                C_interim[int(row_cd0_cd1 * N + col_cd1)] = vec[1]
+                C_interim[int(row_cd2_cd3 * N + col_cd2)] = vec[2]
+                C_interim[int(row_cd2_cd3 * N + col_cd3)] = vec[3]
 
 
 # CHECK-LABEL: run_matmul_mma_warptiling
