@@ -161,9 +161,9 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<GeneratorOp>($exportKind, $sym_name, $signature, $functionType,
-                        $inputParams, $resultParams, $inlineLevel, $decorators,
-                        attr-dict, $bodyRegion)
+    `` custom<GeneratorOp>($exportKind, $sym_name, $signature, $functionType,
+                           $inputParams, $resultParams, $inlineLevel,
+                           $decorators, attr-dict, $bodyRegion)
   }];
 
   let extraClassDeclaration = [{
