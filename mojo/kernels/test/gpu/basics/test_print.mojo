@@ -11,7 +11,7 @@ from gpu.host import Context, Function
 from layout import Layout
 
 from builtin.io import _print_fmt, _printf
-from utils.inlined_string import _FixedString
+from utils.inline_string import _FixedString
 
 
 # CHECK-LABEL: == test_gpu_printf
