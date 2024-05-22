@@ -14,11 +14,13 @@ from layout import LayoutTensor, Layout, IntTuple
 from layout.layout import LayoutList
 from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
+    copy_from_nd_buffer_masked,
     copy_to_nd_buffer,
     distribute,
     vectorize,
     ElementLayout,
     _copy_nd_buffer_to_layout_tensor,
+    _copy_nd_buffer_to_layout_tensor_masked,
     _copy_layout_tensor_to_nd_buffer,
     _tile_mask,
     _vectorize_mask,
@@ -1123,6 +1125,147 @@ fn test_composed_tile_vectorize_distribute_small():
                 print_tile_mask_with_size[1, 1](dist_mask)
 
 
+# CHECK-LABLE: test_copy_nd_buffer_to_layout_tensor_masked_scalar
+fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
+    print("==test_copy_nd_buffer_to_layout_tensor_masked_scalar")
+    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)].stack_allocation()
+    linspace_fill(buff_7x9)
+
+    var dst_tensor_8x12 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 12)
+    ].stack_allocation()
+    dst_tensor_8x12.fill(0)
+
+    # CHECK: --tile[ 0 , 0 ]---
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 9.0 10.0 11.0 12.0
+    # CHECK: 18.0 19.0 20.0 21.0
+    # CHECK: 27.0 28.0 29.0 30.0
+    # CHECK: --tile[ 0 , 1 ]---
+    # CHECK: 4.0 5.0 6.0 7.0
+    # CHECK: 13.0 14.0 15.0 16.0
+    # CHECK: 22.0 23.0 24.0 25.0
+    # CHECK: 31.0 32.0 33.0 34.0
+    # CHECK: --tile[ 0 , 2 ]---
+    # CHECK: 8.0 0.0 0.0 0.0
+    # CHECK: 17.0 0.0 0.0 0.0
+    # CHECK: 26.0 0.0 0.0 0.0
+    # CHECK: 35.0 0.0 0.0 0.0
+    # CHECK: --tile[ 1 , 0 ]---
+    # CHECK: 36.0 37.0 38.0 39.0
+    # CHECK: 45.0 46.0 47.0 48.0
+    # CHECK: 54.0 55.0 56.0 57.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: --tile[ 1 , 1 ]---
+    # CHECK: 40.0 41.0 42.0 43.0
+    # CHECK: 49.0 50.0 51.0 52.0
+    # CHECK: 58.0 59.0 60.0 61.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: --tile[ 1 , 2 ]---
+    # CHECK: 44.0 0.0 0.0 0.0
+    # CHECK: 53.0 0.0 0.0 0.0
+    # CHECK: 62.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+
+    for tile_m in range(2):
+        for tile_n in range(3):
+            print("--tile[", tile_m, ",", tile_n, "]---")
+
+            var buff_tile_4x4 = buff_7x9.tile[4, 4]((tile_m, tile_n))
+
+            var tensor_tile_4x4 = dst_tensor_8x12.tile[4, 4](tile_m, tile_n)
+
+            var tile_mask = _tile_mask[4, 4](
+                buff_7x9.dynamic_shape, (tile_m, tile_n)
+            )
+
+            alias thread_layout = Layout.row_major(2, 2)
+            for th_i in range(4):
+                var buff_thread_local = distribute[thread_layout=thread_layout](
+                    buff_tile_4x4, th_i
+                )
+                var tensor_thread_local = tensor_tile_4x4.distribute[
+                    thread_layout
+                ](th_i)
+
+                var distribute_mask = _distribute_mask[
+                    thread_layout=thread_layout
+                ](tile_mask, th_i)
+                _copy_nd_buffer_to_layout_tensor_masked(
+                    tensor_thread_local,
+                    buff_thread_local,
+                    ElementLayout[2, (1, 1)](),
+                    distribute_mask,
+                )
+
+            tensor_tile_4x4.print()
+
+
+# CHECK-LABEL: test_copy_from_nd_buffer_masked_scalar
+fn test_copy_from_nd_buffer_masked_scalar():
+    print("test_copy_from_nd_buffer_masked_scalar")
+    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)].stack_allocation()
+    linspace_fill(buff_7x9)
+
+    var dst_tensor_8x12 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 12)
+    ].stack_allocation()
+    dst_tensor_8x12.fill(0)
+
+    # CHECK: --tile[ 0 , 0 ]---
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 9.0 10.0 11.0 12.0
+    # CHECK: 18.0 19.0 20.0 21.0
+    # CHECK: 27.0 28.0 29.0 30.0
+    # CHECK: --tile[ 0 , 1 ]---
+    # CHECK: 4.0 5.0 6.0 7.0
+    # CHECK: 13.0 14.0 15.0 16.0
+    # CHECK: 22.0 23.0 24.0 25.0
+    # CHECK: 31.0 32.0 33.0 34.0
+    # CHECK: --tile[ 0 , 2 ]---
+    # CHECK: 8.0 0.0 0.0 0.0
+    # CHECK: 17.0 0.0 0.0 0.0
+    # CHECK: 26.0 0.0 0.0 0.0
+    # CHECK: 35.0 0.0 0.0 0.0
+    # CHECK: --tile[ 1 , 0 ]---
+    # CHECK: 36.0 37.0 38.0 39.0
+    # CHECK: 45.0 46.0 47.0 48.0
+    # CHECK: 54.0 55.0 56.0 57.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: --tile[ 1 , 1 ]---
+    # CHECK: 40.0 41.0 42.0 43.0
+    # CHECK: 49.0 50.0 51.0 52.0
+    # CHECK: 58.0 59.0 60.0 61.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: --tile[ 1 , 2 ]---
+    # CHECK: 44.0 0.0 0.0 0.0
+    # CHECK: 53.0 0.0 0.0 0.0
+    # CHECK: 62.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+
+    for tile_m in range(2):
+        for tile_n in range(3):
+            print("--tile[", tile_m, ",", tile_n, "]---")
+            var buff_tile_4x4 = buff_7x9.tile[4, 4]((tile_m, tile_n))
+
+            var tensor_tile_4x4 = dst_tensor_8x12.tile[4, 4](tile_m, tile_n)
+
+            var tile_mask = _tile_mask[4, 4](
+                buff_7x9.dynamic_shape, (tile_m, tile_n)
+            )
+
+            alias thread_layout = Layout.row_major(2, 2)
+            for th_id in range(4):
+                copy_from_nd_buffer_masked[thread_layout=thread_layout](
+                    tensor_tile_4x4.distribute[thread_layout](th_id),
+                    buff_tile_4x4,
+                    tile_mask,
+                    th_id,
+                )
+
+            tensor_tile_4x4.print()
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
@@ -1139,3 +1282,5 @@ fn main():
     test_distribute_mask()
     test_composed_tile_vectorize_distribute()
     test_composed_tile_vectorize_distribute_small()
+    test_copy_nd_buffer_to_layout_tensor_masked_scalar()
+    test_copy_from_nd_buffer_masked_scalar()
