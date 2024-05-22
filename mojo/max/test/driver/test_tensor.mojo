@@ -214,6 +214,31 @@ def test_copy():
             assert_equal(src[i, j], dst[i, j])
 
 
+def test_set_through_slice():
+    var dev = Device()
+
+    var dt = dev.allocate(
+        TensorSpec(DType.float32, 10, 2),
+    )
+    var tensor = dt^.get_tensor[DType.float32, 2]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(2):
+            tensor[Index(i, j)] = val
+            val += 1
+
+    assert_equal(tensor[1, 0], 3)
+
+    var slice = tensor[1:, :]
+    assert_equal(slice[0, 0], 3)
+
+    slice.set((0, 0), 4)
+
+    assert_equal(slice[0, 0], 4)
+    assert_equal(tensor[1, 0], 4)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -222,3 +247,4 @@ def main():
     test_2dslice_with_step_row_column()
     test_round_trip()
     test_copy()
+    test_set_through_slice()
