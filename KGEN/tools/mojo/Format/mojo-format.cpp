@@ -62,11 +62,6 @@ static int format(const State &state) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
 
-  // Initialize telemetry.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), args);
-
   // Check that the inputs are all valid Mojo/Python files, or directories.
   std::error_code ec;
   bool hasStdin = false;
