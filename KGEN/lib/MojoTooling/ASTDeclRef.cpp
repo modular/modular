@@ -177,15 +177,15 @@ MojoASTDeclRef MojoASTDeclRef::getParentDecl() const {
 }
 
 /// Create an Argument decl view for the given decl and argument index.
-std::unique_ptr<ArgumentDeclView> createArgumentDeclView(MojoASTDeclRef declRef,
-                                                         unsigned arg) {
+static std::unique_ptr<ArgumentDeclView>
+createArgumentDeclView(MojoASTDeclRef declRef, unsigned arg) {
   // The parent FunctionDeclView is the one who owns the docstring of this
   // argument, so it's easier just to construct that view and extract the
   // argument from it.
-  MojoASTDeclRef parentDecl = declRef.getParentDecl();
+  MojoASTDeclRef parentDecl = declRef->getParentDecl();
   auto functionView =
       llvm::unique_dyn_cast_or_null<FunctionDeclView>(parentDecl.getView());
-  if (!functionView)
+  if (!functionView || functionView->getArguments().size() <= arg)
     return nullptr;
   return std::make_unique<ArgumentDeclView>(functionView->getArguments()[arg]);
 }
