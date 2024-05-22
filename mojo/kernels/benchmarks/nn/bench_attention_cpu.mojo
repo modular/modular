@@ -112,22 +112,16 @@ def bench_attention[
                 scale=scale,
             )
 
-        var dispatched = False
         alias depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
 
-        @always_inline
         @parameter
-        fn dispatch_depth_dim[idx: Int]():
+        for idx in range(len(depth_static_dims)):
             if depth_static_dims[idx] == spec.depth_dim:
                 b.iter[iter_fn[Dim(depth_static_dims[idx])]]()
-                dispatched = True
-
-        # Attempt to dispatch with a static shape.
-        unroll[dispatch_depth_dim, len(depth_static_dims)]()
+                return
 
         # Fallback to dispatch with a dynamic shape.
-        if not dispatched:
-            b.iter[iter_fn[Dim()]]()
+        b.iter[iter_fn[Dim()]]()
 
     var input_id = "transpose_k=" + str(transpose_k) + "," + str(spec)
 

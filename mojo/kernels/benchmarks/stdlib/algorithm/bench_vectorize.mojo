@@ -219,8 +219,7 @@ fn unroll_nested_call[
         return z
 
     @parameter
-    @always_inline
-    fn body[i: Int]() raises:
+    for i in range(count[loop_idx]):
         alias index = append_index(index_prev, i)
 
         @parameter
@@ -228,8 +227,6 @@ fn unroll_nested_call[
             unroll_nested_call[func, count, loop_idx + 1, index]()
         else:
             func[index]()
-
-    unroll[body, count[loop_idx]]()
 
 
 fn bench_compare():
