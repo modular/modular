@@ -309,7 +309,10 @@ fn ld_matrix[
 
     @parameter
     fn get_suffix() -> StringLiteral:
-        return (".trans" if transpose else "") + ".b16.p3"
+        alias sfx = ".b16.p3"
+        if transpose:
+            return ".trans" + sfx
+        return sfx
 
     # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
     # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
