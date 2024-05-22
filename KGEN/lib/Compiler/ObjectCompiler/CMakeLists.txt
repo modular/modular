@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENEmitObject
+add_modular_library(KGENObjectCompiler
   JITSupport.cpp
   LowerToLLVM.cpp
   LowerToObject.cpp
