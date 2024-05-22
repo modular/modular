@@ -47,7 +47,7 @@ add_subdirectory(lib/Pipeline)
 add_subdirectory(lib/ToolCommon)
 add_subdirectory(lib/CompilerRT)
 add_subdirectory(lib/ExecutionEngine)
-add_subdirectory(lib/ObjectCompiler)
+add_subdirectory(lib/Compiler/ObjectCompiler)
 add_subdirectory(lib/Compiler)
 
 # Mojo frontend.

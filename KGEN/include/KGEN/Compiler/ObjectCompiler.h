@@ -145,12 +145,6 @@ private:
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
 
-/// Run the llvm opt passes over `module` given `targetMachine`.
-LogicalResult runLLVMOptPasses(llvm::Module &module,
-                               llvm::TargetMachine &targetMachine,
-                               const CompilationOptions &options,
-                               LLCL::Runtime &runtime);
-
 //===----------------------------------------------------------------------===//
 // ObjectCompilerLayer
 //===----------------------------------------------------------------------===//

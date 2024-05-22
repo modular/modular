@@ -42,6 +42,16 @@ SmallVector<LLCL::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     bool isParLLC, bool isJIT, bool emitAssembly = false,
     std::optional<size_t> moduleIdx = std::nullopt);
 
+//===----------------------------------------------------------------------===//
+// runLLVMOptPasses
+//===----------------------------------------------------------------------===//
+
+/// Run the llvm opt passes over `module` given `targetMachine`.
+LogicalResult runLLVMOptPasses(llvm::Module &module,
+                               llvm::TargetMachine &targetMachine,
+                               const CompilationOptions &options,
+                               LLCL::Runtime &runtime);
+
 } // namespace M::KGEN
 
 #endif // KGEN_OBJECTCOMPILER_H

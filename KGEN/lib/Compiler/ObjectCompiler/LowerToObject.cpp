@@ -6,7 +6,7 @@
 
 #include "LowerToObject.h"
 #include "Cache/CacheTelemetryContext.h"
-#include "KGEN/Compiler/JITSupport.h"
+#include "JITSupport.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -123,10 +123,6 @@ private:
 };
 } // namespace
 
-//===----------------------------------------------------------------------===//
-// compileLLVMToObject
-//===----------------------------------------------------------------------===//
-
 /// Run the default LLVM optimization pipeline based on the select optimization
 /// level.
 LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
@@ -186,6 +182,10 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
   modulePassMgr.run(module, moduleAnalysisMgr);
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// compileLLVMToObject
+//===----------------------------------------------------------------------===//
 
 /// Run the default llc passes required to generate object code.
 static LogicalResult
@@ -403,7 +403,6 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         std::optional<size_t> moduleIdx) {
   CompilerTimeTraceScope traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
-  module.setPICLevel(llvm::PICLevel::BigPIC);
 
   std::string saveTempsPrefix = options.saveTempsPrefix;
   if (moduleIdx && !options.saveTempsPrefix.empty())
