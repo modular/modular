@@ -24,6 +24,9 @@ class TargetMachine;
 } // namespace llvm
 
 namespace M::KGEN {
+class MaterializationLayer;
+class ObjectCompiler;
+
 //===----------------------------------------------------------------------===//
 // ExecutionEngineOptions
 //===----------------------------------------------------------------------===//
@@ -81,107 +84,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// MaterializationLayer
-//===----------------------------------------------------------------------===//
-
-/// Provides a base class we can use to store pointers to Layers in the
-/// ExecutionEngine.
-///
-/// Layers must implement an `add` function that the ExecutionEngine can use:
-///
-///  ErrorOrSuccess add(StringRef libName, Args args...);
-///
-/// The base class doesn't have a virtual method to override largely because
-/// each class will have its own requirements for what needs to be passed into
-/// `add`.
-class MaterializationLayer {
-public:
-  enum LayerKind {
-    kStaticArchiveLayer,
-    kObjectCompilerLayer,
-  };
-  virtual ~MaterializationLayer() = default;
-
-  /// Nothing in this class hierarchy is copyable.
-  MaterializationLayer(const MaterializationLayer &other) = delete;
-
-  /// Check if this layer has an error.
-  bool hasError() const { return error.has_value(); }
-
-  LayerKind getKind() const { return kind; }
-
-  /// Take the error from this layer.
-  Error takeError() {
-    assert(hasError());
-    return std::move(*error);
-  }
-
-protected:
-  using AddToSearchOrderFn =
-      llvm::unique_function<ErrorOrSuccess(StringRef, llvm::orc::JITDylib *)>;
-
-  MaterializationLayer(LayerKind kind, llvm::orc::ExecutionSession &sess,
-                       const llvm::DataLayout &dl, AddToSearchOrderFn add);
-
-  /// Get or create a dylib with name `libName`. Subclasses should always use
-  /// this method rather than manipulating the ExecutionSession directly.
-  ErrorOr<llvm::orc::JITDylib *> getOrCreateDylib(StringRef libName);
-
-  /// Mangle and intern `name` in the ExecutionSession.
-  llvm::orc::SymbolStringPtr mangleAndIntern(StringRef name);
-
-  /// Layers should override this function if they need to filter the symbols
-  /// coming from the current process. The MaterializationLayer automatically
-  /// adds visiblity to current process symbols when creating a new dylib, so
-  /// this allows layers to customize that behavior.
-  virtual llvm::unique_function<bool(const llvm::orc::SymbolStringPtr &)>
-  getTargetProcessSymbolFilter() {
-    return {};
-  }
-
-protected:
-  llvm::orc::ExecutionSession &session;
-  const llvm::DataLayout &dataLayout;
-  AddToSearchOrderFn addToSearchOrder;
-
-  /// Stores an optional Error that an individual layer can set to be checked
-  /// later. This is necessary because the MaterializationUnit may call into a
-  /// function in the layer that has no other way to report that error.
-  std::optional<Error> error = std::nullopt;
-
-private:
-  LayerKind kind;
-};
-
-//===----------------------------------------------------------------------===//
-// StaticArchiveLayer
-//===----------------------------------------------------------------------===//
-
-/// This layer provides a way to add a static archive to the ExecutionEngine.
-/// All symbols in the archive are made available for use and lookup.
-class StaticArchiveLayer : public MaterializationLayer {
-public:
-  /// The StaticArchiveLayer needs a reference to the base object linking layer
-  /// so it can feed the archive bytes into the linker.
-  StaticArchiveLayer(llvm::orc::ObjectLayer &objLayer,
-                     llvm::orc::ExecutionSession &sess,
-                     const llvm::DataLayout &dl, AddToSearchOrderFn add);
-
-  /// Add the archive in `archive` to the library `libName`. Stores a reference
-  /// to `archive` inside the class to ensure its lifetime matches the lifetime
-  /// of the ExecutionEngine.
-  ErrorOrSuccess add(StringRef libName, BufferRef archive);
-
-  static bool classof(const MaterializationLayer *layer) {
-    return layer->getKind() == LayerKind::kStaticArchiveLayer;
-  }
-
-private:
-  llvm::orc::ObjectLayer &objectLayer;
-  SmallVector<BufferRef> archiveBuffers;
-};
-
-//===----------------------------------------------------------------------===//
 // ExecutionEngine
 //===----------------------------------------------------------------------===//
 
@@ -198,13 +100,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Constructors
   //===--------------------------------------------------------------------===//
-
-  /// Create an ExecutionEngine with no layers. This is generally not very
-  /// useful unless the user wants to customize exactly which layers go into the
-  /// JIT.
-  static ErrorOr<std::unique_ptr<ExecutionEngine>>
-  create(ExecutionEngineOptions options, const llvm::TargetMachine &tm);
-
   /// Create an ExecutionEngine with StaticArchiveLayer.
   /// This enables the user to load static archives, which is
   /// pretty much the base requirement.
@@ -213,9 +108,8 @@ public:
                            const llvm::TargetMachine &tm);
 
   //===--------------------------------------------------------------------===//
-  // Adding/finding layers
+  // Adding/getting layers
   //===--------------------------------------------------------------------===//
-
   /// Add a layer into the ExecutionEngine. This passes the variables that are
   /// private to the ExecutionEngine into the layer constructor and constructs
   /// the layer in-place.
@@ -229,18 +123,6 @@ public:
         })));
   }
 
-  /// Find a layer of type T. Because we can only have one layer of each kind,
-  /// this simply iterates the layer list and returns a stable pointer to the
-  /// layer of type T. If that layer cannot be found, returns nullptr.
-  template <typename T>
-  T *findLayer() const {
-    auto found =
-        llvm::find_if(layers, [](const auto &layer) { return isa<T>(*layer); });
-    if (found == layers.end())
-      return nullptr;
-    return &cast<T>(**found);
-  }
-
   /// Get a layer of type T. Asserts that the layer is found in the
   /// ExecutionEngine and returns a reference to it.
   template <typename T>
@@ -249,22 +131,6 @@ public:
         llvm::find_if(layers, [](const auto &layer) { return isa<T>(*layer); });
     assert(found != layers.end() && "can't find this layer...");
     return cast<T>(**found);
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Adding symbols/objects/etc.
-  //===--------------------------------------------------------------------===//
-
-  /// Add *something* to the ExecutionEngine. Uses `LayerT` to find the layer to
-  /// add *to*, and then calls the layer's `add` function.
-  template <typename LayerT, typename... Args>
-  ErrorOrSuccess add(StringRef libName, Args &&...args) {
-    LayerT *found = findLayer<LayerT>();
-    if (!found)
-      return Error("could not find layer of type " +
-                   llvm::getTypeName<LayerT>());
-
-    return found->add(libName, std::forward<Args &&>(args)...);
   }
 
   /// Constructs and adds an object with libName to the layer of LayerT.
@@ -279,6 +145,21 @@ public:
     std::lock_guard<std::mutex> guard(mu);
     if (executionSession->getJITDylibByName(libName))
       return success();
+
+    return found->add(libName, std::forward<Args &&>(args)...);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Adding symbols/objects/etc.
+  //===--------------------------------------------------------------------===//
+  /// Add *something* to the ExecutionEngine. Uses `LayerT` to find the layer to
+  /// add *to*, and then calls the layer's `add` function.
+  template <typename LayerT, typename... Args>
+  ErrorOrSuccess add(StringRef libName, Args &&...args) {
+    LayerT *found = findLayer<LayerT>();
+    if (!found)
+      return Error("could not find layer of type " +
+                   llvm::getTypeName<LayerT>());
 
     return found->add(libName, std::forward<Args &&>(args)...);
   }
@@ -331,11 +212,20 @@ public:
   ErrorOrSuccess addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
 
 private:
+  //===--------------------------------------------------------------------===//
+  // Constructors
+  //===--------------------------------------------------------------------===//
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::ExecutionSession> session,
                            const llvm::DataLayout &dl);
 
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
+
+  /// Create an ExecutionEngine with no layers. This is generally not very
+  /// useful unless the user wants to customize exactly which layers go into the
+  /// JIT.
+  static ErrorOr<std::unique_ptr<ExecutionEngine>>
+  create(ExecutionEngineOptions options, const llvm::TargetMachine &tm);
 
   /// Mangle and intern a string name.
   llvm::orc::SymbolStringPtr mangleAndIntern(StringRef name);
@@ -346,6 +236,21 @@ private:
   ErrorOr<CompiledFunc>
   lookupWithSearchOrder(const llvm::orc::JITDylibSearchOrder &order,
                         StringRef symbol);
+
+  //===--------------------------------------------------------------------===//
+  // finding layers
+  //===--------------------------------------------------------------------===//
+  /// Find a layer of type T. Because we can only have one layer of each kind,
+  /// this simply iterates the layer list and returns a stable pointer to the
+  /// layer of type T. If that layer cannot be found, returns nullptr.
+  template <typename T>
+  T *findLayer() const {
+    auto found =
+        llvm::find_if(layers, [](const auto &layer) { return isa<T>(*layer); });
+    if (found == layers.end())
+      return nullptr;
+    return &cast<T>(**found);
+  }
 
   /// The ORC requires an ExecutionSession - this is how it coordinates
   /// execution across processes/machines.

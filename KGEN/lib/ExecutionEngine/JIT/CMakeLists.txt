@@ -4,20 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENObjectCompiler
-  LowerToLLVM.cpp
-  LowerToObject.cpp
-  LLVMIRUtils.cpp
-  LLVMPassesPipeline.cpp
-  StandaloneObject.cpp
-  ProduceFunctionDecls.cpp
+add_modular_library(KGENJIT
+  JITSupport.cpp
+  MaterializationLayer.cpp
+  ObjectCompilerLayer.cpp
+  StaticArchiveLayer.cpp
 
   DEPENDS
   KGENVersion
 
   LINK_COMPONENTS
-  AllTargetsAsmParsers
-  AllTargetsCodeGens
   AllTargetsInfos
   OrcJIT
   JITLink
@@ -25,7 +21,6 @@ add_modular_library(KGENObjectCompiler
 
   LINK_LIBS PUBLIC
   KGENToLLVM
-  KGENExecutionEngine
   KGENToolCommon
   KGENPipeline
 
@@ -39,4 +34,4 @@ add_modular_library(KGENObjectCompiler
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter
   MLIRBytecodeReader
-  )
+)

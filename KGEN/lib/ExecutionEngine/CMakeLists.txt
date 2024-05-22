@@ -49,6 +49,7 @@ add_modular_library(KGENExecutionEngine
   MC
 
   LINK_LIBS PUBLIC
+  KGENJIT
   KGENSupport
   LLCLRuntime
   MCache
