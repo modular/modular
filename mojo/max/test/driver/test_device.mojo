@@ -26,14 +26,14 @@ def test_device_tensor():
         TensorSpec(DType.float32, 2, 2),
     )
     assert_equal(
-        str(dt1), "DeviceTensor(Device(type=CPU,numa_id=2),Spec(2x2xfloat32))"
+        str(dt1), "DeviceMemory(Device(type=CPU,numa_id=2),Spec(2x2xfloat32))"
     )
 
     var dt2 = dev.allocate(
         TensorSpec(DType.float32, 3, 2),
     )
     assert_equal(
-        str(dt2), "DeviceTensor(Device(type=CPU,numa_id=2),Spec(3x2xfloat32))"
+        str(dt2), "DeviceMemory(Device(type=CPU,numa_id=2),Spec(3x2xfloat32))"
     )
 
 

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
-from driver import AnyTensor, Device, CPUDescriptor
+from driver import AnyMemory, Device, CPUDescriptor
 from testing import assert_equal
 from tensor import TensorSpec
 
@@ -17,7 +17,7 @@ def test_from_device_tensor():
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var anytensor = AnyTensor(dt^)
+    var anytensor = AnyMemory(dt^)
 
     assert_equal(anytensor.get_rank(), 2)
 
@@ -31,12 +31,12 @@ def test_from_tensor():
 
     var tensor = dt^.get_tensor[DType.float32, 2]()
 
-    var anytensor = AnyTensor(tensor^)
+    var anytensor = AnyMemory(tensor^)
 
     assert_equal(anytensor.get_rank(), 2)
 
 
-def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
+def _function_that_takes_anytensor(owned t1: AnyMemory, owned t2: AnyMemory):
     return t1.get_rank() + t2.get_rank()
 
 
