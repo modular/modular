@@ -7,6 +7,7 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/ExecutionEngine/JIT/ObjectCompilerLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"

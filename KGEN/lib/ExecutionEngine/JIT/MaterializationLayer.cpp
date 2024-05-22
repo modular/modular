@@ -1,0 +1,55 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/ExecutionEngine/JIT/MaterializationLayer.h"
+#include "Support/ErrorOr.h"
+#include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
+#include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/Debugging/DebugInfoSupport.h"
+#include "llvm/IR/Mangler.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Base64.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
+
+using namespace M;
+using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// MaterializationLayer
+//===----------------------------------------------------------------------===//
+
+MaterializationLayer::MaterializationLayer(LayerKind kind,
+                                           llvm::orc::ExecutionSession &sess,
+                                           const llvm::DataLayout &dl,
+                                           AddToSearchOrderFn add)
+    : session(sess), dataLayout(dl), addToSearchOrder(std::move(add)),
+      kind(kind) {}
+
+ErrorOr<llvm::orc::JITDylib *>
+MaterializationLayer::getOrCreateDylib(StringRef libName) {
+  if (llvm::orc::JITDylib *dylib = session.getJITDylibByName(libName))
+    return dylib;
+
+  auto dylibOr = session.createJITDylib(libName.str());
+  if (!dylibOr)
+    return toModularError(dylibOr.takeError());
+  llvm::orc::JITDylib &dylib = *dylibOr;
+
+  // Add the dylib to the search order.
+  if (auto err = addToSearchOrder(libName, &dylib))
+    return err.takeError();
+
+  return &dylib;
+}
+
+llvm::orc::SymbolStringPtr
+MaterializationLayer::mangleAndIntern(StringRef name) {
+  std::string mangledName;
+  llvm::raw_string_ostream mangledNameStream(mangledName);
+  llvm::Mangler::getNameWithPrefix(mangledNameStream, name, dataLayout);
+  return session.intern(mangledName);
+}
