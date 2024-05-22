@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
@@ -321,7 +322,7 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
 /// If this function detects a problem, it marks the decl as erroneous and
 /// resets the SpecialFunctionInfo.
 static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
-                                      TypeCheckedFnSignature &tcSignature,
+                                      const TypeCheckedFnSignature &tcSignature,
                                       SpecialFunctionInfo &fnInfo) {
   LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
 
@@ -729,6 +730,124 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
       attrs.append(value.name, attr);
   }
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
+}
+
+/// Process an extensibility decorator by generating additional trait binding
+/// information about each argument and result type.
+static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
+                                          const ExprNode *decorator) {
+  StringRef spelling;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
+      spelling = declRef->spelling;
+  if (spelling.empty())
+    return;
+
+  using namespace MOGGPreElab::Decorators;
+  if (!llvm::is_contained(
+          {REGISTER_KERNEL, REGISTER_OVERRIDE, REGISTER_PUBLIC_OVERRIDE},
+          spelling))
+    return;
+
+  // For each argument and result type, generate the set of explicit trait
+  // conformances and witness tables. We need to dig out the declared argument
+  // and result types.
+  auto func = cast<LIT::FuncOp>(decl);
+  if (!isa<FileModuleOp>(func->getParentOp())) {
+    shared.emitError(decl.getLoc(), "@")
+        << spelling << " is only supported on top-level functions";
+    return;
+  }
+
+  LITSignatureType sig = func.getFullSignature();
+  ArrayRef<Type> sigArgTypes = func.getFunctionType().getInputs();
+  ASTType resultType = func.getUserResultType();
+  // Reduce `sigArgTypes` to just the array of declared arguments.
+  if (sig.hasMemoryOnlyResult())
+    sigArgTypes = sigArgTypes.drop_back();
+  // Drop the error slot if there is one.
+  if (sig.isThrows())
+    sigArgTypes = sigArgTypes.drop_back();
+
+  // Extract the declared argument types.
+  SmallVector<ASTType> argTypes;
+  for (auto [idx, argType] : llvm::enumerate(sigArgTypes)) {
+    Type type = argType;
+    ArgConvention conv = sig.getArgConvention(idx);
+    // Handle vararg kinds.
+    if (sig.isPosVarArg(idx)) {
+      auto variadic = cast<VariadicType>(type);
+      type = variadic.getElementType();
+      conv = variadic.getConvention();
+    } else if (sig.isKwVarArg(idx)) {
+      // Don't need to unpack anything. We treat the whole dictionary as the
+      // value type.
+    } else if (sig.isPackVarArg(idx)) {
+      // For variadic packs, we don't have a type instance but we have the
+      // metatype.
+      Type metatype =
+          ASTType(type).getVariadicPackInfo().getVariadicElementType();
+      type = ParamRefType::get(UnknownAttr::get(metatype));
+      conv = ArgConvention::BorrowedInReg;
+    }
+    if (SignatureType::hasAddress(conv))
+      type = ASTType(type).getReferenceElementType();
+    argTypes.push_back(type);
+  }
+
+  ExprEmitter emitter(shared, decl, EC_Type);
+  auto generateConformancesImpl = [&](ASTType type, Location loc) {
+    SyntheticNode node(shared.diags.convertLocToSMLoc(loc));
+    ASTType metatype = type.getMetaType();
+    // If this is already a trait type, then we know the value is going to be
+    // resolved to a type constant.
+    SmallVector<TypedAttr> conformances;
+    if (auto trait = dyn_cast_or_null<TraitType>(metatype)) {
+      conformances.push_back(PValue(type));
+      return conformances;
+    }
+    // If this is some MLIR type, generate the default trait conformances.
+    if (!metatype || isa<TypeType>(metatype)) {
+      for (StringRef traitName : {"AnyType", "Copyable", "Movable"}) {
+        auto traitDecl = cast_or_null<TraitDeclOp>(
+            shared.lookupBuiltinTrait(traitName, &decl, node.getLoc()));
+        if (!traitDecl)
+          continue;
+        TraitType trait = traitDecl.bindReference();
+        if (PValue result =
+                emitter.bindMLIRTypeToTrait({PValue(type), node}, trait))
+          conformances.push_back(result);
+      }
+      return conformances;
+    }
+    // Otherwise, generate bindings for each explicit conformance.
+    assert(isa<AnyStructType>(metatype));
+    auto structDecl = cast<StructDeclOp>(metatype.getDecl(shared));
+    for (TypeLineageAttr parentAttr : structDecl.getParentTypes()) {
+      auto trait = cast<TraitType>(parentAttr.getType());
+      if (PValue result = emitter.emitMetaTypeToTraitConversion(
+              {PValue(type), node}, trait))
+        conformances.push_back(result);
+    }
+    return conformances;
+  };
+  auto generateConformances = [&](ASTType type, Location loc) {
+    return ParameterExprArrayAttr::get(loc.getContext(),
+                                       generateConformancesImpl(type, loc));
+  };
+
+  SmallVector<Attribute> argConformances;
+  Attribute resConformances = generateConformances(resultType, func.getLoc());
+  for (auto [idx, argType] : llvm::enumerate(argTypes)) {
+    argConformances.push_back(
+        generateConformances(argType, func.getArgument(idx).getLoc()));
+  }
+
+  NamedAttrList attrs = func->getAttrDictionary();
+  attrs.set(MOGGPreElab::MOGG_ARGUMENT_CONFORMANCES,
+            ArrayAttr::get(shared.getContext(), argConformances));
+  attrs.set(MOGGPreElab::MOGG_RESULT_CONFORMANCES, resConformances);
+  func->setAttrs(attrs.getDictionary(shared.getContext()));
 }
 
 /// Given the lexical context of a function, return true if the default bit
@@ -1300,7 +1419,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Now that the body of the function is parsed, run any body decorators.
-  Decorators(decl, shared).applyBodyDecorators([](ExprNode *decorator) {
+  Decorators(decl, shared).applyBodyDecorators([&](ExprNode *decorator) {
+    processExtensibilityDecorator(shared, decl, decorator);
     return failure();
   });
 
