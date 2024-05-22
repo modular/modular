@@ -194,8 +194,14 @@ ErrorOrSuccess LSPBatchClient::dispatchResponse(StringRef json) {
       // If we get an "id", then this is the response to a request.
       if (std::optional<int64_t> id = obj->getInteger("id")) {
         auto it = requestHandlers.find(*id);
-        if (auto errOr = it->second->onResponse(*obj->get("result")))
+
+        // The request may have errored.
+        // TODO: Handle errors from individual requests.
+        if (auto err = obj->get("error")) {
+          return Error("error reported by server:\n" + json);
+        } else if (auto errOr = it->second->onResponse(*obj->get("result")))
           return errOr;
+
         requestHandlers.erase(it);
 
         // Now we try to identify diagnostics.
