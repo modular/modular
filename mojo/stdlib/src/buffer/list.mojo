@@ -455,13 +455,11 @@ fn _make_tuple[size: Int](values: DimList) -> StaticIntTuple[size]:
         _type = __mlir_type[`!pop.array<`, size.value, `, `, Int, `>`]
     ](Int(0))
 
-    @always_inline
     @parameter
-    fn fill[idx: Int]():
+    for idx in range(size):
         array = __mlir_op.`pop.array.replace`[
             _type = __mlir_type[`!pop.array<`, size.value, `, `, Int, `>`],
             index = idx.value,
         ](values.at[idx]().get(), array)
 
-    unroll[fill, size]()
     return StaticIntTuple(StaticTuple[Int, size](array))
