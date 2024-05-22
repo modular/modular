@@ -24,20 +24,22 @@ public:
                mlir::lsp::Callback<Result> replyCallback)
       : lspTelemetryCtx(lspTelemetryCtx), request(request),
         start(std::chrono::steady_clock::now()),
-        replyCallback(std::move(replyCallback)){};
+        replyCallback(std::move(replyCallback)) {};
   LSPResponder(LSPResponder &&) = default;
 
   /// Used to reply to the client with the input data is invalid, e.g. the
   /// input location is not valid.
   void replyInvalidRequest() {
-    reply(Result{});
+    replyError(mlir::lsp::LSPError("invalid request",
+                                   mlir::lsp::ErrorCode::InvalidRequest));
     lspTelemetryCtx.recordInvalidRequest(request);
   }
 
   /// Used to reply to the client when the request has gone stale, e.g. the
   /// document has changed while the request was in the queue.
   void replyOutdatedRequest() {
-    reply(Result{});
+    replyError(mlir::lsp::LSPError("outdated request",
+                                   mlir::lsp::ErrorCode::ContentModified));
     lspTelemetryCtx.recordOutdatedRequest(request);
   }
 
@@ -45,6 +47,16 @@ public:
   void reply(Result result) {
     auto end = std::chrono::steady_clock::now();
     replyCallback(std::move(result));
+
+    lspTelemetryCtx.recordResponseTime(
+        request,
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start));
+  }
+
+  /// Use to reply to the client with an arbitrary error.
+  void replyError(mlir::lsp::LSPError error) {
+    auto end = std::chrono::steady_clock::now();
+    replyCallback(llvm::make_error<mlir::lsp::LSPError>(std::move(error)));
 
     lspTelemetryCtx.recordResponseTime(
         request,
