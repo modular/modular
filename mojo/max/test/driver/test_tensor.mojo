@@ -10,7 +10,7 @@ from driver import Device, CPUDescriptor
 from driver import Tensor, TensorSlice
 from tensor import TensorSpec
 from utils import Index
-from testing import assert_equal
+from testing import assert_equal, assert_raises
 
 
 def test_tensor():
@@ -187,12 +187,13 @@ def test_round_trip():
 
 
 def test_copy():
-    var cpu = Device(CPUDescriptor(numa_id=2))
+    var cpu1 = Device(CPUDescriptor(numa_id=0))
+    var cpu2 = Device(CPUDescriptor(numa_id=1))
 
-    var src_dev_tensor = cpu.allocate(
+    var src_dev_tensor = cpu1.allocate(
         TensorSpec(DType.float32, 10, 2),
     )
-    var dst_dev_tensor = cpu.allocate(
+    var dst_dev_tensor = cpu2.allocate(
         TensorSpec(DType.float32, 10, 2),
     )
     var src = src_dev_tensor^.get_tensor[DType.float32, 2]()
@@ -205,13 +206,19 @@ def test_copy():
 
     src_dev_tensor = src^.get_device_tensor()
     src_dev_tensor.copy_to(dst_dev_tensor)
+    var dst_dev_tensor2 = src_dev_tensor.copy_to(cpu2)
 
     var dst = dst_dev_tensor^.get_tensor[DType.float32, 2]()
+    var dst2 = dst_dev_tensor2^.get_tensor[DType.float32, 2]()
+
+    with assert_raises(contains="already allocated on"):
+        _ = src_dev_tensor.copy_to(cpu1)
 
     src = src_dev_tensor^.get_tensor[DType.float32, 2]()
     for i in range(10):
         for j in range(2):
             assert_equal(src[i, j], dst[i, j])
+            assert_equal(src[i, j], dst2[i, j])
 
 
 def test_set_through_slice():
