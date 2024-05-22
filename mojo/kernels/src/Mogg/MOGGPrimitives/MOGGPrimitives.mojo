@@ -9,7 +9,7 @@ from math import ceildiv
 from builtin.dtype import _get_runtime_dtype_size
 from register import *
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.list import Dim, DimList
 from MOGGIntList import IntList
 from extensibility import Tensor as ExtensibilityTensor
 
@@ -446,6 +446,25 @@ fn mgp_tensor_spec_create[
 @export
 fn mgp_tensor_spec_size[rank: Int](spec: StaticTensorSpec[rank]) -> Int:
     return spec.bytecount()
+
+
+@mogg_register("mgp.tensor_spec.equal.static")
+@always_inline
+@export
+fn mgp_tensor_spec_equal_static[
+    rank: Int, *rawDims: Dim
+](spec: StaticTensorSpec[rank]) -> Bool:
+    var dims: VariadicList[Dim] = rawDims
+    var numDims = len(dims)
+    if rank != numDims:
+        return False
+    for i in range(numDims):
+        var dim = dims[i]
+        var expectedDim = spec.shape[i]
+        if dim and dim != -1 and dim != expectedDim:
+            return False
+
+    return True
 
 
 # TODO: Enable MGP chain primitives once either fusion is enabled or perf issues
