@@ -65,14 +65,14 @@ struct StructDecl {
 struct StructDecls {
   // Destructively process the module by collecting struct info and removing
   // trait and struct decls at the same time.
-  LogicalResult process(ModuleOp module);
+  LogicalResult process(ModuleOp module, SymbolTable &symtab);
 
   /// Lookup a struct decl.
   StructDecl &get(StringAttr name) { return structDecls.find(name)->second; }
 
-  void addLocalReplacements(mlir::AttrTypeReplacer &replacer, MLIRContext *ctx);
-  void addStructReplacements(mlir::AttrTypeReplacer &replacer,
-                             MLIRContext *ctx);
+  /// Populate `replacer` with the lowering patterns for attributes and types
+  /// after computing the valid lowerings for each struct decl.
+  void buildReplacer(mlir::AttrTypeReplacer &replacer, MLIRContext *ctx);
 
   /// A map from struct name and field name to index. Used for lowering `insert`
   /// and `extract` ops.
@@ -82,8 +82,8 @@ struct StructDecls {
 };
 }; // namespace
 
-void StructDecls::addLocalReplacements(mlir::AttrTypeReplacer &replacer,
-                                       MLIRContext *ctx) {
+void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
+                                MLIRContext *ctx) {
   auto addReplacement = [&replacer](auto &&func) {
     // This is a legalization replacement, so we have to replace leaves first.
     // Don't rely on the replacer's recursion, which is post-order.
@@ -154,10 +154,7 @@ void StructDecls::addLocalReplacements(mlir::AttrTypeReplacer &replacer,
 
   // !lit.lifetime -> !kgen.struct<()>
   addReplacement([=](LifetimeType) { return emptyStructType; });
-}
 
-void StructDecls::addStructReplacements(mlir::AttrTypeReplacer &replacer,
-                                        MLIRContext *ctx) {
   using AttrResult = std::pair<Attribute, WalkResult>;
   auto noneType = KGEN::NoneType::get(ctx);
 
@@ -203,10 +200,10 @@ void StructDecls::addStructReplacements(mlir::AttrTypeReplacer &replacer,
   });
 }
 
-LogicalResult StructDecls::process(ModuleOp module) {
+LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
   for (Operation &op : llvm::make_early_inc_range(module.getOps())) {
     if (isa<TraitDeclOp>(op)) {
-      op.erase();
+      symtab.erase(&op);
       continue;
     }
     auto structOp = dyn_cast<StructDeclOp>(op);
@@ -227,7 +224,7 @@ LogicalResult StructDecls::process(ModuleOp module) {
     }
     structDecls.try_emplace(structName, std::move(info));
 
-    structOp.erase();
+    symtab.erase(&op);
   }
 
   // DFS through the parametric types to see if there is recursion.
@@ -248,9 +245,8 @@ LogicalResult StructDecls::process(ModuleOp module) {
     for (auto [idx, type] :
          llvm::enumerate(llvm::make_second_range(decl.fields))) {
       // Skip the ones that will become opaque pointers.
-      if (!isa<PointerType>(type))
-        if (!(type = dfs.replace(type)))
-          return failure();
+      if (!isa<PointerType>(type) && !dfs.replace(type))
+        return failure();
     }
     // We know the type can be lowered.
     decl.done = true;
@@ -357,8 +353,7 @@ buildDebugInfoForStructRef(DeclRefType ref, StructDecls &structDecls,
 
 LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
     : IRRewriter(ctx), structDecls(structDecls) {
-  structDecls.addLocalReplacements(*this, ctx);
-  structDecls.addStructReplacements(*this, ctx);
+  structDecls.buildReplacer(*this, ctx);
   auto noneType = KGEN::NoneType::get(ctx);
 
   // Since lowerings have been generated for all struct types, we just need to
@@ -573,7 +568,8 @@ struct LowerLITTypesPass
 
 void LowerLITTypesPass::runOnOperation() {
   StructDecls state;
-  if (failed(state.process(getOperation())))
+  auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+  if (failed(state.process(getOperation(), analysis.getTopLevelSymbolTable())))
     return signalPassFailure();
   LITTypeLowerer b(&getContext(), state);
 
