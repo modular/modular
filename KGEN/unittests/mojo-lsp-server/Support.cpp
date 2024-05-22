@@ -24,7 +24,7 @@ static void dumpIOFile(StringRef streamName, StringRef path) {
 
 /// Create a test client that asserts the execution doesn't fail and also dumps
 /// the contents of server IO files upon errors.
-LSPBatchClient M::createTestClient() {
+LSPBatchClient M::createTestClient(bool attachDebugger) {
   auto dumpStreamsOnError = [](const LSPBatchClient::ExecutionResult &result) {
     if (failed(result.err)) {
       llvm::errs() << "Fatal error: " << result.err.getError() << "\n";
@@ -34,7 +34,7 @@ LSPBatchClient M::createTestClient() {
 
     ASSERT_FALSE(result.err.isError());
   };
-  return LSPBatchClient(dumpStreamsOnError);
+  return LSPBatchClient(attachDebugger, dumpStreamsOnError);
 }
 
 Document M::createDocumentFromInputFile(StringRef fileName) {

@@ -15,7 +15,7 @@ namespace M {
 
 /// Create a test client that asserts the execution doesn't fail and also dumps
 /// the contents of server IO files upon errors.
-LSPBatchClient createTestClient();
+LSPBatchClient createTestClient(bool attachDebugger = false);
 
 /// Create a document from a file located in the `/inputs` folder.
 Document createDocumentFromInputFile(StringRef fileName);
