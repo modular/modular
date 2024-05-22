@@ -912,17 +912,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
 
     auto collectionElement = cast<TraitType>(inputTypes[0]);
-    PValue binding = typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
-                                            collectionElement);
-    if (!binding) {
-      shared.emitError(arg.loc)
-          << "argument type must conform to 'CollectionElement' to be used in "
-             "a keyword variadic argument";
-      arg.isErroneous = true;
-      return;
-    }
+    SmallVector<TypedAttr> newBindings{typeEmitter.emitPValue(
+        {fullType, arg.typeExpr}, EC_Type, collectionElement)};
     fullType =
-        ParamRefType::get(BindTypeAttr::get(PValue(dictType), binding.get()));
+        ParamRefType::get(BindTypeAttr::get(PValue(dictType), newBindings));
 
     // OwnedKwargsDict is memory only and since only the callee can access it,
     // we pass it as owned.

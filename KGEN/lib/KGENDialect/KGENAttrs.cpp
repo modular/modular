@@ -1012,7 +1012,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::CompileAssembly:
   case POC::GetLinkageName:
   case POC::GetTypeMethod:
-  case POC::PtrBitcast:
   case POC::VariadicPtrMap:
   case POC::VariadicPtrRemoveMap:
     break;
@@ -1196,12 +1195,6 @@ LogicalResult ParamOperatorAttr::verify(
     break;
   case POC::GetTypeMethod:
     return verifyGetTypeMethod(operands, type, emitError);
-  case POC::PtrBitcast:
-    if (!::isa<PointerType>(type) ||
-        !::isa<PointerType>(operands.front().getType()))
-      return emitError() << "'ptr_bitcast' requires operand and result types "
-                            "to both be pointers";
-    break;
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
   case POC::VariadicPtrRemoveMap:
@@ -2304,15 +2297,6 @@ static TypedAttr simplifyGetTypeMethod(ArrayRef<TypedAttr> operands,
   return {};
 }
 
-static TypedAttr simplifyPtrBitcast(ArrayRef<TypedAttr> operands,
-                                    Type resultType) {
-  if (operands.front().getType() == resultType)
-    return operands.front();
-  if (auto ptr = dyn_cast<PointerAttr>(operands.front()))
-    return PointerAttr::get(ptr.getAddr(), resultType);
-  return {};
-}
-
 static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
                                         TypedAttr addrSpaceOperand,
                                         Type resultType) {
@@ -2458,9 +2442,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::GetTypeMethod:
     result = simplifyGetTypeMethod(operands, resultType);
-    break;
-  case POC::PtrBitcast:
-    result = simplifyPtrBitcast(operands, resultType);
     break;
   case POC::VariadicPtrMap:
     assert(operands.size() == 2 && "variadic_ptr_map always has 2 operands");
