@@ -46,12 +46,28 @@ termination, and you can inspect them to debug your issues or even invoke the
 Language Server manually with
 `cat /path/to/lsp_stdout | mojo-lsp-server -mojo-test`.
 
+### mojo-lsp-simple-client
+
+This little utility can be used to launch an LSP server and simulate some actions
+that the user would do on the IDE. This tool can be extremely useful for
+debugging issues.
+
 ### Debugging
 
-You can add the `--attach-debugger-on-startup` argument to a `mojo-lsp-server`
+`mojo-lsp-server` offers the `--attach-debugger-on-startup` argument
 invocation to start a debug session on VSCode attaching to the Language Server.
+
+There are two main ways to trigger a real debug session that uses this
+capability:
+
+- Via the VS Code command `Developer: restart the Mojo LSP Server and Attach the
+  debugger to it`. This can be useful for debugging simple issues, but
+  relaunching debug sessions requires several manual interactions.
+- Via the `mojo-lsp-simple-client`, which offers the `-attach-debugger` option.
+  This can be more convenient for automating a LSP session and rerun it
+  repeatedly.
 
 ### Building
 
-If you need to build the VS Code extension from source, you can use `vscode-build`
-to compile the extension and install it locally.
+If you need to build the VS Code extension from source, you can use
+`vscode-build` to compile the extension and install it locally.

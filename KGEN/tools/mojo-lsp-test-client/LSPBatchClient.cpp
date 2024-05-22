@@ -31,10 +31,11 @@ LSPServerStdioFiles::LSPServerStdioFiles(const std::filesystem::path &parentDir)
       serverStderr(parentDir / "stderr.txt") {}
 
 LSPBatchClient::LSPBatchClient(
+    bool attachDebugger,
     std::optional<std::function<void(const ExecutionResult &)>>
         onExecuteCallback)
     : onExecuteCallback(std::move(onExecuteCallback)),
-      serverJSONInputOS(serverJSONInput) {
+      serverJSONInputOS(serverJSONInput), attachDebugger(attachDebugger) {
   llvm::json::Value initialize = llvm::json::Object{{"processId", 123},
                                                     {"rootPath", "mojo"},
                                                     {"capabilities", {}},
@@ -304,17 +305,20 @@ ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
   }
 
   std::string errMsg;
-  int exitCode =
-      llvm::sys::ExecuteAndWait(lspServerPath, {lspServerPath, "-mojo-test"},
-                                /*Env=*/std::nullopt, /*redirects=*/
-                                {
-                                    ioFiles.serverStdin,
-                                    ioFiles.serverStdout,
-                                    ioFiles.serverStderr,
-                                },
-                                /*SecondsToWait=*/0,
-                                /*MemoryLimit=*/0,
-                                /*ErrMsg=*/&errMsg);
+  llvm::SmallVector<StringRef> args = {lspServerPath, "-mojo-test"};
+  if (attachDebugger)
+    args.push_back("-attach-debugger-on-startup");
+
+  int exitCode = llvm::sys::ExecuteAndWait(lspServerPath, args,
+                                           /*Env=*/std::nullopt, /*redirects=*/
+                                           {
+                                               ioFiles.serverStdin,
+                                               ioFiles.serverStdout,
+                                               ioFiles.serverStderr,
+                                           },
+                                           /*SecondsToWait=*/0,
+                                           /*MemoryLimit=*/0,
+                                           /*ErrMsg=*/&errMsg);
   if (exitCode != 0)
     return Error(llvm::formatv("Server failed with exit code {0}. {1}",
                                exitCode, errMsg));

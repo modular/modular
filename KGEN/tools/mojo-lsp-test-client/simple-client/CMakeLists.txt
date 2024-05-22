@@ -4,18 +4,11 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(mojo-lsp-test-client
-  Document.cpp
-  LSPBatchClient.cpp
+add_modular_tool(mojo-lsp-simple-client
+  simple-client.cpp
 
   LINK_LIBS PRIVATE
-  LSPProtocol
-  MLIRLspServerSupportLib
+  mojo-lsp-test-client
   MSupport
-  KGENSupport
-
-  DEPENDS
-  mojo-sdk
+  MSupportGlobals
 )
-
-add_subdirectory(simple-client)

@@ -80,7 +80,8 @@ public:
     std::optional<LSPServerStdioFiles> serverIOFiles = std::nullopt;
   };
 
-  LSPBatchClient(std::optional<std::function<void(const ExecutionResult &)>>
+  LSPBatchClient(bool attachDebugger = false,
+                 std::optional<std::function<void(const ExecutionResult &)>>
                      onExecuteCallback = std::nullopt);
   ~LSPBatchClient();
 
@@ -200,8 +201,11 @@ private:
   RequestId requestId = 0;
   /// A map from request id to response handler.
   DenseMap<RequestId, std::unique_ptr<ResponseHandler>> requestHandlers;
-  // A map from doc URL to response handler.
+  /// A map from doc URL to response handler.
   llvm::StringMap<std::deque<DiagnosticHandler>> diagnosticsHandlers;
+  /// A flag indicating that a mojo-lsp-server will be launched with a debugger
+  /// attached.
+  bool attachDebugger;
 };
 
 } // namespace M
