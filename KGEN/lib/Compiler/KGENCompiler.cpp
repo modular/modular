@@ -17,7 +17,6 @@
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "ObjectCompiler/JITSupport.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
 #include "Support/Context.h"

@@ -1119,10 +1119,9 @@ cc_library(
 cc_library(
     name = "ObjectCompiler",
     srcs = glob([
-        "lib/ObjectCompiler/*.cpp",
-        "lib/ObjectCompiler/*.h",
+        "lib/Compiler/ObjectCompiler/*.cpp",
+        "lib/Compiler/ObjectCompiler/*.h",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":Compiler",
         ":KGENToLLVM",
