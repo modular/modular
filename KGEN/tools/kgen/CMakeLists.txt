@@ -19,8 +19,8 @@ add_modular_tool(kgen
   LINK_LIBS PRIVATE
   KGENToolCommon
   KGENCompiler
-  KGENEmitObject
   KGENExecutionEngine
+  KGENObjectCompiler
   LLCLCompilerSupport
   LLCLRuntimeGlobals
   MArchTarget

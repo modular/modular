@@ -35,7 +35,7 @@ add_modular_library(MojoLLDB SHARED
   LINK_LIBS
   KGENToolCommon
   KGENCompiler
-  KGENEmitObject
+  KGENObjectCompiler
   KGENSupport
   LLCLCompilerSupport
   LLCLRuntimeGlobals

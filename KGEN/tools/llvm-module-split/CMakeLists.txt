@@ -9,6 +9,6 @@ add_modular_tool(llvm-module-split
 
   LINK_LIBS PRIVATE
   KGENToolCommon
-  KGENEmitObject
+  KGENObjectCompiler
   LLVMSupport
 )

@@ -15,7 +15,7 @@ add_modular_library(KGENCompiler
   DebugInfoTransforms
 
   KGENElaborator
-  KGENEmitObject
+  KGENObjectCompiler
   KGENTransforms
   LowerLIT
   MSupport
