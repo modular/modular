@@ -358,8 +358,8 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
 
   // Since lowerings have been generated for all struct types, we just need to
   // lookup the lowered type and substitute the parameters.
-  addReplacement([&, noneType](DeclRefType ref) -> Type {
-    StructDecl &decl = structDecls.get(ref.getName());
+  addReplacement([&, noneType, ctx](DeclRefType ref) -> Type {
+    StructDecl &decl = this->structDecls.get(ref.getName());
     // Substitute the given parameters in.
     ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
     SmallVector<Type> fieldTypes;
