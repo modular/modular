@@ -24,6 +24,12 @@ struct DeviceBuffer[type: AnyRegType](Sized):
         self.size = size
         self.owning = True
 
+    fn __init__(inout self):
+        self.ctx_ptr = Pointer[DeviceContext]()
+        self.ptr = Pointer[type]()
+        self.size = 0
+        self.owning = False
+
     fn __copyinit__(inout self, existing: Self):
         self.ctx_ptr = existing.ctx_ptr
         self.ptr = existing.ptr
@@ -41,6 +47,18 @@ struct DeviceBuffer[type: AnyRegType](Sized):
 
     fn __len__(self) -> Int:
         return self.size
+
+    fn create_sub_buffer[
+        view_type: AnyRegType
+    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
+        if sizeof[view_type]() * (offset + size) > sizeof[type]() * self.size:
+            raise Error("offset and size exceed original buffer size")
+        var sub_buffer = DeviceBuffer[view_type]()
+        sub_buffer.ctx_ptr = self.ctx_ptr
+        sub_buffer.ptr = rebind[Pointer[view_type]](self.ptr).offset(offset)
+        sub_buffer.size = size
+        sub_buffer.owning = False
+        return sub_buffer
 
 
 struct DeviceFunction[inferred func_type: AnyRegType, func: func_type]:
