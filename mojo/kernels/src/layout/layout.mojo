@@ -29,6 +29,52 @@ from .int_tuple import (
 )
 
 
+# ===-----------------------------------------------------------------------===#
+# Layout Trait                                                                 #
+# ===-----------------------------------------------------------------------===#
+
+
+trait LayoutTrait:
+    """The LayoutTrait trait destribles layouts, swizzles, and composed layouts.
+
+    They are used to map indices, e.g. from thread id to memory location.
+
+    """
+
+    fn __call__(self, index: IntTuple) -> Int:
+        """Get the output index."""
+        ...
+
+    fn size(self) -> Int:
+        """Return the size defined by shape.
+
+        E.g. shape (m, n) has size m * n.
+        """
+        ...
+
+    fn cosize(self) -> Int:
+        """Return the size of the domain spanned by output indices.
+
+        E.g. shape (m, n) and stride (r, s) has cosize (m - 1) * r + (n -1) * s.
+        """
+        ...
+
+    @staticmethod
+    fn has_shape(self) -> Bool:
+        """Return whether the object has valid shape.
+
+        Layout and ComposedLayout with at least one Layout have valid shapes.
+        They can be used in layout algebra. Swizzle doesn't have shape and
+        should be excluded from layout algebra.
+        """
+        ...
+
+
+# ===-----------------------------------------------------------------------===#
+# Layout                                                                       #
+# ===-----------------------------------------------------------------------===#
+
+
 fn make_layout(*layouts: Layout) -> Layout:
     var shape = IntTuple()
     var stride = IntTuple()
@@ -55,6 +101,7 @@ struct _LayoutIter:
 
 
 struct Layout(
+    LayoutTrait,
     Sized,
     Stringable,
     Formattable,
@@ -159,6 +206,11 @@ struct Layout(
     fn cosize(self) -> Int:
         return self(self.size() - 1) + 1
         # return math.max(1, inner_product(self.shape, self.stride))
+
+    @staticmethod
+    @always_inline
+    fn has_shape(self) -> Bool:
+        return True
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
