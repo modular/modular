@@ -359,12 +359,10 @@ struct Function[
         populate(args_stack.bitcast[NoneType]())
 
         @parameter
-        fn unrolled[i: Int]():
+        for i in range(args.__len__()):
             var arg_offset = num_captures + i
             var elt_addr = UnsafePointer.address_of(args[i])
             args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
-
-        unroll[unrolled, args.__len__()]()
 
         self.__call_impl(
             args_stack,
