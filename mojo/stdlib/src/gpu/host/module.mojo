@@ -432,8 +432,6 @@ struct Module:
 
             _check_error(result)
         else:
-            # Note that content has already gone through _cleanup_asm and
-            # is null terminated.
             var cuModuleLoadData = self.cuda_dll[].cuModuleLoadData if self.cuda_dll else cuModuleLoadData.load()
             _check_error(
                 cuModuleLoadData(

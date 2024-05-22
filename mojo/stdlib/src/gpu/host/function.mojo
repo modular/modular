@@ -338,12 +338,10 @@ struct Function[
     @always_inline
     @parameter
     fn _call_pack[
-        *Ts: AnyType,
-        elt_is_mutable: __mlir_type.i1,
-        lifetime: AnyLifetime[Bool {value: elt_is_mutable}].type,
+        *Ts: AnyType
     ](
         self,
-        args: VariadicPack[elt_is_mutable, lifetime, AnyType, Ts],
+        args: VariadicPack[_, _, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
@@ -352,15 +350,15 @@ struct Function[
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
-        var args_stack = Pointer[UnsafePointer[NoneType]].alloc(
-            num_captures + len(args)
-        )
+        var args_stack = stack_allocation[
+            num_captures + args.__len__(), UnsafePointer[NoneType]
+        ]()
 
         populate(args_stack.bitcast[NoneType]())
 
         @parameter
         for i in range(args.__len__()):
-            var arg_offset = num_captures + i
+            alias arg_offset = num_captures + i
             var elt_addr = UnsafePointer.address_of(args[i])
             args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
 
@@ -371,8 +369,6 @@ struct Function[
             shared_mem_bytes=shared_mem_bytes,
             stream=stream,
         )
-
-        args_stack.free()
 
     @always_inline
     fn __call_impl(
@@ -409,11 +405,12 @@ struct Function[
     fn _init_fn[
         func_type: AnyRegType, func: func_type
     ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
+        var res = Pointer[_CachedFunctionInfo].alloc(1)
         try:
             var payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
             alias _impl = _compile_code[func, emission_kind="asm"]()
-            alias fn_name = _get_nvptx_fn_name[func]()
+            alias fn_name = _impl.function_name
 
             var module = Module(
                 _impl.asm,
@@ -441,21 +438,15 @@ struct Function[
                         payload.func_attribute.value,
                     )
                 )
-            var res = Pointer[_CachedFunctionInfo].alloc(1)
             res.store(_CachedFunctionInfo(module._steal_handle(), func_handle))
-            return res.bitcast[NoneType]()
         except e:
-            var res = Pointer[_CachedFunctionInfo].alloc(1)
             res.store(_CachedFunctionInfo(e))
-            return res.bitcast[NoneType]()
+        return res.bitcast[NoneType]()
 
     @staticmethod
     fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
         if not cached_value_ptr:
             return
-        var cached_value = cached_value_ptr.bitcast[
-            _CachedFunctionInfo
-        ]().load()
         # We do not need to destroy the module, since it will be destroyed once the
         # CUDA context is destroyed.
         cached_value_ptr.free()
