@@ -159,6 +159,7 @@ bool PogListAttr::isPosVariadic(size_t idx) const {
 }
 
 bool PogListAttr::isKwVariadic(size_t idx) const {
+
   return isVariadic(idx) && getPassingKind(idx) == PassingKind::KwOnly;
 }
 

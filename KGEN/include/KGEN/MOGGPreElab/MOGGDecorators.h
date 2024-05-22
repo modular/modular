@@ -35,10 +35,6 @@ constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
 constexpr StringLiteral MOGG_ARG_RESULT_PARAMS = "mogg.result_params";
 constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 
-/// Tracks the mojo trait conformances of each argument and result type.
-constexpr StringLiteral MOGG_ARGUMENT_CONFORMANCES = "mogg.arg_conformances";
-constexpr StringLiteral MOGG_RESULT_CONFORMANCES = "mogg.result_conformances";
-
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
 struct MOGGDecorator {
