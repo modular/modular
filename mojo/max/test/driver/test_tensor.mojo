@@ -186,6 +186,34 @@ def test_round_trip():
     assert_equal(tensor2[1, 0], 3)
 
 
+def test_copy():
+    var cpu = Device(CPUDescriptor(numa_id=2))
+
+    var src_dev_tensor = cpu.allocate(
+        TensorSpec(DType.float32, 10, 2),
+    )
+    var dst_dev_tensor = cpu.allocate(
+        TensorSpec(DType.float32, 10, 2),
+    )
+    var src = src_dev_tensor^.get_tensor[DType.float32, 2]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(2):
+            src[Index(i, j)] = val
+            val += 1
+
+    src_dev_tensor = src^.get_device_tensor()
+    src_dev_tensor.copy_to(dst_dev_tensor)
+
+    var dst = dst_dev_tensor^.get_tensor[DType.float32, 2]()
+
+    src = src_dev_tensor^.get_tensor[DType.float32, 2]()
+    for i in range(10):
+        for j in range(2):
+            assert_equal(src[i, j], dst[i, j])
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -193,3 +221,4 @@ def main():
     test_2dslice_with_step()
     test_2dslice_with_step_row_column()
     test_round_trip()
+    test_copy()
