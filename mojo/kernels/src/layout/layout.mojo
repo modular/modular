@@ -256,11 +256,10 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
     var layout_list = LayoutList(capacity=num_tiles())
 
     @parameter
-    fn append_tile[i: Int]():
+    for i in range(num_tiles()):
         alias arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
-    unroll[append_tile, num_tiles()]()
     return layout_list
 
 
