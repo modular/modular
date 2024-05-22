@@ -530,9 +530,8 @@ fn tile[
     # Initialize where to start on the overall work load.
     var current_offset: Int = offset
 
-    @always_inline
     @parameter
-    fn static_tile_impl[idx: Int]():
+    for idx in range(len(tile_size_list)):
         # Get the tile size to proceed with.
         alias tile_size = tile_size_list[idx]
 
@@ -541,8 +540,6 @@ fn tile[
         while current_offset <= upperbound - tile_size:
             workgroup_function[tile_size](current_offset)
             current_offset += tile_size
-
-    unroll[static_tile_impl, len(tile_size_list)]()
 
 
 @always_inline
