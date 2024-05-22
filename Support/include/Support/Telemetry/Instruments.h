@@ -102,6 +102,10 @@ private:
   friend class TelemetryContext;
   /// TODO: Allow passing in attributes to attach to the recorded entry.
   Timer() {}
+
+public:
+  void setAttribute(const std::string &key, const MetricAttributeValue &value) {
+  }
 };
 
 #else // MODULAR_ENABLE_TELEMETRY
