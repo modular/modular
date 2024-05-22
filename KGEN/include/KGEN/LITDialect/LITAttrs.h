@@ -16,13 +16,14 @@
 namespace M::KGEN {
 class NoneType;
 namespace LIT {
+class AnyStructType;
 class DeclRefType;
 class LifetimeType;
-class AnyStructType;
-class StructFieldOp;
-class UnpackedType;
-class FnMetadataAttr;
 class RefPackType;
+class TraitType;
+class UnpackedType;
+class StructFieldOp;
+class FnMetadataAttr;
 } // namespace LIT
 } // namespace M::KGEN
 
