@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Compiler/JITSupport.h"
+#include "JITSupport.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 
 using namespace M;
