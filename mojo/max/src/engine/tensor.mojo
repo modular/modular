@@ -162,8 +162,7 @@ struct EngineNumpyView:
         Returns:
             DTypePointer of given type.
         """
-        var data_ptr = self._obj.ctypes.data.__index__()
-        return DTypePointer[DType.invalid](address=data_ptr)
+        return DTypePointer[DType.invalid](address=self._obj.ctypes.data)
 
     fn dtype(self) raises -> DType:
         """Get DataType of the array backing the view.
@@ -212,7 +211,7 @@ struct EngineNumpyView:
             var shape = List[Int]()
             var array_shape = self._obj.shape
             for dim in array_shape:
-                shape.append(dim.__index__())
+                shape.append(dim)
             return TensorSpec(ty, shape)
 
         if self.dtype().is_int8():
