@@ -400,7 +400,7 @@ def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_SubprogramScoped]> {
 }
 
 //===----------------------------------------------------------------------===//
-// CallOpInterface
+// KGENCallOpInterface
 
 def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let description = [{
