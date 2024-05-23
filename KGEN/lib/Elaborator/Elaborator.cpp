@@ -31,32 +31,6 @@ using namespace KGEN;
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
-// Elaborator
-//===----------------------------------------------------------------------===//
-
-static ModuleOp cloneAsEmpty(const SymbolTable &symtab) {
-  ModuleOp newModule = cast<ModuleOp>(symtab.getOp()).cloneWithoutRegions();
-  newModule.getBodyRegion().push_back(new Block);
-  return newModule;
-}
-
-Elaborator::Elaborator(SymbolTable &oldSymTab, TargetInfoAttr target,
-                       const ElaborateGeneratorsOptions &config)
-    : target(target), config(config), newModule(cloneAsEmpty(oldSymTab)),
-      newSymTab(SymbolTable(*newModule)), oldSymTab(oldSymTab),
-      env(oldSymTab.getOp()->getAttrOfType<EnvAttr>(
-          EnvAttr::getEnvAttrName())) {
-  assert(env && "expected an environment attribute");
-}
-
-FuncOp Elaborator::lookupConcreteFunction(SymbolRefAttr symbol) {
-  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-  return newSymTab.read([name](const SymbolTable &symtab) {
-    return symtab.lookup<FuncOp>(name);
-  });
-}
-
-//===----------------------------------------------------------------------===//
 // mangleParameterValues
 //===----------------------------------------------------------------------===//
 
@@ -186,46 +160,6 @@ ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
   err.addCause(impl->error->copy());
   return std::move(err);
 }
-
-//===----------------------------------------------------------------------===//
-// ElaborationState
-//===----------------------------------------------------------------------===//
-
-namespace {
-class ElaborationState {
-  enum State { NEW_IMPL_SCOPE, NEW_PARAM_SCOPE, ADVANCE, ERROR };
-
-public:
-  /// Return the elaboration state that indicates an operation was successfully
-  /// processed.
-  static ElaborationState advance() { return ADVANCE; }
-  /// Return the elaboration state that indicates elaboration should be
-  /// pre-empted by a new frame within a function.
-  static ElaborationState skipFrame() { return NEW_IMPL_SCOPE; }
-  /// Return the elaboration state that indicates elaboration should be
-  /// pre-empted by a new parameter node.
-  static ElaborationState skipNode() { return NEW_PARAM_SCOPE; }
-  /// Return the elaboration state that indicates a fatal error has occurred
-  /// during elaboration.
-  static ElaborationState error() { return ERROR; }
-
-  /// Return true if the frame should be skipped.
-  bool shouldSkipFrame() const { return state == NEW_IMPL_SCOPE; }
-  /// Return true if the node should be skipped.
-  bool shouldSkipNode() const { return state == NEW_PARAM_SCOPE; }
-  /// Return true if an error occurred.
-  bool isError() const { return state == ERROR; }
-
-  /// Allow implicit conversion from `LogicalResult`.
-  ElaborationState(LogicalResult result)
-      : state(succeeded(result) ? ADVANCE : ERROR) {}
-
-private:
-  ElaborationState(State state) : state(state) {}
-
-  State state;
-};
-} // namespace
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
   if (auto exprResult =                                                        \
@@ -400,206 +334,40 @@ static void collectOpsToProcessInside(Region &toProcess, ImplNode *parent,
   collectOpsToProcess(&toProcess, uses, opsToRewrite);
 }
 
-namespace {
-
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl Declaration
+// Elaborator Implementation
 //===----------------------------------------------------------------------===//
 
-/// This class provides the elaborator, which constructs the expansion tree as
-/// it walks the IR and specializes operations. This outputs IR that has been
-/// fully specialized/concretized, with the appropriate functions
-/// multi-versioned.
-class ElaboratorImpl : public Elaborator {
-public:
-  ElaboratorImpl(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
-                 TargetInfoAttr target, ElaboratorCallbacks callbacks,
-                 const ElaborateGeneratorsOptions &config)
-      : Elaborator(symtab, target, config),
-        runtime(*loadContext(target.getContext())->get<LLCL::Runtime>()),
-        g(this->runtime),
-        paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-        callbacks(std::move(callbacks)) {}
+static ModuleOp cloneAsEmpty(const SymbolTable &symtab) {
+  ModuleOp newModule = cast<ModuleOp>(symtab.getOp()).cloneWithoutRegions();
+  newModule.getBodyRegion().push_back(new Block);
+  return newModule;
+}
 
-  ErrorTreeOr<TypedAttr> concretizeSymbolsWithin(TypedAttr value,
-                                                 ImplNode *parent,
-                                                 Location loc) override;
+Elaborator::Elaborator(SymbolTable &symtab,
+                       ParameterCollector::Analysis &paramCache,
+                       TargetInfoAttr target, ElaboratorCallbacks callbacks,
+                       const ElaborateGeneratorsOptions &config)
+    : target(target), config(config), newModule(cloneAsEmpty(symtab)),
+      newSymTab(SymbolTable(*newModule)), oldSymTab(symtab),
+      env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
+      runtime(*loadContext(target.getContext())->get<LLCL::Runtime>()),
+      g(this->runtime),
+      paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
+      callbacks(std::move(callbacks)) {}
 
-  ElaboratorCompileAsmFnRef getCompileAsmFn() const override {
-    return callbacks.compileAsmFn;
-  }
-
-  void addDeferredFunction(OwningOpRef<FuncOp> func) override;
-
-  /// Given a list of primary generators (i.e. generators with no input
-  /// parameters), run the elaborator. This will generate an expansion tree
-  /// rooted on the module with base nodes for each primary generator. Once
-  /// specialization completes we will be able to collect all the concrete
-  /// implementations for each primary generator and handle any renaming or
-  /// fixup that needs to happen to produce the output IR.
-  LogicalResult run(ModuleOp theModule,
-                    ArrayRef<GeneratorOp> primaryGenerators);
-
-private:
-  /// Insert an ImplNode for a function that is already concrete.
-  void addConcreteFunc(FuncOp func) {
-    g.concreteNodes.modify([this, func](auto &map) mutable {
-      auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
-                                             func.getBodyRegion(),
-                                             func.getSymName().str());
-      map.try_emplace(func, node.get());
-      g.elaboratedNodes.push_back(std::move(node));
-    });
-  }
-
-  /// Once a concrete function has finished specializing, finish processing the
-  /// function and call the verifier.
-  void finalizeFunction(ImplNode *node);
-
-  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
-  /// elaborate the generator or interface and return the first concrete
-  /// implementation. Return none if the specialization is not ready yet.
-  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol);
-
-  /// Parameter constants are the only operation that can bridge the parameter
-  /// domain into the runtime domain. Use it to root concretization of nested
-  /// symbol references.
-  template <typename OpT>
-  ElaborationState processParamConstantOp(ImplNode *parent, OpT op);
-
-  /// Process a `kgen.param.apply` operation by concretizing its operands and
-  /// callee and then invoking the interpreter.
-  ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
-                                       FuncOp func);
-
-  /// Process a call op by binding any necessary input parameters from the
-  /// symbol or the call and passing them on to processGeneratorUser.
-  ElaborationState processCallOp(ImplNode *parent,
-                                 GeneratorUserOpInterface call);
-
-  /// Instantiate a generator reference by retrieving the concrete
-  /// implementations of a reference. If this function returns `advance` but
-  /// `inputParamKey` is not populated, then the callee is a direct function
-  /// reference.
-  std::pair<ElaborationState, ImplNode *> instantiateGeneratorReference(
-      ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
-      ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
-      function_ref<bool(ParamNode *)> shouldWait = [](ParamNode *) {
-        return true;
-      });
-
-  /// Process a generator user. In general, this is anything that can call into
-  /// a generator and might therefore need to be multi-versioned.
-  ElaborationState processGeneratorUser(GeneratorUserOpInterface user,
-                                        SymbolConstantAttr calleeSymbol,
-                                        ImplNode *parent);
-
-  /// Complete processing of a generator user by resolving any bound result
-  /// types or parameters in the parent scope. This is the step that propagates
-  /// result parameters from the inner scope to the outer scope.
-  ///
-  /// See function definition for the meaning of `invertLockOrder`.
-  ElaborationState completeCallProcessing(GeneratorUserOpInterface user,
-                                          ArrayRef<ParamDeclAttr> decls,
-                                          ImplNode *thisNode, ImplNode *node);
-
-  /// Given a user of a completed parameter node, collect concrete
-  /// implementations whose bindings are consistent with the current node.
-  FailureOr<ImplNode *> collectConcreteImplementations(Operation *user,
-                                                       ImplNode *parent,
-                                                       ParamNode *calleeNode);
-
-  /// Process a param.if op by evaluating the condition and elaborating and
-  /// inlining only the branch that was taken. If one of the branches had an
-  /// early return, this will split the block after the return and avoid
-  /// elaborating the rest of the function.
-  ElaborationState processParamIfOp(ImplNode *parent, ParamIfOp op);
-
-  ElaborationState processParamForOp(ImplNode *parent, ParamForOp op);
-
-  /// Schedule an implementation node on the LLCL work queue and increment the
-  /// initial counters.
-  void initialScheduleImplNode(ImplNode *inode) {
-    ++inode->parent->numActive;
-    g.numWorkItems.fetch_add(1);
-    scheduleImplNode(inode);
-  }
-  /// Signal the worklist to tell it a job has completed or has been taken off
-  /// the workqueue.
-  void signalWorklist() {
-    if (g.numWorkItems.fetch_sub(1) == 1)
-      g.worklistCh.copy().emplace();
-  }
-  /// Schedule an implementation node on the LLCL work queue.
-  void scheduleImplNode(ImplNode *inode);
-  /// Process the scopes within an implementation node. This function returns
-  /// `success` if all scopes completed processing and the node is completely
-  /// elaborated. If the function returns `failure`, that means elaboration of
-  /// the node hit a suspension point and must halt before completion.
-  LogicalResult processImplNode(ImplNode *inode);
-  /// Complete processing of an implementation node. If all dependencies have
-  /// been completed, this will process them, performing any required
-  /// multi-versioning, and finalize and verify the function, unless an error
-  /// has occurred.
-  void completeImplNodeProcessing(ImplNode *inode);
-  /// Process a worklist of ops. Returns error if processing the scope resulted
-  /// in an error, returns `skipFrame` if the processing of the current scope
-  /// scope should be pre-empted with a new scope, returns `skipNode` if
-  /// processing the current implementation node should suspended.
-  ElaborationState processScope(ImplNode *node, ImplNode::WorkItem &item);
-  /// Process a single operation. Returns error if processing the scope resulted
-  /// in an error, returns `skipFrame` if the processing of the current scope
-  /// should be pre-empted with a new scope, returns `skipNode` if processing
-  /// the current implementation node should be suspended.
-  ElaborationState processOp(ImplNode *node, Operation *op);
-
-  /// Request specialization of the generator at `genNode`. If the node is ready
-  /// complete, then the function returns `advance` and the concrete functions
-  /// can be retrieved from the node. Otherwise, the function returns
-  /// `skipNode`, indicating that elaboration of the current function should be
-  /// suspended.
-  ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
-                                       ParamNode *from, bool addWaiter);
-
-  /// Attempt to diagnose concrete recursion and break recursion where possible.
-  /// Return true if recursion was broken at least once. The "generation" is
-  /// used to know whether a visited flag is valid. It must be at least 1,
-  /// because the initial generation is always 0.
-  bool diagnoseAndBreakRecursion(unsigned generation,
-                                 ArrayRef<ParamNode *> roots);
-
-  /// Hash table of known ParameterUseDefGraphs. This ensures we only compute a
-  /// graph once for each generator. This is extra state generated by
-  /// specializeGenerator that is *required for correctness* - this will cause
-  /// issues with caching (though it would be easy to simply recompute) unless
-  /// we create a ParametricNode or something we can use to store these in a
-  /// proper data structure.
-  Shared<DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>>>
-      knownGraphs;
-
-  /// The LLCL runtime instance to use.
-  LLCL::Runtime &runtime;
-
-  /// The callgraph being expanded.
-  ExpansionGraph g;
-
-  /// This is the cached parameter collector analysis.
-  ThreadLocalCache<ParameterCollector::Analysis> paramCache;
-
-  /// Callbacks to use for JIT functionalities.
-  ElaboratorCallbacks callbacks;
-
-  /// Deferred generated symbols to append to the module.
-  SmallVector<mlir::SymbolOpInterface> deferredSymbols;
-};
-} // namespace
+FuncOp Elaborator::lookupConcreteFunction(SymbolRefAttr symbol) {
+  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
+  return newSymTab.read([name](const SymbolTable &symtab) {
+    return symtab.lookup<FuncOp>(name);
+  });
+}
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::finalizeFunction
+// Elaborator::finalizeFunction
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::finalizeFunction(ImplNode *node) {
+void Elaborator::finalizeFunction(ImplNode *node) {
   CompilerTimeTraceScope traceScope("finalizeFunction");
   // Erase everything but the entry blocks of each region.
   FuncOp func = node->func;
@@ -611,12 +379,12 @@ void ElaboratorImpl::finalizeFunction(ImplNode *node) {
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::getConcreteFunction
+// Elaborator::getConcreteFunction
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<FuncOp>
-ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
-                                    SymbolConstantAttr symbol) {
+ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
+                                                    Location loc,
+                                                    SymbolConstantAttr symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   Operation *gen = oldSymTab.lookup(name);
   // If this doesn't reference anything in the existing module, then it must
@@ -643,9 +411,9 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   return node->getFirstConcreteFunc();
 }
 
-ErrorTreeOr<TypedAttr> ElaboratorImpl::concretizeSymbolsWithin(TypedAttr value,
-                                                               ImplNode *parent,
-                                                               Location loc) {
+ErrorTreeOr<TypedAttr> Elaborator::concretizeSymbolsWithin(TypedAttr value,
+                                                           ImplNode *parent,
+                                                           Location loc) {
   mlir::AttrTypeReplacer replacer;
   std::optional<ErrorTree> error;
   replacer.addReplacement(
@@ -677,10 +445,10 @@ ErrorTreeOr<TypedAttr> ElaboratorImpl::concretizeSymbolsWithin(TypedAttr value,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::addDeferredFunction
+// Elaborator::addDeferredFunction
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
+void Elaborator::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
   addConcreteFunc(op);
   newSymTab.modify([this, op](SymbolTable &symtab) {
@@ -690,12 +458,11 @@ void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processParamConstantOp
+// Elaborator::processParamConstantOp
 //===----------------------------------------------------------------------===//
 
 template <typename OpT>
-ElaborationState ElaboratorImpl::processParamConstantOp(ImplNode *parent,
-                                                        OpT op) {
+ElaborationState Elaborator::processParamConstantOp(ImplNode *parent, OpT op) {
   Attribute attr;
   HANDLE_EVALUATOR_CONC(attr, parent, op->getLoc(), op.getValue());
   auto value = cast<TypedAttr>(attr);
@@ -718,11 +485,11 @@ ElaborationState ElaboratorImpl::processParamConstantOp(ImplNode *parent,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::instantiateGeneratorReference
+// Elaborator::instantiateGeneratorReference
 //===----------------------------------------------------------------------===//
 
 std::pair<ElaborationState, ImplNode *>
-ElaboratorImpl::instantiateGeneratorReference(
+Elaborator::instantiateGeneratorReference(
     ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
     ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
     function_ref<bool(ParamNode *)> shouldWait) {
@@ -775,11 +542,12 @@ ElaboratorImpl::instantiateGeneratorReference(
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::collectConcreteImplementations
+// Elaborator::collectConcreteImplementations
 //===----------------------------------------------------------------------===//
 
-FailureOr<ImplNode *> ElaboratorImpl::collectConcreteImplementations(
-    Operation *user, ImplNode *parent, ParamNode *calleeNode) {
+FailureOr<ImplNode *>
+Elaborator::collectConcreteImplementations(Operation *user, ImplNode *parent,
+                                           ParamNode *calleeNode) {
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
@@ -794,13 +562,13 @@ FailureOr<ImplNode *> ElaboratorImpl::collectConcreteImplementations(
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processGeneratorUser
+// Elaborator::processGeneratorUser
 //===----------------------------------------------------------------------===//
 
 ElaborationState
-ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
-                                     SymbolConstantAttr calleeSymbol,
-                                     ImplNode *parent) {
+Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
+                                 SymbolConstantAttr calleeSymbol,
+                                 ImplNode *parent) {
   // Not all operations can verify their callee type, if for instance, it is a
   // generic type. Verify here as a fallback.
   if (!calleeSymbol.getType().getInputParamTypes().empty()) {
@@ -846,14 +614,13 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::completeCallProcessing
+// Elaborator::completeCallProcessing
 //===----------------------------------------------------------------------===//
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
 /// interpreter on the concrete callee and binding its result.
-ElaborationState ElaboratorImpl::processParamApplyOp(ImplNode *inode,
-                                                     ParamApplyOp op,
-                                                     FuncOp func) {
+ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
+                                                 ParamApplyOp op, FuncOp func) {
   SmallVector<TypedAttr> operands;
   for (TypedAttr operand : op.getOperands()) {
     Attribute value;
@@ -883,9 +650,9 @@ ElaborationState ElaboratorImpl::processParamApplyOp(ImplNode *inode,
 }
 
 ElaborationState
-ElaboratorImpl::completeCallProcessing(GeneratorUserOpInterface user,
-                                       ArrayRef<ParamDeclAttr> decls,
-                                       ImplNode *thisNode, ImplNode *node) {
+Elaborator::completeCallProcessing(GeneratorUserOpInterface user,
+                                   ArrayRef<ParamDeclAttr> decls,
+                                   ImplNode *thisNode, ImplNode *node) {
   if (thisNode->error) {
     node->setToError(ErrorTree(user.getLoc(), "call expansion failed",
                                thisNode->error->copy()));
@@ -926,12 +693,12 @@ ElaboratorImpl::completeCallProcessing(GeneratorUserOpInterface user,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processCallOp
+// Elaborator::processCallOp
 //===----------------------------------------------------------------------===//
 
 /// Process a call_param op.
-ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
-                                               GeneratorUserOpInterface call) {
+ElaborationState Elaborator::processCallOp(ImplNode *parent,
+                                           GeneratorUserOpInterface call) {
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   return processGeneratorUser(call, cast<SymbolConstantAttr>(symbol), parent);
@@ -1020,7 +787,7 @@ static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processParamIfOp
+// Elaborator::processParamIfOp
 //===----------------------------------------------------------------------===//
 
 /// We always erase this op and its nested scopes from the parameter graph -
@@ -1048,8 +815,7 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
     eraseScopes(graph);
 }
 
-ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
-                                                  ParamIfOp op) {
+ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
   // Check the condition expression.
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
@@ -1122,11 +888,11 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processParamForOp
+// Elaborator::processParamForOp
 //===----------------------------------------------------------------------===//
 
-ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
-                                                   ParamForOp op) {
+ElaborationState Elaborator::processParamForOp(ImplNode *parent,
+                                               ParamForOp op) {
   // First, concretize the initializer and sequence generator expressions and
   // result types.
   Attribute initial, iterate;
@@ -1301,10 +1067,10 @@ ElaborationState ElaboratorImpl::processParamForOp(ImplNode *parent,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processScope
+// Elaborator::processScope
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
+void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
   ParamNode *p = inode->parent;
   // This waiter was triggered in an error scenario. No further action is needed
   // because we are destroying the tree.
@@ -1361,7 +1127,7 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
   signalWorklist();
 }
 
-void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
+void Elaborator::scheduleImplNode(ImplNode *inode) {
   // Increment the number of scheduled work items.
   runtime.getWorkQueue()->addTask([inode, this] {
     // Process the node. If processing the node got pre-empted, then return. It
@@ -1375,7 +1141,7 @@ void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
   });
 }
 
-LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
+LogicalResult Elaborator::processImplNode(ImplNode *inode) {
   // Check for a root node.
   if (!inode->func) {
     // Begin specialization of the parameter node. Immediately suspend
@@ -1422,8 +1188,8 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
   return success();
 }
 
-ElaborationState ElaboratorImpl::processScope(ImplNode *node,
-                                              ImplNode::WorkItem &item) {
+ElaborationState Elaborator::processScope(ImplNode *node,
+                                          ImplNode::WorkItem &item) {
   VerboseCompilerTimeTraceScope traceScope("processScope", [&item]() {
     return std::to_string(item.ops.size()) + " ops";
   });
@@ -1440,7 +1206,7 @@ ElaborationState ElaboratorImpl::processScope(ImplNode *node,
   return ElaborationState::advance();
 }
 
-ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
+ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
   if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
     return ElaborationState::advance();
 
@@ -1472,13 +1238,13 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::specializeGenerator
+// Elaborator::specializeGenerator
 //===----------------------------------------------------------------------===//
 
-ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
-                                                     ParamNode *genNode,
-                                                     ParamNode *from,
-                                                     bool addWaiter) {
+ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
+                                                 ParamNode *genNode,
+                                                 ParamNode *from,
+                                                 bool addWaiter) {
   switch (genNode->state.markInProgress()) {
   case ParamNodeState::DONE:
     return ElaborationState::advance();
@@ -1672,11 +1438,11 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::diagnoseAndBreakRecursion
+// Elaborator::diagnoseAndBreakRecursion
 //===----------------------------------------------------------------------===//
 
-bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
-                                               ArrayRef<ParamNode *> roots) {
+bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
+                                           ArrayRef<ParamNode *> roots) {
   std::function<bool(ParamNode *)> visitParamNode = nullptr;
   std::vector<ImplNode *> reschedule;
   std::vector<ImplNode *> errComplete;
@@ -1780,11 +1546,11 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::run
+// Elaborator::run
 //===----------------------------------------------------------------------===//
 
-LogicalResult ElaboratorImpl::run(ModuleOp theModule,
-                                  ArrayRef<GeneratorOp> primaryGenerators) {
+LogicalResult Elaborator::run(ModuleOp theModule,
+                              ArrayRef<GeneratorOp> primaryGenerators) {
   MLIRContext *ctx = theModule.getContext();
 
   // Find any kgen.func we have already - they're already elaborated, and we do
@@ -2035,8 +1801,8 @@ public:
     CompilerTimeTraceScope traceScope("elaborate-generators");
 
     // Now, construct and run the elaborator.
-    ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
-                        std::move(callbacks), config);
+    Elaborator impl(symtab.getTopLevelSymbolTable(), paramCache, target,
+                    std::move(callbacks), config);
     if (failed(impl.run(theModule, primaryGenerators)))
       return signalPassFailure();
   }

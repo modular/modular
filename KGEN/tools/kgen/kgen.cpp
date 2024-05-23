@@ -564,6 +564,7 @@ int main(int argc, char **argv) {
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
+        ctx->printOpOnDiagnostic(true);
         return runToolPipeline(ctx, sourceManager, clOptions);
       }));
 }
