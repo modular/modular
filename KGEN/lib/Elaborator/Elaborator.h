@@ -30,77 +30,6 @@ std::string mangleParameterValues(GeneratorOp generator,
                                   ArrayRef<TypedAttr> inputParamValues);
 
 //===----------------------------------------------------------------------===//
-// Elaborator
-//===----------------------------------------------------------------------===//
-
-using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
-    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmissionKind)>;
-
-struct ElaboratorCallbacks {
-  /// The functor used to compile a module to assembly.
-  ElaboratorCompileAsmFnRef compileAsmFn;
-};
-
-class Elaborator {
-public:
-  /// Enumeration of the compile assembly format.
-  enum ASMFormat : uint8_t { ASM, LLVM };
-
-  /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &oldSymTab, TargetInfoAttr target,
-             const ElaborateGeneratorsOptions &config);
-
-  virtual ~Elaborator() = default;
-
-  /// Concretize all non-parametric symbol references within the provided
-  /// parameter expression.
-  virtual ErrorTreeOr<TypedAttr>
-  concretizeSymbolsWithin(TypedAttr value, ImplNode *parent, Location loc) = 0;
-
-  /// Lookup an existing concrete function.
-  FuncOp lookupConcreteFunction(SymbolRefAttr symbol);
-
-  /// Get the environment defines.
-  EnvAttr getCompilationEnvAttr() const { return env; }
-
-  /// Get the pre-elaboration symbol table we can slice from.
-  const SymbolTable &getSliceSymTab() const { return oldSymTab; }
-
-  /// Get the functor for compiling a generator to assembly.
-  virtual ElaboratorCompileAsmFnRef getCompileAsmFn() const = 0;
-
-  /// Add an owned function operation that should be appended to the module at
-  /// the end of elaboration. This is where generated functions during
-  /// elaboration should go.
-  virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
-
-  /// Get the target associated with this instance of the elaborator.
-  TargetInfoAttr getTarget() const { return target; }
-  /// Get the elaborator config.
-  const ElaborateGeneratorsOptions &getOptions() const { return config; }
-
-protected:
-  /// The target we are compiling code for.
-  TargetInfoAttr target;
-
-  /// The elaborator config.
-  ElaborateGeneratorsOptions config;
-
-  /// This is the new module that concrete functions are being generated into.
-  OwningOpRef<ModuleOp> newModule;
-
-  /// This is the symbol table of the new module.
-  Shared<SymbolTable> newSymTab;
-
-  /// This symbol table allows efficient lookups across the module.
-  SymbolTable &oldSymTab;
-
-  /// The environment defines the module is being elaborated with.
-  EnvAttr env;
-};
-
-//===----------------------------------------------------------------------===//
 // ExpansionGraph
 //===----------------------------------------------------------------------===//
 
@@ -150,6 +79,305 @@ struct ExpansionGraph {
   /// Get or create the node for a generator instantiation.
   ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
                          GeneratorOp gen, size_t depth);
+};
+
+//===----------------------------------------------------------------------===//
+// ElaborationState
+//===----------------------------------------------------------------------===//
+
+class ElaborationState {
+  enum State { NEW_IMPL_SCOPE, NEW_PARAM_SCOPE, ADVANCE, ERROR };
+
+public:
+  /// Return the elaboration state that indicates an operation was successfully
+  /// processed.
+  static ElaborationState advance() { return ADVANCE; }
+  /// Return the elaboration state that indicates elaboration should be
+  /// pre-empted by a new frame within a function.
+  static ElaborationState skipFrame() { return NEW_IMPL_SCOPE; }
+  /// Return the elaboration state that indicates elaboration should be
+  /// pre-empted by a new parameter node.
+  static ElaborationState skipNode() { return NEW_PARAM_SCOPE; }
+  /// Return the elaboration state that indicates a fatal error has occurred
+  /// during elaboration.
+  static ElaborationState error() { return ERROR; }
+
+  /// Return true if the frame should be skipped.
+  bool shouldSkipFrame() const { return state == NEW_IMPL_SCOPE; }
+  /// Return true if the node should be skipped.
+  bool shouldSkipNode() const { return state == NEW_PARAM_SCOPE; }
+  /// Return true if an error occurred.
+  bool isError() const { return state == ERROR; }
+
+  /// Allow implicit conversion from `LogicalResult`.
+  ElaborationState(LogicalResult result)
+      : state(succeeded(result) ? ADVANCE : ERROR) {}
+
+private:
+  ElaborationState(State state) : state(state) {}
+
+  State state;
+};
+
+//===----------------------------------------------------------------------===//
+// Elaborator
+//===----------------------------------------------------------------------===//
+
+using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
+    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
+    TargetInfoAttr, EmissionKind)>;
+
+struct ElaboratorCallbacks {
+  /// The functor used to compile a module to assembly.
+  ElaboratorCompileAsmFnRef compileAsmFn;
+};
+
+/// This class provides the elaborator, which constructs the expansion tree as
+/// it walks the IR and specializes operations. This outputs IR that has been
+/// fully specialized/concretized, with the appropriate functions
+/// multi-versioned.
+class Elaborator {
+public:
+  /// Initialize the elaborator and its symbol table.
+  Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
+             TargetInfoAttr target, ElaboratorCallbacks callbacks,
+             const ElaborateGeneratorsOptions &config);
+
+  //===--------------------------------------------------------------------===//
+  // IREvaluator Interface
+  //===--------------------------------------------------------------------===//
+
+  /// Concretize all non-parametric symbol references within the provided
+  /// parameter expression.
+  ErrorTreeOr<TypedAttr>
+  concretizeSymbolsWithin(TypedAttr value, ImplNode *parent, Location loc);
+
+  /// Lookup an existing concrete function.
+  FuncOp lookupConcreteFunction(SymbolRefAttr symbol);
+
+  /// Get the environment defines.
+  EnvAttr getCompilationEnvAttr() const { return env; }
+
+  /// Get the pre-elaboration symbol table we can slice from.
+  const SymbolTable &getSliceSymTab() const { return oldSymTab; }
+
+  /// Get the functor for compiling a generator to assembly.
+  ElaboratorCompileAsmFnRef getCompileAsmFn() const {
+    return callbacks.compileAsmFn;
+  }
+
+  /// Add an owned function operation that should be appended to the module at
+  /// the end of elaboration. This is where generated functions during
+  /// elaboration should go.
+  void addDeferredFunction(OwningOpRef<FuncOp> func);
+
+  /// Get the target associated with this instance of the elaborator.
+  TargetInfoAttr getTarget() const { return target; }
+  /// Get the elaborator config.
+  const ElaborateGeneratorsOptions &getOptions() const { return config; }
+
+  //===--------------------------------------------------------------------===//
+  // Entry Point
+  //===--------------------------------------------------------------------===//
+
+  /// Given a list of primary generators (i.e. generators with no input
+  /// parameters), run the elaborator. This will generate an expansion tree
+  /// rooted on the module with base nodes for each primary generator. Once
+  /// specialization completes we will be able to collect all the concrete
+  /// implementations for each primary generator and handle any renaming or
+  /// fixup that needs to happen to produce the output IR.
+  LogicalResult run(ModuleOp theModule,
+                    ArrayRef<GeneratorOp> primaryGenerators);
+
+private:
+  //===--------------------------------------------------------------------===//
+  // Utility Functions
+  //===--------------------------------------------------------------------===//
+
+  /// Insert an ImplNode for a function that is already concrete.
+  void addConcreteFunc(FuncOp func) {
+    g.concreteNodes.modify([this, func](auto &map) mutable {
+      auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
+                                             func.getBodyRegion(),
+                                             func.getSymName().str());
+      map.try_emplace(func, node.get());
+      g.elaboratedNodes.push_back(std::move(node));
+    });
+  }
+
+  /// Once a concrete function has finished specializing, finish processing the
+  /// function and call the verifier.
+  void finalizeFunction(ImplNode *node);
+
+  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
+  /// elaborate the generator or interface and return the first concrete
+  /// implementation. Return none if the specialization is not ready yet.
+  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
+                                          SymbolConstantAttr symbol);
+
+  //===--------------------------------------------------------------------===//
+  // Operation Processing
+  //===--------------------------------------------------------------------===//
+
+  /// Parameter constants are the only operation that can bridge the parameter
+  /// domain into the runtime domain. Use it to root concretization of nested
+  /// symbol references.
+  template <typename OpT>
+  ElaborationState processParamConstantOp(ImplNode *parent, OpT op);
+
+  /// Process a `kgen.param.apply` operation by concretizing its operands and
+  /// callee and then invoking the interpreter.
+  ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
+                                       FuncOp func);
+
+  /// Process a call op by binding any necessary input parameters from the
+  /// symbol or the call and passing them on to processGeneratorUser.
+  ElaborationState processCallOp(ImplNode *parent,
+                                 GeneratorUserOpInterface call);
+
+  /// Process a generator user. In general, this is anything that can call into
+  /// a generator and might therefore need to be multi-versioned.
+  ElaborationState processGeneratorUser(GeneratorUserOpInterface user,
+                                        SymbolConstantAttr calleeSymbol,
+                                        ImplNode *parent);
+
+  /// Process a param.if op by evaluating the condition and elaborating and
+  /// inlining only the branch that was taken. If one of the branches had an
+  /// early return, this will split the block after the return and avoid
+  /// elaborating the rest of the function.
+  ElaborationState processParamIfOp(ImplNode *parent, ParamIfOp op);
+
+  /// Process a param.for op by evaluating the sequence of induction variables
+  /// and then instantiating the body for each value of the sequence.
+  ElaborationState processParamForOp(ImplNode *parent, ParamForOp op);
+
+  //===--------------------------------------------------------------------===//
+  // Worklist
+  //===--------------------------------------------------------------------===//
+
+  /// Schedule an implementation node on the LLCL work queue and increment the
+  /// initial counters.
+  void initialScheduleImplNode(ImplNode *inode) {
+    ++inode->parent->numActive;
+    g.numWorkItems.fetch_add(1);
+    scheduleImplNode(inode);
+  }
+  /// Signal the worklist to tell it a job has completed or has been taken off
+  /// the workqueue.
+  void signalWorklist() {
+    if (g.numWorkItems.fetch_sub(1) == 1)
+      g.worklistCh.copy().emplace();
+  }
+  /// Schedule an implementation node on the LLCL work queue.
+  void scheduleImplNode(ImplNode *inode);
+  /// Process the scopes within an implementation node. This function returns
+  /// `success` if all scopes completed processing and the node is completely
+  /// elaborated. If the function returns `failure`, that means elaboration of
+  /// the node hit a suspension point and must halt before completion.
+  LogicalResult processImplNode(ImplNode *inode);
+  /// Complete processing of an implementation node. If all dependencies have
+  /// been completed, this will process them, performing any required
+  /// multi-versioning, and finalize and verify the function, unless an error
+  /// has occurred.
+  void completeImplNodeProcessing(ImplNode *inode);
+  /// Process a worklist of ops. Returns error if processing the scope resulted
+  /// in an error, returns `skipFrame` if the processing of the current scope
+  /// scope should be pre-empted with a new scope, returns `skipNode` if
+  /// processing the current implementation node should suspended.
+  ElaborationState processScope(ImplNode *node, ImplNode::WorkItem &item);
+  /// Process a single operation. Returns error if processing the scope resulted
+  /// in an error, returns `skipFrame` if the processing of the current scope
+  /// should be pre-empted with a new scope, returns `skipNode` if processing
+  /// the current implementation node should be suspended.
+  ElaborationState processOp(ImplNode *node, Operation *op);
+
+  //===--------------------------------------------------------------------===//
+  // Specialization
+  //===--------------------------------------------------------------------===//
+
+  /// Request specialization of the generator at `genNode`. If the node is ready
+  /// complete, then the function returns `advance` and the concrete functions
+  /// can be retrieved from the node. Otherwise, the function returns
+  /// `skipNode`, indicating that elaboration of the current function should be
+  /// suspended.
+  ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
+                                       ParamNode *from, bool addWaiter);
+  /// Complete processing of a generator user by resolving any bound result
+  /// types or parameters in the parent scope. This is the step that propagates
+  /// result parameters from the inner scope to the outer scope.
+  ///
+  /// See function definition for the meaning of `invertLockOrder`.
+  ElaborationState completeCallProcessing(GeneratorUserOpInterface user,
+                                          ArrayRef<ParamDeclAttr> decls,
+                                          ImplNode *thisNode, ImplNode *node);
+  /// Instantiate a generator reference by retrieving the concrete
+  /// implementations of a reference. If this function returns `advance` but
+  /// `inputParamKey` is not populated, then the callee is a direct function
+  /// reference.
+  std::pair<ElaborationState, ImplNode *> instantiateGeneratorReference(
+      ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+      ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
+      function_ref<bool(ParamNode *)> shouldWait = [](ParamNode *) {
+        return true;
+      });
+  /// Given a user of a completed parameter node, collect concrete
+  /// implementations whose bindings are consistent with the current node.
+  FailureOr<ImplNode *> collectConcreteImplementations(Operation *user,
+                                                       ImplNode *parent,
+                                                       ParamNode *calleeNode);
+
+  /// Attempt to diagnose concrete recursion and break recursion where possible.
+  /// Return true if recursion was broken at least once. The "generation" is
+  /// used to know whether a visited flag is valid. It must be at least 1,
+  /// because the initial generation is always 0.
+  bool diagnoseAndBreakRecursion(unsigned generation,
+                                 ArrayRef<ParamNode *> roots);
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+  //===--------------------------------------------------------------------===//
+
+  /// The target we are compiling code for.
+  TargetInfoAttr target;
+
+  /// The elaborator config.
+  ElaborateGeneratorsOptions config;
+
+  /// This is the new module that concrete functions are being generated into.
+  OwningOpRef<ModuleOp> newModule;
+
+  /// This is the symbol table of the new module.
+  Shared<SymbolTable> newSymTab;
+
+  /// This symbol table allows efficient lookups across the module.
+  SymbolTable &oldSymTab;
+
+  /// The environment defines the module is being elaborated with.
+  EnvAttr env;
+
+  /// Hash table of known ParameterUseDefGraphs. This ensures we only compute a
+  /// graph once for each generator. This is extra state generated by
+  /// specializeGenerator that is *required for correctness* - this will cause
+  /// issues with caching (though it would be easy to simply recompute) unless
+  /// we create a ParametricNode or something we can use to store these in a
+  /// proper data structure.
+  Shared<DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>>>
+      knownGraphs;
+
+  /// The LLCL runtime instance to use.
+  LLCL::Runtime &runtime;
+
+  /// The callgraph being expanded.
+  ExpansionGraph g;
+
+  /// This is the cached parameter collector analysis.
+  ThreadLocalCache<ParameterCollector::Analysis> paramCache;
+
+  /// Callbacks to use for JIT functionalities.
+  ElaboratorCallbacks callbacks;
+
+  /// Deferred generated symbols to append to the module.
+  SmallVector<mlir::SymbolOpInterface> deferredSymbols;
 };
 
 } // namespace M::KGEN
