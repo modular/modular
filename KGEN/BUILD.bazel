@@ -888,13 +888,22 @@ cc_library(
 )
 
 cc_library(
-    name = "Compiler",
-    srcs = glob(["lib/Compiler/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/Compiler/*.h",
-    ]),
+    name = "CompilerHeaders",
+    hdrs = glob(["include/KGEN/Compiler/*.h"]),
     strip_include_prefix = "include",
     deps = [
+        ":ExecutionEngineHeaders",
+    ],
+)
+
+cc_library(
+    name = "Compiler",
+    srcs = glob(["lib/Compiler/*.cpp"]),
+    hdrs = glob(["include/KGEN/Compiler/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":ExecutionEngineHeaders",
+        ":JIT",
         ":KGENDialect",
         ":KGENDialectIncGen",
         ":KGENInterfacesIncGen",
@@ -1175,28 +1184,56 @@ cc_library(
 )
 
 cc_library(
+    name = "ExecutionEngineHeaders",
+    hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
+    strip_include_prefix = "include",
+)
+
+cc_library(
     name = "ExecutionEngine",
     srcs = glob(["lib/ExecutionEngine/*.cpp"]),
+    hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
     strip_include_prefix = "include",
     deps = [
-        ":MojoParser",
-        ":MojoTooling",
+        ":JIT",
         ":VersionHeader",
+        "//Cache",
+        "//Support:Buffer",
+        "//Support:Compiler",
         "@llvm-project//llvm:OrcDebugging",
         "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
 )
 
 cc_library(
+    name = "JIT",
+    srcs = glob([
+        "lib/ExecutionEngine/JIT/*.cpp",
+        "lib/ExecutionEngine/JIT/*.h",
+    ]),
+    hdrs = glob(["include/KGEN/ExecutionEngine/JIT/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":CompilerHeaders",
+        ":ExecutionEngineHeaders",
+        ":KGENDialect",
+        ":ToolCommonHeaders",
+        ":VersionHeader",
+        "//Cache",
+        "//Support:Buffer",
+        "@llvm-project//llvm:OrcDebugging",
+        "@llvm-project//llvm:OrcJIT",
+    ],
+)
+
+cc_library(
     name = "ToolCommon",
     srcs = glob(["lib/ToolCommon/**/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/ToolCommon/*.h",
-        "include/KGEN/Compiler/*.h",
-    ]),
+    hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":CODialect",
+        ":ExecutionEngine",
         ":HLCFDialect",
         ":KGENPassesIncGen",
         ":LITDialect",
