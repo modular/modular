@@ -155,6 +155,9 @@ void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
 /// TODO(#23387): fix this when AsmParser can handle '/'.
 class PassingKindParser {
 public:
+  enum Marker { PLUS, BAR, STAR, QUESTION, NUM_MARKERS };
+  static constexpr std::array<char, NUM_MARKERS> markers{'+', '|', '*', '?'};
+
   PassingKindParser(AsmParser &parser) : parser(parser) {}
 
   /// Try to parse a single optional '*' or '|', and emit an error if a
@@ -165,25 +168,18 @@ public:
   void populatePassingKinds(SmallVectorImpl<PassingKind> &kinds) const;
 
   /// Return true if the parser is currently parsing an implicit parameter.
-  bool isCurrentImplicit() const { return foundImplicit; }
+  bool isCurrentImplicit() const { return foundMarkers[QUESTION]; }
 
   /// Return true if the parser is currently parsing a keyword-only parameter.
-  bool isCurrentKwOnly() const { return foundStar && !foundImplicit; }
+  bool isCurrentKwOnly() const {
+    return foundMarkers[STAR] && !foundMarkers[QUESTION];
+  }
 
 private:
-  /// Return the number of positional-only, positional-or-keyword, keyword-only
-  /// and implicit arguments seen so far, respectively.
-  std::tuple<size_t, size_t, size_t, size_t, size_t> getNumPassingKinds() const;
-
   AsmParser &parser;
   size_t idx = 0;
-  size_t numInferred = 0;
-  size_t numPosOnly = 0;
-  size_t numPosOrKw = 0;
-  size_t numKwOnly = 0;
-  bool foundSlash = false;
-  bool foundStar = false;
-  bool foundImplicit = false;
+  std::array<bool, NUM_MARKERS> foundMarkers{};
+  std::array<size_t, NUM_MARKERS> idxOfEach{};
 };
 
 /// Handles printing '/' and '*' in lit IR. Optionally, it allows specifying a

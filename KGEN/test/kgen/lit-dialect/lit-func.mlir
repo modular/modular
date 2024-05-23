@@ -209,10 +209,16 @@ lit.func @address_default[mut lt](%p: !lit.ref<simd<2, si8>, mut lt> owned_in_me
 }
 
 // CHECK-LABEL: lit.func @inferred
-// CHECK-SAME: <+ a: i1, + b, c = 1, |>
-lit.func @inferred<+ a: i1, + b, c = 1, |>() {
-  // CHECK-NEXT: !lit.signature<<+ "a": i1, + "b": index, "c": index = 1, |>() -> ()>
-  kgen.param.constant: !lit.signature<<+ "a": i1, + "b": index, "c": index = 1, |>() -> ()> = <@inferred>
+// CHECK-SAME: <a: i1, b, +, c = 1, |>
+lit.func @inferred<a: i1, b, +, c = 1, |>() {
+  // CHECK-NEXT: !lit.signature<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()>
+  kgen.param.constant: !lit.signature<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()> = <@inferred>
+
+  // CHECK-NEXT: !lit.signature<<index, +, *, index>() -> ()> = <?>
+  kgen.param.constant: !lit.signature<<index, +, *, index>() -> ()> = <?>
+
+  // CHECK-NEXT: !lit.signature<<index, +>() -> ()> = <?>
+  kgen.param.constant: !lit.signature<<index, +>() -> ()> = <?>
   kgen.return
 }
 

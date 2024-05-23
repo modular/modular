@@ -79,30 +79,30 @@ fn variadic_param_after_default[
 
 
 # CHECK-LABEL: lit.func @"inferred_params
-# CHECK-SAME: <+ x, + y, |>
+# CHECK-SAME: <x, y, +>
 fn inferred_params[inferred x: int, inferred y: int]():
-    # CHECK-NEXT: !lit.signature<<+ "x": index, + "y": index, |>() -> !kgen.none> = <@"
+    # CHECK-NEXT: !lit.signature<<"x": index, "y": index, +>() -> !kgen.none> = <@"
     alias fn_type: fn[inferred x: int, inferred y: int]() -> None = inferred_params
 
 
 # CHECK-LABEL: lit.func @"inferred_params_regular
-# CHECK-SAME: <+ x, |, y>
+# CHECK-SAME: <x, +, y>
 fn inferred_params_regular[inferred x: int, y: int]():
-    # CHECK-NEXT: !lit.signature<<+ "x": index, |, "y": index>() -> !kgen.none> = <@"
+    # CHECK-NEXT: !lit.signature<<"x": index, +, "y": index>() -> !kgen.none> = <@"
     alias fn_type: fn[inferred x: int, y: int]() -> None = inferred_params_regular
 
 
 # CHECK-LABEL: lit.func @"inferred_params_pos_only
-# CHECK-SAME: <+ x, y = 1, |>
+# CHECK-SAME: <x, +, y = 1, |>
 fn inferred_params_pos_only[inferred x: int, y: int = `1`, /]():
     pass
 
 
 # CHECK-LABEL: lit.func @"inferred_params_kw_only
-# CHECK-SAME: <+ x, |, *, y>
+# CHECK-SAME: <x, +, *, y>
 fn inferred_params_kw_only[inferred x: int, *, y: int]():
     pass
-    
+
 # ===----------------------------------------------------------------------=== #
 # Test that def arguments are assignable and we get the right number of copies.
 # ===----------------------------------------------------------------------=== #
@@ -123,12 +123,12 @@ def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> No
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}NonTrivialReg::@"__copyinit__{{.*}}(%reg)
   # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
 
-  # CHECK-NEXT: %mem_1 = lit.var.decl "mem" arg(2) 
+  # CHECK-NEXT: %mem_1 = lit.var.decl "mem" arg(2)
   # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__copyinit__{{.*}}(%mem_1, %mem)
 
   # CHECK-NEXT: %a_2 = lit.var.decl "a" arg
   # CHECK-NEXT: lit.ref.store %a, %a_2
-  
+
   # CHECK-NEXT: lit.ref.store %b, %a_2
   a = b # Arguments are mutable!
 
@@ -139,7 +139,7 @@ def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> No
   # CHECK-NEXT: lit.ref.store [[TMP]], %mem_1
   mem = MemoryOnly()
 
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !NonTrivialReg = <{}> 
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !NonTrivialReg = <{}>
   # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
   reg = NonTrivialReg()
 

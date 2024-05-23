@@ -80,20 +80,20 @@ fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_dependent_param{{.*}}<x, :[[PARAMTYPE]]<x> y, :{{@.*DependentParam}}<x, :[[PARAMTYPE]]<x> y> z>
     inferred_dependent_param[z]()
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.signature<<+ "x": index, |>("z": !lit.declref<#ParamType <*(0,0)>>)
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.signature<<"x": index, +>("z": !lit.declref<#ParamType <*(0,0)>>)
     alias partially_bound = inferred_partial[`1`]
     # CHECK: call[!lit.signature<("z": !lit.declref<#ParamType <x>>) -> !kgen.none>:
     # CHECK-SAME: bind_signature(:{{.*}} [[PARTIALLY_BOUND]], x)]
     partially_bound(y)
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.signature<<+ "x": index, |, "z": [[PARAMTYPE]]<*(0,0)>>
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.signature<<"x": index, +, "z": [[PARAMTYPE]]<*(0,0)>>
     # CHECK-SAME: inferred_partial_dependent{{.*}}<?, 1, :[[PARAMTYPE]]<?> ?>
     alias partially_bound_dependent = inferred_partial_dependent[`1`]
     # CHECK-NEXT: !lit.signature<() -> !kgen.none> = <bind_signature(:{{.*}} [[PARTIALLY_BOUND]], x, y)>
     alias fully_bound = partially_bound_dependent[y]
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: anystruct<#InferredStruct <?, 1, :[[PARAMTYPE]]<?> ?>,
-    # CHECK-SAME: <+ "x": index, |, "z": [[PARAMTYPE]]<*(0,0)>>> = <{{.*}}@InferredStruct<?, 1, :[[PARAMTYPE]]<?> ?>>
+    # CHECK-SAME: <"x": index, +, "z": [[PARAMTYPE]]<*(0,0)>>> = <{{.*}}@InferredStruct<?, 1, :[[PARAMTYPE]]<?> ?>>
     alias partially_bound_type = InferredStruct[`1`]
     # CHECK-NEXT: anystruct<#InferredStruct <x, 1, :[[PARAMTYPE]]<x> y>> = <#lit.bind_type<:{{.*}} [[PARTIALLY_BOUND]], [x, y]>>
     alias fully_bound_type = partially_bound_type[y]

@@ -551,26 +551,8 @@ size_t LIT::countNumImplicitKinds(PogListAttr pogListAttr) {
 // PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
-  llvm::SMLoc loc = parser.getCurrentLocation();
-
-  if (succeeded(parser.parseOptionalPlus())) {
-    ++numInferred;
-    return std::nullopt;
-  }
-
-  if (succeeded(parser.parseOptionalVerticalBar())) {
-    if (foundSlash)
-      return parser.emitError(loc, "only one '|' allowed in signature");
-    if (foundStar)
-      return parser.emitError(loc, "'*' cannot precede '|' in signature");
-    if (foundImplicit)
-      return parser.emitError(loc, "'?' cannot precede '|' in signature");
-    numPosOnly = idx;
-    foundSlash = true;
-    return mlir::success();
-  }
-
+static std::optional<PassingKindParser::Marker>
+parseOptionalMarker(AsmParser &p) {
   // We want to allow a standalone * in the signature to represent information
   // about a signature list, but we don't want to interfere with *"fo o" escaped
   // name parsing.  Do a bit of grotty lookahead to make sure we're ok to
@@ -578,59 +560,86 @@ OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
   // because the MLIR asmparser guarantees the buffer is always NUL terminated.
   // This doesn't support whitespace/comments etc between the star and quote
   // though.
-  loc = parser.getCurrentLocation();
-  bool ignoreStar = false;
+  llvm::SMLoc loc = p.getCurrentLocation();
   if (loc.getPointer()[0] == '*' && loc.getPointer()[1] == '"')
-    ignoreStar = true;
+    return {};
 
-  if (!ignoreStar && succeeded(parser.parseOptionalStar())) {
-    if (foundStar)
-      return parser.emitError(loc, "only one '*' allowed in signature");
-    if (foundImplicit) {
-      return parser.emitError(loc, "'?' cannot precede '*' in signature");
+  if (succeeded(p.parseOptionalPlus()))
+    return PassingKindParser::PLUS;
+  if (succeeded(p.parseOptionalVerticalBar()))
+    return PassingKindParser::BAR;
+  if (succeeded(p.parseOptionalStar()))
+    return PassingKindParser::STAR;
+  if (succeeded(p.parseOptionalQuestion()))
+    return PassingKindParser::QUESTION;
+  return {};
+}
+
+OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  std::optional<Marker> marker = parseOptionalMarker(parser);
+  if (!marker) {
+    ++idx;
+    return std::nullopt;
+  }
+
+  // Error if the same marker was already found.
+  if (foundMarkers[*marker]) {
+    return parser.emitError(loc, "only one '")
+           << markers[*marker] << "' allowed in signature";
+  }
+  // Error if any markers that are supposed to come after were already parsed.
+  for (int i = *marker + 1; i < NUM_MARKERS; ++i) {
+    if (foundMarkers[i]) {
+      return parser.emitError(loc, "'") << markers[i] << "' cannot precede '"
+                                        << markers[*marker] << "' in signature";
     }
-    foundStar = true;
-    numPosOrKw = idx - numPosOnly;
-    return mlir::success();
   }
 
-  loc = parser.getCurrentLocation();
-  if (succeeded(parser.parseOptionalQuestion())) {
-    if (foundImplicit)
-      return parser.emitError(loc, "only one '?' allowed in signature");
-    foundImplicit = true;
-    if (foundStar)
-      numKwOnly = idx - numPosOrKw - numPosOnly;
-    else
-      numPosOrKw = idx - numPosOnly;
-    return mlir::success();
-  }
-
-  ++idx;
-  return std::nullopt;
+  foundMarkers[*marker] = true;
+  idxOfEach[*marker] = idx;
+  return mlir::success();
 }
 
 void PassingKindParser::populatePassingKinds(
     SmallVectorImpl<PassingKind> &kinds) const {
-  auto [numInferred, numPosOnly, numPosOrKw, numKwOnly, numImplicit] =
-      getNumPassingKinds();
-  kinds.append(numInferred, PassingKind::Inferred);
-  kinds.append(numPosOnly, PassingKind::PosOnly);
-  kinds.append(numPosOrKw, PassingKind::PosOrKw);
-  kinds.append(numKwOnly, PassingKind::KwOnly);
-  kinds.append(numImplicit, PassingKind::Implicit);
-}
+  size_t lastIdx = 0;
+  // Compute the number of elements from the previous marker to this marker.
+  std::array<size_t, NUM_MARKERS + 1> fwdSegments{}, revSegments{};
+  for (int i = 0; i < NUM_MARKERS; ++i) {
+    if (foundMarkers[i]) {
+      fwdSegments[i] = idxOfEach[i] - lastIdx;
+      lastIdx = idxOfEach[i];
+    } else {
+      fwdSegments[i] = 0;
+    }
+  }
+  fwdSegments[NUM_MARKERS] = idx - lastIdx;
 
-std::tuple<size_t, size_t, size_t, size_t, size_t>
-PassingKindParser::getNumPassingKinds() const {
-  size_t numPosOrKwSoFar = numPosOrKw;
-  if (!foundStar && !foundImplicit)
-    numPosOrKwSoFar = idx - numPosOnly;
-  size_t numKwOnlySoFar = numKwOnly;
-  if (!foundImplicit)
-    numKwOnlySoFar = idx - numPosOnly - numPosOrKwSoFar;
-  return {numInferred, numPosOnly, numPosOrKwSoFar, numKwOnlySoFar,
-          idx - numKwOnlySoFar - numPosOrKwSoFar - numPosOnly};
+  // Compute the number of elements from the next marker to this marker.
+  lastIdx = idx;
+  for (int i = NUM_MARKERS - 1; i >= 0; --i) {
+    if (foundMarkers[i]) {
+      revSegments[i] = lastIdx - idxOfEach[i];
+      lastIdx = idxOfEach[i];
+    } else {
+      revSegments[i] = 0;
+    }
+  }
+  revSegments[0] = lastIdx;
+
+  // Number of inferred and positional only are the number of elements that come
+  // before the marker, until the previous marker or beginning. Number of
+  // implicit or keyword-only are the number of elements that come after the
+  // marker, until the next marker or the end. The number of keyword or position
+  // is everything else.
+  kinds.append(fwdSegments[PLUS], PassingKind::Inferred);
+  kinds.append(fwdSegments[BAR], PassingKind::PosOnly);
+  kinds.append(idx - fwdSegments[PLUS] - fwdSegments[BAR] - revSegments[STAR] -
+                   revSegments[QUESTION],
+               PassingKind::PosOrKw);
+  kinds.append(revSegments[STAR], PassingKind::KwOnly);
+  kinds.append(revSegments[QUESTION], PassingKind::Implicit);
 }
 
 PassingKindPrinter::PassingKindPrinter(
@@ -638,7 +647,7 @@ PassingKindPrinter::PassingKindPrinter(
     std::function<PassingKind(size_t)> getPassingKind,
     bool suppressSlashAfterSelf, char slash)
     : os(os), numPogs(numPogs), getPassingKind(std::move(getPassingKind)),
-      prevPassingKind(PassingKind::PosOnly),
+      prevPassingKind(PassingKind::Inferred),
       suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
 
 PassingKindPrinter::PassingKindPrinter(raw_ostream &os, PogListAttr pogListAttr,
@@ -655,22 +664,24 @@ PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
 
 void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
   PassingKind passingKind = getPassingKind(idx);
-  if (passingKind == PassingKind::Inferred) {
-    os << "+ ";
-    return;
-  }
-
   if (prevPassingKind == passingKind)
     return;
 
   switch (prevPassingKind) {
   case PassingKind::Inferred:
-    llvm_unreachable("this was handled above");
+    if (idx != 0)
+      os << "+, ";
+    if (passingKind == PassingKind::KwOnly)
+      os << "*, ";
+    else if (passingKind == PassingKind::Implicit)
+      os << "?, ";
+    break;
   case PassingKind::PosOnly:
     // Check if we are in the starting state; if no, this was the last
     // positional-only argument. Optionally, we may want to suppress '/' before
     // the second argument.
-    if (idx != 0 && (!suppressSlashAfterSelf || idx != 1))
+    assert(idx != 0);
+    if (!suppressSlashAfterSelf || idx != 1)
       os << slash << ", ";
     if (passingKind == PassingKind::KwOnly)
       os << "*, ";
@@ -698,9 +709,12 @@ void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
 void PassingKindPrinter::printOptionalTrailingSlash(size_t idx) const {
   if (suppressSlashAfterSelf && idx == 0)
     return;
-  if (idx == numPogs - 1)
+  if (idx == numPogs - 1) {
     if (prevPassingKind == PassingKind::PosOnly)
       os << ", " << slash;
+    else if (prevPassingKind == PassingKind::Inferred)
+      os << ", +";
+  }
 }
 
 //===----------------------------------------------------------------------===//
