@@ -18,6 +18,7 @@ from layout.layout import (
     logical_product,
     print_layout,
     size,
+    sublayout,
     zipped_divide,
 )
 from testing import assert_equal, assert_not_equal
@@ -396,6 +397,19 @@ fn test_zipped_divide() raises:
     assert_equal(zd0, "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
 
 
+# CHECK-LABEL: test_sublayout
+fn test_sublayout() raises:
+    print("== test_sublayout")
+    alias layout_2x3x4 = Layout(IntTuple(2, 3, 4), IntTuple(12, 4, 1))
+    assert_equal(sublayout(layout_2x3x4, 0, 2), "((2, 4):(12, 1))")
+    alias layout_2x3x4_rank_2 = Layout(
+        IntTuple(IntTuple(2, 3), 2, 4), IntTuple(IntTuple(12, 4), 4, 1)
+    )
+    assert_equal(
+        sublayout(layout_2x3x4_rank_2, 0, 1), "(((2, 3), 2):((12, 4), 4))"
+    )
+
+
 def main():
     test_layout_basic()
     test_coalesce()
@@ -405,3 +419,4 @@ def main():
     test_logical_product()
     test_print_layout()
     test_zipped_divide()
+    test_sublayout()

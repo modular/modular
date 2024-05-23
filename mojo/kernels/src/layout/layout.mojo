@@ -475,3 +475,15 @@ fn print_layout(layout: Layout):
     for n in range(layout[1].size()):
         _printf["%.*s"](idx_width + 1, delim)
     _printf["+\n"]()
+
+
+# Returns the sublayout with specific modes e.g sublayout(Layout(3,4,5), 0, 2)
+# returns Layout(3, 5)
+#
+fn sublayout(layout: Layout, *modes: Int) -> Layout:
+    var shape = IntTuple()
+    var stride = IntTuple()
+    for mode in modes:
+        shape.append(layout.shape[mode])
+        stride.append(layout.stride[mode])
+    return Layout(shape, stride)
