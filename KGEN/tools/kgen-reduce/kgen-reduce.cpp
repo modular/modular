@@ -308,10 +308,8 @@ ErrorOrSuccess Reducer::reduceFunctionsBinary(IRState &curState) {
   struct StubbedFunction {
     KGEN::FuncOp func;
     Region owner;
-#ifndef NDEBUG
     /// This flag is used for correctness checking the algorithm.
     bool isStubbed = false;
-#endif // NDEBUG
 
     void stub() {
       assert(!isStubbed && "already stubbed?");
