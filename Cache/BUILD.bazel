@@ -1,3 +1,5 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
@@ -24,7 +26,7 @@ cc_library(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "CacheTest",
     srcs = glob(["unittests/*.cpp"]),
     deps = [
