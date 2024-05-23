@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//bazel:api.bzl", "modular_cc_test")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
@@ -956,13 +957,12 @@ TEST(LinkTest, works) {
 """],
 )
 
-cc_test(
+modular_cc_test(
     name = "CompilerRTLinkTest",
     srcs = [
         "include/KGEN/CompilerRT/Registration.h",
         ":gen_link_test",
     ],
-    copts = ["-Wno-global-constructors"],
     linkopts = ["-lz"],
     deps = [
         ":CompilerRT.distributable",

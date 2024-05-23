@@ -1,4 +1,6 @@
-cc_test(
+load("//bazel:api.bzl", "modular_cc_test")
+
+modular_cc_test(
     name = "ASN1Test",
     srcs = ["ASN1Test.cpp"],
     deps = [
@@ -7,7 +9,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "ADTTest",
     srcs = glob(["ADT/*.cpp"]),
     deps = [
@@ -17,7 +19,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "BaseTest",
     srcs = [
         "AlignedAllocTest.cpp",
@@ -38,7 +40,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "BufferTest",
     srcs = [
         "BufferTest.cpp",
@@ -49,7 +51,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "Base64Test",
     srcs = ["Base64Test.cpp"],
     deps = [
@@ -58,7 +60,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "CompilerTest",
     srcs = glob(["Compiler/*.cpp"]),
     deps = [
@@ -68,7 +70,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "ConfigurationTest",
     srcs = ["ConfigurationTest.cpp"],
     deps = [
@@ -77,7 +79,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "ContextTest",
     srcs = ["ContextTest.cpp"],
     deps = [
@@ -88,7 +90,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "CryptographyTest",
     srcs = glob(["Cryptography/*.cpp"]),
     deps = [
@@ -97,7 +99,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "DebugInfoDialectTest",
     srcs = glob(["DebugInfoDialect/*.cpp"]),
     deps = [
@@ -109,7 +111,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "DeviceSpecsTest",
     srcs = ["DeviceSpecsTest.cpp"],
     deps = [
@@ -118,7 +120,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "EntitlementsTest",
     srcs = glob(["Entitlements/*.cpp"]),
     deps = [
@@ -127,7 +129,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "HMACTest",
     srcs = ["HMACTest.cpp"],
     deps = [
@@ -136,7 +138,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "MicroBenchmarkTest",
     srcs = ["MicroBenchmarkTest.cpp"],
     deps = [
@@ -145,7 +147,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "FilesystemTest",
     srcs = ["FileSystemExtrasTest.cpp"],
     deps = [
@@ -155,7 +157,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "URITest",
     srcs = ["URITest.cpp"],
     deps = [
@@ -164,7 +166,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "JSONTest",
     srcs = ["JSONTest.cpp"],
     deps = [
@@ -173,7 +175,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "HTTPTest",
     srcs = glob(["HTTP/*.cpp"]),
     deps = [
@@ -182,7 +184,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "MLTest",
     srcs = [
         "BCastTest.cpp",
@@ -196,7 +198,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "HostTest",
     srcs = ["HostTest.cpp"],
     deps = [
@@ -207,7 +209,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "ProfilingTest",
     srcs = ["TimeProfilerTest.cpp"],
     deps = [
@@ -217,7 +219,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "MArchTargetTest",
     srcs = glob(["MArchTarget/*.cpp"]),
     deps = [
@@ -229,7 +231,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "TelemetryTest",
     srcs = ["TelemetryTest.cpp"],
     tags = ["manual"],  # TODO: fix on linux and re-enable
@@ -239,7 +241,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "FillTest",
     srcs = ["ML/FillTest.cpp"],
     deps = [
@@ -248,7 +250,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "MeteringTests",
     srcs = glob(["Metering/*.cpp"]),
     deps = [

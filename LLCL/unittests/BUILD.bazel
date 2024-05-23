@@ -1,4 +1,6 @@
-cc_test(
+load("//bazel:api.bzl", "modular_cc_test")
+
+modular_cc_test(
     name = "AsyncValueTest",
     srcs = ["AsyncValueTest.cpp"],
     deps = [
@@ -9,7 +11,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "DebuggingAllocatorsTest",
     srcs = ["DebuggingAllocatorsTest.cpp"],
     deps = [
@@ -20,7 +22,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "ResourceTest",
     srcs = ["ResourceTest.cpp"],
     deps = [
@@ -29,7 +31,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "RuntimeTest",
     srcs = ["RuntimeTest.cpp"],
     deps = [
@@ -40,7 +42,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "TypeIDTest",
     srcs = ["TypeIDTest.cpp"],
     deps = [
@@ -51,7 +53,7 @@ cc_test(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "TimerHeapTest",
     srcs = ["TimerHeapTest.cpp"],
     deps = [

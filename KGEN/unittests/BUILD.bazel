@@ -1,3 +1,4 @@
+load("//bazel:api.bzl", "modular_cc_test")
 load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
 
 kgen_kernel(
@@ -5,7 +6,7 @@ kgen_kernel(
     src = "test_kernels.mlir",
 )
 
-cc_test(
+modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
     deps = [

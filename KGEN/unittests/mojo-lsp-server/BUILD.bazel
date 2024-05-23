@@ -1,3 +1,5 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
 cc_library(
     name = "Support",
     srcs = glob(["Support.*"]),
@@ -8,7 +10,7 @@ cc_library(
     ],
 )
 
-cc_test(
+modular_cc_test(
     name = "unittests",
     srcs = glob(
         ["*.cpp"],
