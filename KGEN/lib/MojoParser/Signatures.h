@@ -34,16 +34,17 @@ class SharedState;
 
 /// This specifies the handling of keyword arguments in a list.
 enum class KWArgHandling {
-  kInferred,            //< explicit 'inferred' keyword
+  kInferred,            //< before a standalone '//'
   kPositionalOnly,      //< before a standalone '/'
   kPositionalOrKeyword, //< before a standalone '*'
   kKeywordOnly          //< after a standalone '*'
 };
 
 enum class KWArgMarkerInfo {
-  kNotMarker, //< This is a normal argument.
-  kSlash,     //< This argument is a standalone '/' marker.
-  kStar,      //< This argument is a standalone '*' marker.
+  kNotMarker,  //< This is a normal argument.
+  kSlashSlash, //< This argument is a standalone '//' marker.
+  kSlash,      //< This argument is a standalone '/' marker.
+  kStar,       //< This argument is a standalone '*' marker.
 };
 
 enum class ArgListKind {

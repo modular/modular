@@ -311,7 +311,7 @@ struct NoTraitsType:
     pass
 
 # expected-note @below {{function declared here}}
-fn take_some_trait[inferred T: SomeTrait](x: T):
+fn take_some_trait[T: SomeTrait, //](x: T):
     pass
 
 fn pass_no_traits(x: NoTraitsType):
