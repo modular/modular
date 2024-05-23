@@ -61,7 +61,7 @@ struct DeviceBuffer[type: AnyRegType](Sized):
         return sub_buffer
 
 
-struct DeviceFunction[inferred func_type: AnyRegType, func: func_type]:
+struct DeviceFunction[func_type: AnyRegType, //, func: func_type]:
     var ctx_ptr: Pointer[DeviceContext]
     var cuda_function: Function[func]
 
@@ -92,7 +92,7 @@ struct DeviceContext:
         return DeviceBuffer[type](self, size)
 
     fn compile_function[
-        inferred func_type: AnyRegType, func: func_type
+        func_type: AnyRegType, //, func: func_type
     ](self) raises -> DeviceFunction[func]:
         return DeviceFunction[func](self)
 

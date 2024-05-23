@@ -179,7 +179,7 @@ struct _GlobalPayload:
 @value
 @register_passable
 struct Function[
-    inferred func_type: AnyRegType, func: func_type, _is_failable: Bool = False
+    func_type: AnyRegType, //, func: func_type, _is_failable: Bool = False
 ](Boolable):
     var info: _CachedFunctionInfo
     var cuda_dll: Pointer[CudaDLL]
