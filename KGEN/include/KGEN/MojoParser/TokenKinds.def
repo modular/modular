@@ -127,8 +127,7 @@ TOK_KEYWORD(global)
 TOK_KEYWORD(if)
 TOK_KEYWORD(import)
 TOK_KEYWORD(in)
-TOK_KEYWORD(inferred) // Mojo extension.
-TOK_KEYWORD(inout)    // Mojo extension.
+TOK_KEYWORD(inout) // Mojo extension.
 TOK_KEYWORD(is)
 TOK_KEYWORD(lambda)
 TOK_KEYWORD(match)

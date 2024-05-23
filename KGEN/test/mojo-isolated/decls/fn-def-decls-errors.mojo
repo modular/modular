@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -verify-diagnostics
+# RUN: %parse-mojo-isolated %s -verify-diagnostics -o /dev/null
 
 
 fn test_never_declared_fn():
@@ -81,26 +81,22 @@ fn foo(x: fn[a: int] () -> None):
 fn borrowed_kwargs(borrowed **kwargs: int):
     pass
 
-# expected-error @below {{'inferred' parameters must all be at the beginning of the parameter list}}
-fn invalid_inferred[x: int, inferred y: int]():
+# expected-error @below {{'//' marker cannot be used at the start of the parameter list}}
+fn invalid_inferred[//, x: int]():
     pass
 
-# expected-error @below {{'inferred' parameters must all be at the beginning of the parameter list}}
-fn invalid_inferred_kw_only[*, x: int, inferred y: int]():
+# expected-error @below {{cannot specify '//' marker after '*' marker in parameter list}}
+fn invalid_inferred_kw_only[*, x: int, //, y: int]():
     pass
 
-# expected-error @below {{'inferred' parameters must all be at the beginning of the parameter list}}
-fn invalid_inferred_pos_only[x: int, /, inferred y: int]():
-    pass
-
-# expected-error @below {{only parameters may be specified as 'inferred'}}
-fn invalid_inferred_argument(inferred x: int):
+# expected-error @below {{'//' can only be used in parameter lists to denote inferred parameters}}
+fn invalid_inferred_argument(x: int, //):
     pass
 
 # expected-error @below {{inferred parameters may not have defaults}}
-fn invalid_inferred_default[inferred x: int = `1`]():
+fn invalid_inferred_default[x: int = `1`, //]():
     pass
-    
+
 struct NonCopyable:
     fn __init__(inout self):
        pass

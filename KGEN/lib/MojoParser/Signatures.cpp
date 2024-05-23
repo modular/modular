@@ -32,14 +32,6 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
-  // Only parameters may be `inferred`.
-  if (p.getToken().isAny(Token::kw_inferred) &&
-      kind != ArgListKind::kParamList &&
-      kind != ArgListKind::kFnTypeParamList) {
-    p.emitTokenError("only parameters may be specified as 'inferred'");
-    p.consumeToken();
-  }
-
   // Any owned/borrowed/inout keyword sets convention.
   // TODO: Turn all of these into soft keywords.
   if (p.consumeIf(Token::kw_owned))
@@ -48,21 +40,29 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     convention = kConventionBorrowed;
   else if (p.consumeIf(Token::kw_inout))
     convention = kConventionInOut;
-  else if (p.consumeIf(Token::kw_inferred))
-    kwArgHandling = KWArgHandling::kInferred;
   while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
-                            Token::kw_inout, Token::kw_inferred)) {
+                            Token::kw_inout)) {
     p.emitTokenError("argument already has a convention specified");
     p.consumeToken();
   }
 
   markerInfo = KWArgMarkerInfo::kNotMarker;
 
-  // The first token of an argument may be a standalone '*' or '/' marker, and
-  // the '*' may also be part of a varargs specification.  Check for these
-  // first.
+  // The first token of an argument may be a standalone '*', '/', or '//'
+  // marker, and the '*' may also be part of a varargs specification.  Check for
+  // these first.
   if (p.consumeIf(Token::slash)) {
     markerInfo = KWArgMarkerInfo::kSlash;
+    return success();
+  }
+  if (p.getToken().isAny(Token::slash_slash)) {
+    if (kind != ArgListKind::kParamList &&
+        kind != ArgListKind::kFnTypeParamList) {
+      p.emitTokenError("'//' can only be used in parameter lists to denote "
+                       "inferred parameters");
+    }
+    p.consumeToken();
+    markerInfo = KWArgMarkerInfo::kSlashSlash;
     return success();
   }
   if (p.consumeIf(Token::star)) {
@@ -126,13 +126,6 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   if (p.consumeIf(Token::equal, &equalLoc)) {
     if (p.parseExpression(initExpr))
       return failure();
-
-    if (kwArgHandling == KWArgHandling::kInferred) {
-      // TODO: It could be useful for them to have defaults.
-      p.emitError(equalLoc, "inferred parameters may not have defaults")
-          << initExpr->getRange();
-      initExpr = nullptr;
-    }
 
     if (convention == kConventionInOut ||
         convention == kConventionInitSelfResult) {
@@ -209,19 +202,52 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   //
   // See this for more information:
   // https://peps.python.org/pep-0570/#how-to-teach-this
-  bool hasSlashMarker = false, hasStarMarker = false;
+  bool hasSlashSlashMarker = false, hasSlashMarker = false,
+       hasStarMarker = false;
   auto defaultKWArgHandling = KWArgHandling::kPositionalOrKeyword;
 
-  // `inferred` parameters must all appear at the beginning of the parameter
-  // list. This flag starts true and is set to false if any non-inferred
-  // parameter is parsed.
-  bool lastWasInferred = true;
-
-  // This is invoked when we see a '/' marker.
   StringRef argOrParam =
       kind == ArgListKind::kParamList || kind == ArgListKind::kFnTypeParamList
           ? "parameter"
           : "argument";
+
+  // This is invoked when we see a '//' marker.
+  auto handleSlashSlashMarker = [&](SMLoc loc) {
+    if (hasSlashSlashMarker) {
+      p.emitError(loc, "cannot have two '//' markers in the same ")
+          << argOrParam << " list";
+      return;
+    }
+    if (hasSlashMarker) {
+      p.emitError(loc, "cannot specify '//' marker after '/' marker in ")
+          << argOrParam << " list";
+      return;
+    }
+    if (hasStarMarker) {
+      p.emitError(loc, "cannot specify '//' marker after '*' marker in ")
+          << argOrParam << " list";
+      return;
+    }
+    if (parsedArgs.empty()) {
+      p.emitError(loc, "'//' marker cannot be used at the start of the ")
+          << argOrParam << " list";
+    }
+
+    // Ok, process it by changing all parameter we've seen to be inferred only.
+    // The remaining ones will stay kPositionalOrKeyword.
+    for (ParsedArgument &arg : parsedArgs) {
+      arg.kwArgHandling = KWArgHandling::kInferred;
+      if (arg.initExpr) {
+        p.emitError(arg.loc, "inferred parameters may not have defaults")
+            << arg.initExpr->getRange();
+        arg.initExpr = nullptr;
+      }
+    }
+
+    hasSlashSlashMarker = true;
+  };
+
+  // This is invoked when we see a '/' marker.
   auto handleSlashMarker = [&](SMLoc loc) {
     if (hasSlashMarker) {
       p.emitError(loc, "cannot have two '/' markers in the same ")
@@ -238,8 +264,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
           << argOrParam << " list";
     }
 
-    // Ok, process it by changing all arguments we've seen to be positional
-    // only.  The remaining ones will stay kPositionalOrKeyword though.
+    // Ok, process it by changing all arguments we've seen that aren't inferred
+    // to be positional only. The remaining ones will stay kPositionalOrKeyword.
     for (ParsedArgument &arg : parsedArgs)
       if (arg.kwArgHandling != KWArgHandling::kInferred)
         arg.kwArgHandling = KWArgHandling::kPositionalOnly;
@@ -266,15 +292,6 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     return success();
   };
 
-  // This is invoked when we see an 'inferred' parameter convention.
-  auto handleInferredParam = [&](SMLoc loc) -> ParseResult {
-    if (lastWasInferred)
-      return success();
-    // Error if this comes after anything that isn't another inferred parameter.
-    return p.emitError(loc, "'inferred' parameters must all be at the "
-                            "beginning of the parameter list");
-  };
-
   // This parses either an argument or a keyword argument specifier.
   bool foundName = false;
   auto parseArgument = [&]() -> ParseResult {
@@ -285,23 +302,16 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
       return failure();
 
     // If this argument is just a marker, process it.
+    if (marker == KWArgMarkerInfo::kSlashSlash) {
+      handleSlashSlashMarker(arg.loc);
+      return success();
+    }
     if (marker == KWArgMarkerInfo::kSlash) {
-      lastWasInferred = false;
       handleSlashMarker(arg.loc);
       return success();
     }
-    if (marker == KWArgMarkerInfo::kStar) {
-      lastWasInferred = false;
+    if (marker == KWArgMarkerInfo::kStar)
       return handleStarMarker(arg.loc, /*isMarker=*/true);
-    }
-
-    // Check for an inferred argument.
-    if (arg.kwArgHandling == KWArgHandling::kInferred) {
-      if (handleInferredParam(arg.loc))
-        return failure();
-    } else {
-      lastWasInferred = false;
-    }
 
     if (arg.name.empty()) {
       if (foundName)

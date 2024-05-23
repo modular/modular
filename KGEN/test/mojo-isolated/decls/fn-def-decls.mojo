@@ -80,27 +80,27 @@ fn variadic_param_after_default[
 
 # CHECK-LABEL: lit.func @"inferred_params
 # CHECK-SAME: <x, y, +>
-fn inferred_params[inferred x: int, inferred y: int]():
+fn inferred_params[x: int, y: int, //]():
     # CHECK-NEXT: !lit.signature<<"x": index, "y": index, +>() -> !kgen.none> = <@"
-    alias fn_type: fn[inferred x: int, inferred y: int]() -> None = inferred_params
+    alias fn_type: fn[x: int, y: int, //]() -> None = inferred_params
 
 
 # CHECK-LABEL: lit.func @"inferred_params_regular
 # CHECK-SAME: <x, +, y>
-fn inferred_params_regular[inferred x: int, y: int]():
+fn inferred_params_regular[x: int, //, y: int]():
     # CHECK-NEXT: !lit.signature<<"x": index, +, "y": index>() -> !kgen.none> = <@"
-    alias fn_type: fn[inferred x: int, y: int]() -> None = inferred_params_regular
+    alias fn_type: fn[x: int, //, y: int]() -> None = inferred_params_regular
 
 
 # CHECK-LABEL: lit.func @"inferred_params_pos_only
 # CHECK-SAME: <x, +, y = 1, |>
-fn inferred_params_pos_only[inferred x: int, y: int = `1`, /]():
+fn inferred_params_pos_only[x: int, //, y: int = `1`, /]():
     pass
 
 
 # CHECK-LABEL: lit.func @"inferred_params_kw_only
 # CHECK-SAME: <x, +, *, y>
-fn inferred_params_kw_only[inferred x: int, *, y: int]():
+fn inferred_params_kw_only[x: int, //, *, y: int]():
     pass
 
 # ===----------------------------------------------------------------------=== #

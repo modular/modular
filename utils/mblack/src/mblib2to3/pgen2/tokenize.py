@@ -481,7 +481,6 @@ def generate_tokens(
         "owned": OWNED,
         "borrowed": BORROWED,
         "inout": INOUT,
-        "inferred": INFERRED,
         "trait": TRAIT,
     }
 

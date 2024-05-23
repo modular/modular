@@ -25,41 +25,41 @@ struct DependentParam[x: int, y: ParamType[x]]:
     pass
 
 
-fn inferred_param_from_arg[inferred x: int](y: ParamType[x]):
+fn inferred_param_from_arg[x: int, //](y: ParamType[x]):
     pass
 
 
-fn inferred_param_from_param[inferred x: int, y: ParamType[x]]():
+fn inferred_param_from_param[x: int, //, y: ParamType[x]]():
     pass
 
 
-fn inferred_param_variadic[inferred x: int, *y: ParamType[x]]():
+fn inferred_param_variadic[x: int, //, *y: ParamType[x]]():
     pass
 
 
-fn inferred_with_default[inferred x: int, y: ParamType[x], z: int = `1`]():
+fn inferred_with_default[x: int, //, y: ParamType[x], z: int = `1`]():
     pass
 
 
-fn inferred_trait[inferred T: SomeTrait, y: T]():
+fn inferred_trait[T: SomeTrait, //, y: T]():
     pass
 
 
 fn inferred_dependent_param[
-    inferred x: int, inferred y: ParamType[x], z: DependentParam[x, y]
+    x: int, y: ParamType[x], //, z: DependentParam[x, y]
 ]():
     pass
 
 
-fn inferred_partial[inferred x: int, y: int](owned z: ParamType[x]):
+fn inferred_partial[x: int, //, y: int](owned z: ParamType[x]):
     pass
 
 
-fn inferred_partial_dependent[inferred x: int, y: int, z: ParamType[x]]():
+fn inferred_partial_dependent[x: int, //, y: int, z: ParamType[x]]():
     pass
 
 
-struct InferredStruct[inferred x: int, y: int, z: ParamType[x]]:
+struct InferredStruct[x: int, //, y: int, z: ParamType[x]]:
     pass
 
 

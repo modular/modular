@@ -49,18 +49,12 @@ parameters: '(' [typedargslist] ')'
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: OWNED | BORROWED | INOUT | INFERRED
+convention: OWNED | BORROWED | INOUT
 #tname: NAME [metaparams] [':' test]
 
-typedargslist:  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* ',' '/' [
-                     ',' [(( [convention] tfpdef ['=' test] ',')* ( [convention] '*' [tname_star] (','  [convention] tname ['=' test])*
-                            [',' [ [convention] '**' tname [',']]] | [convention] '**' tname [','])
-                     |  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* [','])]
-                ] | (( [convention] tfpdef ['=' test] ',')* ([convention] '*' [tname_star] (','  [convention] tname ['=' test])*
-                     [',' [ [convention] '**' tname [',']]] | [convention] '**' tname [','])
-                     |  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* [','])
+typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
 
-tname: NAME [metaparams] [':' test]
+tname: NAME [metaparams] [':' (test|star_expr)]
 
 tname_star: NAME [':' (test|star_expr)]
 tfpdef: tname | '(' tfplist ')'
@@ -200,7 +194,7 @@ dictsetmaker: ( ((test ':' asexpr_test | '**' expr)
 		 (comp_for | (',' (test [':=' test] | star_expr))* [','])) )
 
 classdef: ('class' | STRUCT | TRAIT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
-typeconv: (['*'|OWNED|BORROWED|INOUT|INFERRED] ['*'] test [':' test]) | '/' | '*'
+typeconv: (['*'|OWNED|BORROWED|INOUT] ['*'|'**'] test [':' test]) | '/' | '*' | '//'
 functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* ['->' test]
 
 arglist: argument (',' argument)* [',']
