@@ -245,7 +245,7 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 def KGEN_CallOp : KGEN_CallOpBase<"call",
-    [DeclareOpInterfaceMethods<CallOpInterface>]> {
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
   let description = [{
     The `kgen.call` operation invokes a parametric function. The callee must be
@@ -604,6 +604,7 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "return operation for kgen declarations";
   let description = [{

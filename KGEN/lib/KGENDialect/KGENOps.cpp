@@ -433,6 +433,16 @@ LogicalResult ReturnOp::verify() {
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
+ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
+  // Pop the current frame and transfer control flow back to the call operation,
+  // using the operands of the return as the results of the call.
+  Operation *call = state.popFrame();
+  state.setReturnValues(operands);
+  state.transferControlFlowTo(call);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // UnreachableOp
 //===----------------------------------------------------------------------===//
@@ -673,27 +683,26 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
       calleeCst.getType());
 }
 
-OperandRange CallOp::getArgOperands() { return getOperands(); }
-
-MutableOperandRange CallOp::getArgOperandsMutable() {
-  return getOperandsMutable();
-}
-
-mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
-  return getCalleeSymbol();
-}
-
 void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee) {
   setCalleeAttr(callee);
 }
 
-void CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
-  auto symbol = callee.get<SymbolRefAttr>();
-  setCalleeAttr(SymbolConstantAttr::get(symbol, getCallee().getType()));
-}
-
 void CallOp::setCalleeAttr(TypedAttr callee) {
   setCalleeAttr(cast<SymbolConstantAttr>(callee));
+}
+
+ErrorTreeOrSuccess CallOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  auto bodyOr = state.lookupFunctionBody(getCalleeSymbol());
+  if (bodyOr.isError())
+    return ErrorTree(getLoc(), bodyOr.takeError());
+  Region &body = **bodyOr;
+
+  // Function regions are isolated from above, so push a new stack frame. Then,
+  // transfer control flow to the beginning of the function body.
+  state.pushFrame(*this, body.getParentOp());
+  state.transferControlFlowTo(&body.front(), operands);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

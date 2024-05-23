@@ -581,34 +581,6 @@ static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
   return {op->getLoc(), Error(os.str())};
 }
 
-/// Interpret a call operation.
-static ErrorTreeOrSuccess interpretCallOp(mlir::CallOpInterface op,
-                                          ArrayRef<Attribute> operands,
-                                          InterpreterState &state) {
-  auto callee = op.getCallableForCallee().get<SymbolRefAttr>();
-  auto bodyOr = state.lookupFunctionBody(callee);
-  if (bodyOr.isError())
-    return ErrorTree(op->getLoc(), bodyOr.takeError());
-
-  Region &body = **bodyOr;
-
-  // Function regions are isolated from above, so push a new stack frame. Then,
-  // transfer control flow to the beginning of the function body.
-  state.pushFrame(op, body.getParentOp());
-  state.transferControlFlowTo(&body.front(), operands);
-  return success();
-}
-
-/// Interpret a return-like operation.
-static void interpretReturnOp(Operation *op, ArrayRef<Attribute> operands,
-                              InterpreterState &state) {
-  // Pop the current frame and transfer control flow back to the call operation,
-  // using the operands of the return as the results of the call.
-  Operation *call = state.popFrame();
-  state.setReturnValues(operands);
-  state.transferControlFlowTo(call);
-}
-
 /// Interpret a generic operation by trying to use its operation folder.
 static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
                                                 ArrayRef<Attribute> operands,
@@ -758,18 +730,8 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
     for (Value operand : pc->getOperands())
       operands.push_back(lookupValue(operand));
 
-    // Check for a builtin interface.
-    if (auto call = dyn_cast<mlir::CallOpInterface>(pc)) {
-      auto err = interpretCallOp(call, operands, *this);
-      if (err.isError()) {
-        return reportFoldError(pc, operands, "failed to interpret call ")
-            .addCause(err.takeError());
-      }
-    } else if (pc->hasTrait<OpTrait::ReturnLike>()) {
-      interpretReturnOp(pc, operands, *this);
-
-      // Check for an interpreter interface implementation.
-    } else if (auto interpItf = dyn_cast<InterpreterOpInterface>(pc)) {
+    // Check for an interpreter interface implementation.
+    if (auto interpItf = dyn_cast<InterpreterOpInterface>(pc)) {
       ErrorTreeOrSuccess err = interpItf.interpret(operands, *this);
       if (err.isError())
         return reportFoldError(pc, operands, "failed to interpret operation ")
@@ -785,9 +747,10 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
     // If the operation has not changed, advance to the next operation. If the
     // current operation is a terminator, return an error.
     if (prev == pc) {
-      if (!pc->getNextNode())
+      if (LLVM_UNLIKELY(!pc->getNextNode())) {
         return ErrorTree(pc->getLoc(),
                          "terminator did not transfer control flow");
+      }
       pc = pc->getNextNode();
     }
   }
