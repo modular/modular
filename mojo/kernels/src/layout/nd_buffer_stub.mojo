@@ -94,7 +94,7 @@ struct TileMask[
 
 # Computes the mask resulting tiling buffer with the `tile sizes`.
 #
-@always_inline
+@always_inline("nodebug")
 fn _tile_mask[
     *tile_sizes: Dim,
     rank: Int,
@@ -114,6 +114,7 @@ fn _tile_mask[
     return TileMask[rank, __sizes, __element_stride](shape, tile_offset)
 
 
+@always_inline("nodebug")
 fn __to_static_tuple[
     rank: Int
 ](sizes: VariadicList[Int]) -> StaticIntTuple[rank]:
@@ -129,7 +130,7 @@ fn __to_static_tuple[
 
 # Computes the mask resulting vectorizing buffer with the `sizes`.
 #
-@always_inline
+@always_inline("nodebug")
 fn _vectorize_mask[
     rank: Int,
     sizes: StaticIntTuple[rank],
@@ -144,6 +145,7 @@ fn _vectorize_mask[
 
 # Returns the shaep of the `thread_layout` as tuple.
 #
+@always_inline("nodebug")
 fn __get_shape_as_tuple[
     rank: Int,
 ](thread_layout: Layout) -> StaticIntTuple[rank]:
@@ -160,7 +162,7 @@ fn __get_shape_as_tuple[
 
 # Computes the mask resulting distributing to `thread_layout`.
 #
-@always_inline
+@always_inline("nodebug")
 fn _distribute_mask[
     thread_layout: Layout,
     rank: Int,
@@ -191,6 +193,7 @@ fn _distribute_mask[
 
 # Returns the shape of distribute `thread_layout` into `shape`.
 #
+@always_inline("nodebug")
 fn __distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
     constrained[
         thread_layout.rank() <= 3,
@@ -277,10 +280,12 @@ fn distribute[
 # FIXME: Move to a shared utility.
 # Returns the size of variadic integer parameters.
 #
+@always_inline("nodebug")
 fn __get_len[*var_int: Int]() -> Int:
     return __mlir_op.`pop.variadic.size`(var_int)
 
 
+@always_inline("nodebug")
 fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
     alias rank = __get_len[sizes]()
 
@@ -312,6 +317,7 @@ fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
     return DimList()
 
 
+@always_inline("nodebug")
 fn __to_static_tuple[*sizes: Int, rank: Int]() -> StaticIntTuple[rank]:
     var vals = StaticIntTuple[rank]()
 
@@ -345,6 +351,7 @@ struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
 
 # Returns the linear index of an element, this is equivalent to concat
 # the element layout and the buffer layout
+@always_inline("nodebug")
 fn _get_element_idx[
     rank: Int,
     dtype: DType,
@@ -377,6 +384,7 @@ fn _get_element_idx[
     return result
 
 
+@always_inline("nodebug")
 fn _get_element_idx[
     rank: Int,
     dtype: DType,
@@ -394,6 +402,7 @@ fn _get_element_idx[
     return result
 
 
+@always_inline("nodebug")
 fn _get_element_idx[
     rank: Int,
     element_shape: StaticIntTuple[rank],
@@ -458,6 +467,7 @@ fn vectorize[
     )
 
 
+@always_inline("nodebug")
 fn _copy_nd_buffer_to_layout_tensor[
     dst_rank: Int,
     src_rank: Int,
@@ -597,6 +607,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         unroll[_copy_element, num_elements * dst.element_size]()
 
 
+@always_inline("nodebug")
 fn _copy_layout_tensor_to_nd_buffer[
     dst_rank: Int,
     src_rank: Int,

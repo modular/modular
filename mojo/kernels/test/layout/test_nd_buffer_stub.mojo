@@ -182,7 +182,8 @@ fn test_copy_to_nd_buffer_scalars():
 fn test_copy_from_nd_buffer_vectors():
     print("== test_copy_from_nd_buffer_vectors")
 
-    var buff = NDBuffer[DType.float32, 2, DimList(16, 16)].stack_allocation()
+    var buff_storage = DTypePointer[DType.float32].alloc(16 * 16)
+    var buff = NDBuffer[DType.float32, 2, DimList(16, 16)](buff_storage)
     linspace_fill(buff)
 
     var layout_tensor = LayoutTensor[
@@ -234,6 +235,8 @@ fn test_copy_from_nd_buffer_vectors():
 
     layout_tensor.vectorize[4, 4]().print()
 
+    buff_storage.free()
+
 
 # CHECK-LABEL: test_copy_to_nd_buffer_vectors
 fn test_copy_to_nd_buffer_vectors():
@@ -245,7 +248,8 @@ fn test_copy_to_nd_buffer_vectors():
     ].stack_allocation()
     layout_tensor.linspace()
 
-    var buff = NDBuffer[DType.float32, 2, DimList(16, 16)].stack_allocation()
+    var buff_storage = DTypePointer[DType.float32].alloc(16 * 16)
+    var buff = NDBuffer[DType.float32, 2, DimList(16, 16)](buff_storage)
     zero_fill(buff)
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -300,6 +304,8 @@ fn test_copy_to_nd_buffer_vectors():
     # CHECK: 224.0 225.0 226.0 227.0 228.0 229.0 230.0 231.0 232.0 233.0 234.0 235.0 236.0 237.0 238.0 239.0
     # CHECK: 240.0 241.0 242.0 243.0 244.0 245.0 246.0 247.0 248.0 249.0 250.0 251.0 252.0 253.0 254.0 255.0
     print_buff(buff)
+
+    buff_storage.free()
 
 
 # CHECK-LABEL: test_distribute
@@ -501,7 +507,11 @@ fn test_vectorize_and_distribute():
 # CHECK-LABEL: test_copy_nd_buffer_to_layout_tensor
 fn test_copy_nd_buffer_to_layout_tensor():
     print("== test_copy_nd_buffer_to_layout_tensor")
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_storage = DTypePointer[DType.float32].alloc(8 * 8)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](buff_storage)
+    # FIXME: This doesn't if _copy_nd_buffer_to_layout_tensor is inlined!
+    # var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+
     linspace_fill(buff)
 
     var buff_v_1_1_and_element_layout = vectorize[1, 1](buff)
@@ -561,6 +571,8 @@ fn test_copy_nd_buffer_to_layout_tensor():
     # CHECK: [0.0, 8.0, 16.0, 24.0, 1.0, 9.0, 17.0, 25.0, 2.0, 10.0, 18.0, 26.0, 3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0, 5.0, 13.0, 21.0, 29.0, 6.0, 14.0, 22.0, 30.0, 7.0, 15.0, 23.0, 31.0]
     # CHECK: [32.0, 40.0, 48.0, 56.0, 33.0, 41.0, 49.0, 57.0, 34.0, 42.0, 50.0, 58.0, 35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0, 37.0, 45.0, 53.0, 61.0, 38.0, 46.0, 54.0, 62.0, 39.0, 47.0, 55.0, 63.0]
     tensor_4_4.print()
+
+    buff_storage.free()
 
 
 # CHECK-LABEL: test_copy_layout_tensor_to_buffer
