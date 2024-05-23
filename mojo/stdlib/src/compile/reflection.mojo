@@ -6,7 +6,7 @@
 
 
 fn get_linkage_name[
-    inferred func_type: AnyRegType,
+    func_type: AnyRegType, //,
     target: __mlir_type.`!kgen.target`,
     func: func_type,
 ]() -> StringLiteral:

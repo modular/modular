@@ -184,7 +184,7 @@ fn _compile_info_llvm_non_failable_impl[
 
 @always_inline
 fn compile_info[
-    inferred func_type: AnyRegType,
+    func_type: AnyRegType, //,
     func: func_type,
     /,
     *,
@@ -224,7 +224,7 @@ fn compile_info[
 
 
 fn compile_code[
-    inferred func_type: AnyRegType,
+    func_type: AnyRegType, //,
     func: func_type,
     /,
     *,
