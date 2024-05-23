@@ -183,6 +183,27 @@ def LowerClosures : Pass<"lower-closures", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerAsyncFunctions
+//===----------------------------------------------------------------------===//
+
+def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
+  let summary = "Lower `async` functions and closures.";
+  let description = [{
+    The `lower-async-functions` pass transforms `async` functions into normal
+    `kgen.func` by generating the ramp function and the resume function.
+    Calls to the async function are lowered to calls to the ramp function.
+
+     All CO ops except for suspension points are lowered in this pass.
+  }];
+
+  let dependentDialects = [
+    "POPDialect",
+    "KGENDialect",
+    "mlir::index::IndexDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // OutlineClosures
 //===----------------------------------------------------------------------===//
 

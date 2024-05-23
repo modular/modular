@@ -15,6 +15,7 @@ add_modular_library(KGENTransforms
   Inlining.cpp
   LiftAndFoldApply.cpp
   LoopUnrolling.cpp
+  LowerAsyncFunctions.cpp
   LowerClosures.cpp
   LowerLoops.cpp
   LowerArgConventions.cpp
