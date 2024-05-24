@@ -349,16 +349,6 @@ Elaborator::Elaborator(SymbolTable &symtab,
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
       callbacks(std::move(callbacks)) {}
 
-FuncOp Elaborator::lookupConcreteFunction(SymbolRefAttr symbol) {
-  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-  FuncOp &localResult = (*tlFuncs)[name];
-  if (!localResult) {
-    localResult =
-        concreteFuncs.read([name](auto &map) { return map.at(name); });
-  }
-  return localResult;
-}
-
 //===----------------------------------------------------------------------===//
 // Elaborator::finalizeFunction
 //===----------------------------------------------------------------------===//
@@ -401,7 +391,7 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   return node->getFirstConcreteFunc();
 }
 
-ErrorTreeOr<TypedAttr> Elaborator::concretizeSymbolsWithin(TypedAttr value,
+ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
                                                            ImplNode *parent,
                                                            Location loc) {
   mlir::AttrTypeReplacer replacer;
@@ -427,11 +417,11 @@ ErrorTreeOr<TypedAttr> Elaborator::concretizeSymbolsWithin(TypedAttr value,
   replacer.addReplacement([](VTableAttr vtable) {
     return std::make_pair(vtable, WalkResult::skip());
   });
-  if (auto result = cast_or_null<TypedAttr>(replacer.replace(value)))
+  if (Attribute result = replacer.replace(value))
     return result;
   if (error)
     return std::move(*error);
-  return TypedAttr();
+  return Attribute();
 }
 
 //===----------------------------------------------------------------------===//
@@ -464,13 +454,13 @@ ElaborationState Elaborator::processParamConstantOp(ImplNode *parent, OpT op) {
 
   // Root elaboration at the constant value and concretize any generator
   // references inside it. Multi-versioning is disallowed.
-  ErrorTreeOr<TypedAttr> concrete =
+  ErrorTreeOr<Attribute> concrete =
       concretizeSymbolsWithin(value, parent, op.getLoc());
   if (concrete.isError()) {
     parent->setToError(concrete.takeError());
     return ElaborationState::error();
   }
-  value = concrete.takeValue();
+  value = cast_or_null<TypedAttr>(concrete.takeValue());
   if (!value)
     return ElaborationState::skipNode();
 
@@ -611,30 +601,36 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
 /// interpreter on the concrete callee and binding its result.
 ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
                                                  ParamApplyOp op, FuncOp func) {
-  SmallVector<TypedAttr> operands;
-  for (TypedAttr operand : op.getOperands()) {
-    Attribute value;
-    HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), operand);
+  // First concretize the operands.
+  Attribute value;
+  HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getOperandsAttr());
+
+  // Attempt to lookup a cached value. This returns a thread local cached value.
+  auto operandsAttr = cast<ParameterExprArrayAttr>(value);
+  TypedAttr &cached = lookupCachedInterpretation(func, operandsAttr);
+  if (!cached) {
+    ErrorTreeOr<Attribute> operandsOr =
+        concretizeSymbolsWithin(operandsAttr, inode, op.getLoc());
+    if (operandsOr.isError()) {
+      inode->setToError(operandsOr.takeError());
+      return failure();
+    }
+    operandsAttr = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
+    if (!operandsAttr)
+      return ElaborationState::skipNode();
+
     ErrorTreeOr<TypedAttr> result =
-        concretizeSymbolsWithin(cast<TypedAttr>(value), inode, op.getLoc());
+        inode->getEvaluator().evaluateFunction(func, operandsAttr);
     if (result.isError()) {
       inode->setToError(result.takeError());
       return failure();
     }
-    operands.push_back(result.takeValue());
-    if (!operands.back())
-      return ElaborationState::skipNode();
-  }
-  ErrorTreeOr<TypedAttr> result =
-      inode->getEvaluator().evaluateFunction(func, operands);
-  if (result.isError()) {
-    inode->setToError(result.takeError());
-    return failure();
+    cached = result.takeValue();
+    writeGlobalCachedInterpretation(func, operandsAttr, cached);
   }
 
   // Bind the result and erase the operation.
-  inode->getEvaluator().setParameterValue(op.getParamDecl(),
-                                          result.takeValue());
+  inode->getEvaluator().setParameterValue(op.getParamDecl(), cached);
   op.erase();
   return ElaborationState::advance();
 }

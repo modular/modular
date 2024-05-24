@@ -136,29 +136,46 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
-  SmallVector<TypedAttr> operands = llvm::to_vector(op.getOperands());
-  for (TypedAttr &operand : operands) {
-    ErrorTreeOr<TypedAttr> result =
-        elaborator->concretizeSymbolsWithin(operand, parent, *errorLoc);
-    if (result.isError()) {
-      emitError(result.takeError());
-      return failure();
-    }
-    operand = result.takeValue();
-    if (!operand)
-      return TypedAttr();
+  // Attempt to concretize the function first.
+  ErrorTreeOr<FuncOp> funcOr = elaborator->getConcreteFunction(
+      parent, *errorLoc, cast<SymbolConstantAttr>(op.getOperands().front()));
+  if (funcOr.isError()) {
+    emitError(funcOr.takeError());
+    return failure();
   }
+  FuncOp func = funcOr.takeValue();
+  if (!func)
+    return TypedAttr();
 
-  // Lookup the symbol reference and resolve it.
-  FuncOp func = elaborator->lookupConcreteFunction(
-      cast<SymbolConstantAttr>(operands.front()).getSymbol());
+  // Attempt to lookup a cached value. This returns a thread local cached value.
+  auto operandsAttr = ParameterExprArrayAttr::get(
+      op.getContext(), op.getOperands().drop_front());
+  TypedAttr &cached =
+      elaborator->lookupCachedInterpretation(func, operandsAttr);
+  if (cached)
+    return cached;
 
-  ArrayRef<TypedAttr> args = ArrayRef(operands).drop_front();
+  // Concretize symbols within the operands before invoking the function.
+  ErrorTreeOr<Attribute> operandsOr =
+      elaborator->concretizeSymbolsWithin(operandsAttr, parent, *errorLoc);
+  if (operandsOr.isError()) {
+    emitError(operandsOr.takeError());
+    return failure();
+  }
+  operandsAttr = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
+  if (!operandsAttr)
+    return TypedAttr();
+
+  // Now invoke the interpreter.
   ErrorTreeOr<TypedAttr> result =
-      withResultSlot ? evaluateFunctionWithResultSlot(func, args)
-                     : evaluateFunction(func, args);
-  if (TypedAttr value = result.tryGetValue())
-    return value;
+      withResultSlot ? evaluateFunctionWithResultSlot(func, operandsAttr)
+                     : evaluateFunction(func, operandsAttr);
+
+  // If we had a value, write it back.
+  if ((cached = result.tryGetValue())) {
+    elaborator->writeGlobalCachedInterpretation(func, operandsAttr, cached);
+    return cached;
+  }
   emitError(result.takeError());
   return TypedAttr();
 }
