@@ -150,11 +150,25 @@ public:
 
   /// Concretize all non-parametric symbol references within the provided
   /// parameter expression.
-  ErrorTreeOr<TypedAttr>
-  concretizeSymbolsWithin(TypedAttr value, ImplNode *parent, Location loc);
+  ErrorTreeOr<Attribute>
+  concretizeSymbolsWithin(Attribute value, ImplNode *parent, Location loc);
 
   /// Lookup an existing concrete function.
-  FuncOp lookupConcreteFunction(SymbolRefAttr symbol);
+  FuncOp lookupConcreteFunction(SymbolRefAttr symbol) {
+    StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
+    FuncOp &localResult = (*tlFuncs)[name];
+    if (!localResult) {
+      localResult =
+          concreteFuncs.read([name](auto &map) { return map.at(name); });
+    }
+    return localResult;
+  }
+
+  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
+  /// elaborate the generator or interface and return the first concrete
+  /// implementation. Return none if the specialization is not ready yet.
+  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
+                                          SymbolConstantAttr symbol);
 
   /// Get the environment defines.
   EnvAttr getCompilationEnvAttr() const { return env; }
@@ -167,7 +181,7 @@ public:
     return callbacks.compileAsmFn;
   }
 
-  /// Add an owned function operation that should be appended to the module at
+  /// Add an owned function operation that should be appended to the moydule at
   /// the end of elaboration. This is where generated functions during
   /// elaboration should go.
   void addDeferredFunction(OwningOpRef<FuncOp> func);
@@ -176,6 +190,26 @@ public:
   TargetInfoAttr getTarget() const { return target; }
   /// Get the elaborator config.
   const ElaborateGeneratorsOptions &getOptions() const { return config; }
+
+  /// Lookup and return a reference to a cached interpreter result in the
+  /// current thread. Populates the value from the global cache if necessary.
+  TypedAttr &lookupCachedInterpretation(FuncOp func,
+                                        ParameterExprArrayAttr operands) {
+    TypedAttr &tlValue = (*tlInterp)[{func, operands}];
+    if (!tlValue) {
+      tlValue = interpCache.read(
+          [func, operands](auto &map) { return map.lookup({func, operands}); });
+    }
+    return tlValue;
+  }
+  /// Wriet a cached interpreter result to the global cache.
+  void writeGlobalCachedInterpretation(FuncOp func,
+                                       ParameterExprArrayAttr operands,
+                                       TypedAttr value) {
+    interpCache.modify([func, operands, value](auto &map) {
+      map.insert({{func, operands}, value});
+    });
+  }
 
   //===--------------------------------------------------------------------===//
   // Entry Point
@@ -210,12 +244,6 @@ private:
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
   void finalizeFunction(ImplNode *node);
-
-  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
-  /// elaborate the generator or interface and return the first concrete
-  /// implementation. Return none if the specialization is not ready yet.
-  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol);
 
   //===--------------------------------------------------------------------===//
   // Operation Processing
@@ -348,6 +376,12 @@ private:
   /// This is the symbol table of the new module.
   Shared<DenseMap<StringAttr, FuncOp>> concreteFuncs;
   mlir::ThreadLocalCache<DenseMap<StringAttr, FuncOp>> tlFuncs;
+
+  /// This is used to cache interpreter invocations across the elaborator.
+  using InterpreterMapTy =
+      DenseMap<std::pair<FuncOp, ParameterExprArrayAttr>, TypedAttr>;
+  Shared<InterpreterMapTy> interpCache;
+  mlir::ThreadLocalCache<InterpreterMapTy> tlInterp;
 
   /// This symbol table allows efficient lookups across the module.
   SymbolTable &oldSymTab;
