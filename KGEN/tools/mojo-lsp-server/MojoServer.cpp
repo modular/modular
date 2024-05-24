@@ -685,6 +685,7 @@ static std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
     lspDiag.message =
         llvm::formatv("unused {0} '{1}'", kind, symbol.identifier).str();
     lspDiag.range = lsp::Range(doc.getSourceMgr(), symbol.range);
+    lspDiag.tags.push_back(lsp::DiagnosticTag::Unnecessary);
 
     diags.emplace_back(std::move(lspDiag));
   });
