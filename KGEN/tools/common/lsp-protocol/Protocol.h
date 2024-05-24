@@ -413,12 +413,33 @@ bool fromJSON(const llvm::json::Value &value, FoldingRange &foldingRange,
 
 struct Hover2 : Hover {
   using Hover::Hover;
-  Hover2() : Hover(Range()){};
+  Hover2() : Hover(Range()) {}
 };
 
 /// Add support for JSON serialization.
 llvm::json::Value toJSON(const Hover2 &hover);
 bool fromJSON(const llvm::json::Value &value, Hover2 &range,
+              llvm::json::Path path);
+
+//===----------------------------------------------------------------------===//
+// RenameParams
+//===----------------------------------------------------------------------===//
+
+/// Contains the parameters of a textDocument/rename LSP request.
+struct RenameParams {
+  /// The text document.
+  TextDocumentIdentifier textDocument;
+
+  /// The position inside the text document.
+  Position position;
+
+  /// The new name of the symbol.
+  std::string newName;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const RenameParams &params);
+bool fromJSON(const llvm::json::Value &value, RenameParams &params,
               llvm::json::Path path);
 
 //===----------------------------------------------------------------------===//
