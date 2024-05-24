@@ -115,12 +115,16 @@ public:
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_VariableDeclView;
+  }
+
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_VariableDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -169,12 +173,16 @@ public:
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_ParameterDeclView;
+  }
+
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_ParameterDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -239,13 +247,17 @@ public:
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_ArgumentDeclView;
+  }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_ArgumentDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -286,13 +298,15 @@ public:
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() { return DeclViewKind::DK_AliasDeclView; }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_AliasDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -390,13 +404,17 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_FunctionDeclView;
+  }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_FunctionDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -466,13 +484,17 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_StructFieldDeclView;
+  }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_StructFieldDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -514,6 +536,10 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_StructFieldDeclView;
+  }
+
 private:
   FunctionDeclOverloadSetView(StringRef baseName) : baseName(baseName) {}
 
@@ -544,12 +570,14 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() { return DeclViewKind::DK_TraitDeclView; }
+
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_TraitDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -598,13 +626,17 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_StructDeclView;
+  }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_StructDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -654,13 +686,17 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_ModuleDeclView;
+  }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_ModuleDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
@@ -699,13 +735,17 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
+  static DeclViewKind getKindStatic() {
+    return DeclViewKind::DK_PackageDeclView;
+  }
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DeclViewKind::DK_PackageDeclView;
+    return decl->getKind() == getKindStatic();
   }
 
 private:
