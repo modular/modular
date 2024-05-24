@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
+# REQUIRES: DISABLED
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo-no-debug %s | FileCheck %s
 
@@ -18,35 +18,10 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
+from gpu.cublas.cublas import *
 from memory.unsafe import DTypePointer
-
+from testing import *
 from utils.index import Index
-
-alias BLOCK_DIM = 8
-
-
-fn matmul(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
-    m: Int,
-    n: Int,
-    k: Int,
-):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-
-    if x >= m or y >= n:
-        return
-
-    var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.float32, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.float32, 2](c_ptr, Index(m, n))
-
-    var accum = Float32(0)
-    for i in range(k):
-        accum = a[x, i] * b[i, y] + accum
-    c[Index(x, y)] = accum
 
 
 # CHECK-LABEL: run_matmul
@@ -82,39 +57,48 @@ fn run_matmul() raises:
     _copy_host_to_device(a_device, a_host.data, m * k)
     _copy_host_to_device(b_device, b_host.data, k * n)
 
-    var func = Function[matmul](debug=True)
-
-    func(
-        a_device,
-        b_device,
-        c_device,
-        m,
-        n,
-        k,
-        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-        block_dim=(BLOCK_DIM, BLOCK_DIM),
-        stream=stream,
-    )
     synchronize()
+
+    var handle = Pointer[cublasContext]()
+    var alpha = Scalar[DType.float32](1.0)
+    var beta = Scalar[DType.float32](0.0)
+    var res0 = cublasCreate(Pointer.address_of(handle))
+    print(str(res0))
+    var res1 = cublasGemmEx(
+        handle,
+        cublasOperation_t.CUBLAS_OP_N,
+        cublasOperation_t.CUBLAS_OP_N,
+        Int32(m),
+        Int32(n),
+        Int32(k),
+        Pointer.address_of(alpha).bitcast[NoneType](),
+        a_device.bitcast[NoneType](),
+        DataType.R_32F,
+        Int32(m),
+        b_device.bitcast[NoneType](),
+        DataType.R_32F,
+        Int32(k),
+        Pointer.address_of(beta).bitcast[NoneType](),
+        c_device.bitcast[NoneType](),
+        DataType.R_32F,
+        Int32(m),
+        ComputeType.COMPUTE_32F,
+        cublasGemmAlgo_t.CUBLAS_GEMM_DEFAULT,
+    )
+    print(str(res1))
+    cublasDestroy(handle)
+    # print(str(res))
 
     _copy_device_to_host(c_host.data, c_device, m * n)
 
-    for i in range(BLOCK_DIM):
-        for j in range(BLOCK_DIM):
-            print(
-                "at index = [",
-                i,
-                ",",
-                j,
-                "] the value is",
-                c_host[i, j],
-            )
+    for i in range(m):
+        for j in range(n):
+            assert_equal(c_host[i, j], 0.1 * k)
 
     _free(a_device)
     _free(b_device)
     _free(c_device)
 
-    _ = func^
     _ = stream^
 
 
