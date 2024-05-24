@@ -33,6 +33,7 @@
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include <optional>
@@ -121,7 +122,7 @@ struct Symbol {
   SMRange range;
 
   /// A list of symbolRefs that point to this symbol.
-  llvm::DenseSet<SymbolRef *> symbolRefs;
+  llvm::SetVector<SymbolRef *> symbolRefs;
 };
 } // namespace
 
@@ -194,7 +195,7 @@ struct SymbolRef {
   /// Remove the existing links from Symbol -> SymbolRef for this SymbolRef.
   void removeSymbolToSymbolRefMapping() {
     for (Symbol *symbol : symbols)
-      symbol->symbolRefs.erase(this);
+      symbol->symbolRefs.remove(this);
   }
 
   /// Create the links from Symbol -> SymbolRef for reverse lookups.
