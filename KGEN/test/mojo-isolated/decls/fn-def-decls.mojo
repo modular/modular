@@ -119,6 +119,8 @@ struct NonTrivialReg:
 
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, imm {{.*}}> borrow_in_mem,
 def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> None:
+  # CHECK-NEXT: lit.var.decl "defTests"
+
   # CHECK-NEXT: %reg_0 = lit.var.decl "reg" arg(3)
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}NonTrivialReg::@"__copyinit__{{.*}}(%reg)
   # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
@@ -143,7 +145,9 @@ def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> No
   # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
   reg = NonTrivialReg()
 
-
+  # Issue#38762
+  # MOCO-83: [mojo][Bug] def methods can't shadow names via assignment
+  defTests = 4
 
 struct TypeWithParametricSelf:
     fn method(self: Reference[Self, _, _]): pass

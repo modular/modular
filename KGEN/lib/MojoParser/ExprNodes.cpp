@@ -448,6 +448,24 @@ AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(irValue, this, dest);
 }
 
+/// When analyzing a DeclRefNode lookup result in a context that allows implicit
+/// variable definitions, check to see if the lookup set contains immutable
+/// symbols found through global lookup. If so, return true.
+static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
+                                          ExprEmitter &emitter) {
+  for (ASTDecl *decl : lookup.getIfSuccess()) {
+    // If this contains anything mutable, return false.
+    if (isa<VarDeclOp, GlobalVarDeclOp>(*decl) || decl->getIfLValue())
+      return false;
+
+    // If this is an immutable thing in the current scope, then return false.
+    if (decl->getParentDecl() == &emitter.declScope)
+      return false;
+  }
+
+  return true;
+}
+
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -460,6 +478,16 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Perform a lookup of the specified decl in the current container.
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
+
+  // If we're in a 'def' function and have a contextual type, then this may be
+  // an implicit declaration of a variable.  However, name lookup could find
+  // global symbols (e.g. the "slice" function in `slice = foo()`) which are
+  // obviously not mutable.  Handle this by filtering out the overload set if
+  // it is obviously not mutable, but we know we're in an lvalue context with
+  // inferred type.
+  if (emitter.varDeclCursor && dest.getIfLValueInitializerType() &&
+      !lookup.isFailure() && isImmutableValuesInOtherScope(lookup, emitter))
+    lookup = LookupResult::getFailure({});
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
