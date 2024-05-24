@@ -470,7 +470,7 @@ struct Graph(CollectionElement, Stringable):
         Args:
             value: Full-precision value to quantize.
 
-        Return:
+        Returns:
             Symbol representing the quantized constant.
         """
         return self.constant(encoding.quantize(value^))

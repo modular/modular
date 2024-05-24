@@ -4,17 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Describes the quantization encoding for Q4_0 matching that in GGML.
-
-Q4_0 is a block quantization scheme where elements are 4-bit nibbles.
-Then each block consists of N elements and a float16 scale.
-
-Suppose that we have a block of N = 8 numbers A, B, C, D, E, F, G, and H, with
-associated bits aaaa, bbbb, and so on.
-Then, within that block of 8 elements, the elements are packed as follows:
-
-    eeeeaaaa|ffffbbbb|ggggcccc|hhhhdddd
-"""
+"""Implements the Q4_0 quantization encoding matching that in GGML."""
 from buffer import Buffer
 from tensor import Tensor, TensorShape
 from utils import InlineArray
@@ -55,23 +45,37 @@ struct BlockQ40:
 
 
 struct Q4_0Encoding(QuantizationEncoding):
-    """The Q4_0 quantization encoding."""
+    """The Q4_0 quantization encoding.
+
+    Q4_0 is a block quantization scheme originally designed for
+    [GGML](https://ggml.ai) in which each element (number) is reduced to an
+    unsigned, fixed-point, 4-bit value. Multiple quantized elements are packed
+    together in a block, all using the same float16 scale.
+
+    For example, suppose that we have a block of N = 8 numbers A, B, C, D, E,
+    F, G, and H, with associated bits aaaa, bbbb, and so on. Then, within that
+    32-bit block of 8 elements, the elements are packed as follows:
+
+    ```
+    eeeeaaaa|ffffbbbb|ggggcccc|hhhhdddd
+    ```
+    """
 
     @staticmethod
-    def quantize(dequantized: Tensor[DType.float32]) -> Tensor[DType.uint8]:
-        """Quantizes the full-precision tensor `dequantized` to Q4_0.
+    def quantize(tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
+        """Quantizes the full-precision tensor `tensor` to Q4_0.
 
         Args:
-            dequantized: Full-precision tensor to quantize to Q4_0.
+            tensor: Full-precision tensor to quantize to Q4_0.
 
         Returns:
             Quantized Q4_0 tensor.
         """
-        if not dequantized.num_elements():
+        if not tensor.num_elements():
             return Tensor[DType.uint8]()
 
         alias elems_per_block = BlockQ40.elements_per_block()
-        tensor_shape = dequantized.shape()
+        tensor_shape = tensor.shape()
         cols = tensor_shape[-1]
         if cols % elems_per_block != 0:
             raise "num elements in row must be a multiple of Q4_0 block size"
@@ -88,17 +92,17 @@ struct Q4_0Encoding(QuantizationEncoding):
         quantized = Tensor[DType.uint8](TensorShape(buff_dims^))
         quantized_ptr = rebind[UnsafePointer[BlockQ40]](quantized.unsafe_ptr())
 
-        dequantized_ptr = dequantized.unsafe_ptr()
+        tensor_ptr = tensor.unsafe_ptr()
 
         # Iterate over all blocks in the tensor.
-        for block_idx in range(dequantized.num_elements() // elems_per_block):
+        for block_idx in range(tensor.num_elements() // elems_per_block):
             # Track max and abs(max) over the block.
             block_abs_max = Float32(0.0)
             block_max = Float32(0.0)
 
             # Find and set the max over the block.
             for i in range(elems_per_block):
-                val = dequantized_ptr[block_idx * elems_per_block + i]
+                val = tensor_ptr[block_idx * elems_per_block + i]
                 if block_abs_max < abs(val):
                     block_abs_max = abs(val)
                     block_max = val
@@ -113,11 +117,11 @@ struct Q4_0Encoding(QuantizationEncoding):
             @parameter
             for elem_idx in range(elems_per_block // 2):
                 # x0: first half of block.
-                x0 = inv_d * dequantized[block_idx * elems_per_block + elem_idx]
+                x0 = inv_d * tensor[block_idx * elems_per_block + elem_idx]
                 # x1: second half of block.
                 x1 = (
                     inv_d
-                    * dequantized[
+                    * tensor[
                         block_idx * elems_per_block
                         + elems_per_block // 2
                         + elem_idx

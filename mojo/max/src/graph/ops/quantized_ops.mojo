@@ -67,19 +67,31 @@ def _q4_0_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
 
 
 def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
-    """Quantized matrix multiplication.
+    """Performs matrix multiplication between floating point and quantized
+    tensors.
+
+    This quantizes the `lhs` floating point value to match the encoding of the
+    `rhs` quantized value, performs matmul, and then dequantizes the result.
+    That is, where `.` is the matmul operator, this function returns the result
+    from:
+
+        dequantize(quantize(lhs) . rhs)
+
+    The last two dimensions in `lhs` are treated as matricies and multiplied
+    by `rhs` (which must be a 2D tensor). Any remaining dimensions in `lhs`
+    are broadcast dimensions.
+
+    Parameters:
+        encoding: The quantization encoding to use.
 
     Args:
-        lhs: A in C = AB, expected to have floating point dtype.
-        rhs: B in C = AB, expected to be a supported quantized storage format
-          with uint8 dtype.
+        lhs: The non-quantized, left-hand-side of the matmul.
+        rhs: The quantized, right-hand-side of the matmul.
+             Must be rank 2 (a 2D tensor/matrix) and in a supported
+             [quantization encoding](/max/reference/mojo/graph/quantization/).
 
     Returns:
-        A floating point matrix C resulting from:
-
-        C = dequantize(quantize(A) . B)
-
-        where . is matrix multiplication.
+        The dequantized result (a floating point tensor).
     """
 
     if encoding.id() == "Q4_0":

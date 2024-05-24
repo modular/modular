@@ -20,11 +20,11 @@ For example consider the following:
 from tensor import Tensor
 from max.graph.quantization import Q4_0Encoding
 
-var dequantized: Tensor[DType.float32]
-# Initialize `dequantized`.
+var tensor: Tensor[DType.float32]
+# Initialize `tensor`.
 
 # Quantize using the `Q4_0` quantization encoding.
-var quantized: Tensor[DType.uint8] = Q4_0Encoding.quantize(dequantized)
+var quantized: Tensor[DType.uint8] = Q4_0Encoding.quantize(tensor)
 
 # Now `quantized`'s storage is packed according to the `Q4_0` encoding.
 # `quantized` can be used to create graph constants and serialized to disk.
@@ -47,12 +47,12 @@ trait QuantizationEncoding:
     """
 
     @staticmethod
-    def quantize(dequantized: Tensor[DType.float32]) -> Tensor[DType.uint8]:
-        """Quantizes the full-precision tensor `dequantized` to the quantized
+    def quantize(tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
+        """Quantizes the full-precision tensor `tensor` to the quantized
         type associated with this `QuantizationEncoding` instance.
 
         Args:
-            dequantized: Full-precision tensor to quantize.
+            tensor: Full-precision tensor to quantize.
 
         Returns:
             A `Tensor` quantized to the quantized storage format of this
