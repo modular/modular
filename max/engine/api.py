@@ -92,13 +92,13 @@ class Model:
         for input_name, input_value in kwargs.items():
             if dtype_map[input_name] == DType.unknown:
                 # This currently indicates that the value expected by the model
-                # internally is not a `GML::Tensor`. We pass the value as-is,
+                # internally is not a `M::Tensor`. We pass the value as-is,
                 # since no metadata is available to check the runtime values
                 # against.
                 kwargs[input_name] = input_value
             elif not isinstance(input_value, np.ndarray):
                 # Indicates that the model expects an ndarray
-                # (internally `GML::Tensor`), but if the input
+                # (internally `M::Tensor`), but if the input
                 # isn't already an ndarray, then we can attempt to interpret it
                 # as a scalar primitive that needs to be converted to an
                 # ndarray.
