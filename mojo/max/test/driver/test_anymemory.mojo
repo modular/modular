@@ -10,7 +10,7 @@ from testing import assert_equal
 from tensor import TensorSpec
 
 
-def test_from_device_tensor():
+def test_from_device_memory():
     var dev = Device(CPUDescriptor(numa_id=2))
 
     var dt = dev.allocate(
@@ -36,7 +36,7 @@ def test_from_tensor():
     assert_equal(anytensor.get_rank(), 2)
 
 
-def _function_that_takes_anytensor(owned t1: AnyMemory, owned t2: AnyMemory):
+def _function_that_takes_anymemory(owned t1: AnyMemory, owned t2: AnyMemory):
     return t1.get_rank() + t2.get_rank()
 
 
@@ -53,10 +53,10 @@ def test_implicit_conversion():
         TensorSpec(DType.float32, 2, 2),
     )
 
-    assert_equal(_function_that_takes_anytensor(tensor^, dt2^), 4)
+    assert_equal(_function_that_takes_anymemory(tensor^, dt2^), 4)
 
 
 def main():
-    test_from_device_tensor()
+    test_from_device_memory()
     test_from_tensor()
     test_implicit_conversion()

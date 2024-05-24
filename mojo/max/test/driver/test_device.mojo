@@ -19,7 +19,7 @@ def test_device():
     assert_equal(str(dev), str(dev2))
 
 
-def test_device_tensor():
+def test_device_memory():
     var dev = Device(CPUDescriptor(numa_id=2))
 
     var dt1 = dev.allocate(
@@ -39,4 +39,4 @@ def test_device_tensor():
 
 def main():
     test_device()
-    test_device_tensor()
+    test_device_memory()
