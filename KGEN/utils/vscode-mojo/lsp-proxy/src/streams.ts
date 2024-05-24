@@ -4,16 +4,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {JSONObject} from "./types";
+import {ChildProcess} from "child_process";
+
+import {ExitStatus, JSONObject} from "./types";
 
 /**
  * A stream reader that reports whenever a line ending with `\n` is found.
  */
 export class LineSeparatedStream {
+  private enabled = true;
+
   constructor(rawStream: NodeJS.ReadableStream,
               onLine: (line: string) => void) {
     let buffer = "";
     rawStream.on("data", (chunk: any) => {
+      if (!this.enabled)
+        return;
+
       buffer += chunk;
 
       let newLinePos = -1;
@@ -24,6 +31,8 @@ export class LineSeparatedStream {
       }
     });
   }
+
+  public dispose() { this.enabled = false; }
 }
 
 /**
@@ -34,12 +43,16 @@ export class JSONRPCStream {
   static protocolHeader = "Content-Length: ";
   static protocolLineSeparator = "\r\n\r\n";
   private buffer = "";
+  private enabled = true;
 
   constructor(rawStream: NodeJS.ReadableStream,
               onResponse: (response: JSONObject) => void,
               onNotification: (notification: JSONObject) => void) {
 
     rawStream.on("data", (chunk: any) => {
+      if (!this.enabled)
+        return;
+
       this.buffer += chunk;
 
       let packet: JSONObject|undefined;
@@ -85,4 +98,24 @@ export class JSONRPCStream {
     this.buffer = this.buffer.substring(contentBegPos + contents.length);
     return JSON.parse(contents);
   }
+
+  public dispose() { this.enabled = false; }
+}
+
+/**
+ * A stream reader that reports whenever a given process exists. Its underlying
+ * callback will be invoked at most once.
+ */
+export class ProcessExitStream {
+  private enabled = true;
+
+  constructor(process: ChildProcess, onExit: (status: ExitStatus) => void) {
+    process.on("exit", (code: number|null, signal: NodeJS.Signals|null) => {
+      if (!this.enabled)
+        return;
+      onExit({code, signal});
+    });
+  }
+
+  public dispose() { this.enabled = false; }
 }

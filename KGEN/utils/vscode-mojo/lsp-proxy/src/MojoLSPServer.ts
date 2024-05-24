@@ -7,28 +7,31 @@
 import {ChildProcess, spawn} from 'child_process';
 import {firstValueFrom, Subject} from 'rxjs';
 
-import {JSONRPCStream, LineSeparatedStream} from './streams';
-import {ExitStatus, InitializationOptions} from './types';
-
-type JSONObject = {
-  [key: string]: any
-};
-type RequestId = number;
+import {DisposableContext} from './DisposableContext';
+import {JSONRPCStream, LineSeparatedStream, ProcessExitStream} from './streams';
+import {
+  ExitStatus,
+  InitializationOptions,
+  JSONObject,
+  RequestId,
+  RequestParams
+} from './types';
 
 const protocolHeader = "Content-Length: ";
 const protocolLineSeparator = "\r\n\r\n";
+
+type PendingRequest = {
+  params: RequestParams; responseStream : Subject<JSONObject>;
+};
 
 /**
  * This class manages an instance of the mojo-lsp-server process, as well as
  * supporting utilities for sending requests and notifications.
  */
-export class MojoLSPServer {
+export class MojoLSPServer extends DisposableContext {
   private serverProcess: ChildProcess;
-  // Request response tracker.
-  private lastRequestId: RequestId = -1;
-  private pendingRequests = new Map<RequestId, Subject<JSONObject>>();
-  private exitStream = new Subject<ExitStatus>();
-
+  private lastSentRequestId: RequestId = -1;
+  private pendingRequests = new Map<RequestId, PendingRequest>();
   /**
    * @param initializationOptions The options needed to spawn the
    *     mojo-lsp-server.
@@ -42,22 +45,36 @@ export class MojoLSPServer {
     onExit : (status: ExitStatus) => void;
     onNotification : (method: string, params: JSONObject) => void;
   }) {
-    this.exitStream.subscribe(onExit);
+    super();
 
     this.serverProcess = spawn(initializationOptions.serverPath,
                                initializationOptions.serverArgs, {
                                  env : initializationOptions.serverEnv,
                                });
-    new LineSeparatedStream(this.serverProcess.stderr!,
-                            (line: string) => logger(line));
-    new JSONRPCStream(this.serverProcess.stdout!,
-                      (request: JSONObject) => {
-                        const subject = this.pendingRequests.get(request.id)!;
-                        subject.next(request);
-                      },
-                      (notification: JSONObject) => onNotification(
-                          notification.method, notification.params));
-    this.setupServerExit(logger);
+    this.pushSubscription(new LineSeparatedStream(
+        this.serverProcess.stderr!, (line: string) => logger(line)));
+    this.pushSubscription(new JSONRPCStream(
+        this.serverProcess.stdout!,
+        (response: JSONObject) =>
+            this.pendingRequests.get(response.id)!.responseStream.next(
+                response),
+        (notification: JSONObject) =>
+            onNotification(notification.method, notification.params)));
+    this.pushSubscription(new ProcessExitStream(this.serverProcess, onExit));
+  }
+
+  /**
+   * Dispose the server. No listeners will be invoked upon this action, as its
+   * is equivalent to aborting the process. This action will also attempt to
+   * kill the underlying server process.
+   */
+  public dispose() {
+    super.dispose();
+    // We kill the server process after all listeners have been disposed.
+    try {
+      this.serverProcess.kill();
+    } catch {
+    }
   }
 
   /**
@@ -66,13 +83,14 @@ export class MojoLSPServer {
    * @returns a promise with the payload that gets resolved when the request is
    *     responded.
    */
-  public async sendRequest<T>(params: T, method: string): Promise<any> {
+  public async sendRequest(params: RequestParams,
+                           method: string): Promise<JSONObject> {
     const request = this.wrapRequest(params, method);
     const id = request.id;
     await this.sendPacket(request);
 
     const subject = new Subject<any>();
-    this.pendingRequests.set(id, subject);
+    this.pendingRequests.set(id, {params : params, responseStream : subject});
     const result = (await firstValueFrom(subject)).result;
     this.pendingRequests.delete(id);
     return result;
@@ -92,8 +110,8 @@ export class MojoLSPServer {
    *     requests.
    */
   private getNewRequestId(): number {
-    this.lastRequestId++;
-    return this.lastRequestId;
+    this.lastSentRequestId++;
+    return this.lastSentRequestId;
   }
 
   /**
@@ -135,10 +153,12 @@ export class MojoLSPServer {
     };
   }
 
-  private setupServerExit(logger: any) {
-    this.serverProcess.on(
-        "exit",
-        (code: number|null, signal: NodeJS.Signals|
-                            null) => { this.exitStream.next({code, signal}); });
+  /**
+   * @returns the params of the oldest pending request.
+   */
+  public getOldestPendingRequest(): RequestParams|undefined {
+    for (const params of this.pendingRequests.values())
+      return params.params;
+    return undefined;
   }
 }
