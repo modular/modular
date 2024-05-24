@@ -13,4 +13,4 @@ encoding interface, such as bfloat16 and Q4_0 encodings.
 
 from .quantization_encoding import QuantizationEncoding
 from .bfloat16_encoding import BFloat16Encoding
-from .q4_0_encoding import Q4_0Encoding
+from .q4_0_encoding import BlockQ40, Q4_0Encoding
