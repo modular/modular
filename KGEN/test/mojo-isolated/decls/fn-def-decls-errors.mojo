@@ -107,3 +107,11 @@ def test_non_copyable_def_arg(arg: NonCopyable, arg2: int):
 
     # OK!
     arg2 = arg2
+
+
+def defTests() -> None:
+  alias abc = 1
+
+  # MOCO-83: [mojo][Bug] def methods can't shadow names via assignment
+  # expected-error @+1 {{expression must be mutable in assignment}}
+  abc = 4
