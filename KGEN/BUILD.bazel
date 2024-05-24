@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
@@ -53,11 +53,10 @@ gentbl_cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "CODialect",
     srcs = glob(["lib/CODialect/*.cpp"]),
     hdrs = glob(["include/KGEN/CODialect/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":CODialectBytecodeIncGen",
         ":CODialectIncGen",
@@ -475,14 +474,13 @@ gentbl_modular_passes(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MOGGPreElab",
     srcs = glob([
         "lib/MOGGPreElab/*.cpp",
         "lib/MOGGPreElab/*.h",
     ]),
     hdrs = glob(["include/KGEN/MOGGPreElab/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
         ":MOGGreElabIncGen",
@@ -491,11 +489,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Interpreter",
     srcs = glob(["lib/Interpreter/*.cpp"]),
     hdrs = glob(["include/KGEN/Interpreter/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":InterpreterAttrsIncGen",
         ":InterpreterDialectBytecodeIncGen",
@@ -511,11 +508,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "HLCFDialect",
     srcs = glob(["lib/HLCFDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/HLCFDialect/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":HLCFAttrsIncGen",
         ":HLCFDialectIncGen",
@@ -533,13 +529,12 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "HLCFDialectAnalysis",
     srcs = glob(["lib/HLCFDialect/Analysis/*.cpp"]),
     hdrs = glob([
         "include/KGEN/HLCFDialect/Analysis/*.h",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
         "@llvm-project//mlir:IR",
@@ -667,14 +662,13 @@ gentbl_cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "LITDialect",
     srcs = glob(["lib/LITDialect/*.cpp"]),
     hdrs = glob([
         "include/KGEN/LITDialect/*.h",
         "include/KGEN/LITDialect/*.def",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":CODialect",
         ":CODialectIncGen",
@@ -791,11 +785,10 @@ gentbl_cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "POPDialect",
     srcs = glob(["lib/POPDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/POPDialect/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":CODialect",
         ":CODialectIncGen",
@@ -818,10 +811,9 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "KGENDialectHeaders",
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
-    strip_include_prefix = "include",
     visibility = ["//visibility:private"],
     deps = [
         ":KGENAttrInterfacesIncGen",
@@ -833,11 +825,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "KGENDialect",
     srcs = glob(["lib/KGENDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
         ":Interpreter",
@@ -867,20 +858,19 @@ genrule(
     cmd = "echo '#define KGEN_VERSION_STRING \"1.0.0\"' >> $@\n",
 )
 
-cc_library(
+modular_cc_library(
     name = "VersionHeader",
     hdrs = [":kgen_version_gen"],
     include_prefix = "KGEN/KGENVersion",
 )
 
-cc_library(
+modular_cc_library(
     name = "ToolCommonHeaders",
     hdrs = [
         "include/KGEN/ToolCommon/CLOptions.h",
         "include/KGEN/ToolCommon/CompilationOptions.h",
         "include/KGEN/ToolCommon/KGENPasses.h",
     ],
-    strip_include_prefix = "include",
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
@@ -888,20 +878,18 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "CompilerHeaders",
     hdrs = glob(["include/KGEN/Compiler/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":ExecutionEngineHeaders",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Compiler",
     srcs = glob(["lib/Compiler/*.cpp"]),
     hdrs = glob(["include/KGEN/Compiler/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":ExecutionEngineHeaders",
         ":JIT",
@@ -1008,7 +996,7 @@ opt_wrapper(
 # https://bazel.build/build/share-variables#sharing_variables_across_multiple_build_files
 MOJO_CONFIG_COPTS = ["-DMOJO_CONFIG_SECTION=mojo"]
 
-cc_library(
+modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob([
@@ -1016,7 +1004,6 @@ cc_library(
         "include/KGEN/KGENDialect/*.h",
     ]),
     copts = MOJO_CONFIG_COPTS,
-    strip_include_prefix = "include",
     deps = [
         "//LLCL:Support",
         "//Support:Base",
@@ -1029,10 +1016,9 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "LowerLIT",
     srcs = glob(["lib/LowerLIT/*.cpp"]),
-    strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
         ":LITDialect",
@@ -1042,13 +1028,12 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "KGENToLLVM",
     srcs = glob([
         "lib/KGENToLLVM/*.cpp",
         "lib/KGENToLLVM/*.h",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":HLCFDialectAnalysis",
         ":KGENDialect",
@@ -1058,10 +1043,9 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Transforms",
     srcs = glob(["lib/Transforms/*.cpp"]),
-    strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
@@ -1074,13 +1058,12 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Elaborator",
     srcs = glob([
         "lib/Elaborator/*.cpp",
         "lib/Elaborator/*.h",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
         ":LITDialect",
@@ -1091,10 +1074,9 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Pipeline",
     srcs = glob(["lib/Pipeline/*.cpp"]),
-    strip_include_prefix = "include",
     deps = [
         ":Elaborator",
         ":KGENPassesIncGen",
@@ -1107,11 +1089,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "TransformUtils",
     srcs = glob(["lib/TransformUtils/*.cpp"]),
     hdrs = glob(["include/KGEN/TransformUtils/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
         ":LITDialect",
@@ -1121,7 +1102,7 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "ObjectCompiler",
     srcs = glob([
         "lib/Compiler/ObjectCompiler/*.cpp",
@@ -1136,7 +1117,7 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoParser",
     srcs = glob([
         "lib/MojoParser/*.cpp",
@@ -1146,31 +1127,28 @@ cc_library(
         "include/KGEN/MojoParser/*.h",
         "include/KGEN/MojoParser/*.def",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":Compiler",
         ":ToolCommon",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoTooling",
     srcs = glob([
         "lib/MojoTooling/*.cpp",
         "lib/MojoTooling/*.h",
     ]),
     hdrs = glob(["include/KGEN/MojoTooling/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":MojoParser",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoTesting",
     srcs = glob(["lib/MojoTesting/*.cpp"]),
     hdrs = glob(["include/KGEN/MojoTesting/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":MojoParser",
         ":MojoTooling",
@@ -1179,17 +1157,15 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "ExecutionEngineHeaders",
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
-    strip_include_prefix = "include",
 )
 
-cc_library(
+modular_cc_library(
     name = "ExecutionEngine",
     srcs = glob(["lib/ExecutionEngine/*.cpp"]),
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":JIT",
         ":VersionHeader",
@@ -1201,14 +1177,13 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "JIT",
     srcs = glob([
         "lib/ExecutionEngine/JIT/*.cpp",
         "lib/ExecutionEngine/JIT/*.h",
     ]),
     hdrs = glob(["include/KGEN/ExecutionEngine/JIT/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":CompilerHeaders",
         ":ExecutionEngineHeaders",
@@ -1222,11 +1197,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "ToolCommon",
     srcs = glob(["lib/ToolCommon/**/*.cpp"]),
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":CODialect",
         ":ExecutionEngine",
@@ -1246,14 +1220,13 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoBuild",
     srcs = glob([
         "lib/MojoBuild/*.cpp",
         "lib/MojoBuild/*.h",
     ]),
     hdrs = glob(["include/KGEN/MojoBuild/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Support",
         "//Support:Base",
@@ -1359,10 +1332,9 @@ cc_binary(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoLLDBHeaders",
     hdrs = glob(["include/KGEN/MojoLLDB/*.h"]),
-    strip_include_prefix = "include",
 )
 
 globals_library(
@@ -1432,7 +1404,7 @@ $(location :gen_maptlotlib_initialization_tool) \
     tools = [":gen_maptlotlib_initialization_tool"],
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoJupyter",
     srcs = glob(["lib/MojoJupyter/*.cpp"]) + [":gen_maptlotlib_initialization"],
     hdrs = glob([
@@ -1445,7 +1417,6 @@ cc_library(
     local_defines = [
         "MODULAR_BUILDING_JUPYTER_LIBRARY",
     ],
-    strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
         ":MojoLLDB",

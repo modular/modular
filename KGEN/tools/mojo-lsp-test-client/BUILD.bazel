@@ -1,6 +1,8 @@
+load("//bazel:api.bzl", "modular_cc_library")
+
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+modular_cc_library(
     name = "mojo-lsp-test-client",
     srcs = glob(["*.cpp"]),
     hdrs = glob(["*.h"]),

@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@llvm-project//mlir:tblgen.bzl", "td_library")
+load("//bazel:api.bzl", "modular_cc_library")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
@@ -21,7 +22,7 @@ expand_template(
     template = "Debug/MojoDebug.h.in",
 )
 
-cc_library(
+modular_cc_library(
     name = "MojoDebugHeader",
     hdrs = [":MojoDebugHeaderGen"],
     include_prefix = "Debug",

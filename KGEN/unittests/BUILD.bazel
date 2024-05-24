@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
 load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
 
 kgen_kernel(
@@ -13,7 +13,7 @@ modular_cc_test(
 )
 
 # TODO: Remove this and fix the weird import in Support.h
-cc_library(
+modular_cc_library(
     name = "include_shim",
     includes = ["."],
     visibility = ["//KGEN/unittests:__subpackages__"],
