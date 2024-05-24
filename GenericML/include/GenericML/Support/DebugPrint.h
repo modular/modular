@@ -20,7 +20,7 @@ namespace M {
 /// format for debug printing of tensor values.
 struct DebugTensorPrintOptions {
   /// Format to use.
-  GML::ResultOutputStyle style = GML::ResultOutputStyle::kCompact;
+  ResultOutputStyle style = ResultOutputStyle::kCompact;
   /// Precision of textual floating point numbers.
   unsigned precision = 6;
   /// If outputStyle is binary, the directory in which to create the files,
@@ -28,7 +28,7 @@ struct DebugTensorPrintOptions {
   std::string binaryDir;
 
   DebugTensorPrintOptions() = default;
-  DebugTensorPrintOptions(GML::ResultOutputStyle style, unsigned precision,
+  DebugTensorPrintOptions(ResultOutputStyle style, unsigned precision,
                           std::string binaryDir)
       : style(style), precision(precision), binaryDir(std::move(binaryDir)) {}
 
