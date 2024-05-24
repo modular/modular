@@ -144,6 +144,8 @@ from .bencher import (
     Mode,
     Bench,
     Bencher,
+    BenchMetric,
+    ThroughputMeasure,
 )
 from .benchmark import (
     Batch,

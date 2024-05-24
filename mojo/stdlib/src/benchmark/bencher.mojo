@@ -12,6 +12,7 @@ from sys.arg import argv
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
 from stdlib.builtin.string import _calc_initial_buffer_size_int32
+from testing import assert_true
 
 from utils.numerics import FlushDenormals
 
@@ -19,6 +20,144 @@ from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
+@value
+struct BenchMetric(CollectionElement):
+    """Defines a benchmark throughput metric."""
+
+    var code: Int
+    """Op-code of the Metric."""
+    var name: String
+    """Metric's name."""
+    var unit: String
+    """Metric's throughput rate unit (count/second)."""
+
+    alias elements = BenchMetric(0, "Elements", "GElement/s")
+    alias bytes = BenchMetric(1, "Bytes", "GB/s")
+    alias flops = BenchMetric(2, "FLOPS", "GFLOPS/s")
+
+    alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
+    """Default set of benchmark metrics."""
+
+    fn __str__(self) -> String:
+        """Converts BenchMetric to String
+
+        Returns:
+            The string representation of the metric."""
+        return String(self.name) + " (" + self.unit + ")"
+
+    fn __eq__(self, other: Self) -> Bool:
+        """Compares two metrics for equality.
+
+        Args:
+            other: The metric to compare.
+
+        Returns:
+            True if the two metrics are equal.
+        """
+        return self.code == other.code
+
+    fn __ne__(self, other: Self) -> Bool:
+        """Compares two metrics for inequality.
+
+        Args:
+            other: The metric to compare.
+
+        Returns:
+            True if the two metrics are NOT equal.
+        """
+        return self.code != other.code
+
+    fn check_name(self, alt_name: String) -> Bool:
+        """Check whether a string contains the metric's name.
+
+        Args:
+            alt_name: Alternative name of a metric.
+
+        Returns:
+            True if 'alt_name' is valid alternative of the metric's name.
+        """
+        return String(self.name).lower() == String(alt_name).lower()
+
+    @staticmethod
+    fn get_metric_from_list(
+        name: String, metric_list: List[BenchMetric]
+    ) raises -> BenchMetric:
+        """Return a metric from a given list by only using metric's name.
+
+        Args:
+            name: Metric's name (String).
+            metric_list: List of metrics to search.
+
+        Returns:
+            Return a metric from a given list by only using metric's name.
+        """
+        for m in metric_list:
+            if m[].check_name(name):
+                return m[]
+
+        var err: String = "\n"
+        err += "------------------------------------------------------------\n"
+        err += "------------------------------------------------------------\n"
+        err += "Couldn't match metric [" + String(name) + "]\n"
+        err += "Available throughput metrics (case-insensitive) in the list:\n"
+        for m in metric_list:
+            err += "    metric: [" + String(m[].name).lower() + "]\n"
+        err += "------------------------------------------------------------\n"
+        err += "------------------------------------------------------------\n"
+        err += "[ERROR]: metric [" + String(name) + "] is NOT supported!\n"
+        raise Error(err)
+
+
+@value
+struct ThroughputMeasure(CollectionElement):
+    """Records a throughput metric of metric BenchMetric and value."""
+
+    var metric: BenchMetric
+    """Type of throughput metric."""
+    var value: Int
+    """Measured count of throughput metric."""
+
+    fn __init__(
+        inout self,
+        name: String,
+        value: Int,
+        reference: List[BenchMetric] = BenchMetric.DEFAULTS,
+    ) raises:
+        """Create a ThroughputMeasure based on metric's name (String).
+
+        Args:
+            name: The name of BenchMetric in its corresponding reference.
+            value: The measured value to assign to this metric.
+            reference: Reference variadic list of BenchMetrics that contains this metric.
+
+        Example:
+            For the default bench metrics BenchMetric.DEFAULTS the
+            following are equivalent:
+                - ThroughputMeasure(BenchMetric.fmas, 1024)
+                - ThroughputMeasure("fmas", 1024)
+                - ThroughputMeasure("fmas", 1024, BenchMetric.DEFAULTS)
+        """
+        var metric = BenchMetric.get_metric_from_list(name, reference)
+        self.metric = metric
+        self.value = value
+
+    fn __str__(self) -> String:
+        return String(self.metric)
+
+    fn compute(self, elapsed_sec: Float64) -> Float64:
+        """Compute throughput rate for this metric per unit of time (second).
+
+        Args:
+            elapsed_sec: Elapsed time measured in seconds.
+
+        Returns:
+            The throughput values as a floating point 64.
+        """
+        # TODO: do we need support other units of time (ms, ns)?
+        return (self.value) * 1e-9 / elapsed_sec
+
+
+@always_inline
 fn _str_fmt_width(str: String, str_width: Int) -> String:
     """Formats string with a given width.
 
@@ -26,6 +165,7 @@ fn _str_fmt_width(str: String, str_width: Int) -> String:
         sprintf("%-*s", str_width, str)
     """
     debug_assert(str_width > 0, "Should have str_width>0")
+
     alias N = 2048
     var x = String._buffer_type()
     x.reserve(N)
@@ -166,22 +306,34 @@ struct BenchmarkInfo(CollectionElement, Stringable):
     """The output report after executing a benchmark."""
     var elems: Optional[
         Int
-    ]  # TODO: wrap in a throughput type that can be flops or bytes
+    ]  # TODO: wrap in a throughput type that can be flops or bytes -> To be removed and replaced by 'measures'
     """Optional arg used to represent a specific metric like throughput."""
 
-    fn __init__(inout self, name: String, result: Report, elems: Optional[Int]):
+    var measures: List[ThroughputMeasure]
+    """Optional arg used to represent a list of ThroughputMeasure's."""
+
+    fn __init__(
+        inout self,
+        name: String,
+        result: Report,
+        elems: Optional[Int],
+        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+    ):
         """Constructs a Benchmark Info object to return Benchmark report and Stats.
 
         Args:
             name: The name of the benchmark.
             result: The output report after executing a benchmark.
             elems: Optional arg used to represent a specific metric like throughput.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
         """
 
         self.name = name
         self.result = result
         self.elems = elems
+        self.measures = measures
 
+    # TODO: to be removed
     fn _throughput(self) -> Float64:
         """Computes Benchmark Throughput value.
 
@@ -198,7 +350,12 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             A string representing benchmark statistics.
         """
 
+        # TODO: change accordingly after removing self.elems
         var elems = "," + str(self._throughput()) if self.elems else ""
+
+        for i in range(len(self.measures)):
+            var rate = self.measures[i].compute(self.result.mean(unit=Unit.s))
+            elems = elems + "," + String(rate)
 
         return (
             self.name
@@ -209,25 +366,34 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             + elems
         )
 
-    fn _csv_str(self, name_width: Int = 0, iters_width: Int = 10) -> String:
+    fn _csv_str(self, column_width: VariadicList[Int]) -> String:
         """Formats Benchmark Statistical Info.
 
         Returns:
             A string representing benchmark statistics.
         """
-        debug_assert(name_width > 0, "Name width should be >0")
+
+        var name_width = column_width[0]
+        var met_width = column_width[1]
+        var iters_width = column_width[2]
+        var throughput_width = column_width[3]
+        var rate_width = column_width[4]
+
+        debug_assert(column_width[0] > 0, "Name width should be >0")
         alias N = 2048
         var x = String._buffer_type()
         x.reserve(N)
+
+        x.size += _snprintf(x.data + x.size, N, "%-*s, ", name_width, self.name)
+
         x.size += _snprintf(
-            x.data,
+            x.data + x.size,
             N,
-            "%-*s, %12.6f, ",
-            name_width,
-            self.name.unsafe_ptr(),
+            "%*.6f, ",
+            met_width,
             self.result.mean(unit=Unit.ms),
         )
-        debug_assert(x.size < N, "Attempted to access outside array bounds!")
+
         x.size += _snprintf(
             x.data + x.size,
             N,
@@ -235,16 +401,24 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             iters_width,
             self.result.iters(),
         )
+
+        var throughput = self._throughput() if self.elems else 0.0
+        x.size += _snprintf(
+            x.data + x.size, N, ", %*.6f", throughput_width, throughput
+        )
         debug_assert(x.size < N, "Attempted to access outside array bounds!")
 
-        if self.elems:
-            x.size += _snprintf(
-                x.data + x.size, N, ", %.6f", self._throughput()
-            )
-            debug_assert(
-                x.size < N, "Attempted to access outside array bounds!"
-            )
+        if len(self.measures) > 0:
+            for i in range(len(self.measures)):
+                var rate = self.measures[i].compute(self.result.mean(Unit.s))
+                x.size += _snprintf(
+                    x.data + x.size, N, ", %*.6f", rate_width, rate
+                )
+                debug_assert(
+                    x.size < N, "Attempted to access outside array bounds!"
+                )
         x.size += 1
+        debug_assert(x.size < N, "Attempted to access outside array bounds!")
         return String(x)
 
 
@@ -318,6 +492,7 @@ struct Bench:
         bench_id: BenchId,
         input: T,
         throughput_elems: Optional[Int] = None,
+        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
         """Benchmarks an input function with input args of type AnyType.
 
@@ -329,6 +504,7 @@ struct Bench:
             bench_id: The benchmark Id object used for identification.
             input: Represents the target function's input arguments.
             throughput_elems: Optional argument representing algorithmic throughput.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
         """
 
         @parameter
@@ -351,6 +527,7 @@ struct Bench:
         bench_id: BenchId,
         input: T,
         throughput_elems: Optional[Int] = None,
+        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
         """Benchmarks an input function with input args of type AnyRegType.
 
@@ -362,6 +539,7 @@ struct Bench:
             bench_id: The benchmark Id object used for identification.
             input: Represents the target function's input arguments.
             throughput_elems: Optional argument representing algorithmic throughput.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
         """
 
         @parameter
@@ -379,7 +557,10 @@ struct Bench:
     fn bench_function[
         bench_fn: fn (inout Bencher) capturing -> None
     ](
-        inout self, bench_id: BenchId, throughput_elems: Optional[Int] = None
+        inout self,
+        bench_id: BenchId,
+        throughput_elems: Optional[Int] = None,
+        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -389,11 +570,12 @@ struct Bench:
         Args:
             bench_id: The benchmark Id object used for identification.
             throughput_elems: Optional argument representing algorithmic throughput.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
         """
 
         if self.mode == Mode.Benchmark:
             for _ in range(self.config.num_repetitions):
-                self._bench[bench_fn](bench_id, throughput_elems)
+                self._bench[bench_fn](bench_id, throughput_elems, measures)
         elif self.mode == Mode.Test:
             self._test[bench_fn]()
 
@@ -401,7 +583,10 @@ struct Bench:
     fn bench_function[
         bench_fn: fn (inout Bencher) raises capturing -> None
     ](
-        inout self, bench_id: BenchId, throughput_elems: Optional[Int] = None
+        inout self,
+        bench_id: BenchId,
+        throughput_elems: Optional[Int] = None,
+        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -411,6 +596,7 @@ struct Bench:
         Args:
             bench_id: The benchmark Id object used for identification.
             throughput_elems: Optional argument representing algorithmic throughput.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
         """
 
         @parameter
@@ -428,7 +614,7 @@ struct Bench:
             except e:
                 abort(e)
 
-        self.bench_function[abort_on_err](bench_id, throughput_elems)
+        self.bench_function[abort_on_err](bench_id, throughput_elems, measures)
 
     fn _test[bench_fn: fn (inout Bencher) capturing -> None](inout self) raises:
         """Tests an input function by executing it only once.
@@ -442,7 +628,12 @@ struct Bench:
 
     fn _bench[
         user_bench_fn: fn (inout Bencher) capturing -> None
-    ](inout self, bench_id: BenchId, throughput_elems: Optional[Int]) raises:
+    ](
+        inout self,
+        bench_id: BenchId,
+        throughput_elems: Optional[Int],
+        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+    ) raises:
         """Benchmarks an input function.
 
         Parameters:
@@ -451,6 +642,7 @@ struct Bench:
         Args:
             bench_id: The benchmark Id object used for identification.
             throughput_elems: Optional argument representing algorithmic throughput.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
         """
 
         @parameter
@@ -501,12 +693,15 @@ struct Bench:
         )
 
         self.info_vec.append(
-            BenchmarkInfo(
-                full_name,
-                res,
-                throughput_elems,
-            )
+            BenchmarkInfo(full_name, res, throughput_elems, measures)
         )
+
+        # TODO: revise: checking against the first one to ensure consistency.
+        # NOTE: only one set of metrics can be used in one bench object (ie, one bench report).
+        var ref_measures = self.info_vec[0].measures
+        assert_true(len(ref_measures) == len(measures))
+        for i in range(len(measures)):
+            assert_true(measures[i].metric == ref_measures[i].metric)
 
     fn dump_report(self) raises:
         """Prints out the report from a Benchmark execution."""
@@ -514,25 +709,42 @@ struct Bench:
         var num_runs = len(self.info_vec)
 
         if self.config.tabular_view:
-            var max_name_width = self._get_max_name_width()
-            var max_iters_width = max(
-                len(", iters"), self._get_max_iters_width()
-            )
+            var NAME_WIDTH = self._get_max_name_width()
+            var ITERS_WIDTH = max(len(", iters "), self._get_max_iters_width())
+
+            alias MET_WIDTH = 12
+            alias THROUGHPUT_WIDTH = 24
+            alias RATE_WIDTH = 16
 
             report += (
-                _str_fmt_width("name", max_name_width)
-                + _str_fmt_width(", met (ms)", 12 + 2)
-                + _str_fmt_width(", iters", max_iters_width + 2)
-                + String(", throughput (Gelems/s)\n")
+                _str_fmt_width("name", NAME_WIDTH)
+                + _str_fmt_width(", met (ms) ", MET_WIDTH + 2)
+                + _str_fmt_width(", iters ", ITERS_WIDTH + 2)
+                + _str_fmt_width(
+                    ", throughput (Gelems/s) ", THROUGHPUT_WIDTH + 2
+                )
             )
+            var width_list = VariadicList[Int](
+                NAME_WIDTH, MET_WIDTH, ITERS_WIDTH, THROUGHPUT_WIDTH, RATE_WIDTH
+            )
+            if num_runs > 0:
+                for measure in self.info_vec[0].measures:
+                    var measure_name = String(measure[])
+                    report += _str_fmt_width(
+                        ", " + measure_name, RATE_WIDTH + 2
+                    )
+            report += "\n"
 
             for i in range(num_runs):
                 var sep = "\n" if i < num_runs - 1 else ""
-                report += (
-                    self.info_vec[i]._csv_str(max_name_width, max_iters_width)
-                ) + sep
+                report += (self.info_vec[i]._csv_str(width_list)) + sep
         else:
-            report += String("name, met (ms), iters, throughput (Gelems/s)\n")
+            report += String("name, met (ms), iters, throughput (Gelems/s)")
+            if num_runs > 0:
+                for measure in self.info_vec[0].measures:
+                    report += ", " + String(measure[])
+            report += "\n"
+
             for i in range(num_runs):
                 var sep = "\n" if i < num_runs - 1 else ""
                 report += str(self.info_vec[i]) + sep
