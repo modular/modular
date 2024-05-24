@@ -115,3 +115,25 @@ fn function(_unused: Int) raises:
                      })
       .execute();
 }
+
+TEST(DiagnosticsTest, ignoreUnusedSelfOfStructMethod) {
+  Document doc("test:///unused.mojo", R"(
+struct Test:
+  fn method(self, used: Int, unused: Int):
+    print(used)
+
+  @staticmethod
+  fn staticmethod(used2: Int, unused2: Int):
+    print(used2)
+  )");
+
+  createTestClient()
+      .open(doc)
+      .onDiagnostics(doc,
+                     [](const std::vector<lsp::Diagnostic> &diags) {
+                       ASSERT_EQ((int)diags.size(), 2);
+                       EXPECT_EQ(diags[0].message, "unused argument 'unused'");
+                       EXPECT_EQ(diags[1].message, "unused argument 'unused2'");
+                     })
+      .execute();
+}
