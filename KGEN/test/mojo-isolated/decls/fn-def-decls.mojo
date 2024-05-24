@@ -152,15 +152,23 @@ def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> No
 struct TypeWithParametricSelf:
     fn method(self: Reference[Self, _, _]): pass
 
+struct ValueWithTypeWithParametricSelf:
+    var member: TypeWithParametricSelf
+
 # CHECK-LABEL: test_def_arg_box_mbvalue
-def test_def_arg_box_mbvalue(a: TypeWithParametricSelf):
+def test_def_arg_box_mbvalue(a: TypeWithParametricSelf, b: ValueWithTypeWithParametricSelf):
     # CHECK-NEXT: %xyz = lit.var.decl "xyz"
     # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} : !lit.ref<@stdlib::@builtin::@stubs::@Reference
     # CHECK-NEXT: lit.call {{.*}}@Reference::@"__init__{{.*}}(%anonymous2A, %a)
 
-    # CHECK-NEXT: %1 = lit.ref.load %anonymous2A
-    # CHECK-NEXT: lit.call {{.*}}method
+    # CHECK-NEXT: = lit.ref.load %anonymous2A
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}method
+    # CHECK-NEXT: lit.ref.store [[TMP]], %xyz
     var xyz = a.method()
+
+    # MOCO-715: failed to infer implicit parameter 'is_mutable' of argument 'self' type 'Reference
+    # CHECK-NEXT: [[MEMBERREF:%.*]] = lit.ref.struct.ger %b[member]
+    _ = b.member.method()
 
 
 fn returnsMultiple() -> (Int, MemoryOnly): pass
