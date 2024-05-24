@@ -1552,6 +1552,82 @@ lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Renaming
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onRename(const lsp::URIForFile &uri,
+                            const mlir::lsp::Position &pos, StringRef newName,
+                            LSPResponder<lsp::WorkspaceEdit> responder) {
+  // Convert newName to a string now, because the string ref may be invalidated
+  // by the time we process this request.
+  startTaskAfterParsing([uri, pos, newName = newName.str(),
+                         responder =
+                             std::move(responder)](MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return responder.replyOutdatedRequest();
+
+    SMLoc loc = doc.getLocFromPos(uri, pos);
+    if (!loc.isValid())
+      return responder.replyInvalidRequest();
+
+    ErrorOr<std::vector<lsp::TextEdit>> edits = doc.onRenameSync(loc, newName);
+
+    if (auto err = edits.getError())
+      return responder.replyError(
+          lsp::LSPError(err, lsp::ErrorCode::InvalidRequest));
+
+    std::map<std::string, std::vector<lsp::TextEdit>> workspaceEdits;
+    workspaceEdits.insert({uri.file().str(), std::move(edits.get())});
+
+    return responder.reply(lsp::WorkspaceEdit{std::move(workspaceEdits)});
+  });
+}
+
+static bool isLocalVariable(const Symbol &symbol) {
+  if (symbol.approximateViewKind != DeclViewKind::DK_VariableDeclView)
+    return false;
+
+  std::unique_ptr<DeclView> declView = symbol.declRef.getView();
+  if (const auto *varDeclView = dyn_cast<VariableDeclView>(declView.get()))
+    return !varDeclView->isGlobal();
+
+  return false;
+}
+
+ErrorOr<std::vector<mlir::lsp::TextEdit>>
+MojoDocument::onRenameSync(SMLoc loc, const std::string &newName) {
+  SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(loc);
+  if (!symbolRef)
+    return Error("no identified symbol at this position");
+
+  const char *errorMessage = "renaming is only available for local variables";
+
+  // Variables have only one symbol for a given SymbolRef. Overloaded function
+  // sets will reference more than one symbol, but we aren't going to rename
+  // those.
+  if (symbolRef->symbols.size() > 1)
+    return Error(errorMessage);
+
+  Symbol &symbol = *symbolRef->symbols.front();
+
+  if (!isLocalVariable(symbol))
+    return Error(errorMessage);
+
+  std::vector<lsp::TextEdit> edits;
+  edits.reserve(symbol.symbolRefs.size());
+  for (SymbolRef *symbolRef : symbol.symbolRefs) {
+    edits.push_back(
+        lsp::TextEdit{lsp::Range(getSourceMgr(), symbolRef->range), newName});
+  }
+
+  llvm::stable_sort(edits, [](const lsp::TextEdit &a, const lsp::TextEdit &b) {
+    return a.range < b.range;
+  });
+
+  return std::move(edits);
+}
+
+//===----------------------------------------------------------------------===//
 // MojoDocStrings
 //===----------------------------------------------------------------------===//
 
@@ -2533,4 +2609,15 @@ void MojoServer::getSignatureHelp(const lsp::TextDocumentPositionParams &params,
                          std::move(responder));
   else
     responder.replyInvalidRequest();
+}
+
+void MojoServer::onRename(const lsp::RenameParams &params,
+                          LSPResponder<lsp::WorkspaceEdit> responder) {
+  if (MojoDocumentRef doc =
+          impl->findDocument(params.textDocument.uri.file())) {
+    doc->onRename(params.textDocument.uri, params.position, params.newName,
+                  std::move(responder));
+  } else {
+    responder.replyInvalidRequest();
+  }
 }

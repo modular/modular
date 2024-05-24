@@ -26,6 +26,7 @@ add_modular_unittest(
   HoverTest.cpp
   NotebookTest.cpp
   ReferencesTest.cpp
+  RenameTest.cpp
   SampleTest.cpp
   SemanticTokensTest.cpp
   SignatureHelpTest.cpp

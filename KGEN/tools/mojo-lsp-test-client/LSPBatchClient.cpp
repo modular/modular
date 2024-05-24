@@ -139,6 +139,24 @@ LSPBatchClient::hover(const Document &doc, const lsp::Position &position,
   return *this;
 }
 
+LSPBatchClient &LSPBatchClient::rename(
+    const Document &doc, const lsp::Position &position, std::string newName,
+    std::function<void(const lsp::WorkspaceEdit &)> callback) {
+  lsp::RenameParams params{lsp::TextDocumentIdentifier{doc.getURI()}, position,
+                           std::move(newName)};
+  request("textDocument/rename", toJSON(params), std::move(callback));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::renameError(
+    const Document &doc, const lsp::Position &position, std::string newName,
+    std::function<void(const mlir::lsp::LSPError2 &)> callback) {
+  lsp::RenameParams params{lsp::TextDocumentIdentifier{doc.getURI()}, position,
+                           std::move(newName)};
+  request("textDocument/rename", toJSON(params), std::move(callback));
+  return *this;
+}
+
 LSPBatchClient &LSPBatchClient::documentSymbol(
     const Document &doc,
     std::function<void(const std::vector<lsp::DocumentSymbol> &)> callback) {
@@ -197,9 +215,15 @@ ErrorOrSuccess LSPBatchClient::dispatchResponse(StringRef json) {
         auto it = requestHandlers.find(*id);
 
         // The request may have errored.
-        // TODO: Handle errors from individual requests.
         if (auto err = obj->get("error")) {
-          return Error("error reported by server:\n" + json);
+          // If there's an error from the response handler, it's probably a
+          // parse error about converting from the error value to the actually
+          // expected type. In this case it's better to report the JSON.
+          if (auto errOr = it->second->onResponse(*err)) {
+            return Error(llvm::formatv("error while handling an error "
+                                       "response: {0}\nJSON response:\n{1:2}",
+                                       errOr.getError(), json));
+          }
         } else if (auto errOr = it->second->onResponse(*obj->get("result")))
           return errOr;
 

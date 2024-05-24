@@ -255,6 +255,10 @@ public:
                        const mlir::lsp::Position &pos,
                        LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
+  void onRename(const mlir::lsp::URIForFile &uri,
+                const mlir::lsp::Position &pos, StringRef newName,
+                LSPResponder<mlir::lsp::WorkspaceEdit> responder);
+
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
@@ -349,6 +353,9 @@ private:
 
   std::vector<mlir::lsp::Location> onReferencesSync(SMLoc smLoc,
                                                     bool includeDeclaration);
+
+  ErrorOr<std::vector<mlir::lsp::TextEdit>>
+  onRenameSync(SMLoc loc, const std::string &newName);
 
   std::optional<std::vector<SemanticToken>>
   onSemanticTokensSync(llvm::SMRange range);
