@@ -35,7 +35,6 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/CrashRecoveryContext.h"
 #include <optional>
 
 namespace lsp = mlir::lsp;
@@ -699,40 +698,7 @@ void MojoDocument::parseDocument() {
   sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
   context = std::make_unique<Context>(*this);
 
-  if (!StringRef(getenv("DISABLE_LSP_CRASH_RECOVERY")).empty()) {
-    mlir::lsp::Logger::info("Crash recovery disabled.");
-    parseDocumentImpl();
-  } else {
-    llvm::CrashRecoveryContext::Enable();
-    llvm::CrashRecoveryContext crc;
-    crc.DumpStackAndCleanupOnFailure = true;
-
-    if (!crc.RunSafely([&]() { parseDocumentImpl(); })) {
-      lsp::Logger::error("Crash recovered: CrashRecoveryContext::RetCode (on "
-                         "POSIX: signal number + 128) = {0}",
-                         crc.RetCode);
-      lsp::Logger::error(
-          "A crash happened in the mojo parser when processing the "
-          "file {0}.\nPlease report this issue in "
-          "https://github.com/modularml/mojo/issues along with all the "
-          "relevant "
-          "source codes with the contents they had at crash time.",
-          uris.front());
-      isInvalidated = true;
-      lsp::PublishDiagnosticsParams diagParams(uris.front(), version);
-      lsp::Diagnostic lspDiag;
-      lspDiag.source = "mojo";
-      lspDiag.severity = lsp::DiagnosticSeverity::Error;
-      lspDiag.message = "A crash happened in the mojo parser with the current "
-                        "version of this "
-                        "file. Please report this issue in "
-                        "https://github.com/modularml/mojo/issues along with "
-                        "all the relevant "
-                        "source codes with their current contents.";
-      diagParams.diagnostics.push_back(lspDiag);
-      sendDiagnosticsFn(diagParams);
-    }
-  }
+  parseDocumentImpl();
 
   // If we've already been invalidated, bail out early.
   if (isInvalidated)
