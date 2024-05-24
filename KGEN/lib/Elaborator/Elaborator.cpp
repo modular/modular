@@ -1607,8 +1607,13 @@ LogicalResult Elaborator::run(ModuleOp theModule,
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
     }
   }
-  if (failed)
+  if (failed) {
+    for (FuncOp func : llvm::make_second_range(concreteFuncs.get()))
+      func.erase();
+    for (FuncOp func : deferredSymbols)
+      func.erase();
     return failure();
+  }
 
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary
