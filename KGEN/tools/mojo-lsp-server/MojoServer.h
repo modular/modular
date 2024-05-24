@@ -142,6 +142,10 @@ public:
   void getSignatureHelp(const mlir::lsp::TextDocumentPositionParams &params,
                         LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
+  /// Perform a rename operation at the position within the given document.
+  void onRename(const mlir::lsp::RenameParams &params,
+                LSPResponder<mlir::lsp::WorkspaceEdit> responder);
+
 private:
   MojoServer(std::unique_ptr<Impl> &&);
   std::unique_ptr<Impl> impl;

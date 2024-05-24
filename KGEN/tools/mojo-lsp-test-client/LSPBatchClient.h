@@ -121,6 +121,18 @@ public:
   hover(const Document &doc, const mlir::lsp::Position &position,
         std::function<void(const mlir::lsp::Hover2 &)> callback);
 
+  /// textDocument/rename
+  LSPBatchClient &
+  rename(const Document &doc, const mlir::lsp::Position &position,
+         std::string newName,
+         std::function<void(const mlir::lsp::WorkspaceEdit &)> callback);
+
+  /// textDocument/rename (error variant)
+  LSPBatchClient &
+  renameError(const Document &doc, const mlir::lsp::Position &position,
+              std::string newName,
+              std::function<void(const mlir::lsp::LSPError2 &)> callback);
+
   /// textDocument/documentSymbol
   LSPBatchClient &documentSymbol(
       const Document &doc,

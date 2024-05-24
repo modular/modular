@@ -450,6 +450,11 @@ llvm::json::Value lsp::toJSON(const Hover2 &hover) {
   return toJSON(static_cast<Hover>(hover));
 }
 
+llvm::json::Value lsp::toJSON(const LSPError2 &error) {
+  return llvm::json::Object{{"message", error.message},
+                            {"code", (int)error.code}};
+}
+
 llvm::json::Value lsp::toJSON(const DocumentSymbolParams &params) {
   return llvm::json::Object{{"textDocument", params.textDocument}};
 }
@@ -463,6 +468,21 @@ bool lsp::fromJSON(const llvm::json::Value &value, Hover2 &range,
   llvm::json::ObjectMapper o(value, path);
   return o && o.map("contents", range.contents) &&
          o.mapOptional("range", range.range);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value, LSPError2 &error,
+                   llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("message", error.message) && o.map("code", error.code);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value, ErrorCode &code,
+                   llvm::json::Path path) {
+  std::optional<int64_t> intVal = value.getAsInteger();
+  if (!intVal)
+    return false;
+  code = static_cast<ErrorCode>(*intVal);
+  return true;
 }
 
 bool lsp::fromJSON(const llvm::json::Value &value, MarkupKind &kind,

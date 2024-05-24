@@ -72,6 +72,7 @@ export class MojoLSPProxy {
     this.client.onFoldingRanges(
         this.requestPassthrough("textDocument/foldingRange"));
     this.client.onHover(this.requestPassthrough("textDocument/hover"));
+    this.client.onRenameRequest(this.requestPassthrough("textDocument/rename"));
     this.client.onReferences(
         this.requestPassthrough("textDocument/references"));
     this.client.onSignatureHelp(

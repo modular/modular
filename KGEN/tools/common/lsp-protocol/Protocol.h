@@ -422,6 +422,23 @@ bool fromJSON(const llvm::json::Value &value, Hover2 &range,
               llvm::json::Path path);
 
 //===----------------------------------------------------------------------===//
+// Extension of LSPError that has a default constructor to make fromJSON happy.
+//===----------------------------------------------------------------------===//
+
+struct LSPError2 : LSPError {
+  using LSPError::LSPError;
+  LSPError2() : LSPError("", ErrorCode::UnknownErrorCode) {}
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const LSPError2 &error);
+bool fromJSON(const llvm::json::Value &value, LSPError2 &error,
+              llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, ErrorCode &code,
+              llvm::json::Path path);
+
+//===----------------------------------------------------------------------===//
 // RenameParams
 //===----------------------------------------------------------------------===//
 

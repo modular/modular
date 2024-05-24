@@ -152,6 +152,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
            }},
        }}},
       {"referencesProvider", true},
+      {"renameProvider", true},
       {"semanticTokensProvider",
        llvm::json::Object{
            {"full", llvm::json::Object{{"delta", true}}},
@@ -314,6 +315,7 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                         &MojoServer::onSemanticTokensDelta);
   requestHandler.method("textDocument/signatureHelp", &server,
                         &MojoServer::getSignatureHelp);
+  requestHandler.method("textDocument/rename", &server, &MojoServer::onRename);
 
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {
