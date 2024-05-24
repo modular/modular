@@ -128,6 +128,17 @@ public:
   llvm::iterator_range<ChildIterator> getChildren() const;
 
 private:
+  using ApproximateDeclViewKind = std::optional<DeclViewKind>;
+  using DeclViewInstance = std::unique_ptr<DeclView>;
+
+  /// The documentation for this method is in the corresponding cpp file.
+  template <typename ResultType, typename DeclViewT, typename... DeclArgs>
+  ResultType createDeclView(DeclArgs &&...declArgs) const;
+
+  /// The documentation for this method is in the corresponding cpp file.
+  template <typename ResultType>
+  ResultType getViewImpl() const;
+
   /// Allow MojoParserContext to access the internal impl.
   friend class MojoParserContext;
 

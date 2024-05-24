@@ -190,42 +190,94 @@ createArgumentDeclView(MojoASTDeclRef declRef, unsigned arg) {
   return std::make_unique<ArgumentDeclView>(functionView->getArguments()[arg]);
 }
 
-std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
+/// Helper method for `getViewImpl` that either returns a DeclViewKind or a new
+/// DeclView instance depending on the ResultType.
+template <typename ResultType, typename DeclViewT, typename... DeclArgs>
+ResultType MojoASTDeclRef::createDeclView(DeclArgs &&...declArgs) const {
+  if constexpr (std::is_same_v<ResultType, ApproximateDeclViewKind>)
+    return DeclViewT::getKindStatic();
+  else
+    return std::unique_ptr<DeclViewT>(
+        new DeclViewT(std::forward<DeclArgs>(declArgs)...));
+}
+
+/// Common implementation for `getView` and `getApproximateViewKind`.
+///
+/// If parametrized with `DeclViewInstance`, it will return a DeclView, which
+/// can be an expensive operation for entities like function arguments, but it
+/// is guaranteed to be correct. This is considered the correct but slow path.
+///
+/// If parametrized with `ApproximateDeclViewKind`, it will return a
+/// `DeclViewKind` by doing only cheap lookups. In general, expensive or
+/// unbounded iterations are disallowed in this variant and only executed in
+/// the `DeclViewInstance` case. This is considered the approximate but fast
+/// path, which is used by interactive tools like the LSP.
+template <typename ResultType>
+ResultType MojoASTDeclRef::getViewImpl() const {
+  static_assert(
+      std::is_same_v<ResultType, ApproximateDeclViewKind> ||
+          std::is_same_v<ResultType, DeclViewInstance>,
+      "Only ApproximateDeclViewKind or DeclViewInstance are valid parameters.");
+
+  constexpr bool isApproximateResult =
+      std::is_same_v<ResultType, ApproximateDeclViewKind>;
+
   if (isa<AliasDeclOp>(*decl))
-    return std::unique_ptr<AliasDeclView>(new AliasDeclView(*this));
-  if (isa<FileModuleOp>(*decl))
-    return std::unique_ptr<ModuleDeclView>(new ModuleDeclView(*this));
+    return createDeclView<ResultType, AliasDeclView>(*this);
+
   if (isa<LIT::FuncOp>(*decl))
-    return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
+    return createDeclView<ResultType, FunctionDeclView>(*this);
+
+  // If the decl corresponds to a signature, synthesize a function view for
+  // it.
+  if (auto signature = getSignatureFromDecl(decl))
+    return createDeclView<ResultType, FunctionDeclView>(*this, signature);
+
+  if (isa<FileModuleOp>(*decl))
+    return createDeclView<ResultType, ModuleDeclView>(*this);
+
   if (isa<StructDeclOp>(*decl))
-    return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
+    return createDeclView<ResultType, StructDeclView>(*this);
+
   if (isa<StructFieldOp>(*decl))
-    return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
+    return createDeclView<ResultType, StructFieldDeclView>(*this);
+
   if (auto varDecl = dyn_cast<VarDeclOp>(*decl)) {
     // Handle the case of an argument materialized in a variable.
     if (varDecl.getKind() == VarDeclKind::Arg) {
-      auto parentFn = varDecl->getParentOfType<LIT::FuncOp>();
-      for (auto [idx, pogAttr] :
-           llvm::enumerate(parentFn.getSignature().getArgListAttrs().getPogs()))
-        if (pogAttr.getName() == varDecl.getNameAttr())
-          return createArgumentDeclView(*this, idx);
+      if constexpr (isApproximateResult) {
+        return DeclViewKind::DK_ArgumentDeclView;
+      } else {
+        auto parentFn = varDecl->getParentOfType<LIT::FuncOp>();
+        for (auto [idx, pogAttr] : llvm::enumerate(
+                 parentFn.getSignature().getArgListAttrs().getPogs()))
+          if (pogAttr.getName() == varDecl.getNameAttr())
+            return createArgumentDeclView(*this, idx);
+      }
     }
     // Otherwise, this is a regular variable.
-    return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
+    return createDeclView<ResultType, VariableDeclView>(*this);
   }
+
   if (isa<GlobalVarDeclOp>(*decl))
-    return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
+    return createDeclView<ResultType, VariableDeclView>(*this);
+
   if (isa<PackageOp>(*decl))
-    return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
+    return createDeclView<ResultType, PackageDeclView>(*this);
+
   if (isa<TraitDeclOp>(*decl))
-    return std::unique_ptr<TraitDeclView>(new TraitDeclView(*this));
+    return createDeclView<ResultType, TraitDeclView>(*this);
 
   // After failing to match with regular Ops, we then inspect the IR to
   // identify if this decl is an argument.
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    if (std::optional<size_t> argIdx = getDeclArgIndex(*decl, bbArg))
-      return createArgumentDeclView(*this, *argIdx);
-    return nullptr;
+    if constexpr (isApproximateResult) {
+      return DeclViewKind::DK_ArgumentDeclView;
+    } else {
+      if (std::optional<size_t> argIdx = getDeclArgIndex(*decl, bbArg))
+        return createArgumentDeclView(*this, *argIdx);
+      return nullptr;
+    }
   }
 
   // Handle def argument shadows, the parser produces these as
@@ -236,80 +288,60 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     if (auto dlvalue = lvalue.getIfDLValue()) {
       if (dlvalue->isDefArgument()) {
         auto &defArgDLVal = ((DefArgumentWrapperDLValue &)*dlvalue);
-        return createArgumentDeclView(*this, defArgDLVal.argIndex);
+        if constexpr (isApproximateResult)
+          return DeclViewKind::DK_ArgumentDeclView;
+        else
+          return createArgumentDeclView(*this, defArgDLVal.argIndex);
       }
     }
     // Resolved to mutable.
     if (auto mlValue = lvalue.getIfMLValue()) {
       if (auto var = mlValue.getDefiningOp<VarDeclOp>()) {
-        if (var.getArgShadowIndex().has_value())
-          return createArgumentDeclView(*this, var.getArgShadowIndex().value());
+        if (var.getArgShadowIndex().has_value()) {
+          if constexpr (isApproximateResult)
+            return DeclViewKind::DK_ArgumentDeclView;
+          else
+            return createArgumentDeclView(*this,
+                                          var.getArgShadowIndex().value());
+        }
       }
     }
   }
 
   // Now we inspect the IR checking for a parameter.
   if (ParamDeclRefAttr param = getIfParameter(*this)) {
-    auto name = demangleIfNeeded(param).getName().getValue();
-    // The parent FunctionDeclView or StructDeclView is the one who owns the
-    // docstring of this parameter, so it's easier to construct that view and
-    // extract the parameter from it.
-    auto getParamViewFromParent =
-        [&](auto &parentView) -> std::unique_ptr<DeclView> {
-      for (const ParameterDeclView &paramView : parentView->parameters)
-        if (paramView.getName() == name)
-          return std::make_unique<ParameterDeclView>(paramView);
-      return nullptr;
-    };
-
-    std::unique_ptr<DeclView> parentView = getParentDecl().getView();
-    if (!parentView)
-      return nullptr;
-    return TypeSwitch<DeclView *, std::unique_ptr<DeclView>>(&*parentView)
-        .Case<FunctionDeclView, StructDeclView>(getParamViewFromParent)
-        .Default({nullptr});
+    if constexpr (isApproximateResult) {
+      return DeclViewKind::DK_ParameterDeclView;
+    } else {
+      auto name = demangleIfNeeded(param).getName().getValue();
+      // The parent FunctionDeclView or StructDeclView is the one who owns the
+      // docstring of this parameter, so it's easier to construct that view and
+      // extract the parameter from it.
+      auto getParamViewFromParent =
+          [&](auto &parentView) -> std::unique_ptr<DeclView> {
+        for (const ParameterDeclView &paramView : parentView->parameters)
+          if (paramView.getName() == name)
+            return std::make_unique<ParameterDeclView>(paramView);
+        return nullptr;
+      };
+      std::unique_ptr<DeclView> parentView = getParentDecl().getView();
+      if (!parentView)
+        return nullptr;
+      return TypeSwitch<DeclView *, std::unique_ptr<DeclView>>(&*parentView)
+          .Case<FunctionDeclView, StructDeclView>(getParamViewFromParent)
+          .Default({nullptr});
+    }
   }
 
-  // If the decl corresponds to a signature, synthesize a function view for it.
-  if (auto signature = getSignatureFromDecl(decl))
-    return std::make_unique<FunctionDeclView>(
-        FunctionDeclView(*this, signature));
+  return {};
+}
 
-  return nullptr;
+std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
+  return getViewImpl<DeclViewInstance>();
 }
 
 std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
-  if (isa<AliasDeclOp>(*decl))
-    return DeclViewKind::DK_AliasDeclView;
-  if (isa<FileModuleOp>(*decl))
-    return DeclViewKind::DK_ModuleDeclView;
-  if (getSignatureFromDecl(decl))
-    return DeclViewKind::DK_FunctionDeclView;
-  if (isa<StructDeclOp>(*decl))
-    return DeclViewKind::DK_StructDeclView;
-  if (isa<StructFieldOp>(*decl))
-    return DeclViewKind::DK_StructFieldDeclView;
-  if (auto varDecl = dyn_cast<VarDeclOp>(*decl)) {
-    if (varDecl.getKind() == VarDeclKind::Arg)
-      return DeclViewKind::DK_ArgumentDeclView;
-    return DeclViewKind::DK_VariableDeclView;
-  }
-  if (isa<GlobalVarDeclOp>(*decl))
-    return DeclViewKind::DK_VariableDeclView;
-  if (isa<PackageOp>(*decl))
-    return DeclViewKind::DK_PackageDeclView;
-  if (isa<TraitDeclOp>(*decl))
-    return DeclViewKind::DK_TraitDeclView;
-
-  // After failing to match with regular Ops, we then inspect the IR to identify
-  // if this decl is an argument.
-  if (getIfNotOwnedFunctionArgument(*this))
-    return DeclViewKind::DK_ArgumentDeclView;
-
-  // Now we inspect the IR checking for a parameter.
-  if (getIfParameter(*this))
-    return DeclViewKind::DK_ParameterDeclView;
-  return std::nullopt;
+  return getViewImpl<ApproximateDeclViewKind>();
 }
 
 //===----------------------------------------------------------------------===//
