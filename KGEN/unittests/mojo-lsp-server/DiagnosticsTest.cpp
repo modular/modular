@@ -137,3 +137,19 @@ struct Test:
                      })
       .execute();
 }
+
+TEST(DiagnosticsTest, ignoreUnusedTraitMethodArgument) {
+  Document doc("test:///unused.mojo", R"(
+trait Test:
+  fn method(self, x: Int):
+    ...
+  )");
+
+  createTestClient()
+      .open(doc)
+      .onDiagnostics(doc,
+                     [](const std::vector<lsp::Diagnostic> &diags) {
+                       ASSERT_EQ((int)diags.size(), 0);
+                     })
+      .execute();
+}

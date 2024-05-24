@@ -613,6 +613,10 @@ shouldSkipArgument(DenseMap<const ASTDecl *, std::unique_ptr<DeclView>> &views,
   std::optional<DeclViewKind> grandparentKind =
       grandparent.getApproximateViewKind();
 
+  // All arguments to trait methods/functions are, by definition, unused.
+  if (grandparentKind == DeclViewKind::DK_TraitDeclView)
+    return true;
+
   // We want to ignore an unused first argument for struct methods, as this
   // may be the `self` variable.
   if (grandparentKind == DeclViewKind::DK_StructDeclView) {
