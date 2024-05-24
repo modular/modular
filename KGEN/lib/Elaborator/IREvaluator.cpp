@@ -291,10 +291,9 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   }
 
   auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
-  elaborator->addDeferredFunction(populate);
-
   auto populateFnRef = SymbolConstantAttr::get(
       FlatSymbolRefAttr::get(populate.getSymNameAttr()), populateFnType);
+  elaborator->addDeferredFunction(populate);
   return {
       StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
                        populateFnRef})};

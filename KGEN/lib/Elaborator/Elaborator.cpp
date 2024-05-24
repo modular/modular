@@ -338,18 +338,11 @@ static void collectOpsToProcessInside(Region &toProcess, ImplNode *parent,
 // Elaborator Implementation
 //===----------------------------------------------------------------------===//
 
-static ModuleOp cloneAsEmpty(const SymbolTable &symtab) {
-  ModuleOp newModule = cast<ModuleOp>(symtab.getOp()).cloneWithoutRegions();
-  newModule.getBodyRegion().push_back(new Block);
-  return newModule;
-}
-
 Elaborator::Elaborator(SymbolTable &symtab,
                        ParameterCollector::Analysis &paramCache,
                        TargetInfoAttr target, ElaboratorCallbacks callbacks,
                        const ElaborateGeneratorsOptions &config)
-    : target(target), config(config), newModule(cloneAsEmpty(symtab)),
-      newSymTab(SymbolTable(*newModule)), oldSymTab(symtab),
+    : target(target), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
       runtime(*loadContext(target.getContext())->get<LLCL::Runtime>()),
       g(this->runtime),
@@ -358,9 +351,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
 
 FuncOp Elaborator::lookupConcreteFunction(SymbolRefAttr symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-  return newSymTab.read([name](const SymbolTable &symtab) {
-    return symtab.lookup<FuncOp>(name);
-  });
+  return concreteFuncs.read([name](auto &map) { return map.at(name); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -386,23 +377,17 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
                                                     Location loc,
                                                     SymbolConstantAttr symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
-  Operation *gen = oldSymTab.lookup(name);
+  auto gen = oldSymTab.lookup<GeneratorOp>(name);
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
-  if (!gen) {
-    FuncOp concrete = newSymTab.read([name](const SymbolTable &symtab) {
-      return symtab.lookup<FuncOp>(name);
-    });
-    assert(concrete && "expected to find a concrete function");
-    return concrete;
-  }
+  if (!gen)
+    return concreteFuncs.read([name](auto &funcs) { return funcs.at(name); });
 
   auto vals =
       ParameterExprArrayAttr::get(loc.getContext(), symbol.getParamValues());
 
   // Lookup the node if it already exists.
-  ParamNode *node =
-      g.getOrCreate(runtime, vals, cast<GeneratorOp>(gen), /*depth=*/0);
+  ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
   // If the node has already been elaborated, just use that result.
   ElaborationState result =
       specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
@@ -450,11 +435,16 @@ ErrorTreeOr<TypedAttr> Elaborator::concretizeSymbolsWithin(TypedAttr value,
 
 void Elaborator::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
-  addConcreteFunc(op);
-  newSymTab.modify([this, op](SymbolTable &symtab) {
-    symtab.insert(op);
-    deferredSymbols.push_back(op);
-  });
+  if (concreteFuncs.modify(
+          [this, op, name = op.getSymNameAttr()](auto &funcs) mutable {
+            if (funcs.try_emplace(name, op).second) {
+              deferredSymbols.push_back(op);
+              return true;
+            }
+            op.erase();
+            return false;
+          }))
+    addConcreteFunc(op);
 }
 
 //===----------------------------------------------------------------------===//
@@ -498,15 +488,10 @@ Elaborator::instantiateGeneratorReference(
   Operation *calleeOp = oldSymTab.lookup(name);
 
   if (!calleeOp) {
-    auto func = newSymTab.read([name](const SymbolTable &symtab) {
-      return symtab.lookup<FuncOp>(name);
-    });
-    assert(func && "could not find referenced generator, invalid IR?");
+    FuncOp func =
+        concreteFuncs.read([name](auto &map) { return map.at(name); });
     ImplNode *node =
-        g.concreteNodes.read([func](const DenseMap<FuncOp, ImplNode *> &map) {
-          return map.lookup(func);
-        });
-    assert(node && "concrete callee is missing a node?");
+        g.concreteNodes.read([func](auto &map) { return map.at(func); });
     return {ElaborationState::advance(), node};
   }
 
@@ -1207,8 +1192,9 @@ ElaborationState Elaborator::processScope(ImplNode *node,
 }
 
 ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
-  if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
-    return ElaborationState::advance();
+  if (Block *block = op->getBlock())
+    if (!block->isEntryBlock())
+      return ElaborationState::advance();
 
   if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
     return processParamDeclareOp(node, declare);
@@ -1355,7 +1341,9 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  newSymTab.modify([newFunc](SymbolTable &symtab) { symtab.insert(newFunc); });
+  concreteFuncs.modify([newFunc, mangledName](auto &map) {
+    map.try_emplace(mangledName, newFunc);
+  });
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
@@ -1555,17 +1543,9 @@ LogicalResult Elaborator::run(ModuleOp theModule,
 
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
-  auto moveSymbol = [this](Operation *op) {
-    oldSymTab.remove(op);
-    op->remove();
-    newSymTab.get().insert(op);
-  };
-  for (Operation &op : llvm::make_early_inc_range(theModule.getOps())) {
-    if (auto func = dyn_cast<FuncOp>(op))
-      addConcreteFunc(func);
-    if (!isa<GeneratorOp, PackageLinkOp>(op) &&
-        isa<mlir::SymbolOpInterface>(op))
-      moveSymbol(&op);
+  for (FuncOp func : theModule.getOps<FuncOp>()) {
+    addConcreteFunc(func);
+    concreteFuncs.get().try_emplace(func.getSymNameAttr(), func);
   }
 
   auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
@@ -1632,72 +1612,57 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary
   // generators - everything else we don't care about.
-  {
-    CompilerTimeTraceScope traceScope("eraseFuncs");
-    LLCL::ForkJoin eraseState(runtime);
-    auto eraseFunc = [&eraseState](Operation *op, SymbolTable &symtab) {
-      symtab.remove(op);
-      op->remove();
-      eraseState.fork([op] { op->erase(); });
-    };
-    // Sort instantiations of each generator to ensure we have a deterministic
-    // output in multithreaded execution.
-    struct SuccessfulFuncs {
-      std::string paramStr;
-      FuncOp func;
-    };
-    llvm::MapVector<GeneratorOp, std::vector<SuccessfulFuncs>>
-        genInstantiations;
-    for (auto gen : theModule.getOps<GeneratorOp>())
+  // Sort instantiations of each generator to ensure we have a deterministic
+  // output in multithreaded execution.
+  struct SuccessfulFuncs {
+    std::string paramStr;
+    FuncOp func;
+  };
+  auto *newBlock = new Block;
+  llvm::MapVector<GeneratorOp, std::vector<SuccessfulFuncs>> genInstantiations;
+  for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
+    if (auto gen = dyn_cast<GeneratorOp>(op)) {
       genInstantiations[gen];
-    for (ParamNode &node :
-         llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
-      CompilerTimeTraceScope traceScope(
-          "processGen", [name = node.gen.getSymName()] { return name.str(); });
-      // Erase all erroneous functions.
-      if (node.impl->error) {
-        eraseFunc(node.impl->func, newSymTab.get());
-        continue;
-      }
-
-      genInstantiations[node.gen].push_back(SuccessfulFuncs{
-          mlir::debugString(node.inputParams), node.impl->func});
+    } else {
+      op.remove();
+      newBlock->push_back(&op);
+    }
+  }
+  for (ParamNode &node :
+       llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
+    CompilerTimeTraceScope traceScope(
+        "processGen", [name = node.gen.getSymName()] { return name.str(); });
+    // Erase all erroneous functions.
+    if (node.impl->error) {
+      node.impl->func.erase();
+      continue;
     }
 
-    // Now reorder all instantiations of each generator to be deterministic.
-    Block *newBlock = newModule->getBody();
-    for (auto &[gen, instantiations] : genInstantiations) {
-      CompilerTimeTraceScope traceScope(
-          "sortInstantiations",
-          [name = gen.getSymNameAttr()] { return name.str(); });
-      llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
-        return lhs.paramStr < rhs.paramStr;
-      });
-      for (auto &[_, func] : instantiations)
-        func->moveBefore(newBlock, newBlock->end());
-    }
+    genInstantiations[node.gen].push_back(
+        SuccessfulFuncs{mlir::debugString(node.inputParams), node.impl->func});
+  }
 
-    // Erase all generators.
-    cast<ModuleOp>(oldSymTab.getOp())
-        .getBodyRegion()
-        .takeBody(newModule->getBodyRegion());
-
-    eraseState.join();
+  // Now reorder all instantiations of each generator to be deterministic.
+  for (auto &[gen, instantiations] : genInstantiations) {
+    llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
+      return lhs.paramStr < rhs.paramStr;
+    });
+    for (auto &[_, func] : instantiations)
+      newBlock->push_back(func);
   }
 
   // Sort and then push on all the deferred functions.
   llvm::sort(deferredSymbols, [](FuncOp lhs, FuncOp rhs) {
     return lhs.getSymName() < rhs.getSymName();
   });
-  for (FuncOp symbol : deferredSymbols) {
-    symbol->remove();
-    theModule.push_back(symbol);
-  }
+  for (FuncOp func : deferredSymbols)
+    newBlock->push_back(func);
 
   // Update the symbol table with the new one.
-  oldSymTab = std::move(newSymTab.get());
-  // HACK: Need a `SymbolTable::setOp` to properly avoid recomputing the table.
-  *((Operation **)&oldSymTab) = theModule;
+  theModule.getBody()->erase();
+  theModule.getBodyRegion().push_back(newBlock);
+  // Recompute the new symbol table.
+  oldSymTab = SymbolTable(theModule);
   return success();
 }
 

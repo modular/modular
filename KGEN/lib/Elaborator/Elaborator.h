@@ -196,13 +196,14 @@ private:
 
   /// Insert an ImplNode for a function that is already concrete.
   void addConcreteFunc(FuncOp func) {
-    g.concreteNodes.modify([this, func](auto &map) mutable {
-      auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
-                                             func.getBodyRegion(),
-                                             func.getSymName().str());
-      map.try_emplace(func, node.get());
-      g.elaboratedNodes.push_back(std::move(node));
-    });
+    auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
+                                           func.getBodyRegion(),
+                                           func.getSymName().str());
+    g.concreteNodes.modify(
+        [this, func, node = std::move(node)](auto &map) mutable {
+          map.try_emplace(func, node.get());
+          g.elaboratedNodes.push_back(std::move(node));
+        });
   }
 
   /// Once a concrete function has finished specializing, finish processing the
@@ -343,11 +344,8 @@ private:
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
 
-  /// This is the new module that concrete functions are being generated into.
-  OwningOpRef<ModuleOp> newModule;
-
   /// This is the symbol table of the new module.
-  Shared<SymbolTable> newSymTab;
+  Shared<DenseMap<StringAttr, FuncOp>> concreteFuncs;
 
   /// This symbol table allows efficient lookups across the module.
   SymbolTable &oldSymTab;
