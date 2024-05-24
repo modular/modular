@@ -616,13 +616,14 @@ InterpreterState::startInterpreterAt(Region &region,
 
 void InterpreterState::reset() {
   pc = nullptr;
-  stack.clear();
+  stackIdx = 0;
   for (MemoryTable &table : memory)
     table.reset();
 }
 
 ErrorTree InterpreterState::addStackTrace(ErrorTree error) {
-  for (const StackFrame &frame : llvm::reverse(stack)) {
+  for (const StackFrame &frame :
+       llvm::reverse(ArrayRef(stack).take_front(stackIdx))) {
     StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
     error = ErrorTree(frame.func->getLoc(),
                       Error("failed to interpret function @" + funcName),
@@ -756,43 +757,16 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
   }
 
   // The stack frame must be empty.
-  assert(stack.empty() && "exiting interpreter with remaining stack frames");
-  return takeReturnValues();
-}
-
-Operation *InterpreterState::popFrame() {
-  // Drop all stack memory on the current frame.
-  MemoryTable &table = getTable(MemoryKind::Stack);
-  StackFrame &frame = getCurrentFrame();
-  for (size_t i = 0, e = frame.numStackAllocs; i != e; ++i)
-    table.blobs.pop_back();
-  for (size_t i = 0, e = frame.numSymbolicAllocs; i != e; ++i)
-    symbolicMemory.pop_back();
-
-  Operation *origin = frame.origin;
-  stack.pop_back();
-  return origin;
+  if (stackIdx)
+    llvm::report_fatal_error(
+        "exiting interpreter with remaining stack frames " + Twine(stackIdx));
+  return llvm::to_vector(returnValues);
 }
 
 Operation *InterpreterState::getOrigin(size_t depth) {
   if (depth >= stack.size())
     return nullptr;
-  return stack[stack.size() - 1 - depth].origin;
-}
-
-void InterpreterState::transferControlFlowTo(Operation *target) {
-  pc = target;
-  if (pc) {
-    mapResults(takeReturnValues());
-    pc = pc->getNextNode();
-  }
-}
-
-void InterpreterState::transferControlFlowTo(Block *target,
-                                             ArrayRef<Attribute> arguments) {
-  for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
-    mapOrOverwrite(arg, value);
-  pc = &target->front();
+  return stack[stackIdx - 1 - depth].origin;
 }
 
 //===----------------------------------------------------------------------===//

@@ -120,11 +120,21 @@ public:
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the
   /// current return values are taken as the results of the target operation.
-  void transferControlFlowTo(Operation *target);
+  void transferControlFlowTo(Operation *target) {
+    pc = target;
+    if (pc) {
+      mapResults(returnValues);
+      pc = pc->getNextNode();
+    }
+  }
 
   /// Transfer control flow to the beginning of the given block with the
   /// constant values of the block arguments.
-  void transferControlFlowTo(Block *target, ArrayRef<Attribute> arguments);
+  void transferControlFlowTo(Block *target, ArrayRef<Attribute> arguments) {
+    for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
+      mapOrOverwrite(arg, value);
+    pc = &target->front();
+  }
 
   //===--------------------------------------------------------------------===//
   // Interpreter Stack Management
@@ -134,9 +144,7 @@ public:
   /// the stack frame is for so that if an error occurs, we can emit a nice
   /// stacktrace.
   struct StackFrame {
-    StackFrame(Operation *origin, Operation *func)
-        : origin(origin), func(func), numStackAllocs(0), numSymbolicAllocs(0) {}
-
+    StackFrame() {}
     /// The operation that created the frame and invoked the function.
     Operation *origin;
     /// The corresponding function to the frame.
@@ -153,29 +161,39 @@ public:
 
   /// Push a new stack frame.
   void pushFrame(Operation *origin, Operation *func) {
-    stack.emplace_back(origin, func);
+    StackFrame &frame =
+        stackIdx == stack.size() ? stack.emplace_back() : stack[stackIdx];
+    // Initialize or re-initialize the frame. This avoids unnecessary memory
+    // pressure from freeing and allocating the contained DenseMap.
+    frame.origin = origin;
+    frame.func = func;
+    frame.numStackAllocs = 0;
+    frame.numSymbolicAllocs = 0;
+    ++stackIdx;
   }
 
   /// Pop the current stack frame, returning the origin operation.
-  Operation *popFrame();
+  Operation *popFrame() {
+    // Drop all stack memory on the current frame.
+    MemoryTable &table = getTable(MemoryKind::Stack);
+    StackFrame &frame = getCurrentFrame();
+    for (size_t i = 0, e = frame.numStackAllocs; i != e; ++i)
+      table.blobs.pop_back();
+    for (size_t i = 0, e = frame.numSymbolicAllocs; i != e; ++i)
+      symbolicMemory.pop_back();
+
+    Operation *origin = frame.origin;
+    // Soft-remove the frame from the stack.
+    --stackIdx;
+    return origin;
+  }
 
   /// Return the origin operation of the frame at the given depth in the stack.
   /// If the stack is not deep enough, return null.
   Operation *getOrigin(size_t depth);
 
   /// Set the return values.
-  void setReturnValues(ArrayRef<Attribute> values) {
-    assert(!returnValues && "already have return values");
-    returnValues = llvm::to_vector(values);
-  }
-
-  /// Take the current return values.
-  SmallVector<Attribute> takeReturnValues() {
-    assert(returnValues && "no return values");
-    SmallVector<Attribute> values = std::move(*returnValues);
-    returnValues.reset();
-    return values;
-  }
+  void setReturnValues(ArrayRef<Attribute> values) { returnValues = values; }
 
   /// Set the value of a named global.
   void setNamedGlobal(StringAttr name, Attribute value) {
@@ -333,7 +351,7 @@ private:
 
   StackFrame &getCurrentFrame() {
     assert(!stack.empty() && "expected a stack frame");
-    return stack.back();
+    return stack[stackIdx - 1];
   }
 
   /// Process input arguments to the region and initialize the program counter.
@@ -354,10 +372,11 @@ private:
 
   /// A call stack. The values in the current frame are available to the
   /// operation being interpreted.
-  std::vector<StackFrame> stack;
+  SmallVector<StackFrame, 32> stack;
+  size_t stackIdx = 0;
 
-  /// An optional list of return values.
-  std::optional<SmallVector<Attribute>> returnValues;
+  /// A list of return values.
+  ArrayRef<Attribute> returnValues;
 
   /// This map implements named global values. Named global values represent a
   /// mechanism for storing SSA value captures at compile time.
