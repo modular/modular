@@ -7,7 +7,6 @@ modular_cc_test(
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -18,17 +17,13 @@ modular_cc_test(
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
 modular_cc_test(
     name = "ResourceTest",
     srcs = ["ResourceTest.cpp"],
-    deps = [
-        "//LLCL:Support",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//LLCL:Support"],
 )
 
 modular_cc_test(
@@ -38,7 +33,6 @@ modular_cc_test(
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -49,7 +43,6 @@ modular_cc_test(
         "//LLCL:Support",
         "//Support:Base",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -61,6 +54,5 @@ modular_cc_test(
         "//LLCL:RuntimeGlobals",
         "//LLCL:Support",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )

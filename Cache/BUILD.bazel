@@ -33,7 +33,6 @@ modular_cc_test(
         ":Cache",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:FuncDialect",
     ],

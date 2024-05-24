@@ -964,11 +964,7 @@ modular_cc_test(
         ":gen_link_test",
     ],
     linkopts = ["-lz"],
-    deps = [
-        ":CompilerRT.distributable",
-        "@com_github_google_googletest//:gtest",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = [":CompilerRT.distributable"],
 )
 
 globals_library(

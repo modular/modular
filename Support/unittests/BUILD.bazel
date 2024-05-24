@@ -3,10 +3,7 @@ load("//bazel:api.bzl", "modular_cc_test")
 modular_cc_test(
     name = "ASN1Test",
     srcs = ["ASN1Test.cpp"],
-    deps = [
-        "//Support:ASN1",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:ASN1"],
 )
 
 modular_cc_test(
@@ -15,7 +12,6 @@ modular_cc_test(
     deps = [
         "//Support:ADT",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -36,7 +32,6 @@ modular_cc_test(
     deps = [
         "//Support:Base",
         "//Support:Buffer",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -45,19 +40,13 @@ modular_cc_test(
     srcs = [
         "BufferTest.cpp",
     ],
-    deps = [
-        "//Support:Buffer",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Buffer"],
 )
 
 modular_cc_test(
     name = "Base64Test",
     srcs = ["Base64Test.cpp"],
-    deps = [
-        "//Support:Base64",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Base64"],
 )
 
 modular_cc_test(
@@ -66,17 +55,13 @@ modular_cc_test(
     deps = [
         "//LLCL:CompilerSupport",
         "//Support:Compiler",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
 modular_cc_test(
     name = "ConfigurationTest",
     srcs = ["ConfigurationTest.cpp"],
-    deps = [
-        "//Support:Configuration",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Configuration"],
 )
 
 modular_cc_test(
@@ -86,17 +71,13 @@ modular_cc_test(
         "//Support:ADT",
         "//Support:Base",
         "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
 modular_cc_test(
     name = "CryptographyTest",
     srcs = glob(["Cryptography/*.cpp"]),
-    deps = [
-        "//Support:Cryptography",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Cryptography"],
 )
 
 modular_cc_test(
@@ -107,44 +88,31 @@ modular_cc_test(
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "//Support:DebugInfoTransforms",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
 modular_cc_test(
     name = "DeviceSpecsTest",
     srcs = ["DeviceSpecsTest.cpp"],
-    deps = [
-        "//Support:DeviceSpecs",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:DeviceSpecs"],
 )
 
 modular_cc_test(
     name = "EntitlementsTest",
     srcs = glob(["Entitlements/*.cpp"]),
-    deps = [
-        "//Support:Entitlements",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Entitlements"],
 )
 
 modular_cc_test(
     name = "HMACTest",
     srcs = ["HMACTest.cpp"],
-    deps = [
-        "//Support:HMAC",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:HMAC"],
 )
 
 modular_cc_test(
     name = "MicroBenchmarkTest",
     srcs = ["MicroBenchmarkTest.cpp"],
-    deps = [
-        "//Support:MicroBenchmark",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:MicroBenchmark"],
 )
 
 modular_cc_test(
@@ -153,35 +121,25 @@ modular_cc_test(
     deps = [
         "//Support:Buffer",
         "//Support:Filesystem",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
 modular_cc_test(
     name = "URITest",
     srcs = ["URITest.cpp"],
-    deps = [
-        "//Support:URI",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:URI"],
 )
 
 modular_cc_test(
     name = "JSONTest",
     srcs = ["JSONTest.cpp"],
-    deps = [
-        "//Support:JSON",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:JSON"],
 )
 
 modular_cc_test(
     name = "HTTPTest",
     srcs = glob(["HTTP/*.cpp"]),
-    deps = [
-        "//Support:HTTP",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:HTTP"],
 )
 
 modular_cc_test(
@@ -192,10 +150,7 @@ modular_cc_test(
         "TensorShapeTest.cpp",
         "TensorSpecTest.cpp",
     ],
-    deps = [
-        "//Support:ML",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:ML"],
 )
 
 modular_cc_test(
@@ -205,7 +160,6 @@ modular_cc_test(
         "//LLCL:CompilerSupport",
         "//Support:MArchTarget",
         "//Support:Threading",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -215,7 +169,6 @@ modular_cc_test(
     deps = [
         "//Support:Globals",
         "//Support:Profiling",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -227,7 +180,6 @@ modular_cc_test(
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
         "//Support:MArchTarget",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -235,26 +187,17 @@ modular_cc_test(
     name = "TelemetryTest",
     srcs = ["TelemetryTest.cpp"],
     tags = ["manual"],  # TODO: fix on linux and re-enable
-    deps = [
-        "//Support:Telemetry",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Telemetry"],
 )
 
 modular_cc_test(
     name = "FillTest",
     srcs = ["ML/FillTest.cpp"],
-    deps = [
-        "//Support:ML",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:ML"],
 )
 
 modular_cc_test(
     name = "MeteringTests",
     srcs = glob(["Metering/*.cpp"]),
-    deps = [
-        "//Support:Metering",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = ["//Support:Metering"],
 )

@@ -9,10 +9,7 @@ kgen_kernel(
 modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
-    deps = [
-        ":test_kernels",
-        "@com_github_google_googletest//:gtest_main",
-    ],
+    deps = [":test_kernels"],
 )
 
 # TODO: Remove this and fix the weird import in Support.h
