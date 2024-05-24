@@ -388,6 +388,27 @@ llvm::json::Value mlir::lsp::toJSON(const FoldingRange &value) {
   return result;
 }
 
+//===----------------------------------------------------------------------===//
+// RenameParams
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value lsp::toJSON(const RenameParams &params) {
+  return llvm::json::Object{{"textDocument", params.textDocument},
+                            {"position", params.position},
+                            {"newName", params.newName}};
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value, RenameParams &params,
+                   llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("textDocument", params.textDocument) &&
+         o.map("position", params.position) && o.map("newName", params.newName);
+}
+
+//===----------------------------------------------------------------------===//
+// Serialization methods not available in the upstream MLIR code
+//===----------------------------------------------------------------------===//
+
 llvm::json::Value lsp::toJSON(const TextDocumentItem &params) {
   return llvm::json::Object{{"uri", params.uri},
                             {"languageId", params.languageId},
