@@ -134,9 +134,9 @@ fn test_layout_mma[
 
     var mma_kernel = Function[mma_func]()
     mma_kernel(
-        mat_c,
-        mat_a,
-        mat_b,
+        mat_c.tensor,
+        mat_a.tensor,
+        mat_b.tensor,
         grid_dim=(1, 1),
         block_dim=(32),
         stream=stream,
