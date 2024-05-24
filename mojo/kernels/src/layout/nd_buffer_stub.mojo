@@ -877,6 +877,136 @@ fn _copy_layout_tensor_to_nd_buffer[
         unroll[_copy_element, num_elements * src.element_size]()
 
 
+@always_inline
+fn _copy_layout_tensor_to_nd_buffer_masked[
+    dst_rank: Int,
+    src_rank: Int,
+    mask_rank: Int,
+    dtype: DType,
+    layout: Layout,
+    shape: DimList,
+    dst_address_space: AddressSpace,
+    tensor_element_layout: Layout,
+    src_masked: Bool,
+    buff_element_layout_shape: StaticIntTuple[dst_rank],
+    mask_element_size: StaticIntTuple[mask_rank],
+    mask_element_stride: StaticIntTuple[mask_rank],
+](
+    dst: NDBuffer[dtype, dst_rank, shape],
+    buff_element_layout: ElementLayout[dst_rank, buff_element_layout_shape],
+    src: LayoutTensor[
+        dtype,
+        layout,
+        src_rank,
+        address_space=dst_address_space,
+        element_layout=tensor_element_layout,
+        masked=src_masked,
+    ],
+    tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
+):
+    alias num_elements = src.layout.size()
+    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+
+    constrained[
+        mask_rank == dst_rank, "mask_rank and dst should have same rank"
+    ]()
+
+    constrained[mask_rank == 2, "Masking is only supported for rank-2 inputs"]()
+
+    constrained[
+        mask_element_size[0] * mask_element_size[1] == 1,
+        "Only scalar element masksing is supported",
+    ]()
+
+    # 1d-vector load/store
+    @parameter
+    if (
+        tensor_element_layout.rank() == 1
+        and tensor_element_layout.stride[0] == 1
+        and src.element_size != 1
+    ):
+        constrained[
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
+            "LayoutTensor element shape != buffer element shape",
+        ]()
+        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+
+        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias alignment = alignof[src.element_type]()
+
+        @parameter
+        fn _copy_vector[i: Int]():
+            var dst_idx = _get_element_idx(
+                i * vec_size, dst, buff_element_layout
+            )
+            alias src_idx = make_layout(tensor_element_layout, src.layout)(
+                i * vec_size
+            )
+
+            var src_element = src.ptr.offset(src_idx).load[
+                width=vec_size, alignment=alignment
+            ]()
+            dst.data.offset(dst_idx).store[width=vec_size, alignment=alignment](
+                src_element
+            )
+
+        unroll[_copy_vector, num_elements]()
+    # 2d-vector load/store
+    elif (
+        tensor_element_layout.rank() == 2
+        and tensor_element_layout.stride[1] == 1
+    ):
+        alias num_copies = tensor_element_layout.shape[0].value()
+        alias vec_width = tensor_element_layout.shape[1].value()
+
+        @parameter
+        fn copy_by_element[i: Int]():
+            # Offset to the current element.
+            var dst_offset = _get_element_idx(i, dst)
+
+            alias src_offset = layout(i)
+
+            @parameter
+            fn copy_by_vec[j: Int]():
+                var dst_idx = dst_offset + _get_element_idx(
+                    j, buff_element_layout
+                )
+                alias src_idx = src_offset + tensor_element_layout(j)
+
+                var src_vec = src.ptr.load[
+                    width=vec_width,
+                    alignment = alignof[SIMD[dtype, vec_width]](),
+                ](src_idx).cast[dtype]()
+
+                dst.data.store[
+                    width=vec_width,
+                    alignment = alignof[SIMD[dtype, vec_width]](),
+                ](dst_idx, src_vec)
+
+            unroll[copy_by_vec, num_copies]()
+
+        unroll[copy_by_element, num_elements]()
+    # Scalar case.
+    else:
+
+        @parameter
+        fn _copy_element[i: Int]():
+            # Evaluate the mask, skip OOB element copies
+            alias dim_0_shape = to_int(src.layout.shape[0])
+            var dim_0 = i % dim_0_shape
+            var dim_1 = i // dim_0_shape
+            var mask_val = tile_mask.access_mask((dim_0, dim_1))
+            var can_access = mask_val[0] and mask_val[1]
+            if not can_access:
+                return
+
+            alias src_idx = make_layout(tensor_element_layout, src.layout)(i)
+            var dst_idx = _get_element_idx(i, dst, buff_element_layout)
+            dst.data[dst_idx] = src.ptr[src_idx]
+
+        unroll[_copy_element, num_elements * src.element_size]()
+
+
 # Copies an nd-buffer fragment to `thread_id` thread local LayoutTensor element
 # where each element of the fragment is originally distributed by `thread_layout`.
 #
@@ -1122,4 +1252,94 @@ fn copy_to_nd_buffer[
         )
         _copy_layout_tensor_to_nd_buffer(
             dst_thread_local, dst_element_layout, src_thread_local
+        )
+
+
+@always_inline("nodebug")
+fn copy_to_nd_buffer_masked[
+    dst_rank: Int,
+    src_rank: Int,
+    dtype: DType,
+    dst_buff_shape: DimList,
+    dst_address_space: AddressSpace,
+    src_data_layout: Layout,
+    src_element_layout: Layout,
+    src_masked: Bool,
+    thread_layout: Layout,
+](
+    dst: NDBuffer[dtype, dst_rank, dst_buff_shape],
+    src_thread_local: LayoutTensor[
+        dtype,
+        src_data_layout,
+        src_rank,
+        address_space=dst_address_space,
+        element_layout=src_element_layout,
+        masked=src_masked,
+    ],
+    tile_mask: TileMask,
+    thread_id: Int,
+):
+    # FIXME: Relax this to support any ranked data and thread layouts.
+    constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
+
+    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+
+    constrained[
+        src_thread_local.element_layout.rank() == 1
+        or src_thread_local.element_layout.rank() == 2,
+        "Only rank-1, rank-2 vectoriztion is supported",
+    ]()
+
+    alias threads_layout_rank = thread_layout.rank()
+    constrained[
+        threads_layout_rank == dst_rank,
+        "thread and data layout should have the same rank",
+    ]()
+
+    @parameter
+    if src_element_layout.rank() == 1:
+        var dst_vectorized = vectorize[1, to_int(src_element_layout.shape[0])](
+            dst
+        )
+        var vectorize_mask = _vectorize_mask[
+            sizes = (1, to_int(src_element_layout.shape[0]))
+        ](tile_mask)
+        var dst_vectorized_buffer = dst_vectorized[0]
+        var dst_element_layout = dst_vectorized[1]
+        var dst_thread_local = distribute[thread_layout=thread_layout](
+            dst_vectorized_buffer, thread_id
+        )
+        var distribute_mask = _distribute_mask[thread_layout](
+            vectorize_mask, thread_id
+        )
+        _copy_layout_tensor_to_nd_buffer_masked(
+            dst_thread_local,
+            dst_element_layout,
+            src_thread_local,
+            distribute_mask,
+        )
+    else:
+        var dst_vectorized = vectorize[
+            to_int(src_element_layout.shape[0]),
+            to_int(src_element_layout.shape[1]),
+        ](dst)
+        var vectorize_mask = _vectorize_mask[
+            sizes = (
+                to_int(src_element_layout.shape[0]),
+                to_int(src_element_layout.shape[0]),
+            )
+        ](tile_mask)
+        var dst_vectorized_buffer = dst_vectorized[0]
+        var dst_element_layout = dst_vectorized[1]
+        var dst_thread_local = distribute[thread_layout=thread_layout](
+            dst_vectorized_buffer, thread_id
+        )
+        var distribute_mask = _distribute_mask[thread_layout](
+            vectorize_mask, thread_id
+        )
+        _copy_layout_tensor_to_nd_buffer_masked(
+            dst_thread_local,
+            dst_element_layout,
+            src_thread_local,
+            distribute_mask,
         )
