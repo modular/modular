@@ -385,7 +385,7 @@ endfunction()
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
   cmake_parse_arguments(KGEN
-    "DISABLE_PREBUILT_PACKAGES;SAVE_TEMPS;NO_DEBUG"
+    "SAVE_TEMPS;NO_DEBUG"
     "OUTPUT"
     "LINK_LIBS;LINK_DIRS"
     ${ARGN})
@@ -408,7 +408,6 @@ function(add_kgen_library target)
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
-      $<$<BOOL:${KGEN_DISABLE_PREBUILT_PACKAGES}>:-disable-prebuilt-packages>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${kgen_output_rel}
       -O${KGEN_OPTIMIZATION_LEVEL}
