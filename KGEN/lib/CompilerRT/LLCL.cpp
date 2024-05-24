@@ -4,7 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ArraySupport/BufferRef.h"
+#include "ArraySupport/StateContext.h"
+#include "ArraySupport/TensorBufferRef.h"
 #include "CUDASupport/Globals/Globals.h"
 #include "KGEN/CompilerRT/MojoCallContext.h"
 #include "KGEN/CompilerRT/Registration.h"
@@ -314,12 +315,12 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<GML::BufferRef>(
-        ::M::GML::BufferRef::take(runtime, size, data));
+    value.copy().emplaceIndirect<TensorBufferRef>(
+        ::M::TensorBufferRef::take(runtime, size, data));
   } else {
     assert(!value.isReady());
-    value = value.createReady<GML::BufferRef>(
-        runtime, ::M::GML::BufferRef::take(runtime, size, data));
+    value = value.createReady<TensorBufferRef>(
+        runtime, ::M::TensorBufferRef::take(runtime, size, data));
   }
 }
 
@@ -363,7 +364,7 @@ KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async,
                                   size_t *sizeOut) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
-  auto &buffer = value.get<GML::BufferRef>();
+  auto &buffer = value.get<TensorBufferRef>();
   *sizeOut = buffer.getSize();
   return buffer.getBuffer();
 }
