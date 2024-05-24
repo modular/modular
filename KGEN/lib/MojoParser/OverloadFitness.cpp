@@ -523,6 +523,11 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       // Element type and address have to match and the mutability has to be
       // compatible.
+      RefType valueRefType;
+      if (argVal.isMValue())
+        valueRefType = cast<RefType>(argVal.getMValueReference().getType());
+      else if (argVal.getIfPValue() && scopeInfo.isParamContext)
+        valueRefType = RefType::getImmortal(argVal.getType(), /*isMut=*/true);
 
       // As a special hack, look through DefArgumentWrapperDLValue to the
       // underlying MBValue that it may contain.  This is for two reasons:
@@ -534,17 +539,12 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       //     is tracked by MOCO-684.
       // Solve this by hacking this important case specifically.
       if (auto dlValue = argVal.getIfDLValue())
-        if (auto mbValue = dlValue->getMBValueFromDefArgument())
-          argVal = mbValue;
+        if (auto refType = dlValue->getMBValueTypeFromDefArgument())
+          valueRefType = refType;
 
       // The argument must be an MValue in the case of a dynamic call.
-      if (argVal.isMValue() &&
-          canConvertWithRebind(argVal.getMValueType(), expectedRef, shared))
-        return {kValidType, expectedType};
-
-      // In a parameter expression, it can be a PValue.  It will get an
-      // immortal lifetime.
-      if (argVal.getIfPValue() && scopeInfo.isParamContext)
+      if (valueRefType &&
+          canConvertWithRebind(valueRefType, expectedRef, shared))
         return {kValidType, expectedType};
     }
 

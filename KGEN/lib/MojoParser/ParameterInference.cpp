@@ -587,6 +587,12 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     if (expectedConvention == ArgConvention::BorrowedInReg &&
         !isa<RefType>(argType)) {
 
+      RefType valueRefType;
+      if (value.isMValue())
+        valueRefType = cast<RefType>(value.getMValueReference().getType());
+      else if (value.getIfPValue() && isParamContext)
+        valueRefType = RefType::getImmortal(argType, /*isMut=*/true);
+
       // As a special hack, look through DefArgumentWrapperDLValue to the
       // underlying MBValue that it may contain.  This is for two reasons:
       //  1) We don't want to infer mutability from the argument even though
@@ -597,14 +603,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       //     is tracked by MOCO-684.
       // Solve this by hacking this important case specifically.
       if (auto dlValue = value.getIfDLValue())
-        if (auto mbValue = dlValue->getMBValueFromDefArgument())
-          value = mbValue;
-
-      RefType valueRefType;
-      if (value.isMValue())
-        valueRefType = cast<RefType>(value.getMValueReference().getType());
-      else if (value.getIfPValue() && isParamContext)
-        valueRefType = RefType::getImmortal(argType, /*isMut=*/true);
+        if (auto refType = dlValue->getMBValueTypeFromDefArgument())
+          valueRefType = refType;
 
       if (valueRefType) {
         if (succeeded(matchTypes(valueRefType, expectedRef)))

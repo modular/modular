@@ -1434,8 +1434,10 @@ DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
     : BaseDLValue(eltType), argDecl(argDecl), argRef(argRef),
       argIndex(argIndex) {}
 
-MBValue DefArgumentWrapperDLValue::getMBValueFromDefArgument() const {
-  return argRef.getIfMBValue();
+RefType DefArgumentWrapperDLValue::getMBValueTypeFromDefArgument() const {
+  if (auto mbVal = argRef.getIfMBValue())
+    return cast<RefType>(mbVal.getType());
+  return {};
 }
 
 void DefArgumentWrapperDLValue::print(raw_ostream &os) const {

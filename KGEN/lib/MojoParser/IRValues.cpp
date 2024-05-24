@@ -328,6 +328,8 @@ DLValue &DLValue::operator=(const DLValue &existing) {
 
 BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
+RefType BaseDLValue::getMBValueTypeFromDefArgument() const { return RefType(); }
+
 //===----------------------------------------------------------------------===//
 // DiscardDLValue
 //===----------------------------------------------------------------------===//
@@ -354,6 +356,15 @@ StructFieldOp StoredAttributeRefDLValue::getField() const {
 void StoredAttributeRefDLValue::print(raw_ostream &os) const {
   os << "stored attr '" << getField().getName() << " : ";
   baseVal.ir->print(os);
+}
+
+RefType StoredAttributeRefDLValue::getMBValueTypeFromDefArgument() const {
+  // If the base is an MBValue then we can reproject the element type, keeping
+  // the lifetime and mutability.
+  if (auto baseType = baseVal.ir->getMBValueTypeFromDefArgument())
+    return baseType.getWithElement(elementType);
+
+  return RefType();
 }
 
 //===----------------------------------------------------------------------===//
