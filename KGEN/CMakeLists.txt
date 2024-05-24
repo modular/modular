@@ -580,6 +580,7 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
   add_custom_target("${target}-validate"
     COMMENT "Checking `mojo doc --validate-doc-strings '${package_dir}'`..."
     COMMAND $<TARGET_FILE:mojo> doc --validate-doc-strings
+      --diagnose-missing-doc-strings
       ${KGEN_INCLUDE_FLAGS} ${package_dir} -o /dev/null
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo-sdk ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
