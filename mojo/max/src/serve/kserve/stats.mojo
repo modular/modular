@@ -60,6 +60,7 @@ struct ServerStats(ServerCallbacks):
         inout self, owned options: ServerStatsOptions = ServerStatsOptions()
     ):
         """Initialize the server stats with the given options.
+
         Args:
             options: The ServerStatsOptions to be used to configure printing the statistics.
         """
@@ -73,6 +74,7 @@ struct ServerStats(ServerCallbacks):
 
     fn __moveinit__(inout self: Self, owned existing: Self):
         """Move initialize the server stats from a given ServerStats instance.
+
         Args:
             existing: The existin ServerStats isntance.
         """
@@ -121,6 +123,7 @@ struct ServerStats(ServerCallbacks):
     fn print(inout self, unit: String = Unit.ms):
         """
         Prints out a summary of collected statistics.
+
         Args:
             unit: The unit used to display the time measurement.
         """

@@ -44,6 +44,8 @@ trait ServerCallbacks(Movable):
 @value
 struct NoopServerCallbacks(ServerCallbacks):
     """A no-op server callback implementation. All implementations are a no-op.
+
+    This is the default callback used when no callback operation is required.
     """
 
     fn on_server_start(inout self):
@@ -70,7 +72,13 @@ struct NoopServerCallbacks(ServerCallbacks):
 
 struct Guarded[T: ServerCallbacks, enabled: Bool](ServerCallbacks):
     """A utility to control callbacks from a parameter.
-    The `enabled` parameter determines whether the callback is called or not.
+
+    This struct wraps an existing callback with a guard that is controlled
+    through a parameter `enabled`.
+
+    Parameters:
+        T: The server callback implementation to be wrapped.
+        enabled:  Determines whether the callback is called or not.
     """
 
     var cb: T

@@ -23,6 +23,7 @@ struct ColoredTextCodes:
 
         Args:
             idx: The index of the color to be used.
+
         Returns:
             The ASCII color coded string.
         """
