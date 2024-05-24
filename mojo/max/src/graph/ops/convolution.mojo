@@ -139,7 +139,7 @@ def avg_pool(
     attributes.append(
         NamedAttribute(
             name=Identifier(g._context(), "count_boundary"),
-            attr=BoolAttr(g._context(), False),
+            attr=BoolAttr(g._context(), count_boundary),
         )
     )
 
