@@ -8,6 +8,7 @@
 #include "ArraySupport/TensorBufferRef.h"
 #include "CUDASupport/Globals/Globals.h"
 #include "KGEN/CompilerRT/MojoCallContext.h"
+#include "KGEN/CompilerRT/MojoValue.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
@@ -344,6 +345,23 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
   }
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateOwnedAsyncMojoValue(void *data,
+                                          void (*destructorFn)(void *),
+                                          LLCLWrapper<AnyAsyncValueRef> async,
+                                          LLCLWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<MojoValue>(data, destructorFn);
+  } else {
+    assert(!value.isReady());
+    value =
+        AnyAsyncValueRef::createReady<MojoValue>(runtime, data, destructorFn);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Unpacking functions for reading async values
 //===----------------------------------------------------------------------===//
@@ -449,6 +467,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_CreateAsyncBufferRef});
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncTensorSpec",
                    (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
+  funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncMojoValue",
+                   (void *)&KGEN_CompilerRT_CreateOwnedAsyncMojoValue});
   funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
                    (void *)&KGEN_CompilerRT_GetValueFromAsync});
   funcs.push_back({"KGEN_CompilerRT_GetTensorSpecFromAsync",
