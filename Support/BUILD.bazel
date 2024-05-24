@@ -1,19 +1,19 @@
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//bazel:api.bzl", "modular_cc_library")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+modular_cc_library(
     name = "SymbolExport",
     hdrs = [
         "include/Support/SymbolExport.h",
     ],
-    strip_include_prefix = "include",
 )
 
-cc_library(
+modular_cc_library(
     name = "Base",
     srcs = [
         "lib/AlignedAlloc.cpp",
@@ -71,7 +71,6 @@ cc_library(
         "@platforms//os:macos": ["SHARED_LIBRARY_SUFFIX='\".dylib\"'"],
         "@platforms//os:linux": ["SHARED_LIBRARY_SUFFIX='\".so\"'"],
     }),
-    strip_include_prefix = "include",
     deps = [
         "//Config",
         "@llvm-project//mlir:Pass",
@@ -79,19 +78,17 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Base64",
     srcs = ["lib/Base64.cpp"],
     hdrs = ["include/Support/Base64.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "CommonCLOptions",
     srcs = ["lib/CommonCLOptions.cpp"],
     hdrs = ["include/Support/CommonCLOptions.h"],
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Filesystem",
@@ -102,19 +99,17 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "HMAC",
     srcs = ["lib/HMAC.cpp"],
     hdrs = ["include/Support/HMAC.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "Buffer",
     srcs = ["lib/Buffer.cpp"],
     hdrs = ["include/Support/Buffer.h"],
-    strip_include_prefix = "include",
     deps = [
         ":ADT",
         ":Base",
@@ -122,30 +117,27 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "DeviceSpecs",
     srcs = ["lib/DeviceSpecs.cpp"],
     hdrs = ["include/Support/DeviceSpecs.h"],
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         "@llvm-project//llvm:TargetParser",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "CPUCache",
     srcs = ["lib/CPUCache.cpp"],
     hdrs = ["include/Support/CPUCache.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "MicroBenchmark",
     srcs = ["lib/MicroBenchmark.cpp"],
     hdrs = ["include/Support/MicroBenchmark.h"],
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":CPUCache",
@@ -153,14 +145,13 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Driver",
     srcs = glob(["lib/Driver/*.cpp"]),
     hdrs = glob([
         "include/Support/Driver/*.h",
         "include/Support/Driver/*.inc",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Filesystem",
@@ -168,24 +159,22 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "CUDA",
     srcs = glob(["lib/CUDA/*.cpp"]),
     hdrs = glob(["include/Support/CUDA/*.h"]),
-    strip_include_prefix = "include",
     textual_hdrs = glob(["lib/CUDA/*.h"]),
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "ASN1",
     srcs = glob(["lib/ASN1/*.cpp"]),
     hdrs = glob(["include/Support/ASN1/*.h"]),
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "ADT",
     srcs = glob([
         "lib/ADT/*.cpp",
@@ -194,7 +183,6 @@ cc_library(
         "lib/TypeID.cpp",
     ],
     hdrs = glob(["include/Support/ADT/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Globals.headers",
@@ -202,11 +190,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Configuration",
     srcs = ["lib/Configuration.cpp"],
     hdrs = ["include/Support/Configuration.h"],
-    strip_include_prefix = "include",
     deps = [
         ":ADT",
         ":Base",
@@ -214,13 +201,12 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "CrashReporting",
     srcs = glob(["lib/CrashReporting/*.cpp"]),
     hdrs = [
         "include/Support/CrashReporting.h",
     ],
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Configuration",
@@ -229,11 +215,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Cryptography",
     srcs = glob(["lib/Cryptography/*.cpp"]),
     hdrs = glob(["include/Support/Cryptography/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Base64",
@@ -267,30 +252,21 @@ expand_root_cert_inc(
     source = "lib/Entitlements/RootCertificates/RootCert.inc.in",
 )
 
-cc_library(
-    name = "Certificates",
-    hdrs = [":CertificatesHeader"],
-    # FIXME: This should really be namedspace in the proper place, but now it
-    # relies on being in the same directory as the entitlements code.
-    include_prefix = "./",
-)
-
-cc_library(
+modular_cc_library(
     name = "Entitlements",
-    srcs = glob(["lib/Entitlements/*.cpp"]),
+    srcs = [":CertificatesHeader"] + glob(["lib/Entitlements/*.cpp"]),
     hdrs = glob(["include/Support/Entitlements/*.h"]),
-    strip_include_prefix = "include",
+    copts = ["-I$(GENDIR)/Support"],
     deps = [
         ":ASN1",
         ":Base",
-        ":Certificates",
         ":Configuration",
         ":Cryptography",
         ":HTTP",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Filesystem",
     srcs = [
         "lib/FileSystemExtras.cpp",
@@ -302,71 +278,63 @@ cc_library(
     ] + glob([
         "include/Support/Filesystem/*.h",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         "@llvm-project//llvm:Support",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "IPInt",
     srcs = ["lib/IPInt.cpp"],
     hdrs = ["include/Support/IPInt.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "IPRational",
     srcs = ["lib/IPRational.cpp"],
     hdrs = ["include/Support/IPRational.h"],
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":IPInt",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Stats",
     srcs = ["lib/Stats.cpp"],
     hdrs = ["include/Support/Stats.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "URI",
     srcs = ["lib/URI.cpp"],
     hdrs = ["include/Support/URI.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "JSON",
     srcs = ["lib/JSON.cpp"],
     hdrs = ["include/Support/JSON.h"],
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "UI",
     srcs = glob(["lib/UI/*.cpp"]),
     hdrs = glob(["include/Support/UI/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "HTTP",
     srcs = glob(["lib/HTTP/*.cpp"]),
     hdrs = glob(["include/Support/HTTP/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Base64",
@@ -380,30 +348,27 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "ML",
     srcs = glob(["lib/ML/*.cpp"]),
     hdrs = glob(["include/Support/ML/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         "@llvm-project//mlir:IR",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Threading",
     srcs = glob(["lib/Threading/*.cpp"]),
     hdrs = glob(["include/Support/Threading/*.h"]),
-    strip_include_prefix = "include",
     deps = [":Base"],
 )
 
-cc_library(
+modular_cc_library(
     name = "Profiling",
     srcs = glob(["lib/Profiling/*.cpp"]),
     hdrs = glob(["include/Support/Profiling/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Globals.headers",
@@ -411,20 +376,18 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "ProfilingHeaders",
     hdrs = glob(["include/Support/Profiling/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "MArchTarget",
     srcs = glob(["lib/MArchTarget/*.cpp"]),
     hdrs = glob(["include/Support/MArchTarget/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":CPUCache",
@@ -443,11 +406,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Compiler",
     srcs = glob(["lib/Compiler/*.cpp"]),
     hdrs = glob(["include/Support/Compiler/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":ADT",
         ":Base",
@@ -467,7 +429,7 @@ MODULAR_TELEMETRY_COPTS = [
     "-Wno-covered-switch-default",  # Avoid errors coming from opentelemetry
 ]
 
-cc_library(
+modular_cc_library(
     name = "Telemetry",
     srcs = glob(["lib/Telemetry/**/*.cpp"]),
     hdrs = glob(["include/Support/Telemetry/**/*.h"]),
@@ -485,7 +447,6 @@ cc_library(
             'MODULAR_TELEMETRY_URL=\\"https://telemetry-dev.modular.com:443\\"',
         ],
     }),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Configuration",
@@ -614,7 +575,7 @@ gentbl_cc_library(
     deps = [":MTdFiles"],
 )
 
-cc_library(
+modular_cc_library(
     name = "MDialect",
     srcs = glob(["lib/MDialect/*.cpp"]),
     hdrs = glob([
@@ -627,7 +588,6 @@ cc_library(
         "include/Support/Compiler/MLIRDenseAttr.h",
         "include/Support/MArchTarget/Host.h",
     ],
-    strip_include_prefix = "include",
     deps = [
         ":ADT",
         ":Base",
@@ -702,11 +662,10 @@ gentbl_cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "DebugInfoDialect",
     srcs = glob(["lib/DebugInfoDialect/IR/*.cpp"]),
     hdrs = glob(["include/Support/DebugInfoDialect/IR/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Compiler",
@@ -720,11 +679,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Settings",
     srcs = glob(["lib/Settings/*.cpp"]),
     hdrs = glob(["include/Support/Settings/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Configuration",
         ":Entitlements",
@@ -834,11 +792,10 @@ gentbl_modular_passes(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "DebugInfoTransforms",
     srcs = glob(["lib/DebugInfoDialect/Transforms/*.cpp"]),
     hdrs = glob(["include/Support/DebugInfoDialect/Transforms/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":DebugInfoDialect",
@@ -848,14 +805,13 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "DebugInfoToLLVM",
     srcs = glob([
         "lib/DebugInfoDialect/DebugInfoToLLVM/**/*.cpp",
         "lib/DebugInfoDialect/DebugInfoToLLVM/**/*.h",
     ]),
     hdrs = glob(["include/Support/DebugInfoDialect/DebugInfoToLLVM/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":DebugInfoDialect",
         ":DebugInfoToLLVMIncGen",
@@ -888,7 +844,7 @@ td_library(
     includes = ["include"],
 )
 
-cc_library(
+modular_cc_library(
     name = "Init",
     srcs = [
         "lib/Init/Init.cpp",
@@ -896,7 +852,6 @@ cc_library(
     hdrs = [
         "include/Support/Init/Init.h",
     ],
-    strip_include_prefix = "include",
     deps = [
         ":CrashReporting",
         ":Settings",
@@ -905,11 +860,10 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "FrameworkSupport",
     srcs = glob(["lib/Frameworks/*.cpp"]),
     hdrs = glob(["include/Support/Frameworks/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Telemetry",
     ],
@@ -926,11 +880,10 @@ globals_library(
     # NOTE: This library should not have any deps to avoid shared object linking issues
 )
 
-cc_library(
+modular_cc_library(
     name = "Metering",
     srcs = glob(["lib/Metering/**/*.cpp"]),
     hdrs = glob(["include/Support/Metering/**/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Buffer",

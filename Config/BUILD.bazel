@@ -1,6 +1,7 @@
+load("//bazel:api.bzl", "modular_cc_library")
 load("//Config:version.bzl", "status_template")
 
-cc_library(
+modular_cc_library(
     name = "Config",
     srcs = glob(["lib/**/*.cpp"]) + [
         ":GeneratedVersion",
@@ -17,7 +18,6 @@ cc_library(
         # required to have an actual working binary.
         "LLVM_TARGETS_BUILT=\\\"unknown\\\"",
     ],
-    strip_include_prefix = "include",
     visibility = ["//visibility:public"],
 )
 

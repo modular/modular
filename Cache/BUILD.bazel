@@ -1,8 +1,8 @@
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+modular_cc_library(
     name = "Cache",
     srcs = glob(["lib/**/*.cpp"]),
     hdrs = glob(["include/Cache/**/*.h"]),
@@ -10,7 +10,6 @@ cc_library(
         # TODO(35394): This isn't what cmake is doing
         '-DMODULAR_DERIVED_DIR=\\"/tmp/modularderived\\"',
     ],
-    strip_include_prefix = "include",
     deps = [
         "//LLCL:CompilerSupport",
         "//LLCL:Runtime",

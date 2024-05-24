@@ -99,7 +99,8 @@ modular_cc_test(
 
 modular_cc_test(
     name = "EntitlementsTest",
-    srcs = glob(["Entitlements/*.cpp"]),
+    srcs = ["//Support:CertificatesHeader"] + glob(["Entitlements/*.cpp"]),
+    copts = ["-I$(GENDIR)/Support"],
     deps = ["//Support:Entitlements"],
 )
 

@@ -1,20 +1,20 @@
+load("//bazel:api.bzl", "modular_cc_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+modular_cc_library(
     name = "CompilerSupportHeaders",
     hdrs = glob([
         "include/LLCL/CompilerSupport/*.h",
     ]),
-    strip_include_prefix = "include",
     deps = [
         ":RuntimeHeaders",
         "//Support:Threading",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "RuntimeHeaders",
     hdrs = glob([
         "include/LLCL/Runtime/*.h",
@@ -22,7 +22,6 @@ cc_library(
     ]) + [
         "include/LLCL/ForwardDecls.h",
     ],
-    strip_include_prefix = "include",
     visibility = ["//visibility:private"],
     deps = [
         ":SupportHeaders",
@@ -30,24 +29,22 @@ cc_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "SupportHeaders",
     hdrs = glob(["include/LLCL/Support/*.h"]),
-    strip_include_prefix = "include",
     visibility = ["//visibility:private"],
 )
 
-cc_library(
+modular_cc_library(
     name = "CompilerSupport",
     srcs = glob(["lib/CompilerSupport/*.cpp"]),
     hdrs = glob(["include/LLCL/CompilerSupport/*.h"]),
-    strip_include_prefix = "include",
     deps = [
         ":Runtime",
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Runtime",
     srcs = glob(["lib/Runtime/*.cpp"]),
     hdrs = glob([
@@ -60,7 +57,6 @@ cc_library(
         "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
         "//conditions:default": [],
     }),
-    strip_include_prefix = "include",
     deps = [
         ":RuntimeHeaders",
         ":Support",
@@ -83,7 +79,7 @@ globals_library(
     ],
 )
 
-cc_library(
+modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/LLCL/Support/*.h"]),
@@ -91,7 +87,6 @@ cc_library(
         "//:llcl_no_affinity_setting": ["LLCL_NO_AFFINITY"],
         "//conditions:default": [],
     }),
-    strip_include_prefix = "include",
     deps = [
         "//Support:MArchTarget",
         "//Support:Threading",

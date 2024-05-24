@@ -1,6 +1,6 @@
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
 
-cc_library(
+modular_cc_library(
     name = "Support",
     srcs = glob(["Support.*"]),
     deps = [
