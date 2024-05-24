@@ -351,7 +351,12 @@ Elaborator::Elaborator(SymbolTable &symtab,
 
 FuncOp Elaborator::lookupConcreteFunction(SymbolRefAttr symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-  return concreteFuncs.read([name](auto &map) { return map.at(name); });
+  FuncOp &localResult = (*tlFuncs)[name];
+  if (!localResult) {
+    localResult =
+        concreteFuncs.read([name](auto &map) { return map.at(name); });
+  }
+  return localResult;
 }
 
 //===----------------------------------------------------------------------===//

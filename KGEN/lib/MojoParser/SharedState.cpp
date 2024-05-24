@@ -523,7 +523,7 @@ Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
     existingOp = nullptr;
   }
 
-  auto newName = symTab.insert(declOp);
+  [[maybe_unused]] auto newName = symTab.insert(declOp);
   assert(newName == SymbolTable::getSymbolName(declOp) &&
          "symbol table insertion changed the name");
   return existingOp;
