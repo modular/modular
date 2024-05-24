@@ -204,6 +204,8 @@ struct CMuttServerAsync:
     alias _PopReadyFnName = "M_muttPopReady"
     alias _PushCompleteFnName = "M_muttPushComplete"
     alias _PushFailedFnName = "M_muttPushFailed"
+    alias _StopFnName = "M_muttStopServer"
+    alias _SignalStopFnName = "M_muttSignalStopServer"
 
     @staticmethod
     fn new(lib: DLHandle, address: StringRef) -> CMuttServerAsync:
@@ -219,6 +221,16 @@ struct CMuttServerAsync:
 
     fn run(owned self, lib: DLHandle):
         call_dylib_func(lib, Self._RunFnName, self.ptr)
+
+    fn stop(owned self, lib: DLHandle):
+        # print("mojo:: Calling CMuttServerAsync stop")
+        call_dylib_func(lib, Self._StopFnName, self.ptr)
+        # print("mojo:: Done calling CMuttServerAsync stop")
+
+    fn signal_stop(owned self, lib: DLHandle):
+        # print("mojo:: Calling CMuttServerAsync signal_stop")
+        call_dylib_func(lib, Self._SignalStopFnName, self.ptr)
+        # print("mojo:: Done Calling CMuttServerAsync signal_stop")
 
     async fn pop_ready(owned self, lib: DLHandle) -> CBatch:
         var ptr = call_dylib_func[AsyncCBatch](
@@ -293,6 +305,12 @@ struct MuttServerAsync:
 
     fn run(self):
         self._ptr.run(self._lib)
+
+    fn stop(self):
+        self._ptr.stop(self._lib)
+
+    fn signal_stop(self):
+        self._ptr.signal_stop(self._lib)
 
     async fn pop_ready(self, inout batch: Batch) -> None:
         var ptr = await self._ptr.pop_ready(self._lib)

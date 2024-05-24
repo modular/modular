@@ -12,6 +12,7 @@ from runtime.llcl import (
     TaskGroup,
     TaskGroupTask,
     TaskGroupTaskList,
+    Atomic,
 )
 from tensor import TensorSpec
 from time import now
@@ -53,6 +54,7 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
     var _session: InferenceSession
     var _num_listeners: Int
     var _impl: MuttServerAsync
+    var _stop_flag: Atomic[DType.int64]
 
     var _callbacks: CallbacksPair[
         CallbacksPair[
@@ -87,6 +89,7 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         self._session = session^
         self._num_listeners = num_listeners
         self._impl = MuttServerAsync(address, self._lib, self._session)
+        self._stop_flag = Atomic[DType.int64](0)
 
         self._callbacks = make_callbacks_triple(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),
@@ -114,6 +117,11 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
     fn serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         var rt = Runtime()
         rt.run(self.async_serve[handle_fn]())
+
+    fn signal_stop(inout self: Self):
+        """Signals the server to be stop serving requests."""
+        _ = self._stop_flag.fetch_add(1)
+        self._impl.signal_stop()
 
     async fn async_serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         @always_inline
@@ -144,7 +152,7 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         @always_inline
         @parameter
         async fn listen() capturing -> None:
-            while True:
+            while not self._stop_flag.load():
                 var batch = Batch(self._lib, self._session)
                 # TODO: Construct merged request (per model) for batching.
                 await self._impl.pop_ready(batch)
@@ -159,12 +167,13 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         var rt = Runtime()
         var tasks = TaskGroupTaskList[NoneType](self._num_listeners)
         var tg = TaskGroup(rt)
-        for i in range(self._num_listeners):
+        for _ in range(self._num_listeners):
             var task = tg.create_task[NoneType](listen())
             tasks.add(task^)
 
         await tg
         _ = tasks^
+        self._impl.stop()
 
 
 struct MuxInferenceService(InferenceService):
