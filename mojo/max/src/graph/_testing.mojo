@@ -11,6 +11,7 @@ from max.engine import InferenceSession, TensorMap
 from tensor import Tensor
 
 
+@always_inline
 fn assert_tensors_almost_equal[
     dtype: DType
 ](
@@ -24,6 +25,7 @@ fn assert_tensors_almost_equal[
         assert_almost_equal[dtype](a[i], b[i], atol=atol, rtol=rtol)
 
 
+@always_inline
 fn assert_tensors_equal[
     dtype: DType
 ](a: Tensor[dtype], b: Tensor[dtype]) raises:
@@ -32,6 +34,7 @@ fn assert_tensors_equal[
         assert_equal[dtype](a[i], b[i])
 
 
+@always_inline
 fn execute_nullary[
     outtype: DType = DType.float32
 ](
@@ -43,6 +46,7 @@ fn execute_nullary[
     return result_map.get[outtype]("output0")
 
 
+@always_inline
 fn execute_nullary_list[
     outtype: DType = DType.float32
 ](
@@ -61,6 +65,7 @@ fn execute_nullary_list[
     return results
 
 
+@always_inline
 fn execute_unary[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](
@@ -75,6 +80,7 @@ fn execute_unary[
     return result_map.get[outtype]("output0")
 
 
+@always_inline
 fn execute_unary_list[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](
@@ -94,6 +100,7 @@ fn execute_unary_list[
     return results
 
 
+@always_inline
 fn execute_binary[
     intype1: DType = DType.float32,
     intype2: DType = intype1,
@@ -119,6 +126,7 @@ fn execute_binary[
     return result_map.get[outtype]("output0")
 
 
+@always_inline
 fn execute_no_args(
     g: Graph,
     *,
@@ -135,6 +143,33 @@ fn execute_no_args(
     return result_map^
 
 
+@always_inline
+fn execute_n_args[
+    dt1: DType, dt2: DType, dt3: DType
+](
+    g: Graph,
+    t1: Tensor[dt1],
+    t2: Tensor[dt2],
+    t3: Tensor[dt3],
+    *,
+    custom_ops_paths: List[Path] = List[Path](),
+) raises -> TensorMap:
+    g.verify()
+
+    var session = InferenceSession()
+    var model = session.load(g, custom_ops_paths=custom_ops_paths)
+
+    var input_map = session.new_tensor_map()
+    input_map.borrow("input0", t1)
+    input_map.borrow("input1", t2)
+    input_map.borrow("input2", t3)
+
+    var result_map = model.execute(input_map)
+
+    return result_map^
+
+
+@always_inline
 fn execute_n_args[
     dt1: DType, dt2: DType, dt3: DType, dt4: DType, dt5: DType
 ](
@@ -164,6 +199,7 @@ fn execute_n_args[
     return result_map^
 
 
+@always_inline
 fn execute_base(
     g: Graph,
     *tensors: Tensor,
