@@ -17,6 +17,7 @@
 #include "Support/Threading/Shared.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/Support/ThreadLocalCache.h"
 
 namespace M::KGEN {
 
@@ -346,6 +347,7 @@ private:
 
   /// This is the symbol table of the new module.
   Shared<DenseMap<StringAttr, FuncOp>> concreteFuncs;
+  mlir::ThreadLocalCache<DenseMap<StringAttr, FuncOp>> tlFuncs;
 
   /// This symbol table allows efficient lookups across the module.
   SymbolTable &oldSymTab;
