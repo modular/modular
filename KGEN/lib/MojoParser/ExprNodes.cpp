@@ -3190,11 +3190,39 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTType tupleType =
       emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
+
+  // If the tuple has an inferred type from the RHS, as in `(a, b)=foo()`,
+  // propagate the element types into the subexpressions if possible to enable
+  // implicit var definition.
+  SmallVector<ASTType> eltTypes;
+  if (auto destLVType = dest.getIfLValueInitializerType()) {
+    // Special case the element type of Tuple.  We could be more general than
+    // this if there was a reason to, e.g. looking up a __getitem__
+    // implementation.
+    if (tupleType.isEqualCanon(
+            destLVType.getWithoutParameters(emitter.shared))) {
+      assert(destLVType.getParamBindings().size() == 1 &&
+             "Tuple has one variadic parameter");
+      if (auto variadicAttr =
+              dyn_cast<VariadicAttr>(destLVType.getParamBindings()[0])) {
+        if (variadicAttr.getValues().size() == exprs.size()) {
+          for (auto typeElt : variadicAttr.getValues())
+            eltTypes.push_back(ASTType(typeElt));
+        }
+      }
+    }
+  }
+
   bool allEltsLValue = true;
   bool allEltsTypes = true;
   SmallVector<ASTExprAnd<AnyValue>> elements;
-  for (ExprNode *expr : exprs) {
-    auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
+  for (auto [i, expr] : llvm::enumerate(exprs)) {
+    // Use an inferred element type if we have one.
+    ValueDest eltDest(EC_TupleElement);
+    if (!eltTypes.empty())
+      eltDest = ValueDest(LValueInitializerType{eltTypes[i]}, EC_TupleElement);
+
+    auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
       return {};
     allEltsLValue &= !exprVal.getIfLValue().isNull();
@@ -3209,6 +3237,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     for (ExprNode *exprNode : exprs)
       operands.push_back(Operand(exprNode, exprNode->getLoc(),
                                  Operand::PassKind::kPositional));
+
     if (tupleType.isTypeCheckErrorType())
       return {};
     PValue concretizedTupleType = substituteParametersIntoUserDefinedType(

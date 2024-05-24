@@ -157,3 +157,14 @@ def test_def_arg_box_mbvalue(a: TypeWithParametricSelf):
     # CHECK-NEXT: %1 = lit.ref.load %anonymous2A
     # CHECK-NEXT: lit.call {{.*}}method
     var xyz = a.method()
+
+
+fn returnsMultiple() -> (Int, MemoryOnly): pass
+
+
+# MOCO-687: Unable to destructure multiple outputs in a def function without explicit var declarations
+# CHECK-LABEL: test_multi_tuple_def_value
+def test_multi_tuple_def_value():
+     # CHECK: %b = lit.var.decl "b"
+     # CHECK: %a = lit.var.decl "a"
+     a, b = returnsMultiple()
