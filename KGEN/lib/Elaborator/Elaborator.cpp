@@ -1686,11 +1686,10 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   }
 
   // Sort and then push on all the deferred functions.
-  llvm::sort(deferredSymbols,
-             [](mlir::SymbolOpInterface lhs, mlir::SymbolOpInterface rhs) {
-               return lhs.getName() < rhs.getName();
-             });
-  for (mlir::SymbolOpInterface symbol : deferredSymbols) {
+  llvm::sort(deferredSymbols, [](FuncOp lhs, FuncOp rhs) {
+    return lhs.getSymName() < rhs.getSymName();
+  });
+  for (FuncOp symbol : deferredSymbols) {
     symbol->remove();
     theModule.push_back(symbol);
   }

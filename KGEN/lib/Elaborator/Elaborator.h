@@ -377,7 +377,7 @@ private:
   ElaboratorCallbacks callbacks;
 
   /// Deferred generated symbols to append to the module.
-  SmallVector<mlir::SymbolOpInterface> deferredSymbols;
+  SmallVector<FuncOp> deferredSymbols;
 };
 
 } // namespace M::KGEN
