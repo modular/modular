@@ -44,7 +44,7 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 @always_inline
 fn _get_dylib_function[
     func_name: StringLiteral, result_type: AnyRegType
-]() raises -> result_type:
+]() -> result_type:
     return _ffi_get_dylib_function[
         "CUDA_CUBLAS_LIBRARY",
         func_name,
@@ -52,6 +52,34 @@ fn _get_dylib_function[
         _destroy_dylib,
         result_type,
     ]()
+
+
+# ===----------------------------------------------------------------------===#
+# Wrappers
+# ===----------------------------------------------------------------------===#
+
+
+# fn cublas_gemm_row_major[
+#     a_type: DType,
+#     a_shape: DimList,
+#     b_type: DType,
+#     b_shape: DimList,
+#     c_type: DType,
+#     c_shape: DimList,
+#     c_is_row_major: Bool = True,
+#     transpose_a: Bool = False,
+#     transpose_b: Bool = False,
+# ](
+#     handle: Pointer[cublasContext],
+#     c: NDBuffer[c_type, 2, c_shape],
+#     a: NDBuffer[a_type, 2, a_shape],
+#     b: NDBuffer[b_type, 2, b_shape],
+# ):
+#     var M = c.dim[0]()
+#     var N = c.dim[1]()
+#     var K = a.dim[1]() if not transpose_a else a.dim[0]()
+
+#     pass
 
 
 # ===----------------------------------------------------------------------===#
@@ -66,7 +94,7 @@ fn cublasScopy(
     incx: Int64,
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasScopy_v2_64",
         fn (
@@ -76,7 +104,7 @@ fn cublasScopy(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -93,7 +121,7 @@ fn cublasDgemv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemv_v2",
         fn (
@@ -109,7 +137,7 @@ fn cublasDgemv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -122,7 +150,7 @@ fn cublasStpsv(
     _ap: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStpsv_v2",
         fn (
@@ -134,7 +162,7 @@ fn cublasStpsv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -153,7 +181,7 @@ fn cublasDgbmv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgbmv_v2",
         fn (
@@ -171,7 +199,7 @@ fn cublasDgbmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -194,7 +222,7 @@ fn cublasDgemmStridedBatched(
     ldc: Int64,
     stride_c: Int64,
     batch_count: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemmStridedBatched_64",
         fn (
@@ -216,7 +244,7 @@ fn cublasDgemmStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -253,7 +281,7 @@ fn cublasDsyrkx(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyrkx_64",
         fn (
@@ -270,7 +298,7 @@ fn cublasDsyrkx(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -293,7 +321,7 @@ fn cublasUint8gemmBias(
     ldc: Int16,
     _c_mult: Int16,
     _c_shift: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasUint8gemmBias",
         fn (
@@ -315,7 +343,7 @@ fn cublasUint8gemmBias(
             Int16,
             Int16,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -338,10 +366,10 @@ fn cublasUint8gemmBias(
     )
 
 
-fn cublasGetProperty(type: Property, value: Pointer[Int16]) raises -> Result:
+fn cublasGetProperty(type: Property, value: Pointer[Int16]) -> Result:
     return _get_dylib_function[
         "cublasGetProperty",
-        fn (Property, Pointer[Int16]) raises -> Result,
+        fn (Property, Pointer[Int16]) -> Result,
     ]()(type, value)
 
 
@@ -354,7 +382,7 @@ fn cublasSsyr(
     incx: Int16,
     _a: DTypePointer[DType.float32],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyr_v2",
         fn (
@@ -366,7 +394,7 @@ fn cublasSsyr(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -376,7 +404,7 @@ fn cublasIdamax(
     x: DTypePointer[DType.float64],
     incx: Int16,
     result: Pointer[Int16],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIdamax_v2",
         fn (
@@ -385,7 +413,7 @@ fn cublasIdamax(
             DTypePointer[DType.float64],
             Int16,
             Pointer[Int16],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -397,7 +425,7 @@ fn cublasGetMatrix(
     lda: Int16,
     _b: Pointer[NoneType],
     ldb: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetMatrix",
         fn (
@@ -408,7 +436,7 @@ fn cublasGetMatrix(
             Int16,
             Pointer[NoneType],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -429,7 +457,7 @@ fn cublasSgemvStridedBatched(
     incy: Int16,
     stridey: Int64,
     batch_count: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemvStridedBatched",
         fn (
@@ -449,7 +477,7 @@ fn cublasSgemvStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         trans,
@@ -483,7 +511,7 @@ fn cublasStrsm(
     lda: Int16,
     _b: DTypePointer[DType.float32],
     ldb: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrsm_v2",
         fn (
@@ -499,7 +527,7 @@ fn cublasStrsm(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -515,7 +543,7 @@ fn cublasRotmEx(
     param: Pointer[NoneType],
     param_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasRotmEx",
         fn (
@@ -530,7 +558,7 @@ fn cublasRotmEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -561,7 +589,7 @@ fn cublasSgemm(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemm_v2_64",
         fn (
@@ -579,7 +607,7 @@ fn cublasSgemm(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -597,7 +625,7 @@ fn cublasSgeam(
     ldb: Int64,
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgeam_64",
         fn (
@@ -614,7 +642,7 @@ fn cublasSgeam(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -625,7 +653,7 @@ fn cublasStrttp(
     _a: DTypePointer[DType.float32],
     lda: Int16,
     _ap: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrttp",
         fn (
@@ -635,7 +663,7 @@ fn cublasStrttp(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, _a, lda, _ap)
 
 
@@ -652,7 +680,7 @@ fn cublasRotmgEx(
     param: Pointer[NoneType],
     param_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasRotmgEx",
         fn (
@@ -668,7 +696,7 @@ fn cublasRotmgEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         d1,
@@ -695,7 +723,7 @@ fn cublasStrmv(
     lda: Int16,
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrmv_v2",
         fn (
@@ -708,7 +736,7 @@ fn cublasStrmv(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -722,20 +750,20 @@ struct cublasPointerMode_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_POINTER_MODE_HOST:
             return "CUBLAS_POINTER_MODE_HOST"
         if self == Self.CUBLAS_POINTER_MODE_DEVICE:
             return "CUBLAS_POINTER_MODE_DEVICE"
         return abort[String]("invalid cublasPointerMode_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -745,7 +773,7 @@ fn cublasDnrm2(
     x: DTypePointer[DType.float64],
     incx: Int16,
     result: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDnrm2_v2",
         fn (
@@ -754,7 +782,7 @@ fn cublasDnrm2(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -765,7 +793,7 @@ fn cublasIaminEx(
     x_type: DataType,
     incx: Int16,
     result: Pointer[Int16],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIaminEx",
         fn (
@@ -775,7 +803,7 @@ fn cublasIaminEx(
             DataType,
             Int16,
             Pointer[Int16],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -790,7 +818,7 @@ fn cublasDger(
     incy: Int64,
     _a: DTypePointer[DType.float64],
     lda: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDger_v2_64",
         fn (
@@ -804,7 +832,7 @@ fn cublasDger(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -827,7 +855,7 @@ fn cublasDgemmStridedBatched(
     ldc: Int16,
     stride_c: Int64,
     batch_count: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemmStridedBatched",
         fn (
@@ -849,7 +877,7 @@ fn cublasDgemmStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -885,13 +913,13 @@ struct cublasMath_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_DEFAULT_MATH:
             return "CUBLAS_DEFAULT_MATH"
         if self == Self.CUBLAS_TENSOR_OP_MATH:
@@ -904,7 +932,7 @@ struct cublasMath_t:
             return "CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION"
         return abort[String]("invalid cublasMath_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -916,7 +944,7 @@ fn cublasSdot(
     y: DTypePointer[DType.float32],
     incy: Int64,
     result: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSdot_v2_64",
         fn (
@@ -927,7 +955,7 @@ fn cublasSdot(
             DTypePointer[DType.float32],
             Int64,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -940,7 +968,7 @@ fn cublasGetMatrixAsync(
     _b: Pointer[NoneType],
     ldb: Int16,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetMatrixAsync",
         fn (
@@ -952,7 +980,7 @@ fn cublasGetMatrixAsync(
             Pointer[NoneType],
             Int16,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -963,12 +991,12 @@ fn cublasGetVector(
     incx: Int64,
     y: Pointer[NoneType],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetVector_64",
         fn (
             Int64, Int64, Pointer[NoneType], Int64, Pointer[NoneType], Int64
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, x, incx, y, incy)
 
 
@@ -982,7 +1010,7 @@ fn cublasStrsv(
     lda: Int16,
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrsv_v2",
         fn (
@@ -995,7 +1023,7 @@ fn cublasStrsv(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -1012,7 +1040,7 @@ fn cublasSgemv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemv_v2_64",
         fn (
@@ -1028,13 +1056,13 @@ fn cublasSgemv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasXerbla(sr_name: Pointer[Int8], info: Int16) raises -> NoneType:
+fn cublasXerbla(sr_name: Pointer[Int8], info: Int16) -> NoneType:
     return _get_dylib_function[
-        "cublasXerbla", fn (Pointer[Int8], Int16) raises -> NoneType
+        "cublasXerbla", fn (Pointer[Int8], Int16) -> NoneType
     ]()(sr_name, info)
 
 
@@ -1047,7 +1075,7 @@ fn cublasGetMatrixAsync(
     _b: Pointer[NoneType],
     ldb: Int64,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetMatrixAsync_64",
         fn (
@@ -1059,7 +1087,7 @@ fn cublasGetMatrixAsync(
             Pointer[NoneType],
             Int64,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -1074,7 +1102,7 @@ fn cublasStbsv(
     lda: Int16,
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStbsv_v2",
         fn (
@@ -1088,25 +1116,25 @@ fn cublasStbsv(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
 fn cublasGetSmCountTarget(
     handle: Pointer[cublasContext], sm_count_target: Pointer[Int16]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetSmCountTarget",
-        fn (Pointer[cublasContext], Pointer[Int16]) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[Int16]) -> Result,
     ]()(handle, sm_count_target)
 
 
 fn cublasSetMathMode(
     handle: Pointer[cublasContext], mode: cublasMath_t
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetMathMode",
-        fn (Pointer[cublasContext], cublasMath_t) raises -> Result,
+        fn (Pointer[cublasContext], cublasMath_t) -> Result,
     ]()(handle, mode)
 
 
@@ -1123,7 +1151,7 @@ fn cublasDsbmv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsbmv_v2_64",
         fn (
@@ -1139,7 +1167,7 @@ fn cublasDsbmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1151,7 +1179,7 @@ fn cublasSdot(
     y: DTypePointer[DType.float32],
     incy: Int16,
     result: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSdot_v2",
         fn (
@@ -1162,7 +1190,7 @@ fn cublasSdot(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -1179,7 +1207,7 @@ fn cublasSsbmv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsbmv_v2_64",
         fn (
@@ -1195,7 +1223,7 @@ fn cublasSsbmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1205,7 +1233,7 @@ fn cublasIsamax(
     x: DTypePointer[DType.float32],
     incx: Int64,
     result: Pointer[Int64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIsamax_v2_64",
         fn (
@@ -1214,7 +1242,7 @@ fn cublasIsamax(
             DTypePointer[DType.float32],
             Int64,
             Pointer[Int64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -1229,7 +1257,7 @@ fn cublasSdgmm(
     incx: Int64,
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSdgmm_64",
         fn (
@@ -1243,7 +1271,7 @@ fn cublasSdgmm(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -1256,7 +1284,7 @@ fn cublasSwapEx(
     y: Pointer[NoneType],
     y_type: DataType,
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSwapEx_64",
         fn (
@@ -1268,7 +1296,7 @@ fn cublasSwapEx(
             Pointer[NoneType],
             DataType,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
@@ -1284,7 +1312,7 @@ fn cublasDotcEx(
     result: Pointer[NoneType],
     result_type: DataType,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDotcEx",
         fn (
@@ -1299,7 +1327,7 @@ fn cublasDotcEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -1328,7 +1356,7 @@ fn cublasRotEx(
     s: Pointer[NoneType],
     cs_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasRotEx",
         fn (
@@ -1344,7 +1372,7 @@ fn cublasRotEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -1373,7 +1401,7 @@ fn cublasSsymv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsymv_v2_64",
         fn (
@@ -1388,7 +1416,7 @@ fn cublasSsymv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1403,7 +1431,7 @@ fn cublasSsyr2(
     incy: Int16,
     _a: DTypePointer[DType.float32],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyr2_v2",
         fn (
@@ -1417,16 +1445,16 @@ fn cublasSsyr2(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
 fn cublasGetStream(
     handle: Pointer[cublasContext], stream_id: Pointer[Pointer[Stream]]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetStream_v2",
-        fn (Pointer[cublasContext], Pointer[Pointer[Stream]]) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[Pointer[Stream]]) -> Result,
     ]()(handle, stream_id)
 
 
@@ -1436,7 +1464,7 @@ fn cublasIsamin(
     x: DTypePointer[DType.float32],
     incx: Int16,
     result: Pointer[Int16],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIsamin_v2",
         fn (
@@ -1445,7 +1473,7 @@ fn cublasIsamin(
             DTypePointer[DType.float32],
             Int16,
             Pointer[Int16],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -1460,7 +1488,7 @@ fn cublasStbsv(
     lda: Int64,
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStbsv_v2_64",
         fn (
@@ -1474,7 +1502,7 @@ fn cublasStbsv(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -1487,7 +1515,7 @@ fn cublasSetMatrixAsync(
     _b: Pointer[NoneType],
     ldb: Int16,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetMatrixAsync",
         fn (
@@ -1499,7 +1527,7 @@ fn cublasSetMatrixAsync(
             Pointer[NoneType],
             Int16,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -1511,7 +1539,7 @@ fn cublasSaxpy(
     incx: Int64,
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSaxpy_v2_64",
         fn (
@@ -1522,7 +1550,7 @@ fn cublasSaxpy(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -1540,7 +1568,7 @@ fn cublasDgeam(
     ldb: Int16,
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgeam",
         fn (
@@ -1557,7 +1585,7 @@ fn cublasDgeam(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -1570,7 +1598,7 @@ fn cublasCopyEx(
     y: Pointer[NoneType],
     y_type: DataType,
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasCopyEx",
         fn (
@@ -1582,14 +1610,12 @@ fn cublasCopyEx(
             Pointer[NoneType],
             DataType,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
-fn cublasGetCudartVersion() raises -> Int:
-    return _get_dylib_function[
-        "cublasGetCudartVersion", fn () raises -> Int
-    ]()()
+fn cublasGetCudartVersion() -> Int:
+    return _get_dylib_function["cublasGetCudartVersion", fn () -> Int]()()
 
 
 fn cublasIdamax(
@@ -1598,7 +1624,7 @@ fn cublasIdamax(
     x: DTypePointer[DType.float64],
     incx: Int64,
     result: Pointer[Int64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIdamax_v2_64",
         fn (
@@ -1607,7 +1633,7 @@ fn cublasIdamax(
             DTypePointer[DType.float64],
             Int64,
             Pointer[Int64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -1622,7 +1648,7 @@ fn cublasSsyr2(
     incy: Int64,
     _a: DTypePointer[DType.float32],
     lda: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyr2_v2_64",
         fn (
@@ -1636,7 +1662,7 @@ fn cublasSsyr2(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -1648,7 +1674,7 @@ fn cublasDaxpy(
     incx: Int64,
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDaxpy_v2_64",
         fn (
@@ -1659,7 +1685,7 @@ fn cublasDaxpy(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -1677,7 +1703,7 @@ fn cublasDsyr2k(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyr2k_v2_64",
         fn (
@@ -1694,16 +1720,16 @@ fn cublasDsyr2k(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 fn cublasSetLoggerCallback(
-    user_callback: fn (Pointer[Int8]) raises -> NoneType,
-) raises -> Result:
+    user_callback: fn (Pointer[Int8]) -> NoneType,
+) -> Result:
     return _get_dylib_function[
         "cublasSetLoggerCallback",
-        fn (fn (Pointer[Int8]) raises -> NoneType) raises -> Result,
+        fn (fn (Pointer[Int8]) -> NoneType) -> Result,
     ]()(user_callback)
 
 
@@ -1721,7 +1747,7 @@ fn cublasSgeam(
     ldb: Int16,
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgeam",
         fn (
@@ -1738,7 +1764,7 @@ fn cublasSgeam(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -1749,7 +1775,7 @@ fn cublasDtpttr(
     _ap: DTypePointer[DType.float64],
     _a: DTypePointer[DType.float64],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtpttr",
         fn (
@@ -1759,7 +1785,7 @@ fn cublasDtpttr(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, _ap, _a, lda)
 
 
@@ -1770,7 +1796,7 @@ fn cublasIamaxEx(
     x_type: DataType,
     incx: Int16,
     result: Pointer[Int16],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIamaxEx",
         fn (
@@ -1780,7 +1806,7 @@ fn cublasIamaxEx(
             DataType,
             Int16,
             Pointer[Int16],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -1795,7 +1821,7 @@ fn cublasSspmv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSspmv_v2_64",
         fn (
@@ -1809,7 +1835,7 @@ fn cublasSspmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -1825,7 +1851,7 @@ fn cublasSsymv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsymv_v2",
         fn (
@@ -1840,7 +1866,7 @@ fn cublasSsymv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1868,7 +1894,7 @@ fn cublasGemmStridedBatchedEx(
     batch_count: Int64,
     compute_type: ComputeType,
     algo: cublasGemmAlgo_t,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGemmStridedBatchedEx_64",
         fn (
@@ -1895,7 +1921,7 @@ fn cublasGemmStridedBatchedEx(
             Int64,
             ComputeType,
             cublasGemmAlgo_t,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -1932,7 +1958,7 @@ fn cublasNrm2Ex(
     result: Pointer[NoneType],
     result_type: DataType,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasNrm2Ex_64",
         fn (
@@ -1944,18 +1970,16 @@ fn cublasNrm2Ex(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, execution_type)
 
 
 fn cublasGetPointerMode(
     handle: Pointer[cublasContext], mode: Pointer[cublasPointerMode_t]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetPointerMode_v2",
-        fn (
-            Pointer[cublasContext], Pointer[cublasPointerMode_t]
-        ) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[cublasPointerMode_t]) -> Result,
     ]()(handle, mode)
 
 
@@ -1967,7 +1991,7 @@ fn cublasSrotm(
     y: DTypePointer[DType.float32],
     incy: Int64,
     param: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSrotm_v2_64",
         fn (
@@ -1978,7 +2002,7 @@ fn cublasSrotm(
             DTypePointer[DType.float32],
             Int64,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -1986,152 +2010,159 @@ fn cublasSrotm(
 @register_passable("trivial")
 struct cublasGemmAlgo_t:
     var _value: Int8
-    alias CUBLAS_GEMM_DFALT = cublasGemmAlgo_t(0)
-    alias CUBLAS_GEMM_DEFAULT = cublasGemmAlgo_t(1)
-    alias CUBLAS_GEMM_ALGO0 = cublasGemmAlgo_t(2)
-    alias CUBLAS_GEMM_ALGO1 = cublasGemmAlgo_t(3)
-    alias CUBLAS_GEMM_ALGO2 = cublasGemmAlgo_t(4)
-    alias CUBLAS_GEMM_ALGO3 = cublasGemmAlgo_t(5)
-    alias CUBLAS_GEMM_ALGO4 = cublasGemmAlgo_t(6)
-    alias CUBLAS_GEMM_ALGO5 = cublasGemmAlgo_t(7)
-    alias CUBLAS_GEMM_ALGO6 = cublasGemmAlgo_t(8)
-    alias CUBLAS_GEMM_ALGO7 = cublasGemmAlgo_t(9)
-    alias CUBLAS_GEMM_ALGO8 = cublasGemmAlgo_t(10)
-    alias CUBLAS_GEMM_ALGO9 = cublasGemmAlgo_t(11)
-    alias CUBLAS_GEMM_ALGO10 = cublasGemmAlgo_t(12)
-    alias CUBLAS_GEMM_ALGO11 = cublasGemmAlgo_t(13)
-    alias CUBLAS_GEMM_ALGO12 = cublasGemmAlgo_t(14)
-    alias CUBLAS_GEMM_ALGO13 = cublasGemmAlgo_t(15)
-    alias CUBLAS_GEMM_ALGO14 = cublasGemmAlgo_t(16)
-    alias CUBLAS_GEMM_ALGO15 = cublasGemmAlgo_t(17)
-    alias CUBLAS_GEMM_ALGO16 = cublasGemmAlgo_t(18)
-    alias CUBLAS_GEMM_ALGO17 = cublasGemmAlgo_t(19)
-    alias CUBLAS_GEMM_ALGO18 = cublasGemmAlgo_t(20)
-    alias CUBLAS_GEMM_ALGO19 = cublasGemmAlgo_t(21)
-    alias CUBLAS_GEMM_ALGO20 = cublasGemmAlgo_t(22)
-    alias CUBLAS_GEMM_ALGO21 = cublasGemmAlgo_t(23)
-    alias CUBLAS_GEMM_ALGO22 = cublasGemmAlgo_t(24)
-    alias CUBLAS_GEMM_ALGO23 = cublasGemmAlgo_t(25)
-    alias CUBLAS_GEMM_DEFAULT_TENSOR_OP = cublasGemmAlgo_t(26)
-    alias CUBLAS_GEMM_DFALT_TENSOR_OP = cublasGemmAlgo_t(27)
-    alias CUBLAS_GEMM_ALGO0_TENSOR_OP = cublasGemmAlgo_t(28)
-    alias CUBLAS_GEMM_ALGO1_TENSOR_OP = cublasGemmAlgo_t(29)
-    alias CUBLAS_GEMM_ALGO2_TENSOR_OP = cublasGemmAlgo_t(30)
-    alias CUBLAS_GEMM_ALGO3_TENSOR_OP = cublasGemmAlgo_t(31)
-    alias CUBLAS_GEMM_ALGO4_TENSOR_OP = cublasGemmAlgo_t(32)
-    alias CUBLAS_GEMM_ALGO5_TENSOR_OP = cublasGemmAlgo_t(33)
-    alias CUBLAS_GEMM_ALGO6_TENSOR_OP = cublasGemmAlgo_t(34)
-    alias CUBLAS_GEMM_ALGO7_TENSOR_OP = cublasGemmAlgo_t(35)
-    alias CUBLAS_GEMM_ALGO8_TENSOR_OP = cublasGemmAlgo_t(36)
-    alias CUBLAS_GEMM_ALGO9_TENSOR_OP = cublasGemmAlgo_t(37)
-    alias CUBLAS_GEMM_ALGO10_TENSOR_OP = cublasGemmAlgo_t(38)
-    alias CUBLAS_GEMM_ALGO11_TENSOR_OP = cublasGemmAlgo_t(39)
-    alias CUBLAS_GEMM_ALGO12_TENSOR_OP = cublasGemmAlgo_t(40)
-    alias CUBLAS_GEMM_ALGO13_TENSOR_OP = cublasGemmAlgo_t(41)
-    alias CUBLAS_GEMM_ALGO14_TENSOR_OP = cublasGemmAlgo_t(42)
-    alias CUBLAS_GEMM_ALGO15_TENSOR_OP = cublasGemmAlgo_t(43)
+
+    # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
+    # only useful algorithm options are cublas_gemm_default and algo0 - algo23.
+    # We never specify 0-23 in pratice.
+
+    alias CUBLAS_GEMM_DEFAULT = cublasGemmAlgo_t(-1)
+
+    # Undocumented or unused types.
+    # alias CUBLAS_GEMM_DFALT = cublasGemmAlgo_t(0)
+    # alias CUBLAS_GEMM_ALGO0 = cublasGemmAlgo_t(2)
+    # alias CUBLAS_GEMM_ALGO1 = cublasGemmAlgo_t(3)
+    # alias CUBLAS_GEMM_ALGO2 = cublasGemmAlgo_t(4)
+    # alias CUBLAS_GEMM_ALGO3 = cublasGemmAlgo_t(5)
+    # alias CUBLAS_GEMM_ALGO4 = cublasGemmAlgo_t(6)
+    # alias CUBLAS_GEMM_ALGO5 = cublasGemmAlgo_t(7)
+    # alias CUBLAS_GEMM_ALGO6 = cublasGemmAlgo_t(8)
+    # alias CUBLAS_GEMM_ALGO7 = cublasGemmAlgo_t(9)
+    # alias CUBLAS_GEMM_ALGO8 = cublasGemmAlgo_t(10)
+    # alias CUBLAS_GEMM_ALGO9 = cublasGemmAlgo_t(11)
+    # alias CUBLAS_GEMM_ALGO10 = cublasGemmAlgo_t(12)
+    # alias CUBLAS_GEMM_ALGO11 = cublasGemmAlgo_t(13)
+    # alias CUBLAS_GEMM_ALGO12 = cublasGemmAlgo_t(14)
+    # alias CUBLAS_GEMM_ALGO13 = cublasGemmAlgo_t(15)
+    # alias CUBLAS_GEMM_ALGO14 = cublasGemmAlgo_t(16)
+    # alias CUBLAS_GEMM_ALGO15 = cublasGemmAlgo_t(17)
+    # alias CUBLAS_GEMM_ALGO16 = cublasGemmAlgo_t(18)
+    # alias CUBLAS_GEMM_ALGO17 = cublasGemmAlgo_t(19)
+    # alias CUBLAS_GEMM_ALGO18 = cublasGemmAlgo_t(20)
+    # alias CUBLAS_GEMM_ALGO19 = cublasGemmAlgo_t(21)
+    # alias CUBLAS_GEMM_ALGO20 = cublasGemmAlgo_t(22)
+    # alias CUBLAS_GEMM_ALGO21 = cublasGemmAlgo_t(23)
+    # alias CUBLAS_GEMM_ALGO22 = cublasGemmAlgo_t(24)
+    # alias CUBLAS_GEMM_ALGO23 = cublasGemmAlgo_t(25)
+    # alias CUBLAS_GEMM_DEFAULT_TENSOR_OP = cublasGemmAlgo_t(26)
+    # alias CUBLAS_GEMM_DFALT_TENSOR_OP = cublasGemmAlgo_t(27)
+    # alias CUBLAS_GEMM_ALGO0_TENSOR_OP = cublasGemmAlgo_t(28)
+    # alias CUBLAS_GEMM_ALGO1_TENSOR_OP = cublasGemmAlgo_t(29)
+    # alias CUBLAS_GEMM_ALGO2_TENSOR_OP = cublasGemmAlgo_t(30)
+    # alias CUBLAS_GEMM_ALGO3_TENSOR_OP = cublasGemmAlgo_t(31)
+    # alias CUBLAS_GEMM_ALGO4_TENSOR_OP = cublasGemmAlgo_t(32)
+    # alias CUBLAS_GEMM_ALGO5_TENSOR_OP = cublasGemmAlgo_t(33)
+    # alias CUBLAS_GEMM_ALGO6_TENSOR_OP = cublasGemmAlgo_t(34)
+    # alias CUBLAS_GEMM_ALGO7_TENSOR_OP = cublasGemmAlgo_t(35)
+    # alias CUBLAS_GEMM_ALGO8_TENSOR_OP = cublasGemmAlgo_t(36)
+    # alias CUBLAS_GEMM_ALGO9_TENSOR_OP = cublasGemmAlgo_t(37)
+    # alias CUBLAS_GEMM_ALGO10_TENSOR_OP = cublasGemmAlgo_t(38)
+    # alias CUBLAS_GEMM_ALGO11_TENSOR_OP = cublasGemmAlgo_t(39)
+    # alias CUBLAS_GEMM_ALGO12_TENSOR_OP = cublasGemmAlgo_t(40)
+    # alias CUBLAS_GEMM_ALGO13_TENSOR_OP = cublasGemmAlgo_t(41)
+    # alias CUBLAS_GEMM_ALGO14_TENSOR_OP = cublasGemmAlgo_t(42)
+    # alias CUBLAS_GEMM_ALGO15_TENSOR_OP = cublasGemmAlgo_t(43)
 
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
-        if self == Self.CUBLAS_GEMM_DFALT:
-            return "CUBLAS_GEMM_DFALT"
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_GEMM_DEFAULT:
             return "CUBLAS_GEMM_DEFAULT"
-        if self == Self.CUBLAS_GEMM_ALGO0:
-            return "CUBLAS_GEMM_ALGO0"
-        if self == Self.CUBLAS_GEMM_ALGO1:
-            return "CUBLAS_GEMM_ALGO1"
-        if self == Self.CUBLAS_GEMM_ALGO2:
-            return "CUBLAS_GEMM_ALGO2"
-        if self == Self.CUBLAS_GEMM_ALGO3:
-            return "CUBLAS_GEMM_ALGO3"
-        if self == Self.CUBLAS_GEMM_ALGO4:
-            return "CUBLAS_GEMM_ALGO4"
-        if self == Self.CUBLAS_GEMM_ALGO5:
-            return "CUBLAS_GEMM_ALGO5"
-        if self == Self.CUBLAS_GEMM_ALGO6:
-            return "CUBLAS_GEMM_ALGO6"
-        if self == Self.CUBLAS_GEMM_ALGO7:
-            return "CUBLAS_GEMM_ALGO7"
-        if self == Self.CUBLAS_GEMM_ALGO8:
-            return "CUBLAS_GEMM_ALGO8"
-        if self == Self.CUBLAS_GEMM_ALGO9:
-            return "CUBLAS_GEMM_ALGO9"
-        if self == Self.CUBLAS_GEMM_ALGO10:
-            return "CUBLAS_GEMM_ALGO10"
-        if self == Self.CUBLAS_GEMM_ALGO11:
-            return "CUBLAS_GEMM_ALGO11"
-        if self == Self.CUBLAS_GEMM_ALGO12:
-            return "CUBLAS_GEMM_ALGO12"
-        if self == Self.CUBLAS_GEMM_ALGO13:
-            return "CUBLAS_GEMM_ALGO13"
-        if self == Self.CUBLAS_GEMM_ALGO14:
-            return "CUBLAS_GEMM_ALGO14"
-        if self == Self.CUBLAS_GEMM_ALGO15:
-            return "CUBLAS_GEMM_ALGO15"
-        if self == Self.CUBLAS_GEMM_ALGO16:
-            return "CUBLAS_GEMM_ALGO16"
-        if self == Self.CUBLAS_GEMM_ALGO17:
-            return "CUBLAS_GEMM_ALGO17"
-        if self == Self.CUBLAS_GEMM_ALGO18:
-            return "CUBLAS_GEMM_ALGO18"
-        if self == Self.CUBLAS_GEMM_ALGO19:
-            return "CUBLAS_GEMM_ALGO19"
-        if self == Self.CUBLAS_GEMM_ALGO20:
-            return "CUBLAS_GEMM_ALGO20"
-        if self == Self.CUBLAS_GEMM_ALGO21:
-            return "CUBLAS_GEMM_ALGO21"
-        if self == Self.CUBLAS_GEMM_ALGO22:
-            return "CUBLAS_GEMM_ALGO22"
-        if self == Self.CUBLAS_GEMM_ALGO23:
-            return "CUBLAS_GEMM_ALGO23"
-        if self == Self.CUBLAS_GEMM_DEFAULT_TENSOR_OP:
-            return "CUBLAS_GEMM_DEFAULT_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_DFALT_TENSOR_OP:
-            return "CUBLAS_GEMM_DFALT_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO0_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO0_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO1_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO1_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO2_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO2_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO3_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO3_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO4_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO4_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO5_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO5_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO6_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO6_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO7_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO7_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO8_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO8_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO9_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO9_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO10_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO10_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO11_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO11_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO12_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO12_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO13_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO13_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO14_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO14_TENSOR_OP"
-        if self == Self.CUBLAS_GEMM_ALGO15_TENSOR_OP:
-            return "CUBLAS_GEMM_ALGO15_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_DFALT:
+        # return "CUBLAS_GEMM_DFALT"
+        # if self == Self.CUBLAS_GEMM_ALGO0:
+        #     return "CUBLAS_GEMM_ALGO0"
+        # if self == Self.CUBLAS_GEMM_ALGO1:
+        #     return "CUBLAS_GEMM_ALGO1"
+        # if self == Self.CUBLAS_GEMM_ALGO2:
+        #     return "CUBLAS_GEMM_ALGO2"
+        # if self == Self.CUBLAS_GEMM_ALGO3:
+        #     return "CUBLAS_GEMM_ALGO3"
+        # if self == Self.CUBLAS_GEMM_ALGO4:
+        #     return "CUBLAS_GEMM_ALGO4"
+        # if self == Self.CUBLAS_GEMM_ALGO5:
+        #     return "CUBLAS_GEMM_ALGO5"
+        # if self == Self.CUBLAS_GEMM_ALGO6:
+        #     return "CUBLAS_GEMM_ALGO6"
+        # if self == Self.CUBLAS_GEMM_ALGO7:
+        #     return "CUBLAS_GEMM_ALGO7"
+        # if self == Self.CUBLAS_GEMM_ALGO8:
+        #     return "CUBLAS_GEMM_ALGO8"
+        # if self == Self.CUBLAS_GEMM_ALGO9:
+        #     return "CUBLAS_GEMM_ALGO9"
+        # if self == Self.CUBLAS_GEMM_ALGO10:
+        #     return "CUBLAS_GEMM_ALGO10"
+        # if self == Self.CUBLAS_GEMM_ALGO11:
+        #     return "CUBLAS_GEMM_ALGO11"
+        # if self == Self.CUBLAS_GEMM_ALGO12:
+        #     return "CUBLAS_GEMM_ALGO12"
+        # if self == Self.CUBLAS_GEMM_ALGO13:
+        #     return "CUBLAS_GEMM_ALGO13"
+        # if self == Self.CUBLAS_GEMM_ALGO14:
+        #     return "CUBLAS_GEMM_ALGO14"
+        # if self == Self.CUBLAS_GEMM_ALGO15:
+        #     return "CUBLAS_GEMM_ALGO15"
+        # if self == Self.CUBLAS_GEMM_ALGO16:
+        #     return "CUBLAS_GEMM_ALGO16"
+        # if self == Self.CUBLAS_GEMM_ALGO17:
+        #     return "CUBLAS_GEMM_ALGO17"
+        # if self == Self.CUBLAS_GEMM_ALGO18:
+        #     return "CUBLAS_GEMM_ALGO18"
+        # if self == Self.CUBLAS_GEMM_ALGO19:
+        #     return "CUBLAS_GEMM_ALGO19"
+        # if self == Self.CUBLAS_GEMM_ALGO20:
+        #     return "CUBLAS_GEMM_ALGO20"
+        # if self == Self.CUBLAS_GEMM_ALGO21:
+        #     return "CUBLAS_GEMM_ALGO21"
+        # if self == Self.CUBLAS_GEMM_ALGO22:
+        #     return "CUBLAS_GEMM_ALGO22"
+        # if self == Self.CUBLAS_GEMM_ALGO23:
+        #     return "CUBLAS_GEMM_ALGO23"
+        # if self == Self.CUBLAS_GEMM_DEFAULT_TENSOR_OP:
+        #     return "CUBLAS_GEMM_DEFAULT_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_DFALT_TENSOR_OP:
+        #     return "CUBLAS_GEMM_DFALT_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO0_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO0_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO1_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO1_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO2_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO2_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO3_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO3_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO4_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO4_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO5_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO5_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO6_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO6_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO7_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO7_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO8_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO8_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO9_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO9_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO10_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO10_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO11_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO11_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO12_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO12_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO13_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO13_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO14_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO14_TENSOR_OP"
+        # if self == Self.CUBLAS_GEMM_ALGO15_TENSOR_OP:
+        #     return "CUBLAS_GEMM_ALGO15_TENSOR_OP"
         return abort[String]("invalid cublasGemmAlgo_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -2147,7 +2178,7 @@ fn cublasSsyrk(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyrk_v2",
         fn (
@@ -2162,7 +2193,7 @@ fn cublasSsyrk(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -2175,7 +2206,7 @@ fn cublasDsyr(
     incx: Int16,
     _a: DTypePointer[DType.float64],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyr_v2",
         fn (
@@ -2187,7 +2218,7 @@ fn cublasDsyr(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -2201,7 +2232,7 @@ fn cublasStrmv(
     lda: Int64,
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrmv_v2_64",
         fn (
@@ -2214,7 +2245,7 @@ fn cublasStrmv(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -2225,7 +2256,7 @@ fn cublasDcopy(
     incx: Int64,
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDcopy_v2_64",
         fn (
@@ -2235,7 +2266,7 @@ fn cublasDcopy(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -2254,7 +2285,7 @@ fn cublasDtrmm(
     ldb: Int64,
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrmm_v2_64",
         fn (
@@ -2272,7 +2303,7 @@ fn cublasDtrmm(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -2284,7 +2315,7 @@ fn cublasDdot(
     y: DTypePointer[DType.float64],
     incy: Int16,
     result: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDdot_v2",
         fn (
@@ -2295,7 +2326,7 @@ fn cublasDdot(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -2305,7 +2336,7 @@ fn cublasSscal(
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSscal_v2",
         fn (
@@ -2314,7 +2345,7 @@ fn cublasSscal(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -2337,7 +2368,7 @@ fn cublasSgemmStridedBatched(
     ldc: Int64,
     stride_c: Int64,
     batch_count: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemmStridedBatched_64",
         fn (
@@ -2359,7 +2390,7 @@ fn cublasSgemmStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -2393,7 +2424,7 @@ fn cublasDdgmm(
     incx: Int64,
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDdgmm_64",
         fn (
@@ -2407,7 +2438,7 @@ fn cublasDdgmm(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -2418,7 +2449,7 @@ fn cublasStpttr(
     _ap: DTypePointer[DType.float32],
     _a: DTypePointer[DType.float32],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStpttr",
         fn (
@@ -2428,7 +2459,7 @@ fn cublasStpttr(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, _ap, _a, lda)
 
 
@@ -2441,7 +2472,7 @@ fn cublasDsyr(
     incx: Int64,
     _a: DTypePointer[DType.float64],
     lda: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyr_v2_64",
         fn (
@@ -2453,7 +2484,7 @@ fn cublasDsyr(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -2464,12 +2495,12 @@ fn cublasSetVector(
     incx: Int16,
     device_ptr: Pointer[NoneType],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetVector",
         fn (
             Int16, Int16, Pointer[NoneType], Int16, Pointer[NoneType], Int16
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, x, incx, device_ptr, incy)
 
 
@@ -2482,7 +2513,7 @@ fn cublasSetMatrixAsync(
     _b: Pointer[NoneType],
     ldb: Int64,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetMatrixAsync_64",
         fn (
@@ -2494,13 +2525,13 @@ fn cublasSetMatrixAsync(
             Pointer[NoneType],
             Int64,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
-# fn cublasGetLoggerCallback(user_callback: UNKNOWN) raises -> Result:
+# fn cublasGetLoggerCallback(user_callback: UNKNOWN) -> Result:
 #     return _get_dylib_function[
-#         "cublasGetLoggerCallback", fn (UNKNOWN) raises -> Result
+#         "cublasGetLoggerCallback", fn (UNKNOWN) -> Result
 #     ]()(user_callback)
 
 
@@ -2510,7 +2541,7 @@ fn cublasSasum(
     x: DTypePointer[DType.float32],
     incx: Int16,
     result: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSasum_v2",
         fn (
@@ -2519,7 +2550,7 @@ fn cublasSasum(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -2532,7 +2563,7 @@ fn cublasRotgEx(
     s: Pointer[NoneType],
     cs_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasRotgEx",
         fn (
@@ -2544,7 +2575,7 @@ fn cublasRotgEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, a, b, ab_type, c, s, cs_type, executiontype)
 
 
@@ -2558,20 +2589,20 @@ struct cublasDiagType_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_DIAG_NON_UNIT:
             return "CUBLAS_DIAG_NON_UNIT"
         if self == Self.CUBLAS_DIAG_UNIT:
             return "CUBLAS_DIAG_UNIT"
         return abort[String]("invalid cublasDiagType_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -2579,28 +2610,28 @@ struct cublasDiagType_t:
 @register_passable("trivial")
 struct ComputeType:
     var _value: Int8
-    alias COMPUTE_16F = ComputeType(0)
-    alias COMPUTE_16F_PEDANTIC = ComputeType(1)
-    alias COMPUTE_32F = ComputeType(2)
-    alias COMPUTE_32F_PEDANTIC = ComputeType(3)
-    alias COMPUTE_32F_FAST_16F = ComputeType(4)
-    alias COMPUTE_32F_FAST_16BF = ComputeType(5)
-    alias COMPUTE_32F_FAST_TF32 = ComputeType(6)
-    alias COMPUTE_64F = ComputeType(7)
-    alias COMPUTE_64F_PEDANTIC = ComputeType(8)
-    alias COMPUTE_32I = ComputeType(9)
-    alias COMPUTE_32I_PEDANTIC = ComputeType(10)
+    alias COMPUTE_16F = ComputeType(64)
+    alias COMPUTE_16F_PEDANTIC = ComputeType(65)
+    alias COMPUTE_32F = ComputeType(68)
+    alias COMPUTE_32F_PEDANTIC = ComputeType(69)
+    alias COMPUTE_32F_FAST_16F = ComputeType(74)
+    alias COMPUTE_32F_FAST_16BF = ComputeType(75)
+    alias COMPUTE_32F_FAST_TF32 = ComputeType(77)
+    alias COMPUTE_64F = ComputeType(70)
+    alias COMPUTE_64F_PEDANTIC = ComputeType(71)
+    alias COMPUTE_32I = ComputeType(72)
+    alias COMPUTE_32I_PEDANTIC = ComputeType(73)
 
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.COMPUTE_16F:
             return "COMPUTE_16F"
         if self == Self.COMPUTE_16F_PEDANTIC:
@@ -2625,7 +2656,7 @@ struct ComputeType:
             return "COMPUTE_32I_PEDANTIC"
         return abort[String]("invalid ComputeType entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -2643,7 +2674,7 @@ fn cublasDsymm(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsymm_v2_64",
         fn (
@@ -2660,7 +2691,7 @@ fn cublasDsymm(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -2672,7 +2703,7 @@ fn cublasSspr(
     x: DTypePointer[DType.float32],
     incx: Int64,
     _ap: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSspr_v2_64",
         fn (
@@ -2683,7 +2714,7 @@ fn cublasSspr(
             DTypePointer[DType.float32],
             Int64,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -2693,7 +2724,7 @@ fn cublasIdamin(
     x: DTypePointer[DType.float64],
     incx: Int64,
     result: Pointer[Int64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIdamin_v2_64",
         fn (
@@ -2702,7 +2733,7 @@ fn cublasIdamin(
             DTypePointer[DType.float64],
             Int64,
             Pointer[Int64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -2714,7 +2745,7 @@ fn cublasGetVectorAsync(
     host_ptr: Pointer[NoneType],
     incy: Int16,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetVectorAsync",
         fn (
@@ -2725,7 +2756,7 @@ fn cublasGetVectorAsync(
             Pointer[NoneType],
             Int16,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
 
@@ -2737,7 +2768,7 @@ fn cublasGetMatrix(
     lda: Int64,
     _b: Pointer[NoneType],
     ldb: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetMatrix_64",
         fn (
@@ -2748,7 +2779,7 @@ fn cublasGetMatrix(
             Int64,
             Pointer[NoneType],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -2760,7 +2791,7 @@ fn cublasDaxpy(
     incx: Int16,
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDaxpy_v2",
         fn (
@@ -2771,7 +2802,7 @@ fn cublasDaxpy(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -2789,7 +2820,7 @@ fn cublasDsyr2k(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyr2k_v2",
         fn (
@@ -2806,7 +2837,7 @@ fn cublasDsyr2k(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -2821,7 +2852,7 @@ fn cublasSger(
     incy: Int64,
     _a: DTypePointer[DType.float32],
     lda: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSger_v2_64",
         fn (
@@ -2835,7 +2866,7 @@ fn cublasSger(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -2850,7 +2881,7 @@ fn cublasSdgmm(
     incx: Int16,
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSdgmm",
         fn (
@@ -2864,7 +2895,7 @@ fn cublasSdgmm(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -2879,7 +2910,7 @@ fn cublasDtbsv(
     lda: Int16,
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtbsv_v2",
         fn (
@@ -2893,7 +2924,7 @@ fn cublasDtbsv(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -2910,7 +2941,7 @@ fn cublasDtrsm(
     lda: Int16,
     _b: DTypePointer[DType.float64],
     ldb: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrsm_v2",
         fn (
@@ -2926,7 +2957,7 @@ fn cublasDtrsm(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -2941,7 +2972,7 @@ fn cublasStbmv(
     lda: Int16,
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStbmv_v2",
         fn (
@@ -2955,7 +2986,7 @@ fn cublasStbmv(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -2970,7 +3001,7 @@ fn cublasDspmv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDspmv_v2",
         fn (
@@ -2984,7 +3015,7 @@ fn cublasDspmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -2995,7 +3026,7 @@ fn cublasSswap(
     incx: Int64,
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSswap_v2_64",
         fn (
@@ -3005,7 +3036,7 @@ fn cublasSswap(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -3020,7 +3051,7 @@ fn cublasDspmv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDspmv_v2_64",
         fn (
@@ -3034,7 +3065,7 @@ fn cublasDspmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -3045,7 +3076,7 @@ fn cublasSrotmg(
     x1: DTypePointer[DType.float32],
     y1: DTypePointer[DType.float32],
     param: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSrotmg_v2",
         fn (
@@ -3055,7 +3086,7 @@ fn cublasSrotmg(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -3068,7 +3099,7 @@ fn cublasDtpmv(
     _ap: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtpmv_v2",
         fn (
@@ -3080,7 +3111,7 @@ fn cublasDtpmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -3090,7 +3121,7 @@ fn cublasDasum(
     x: DTypePointer[DType.float64],
     incx: Int16,
     result: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDasum_v2",
         fn (
@@ -3099,7 +3130,7 @@ fn cublasDasum(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -3116,7 +3147,7 @@ fn cublasRotEx(
     s: Pointer[NoneType],
     cs_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasRotEx_64",
         fn (
@@ -3132,7 +3163,7 @@ fn cublasRotEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -3157,7 +3188,7 @@ fn cublasDrotm(
     y: DTypePointer[DType.float64],
     incy: Int16,
     param: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDrotm_v2",
         fn (
@@ -3168,7 +3199,7 @@ fn cublasDrotm(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -3184,7 +3215,7 @@ fn cublasAxpyEx(
     y_type: DataType,
     incy: Int16,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasAxpyEx",
         fn (
@@ -3199,7 +3230,7 @@ fn cublasAxpyEx(
             DataType,
             Int16,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -3230,7 +3261,7 @@ fn cublasSgemm(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemm_v2",
         fn (
@@ -3248,7 +3279,7 @@ fn cublasSgemm(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3266,7 +3297,7 @@ fn cublasSsymm(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsymm_v2_64",
         fn (
@@ -3283,7 +3314,7 @@ fn cublasSsymm(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3296,7 +3327,7 @@ fn cublasCopyEx(
     y: Pointer[NoneType],
     y_type: DataType,
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasCopyEx_64",
         fn (
@@ -3308,7 +3339,7 @@ fn cublasCopyEx(
             Pointer[NoneType],
             DataType,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
@@ -3321,7 +3352,7 @@ fn cublasSwapEx(
     y: Pointer[NoneType],
     y_type: DataType,
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSwapEx",
         fn (
@@ -3333,7 +3364,7 @@ fn cublasSwapEx(
             Pointer[NoneType],
             DataType,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
@@ -3346,7 +3377,7 @@ fn cublasSrot(
     incy: Int64,
     c: DTypePointer[DType.float32],
     s: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSrot_v2_64",
         fn (
@@ -3358,7 +3389,7 @@ fn cublasSrot(
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -3369,12 +3400,12 @@ fn cublasGetVector(
     incx: Int16,
     y: Pointer[NoneType],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetVector",
         fn (
             Int16, Int16, Pointer[NoneType], Int16, Pointer[NoneType], Int16
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, x, incx, y, incy)
 
 
@@ -3388,7 +3419,7 @@ fn cublasDtrsv(
     lda: Int16,
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrsv_v2",
         fn (
@@ -3401,7 +3432,7 @@ fn cublasDtrsv(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -3419,7 +3450,7 @@ fn cublasSsymm(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsymm_v2",
         fn (
@@ -3436,7 +3467,7 @@ fn cublasSsymm(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3455,7 +3486,7 @@ fn cublasDtrmm(
     ldb: Int16,
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrmm_v2",
         fn (
@@ -3473,7 +3504,7 @@ fn cublasDtrmm(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -3491,7 +3522,7 @@ fn cublasCherk3mEx(
     _c: Pointer[NoneType],
     _ctype: DataType,
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasCherk3mEx_64",
         fn (
@@ -3508,13 +3539,13 @@ fn cublasCherk3mEx(
             Pointer[NoneType],
             DataType,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
 
 
-alias cublasLogCallback = fn (Pointer[Int8]) raises -> NoneType
+alias cublasLogCallback = fn (Pointer[Int8]) -> NoneType
 
 
 fn cublasDtrmv(
@@ -3527,7 +3558,7 @@ fn cublasDtrmv(
     lda: Int16,
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrmv_v2",
         fn (
@@ -3540,7 +3571,7 @@ fn cublasDtrmv(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -3555,7 +3586,7 @@ fn cublasDdgmm(
     incx: Int16,
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDdgmm",
         fn (
@@ -3569,7 +3600,7 @@ fn cublasDdgmm(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -3584,7 +3615,7 @@ fn cublasDtbsv(
     lda: Int64,
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtbsv_v2_64",
         fn (
@@ -3598,7 +3629,7 @@ fn cublasDtbsv(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -3616,7 +3647,7 @@ fn cublasSsyr2k(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyr2k_v2",
         fn (
@@ -3633,7 +3664,7 @@ fn cublasSsyr2k(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3652,7 +3683,7 @@ fn cublasDgemm(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemm_v2",
         fn (
@@ -3670,16 +3701,16 @@ fn cublasDgemm(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 fn cublasGetMathMode(
     handle: Pointer[cublasContext], mode: Pointer[cublasMath_t]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetMathMode",
-        fn (Pointer[cublasContext], Pointer[cublasMath_t]) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[cublasMath_t]) -> Result,
     ]()(handle, mode)
 
 
@@ -3692,7 +3723,7 @@ fn cublasDrot(
     incy: Int64,
     c: DTypePointer[DType.float64],
     s: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDrot_v2_64",
         fn (
@@ -3704,7 +3735,7 @@ fn cublasDrot(
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -3716,7 +3747,7 @@ fn cublasSspr(
     x: DTypePointer[DType.float32],
     incx: Int16,
     _ap: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSspr_v2",
         fn (
@@ -3727,7 +3758,7 @@ fn cublasSspr(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -3751,7 +3782,7 @@ fn cublasGemmEx(
     ldc: Int64,
     compute_type: ComputeType,
     algo: cublasGemmAlgo_t,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGemmEx_64",
         fn (
@@ -3774,7 +3805,7 @@ fn cublasGemmEx(
             Int64,
             ComputeType,
             cublasGemmAlgo_t,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -3810,7 +3841,7 @@ fn cublasDotEx(
     result: Pointer[NoneType],
     result_type: DataType,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDotEx",
         fn (
@@ -3825,7 +3856,7 @@ fn cublasDotEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -3848,7 +3879,7 @@ fn cublasSswap(
     incx: Int16,
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSswap_v2",
         fn (
@@ -3858,7 +3889,7 @@ fn cublasSswap(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -3870,7 +3901,7 @@ fn cublasDrotm(
     y: DTypePointer[DType.float64],
     incy: Int64,
     param: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDrotm_v2_64",
         fn (
@@ -3881,7 +3912,7 @@ fn cublasDrotm(
             DTypePointer[DType.float64],
             Int64,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -3903,7 +3934,7 @@ fn cublasSgemmEx(
     _c: Pointer[NoneType],
     _ctype: DataType,
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemmEx_64",
         fn (
@@ -3924,7 +3955,7 @@ fn cublasSgemmEx(
             Pointer[NoneType],
             DataType,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -3961,7 +3992,7 @@ fn cublasDgemm(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemm_v2_64",
         fn (
@@ -3979,7 +4010,7 @@ fn cublasDgemm(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3995,7 +4026,7 @@ fn cublasSsyrk(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyrk_v2_64",
         fn (
@@ -4010,7 +4041,7 @@ fn cublasSsyrk(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -4020,7 +4051,7 @@ fn cublasDnrm2(
     x: DTypePointer[DType.float64],
     incx: Int64,
     result: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDnrm2_v2_64",
         fn (
@@ -4029,7 +4060,7 @@ fn cublasDnrm2(
             DTypePointer[DType.float64],
             Int64,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -4039,7 +4070,7 @@ fn cublasDasum(
     x: DTypePointer[DType.float64],
     incx: Int64,
     result: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDasum_v2_64",
         fn (
@@ -4048,7 +4079,7 @@ fn cublasDasum(
             DTypePointer[DType.float64],
             Int64,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -4066,7 +4097,7 @@ fn cublasDsyrkx(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyrkx",
         fn (
@@ -4083,7 +4114,7 @@ fn cublasDsyrkx(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -4099,7 +4130,7 @@ fn cublasRotmEx(
     param: Pointer[NoneType],
     param_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasRotmEx_64",
         fn (
@@ -4114,7 +4145,7 @@ fn cublasRotmEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -4139,7 +4170,7 @@ fn cublasDtpsv(
     _ap: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtpsv_v2",
         fn (
@@ -4151,7 +4182,7 @@ fn cublasDtpsv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -4165,7 +4196,7 @@ fn cublasSspr2(
     y: DTypePointer[DType.float32],
     incy: Int16,
     _ap: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSspr2_v2",
         fn (
@@ -4178,7 +4209,7 @@ fn cublasSspr2(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4190,7 +4221,7 @@ fn cublasSetMatrix(
     lda: Int64,
     _b: Pointer[NoneType],
     ldb: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetMatrix_64",
         fn (
@@ -4201,7 +4232,7 @@ fn cublasSetMatrix(
             Int64,
             Pointer[NoneType],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -4211,7 +4242,7 @@ fn cublasDrotg(
     b: DTypePointer[DType.float64],
     c: DTypePointer[DType.float64],
     s: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDrotg_v2",
         fn (
@@ -4220,18 +4251,16 @@ fn cublasDrotg(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, a, b, c, s)
 
 
 fn cublasGetAtomicsMode(
     handle: Pointer[cublasContext], mode: Pointer[cublasAtomicsMode_t]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetAtomicsMode",
-        fn (
-            Pointer[cublasContext], Pointer[cublasAtomicsMode_t]
-        ) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[cublasAtomicsMode_t]) -> Result,
     ]()(handle, mode)
 
 
@@ -4246,7 +4275,7 @@ fn cublasStbmv(
     lda: Int64,
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStbmv_v2_64",
         fn (
@@ -4260,7 +4289,7 @@ fn cublasStbmv(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -4276,7 +4305,7 @@ fn cublasAxpyEx(
     y_type: DataType,
     incy: Int64,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasAxpyEx_64",
         fn (
@@ -4291,7 +4320,7 @@ fn cublasAxpyEx(
             DataType,
             Int64,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -4314,7 +4343,7 @@ fn cublasIaminEx(
     x_type: DataType,
     incx: Int64,
     result: Pointer[Int64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIaminEx_64",
         fn (
@@ -4324,7 +4353,7 @@ fn cublasIaminEx(
             DataType,
             Int64,
             Pointer[Int64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -4338,7 +4367,7 @@ fn cublasDspr2(
     y: DTypePointer[DType.float64],
     incy: Int16,
     _ap: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDspr2_v2",
         fn (
@@ -4351,7 +4380,7 @@ fn cublasDspr2(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4367,7 +4396,7 @@ fn cublasDotEx(
     result: Pointer[NoneType],
     result_type: DataType,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDotEx_64",
         fn (
@@ -4382,7 +4411,7 @@ fn cublasDotEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -4405,7 +4434,7 @@ fn cublasScopy(
     incx: Int16,
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasScopy_v2",
         fn (
@@ -4415,7 +4444,7 @@ fn cublasScopy(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -4431,7 +4460,7 @@ fn cublasDsyrk(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyrk_v2",
         fn (
@@ -4446,13 +4475,13 @@ fn cublasDsyrk(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn cublasDestroy(handle: Pointer[cublasContext]) raises -> Result:
+fn cublasDestroy(handle: Pointer[cublasContext]) -> Result:
     return _get_dylib_function[
-        "cublasDestroy_v2", fn (Pointer[cublasContext]) raises -> Result
+        "cublasDestroy_v2", fn (Pointer[cublasContext]) -> Result
     ]()(handle)
 
 
@@ -4464,7 +4493,7 @@ fn cublasSetVectorAsync(
     device_ptr: Pointer[NoneType],
     incy: Int16,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetVectorAsync",
         fn (
@@ -4475,7 +4504,7 @@ fn cublasSetVectorAsync(
             Pointer[NoneType],
             Int16,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
 
@@ -4486,7 +4515,7 @@ fn cublasIamaxEx(
     x_type: DataType,
     incx: Int64,
     result: Pointer[Int64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIamaxEx_64",
         fn (
@@ -4496,7 +4525,7 @@ fn cublasIamaxEx(
             DataType,
             Int64,
             Pointer[Int64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -4514,7 +4543,7 @@ fn cublasSsyrkx(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyrkx_64",
         fn (
@@ -4531,7 +4560,7 @@ fn cublasSsyrkx(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -4542,7 +4571,7 @@ fn cublasDswap(
     incx: Int64,
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDswap_v2_64",
         fn (
@@ -4552,7 +4581,7 @@ fn cublasDswap(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -4565,7 +4594,7 @@ fn cublasAsumEx(
     result: Pointer[NoneType],
     result_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasAsumEx_64",
         fn (
@@ -4577,7 +4606,7 @@ fn cublasAsumEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, executiontype)
 
 
@@ -4592,13 +4621,13 @@ struct cublasFillMode_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_FILL_MODE_LOWER:
             return "CUBLAS_FILL_MODE_LOWER"
         if self == Self.CUBLAS_FILL_MODE_UPPER:
@@ -4607,7 +4636,7 @@ struct cublasFillMode_t:
             return "CUBLAS_FILL_MODE_FULL"
         return abort[String]("invalid cublasFillMode_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -4621,7 +4650,7 @@ fn cublasSspr2(
     y: DTypePointer[DType.float32],
     incy: Int64,
     _ap: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSspr2_v2_64",
         fn (
@@ -4634,7 +4663,7 @@ fn cublasSspr2(
             DTypePointer[DType.float32],
             Int64,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4653,7 +4682,7 @@ fn cublasSgbmv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgbmv_v2_64",
         fn (
@@ -4671,7 +4700,7 @@ fn cublasSgbmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -4684,7 +4713,7 @@ fn cublasAsumEx(
     result: Pointer[NoneType],
     result_type: DataType,
     executiontype: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasAsumEx",
         fn (
@@ -4696,16 +4725,16 @@ fn cublasAsumEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, executiontype)
 
 
 fn cublasGetVersion(
     handle: Pointer[cublasContext], version: Pointer[Int16]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetVersion_v2",
-        fn (Pointer[cublasContext], Pointer[Int16]) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[Int16]) -> Result,
     ]()(handle, version)
 
 
@@ -4718,7 +4747,7 @@ fn cublasScalEx(
     x_type: DataType,
     incx: Int64,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasScalEx_64",
         fn (
@@ -4730,16 +4759,16 @@ fn cublasScalEx(
             DataType,
             Int64,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
 fn cublasSetPointerMode(
     handle: Pointer[cublasContext], mode: cublasPointerMode_t
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetPointerMode_v2",
-        fn (Pointer[cublasContext], cublasPointerMode_t) raises -> Result,
+        fn (Pointer[cublasContext], cublasPointerMode_t) -> Result,
     ]()(handle, mode)
 
 
@@ -4756,7 +4785,7 @@ fn cublasDgemv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemv_v2_64",
         fn (
@@ -4772,13 +4801,13 @@ fn cublasDgemv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasGetStatusString(status: Result) raises -> Pointer[Int8]:
+fn cublasGetStatusString(status: Result) -> Pointer[Int8]:
     return _get_dylib_function[
-        "cublasGetStatusString", fn (Result) raises -> Pointer[Int8]
+        "cublasGetStatusString", fn (Result) -> Pointer[Int8]
     ]()(status)
 
 
@@ -4788,7 +4817,7 @@ fn cublasSnrm2(
     x: DTypePointer[DType.float32],
     incx: Int64,
     result: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSnrm2_v2_64",
         fn (
@@ -4797,7 +4826,7 @@ fn cublasSnrm2(
             DTypePointer[DType.float32],
             Int64,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -4816,7 +4845,7 @@ fn cublasDgbmv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgbmv_v2_64",
         fn (
@@ -4834,7 +4863,7 @@ fn cublasDgbmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -4849,7 +4878,7 @@ fn cublasDsyr2(
     incy: Int16,
     _a: DTypePointer[DType.float64],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyr2_v2",
         fn (
@@ -4863,7 +4892,7 @@ fn cublasDsyr2(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -4876,7 +4905,7 @@ fn cublasDtpsv(
     _ap: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtpsv_v2_64",
         fn (
@@ -4888,7 +4917,7 @@ fn cublasDtpsv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -4899,12 +4928,12 @@ fn cublasSetVector(
     incx: Int64,
     device_ptr: Pointer[NoneType],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetVector_64",
         fn (
             Int64, Int64, Pointer[NoneType], Int64, Pointer[NoneType], Int64
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, x, incx, device_ptr, incy)
 
 
@@ -4925,7 +4954,7 @@ fn cublasDgemvStridedBatched(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemvStridedBatched_64",
         fn (
@@ -4945,7 +4974,7 @@ fn cublasDgemvStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         trans,
@@ -4980,7 +5009,7 @@ fn cublasSsyrkx(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyrkx",
         fn (
@@ -4997,13 +5026,13 @@ fn cublasSsyrkx(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasGetStatusName(status: Result) raises -> Pointer[Int8]:
+fn cublasGetStatusName(status: Result) -> Pointer[Int8]:
     return _get_dylib_function[
-        "cublasGetStatusName", fn (Result) raises -> Pointer[Int8]
+        "cublasGetStatusName", fn (Result) -> Pointer[Int8]
     ]()(status)
 
 
@@ -5018,7 +5047,7 @@ fn cublasDtbmv(
     lda: Int64,
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtbmv_v2_64",
         fn (
@@ -5032,7 +5061,7 @@ fn cublasDtbmv(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -5042,7 +5071,7 @@ fn cublasSrotg(
     b: DTypePointer[DType.float32],
     c: DTypePointer[DType.float32],
     s: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSrotg_v2",
         fn (
@@ -5051,7 +5080,7 @@ fn cublasSrotg(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, a, b, c, s)
 
 
@@ -5069,7 +5098,7 @@ fn cublasCherkEx(
     _c: Pointer[NoneType],
     _ctype: DataType,
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasCherkEx",
         fn (
@@ -5086,7 +5115,7 @@ fn cublasCherkEx(
             Pointer[NoneType],
             DataType,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
@@ -5099,7 +5128,7 @@ fn cublasDrotmg(
     x1: DTypePointer[DType.float64],
     y1: DTypePointer[DType.float64],
     param: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDrotmg_v2",
         fn (
@@ -5109,7 +5138,7 @@ fn cublasDrotmg(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -5124,7 +5153,7 @@ fn cublasDger(
     incy: Int16,
     _a: DTypePointer[DType.float64],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDger_v2",
         fn (
@@ -5138,7 +5167,7 @@ fn cublasDger(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -5148,7 +5177,7 @@ fn cublasSscal(
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSscal_v2_64",
         fn (
@@ -5157,7 +5186,7 @@ fn cublasSscal(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -5165,10 +5194,10 @@ fn cublasSetWorkspace(
     handle: Pointer[cublasContext],
     workspace: Pointer[NoneType],
     workspace_size_in_bytes: Int,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetWorkspace_v2",
-        fn (Pointer[cublasContext], Pointer[NoneType], Int) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[NoneType], Int) -> Result,
     ]()(handle, workspace, workspace_size_in_bytes)
 
 
@@ -5181,7 +5210,7 @@ fn cublasStpsv(
     _ap: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStpsv_v2_64",
         fn (
@@ -5193,7 +5222,7 @@ fn cublasStpsv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5205,7 +5234,7 @@ fn cublasDspr(
     x: DTypePointer[DType.float64],
     incx: Int64,
     _ap: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDspr_v2_64",
         fn (
@@ -5216,7 +5245,7 @@ fn cublasDspr(
             DTypePointer[DType.float64],
             Int64,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -5224,46 +5253,46 @@ fn cublasGemmEx(
     handle: Pointer[cublasContext],
     transa: cublasOperation_t,
     transb: cublasOperation_t,
-    m: Int16,
-    n: Int16,
-    k: Int16,
+    m: Int32,
+    n: Int32,
+    k: Int32,
     alpha: Pointer[NoneType],
     _a: Pointer[NoneType],
     _atype: DataType,
-    lda: Int16,
+    lda: Int32,
     _b: Pointer[NoneType],
     _btype: DataType,
-    ldb: Int16,
+    ldb: Int32,
     beta: Pointer[NoneType],
     _c: Pointer[NoneType],
     _ctype: DataType,
-    ldc: Int16,
+    ldc: Int32,
     compute_type: ComputeType,
     algo: cublasGemmAlgo_t,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGemmEx",
         fn (
             Pointer[cublasContext],
             cublasOperation_t,
             cublasOperation_t,
-            Int16,
-            Int16,
-            Int16,
+            Int32,
+            Int32,
+            Int32,
             Pointer[NoneType],
             Pointer[NoneType],
             DataType,
-            Int16,
+            Int32,
             Pointer[NoneType],
             DataType,
-            Int16,
+            Int32,
             Pointer[NoneType],
             Pointer[NoneType],
             DataType,
-            Int16,
+            Int32,
             ComputeType,
             cublasGemmAlgo_t,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -5300,7 +5329,7 @@ fn cublasSsbmv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsbmv_v2",
         fn (
@@ -5316,7 +5345,7 @@ fn cublasSsbmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -5337,7 +5366,7 @@ fn cublasDgemvStridedBatched(
     incy: Int16,
     stridey: Int64,
     batch_count: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgemvStridedBatched",
         fn (
@@ -5357,7 +5386,7 @@ fn cublasDgemvStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         trans,
@@ -5390,7 +5419,7 @@ fn cublasDsymv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsymv_v2",
         fn (
@@ -5405,7 +5434,7 @@ fn cublasDsymv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -5414,10 +5443,10 @@ fn cublasLoggerConfigure(
     log_to_std_out: Int16,
     log_to_std_err: Int16,
     log_file_name: Pointer[Int8],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasLoggerConfigure",
-        fn (Int16, Int16, Int16, Pointer[Int8]) raises -> Result,
+        fn (Int16, Int16, Int16, Pointer[Int8]) -> Result,
     ]()(log_is_on, log_to_std_out, log_to_std_err, log_file_name)
 
 
@@ -5430,7 +5459,7 @@ fn cublasStpmv(
     _ap: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStpmv_v2_64",
         fn (
@@ -5442,7 +5471,7 @@ fn cublasStpmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5463,7 +5492,7 @@ fn cublasSgemvStridedBatched(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemvStridedBatched_64",
         fn (
@@ -5483,7 +5512,7 @@ fn cublasSgemvStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         trans,
@@ -5510,7 +5539,7 @@ fn cublasIsamin(
     x: DTypePointer[DType.float32],
     incx: Int64,
     result: Pointer[Int64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIsamin_v2_64",
         fn (
@@ -5519,7 +5548,7 @@ fn cublasIsamin(
             DTypePointer[DType.float32],
             Int64,
             Pointer[Int64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -5532,7 +5561,7 @@ fn cublasDrot(
     incy: Int16,
     c: DTypePointer[DType.float64],
     s: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDrot_v2",
         fn (
@@ -5544,7 +5573,7 @@ fn cublasDrot(
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -5562,7 +5591,7 @@ fn cublasDgeam(
     ldb: Int64,
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDgeam_64",
         fn (
@@ -5579,7 +5608,7 @@ fn cublasDgeam(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -5591,7 +5620,7 @@ fn cublasGetVectorAsync(
     host_ptr: Pointer[NoneType],
     incy: Int64,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGetVectorAsync_64",
         fn (
@@ -5602,7 +5631,7 @@ fn cublasGetVectorAsync(
             Pointer[NoneType],
             Int64,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
 
@@ -5619,7 +5648,7 @@ fn cublasStrsm(
     lda: Int64,
     _b: DTypePointer[DType.float32],
     ldb: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrsm_v2_64",
         fn (
@@ -5635,7 +5664,7 @@ fn cublasStrsm(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -5657,7 +5686,7 @@ fn cublasSgemmEx(
     _c: Pointer[NoneType],
     _ctype: DataType,
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemmEx",
         fn (
@@ -5678,7 +5707,7 @@ fn cublasSgemmEx(
             Pointer[NoneType],
             DataType,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -5709,7 +5738,7 @@ fn cublasStpmv(
     _ap: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStpmv_v2",
         fn (
@@ -5721,7 +5750,7 @@ fn cublasStpmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5735,7 +5764,7 @@ fn cublasDtrmv(
     lda: Int64,
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrmv_v2_64",
         fn (
@@ -5748,7 +5777,7 @@ fn cublasDtrmv(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -5762,7 +5791,7 @@ fn cublasDtrsv(
     lda: Int64,
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrsv_v2_64",
         fn (
@@ -5775,7 +5804,7 @@ fn cublasDtrsv(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -5790,7 +5819,7 @@ fn cublasDsyr2(
     incy: Int64,
     _a: DTypePointer[DType.float64],
     lda: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyr2_v2_64",
         fn (
@@ -5804,7 +5833,7 @@ fn cublasDsyr2(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -5817,7 +5846,7 @@ fn cublasSrot(
     incy: Int16,
     c: DTypePointer[DType.float32],
     s: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSrot_v2",
         fn (
@@ -5829,7 +5858,7 @@ fn cublasSrot(
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -5839,7 +5868,7 @@ fn cublasDscal(
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDscal_v2",
         fn (
@@ -5848,23 +5877,23 @@ fn cublasDscal(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
-fn cublasCreate(handle: Pointer[Pointer[cublasContext]]) raises -> Result:
+fn cublasCreate(handle: Pointer[Pointer[cublasContext]]) -> Result:
     return _get_dylib_function[
         "cublasCreate_v2",
-        fn (Pointer[Pointer[cublasContext]]) raises -> Result,
+        fn (Pointer[Pointer[cublasContext]]) -> Result,
     ]()(handle)
 
 
 fn cublasSetSmCountTarget(
     handle: Pointer[cublasContext], sm_count_target: Int16
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetSmCountTarget",
-        fn (Pointer[cublasContext], Int16) raises -> Result,
+        fn (Pointer[cublasContext], Int16) -> Result,
     ]()(handle, sm_count_target)
 
 
@@ -5875,7 +5904,7 @@ fn cublasDswap(
     incx: Int16,
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDswap_v2",
         fn (
@@ -5885,7 +5914,7 @@ fn cublasDswap(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -5899,7 +5928,7 @@ fn cublasStrsv(
     lda: Int64,
     x: DTypePointer[DType.float32],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrsv_v2_64",
         fn (
@@ -5912,7 +5941,7 @@ fn cublasStrsv(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -5926,7 +5955,7 @@ fn cublasDspr2(
     y: DTypePointer[DType.float64],
     incy: Int64,
     _ap: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDspr2_v2_64",
         fn (
@@ -5939,7 +5968,7 @@ fn cublasDspr2(
             DTypePointer[DType.float64],
             Int64,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -5952,7 +5981,7 @@ fn cublasSsyr(
     incx: Int64,
     _a: DTypePointer[DType.float32],
     lda: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyr_v2_64",
         fn (
@@ -5964,7 +5993,7 @@ fn cublasSsyr(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -5977,7 +6006,7 @@ fn cublasNrm2Ex(
     result: Pointer[NoneType],
     result_type: DataType,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasNrm2Ex",
         fn (
@@ -5989,7 +6018,7 @@ fn cublasNrm2Ex(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, execution_type)
 
 
@@ -6004,7 +6033,7 @@ fn cublasDtbmv(
     lda: Int16,
     x: DTypePointer[DType.float64],
     incx: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtbmv_v2",
         fn (
@@ -6018,7 +6047,7 @@ fn cublasDtbmv(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -6032,20 +6061,20 @@ struct cublasAtomicsMode_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_ATOMICS_NOT_ALLOWED:
             return "CUBLAS_ATOMICS_NOT_ALLOWED"
         if self == Self.CUBLAS_ATOMICS_ALLOWED:
             return "CUBLAS_ATOMICS_ALLOWED"
         return abort[String]("invalid cublasAtomicsMode_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -6063,7 +6092,7 @@ fn cublasSsyr2k(
     beta: DTypePointer[DType.float32],
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSsyr2k_v2_64",
         fn (
@@ -6080,7 +6109,7 @@ fn cublasSsyr2k(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -6098,7 +6127,7 @@ fn cublasCherk3mEx(
     _c: Pointer[NoneType],
     _ctype: DataType,
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasCherk3mEx",
         fn (
@@ -6115,7 +6144,7 @@ fn cublasCherk3mEx(
             Pointer[NoneType],
             DataType,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
@@ -6130,7 +6159,7 @@ fn cublasScalEx(
     x_type: DataType,
     incx: Int16,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasScalEx",
         fn (
@@ -6142,7 +6171,7 @@ fn cublasScalEx(
             DataType,
             Int16,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
@@ -6158,7 +6187,7 @@ fn cublasDotcEx(
     result: Pointer[NoneType],
     result_type: DataType,
     execution_type: DataType,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDotcEx_64",
         fn (
@@ -6173,7 +6202,7 @@ fn cublasDotcEx(
             Pointer[NoneType],
             DataType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         n,
@@ -6203,7 +6232,7 @@ fn cublasDsymm(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsymm_v2",
         fn (
@@ -6220,7 +6249,7 @@ fn cublasDsymm(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -6230,7 +6259,7 @@ fn cublasIsamax(
     x: DTypePointer[DType.float32],
     incx: Int16,
     result: Pointer[Int16],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIsamax_v2",
         fn (
@@ -6239,7 +6268,7 @@ fn cublasIsamax(
             DTypePointer[DType.float32],
             Int16,
             Pointer[Int16],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -6251,7 +6280,7 @@ fn cublasSaxpy(
     incx: Int16,
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSaxpy_v2",
         fn (
@@ -6262,7 +6291,7 @@ fn cublasSaxpy(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -6272,7 +6301,7 @@ fn cublasSnrm2(
     x: DTypePointer[DType.float32],
     incx: Int16,
     result: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSnrm2_v2",
         fn (
@@ -6281,7 +6310,7 @@ fn cublasSnrm2(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -6299,7 +6328,7 @@ fn cublasCherkEx(
     _c: Pointer[NoneType],
     _ctype: DataType,
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasCherkEx_64",
         fn (
@@ -6316,7 +6345,7 @@ fn cublasCherkEx(
             Pointer[NoneType],
             DataType,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
@@ -6332,20 +6361,20 @@ struct cublasSideMode_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_SIDE_LEFT:
             return "CUBLAS_SIDE_LEFT"
         if self == Self.CUBLAS_SIDE_RIGHT:
             return "CUBLAS_SIDE_RIGHT"
         return abort[String]("invalid cublasSideMode_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -6357,7 +6386,7 @@ fn cublasSetMatrix(
     lda: Int16,
     _b: Pointer[NoneType],
     ldb: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetMatrix",
         fn (
@@ -6368,7 +6397,7 @@ fn cublasSetMatrix(
             Int16,
             Pointer[NoneType],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -6385,7 +6414,7 @@ fn cublasDtrsm(
     lda: Int64,
     _b: DTypePointer[DType.float64],
     ldb: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrsm_v2_64",
         fn (
@@ -6401,7 +6430,7 @@ fn cublasDtrsm(
             Int64,
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -6412,7 +6441,7 @@ fn cublasDcopy(
     incx: Int16,
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDcopy_v2",
         fn (
@@ -6422,7 +6451,7 @@ fn cublasDcopy(
             Int16,
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -6434,7 +6463,7 @@ fn cublasSetVectorAsync(
     device_ptr: Pointer[NoneType],
     incy: Int64,
     stream: Pointer[Stream],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetVectorAsync_64",
         fn (
@@ -6445,7 +6474,7 @@ fn cublasSetVectorAsync(
             Pointer[NoneType],
             Int64,
             Pointer[Stream],
-        ) raises -> Result,
+        ) -> Result,
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
 
@@ -6457,7 +6486,7 @@ fn cublasDspr(
     x: DTypePointer[DType.float64],
     incx: Int16,
     _ap: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDspr_v2",
         fn (
@@ -6468,7 +6497,7 @@ fn cublasDspr(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -6485,7 +6514,7 @@ fn cublasSgemv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemv_v2",
         fn (
@@ -6501,7 +6530,7 @@ fn cublasSgemv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6512,7 +6541,7 @@ fn cublasDtrttp(
     _a: DTypePointer[DType.float64],
     lda: Int16,
     _ap: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtrttp",
         fn (
@@ -6522,7 +6551,7 @@ fn cublasDtrttp(
             DTypePointer[DType.float64],
             Int16,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, _a, lda, _ap)
 
 
@@ -6534,7 +6563,7 @@ fn cublasDdot(
     y: DTypePointer[DType.float64],
     incy: Int64,
     result: DTypePointer[DType.float64],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDdot_v2_64",
         fn (
@@ -6545,7 +6574,7 @@ fn cublasDdot(
             DTypePointer[DType.float64],
             Int64,
             DTypePointer[DType.float64],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -6573,7 +6602,7 @@ fn cublasGemmStridedBatchedEx(
     batch_count: Int16,
     compute_type: ComputeType,
     algo: cublasGemmAlgo_t,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasGemmStridedBatchedEx",
         fn (
@@ -6600,7 +6629,7 @@ fn cublasGemmStridedBatchedEx(
             Int16,
             ComputeType,
             cublasGemmAlgo_t,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -6643,7 +6672,7 @@ fn cublasStrmm(
     ldb: Int64,
     _c: DTypePointer[DType.float32],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrmm_v2_64",
         fn (
@@ -6661,7 +6690,7 @@ fn cublasStrmm(
             Int64,
             DTypePointer[DType.float32],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -6677,7 +6706,7 @@ fn cublasDsyrk(
     beta: DTypePointer[DType.float64],
     _c: DTypePointer[DType.float64],
     ldc: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsyrk_v2_64",
         fn (
@@ -6692,7 +6721,7 @@ fn cublasDsyrk(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -6702,7 +6731,7 @@ fn cublasDscal(
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDscal_v2_64",
         fn (
@@ -6711,7 +6740,7 @@ fn cublasDscal(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -6724,7 +6753,7 @@ fn cublasDtpmv(
     _ap: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
     incx: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDtpmv_v2_64",
         fn (
@@ -6736,7 +6765,7 @@ fn cublasDtpmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -6755,7 +6784,7 @@ fn cublasSgbmv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgbmv_v2",
         fn (
@@ -6773,7 +6802,7 @@ fn cublasSgbmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6785,7 +6814,7 @@ fn cublasSrotm(
     y: DTypePointer[DType.float32],
     incy: Int16,
     param: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSrotm_v2",
         fn (
@@ -6796,16 +6825,16 @@ fn cublasSrotm(
             DTypePointer[DType.float32],
             Int16,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
 fn cublasSetAtomicsMode(
     handle: Pointer[cublasContext], mode: cublasAtomicsMode_t
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetAtomicsMode",
-        fn (Pointer[cublasContext], cublasAtomicsMode_t) raises -> Result,
+        fn (Pointer[cublasContext], cublasAtomicsMode_t) -> Result,
     ]()(handle, mode)
 
 
@@ -6822,7 +6851,7 @@ fn cublasDsbmv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsbmv_v2",
         fn (
@@ -6838,7 +6867,7 @@ fn cublasDsbmv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6853,7 +6882,7 @@ fn cublasSger(
     incy: Int16,
     _a: DTypePointer[DType.float32],
     lda: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSger_v2",
         fn (
@@ -6867,7 +6896,7 @@ fn cublasSger(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -6883,7 +6912,7 @@ fn cublasDsymv(
     beta: DTypePointer[DType.float64],
     y: DTypePointer[DType.float64],
     incy: Int64,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasDsymv_v2_64",
         fn (
@@ -6898,16 +6927,16 @@ fn cublasDsymv(
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 fn cublasSetStream(
     handle: Pointer[cublasContext], stream_id: Pointer[Stream]
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSetStream_v2",
-        fn (Pointer[cublasContext], Pointer[Stream]) raises -> Result,
+        fn (Pointer[cublasContext], Pointer[Stream]) -> Result,
     ]()(handle, stream_id)
 
 
@@ -6926,7 +6955,7 @@ fn cublasStrmm(
     ldb: Int16,
     _c: DTypePointer[DType.float32],
     ldc: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasStrmm_v2",
         fn (
@@ -6944,7 +6973,7 @@ fn cublasStrmm(
             Int16,
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -6961,13 +6990,13 @@ struct cublasOperation_t:
     fn __init__(inout self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) raises -> String:
+    fn __str__(self) -> String:
         if self == Self.CUBLAS_OP_N:
             return "CUBLAS_OP_N"
         if self == Self.CUBLAS_OP_T:
@@ -6980,7 +7009,7 @@ struct cublasOperation_t:
             return "CUBLAS_OP_CONJG"
         return abort[String]("invalid cublasOperation_t entry")
 
-    fn __int__(self) raises -> Int:
+    fn __int__(self) -> Int:
         return int(self._value)
 
 
@@ -6990,7 +7019,7 @@ fn cublasIdamin(
     x: DTypePointer[DType.float64],
     incx: Int16,
     result: Pointer[Int16],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasIdamin_v2",
         fn (
@@ -6999,7 +7028,7 @@ fn cublasIdamin(
             DTypePointer[DType.float64],
             Int16,
             Pointer[Int16],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -7014,7 +7043,7 @@ fn cublasSspmv(
     beta: DTypePointer[DType.float32],
     y: DTypePointer[DType.float32],
     incy: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSspmv_v2",
         fn (
@@ -7028,7 +7057,7 @@ fn cublasSspmv(
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -7051,7 +7080,7 @@ fn cublasSgemmStridedBatched(
     ldc: Int16,
     stride_c: Int64,
     batch_count: Int16,
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSgemmStridedBatched",
         fn (
@@ -7073,7 +7102,7 @@ fn cublasSgemmStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) raises -> Result,
+        ) -> Result,
     ]()(
         handle,
         transa,
@@ -7102,7 +7131,7 @@ fn cublasSasum(
     x: DTypePointer[DType.float32],
     incx: Int64,
     result: DTypePointer[DType.float32],
-) raises -> Result:
+) -> Result:
     return _get_dylib_function[
         "cublasSasum_v2_64",
         fn (
@@ -7111,5 +7140,5 @@ fn cublasSasum(
             DTypePointer[DType.float32],
             Int64,
             DTypePointer[DType.float32],
-        ) raises -> Result,
+        ) -> Result,
     ]()(handle, n, x, incx, result)

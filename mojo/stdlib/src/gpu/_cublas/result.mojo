@@ -11,14 +11,14 @@ struct Result:
     var _value: Int8
     alias SUCCESS = Result(0)
     alias NOT_INITIALIZED = Result(1)
-    alias ALLOC_FAILED = Result(2)
-    alias INVALID_VALUE = Result(3)
-    alias ARCH_MISMATCH = Result(4)
-    alias MAPPING_ERROR = Result(5)
-    alias EXECUTION_FAILED = Result(6)
-    alias INTERNAL_ERROR = Result(7)
-    alias NOT_SUPPORTED = Result(8)
-    alias LICENSE_ERROR = Result(9)
+    alias ALLOC_FAILED = Result(3)
+    alias INVALID_VALUE = Result(7)
+    alias ARCH_MISMATCH = Result(8)
+    alias MAPPING_ERROR = Result(11)
+    alias EXECUTION_FAILED = Result(13)
+    alias INTERNAL_ERROR = Result(14)
+    alias NOT_SUPPORTED = Result(15)
+    alias LICENSE_ERROR = Result(16)
 
     fn __init__(inout self, value: Int):
         self._value = value
