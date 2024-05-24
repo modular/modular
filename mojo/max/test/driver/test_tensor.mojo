@@ -240,7 +240,7 @@ def test_set_through_slice():
     var slice = tensor[1:, :]
     assert_equal(slice[0, 0], 3)
 
-    slice.set((0, 0), 4)
+    slice[(0, 0)] = 4
 
     assert_equal(slice[0, 0], 4)
     assert_equal(tensor[1, 0], 4)
