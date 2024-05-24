@@ -221,8 +221,10 @@ void MaterializePackagesPass::runOnOperation() {
   while (!generatorsToProcess.empty()) {
     // Materialize the generators.
     for (ExternGeneratorOp func : generatorsToProcess)
-      if (failed(materializeGenerator(func)))
+      if (failed(materializeGenerator(func))) {
+        signalPassFailure();
         return cleanupState();
+      }
     generatorsToProcess.clear();
 
     // Process any new operations to inflate.
