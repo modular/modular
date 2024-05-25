@@ -82,15 +82,19 @@ TEST(DiagnosticsTest, detectUnusedFnArg) {
   Document doc("test:///unused.mojo", R"(
 fn function(used: Int, unused: Int, /, used2: Int, unused2: Int):
   print(used, used2)
+
+def not_a_method(self):
+  pass
   )");
 
   createTestClient()
       .open(doc)
       .onDiagnostics(doc,
                      [](const std::vector<lsp::Diagnostic> &diags) {
-                       ASSERT_EQ((int)diags.size(), 2);
+                       ASSERT_EQ((int)diags.size(), 3);
                        EXPECT_EQ(diags[0].message, "unused argument 'unused'");
                        EXPECT_EQ(diags[1].message, "unused argument 'unused2'");
+                       EXPECT_EQ(diags[2].message, "unused argument 'self'");
                      })
       .execute();
 }
