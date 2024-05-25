@@ -1027,7 +1027,7 @@ def _create_contig_kv_cache[
     depth: Int,
     transpose: Bool,
 ](
-    ref: NDBuffer[type, 4],
+    ref_: NDBuffer[type, 4],
 ) -> ContiguousKVCache[
     type, num_heads, depth, transpose
 ]:
@@ -1036,11 +1036,11 @@ def _create_contig_kv_cache[
     var batch_tensor_shape = StaticIntTuple[3](
         num_heads, depth, seq_len
     ) if transpose else StaticIntTuple[3](num_heads, seq_len, depth)
-    print(ref.dynamic_shape)
+    print(ref_.dynamic_shape)
     for b in range(batch_size):
         batch_list.append(
             NDBuffer[type, 3](
-                ref.data.offset(batch_tensor_size * b), batch_tensor_shape
+                ref_.data.offset(batch_tensor_size * b), batch_tensor_shape
             )
         )
 
@@ -1060,7 +1060,7 @@ def _create_paged_kv_cache[
     depth: Int,
     transpose_blocks: Bool,
 ](
-    ref: NDBuffer[type, 4],
+    ref_: NDBuffer[type, 4],
 ) -> PagedKVCache[
     type, num_heads, depth, block_size, transpose_blocks
 ]:
@@ -1085,13 +1085,13 @@ def _create_paged_kv_cache[
                             for b in range(block_size):
                                 block_ptr[
                                     h * depth * block_size + d * block_size + b
-                                ] = ref[
+                                ] = ref_[
                                     Index(bs, h, d, block_idx * block_size + b)
                                 ]
                     else:
                         memcpy(
                             block_ptr + h * block_size * depth,
-                            ref._offset((bs, h, block_idx * block_size, 0)),
+                            ref_._offset((bs, h, block_idx * block_size, 0)),
                             depth * block_size,
                         )
             else:
@@ -1103,13 +1103,13 @@ def _create_paged_kv_cache[
                             for d in range(depth):
                                 block_ptr[
                                     h * depth * block_size + d * block_size + s
-                                ] = ref[
+                                ] = ref_[
                                     Index(bs, h, d, block_idx * block_size + s)
                                 ]
                         else:
                             memcpy(
                                 block_ptr + h * block_size * depth + s * depth,
-                                ref._offset(
+                                ref_._offset(
                                     (bs, h, block_idx * block_size + s, 0)
                                 ),
                                 depth,
