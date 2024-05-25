@@ -313,7 +313,8 @@ DeadArgumentElimination::surveyUses(const RetOrArg &retOrArg,
 /// it uses any of its incoming arguments or whether any callers use the return
 /// value. This fills in the LiveValues set and Uses map.
 void DeadArgumentElimination::surveyFunction(FuncOp func) {
-  if (func.isExported() || func.isExternal()) {
+  if (func.isExported() || func.isExternal() ||
+      func.getInlineLevel() == InlineLevel::Never) {
     markLive(func);
     return;
   }
