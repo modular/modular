@@ -1004,9 +1004,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 /// Type check the result type for the function.  `resultTypeExpr` will be
 /// non-null if explicitly specified in source code, and the `resultLoc` will
 /// always be valid point for end of the argument list.
-static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
-                            bool isDef, const SpecialFunctionInfo &fnInfo,
-                            ASTDecl *fnDecl,
+static void typeCheckResult(const ExprNode *resultTypeExpr,
+                            const ExprNode *resultRefLifetimeExpr,
+                            SMLoc resultLoc, bool isDef,
+                            const SpecialFunctionInfo &fnInfo, ASTDecl *fnDecl,
                             TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
@@ -1036,6 +1037,24 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     // calls to this function though.
     if (!resultType)
       resultType = shared.getTypeCheckErrorType();
+  }
+
+  // If a result lifetime is specified with `ref [life] Ty`, then form a ref
+  // result.
+  if (resultRefLifetimeExpr && !isa<TypeCheckErrorType>(resultType)) {
+    ExprEmitter emitter(shared, declScope, EC_Lifetime);
+    PValue lifetime =
+        emitter.emitExprPValue(resultRefLifetimeExpr, EC_Lifetime);
+    if (lifetime && isa<LifetimeType>(lifetime.getType())) {
+      resultType = RefType::get(resultType, lifetime);
+      tcSignature.argList.effects.setRefResult(true);
+    } else {
+      if (lifetime)
+        emitter.emitError(resultRefLifetimeExpr->getLoc())
+            << "result reference lifetime has unexpected type "
+            << lifetime.getType() << resultRefLifetimeExpr->getRange();
+      resultType = shared.getTypeCheckErrorType();
+    }
   }
 
   // Remember the user-declared result type.
@@ -1144,12 +1163,10 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
 ///
 /// 'fnDecl' will be null when this is a function type, which doesn't have a
 /// declaration.
-TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
-                                               ParsedArgumentList &argList,
-                                               const ExprNode *resultTypeExpr,
-                                               SMLoc resultLoc, bool isDef,
-                                               ASTDecl *fnDecl,
-                                               SpecialFunctionInfo &fnInfo)
+TypeCheckedFnSignature::TypeCheckedFnSignature(
+    TypeCheckedParamList &paramList, ParsedArgumentList &argList,
+    const ExprNode *resultTypeExpr, const ExprNode *resultRefLifetimeExpr,
+    SMLoc resultLoc, bool isDef, ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList) {
 
   SharedState &shared = paramList.shared;
@@ -1236,7 +1253,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     typeCheckOneArgument(i, selfType, isDef, isStaticMethod, fnDecl, *this);
 
   // Compute the result type.
-  typeCheckResult(resultTypeExpr, resultLoc, isDef, fnInfo, fnDecl, *this);
+  typeCheckResult(resultTypeExpr, resultRefLifetimeExpr, resultLoc, isDef,
+                  fnInfo, fnDecl, *this);
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {

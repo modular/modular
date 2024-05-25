@@ -222,6 +222,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     bool hasOwnedRegisterResult() const {
       return getFnEffects().hasOwnedRegisterResult();
     }
+    bool isRefResult() const { return getFnEffects().isRefResult(); }
 
     /// Return the convention for the specified value argument.
     ArgConvention getArgConvention(size_t inputNo) {

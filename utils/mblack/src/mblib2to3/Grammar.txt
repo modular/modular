@@ -31,9 +31,10 @@ decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt)
 async_funcdef: ASYNC funcdef
-funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME] ['->' test] ':' suite
+funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME] ['->' result_type] ':' suite
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
+result_type: [REF '[' test ']'] test
 
 # The following definition for typedarglist is equivalent to this set of rules:
 #
@@ -122,7 +123,7 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-var_stmt: (ALIAS | LET | VAR) top_expr_stmt
+var_stmt: (ALIAS | VAR) top_expr_stmt
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)

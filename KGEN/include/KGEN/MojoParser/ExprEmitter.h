@@ -78,6 +78,7 @@ enum ExprContext {
   EC_AutoDeref,             // dereference Reference x
   EC_Trait,                 // trait conformance checking for `T`
   EC_Closure,               // closure formation
+  EC_Lifetime,              // lifetime specifier
 };
 const char *getContextMessage(ExprContext context);
 
@@ -448,7 +449,8 @@ public:
                         ASTType resultType = {});
 
   /// This emits the specified value rep as a CValue.
-  CValue emitExprCValue(const ExprNode *expr, ExprContext context);
+  CValue emitExprCValue(const ExprNode *expr, ExprContext context,
+                        ASTType resultType = {});
 
   /// This helper emits the specified value rep as an SRValue, materializing
   /// it as an operation if it is a parameter.  This returns null if emission

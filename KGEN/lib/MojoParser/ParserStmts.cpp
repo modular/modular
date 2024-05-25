@@ -712,6 +712,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // Materialize the expression values into IR.
   CValue resultValue;
   SignatureType declSig = decl.getSignature();
+  ASTType userResultType = decl.getUserResultType();
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(MLValue(decl.getArguments().back()), EC_ReturnValue);
@@ -722,11 +723,71 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       resultValue = PValue(BoolAttr::get(getContext(), false));
     else
       resultValue = PValue(shared.getNoneAttr());
+  } else if (declSig.isRefResult()) {
+    // Returning a reference, emit it as an MValue then coerce.
+    resultValue = emitter.emitExprCValue(
+        operandExpr, EC_ReturnValue, userResultType.getReferenceElementType());
+    if (!resultValue)
+      return {};
+
+    if (!resultValue.isMValue()) {
+      emitter.emitError(operandExpr->getLoc())
+          << "cannot return reference to non-memory value of type "
+          << resultValue.getType();
+      return {};
+    }
+
+    RefType argType = resultValue.getMValueType();
+
+    // If the lifetime is an InvalidRefLifetimeAttr then this value is
+    // derived from an argument which might be bound (after elaboration)
+    // to a register value that has no lifetime.  Emit an error because
+    // you can't return a reference to it.
+    if (isa<InvalidRefLifetimeAttr>(argType.getLifetime())) {
+      emitter.emitError(operandExpr->getLoc())
+          << "cannot return a reference to an argument that "
+             "might instantiate to @register_passable type "
+          << resultValue.getRValueType(shared);
+      return {};
+    }
+
+    // We already checked the element type, check the lifetime and address
+    // space.
+    if (!userResultType.isEqualCanon(argType)) {
+      if (!canConvertWithRebind(argType, userResultType, shared)) {
+        auto expectedRefType = cast<RefType>(userResultType);
+        auto diag = emitter.emitError(operandExpr->getLoc())
+                    << "cannot return reference with incompatible ";
+        if (argType.getLifetime() != expectedRefType.getLifetime())
+          diag << "lifetime: " << argType.getLifetime() << " vs "
+               << expectedRefType.getLifetime();
+        else {
+          assert(argType.getAddressSpace() !=
+                     expectedRefType.getAddressSpace() &&
+                 "Only lifetime and address space can disagree given the "
+                 "element types agree");
+          diag << "address space: " << argType.getAddressSpace() << " vs "
+               << expectedRefType.getAddressSpace();
+        }
+        return {};
+      }
+      // Rebind to make the reference compatible, e.g. converting to a more
+      // general lifetime union.
+      resultValue =
+          emitter.rebindValue({resultValue, operandExpr}, userResultType)
+              .getIfCValue();
+    }
+
+    assert(!isa<InvalidRefLifetimeAttr>(argType.getLifetime()) &&
+           "cannot declare result type of this attribute");
+
+    // We're returning the reference itself, so switch to SRValue.
+    resultValue = SRValue(resultValue.getMValueReference());
 
   } else {
     // Convert the returned value to the returned type of the function.
-    resultValue = emitter.emitExprSRValue(operandExpr, EC_ReturnValue,
-                                          decl.getUserResultType());
+    resultValue =
+        emitter.emitExprSRValue(operandExpr, EC_ReturnValue, userResultType);
   }
 
   if (!resultValue)

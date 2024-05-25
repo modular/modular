@@ -34,25 +34,27 @@ class FnEffects {
 public:
   FnEffects(Impl impl = Impl::None) : impl(impl) {}
 
-  FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
   bool isThrows() const { return get(Impl::Throws); }
-
-  FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
   bool isAsync() const { return get(Impl::Async); }
+  bool isCapturing() const { return get(Impl::Capturing); }
+  bool hasOwnedRegisterResult() { return get(Impl::OwnedResult); }
+  bool isEscaping() const { return get(Impl::Escaping); }
+  bool isRefResult() const { return get(Impl::RefResult); }
 
-  FnEffects setOwnedRegisterResult(bool ownedRegisterResult = true) {
-    return set(Impl::OwnedResult, ownedRegisterResult);
-  }
-  bool hasOwnedRegisterResult() const { return get(Impl::OwnedResult); }
-
+  FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
+  FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
   FnEffects setCapturing(bool capturing = true) {
     return set(Impl::Capturing, capturing);
+  }
+  FnEffects setOwnedRegisterResult(bool ownedRegisterResult = true) {
+    return set(Impl::OwnedResult, ownedRegisterResult);
   }
   FnEffects setEscaping(bool escaping = true) {
     return set(Impl::Escaping, escaping);
   }
-  bool isCapturing() const { return get(Impl::Capturing); }
-  bool isEscaping() const { return get(Impl::Escaping); }
+  FnEffects setRefResult(bool value = true) {
+    return set(Impl::RefResult, value);
+  }
 
   bool operator==(FnEffects rhs) const { return getImpl() == rhs.getImpl(); }
   bool operator!=(FnEffects rhs) const { return getImpl() != rhs.getImpl(); }

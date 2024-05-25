@@ -6,6 +6,9 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics -o /dev/null
 
+@value
+struct MemoryType:
+    pass
 
 fn test_never_declared_fn():
     # expected-error @+1 {{use of unknown declaration 'never_declared_fn'}}
@@ -115,3 +118,36 @@ def defTests() -> None:
   # MOCO-83: [mojo][Bug] def methods can't shadow names via assignment
   # expected-error @+1 {{expression must be mutable in assignment}}
   abc = 4
+
+# expected-error @+1 {{result reference lifetime has unexpected type 'IntLiteral'}}
+fn ref_result_invalid() -> ref [4] MemoryType:
+    pass
+
+fn ref_result_invalid2(inout a: MemoryType) -> ref [__lifetime_of(a)] Int:
+    # expected-error @+1 {{cannot return reference to non-memory value of type 'Int'}}
+    return 4
+
+fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
+     -> ref [__lifetime_of(a)] MemoryType:
+    # expected-error @+1 {{cannot return reference with incompatible lifetime: 'b' vs 'a'}}
+    return b
+
+fn ref_result_invalid3(inout a: MemoryType, b: Int) -> ref [__lifetime_of(a)] MemoryType:
+    # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
+    return b
+
+fn ref_result_invalid4[T: AnyType](a: T) -> ref [__lifetime_of(a)] T:
+    # expected-error @+1 {{cannot return a reference to an argument that might instantiate to @register_passable type 'T'}}
+    return a
+
+fn valid_ref_result(x: MemoryType) -> ref [__lifetime_of(x)] MemoryType: return x
+
+fn ref_invalid():
+    var a = MemoryType()
+    # expected-error @+1 {{expression must be mutable in assignment}}
+    valid_ref_result(a) = MemoryType()
+
+fn return_ref_type_error(a: fn (x: MemoryType) -> ref [__lifetime_of(x)] MemoryType):
+    # expected-error @+1 {{cannot implicitly convert 'fn(x: MemoryType) -> ref [*[0,0]] MemoryType' value to 'Int'}}
+    var b: Int = a
+
