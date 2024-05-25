@@ -1197,10 +1197,16 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetTypeMethod:
     return verifyGetTypeMethod(operands, type, emitError);
   case POC::PtrBitcast:
+    if (operands.size() != 1)
+      return emitError() << "'ptr_bitcast' expects one operand";
     if (!::isa<PointerType>(type) ||
         !::isa<PointerType>(operands.front().getType()))
       return emitError() << "'ptr_bitcast' requires operand and result types "
                             "to both be pointers";
+    break;
+  case POC::LoadFromMem:
+    if (operands.size() != 1)
+      return emitError() << "'load_from_mem' expects one operand";
     break;
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
@@ -2461,6 +2467,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::PtrBitcast:
     result = simplifyPtrBitcast(operands, resultType);
+    break;
+  case POC::LoadFromMem:
+    result = {};
     break;
   case POC::VariadicPtrMap:
     assert(operands.size() == 2 && "variadic_ptr_map always has 2 operands");

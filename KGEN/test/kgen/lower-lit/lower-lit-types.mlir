@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit-types -allow-unregistered-dialect -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-lit-types -allow-unregistered-dialect -split-input-file | kgen-opt -verify-parameters | FileCheck %s
 
 //===----------------------------------------------------------------------===//
 // Parametric Structs
@@ -482,7 +482,7 @@ kgen.generator @make_ptr<T: type>() -> !kgen.pointer<T> {
 
 // CHECK-LABEL: kgen.generator @pointer_const
 kgen.generator @pointer_const<T: type>() {
-  // CHECK-NEXT: constant: pointer<none> = <ptr_bitcast(apply(:() -> !kgen.pointer<T> @make_ptr<:type T>))>
+  // CHECK-NEXT: constant: pointer<none> = <ptr_bitcast(:pointer<T> apply(:() -> !kgen.pointer<T> @make_ptr<:type T>))>
   kgen.param.constant: @Pointer<:type T, 0> = <{value: pointer<T> = apply(:() -> !kgen.pointer<T> @make_ptr<:type T>)}>
   // CHECK-NEXT: constant: pointer<none, 1> = <0>
   kgen.param.constant: @Pointer<:type T, 1> = <{value: pointer<T, 1> = 0}>

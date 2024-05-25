@@ -562,6 +562,15 @@ kgen.generator @target_get_field() {
   kgen.return
 }
 
+// CHECK-LABEL: @pointer_param_ops
+kgen.generator @pointer_param_ops<ptr: pointer<index, 1>>() {
+  // CHECK-NEXT: constant = <load_from_mem(:pointer<index, 1> ptr)>
+  kgen.param.constant = <load_from_mem(:pointer<index, 1> ptr)>
+  // CHECK-NXET: constant: pointer<i1, 1> = <ptr_bitcast(:pointer<index, 1> ptr)>
+  kgen.param.constant: pointer<i1, 1> = <ptr_bitcast(:pointer<index, 1> ptr)>
+  kgen.return
+}
+
 // REGION TYPES
 // CHECK-LABEL: kgen.generator @region_params<
 kgen.generator @region_params
