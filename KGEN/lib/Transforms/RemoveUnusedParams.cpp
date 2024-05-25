@@ -343,8 +343,8 @@ void RemoveUnusedParams::runOnOperation() {
 
   // Count number of functions cloned to tell how much memory to alloc.
   size_t numFuncs = 0;
-  for (auto _ : mod.getOps<GeneratorOp>()) {
-    (void)_;
+  for (auto generator : mod.getOps<GeneratorOp>()) {
+    (void)generator;
     ++numFuncs;
   }
 
@@ -383,10 +383,9 @@ void RemoveUnusedParams::runOnOperation() {
     generator.walk([&, gen = generator](CallOp call) {
       // We can also call external generators and other things so it's not safe
       // to assume it's a generator op.
-      auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
-          cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
+      auto calledFunc = symTab.lookup<GeneratorOp>(
+          cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue());
       if (calledFunc) {
-
         // Track the caller of this generator, but only one entry per call.
         if (!seenCallees.contains(calledFunc)) {
           callees.push_back(calledFunc);
@@ -399,10 +398,10 @@ void RemoveUnusedParams::runOnOperation() {
           recursiveFuncs.insert(gen);
         } else {
           // Get or allocate.
-          funcUsers[calledFunc];
+          auto &users = funcUsers[calledFunc];
           // Then insert without iteration invalidation in case of allocate.
-          funcUsers[calledFunc].callers.insert(gen);
-          funcUsers[calledFunc].calls.push_back(call);
+          users.callers.insert(gen);
+          users.calls.push_back(call);
         }
       }
     });
@@ -413,7 +412,7 @@ void RemoveUnusedParams::runOnOperation() {
     if (callees.empty())
       toSchedule.worklist.push_back({generator, idx});
 
-    genToCallees.try_emplace(generator, callees);
+    genToCallees.try_emplace(generator, std::move(callees));
   }
 
   // The actual algorithm which will traverse the calls, identify unused
@@ -427,6 +426,23 @@ void RemoveUnusedParams::runOnOperation() {
     // Will return null if there's nothing left to scheudle.
     if (!oldFunction)
       break;
+
+    CallSites &callSites = funcUsers[oldFunction];
+    auto markReady = [&] {
+      callSites.calls.clear();
+      for (GeneratorOp caller : callSites.callers)
+        --numCallersFromFunc[caller];
+
+      // We don't need to process this anymore.
+      toSchedule.markProcessed(pair);
+    };
+
+    // If the function is marked `no_inline`, just skip it and mark its
+    // dependencies as ready.
+    if (oldFunction.getInlineLevel() == InlineLevel::Never) {
+      markReady();
+      continue;
+    }
 
     // To optimize memory allocations we reuse the allocations of previous steps
     // by just clearing the data structures.
@@ -442,19 +458,12 @@ void RemoveUnusedParams::runOnOperation() {
     identifyUnusedArguments(oldFunction, oldSymbol, isRecursive);
     identifyUnusedParameters(oldFunction, oldSymbol, isRecursive);
 
-    CallSites &callSites = funcUsers[oldFunction];
-
     // If nothing is unused we need to clear the calls and treat this as
     // having already been processed so the rest of the call graph can
     // progress.
     if (callSites.calls.empty() ||
         (unusedArgs.none() && unusedParamsIndex.none())) {
-      callSites.calls.clear();
-      for (GeneratorOp caller : callSites.callers)
-        --numCallersFromFunc[caller];
-
-      // We don't need to process this anymore.
-      toSchedule.markProcessed(pair);
+      markReady();
       continue;
     }
 
@@ -517,8 +526,8 @@ void RemoveUnusedParams::runOnOperation() {
     // updated yet to the call graph so they will be updated later as well.
     if (brokeCycle && newFunc != oldFunction) {
       newFunc.walk([&](CallOp call) {
-        auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
-            cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
+        auto calledFunc = symTab.lookup<GeneratorOp>(
+            cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue());
         if (calledFunc && calledFunc != newFunc) {
           // Update the calls of any called function if they are still to be
           // scheudled.
