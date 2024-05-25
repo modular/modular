@@ -1898,11 +1898,11 @@ LogicalResult UnboundRegionOp::verify() {
 
 ErrorTreeOrSuccess LoadConsumeOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
-  uint64_t slot = cast<SymbolicPointerAttr>(operands.front()).getSlot();
-  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(slot);
-  if (mem.isError())
-    return ErrorTree(getLoc(), mem.takeError());
-  state.mapResults(*mem);
+  ErrorTreeOr<TypedAttr> result = interpretSymbolicLoadOp(
+      getLoc(), cast<TypedAttr>(operands.front()), state);
+  if (result.isError())
+    return result.takeError();
+  state.mapResults(*result);
   return success();
 }
 
