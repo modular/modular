@@ -9,6 +9,16 @@ lit.struct.decl @SmallVector<N, T: type> register_passable {
 }
 !structTest = !lit.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
 
+// CHECK-DAG: ![[LLDATA:.*]] = !debuginfo.member<lldata: index>
+// CHECK-DAG: ![[NONE_PTR_TYPE:.*]] = !debuginfo.ti.ptr<!kgen.none>
+// CHECK-DAG: ![[RECURSIVE_FIELD:.*]] = !debuginfo.member<ptr: ![[NONE_PTR_TYPE]]>
+// CHECK-DAG: ![[RECURSIVE_STRUCT:.*]] = !debuginfo.struct<"struct RecursiveStruct"(![[LLDATA]], ![[RECURSIVE_FIELD]])>
+lit.struct.decl @RecursiveStruct register_passable {
+  lit.struct.field lldata: index
+  lit.struct.field ptr: !kgen.pointer<!lit.declref<@RecursiveStruct>>
+}
+!structTestRecursive = !lit.declref<@RecursiveStruct>
+
 // CHECK-DAG: ![[MEMBER_A:.*]] = !debuginfo.member<a: !kgen.paramref<Int>>
 // CHECK-DAG: ![[MEMBER_B:.*]] = !debuginfo.member<b: !pop.simd<4, f32>>
 // CHECK-DAG: ![[COMPLEX_STRUCT:.*]] = !debuginfo.struct<"module test::struct ComplexStruct[type,type]<`:type Int`,`:type simd<4, f32>`>"(![[MEMBER_A]], ![[MEMBER_B]])>
@@ -39,7 +49,9 @@ lit.struct.decl @"$test::ComplexStructNoSourceName"<A: type, B: type> attributes
   // CHECK-SAME: structTypeComplexNoSourceName = ![[COMPLEX_STRUCT_NOSOURCENAME]]
   structTypeComplexNoSourceName = !debuginfo.unresolved<!structTestComplexNoSourceName>,
   // CHECK-SAME: structTypeComplexRef = ![[COMPLEX_STRUCT_REF]]
-  structTypeComplexRef = !debuginfo.unresolved<!structTestComplexRef>
+  structTypeComplexRef = !debuginfo.unresolved<!structTestComplexRef>,
+  // CHECK-SAME: structTypeRecursive = ![[RECURSIVE_STRUCT]]
+  structTypeRecursive = !debuginfo.unresolved<!structTestRecursive>
 
 } : () -> ()
 

@@ -392,6 +392,12 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
   debugTypeConverter.addConversion([&](PointerType type) -> DebugInfo::DIType {
     DebugInfo::DIType elementType =
         debugTypeConverter.convertDebugType(type.getElementType());
+    if (!elementType) {
+      // If the type that we point to can't be converted into a debuginfo type,
+      // make a None pointer debuginfo type.
+      elementType = debugTypeConverter.convertDebugType(
+          KGEN::NoneType::get(type.getContext()));
+    }
     return DebugInfo::DITargetIndependentPointerType::get(elementType);
   });
   debugTypeConverter.addConversion([&](RefType type) -> DebugInfo::DIType {

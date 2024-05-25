@@ -117,6 +117,16 @@ TEST(PrimitiveTypesTest, testStructFieldOffset) {
   EXPECT_EQ(second.GetChildAtIndex(0).GetValueAsSigned(-1), 3735928559);
 }
 
+TEST(PrimitiveTypesTest, testRecursiveStruct) {
+  /// Make sure pointer to self type can be seen and doesn't crash.
+
+  StopContext ctx = buildAndLaunch("recursive-struct.mojo");
+  SBValue strct = ctx.frame.FindVariable("f2");
+  ASSERT_EQ((int)strct.GetNumChildren(), 2);
+  SBValue second = strct.GetChildAtIndex(1);
+  EXPECT_STREQ(second.GetTypeName(), "!kgen.pointer<none>");
+}
+
 TEST(PrimitiveTypesTest, testTupleAndSIMD) {
   // Test that we can parse a StaticTuple and a SIMD with similar entries.
   // In DWARF, they are both array types but SIMD is marked as vector, which
