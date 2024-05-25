@@ -210,13 +210,13 @@ struct CallSites {
 // This worklist helper tracks which ops are still to be scheudled.
 struct WorklistHelper {
   WorklistHelper(size_t numFuncs)
-      : shouldScheudle(numFuncs, false), allOps(numFuncs), numProcessed(0) {
+      : shouldSchedule(numFuncs, false), allOps(numFuncs), numProcessed(0) {
     funcToIndex.reserve(numFuncs);
   }
 
   // 1:1 mapping between generator and a bool which marks it as ready to
   // scheudle. std::vector to make use of the bool optimization.
-  std::vector<bool> shouldScheudle;
+  std::vector<bool> shouldSchedule;
 
   // All the ops so we can traverse cheaply.
   SmallVector<GeneratorOp> allOps;
@@ -225,7 +225,7 @@ struct WorklistHelper {
   DenseMap<GeneratorOp, size_t> funcToIndex;
 
   // The number of ops which have been processed. Same as
-  // std::all_of(shouldScheudle)
+  // std::all_of(shouldSchedule)
   size_t numProcessed;
 
   // We include the index in the worklist so we have an O(1) way to update the
@@ -236,14 +236,14 @@ struct WorklistHelper {
   DenseSet<GeneratorOp> cycleSeenFuncs;
   SmallVector<GeneratorOp> cycleFinderWorklist;
 
-  void addToScheudle(GeneratorOp gen, size_t index) {
+  void addToSchedule(GeneratorOp gen, size_t index) {
     allOps[index] = gen;
-    shouldScheudle[index] = true;
+    shouldSchedule[index] = true;
     funcToIndex[gen] = index;
   }
 
   void markProcessed(std::pair<GeneratorOp, size_t> pair) {
-    shouldScheudle[pair.second] = false;
+    shouldSchedule[pair.second] = false;
     ++numProcessed;
   }
 
@@ -263,13 +263,13 @@ struct WorklistHelper {
     // scheudled.
     for (auto [idx, gen] : llvm::enumerate(allOps)) {
       // Skip ops which should not be scheudled.
-      if (!shouldScheudle[idx])
+      if (!shouldSchedule[idx])
         continue;
 
       // Remove any with no calls.
       CallSites &callSites = funcUsers[gen];
       if (callSites.calls.empty()) {
-        shouldScheudle[idx] = false;
+        shouldSchedule[idx] = false;
         ++numProcessed;
       } else if (numCallersFromFunc[gen] == 0) {
         // Add any functions with no dependencies.
@@ -284,7 +284,7 @@ struct WorklistHelper {
     // graph.
     for (auto [idx, gen] : llvm::enumerate(allOps)) {
       // Skip ops which should not be scheudled.
-      if (!shouldScheudle[idx])
+      if (!shouldSchedule[idx])
         continue;
 
       cycleSeenFuncs.clear();
@@ -294,13 +294,13 @@ struct WorklistHelper {
       while (!cycleFinderWorklist.empty()) {
         GeneratorOp head = cycleFinderWorklist.back();
         cycleFinderWorklist.pop_back();
-        if (!shouldScheudle[funcToIndex[head]])
+        if (!shouldSchedule[funcToIndex[head]])
           continue;
         cycleSeenFuncs.insert(head);
 
         SmallVector<GeneratorOp> &uniqueCallees = genToCallees[head];
         for (GeneratorOp called : uniqueCallees) {
-          if (!shouldScheudle[funcToIndex[called]])
+          if (!shouldSchedule[funcToIndex[called]])
             continue;
           // Found the cycle, break it.
           if (cycleSeenFuncs.contains(called)) {
@@ -368,7 +368,7 @@ void RemoveUnusedParams::runOnOperation() {
   // Maintain a seperate list of operations we are going to process but arent
   // ready yet. The active worklist of functions which are ready for us to
   // remove their arguments from them.
-  WorklistHelper toScheudle(numFuncs);
+  WorklistHelper toSchedule(numFuncs);
 
   DenseSet<GeneratorOp> seenCallees;
 
@@ -407,21 +407,21 @@ void RemoveUnusedParams::runOnOperation() {
       }
     });
 
-    toScheudle.addToScheudle(generator, idx);
+    toSchedule.addToSchedule(generator, idx);
 
     // Start from the leaf nodes, i.e the functions which don't call anything.
     if (callees.empty())
-      toScheudle.worklist.push_back({generator, idx});
+      toSchedule.worklist.push_back({generator, idx});
 
     genToCallees.try_emplace(generator, callees);
   }
 
   // The actual algorithm which will traverse the calls, identify unused
   // parameters and a rewrite them.
-  while (!toScheudle.empty()) {
+  while (!toSchedule.empty()) {
     bool brokeCycle = false;
     std::pair<GeneratorOp, size_t> pair =
-        toScheudle.pop(funcUsers, genToCallees, numCallersFromFunc, brokeCycle);
+        toSchedule.pop(funcUsers, genToCallees, numCallersFromFunc, brokeCycle);
     GeneratorOp oldFunction = pair.first;
 
     // Will return null if there's nothing left to scheudle.
@@ -454,7 +454,7 @@ void RemoveUnusedParams::runOnOperation() {
         --numCallersFromFunc[caller];
 
       // We don't need to process this anymore.
-      toScheudle.markProcessed(pair);
+      toSchedule.markProcessed(pair);
       continue;
     }
 
@@ -511,7 +511,7 @@ void RemoveUnusedParams::runOnOperation() {
       });
     }
 
-    toScheudle.markProcessed(pair);
+    toSchedule.markProcessed(pair);
 
     // If we broke a cycle we need to add the calls we have which have not been
     // updated yet to the call graph so they will be updated later as well.
