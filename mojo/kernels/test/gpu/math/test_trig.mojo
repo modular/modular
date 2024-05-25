@@ -20,7 +20,7 @@ from testing import assert_true
 
 fn run_func[
     type: DType, kernel_fn: fn (SIMD[type, 1]) capturing -> SIMD[type, 1]
-](out_prefix: String, val: SIMD[type, 1], ref: SIMD[type, 1]) raises:
+](out_prefix: String, val: SIMD[type, 1], ref_: SIMD[type, 1]) raises:
     print("test trignometric functions on gpu")
 
     var out = _malloc[type](1)
@@ -37,7 +37,7 @@ fn run_func[
     synchronize()
     var out_h = DTypePointer[type].alloc(1)
     _copy_device_to_host(out_h, out, 1)
-    assert_true(math.isclose(out_h[0], ref))
+    assert_true(math.isclose(out_h[0], ref_))
     _free(out)
 
 
