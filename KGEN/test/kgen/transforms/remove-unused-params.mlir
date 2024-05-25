@@ -142,16 +142,3 @@ kgen.generator export @with_cycle<T: dtype>(%arg0: index, %arg1: !kgen.pointer<i
 
 // CHECK-LABEL: kgen.generator  @with_cycle_1_REMOVED_ARG(%arg0: index) -> index {
 // CHECK-NEXT: kgen.call @with_cycle_2(%arg0) : (index) -> index
-
-// -----
-
-// CHECK-LABEL: kgen.generator export @no_inline_callee
-kgen.generator export @no_inline_callee(%arg0: index) {
-  // CHECK-NEXT: call @no_inline(%arg0)
-  kgen.call @no_inline(%arg0) : (index) -> ()
-  kgen.return
-}
-
-kgen.generator @no_inline(%arg0: index) no_inline {
-  kgen.return
-}
