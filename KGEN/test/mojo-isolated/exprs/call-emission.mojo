@@ -295,3 +295,28 @@ fn partialBind(inout C:Matrix[`1`,`2`]) raises:
   # CHECK-SAME: rebind(:!lit.signature<[1]<?, index, index>("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> byref) -> !kgen.none>
   # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
   var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
+
+
+# MOCO-692: [mojo-lang][ownership] Implicit conversion failure
+# CHECK-LABEL: lit.func @"test_implicit_conversion_bvalue
+fn test_implicit_conversion_bvalue():
+    # CHECK-NEXT: %foo = lit.var.decl
+    # CHECK-NEXT: Struct1::@"__init__
+    var foo = Struct1()
+    # CHECK-NEXT: lit.transfer_mem_ownership %foo
+    # CHECK-NEXT: %anonymous2A = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}Struct2::@"__init__
+    # CHECK-NEXT: lit.ref.immut
+    # CHECK-NEXT: lit.call {{.*}}take_struct2
+    take_struct2(foo^)
+
+struct Struct1:
+    fn __init__(inout self): pass
+    fn __moveinit__(inout self, owned existing: Self): pass
+struct Struct2:
+    fn __init__(inout self, owned foo: Struct1): pass
+fn take_struct2(bar: Struct2):
+    pass
+
+
+

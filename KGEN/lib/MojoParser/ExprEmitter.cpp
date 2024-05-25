@@ -552,9 +552,6 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     if (!value.ir)
       return {};
   }
-  // Handle M*Value's by decaying to MBValue.
-  if (value.ir.isMValue())
-    value.ir = MBValue(value.ir.getMValueReference());
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
@@ -571,6 +568,10 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     // it with a now-empty (assigned from context) destination.
     return emitBValue(value, dest);
   }
+
+  // Handle M*Value's by decaying to MBValue.
+  if (value.ir.isMValue())
+    value.ir = MBValue(value.ir.getMValueReference());
 
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue

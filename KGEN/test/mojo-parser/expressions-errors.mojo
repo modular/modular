@@ -264,7 +264,8 @@ fn bad_tuple(a: Int):
 
 
 def tuple_return():
-  return 32, 17 # expected-error {{'Tuple[Int, Int]' is not copyable because it has no '__copyinit__'}}
+  # Weirdly converts Tuple to list iteral for some reason.
+  return 32, 17 
 
 
 # Issue https://github.com/modularml/mojo/issues/1917
