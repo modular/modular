@@ -2319,6 +2319,15 @@ static TypedAttr simplifyPtrBitcast(ArrayRef<TypedAttr> operands,
   return {};
 }
 
+static TypedAttr simplifyLoadFromMem(ArrayRef<TypedAttr> operands,
+                                     Type resultType) {
+  // If we get a PointerAttr, then it must not be mapped to any persistent
+  // memory. There is nothing we can ever do with it. Return a undef value.
+  if (isa<PointerAttr>(operands.front()))
+    return UnknownAttr::get(resultType);
+  return {};
+}
+
 static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
                                         TypedAttr addrSpaceOperand,
                                         Type resultType) {
@@ -2469,7 +2478,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = simplifyPtrBitcast(operands, resultType);
     break;
   case POC::LoadFromMem:
-    result = {};
+    result = simplifyLoadFromMem(operands, resultType);
     break;
   case POC::VariadicPtrMap:
     assert(operands.size() == 2 && "variadic_ptr_map always has 2 operands");

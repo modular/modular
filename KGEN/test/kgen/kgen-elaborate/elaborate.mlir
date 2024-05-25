@@ -1950,3 +1950,16 @@ kgen.generator @count_to_zero(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<
   pop.store %2, %arg1 : !kgen.pointer<struct<(index, index, i1)>>
   kgen.return %none : !kgen.none
 }
+
+// -----
+
+kgen.generator @forward_pointer(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index> {
+  kgen.return %arg0 : !kgen.pointer<index>
+}
+
+// CHECK-LABEL: kgen.func export @load_from_mem
+kgen.generator export @load_from_mem() {
+  // CHECK-NEXT: <42>
+  kgen.param.constant = <load_from_mem(:pointer<index> apply(:(!kgen.pointer<index>) -> !kgen.pointer<index> @forward_pointer, store_to_mem(42)))>
+  kgen.return
+}

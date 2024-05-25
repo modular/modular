@@ -129,6 +129,16 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateCompileAssembly(op);
   case POC::GetLinkageName:
     return evaluateGetLinkageName(op);
+  case POC::LoadFromMem:
+    if (auto memref = dyn_cast<MemRefAttr>(op.getOperands().front())) {
+      ErrorOr<TypedAttr> value = loadAttributeFromMemRef(memref, op.getType());
+      if (value.isError()) {
+        emitError({*errorLoc, value.takeError()});
+        return failure();
+      }
+      return value.takeValue();
+    }
+    return failure();
   default:
     return failure();
   }

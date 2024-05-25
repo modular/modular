@@ -542,6 +542,18 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   return success();
 }
 
+ErrorOr<TypedAttr> InterpreterState::loadAttributeFromMemRef(MemRefAttr memref,
+                                                             Type type) {
+  // Push a frame so we can internalize the memory. Reset upon exit.
+  pushFrame(nullptr, nullptr);
+  auto resetState = llvm::make_scope_exit([&] { reset(); });
+
+  Attribute attr = memref;
+  if (ErrorOrSuccess err = internalizeMemory(attr))
+    return err.takeError();
+  return readAttributeFromMemory(cast<PointerAttr>(attr).getAddr(), type);
+}
+
 ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,
                                                                 Type ptrType) {
   std::optional<int64_t> size =

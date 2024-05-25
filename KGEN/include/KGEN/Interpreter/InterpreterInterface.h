@@ -100,6 +100,9 @@ public:
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
 
+  /// Load a single attribute from memory from a memref.
+  ErrorOr<TypedAttr> loadAttributeFromMemRef(MemRefAttr memref, Type type);
+
   //===--------------------------------------------------------------------===//
   // Interpreter Control Flow
 
