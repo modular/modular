@@ -180,3 +180,21 @@ def test_multi_tuple_def_value():
      # CHECK: %b = lit.var.decl "b"
      # CHECK: %a = lit.var.decl "a"
      a, b = returnsMultiple()
+
+# CHECK-LABEL: lit.func @"ref_result
+fn ref_result(inout x: MemoryOnly) -> ref [__lifetime_of(x)] MemoryOnly:
+    # CHECK-NEXT: lit.return %x : !lit.ref<!MemoryOnly, mut *"x`">
+    return x
+
+# CHECK-LABEL: lit.func @"use_ref_result
+fn use_ref_result():
+    # CHECK-NEXT: %a = lit.var.decl "a"
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
+    # CHECK-NEXT: lit.ref.store [[TMP]], %a
+    var a = MemoryOnly()
+
+    # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}ref_result{{.*}}(%a)
+    ref_result(a) = MemoryOnly()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
+

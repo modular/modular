@@ -200,6 +200,8 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"OwnedResult", 3, "ownedresult">,
   /// This local function has state that may live beyond its defined scope.
   I16BitEnumAttrCaseBit<"Escaping", 4, "escaping">,
+  /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
+  I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;

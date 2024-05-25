@@ -127,6 +127,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in trait conformance checking";
   case EC_Closure:
     return " in internal closure formation";
+  case EC_Lifetime:
+    return " in lifetime specifier";
   }
   llvm_unreachable("invalid expr context");
 }
@@ -1479,8 +1481,9 @@ RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
                     resultType);
 }
 
-CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
-  return emitCValue({emitExpr(expr, context), expr}, context);
+CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context,
+                                   ASTType resultType) {
+  return emitCValue({emitExpr(expr, context, resultType), expr}, context);
 }
 
 SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,

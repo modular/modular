@@ -624,12 +624,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       } else {
         os << "()";
       }
-      if (!sig.getResultParamTypes().empty()) {
-        os << " -> ";
-        llvm::interleaveComma(sig.getResultParamTypes(), os, [&](Type type) {
-          ASTType(type).print(os, forDiag);
-        });
-      }
+      assert(sig.getResultParamTypes().empty() &&
+             "Mojo doesn't support result parameters");
       os << ']';
     }
     os << '(';
@@ -711,6 +707,15 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         os << ' ' << effect;
     os << " -> ";
     Type resultType = ASTType(sig).getSignatureUserResultType();
+
+    if (sig.isRefResult()) {
+      auto refType = cast<RefType>(resultType);
+      os << "ref [";
+      printParam(os, refType.getLifetime(), forDiag, demangleParams);
+      os << "] ";
+      resultType = refType.getElementType();
+    }
+
     if (isa<KGEN::NoneType>(resultType))
       os << "None";
     else

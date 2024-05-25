@@ -866,7 +866,7 @@ static ArrayRef<T> dropResultSlots(ArrayRef<T> argumentValues,
 
 FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-  if (calleeSig.isThrows() || calleeSig.isAsync())
+  if (calleeSig.isThrows() || calleeSig.isAsync() || calleeSig.isRefResult())
     return failure();
   auto calleePR = callee.getIfPValue();
   if (!calleePR)
@@ -916,6 +916,11 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (calleeSig.isAsync()) {
     return emitter.emitErrorForDynamicValueInParameter(
         callExpr, "cannot call async function");
+  }
+  if (calleeSig.isRefResult()) {
+    // This should be easy to implement.
+    return emitter.emitErrorForDynamicValueInParameter(
+        callExpr, "TODO: cannot call function returning a reference");
   }
 
   // Emitting a call in a parameter context. Generate an apply operator.
@@ -1338,6 +1343,17 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // Otherwise, always return `None` when directly invoking a constructor.
     // Raising constructors have an ABI result of `i1`.
     return emitCResult(PValue(shared.getNoneAttr()), callExpr, dest);
+  }
+
+  // If returning a reference, we need to convert to an MBValue or MLValue from
+  // the SRValue we've got.
+  if (calleeSig.isRefResult()) {
+    auto resultVal = callResult.getIfSRValue();
+    assert(resultVal && "ref result should always be SRValue result");
+    if (cast<RefType>(resultVal.getType()).isMutableKnown(true))
+      callResult = MLValue(resultVal);
+    else
+      callResult = MBValue(resultVal);
   }
 
   // Otherwise, register-passable results are the call result which may need to

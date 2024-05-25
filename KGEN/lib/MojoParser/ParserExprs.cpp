@@ -40,24 +40,24 @@ using namespace M;
 enum class Precedence {
   kInvalid, // No precedence
 
-  kUnpack,         // prefix: * or **
-  kAssignExpr,     // infix: := (walrus)
-  kIfElse,         // infix: if - else
-  kBoolOr,         // infix: or
-  kBoolAnd,        // infix: and
-  kBoolNot,        // prefix: not
-  kComparison,     // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
-  kOr,             // infix: |
-  kXor,            // infix: ^
-  kAnd,            // infix: &
-  kShift,          // infix: <<, >>
-  kSum,            // infix: +, -
-  kTerm,           // infix: *, @, /, //, %
-  kFactor,         // prefix: +, -, ~
-  kPower,          // infix: **
-  kAwaitOwnership, // prefix: await, borrowed[], owned[], inout[]
-  kPrimary,        // prefix: foo, "123", 123, 1.23, True, False, foo(1),
-                   //         foo.bar, foo[bar], lambda
+  kUnpack,     // prefix: * or **
+  kAssignExpr, // infix: := (walrus)
+  kIfElse,     // infix: if - else
+  kBoolOr,     // infix: or
+  kBoolAnd,    // infix: and
+  kBoolNot,    // prefix: not
+  kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
+  kOr,         // infix: |
+  kXor,        // infix: ^
+  kAnd,        // infix: &
+  kShift,      // infix: <<, >>
+  kSum,        // infix: +, -
+  kTerm,       // infix: *, @, /, //, %
+  kFactor,     // prefix: +, -, ~
+  kPower,      // infix: **
+  kAwait,      // prefix: await
+  kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
+               //         foo.bar, foo[bar], lambda
 
   kExpression = kIfElse, // "expression" precedence is if/else.
   kHighest = kPrimary
@@ -382,9 +382,6 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::tilde:
   case Token::star:
   case Token::kw_await:
-  case Token::kw_borrowed: // borrowed [lifetime] type
-  case Token::kw_inout:    // inout [lifetime] type
-  case Token::kw_owned:    // owned [lifetime] type
   case Token::kw_not:
   case Token::identifier:
   case Token::escaped_identifier:
@@ -969,7 +966,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   ParsedParamList paramList;
   ParsedArgumentList fnSignature;
 
-  ExprNode *resultTypeExpr = nullptr;
+  ExprNode *resultTypeExpr = nullptr, *resultRefLifetimeExpr = nullptr;
   bool isDef = false;
 
   // Parse the function effects from the leading keyword.
@@ -989,15 +986,25 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc endLoc = getToken().getEndLoc();
   SMLoc resultLoc = getToken().getLoc();
   if (!isDef || getToken().is(Token::minus_greater)) {
-    if (parseToken(Token::minus_greater, "expected '->' in function type") ||
-        ParserBase::parseExpression(resultTypeExpr, stmtIndent))
+    if (parseToken(Token::minus_greater, "expected '->' in function type"))
+      return failure();
+
+    // Parse a result reference if present.
+    if (consumeIf(Token::kw_ref)) {
+      if (parseToken(Token::l_square, "expected '[' in result reference") ||
+          parseExpression(resultRefLifetimeExpr) ||
+          parseToken(Token::r_square, "expected ']' in result reference"))
+        return failure();
+    }
+
+    if (ParserBase::parseExpression(resultTypeExpr, stmtIndent))
       return failure();
   }
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs), resultTypeExpr,
-      fnSignature.effects, endLoc, isDef, resultLoc);
+      resultRefLifetimeExpr, fnSignature.effects, endLoc, isDef, resultLoc);
   return success();
 }
 

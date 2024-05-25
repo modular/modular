@@ -1037,10 +1037,19 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Parse the result type if present.
   ExprNode *resultTypeExpr = nullptr;
+  ExprNode *resultRefLifetimeExpr = nullptr;
   SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
-    // Parse a result expression. If this fails, then we just continue on as if
-    // none was specified.
+    // Parse a result reference if present.
+    if (p.consumeIf(Token::kw_ref)) {
+      if (p.parseToken(Token::l_square, "expected '[' in result reference") ||
+          p.parseExpression(resultRefLifetimeExpr) ||
+          p.parseToken(Token::r_square, "expected ']' in result reference"))
+        /*intentionally ignore the problem*/;
+    }
+    // Parse the result type expression.
+    // If this result parsing fails, then we just continue on as if none was
+    // specified.
     (void)p.parseExpression(resultTypeExpr);
   }
 
@@ -1048,7 +1057,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
   TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultTypeExpr,
-                                     resultLoc, isDef, &decl, fnInfo);
+                                     resultRefLifetimeExpr, resultLoc, isDef,
+                                     &decl, fnInfo);
 
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.

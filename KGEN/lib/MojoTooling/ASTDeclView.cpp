@@ -799,8 +799,17 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
 
   // Grab the result type, if it's non-none.
   ASTType resultType = ASTType(signature).getSignatureUserResultType();
-  if (resultType && !resultType.isNoneType())
-    returnType = generateTypeString(resultType, VariadicKind::kNone, selfType);
+  assert(resultType && "didn't find a result type?");
+  std::string resultPrefix;
+  if (signature.isRefResult()) {
+    auto refType = cast<RefType>(resultType);
+    resultPrefix = "ref [" + generatePValueString(refType.getLifetime()) + "] ";
+    resultType = refType.getElementType();
+  }
+
+  if (!resultType.isNoneType() || !resultPrefix.empty())
+    returnType = resultPrefix +
+                 generateTypeString(resultType, VariadicKind::kNone, selfType);
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();

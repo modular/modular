@@ -654,7 +654,7 @@ fn partial_parameter_overloading[param: DType, other: DType]():
 # CHECK-LABEL: lit.func @"form_reference_to_overloaded
 fn form_reference_to_overloaded():
     # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
-    alias ref = parameter_overloading[1]
+    alias refresult = parameter_overloading[1]
     # CHECK-NEXT: !lit.signature<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
     alias partial = partial_parameter_overloading[1]
 
