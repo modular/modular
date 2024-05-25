@@ -1045,12 +1045,12 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // If we have at least one reffer implementation then filter it based on the
     // subscriptArgs we have.
     ValueDest refDest(dest.getContext());
-    CValue callResult = refferSet.emitCall(
-        CallOperands(posOperands, &kwOperands), refDest, emitter);
-    if (!callResult)
+    CValue result = refferSet.emitCall(CallOperands(posOperands, &kwOperands),
+                                       refDest, emitter);
+    if (!result)
       return {};
 
-    auto resultRVType = callResult.getRValueType(emitter.shared);
+    auto resultRVType = result.getRValueType(emitter.shared);
 
     // We expected the refitem method to return an MLIR reference or something
     // we can achieve one by calling `__mlir_ref__`.  Unless we have a reference
@@ -1068,7 +1068,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       }
       // If it exists, call it.  This checks that the operands line up.
       CValue mlirRefResult = emitter.emitNamedMethodCall(
-          "__mlir_ref__", CallOperands({{callResult, node}}), refDest,
+          "__mlir_ref__", CallOperands({{result, node}}), refDest,
           CallSyntax::kImplicitConvert, node);
       if (!mlirRefResult)
         return {};
@@ -1083,21 +1083,24 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
             << ", expected an MLIR reference";
         return {};
       }
-      callResult = mlirRefResult;
+      result = mlirRefResult;
     }
 
-    // We know it has the right type, get it as a scalar value.
-    Value refVal = emitter.emitSRValue({callResult, node}, dest.getContext());
-    if (!refVal)
-      return {};
-    assert(refVal.getType() == resultRefType &&
-           "RValue type didn't agree with actual type");
+    // We know it has the right type, get it as a scalar value. PValues are
+    // always immutable.
+    if (!result.getIfPValue()) {
+      Value refVal = emitter.emitSRValue({result, node}, dest.getContext());
+      if (!refVal)
+        return {};
+      assert(refVal.getType() == resultRefType &&
+             "RValue type didn't agree with actual type");
 
-    // The result of the subscript or attribute lookup is a borrowed reference
-    // or LValue, which can be directly used.  Parametric mutability is always
-    // treated as immutable because some cases wouldn't allow mutation.
-    auto result = resultRefType.isMutableKnown(true) ? AnyValue(MLValue(refVal))
-                                                     : MBValue(refVal);
+      // The result of the subscript or attribute lookup is a borrowed reference
+      // or LValue, which can be directly used.  Parametric mutability is always
+      // treated as immutable because some cases wouldn't allow mutation.
+      result = resultRefType.isMutableKnown(true) ? CValue(MLValue(refVal))
+                                                  : MBValue(refVal);
+    }
 
     // Check to see if we get a reference with an element type that is a down
     // casted metatype.  If we have this, we rebind the reference itself to get
@@ -1113,14 +1116,21 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
     // TODO: This seems like a very specific hack and this causes problems, we
     // should figure out another solution.
-    if (auto paramRef = dyn_cast<ParamRefType>(resultRefType.getElementType()))
+    if (auto paramRef =
+            dyn_cast<ParamRefType>(resultRefType.getElementType())) {
       if (auto rebind = dyn_cast<ParamOperatorAttr>(paramRef.getParam());
           rebind && rebind.getOpcode() == POC::Rebind) {
         resultRefType =
             resultRefType.getWithElement(ASTType(rebind.getOperand(0)));
-        result = emitter.rebindValue({result, node}, resultRefType);
+        result =
+            emitter.rebindValue({result, node}, resultRefType).getIfCValue();
       }
-
+    }
+    // Load PValues immediately.
+    if (auto pv = result.getIfPValue()) {
+      result = ParamOperatorAttr::get(POC::LoadFromMem, pv.get(),
+                                      resultRefType.getElementType());
+    }
     return emitter.emitResult(result, node, dest);
   }
 

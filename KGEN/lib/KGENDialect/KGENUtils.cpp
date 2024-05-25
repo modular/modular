@@ -719,7 +719,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                         StringType::get(p.getContext())))
       return failure();
     return success();
-
   case (uint32_t)POC::VariadicPtrMap:
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
@@ -852,6 +851,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         operandType = p.getBuilder().getIndexType();
         break;
       case (uint32_t)POC::GetTypeMethod:
+        operandType = TypeType::get(p.getContext());
         break;
       default:
         // Other operators default to the same operand type as the result type.
@@ -1014,7 +1014,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printColonTypeParamValue(p, operands[1]);
     break;
-
   case POC::GetTypeMethod:
     if (!isa<TypeType>(operands[0].getType())) {
       p << ':';
@@ -1024,6 +1023,10 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     printParamValue(p, operands[0]);
     p << ", ";
     printParamValue(p, operands[1]);
+    break;
+  case POC::PtrBitcast:
+  case POC::LoadFromMem:
+    printColonTypeParamValue(p, operands.front());
     break;
   case POC::VariadicPtrMap:
     // Type is of the list, but the index type doesn't need it.
