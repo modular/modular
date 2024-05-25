@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
 
-
 struct Empty:
     fn __init__(inout self):
         pass
@@ -435,4 +434,3 @@ fn test38421():
    # This is an error since the rvalue temp slot is uninitialized here.
    # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
    _ = reference[].__len__()
-

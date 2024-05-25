@@ -332,6 +332,7 @@ struct MemoryType:
 struct NonMovableMemoryType:
     var value: Int
 
+    @always_inline
     fn __init__(inout self, value: Int):
         self.value = value
 
@@ -340,6 +341,10 @@ fn makeMemoryValue(x: Int) -> MemoryType:
 
 fn passMemoryValue(x: MemoryType) -> MemoryType:
     return x
+
+@always_inline
+fn readMemoryValue(x: NonMovableMemoryType) -> Int:
+    return x.value
 
 # CHECK-LABEL: lit.func @"callMemoryValueParam
 fn callMemoryValueParam():
@@ -368,6 +373,9 @@ fn callMemoryValueParam():
 
     # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType {:!Int {22}}>
     memoryParam[MemoryType(22)]()
+
+    # CHECK: foldMemoryCall{{.*}} = <42>
+    alias foldMemoryCall = readMemoryValue(NonMovableMemoryType(42)).value
 
 # CHECK-LABEL: lit.func @"memoryParam{{.*}}"<value: !MemoryType>()
 fn memoryParam[value: MemoryType]():

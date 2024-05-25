@@ -853,9 +853,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 /// This function drops `init_self` or `byref_result` result slots from an
 /// argument list, leaving only the formal arguments. This logic is valid for
 /// parameter calls only.
-static ArrayRef<ASTExprAnd<AnyValue>>
-dropResultSlots(ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                SignatureType sig) {
+template <typename T>
+static ArrayRef<T> dropResultSlots(ArrayRef<T> argumentValues,
+                                   SignatureType sig) {
   if (sig.hasInitSelfArg() && sig.getNumArguments() == argumentValues.size())
     return argumentValues.drop_front();
   if (sig.hasMemoryOnlyResult() &&
@@ -880,13 +880,19 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   // may pass in a placeholder value. Make sure to drop them before calling into
   // the interpreter.
   argumentValues = dropResultSlots(argumentValues, calleeSig);
+  ArrayRef<ArgConvention> conventions =
+      dropResultSlots(calleeSig.getArgConventions(), calleeSig);
+  ArrayRef<Type> types = dropResultSlots(calleeSig.getArguments(), calleeSig);
 
   SmallVector<Attribute> arguments;
-  for (ASTExprAnd<AnyValue> argValue : argumentValues) {
-    auto mValue = argValue.ir.getIfPValue();
-    if (!mValue || !ParameterAttr::isSimpleConstant(mValue.get()))
+  for (auto [argValue, conv, type] :
+       llvm::zip(argumentValues, conventions, types)) {
+    auto pValue = argValue.ir.getIfPValue();
+    if (!pValue || !ParameterAttr::isSimpleConstant(pValue.get()))
       return failure();
-    arguments.push_back(mValue.get());
+    arguments.push_back(SignatureType::hasAddress(conv)
+                            ? StoreToMemAttr::get(pValue, type)
+                            : pValue);
   }
 
   FailureOr<TypedAttr> res =
