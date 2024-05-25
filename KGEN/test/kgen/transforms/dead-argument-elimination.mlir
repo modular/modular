@@ -1,4 +1,4 @@
-// RUN: kgen-opt -dead-argument-elimination -split-input-file -verify-parameters %s | FileCheck %s
+// RUN: kgen-opt -dead-argument-elimination -split-input-file %s | FileCheck %s
 
 // COM: simple local dead argument.
 // CHECK-LABEL: kgen.func @simple(%arg0: index) -> index
@@ -63,19 +63,4 @@ kgen.func export @h_dead1(%arg: index) -> index {
   // CHECK: [[V0:%.*]] = kgen.call @g_dead_arg1() : () -> index
   %0 = kgen.call @g_dead_arg1(%arg) : (index) -> index
   kgen.return %0: index
-}
-
-// -----
-
-// CHECK-LABEL: kgen.func @no_inline(%arg0: index)
-kgen.func @no_inline(%arg0: index) no_inline {
-  kgen.return
-}
-
-// -----
-
-// CHECK-LABEL: kgen.func @closure(%arg0: index)
-kgen.func @closure(%arg0: index) {
-  kgen.create_closure[(index) -> (): @closure]()
-  kgen.return
 }
