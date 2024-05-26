@@ -3097,7 +3097,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
 
   // Emit the subexpression.
   ExprNode *subExpr = subExprs.front();
-  AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
+  CValue subExprValue = emitter.emitExprCValue(subExpr, dest.getContext());
   if (!subExprValue)
     return {};
 
@@ -3123,6 +3123,24 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     // Return the MValue as an SRValue since the ref itself is the result.
     Value refValue = subExprValue.getMValueReference();
     return emitter.emitResult(SRValue(refValue), this, dest);
+  }
+
+  // __get_litref_as_mvalue(someLITRef) returns an MValue.
+  if (kind == kGetLitRefAsMValue) {
+    Value exprVal =
+        emitter.emitSRValue({subExprValue, subExpr}, dest.getContext());
+    if (!exprVal)
+      return {};
+    auto refType = dyn_cast<RefType>(exprVal.getType());
+    if (!refType) {
+      emitter.emitError(getLoc(), "operand isn't a '!lit.ref' type ")
+          << ASTType(exprVal.getType()) << getRange();
+      return {};
+    }
+
+    if (refType.isMutableKnown(true))
+      return emitter.emitResult(MLValue(exprVal), this, dest);
+    return emitter.emitResult(MBValue(exprVal), this, dest);
   }
 
   // __get_address_as_uninit_lvalue and __get_address_as_owned_value take a
