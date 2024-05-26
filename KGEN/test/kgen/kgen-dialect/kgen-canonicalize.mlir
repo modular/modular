@@ -464,3 +464,22 @@ kgen.generator @param_if_known_dead(%arg0: !kgen.pointer<index>, %arg1: index) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @trivial_struct_copy
+kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i1, i1)>) -> (!kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>) {
+  // CHECK: %struct = kgen.param.constant: struct<()>
+  %0 = kgen.struct.create () : !kgen.struct<()>
+
+  %1 = kgen.struct.extract %arg0[0] : !kgen.struct<(i1)>
+  %2 = kgen.struct.create (%1) : !kgen.struct<(i1)>
+
+  %3 = kgen.struct.extract %arg1[1] : !kgen.struct<(i1, i1)>
+  %4 = kgen.struct.extract %arg1[0] : !kgen.struct<(i1, i1)>
+  %5 = kgen.struct.create (%4, %3) : !kgen.struct<(i1, i1)>
+
+  // CHECK: [[CREATE:%.*]] = kgen.struct.create
+  %6 = kgen.struct.create (%3, %4) : !kgen.struct<(i1, i1)>
+
+  // CHECK: return %struct, %arg0, %arg1, [[CREATE:%.*]]
+  kgen.return %0, %2, %5, %6 : !kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>
+}
