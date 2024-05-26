@@ -1050,6 +1050,11 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
   var ref5 = ref1 if cond else ref2 if cond else __get_mvalue_as_litref(c)
 
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
+  # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %ref2
+  # CHECK-NEXT: lit.call {{.*}}MemoryOnlyInt::@"__init__{{.*}}([[TMP2]], [[TMP]])
+  __get_litref_as_mvalue(ref2) = MemoryOnlyInt()
+
 struct CallableStruct:
     var value: Int
 

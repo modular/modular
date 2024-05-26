@@ -60,6 +60,7 @@ public:
 
     // Magic functions
     kGetMValueAsLitRef,        // __get_mvalue_as_litref(x)
+    kGetLitRefAsMValue,        // __get_litref_as_mvalue(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kLifetimeOf,               // __lifetime_of(x)
