@@ -52,10 +52,17 @@ struct CallGraphNode
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
   ~CallGraphNode() {
-    if (func && (isAllInlined() || !reachable) && !func.isExported()) {
+    // `func` is null for the root node.
+    if (func && isFunctionDead()) {
       func->remove();
       func->erase();
     }
+  }
+
+  /// Return true if at the end of processing, the function is dead and will be
+  /// erased.
+  bool isFunctionDead() {
+    return (isAllInlined() || !reachable) && !func.isExported();
   }
 
   /// Should callee be inlined or not given a threshold.
@@ -230,6 +237,8 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
   DenseSet<CallGraphNode *> seenNodes;
   // Collect callee dependencies to wait.
   for (auto [_, callee] : caller->callsites) {
+    // Don't attempt to inline functions in the SCCs of their callers or those
+    // in unreachable SCCs.
     if (!caller->canInlineCallee(callee))
       continue;
     if (seenNodes.insert(callee).second)
@@ -245,14 +254,14 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
   auto inlineFunc = [caller, threshold,
                      this](ArrayRef<AnyAsyncValueRef>) mutable {
     for (auto [call, callee] : caller->callsites) {
-      if (!call)
-        continue;
-
       // Make sure we don't call shouldInlineCallee on a callee that we are not
       // waiting on.
       if (!caller->canInlineCallee(callee))
         continue;
 
+      // Now that the callee has finished processing along with its inner
+      // function pipeline, we can run our heuristic on it to determine if we
+      // should inline it.
       if (!caller->shouldInlineCallee(callee, threshold))
         continue;
 
@@ -268,9 +277,8 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
       callee->numTimesInlined++;
     }
 
-    if (caller->func)
-      if (failed(pms.getPassManager().run(caller->func)))
-        innerPipelineFailed = true;
+    if (failed(pms.getPassManager().run(caller->func)))
+      innerPipelineFailed = true;
 
     caller->doneInlining.copy().emplace();
     endWork();
@@ -390,9 +398,7 @@ void AutomaticInline::runOnOperation() {
     LLCL::ForkJoin state(runtime);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
-      if (!func ||
-          ((node.isAllInlined() || !node.reachable) && !func.isExported()) ||
-          node.callsites.empty())
+      if (node.isFunctionDead() || node.callsites.empty())
         continue;
 
       state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
