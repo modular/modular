@@ -339,9 +339,7 @@ fn test_immortal_to_mortal(arg: Reference[Int, _, _])
 # CHECK-LABEL: lit.func @"ref_copyability
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # CHECK: %x = lit.var.decl
-  # Cast away the metatype rebind to AnyType.
-  # CHECK: [[TMP:%.*]] = kgen.rebind {{.*}} : !lit.ref<:!AnyType rebind(:!Copyable variadic_get(:variadic<!Copyable> element_types, 4)), imm *"args`"> to !lit.ref<:!Copyable variadic_get(:variadic<!Copyable> element_types, 4), imm *"args`">
-  # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__copyinit__{{.*}}(%x, [[TMP]])
+  # CHECK: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__copyinit__{{.*}}(%x, %0)
   var x = args[4]
 
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
