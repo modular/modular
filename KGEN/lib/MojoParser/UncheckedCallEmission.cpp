@@ -865,7 +865,7 @@ static ArrayRef<T> dropResultSlots(ArrayRef<T> argumentValues,
 
 FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-  if (calleeSig.isThrows() || calleeSig.isAsync() || calleeSig.isRefResult())
+  if (calleeSig.isThrows() || calleeSig.isAsync())
     return failure();
   auto calleePR = callee.getIfPValue();
   if (!calleePR)
@@ -898,7 +898,16 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
       evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
   if (failed(res))
     return failure();
-  return emitter.emitCResult(*res, callExpr, dest);
+  TypedAttr resultValue = *res;
+
+  // If the result was a returned reference, load it before returning it.
+  if (calleeSig.isRefResult()) {
+    resultValue = ParamOperatorAttr::get(
+        POC::LoadFromMem, resultValue,
+        cast<RefType>(resultValue.getType()).getElementType());
+  }
+
+  return emitter.emitCResult(resultValue, callExpr, dest);
 }
 
 TypedAttr CallEmitter::emitCallInParamContext(
@@ -915,11 +924,6 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (calleeSig.isAsync()) {
     return emitter.emitErrorForDynamicValueInParameter(
         callExpr, "cannot call async function");
-  }
-  if (calleeSig.isRefResult()) {
-    // This should be easy to implement.
-    return emitter.emitErrorForDynamicValueInParameter(
-        callExpr, "TODO: cannot call function returning a reference");
   }
 
   // Emitting a call in a parameter context. Generate an apply operator.
@@ -973,7 +977,15 @@ TypedAttr CallEmitter::emitCallInParamContext(
         ASTType(boundSigType.getArguments().front()).getReferenceElementType();
   else {
     resultType = boundSigType.getResults().front();
-    return ParamOperatorAttr::get(POC::Apply, operands, resultType);
+    TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands, resultType);
+
+    // If the result was a returned reference, load it before returning it.
+    if (boundSigType.isRefResult()) {
+      result = ParamOperatorAttr::get(
+          POC::LoadFromMem, result,
+          cast<RefType>(result.getType()).getElementType());
+    }
+    return result;
   }
   // ByRefResult and InitSelf use ApplyResultSlot.
   return ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);

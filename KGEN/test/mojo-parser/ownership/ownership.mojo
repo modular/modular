@@ -708,9 +708,8 @@ fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-SAME: <:!AnyType #MemExample{{.*}} :lifetime<1> *"mems`">(%mems_0, %mems)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
-  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMMREF]], [[ZERO]])
-  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
-  # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[IMMREF]], [[ZERO]])
+  # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[REF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
   # CHECK-NEXT: lit.call {{.*}}__iadd__{{.*}}([[XREF]], [[ONE]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)

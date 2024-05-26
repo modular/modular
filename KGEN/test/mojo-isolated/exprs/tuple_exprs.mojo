@@ -75,14 +75,12 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK: [[REFTMPVAR:%.*]] = lit.var.decl "anonymous
     # CHECK: lit.call {{.*}}Reference::@"__init__{{.*}}([[REFTMPVAR]], [[TMPVAR]]
     # CHECK: [[REFVAL:%.*]] = lit.ref.load [[REFTMPVAR]]
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[REFVAL]])
-    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}([[REFVAL]])
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}(
-    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}(
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = iTup
 
@@ -93,22 +91,19 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]],
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>(
-    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}>(
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>(
-    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}>(
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = (i2, i1)
 
     # CHECK: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous{{.*}}, %iTup)
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__refitem__{{.*}}(
-    # CHECK-NEXT: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__getitem__{{.*}}(
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
-    # CHECK-NEXT: lit.ref.store [[TMP]], [[ELTR]]
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[ELT]]
     iTup[1] = i1
 
     var f1: FloatDyn

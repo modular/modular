@@ -373,10 +373,10 @@ struct Tuple[*element_types: AnyType]:
     fn __moveinit__(inout self, owned existing: Self):
         pass
 
-    fn __refitem__[
+    fn __getitem__[
         i: Int
-    ](self: Reference[Self, _, _]) -> Reference[
-        element_types[i.value], self.is_mutable, self.lifetime
+    ](self: Reference[Self, _, _]) -> ref [self.lifetime] element_types[
+        i.value
     ]:
         while __mlir_attr.true:
             pass
