@@ -913,6 +913,35 @@ void ParamIfOp::collectParameterUsesBelow(
     function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
 }
 
+LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
+  auto condAttr = dyn_cast<BoolAttr>(op.getCond());
+  if (!condAttr)
+    return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
+
+  // We can't fold away the op entirely, because it defines a parameter scope
+  // and this could create param decl conflicts. Instead, purge the dead region
+  // and insert a `kgen.unreachable`.
+  Block &liveBlock = op->getRegion(!condAttr.getValue()).front();
+  Block &deadBlock = op->getRegion(condAttr.getValue()).front();
+
+  // If the live block happens to be trivial, we can actually remove the whole
+  // operation. Replace the results with the operands to the yield.
+  if (auto yield = dyn_cast<ParamYieldOp>(&liveBlock.front())) {
+    b.replaceOp(op, yield.getOperands());
+    return success();
+  }
+
+  // Don't match again if the dead block is already purged.
+  if (isa<UnreachableOp>(deadBlock.front()))
+    return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
+
+  for (Operation &op : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
+    b.eraseOp(&op);
+  b.setInsertionPointToStart(&deadBlock);
+  b.create<UnreachableOp>(op.getLoc());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamYieldOp
 //===----------------------------------------------------------------------===//
