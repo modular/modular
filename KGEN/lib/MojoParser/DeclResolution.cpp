@@ -1219,7 +1219,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Given a value of !kgen.variadic<..> construct a VariadicList and return
 /// the variable declaration holding it.
-static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
+static VarDeclOp makeVarArgWrapper(const CValue &argValue, StringAttr argName,
                                    ASTDecl &parentDecl, ExprEmitter &emitter,
                                    SMLoc loc) {
   // Expr to provide location information.
@@ -1227,7 +1227,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
   auto variadicEltType =
-      cast<VariadicType>(argValue.getType()).getElementType();
+      cast<VariadicType>(argValue.getRValueType()).getElementType();
   bool isMem = isa<RefType>(variadicEltType);
   ASTType varListType =
       emitter.shared.getBuiltinVariadicListType(parentDecl, loc, isMem);
@@ -1333,7 +1333,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
       // Insert the def argument wrapper to make it lazily mutable on demand.
       setDecl(RCRef<DefArgumentWrapperDLValue>::create(
-          &argDecl, argBValue, argBValue.getRValueType(shared), argIdx));
+          &argDecl, argBValue, argBValue.getRValueType(), argIdx));
     };
 
     // If this is an MValue argument whose underlying type could be a register

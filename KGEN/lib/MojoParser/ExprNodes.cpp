@@ -937,7 +937,7 @@ static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
 AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
                                 ArrayRef<Operand> exprOperands, ValueDest &dest,
                                 ExprEmitter &emitter) {
-  ASTType baseType = base.ir.getRValueType(emitter.shared);
+  ASTType baseType = base.ir.getRValueType();
 
   // This is either a SubscriptNode for x[i,j] or a AttributeRefNode for x.name.
   bool isSubscript = isa<SubscriptNode>(node);
@@ -1050,7 +1050,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     if (!result)
       return {};
 
-    auto resultRVType = result.getRValueType(emitter.shared);
+    auto resultRVType = result.getRValueType();
 
     // We expected the refitem method to return an MLIR reference or something
     // we can achieve one by calling `__mlir_ref__`.  Unless we have a reference
@@ -1072,14 +1072,13 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
           CallSyntax::kImplicitConvert, node);
       if (!mlirRefResult)
         return {};
-      auto mlirRVType = mlirRefResult.getRValueType(emitter.shared);
 
       // Double check this really returned an MLIR reference.
-      resultRefType = dyn_cast<RefType>(mlirRVType);
+      resultRefType = dyn_cast<RefType>(mlirRefResult.getRValueType());
       if (!resultRefType) {
         emitter.emitError(node->getLoc())
             << "the '__mlir_ref__' method on " << resultRVType
-            << " returned a value of " << mlirRVType
+            << " returned a value of " << resultRefType
             << ", expected an MLIR reference";
         return {};
       }
@@ -1284,7 +1283,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   } else {
     // Otherwise, it must be an access to a field of a value.  Look up in the
     // RValueType of the value.
-    baseRVType = baseVal.getRValueType(shared);
+    baseRVType = baseVal.getRValueType();
   }
 
   // Find the decl for the type we're looking up into.
@@ -1868,7 +1867,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   CValue baseValue = emitter.emitCValue({baseAnyValue, base}, EC_SubscriptBase);
   if (!baseValue)
     return {};
-  ASTType baseType = baseValue.getRValueType(emitter.shared);
+  ASTType baseType = baseValue.getRValueType();
 
   if (auto value = baseValue.getIfPValue()) {
     // Check for attribute bindings to an MLIR operation.
@@ -2228,8 +2227,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     CallOperands operands(argValues);
     if (PValue callee = OverloadSet::lookupAndResolve(
-            emitter.getScopeInfo(), lhsCV.getRValueType(emitter.shared),
-            specialFnInfo.name, operands, callExpr, CallSyntax::kOperator))
+            emitter.getScopeInfo(), lhsCV.getRValueType(), specialFnInfo.name,
+            operands, callExpr, CallSyntax::kOperator))
       return emitter.emitIndirectCall(callee, operands, dest, callExpr);
   }
 
@@ -2241,7 +2240,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       CallOperands operands(argValues);
       if (PValue callee = OverloadSet::lookupAndResolve(
-              emitter.getScopeInfo(), rhsCV.getRValueType(emitter.shared),
+              emitter.getScopeInfo(), rhsCV.getRValueType(),
               reversedFnInfo.name, operands, callExpr,
               CallSyntax::kReversedOperator))
         return emitter.emitIndirectCall(callee, operands, dest, callExpr);
@@ -2336,8 +2335,7 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
   if (!lhs || !rhs)
     return failure();
 
-  ASTType lhsType = lhs.getRValueType(emitter.shared);
-  ASTType rhsType = rhs.getRValueType(emitter.shared);
+  ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
 
   // If the types already match, then we're done.
   if (lhsType.isEqualCanon(rhsType))
@@ -2512,14 +2510,14 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 
     // If the RHS is already a Bool, we're good, otherwise convert to i1 then
     // back to Bool with a ctor.
-    if (!rhsV.getRValueType(emitter.shared).isEqualCanon(boolType)) {
+    if (!rhsV.getRValueType().isEqualCanon(boolType)) {
       RValue rhsI1Value = emitter.emitI1({rhsV, rhs}, EC_OperatorOperandValue);
       rhsV = convertValue({rhsI1Value, rhs}, boolType, /*isLHS=*/false);
     }
 
     // Similarly, if the LHS was already a Bool then use it, otherwise convert
     // the i1 we already have back to Bool with a ctor.
-    if (!lhsV.getRValueType(emitter.shared).isEqualCanon(boolType))
+    if (!lhsV.getRValueType().isEqualCanon(boolType))
       lhsV = convertValue({lhsI1SRValue, lhs}, boolType, /*isLHS=*/true);
 
     if (!lhsV || !rhsV)
@@ -2556,7 +2554,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   };
 
   // Now we know they have common types.
-  auto resultType = lhsV.getRValueType(emitter.shared);
+  auto resultType = lhsV.getRValueType();
   if (resultType.isRegisterPassable(lhs->getLoc(), emitter.shared)) {
     emitter.builder = trueBuilder;
     auto rhsSR = emitter.emitSRValue({rhsV, rhs}, EC_OperatorOperandValue);
@@ -2652,15 +2650,15 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   }
   CValue argCValue = argValue.getIfCValue();
   assert(argCValue && "MValue and SValue is always a CValue");
-  auto argRVType = argCValue.getRValueType(emitter.shared);
-  if (argRVType.isTrivial(getLoc(), emitter.shared)) {
+  if (argCValue.getRValueType().isTrivial(getLoc(), emitter.shared)) {
     // We don't support transfering from register-passable trivial values,
     // since this won't end the lifetime. CheckLifetimes doesn't and can't track
     // these things because they don't have consume operators, move operators,
     // etc.
     emitter.emitWarning(getLoc())
-        << "transfer from a value of trivial register type " << argRVType
-        << " has no effect and can be removed" << FixIt::remove(getLoc());
+        << "transfer from a value of trivial register type "
+        << argCValue.getRValueType() << " has no effect and can be removed"
+        << FixIt::remove(getLoc());
     return emitter.emitResult(argValue, this, dest);
   }
 
@@ -2798,7 +2796,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  auto resultType = trueVal.getRValueType(emitter.shared);
+  auto resultType = trueVal.getRValueType();
 
   auto deadCodeCheck = [&]() {
     if (PValue condPVal = condRVal.getIfPValue()) {
@@ -3213,8 +3211,7 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
   if (!subExprValue)
     return {};
 
-  return emitter.emitResult(PValue(subExprValue.getRValueType(emitter.shared)),
-                            this, dest);
+  return emitter.emitResult(PValue(subExprValue.getRValueType()), this, dest);
 }
 
 // There are two options. We are either emitting a type or an instance of Tuple.
@@ -3290,7 +3287,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (allEltsLValue) {
     SmallVector<Type> typeElts;
     for (ASTExprAnd<AnyValue> elt : elements)
-      typeElts.push_back(elt.ir.getIfLValue().getLValueStorageType());
+      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
     ASTType concretizedTupleType =
         emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
     if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())

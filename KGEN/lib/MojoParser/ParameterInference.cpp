@@ -501,7 +501,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return failure();
 
     // By-ref argument types must exactly match, no conversions are allowed.
-    return matchTypes(argVal.getLValueStorageType(),
+    return matchTypes(argVal.getRValueType(),
                       expectedType.getReferenceElementType());
   }
 
@@ -552,7 +552,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
 
   // If the argument types exactly match, then they are good.
-  ASTType argType = argVal.getRValueType(shared);
+  ASTType argType = argVal.getRValueType();
   if (argType.isEqualCanon(expectedType))
     return success();
 
@@ -965,7 +965,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
       while (posOperandIdx != numPosOperands) {
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
-        ASTType toPush = operand.ir.getRValueTypeIfResolvable(shared);
+        ASTType toPush = operand.ir.getRValueTypeIfResolvable();
         if (!toPush) {
           shared.emitWarning(operand.expr->getLoc(),
                              "could not infer parameter type for this value, "
