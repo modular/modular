@@ -39,10 +39,8 @@ fn test_owned(owned x: RegPassable, owned y: MemOnly):
     borrowed_generic(y)
 
     # COM: check callsite to inlined RegPassable::__copyinit__
-    # CHECK: [[V2:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: [[V3:%.*]] = kgen.struct.extract %arg0[1] : !kgen.struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: [[XCOPY:%.*]] = kgen.struct.create([[V2]], [[V3]]) : !kgen.struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"([[XCOPY]])
+    # NOTE: The copy is optimized away since it is trivial.
+    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x)
 
     # CHECK: [[XPTR3:%.*]] = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
@@ -76,10 +74,7 @@ fn test_borrowed(borrowed x: RegPassable, borrowed y: MemOnly):
     borrowed_generic(y)
 
     # COM: check callsite to inlined RegPassable::__copyinit__
-    # CHECK: [[V2:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: [[V3:%.*]] = kgen.struct.extract %arg0[1] : !kgen.struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: [[XCOPY:%.*]] = kgen.struct.create([[V2]], [[V3]]) : !kgen.struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"([[XCOPY]])
+    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x)
 
     # CHECK: [[XPTR3:%.*]] = pop.stack_allocation 1 x struct<(index, index) memoryOnly>

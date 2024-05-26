@@ -1476,8 +1476,8 @@ OpFoldResult VariantTakeOp::fold(FoldAdaptor adaptor) {
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
-  ArrayRef<Attribute> operands = adaptor.getOperands();
+static StructAttr foldStructCreateConstant(StructCreateOp op,
+                                           ArrayRef<Attribute> operands) {
   SmallVector<TypedAttr> values;
   values.reserve(operands.size());
   for (Attribute operand : operands) {
@@ -1486,7 +1486,36 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
       return {};
     values.push_back(value);
   }
-  return StructAttr::get(values, getType());
+  return StructAttr::get(values, op.getType());
+}
+
+static Value foldTrivialStructCopy(StructCreateOp op) {
+  // Fold `create(%x[0], %x[1], %x[2]) -> %x` where `%x` has the same type.
+  // An empty create would have been folded above.
+  auto getSourceContainer = [&](unsigned idx, Value operand) -> Value {
+    auto extract = operand.getDefiningOp<StructExtractOp>();
+    if (extract && extract.getIndex() == idx &&
+        extract.getContainer().getType() == op.getType())
+      return extract.getContainer();
+    return {};
+  };
+  Value container = getSourceContainer(0, op.getOperands().front());
+  if (!container)
+    return {};
+  for (auto [idx, operand] :
+       llvm::enumerate(llvm::drop_begin(op.getOperands())))
+    if (getSourceContainer(idx + 1, operand) != container)
+      return {};
+  return container;
+}
+
+OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
+  if (StructAttr cst = foldStructCreateConstant(*this, adaptor.getOperands()))
+    return cst;
+  if (Value container = foldTrivialStructCopy(*this))
+    return container;
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
