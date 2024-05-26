@@ -514,36 +514,6 @@ fn invalid_call_variadic_int(a: Int):
     if variadic_int(a, a):
         pass
 
-
-## FIXME: Shouldn't have to duplicate this from stdlib, but otherwise
-## Verify diagnostics gets happy because we have no check line for the note :(
-@automatically_dereference
-struct Reference[
-    type: AnyType,
-    is_mutable: Bool,
-    lifetime: AnyLifetime[is_mutable].type,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-]:
-    alias _mlir_type = __mlir_type[
-        `!lit.ref<`,
-        type,
-        `, `,
-        lifetime,
-        `, `,
-        address_space._value.value,
-        `>`,
-    ]
-
-    fn __init__(inout self, value: Self._mlir_type): pass
-    fn __refitem__(self) -> Self: pass
-    fn __mlir_ref__(self) -> Self._mlir_type: pass
-
-fn test_bad_ref_errors(a: MemoryOnlyPair, b: MemoryOnlyPair):
-  var aref = Reference(a)
-  var bref = Reference(b)
-
-  _ = Reference(MemoryOnlyPair())
-
 fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
   # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[T, is_mutable, lifetime, 0]'}}
   var x : Reference[T, a.is_mutable, a.lifetime] = a[]

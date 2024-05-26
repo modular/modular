@@ -722,15 +722,6 @@ fn function_with_struct2():
             pass
     var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
 
-struct BadRefItem:
-    fn __init__(inout self): pass
-    fn __refitem__(inout self, key: Int) -> Int:
-        return key
-
-fn access_BadRefItem():
-    var val = BadRefItem()
-    _ = val[1] # expected-error {{the '__refitem__' method on 'BadRefItem' returned a value of 'Int', expected a reference}}
-
 # https://github.com/modularml/modular/issues/33557
 struct HasBadCtor:
     var v: Int

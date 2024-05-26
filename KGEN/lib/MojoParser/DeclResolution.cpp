@@ -1043,7 +1043,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     // Parse a result reference if present.
     if (p.consumeIf(Token::kw_ref)) {
       if (p.parseToken(Token::l_square, "expected '[' in result reference") ||
-          p.parseExpression(resultRefLifetimeExpr) ||
+          p.parseExpressionList(resultRefLifetimeExpr, {}) ||
           p.parseToken(Token::r_square, "expected ']' in result reference"))
         /*intentionally ignore the problem*/;
     }
