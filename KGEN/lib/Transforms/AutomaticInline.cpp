@@ -108,10 +108,9 @@ struct CallGraphNode
 //===----------------------------------------------------------------------===//
 
 struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
-  explicit CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
-                     const std::optional<StringAttr> updateAttrName,
-                     bool debugCallsite)
-      : runtime(runtime), pms(pms), externalNode(nullptr, runtime),
+  CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
+            std::optional<StringAttr> updateAttrName, bool debugCallsite)
+      : externalNode(nullptr, runtime), runtime(runtime), pms(pms),
         updateAttrName(updateAttrName), debugCallsite(debugCallsite),
         numWorkItems(0),
         done(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
@@ -130,24 +129,21 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   /// Performing inlining on the graph.
   void performInlining(uint64_t threshold);
 
-  /// Get graph entry node.
-  CallGraphNode *getExternalCallerNode() { return &externalNode; }
-
-  /// Reference to the LLCL runtime for launch jobs in parallel.
-  LLCL::Runtime &runtime;
-
-  /// The pass managers to use.
-  PerThreadPassManagers &pms;
+  /// If inner pipeline for function optimization failed or not.
+  std::atomic<bool> innerPipelineFailed = false;
 
   /// External node that has all the functions that do not have a caller in the
   /// Module as callees. This node is the entry node of the CallGraph for
   /// computing SCCs.
   CallGraphNode externalNode;
 
-  /// If inner pipeline for function optimization failed or not.
-  bool innerPipelineFailed = false;
-
 private:
+  /// Reference to the LLCL runtime for launch jobs in parallel.
+  LLCL::Runtime &runtime;
+
+  /// The pass managers to use.
+  PerThreadPassManagers &pms;
+
   /// When a work item ends, call this function for post-processing.
   void endWork();
 
@@ -246,8 +242,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
     return;
   }
 
-  auto inlineFunc = [&pms = pms, &innerPipelineFailed = innerPipelineFailed,
-                     caller, &updateAttrName = updateAttrName, threshold,
+  auto inlineFunc = [caller, threshold,
                      this](ArrayRef<AnyAsyncValueRef>) mutable {
     for (auto [call, callee] : caller->callsites) {
       if (!call)
@@ -306,8 +301,7 @@ namespace {
 struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
   explicit AutomaticInline(
       const AutomaticInlineOptions &options = {},
-      std::function<void(mlir::OpPassManager &)> buildFuncPasses =
-          [](mlir::OpPassManager &) {})
+      std::function<void(mlir::OpPassManager &)> buildFuncPasses = {})
       : AutomaticInlineBase(options), buildFuncPasses(buildFuncPasses) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
@@ -328,6 +322,15 @@ struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
     funcPipelineStr =
         StringRef(funcPipelineStr).drop_front(4).drop_back().str();
     return success();
+  }
+
+  void getDependentDialects(DialectRegistry &registry) const override {
+    mlir::OpPassManager pipeline;
+    if (buildFuncPasses)
+      buildFuncPasses(pipeline);
+    else
+      (void)mlir::parsePassPipeline(funcPipelineStr, pipeline);
+    pipeline.getDependentDialects(registry);
   }
 
   void runOnOperation() override;
