@@ -1076,7 +1076,7 @@ namespace {
 struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
   explicit ForceInlinePass(
       const ForceInlineOptions &options = {},
-      std::function<void(mlir::OpPassManager &)> buildFuncPasses = nullptr)
+      std::function<void(mlir::OpPassManager &)> buildFuncPasses = {})
       : ForceInlineBase(options), buildFuncPasses(std::move(buildFuncPasses)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
