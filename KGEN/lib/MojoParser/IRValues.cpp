@@ -124,9 +124,9 @@ void AnyValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 
-ASTType AnyValue::getRValueTypeIfResolvable(SharedState &shared) const {
+ASTType AnyValue::getRValueTypeIfResolvable() const {
   if (auto cValue = getIfCValue())
-    return cValue.getRValueType(shared);
+    return cValue.getRValueType();
   // Otherwise, try to narrow an overload set to a PValue.
   if (auto ovSet = getIfOverloadSet())
     if (auto pValue = ovSet->getIfPValue())
@@ -198,34 +198,24 @@ ASTType RValue::getRValueType() const {
   return type;
 }
 
-ASTType CValue::getRValueType(SharedState &shared) const {
+ASTType CValue::getRValueType() const {
   auto type = getType();
   if (isa<MLValue, MRValue, MBValue>(storage))
-    type = type.getReferenceElementType();
-  // TODO: RValue promotions.
+    return type.getReferenceElementType();
   return type;
 }
 
-ASTType LValue::getRValueType(SharedState &shared) const {
+ASTType LValue::getRValueType() const {
   auto type = getType();
   if (isa<MLValue>(storage))
-    type = type.getReferenceElementType();
-  // TODO: RValue promotions.
+    return type.getReferenceElementType();
   return type;
 }
 
-ASTType BValue::getRValueType(SharedState &shared) const {
+ASTType BValue::getRValueType() const {
   auto type = getType();
   if (isa<MBValue>(storage))
-    type = type.getReferenceElementType();
-  // TODO: RValue promotions.
-  return type;
-}
-
-ASTType LValue::getLValueStorageType() const {
-  auto type = getType();
-  if (isa<MLValue>(storage))
-    type = type.getReferenceElementType();
+    return type.getReferenceElementType();
   return type;
 }
 

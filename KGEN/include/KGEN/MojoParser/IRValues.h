@@ -131,9 +131,7 @@ public:
   MBValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
-  ASTType getRValueType(SharedState &shared) const {
-    return getType().getReferenceElementType();
-  }
+  ASTType getRValueType() const { return getType().getReferenceElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
 
 private:
@@ -151,11 +149,7 @@ public:
   SBValue(Value v) : Value(v) {}
 
   ASTType getType() const { return ASTType(Value::getType()); }
-
-  ASTType getRValueType(SharedState &shared) const {
-    // TODO: Needs RValue promotions.
-    return getType();
-  }
+  ASTType getRValueType() const { return getType(); }
 };
 
 /// Instances of MLValue model a loadable/storable address as an SSA value with
@@ -165,17 +159,8 @@ public:
   using Value::Value;
   MLValue(Value v) : Value(v) { check(); }
 
-  ASTType getRValueType(SharedState &shared) const {
-    // TODO: Needs RValue promotions.
-    return getType().getReferenceElementType();
-  }
-
-  /// This returns the declared type of the value, which isn't subject to rvalue
-  /// promotions.
-  ASTType getLValueStorageType() const {
-    return getType().getReferenceElementType();
-  }
-
+  /// This returns the declared type of the value without the wrapping pointer.
+  ASTType getRValueType() const { return getType().getReferenceElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
 
 private:
@@ -235,9 +220,6 @@ public:
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const { return get().getType(); }
   ASTType getRValueType() const { return getType(); }
-
-  // FIXME: Split PValue into PValue/PRValue.
-  ASTType getRValueType(SharedState &shared) const { return getRValueType(); }
 
   /// If this value /is/ a type (i.e., if it has metatype type) return it.
   ASTType getIfTypeValue() const;
@@ -532,14 +514,9 @@ public:
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
 
-  /// This method looks through implicit references and performs RValue
-  /// promotions.
-  ASTType getRValueType(SharedState &shared) const;
-
-  /// This returns the declared type of the value, which isn't subject to rvalue
-  /// promotions.
-  ASTType getLValueStorageType() const;
-
+  /// This method looks through the reference in a MLValue to return
+  /// the underlying type.
+  ASTType getRValueType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, LValue value);
@@ -594,8 +571,8 @@ public:
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
 
-  /// This method looks returns the element type after rvalue promotions.
-  ASTType getRValueType(SharedState &shared) const;
+  /// This method looks returns the underlying element type.
+  ASTType getRValueType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, LValue value);
@@ -639,7 +616,7 @@ public:
 
   /// This method looks through the pointer in memory references to return
   /// the underlying type.
-  ASTType getRValueType(SharedState &shared) const;
+  ASTType getRValueType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, CValue value);
@@ -677,7 +654,7 @@ public:
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorage()); }
 
   /// Get the RValue type of the value if it can be resolved to one.
-  ASTType getRValueTypeIfResolvable(SharedState &shared) const;
+  ASTType getRValueTypeIfResolvable() const;
 
   void dump() const;
 };

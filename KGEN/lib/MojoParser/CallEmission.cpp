@@ -270,10 +270,10 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     ASTType selfOperandType, singleOperandType;
     if (operands.posOperands.size() == 2) {
       if (auto cValue = operands.posOperands[0].ir.getIfCValue())
-        if (auto selfRef = dyn_cast<RefType>(cValue.getRValueType(getShared())))
+        if (auto selfRef = dyn_cast<RefType>(cValue.getRValueType()))
           selfOperandType = selfRef.getElementType();
       if (auto cValue = operands.posOperands[1].ir.getIfCValue())
-        singleOperandType = cValue.getRValueType(getShared());
+        singleOperandType = cValue.getRValueType();
     }
 
     // Reject Int(x) where x is already an Int with an error + fixit.
@@ -769,7 +769,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
                                      const CallOperands &callOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType(shared));
+  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.
@@ -855,7 +855,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   CallOperands operands(posOperands, callOperands.kwOperands);
 
-  ASTType type = selfVal.getRValueType(shared);
+  ASTType type = selfVal.getRValueType();
 
   auto emitNoMethodError = [&]() {
     auto diag = emitError(callNode->getLoc(), "")
@@ -934,7 +934,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       assert(callOperands.posOperands.size() == 1 &&
              "implicit conversions have one operand");
       if (auto cValue = callOperands.posOperands[0].ir.getIfCValue())
-        singleOperandType = cValue.getRValueType(shared);
+        singleOperandType = cValue.getRValueType();
 
       auto diag = emitError(expr->getLoc());
       if (isa<DeclRefType>(type)) {

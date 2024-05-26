@@ -160,9 +160,9 @@ InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(InflightDiag &diag,
                                     ASTExprAnd<AnyValue> operand,
-                                    ASTType argType, SharedState &shared) {
+                                    ASTType argType) {
   auto loc = operand.expr->getLoc();
-  ASTType operandType = operand.ir.getRValueTypeIfResolvable(shared);
+  ASTType operandType = operand.ir.getRValueTypeIfResolvable();
   if (!operandType) {
     diag.attachNote(loc) << "try resolving the overloaded function first";
     return;
@@ -230,9 +230,8 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
   }
 }
 
-static void printRValueTypeInfo(const AnyValue &value, SharedState &shared,
-                                InflightDiag &diag) {
-  if (ASTType type = value.getRValueTypeIfResolvable(shared))
+static void printRValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
+  if (ASTType type = value.getRValueTypeIfResolvable())
     diag << type;
   else if (value.getIfInitializer())
     diag << "initializer list";
@@ -252,7 +251,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
          callSyntax == CallSyntax::kMethodCallSynthetic) &&
         argIdx == 0) {
       diag << "invalid use of mutating method on rvalue of type ";
-      printRValueTypeInfo(operand.ir, shared, diag);
+      printRValueTypeInfo(operand.ir, diag);
     } else {
       describeArgumentNo(diag, argIdx);
       diag << " must be mutable in order to pass as a by-ref argument";
@@ -261,21 +260,21 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     return diag;
   case ArgTypeMismatchKind::kWrongLVType:
     return std::move(diag) << "l-value of type "
-                           << operand.ir.getIfLValue().getLValueStorageType()
+                           << operand.ir.getIfLValue().getRValueType()
                            << " cannot be converted to reference of type "
                            << ty.getReferenceElementType()
                            << operand.expr->getRange();
   case ArgTypeMismatchKind::kWrongType: {
     // Special case implicit conversions with a custom message.
     if (callSyntax == CallSyntax::kImplicitConvert) {
-      printRValueTypeInfo(operand.ir, shared, diag);
+      printRValueTypeInfo(operand.ir, diag);
       diag << " value to " << ty;
       return diag;
     }
 
     describeArgumentNo(diag, argIdx);
     diag << " cannot be converted from " << operand.expr->getRange();
-    ASTType rValueType = operand.ir.getRValueTypeIfResolvable(shared);
+    ASTType rValueType = operand.ir.getRValueTypeIfResolvable();
     bool isConvertingTypeValue = ty.getMetaType() == rValueType;
     if (rValueType) {
       if (isConvertingTypeValue)
@@ -297,7 +296,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     diag << (isConvertingTypeValue ? "an instance of " : "") << ty;
     if (isConvertingTypeValue)
       diag << "; did you mean to instantiate " << ty << "?";
-    addTypeConversionDetail(diag, operand, ty, shared);
+    addTypeConversionDetail(diag, operand, ty);
     return diag;
   }
   default:
@@ -429,7 +428,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
     // By-ref argument types must exactly match, no conversions are allowed.
     ASTType elementType = expectedType.getReferenceElementType();
-    if (!argVal.getLValueStorageType().isEqualCanon(elementType))
+    if (!argVal.getRValueType().isEqualCanon(elementType))
       return {kWrongLVType, expectedType};
     // If a register-passable type is being returned in-memory, remember this.
     numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
@@ -481,7 +480,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         return {kWrongType, expectedType};
     }
 
-    ASTType argType = argVal.getRValueType(shared);
+    ASTType argType = argVal.getRValueType();
     // Otherwise, we pass as an r-value.  If the argument types match, then
     // they are good.
     if (argType.isEqualCanon(expectedType))

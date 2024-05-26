@@ -112,10 +112,10 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
     if (rv.getType().isTypeCheckErrorType())
       decl->setErroneous();
   } else if (auto lv = decl->getIfLValue()) {
-    if (lv.getRValueType(shared).isTypeCheckErrorType())
+    if (lv.getRValueType().isTypeCheckErrorType())
       decl->setErroneous();
   } else if (auto bv = decl->getIfBValue()) {
-    if (bv.getRValueType(shared).isTypeCheckErrorType())
+    if (bv.getRValueType().isTypeCheckErrorType())
       decl->setErroneous();
   }
 
