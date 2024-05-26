@@ -622,6 +622,11 @@ struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
 
 template <typename DerivedT, typename NodeT>
 void InliningGraphBase<DerivedT, NodeT>::complete(NodeT *node) {
+  // Run the function pipeline after inlining has been performed for a function.
+  // Make sure the verifier is off. Note that `Pass::runPipeline` is not thread
+  // safe due to analysis manager nesting.
+  getDerived().onComplete(node);
+
   // Since the function is complete, compute its callee graph, if it has
   // any callers.
   numProcessed.fetch_add(1);
@@ -705,6 +710,8 @@ struct ParametricInliningGraph
                       runtime.getWorkQueue()->getParallelismLevel()),
         optimizationLevel(optimizationLevel), updateDebugInfo(updateDebugInfo) {
   }
+
+  void onComplete(ParametricInliningGraphNode *node) {}
 
   /// CallGraphBase interface for whether to add the node to the graph.
   bool shouldAddToGraph(CallOp call, ParametricInliningGraphNode *node) {
@@ -868,6 +875,7 @@ void InlineParametricPass::runOnOperation() {
 //===----------------------------------------------------------------------===//
 // InliningGraph
 //===----------------------------------------------------------------------===//
+
 namespace {
 struct InliningGraphNode
     : public CallGraphNodeBase<InliningGraphNode, FuncOp, KGENCallOpInterface> {
@@ -919,6 +927,13 @@ struct InliningGraph
                          unsigned optimizationLevel)
       : InliningGraphBase(runtime), pms(pms), updateAttrName(updateAttrName),
         optimizationLevel(optimizationLevel) {}
+
+  /// On completion of inlining a function, run the nested function pipeline.
+  void onComplete(InliningGraphNode *caller) {
+    CompilerTimeTraceScope traceScope("optimizeFunction");
+    if (failed(pms.getPassManager().run(caller->func)))
+      innerPipelineFailed = true;
+  }
 
   /// CallGraphBase interface for whether to add the node to the graph.
   bool shouldAddToGraph(KGENCallOpInterface call, InliningGraphNode *node) {
@@ -996,14 +1011,6 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     }
 
     maybeUpdateDebugInfo(scope, updateAttrName, singleExit);
-  }
-
-  // Run the function pipeline. Make sure the verifier is off. Note that
-  // `Pass::runPipeline` is not thread safe due to analysis manager nesting.
-  {
-    CompilerTimeTraceScope traceScope("optimizeFunction");
-    if (failed(pms.getPassManager().run(caller->func)))
-      innerPipelineFailed = true;
   }
 }
 
@@ -1153,22 +1160,14 @@ void ForceInlinePass::runOnOperation() {
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
     CompilerTimeTraceScope traceScope("updateDebugInfo");
     LLCL::ForkJoin state(runtime);
-    std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
       if (node.shouldInline() || node.callsites.empty())
         continue;
-      state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
-        updateScopeDebugInfo(func, *updateAttrName);
-        // Run the function pipeline here.
-        CompilerTimeTraceScope traceScope("optimizeFunction");
-        if (failed(pms.getPassManager().run(func)))
-          innerPipelineFailed = true;
-      });
+      state.fork(
+          [&, func = func] { updateScopeDebugInfo(func, *updateAttrName); });
     }
     state.join();
-    if (innerPipelineFailed)
-      signalPassFailure();
   }
 
   // The symbol table is invalid now; we don't remove from it. Rebuild it.

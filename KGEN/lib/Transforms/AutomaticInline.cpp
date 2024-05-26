@@ -151,6 +151,9 @@ private:
   /// The pass managers to use.
   PerThreadPassManagers &pms;
 
+  /// Complete processing of a function that has inlined all eligible callees.
+  void completeFunctionProcessing(CallGraphNode *caller);
+
   /// When a work item ends, call this function for post-processing.
   void endWork();
 
@@ -205,6 +208,13 @@ bool CallGraphNode::isAllInlined() {
   return numCallers == numTimesInlined && numTimesInlined > 0;
 }
 
+void CallGraph::completeFunctionProcessing(CallGraphNode *caller) {
+  if (failed(pms.getPassManager().run(caller->func)))
+    innerPipelineFailed = true;
+  caller->doneInlining.copy().emplace();
+  endWork();
+}
+
 void CallGraph::endWork() {
   if (numWorkItems.fetch_sub(1) == 1)
     done.copy().emplace();
@@ -246,8 +256,10 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
   }
 
   if (calleeAsynchValues.empty()) {
-    caller->doneInlining.copy().emplace();
-    endWork();
+    // If the function has no callees to wait on, run the inner pipeline
+    // immediately. Add a task to avoid blocking the main thread.
+    runtime.getWorkQueue()->addTask(
+        [this, caller] { completeFunctionProcessing(caller); });
     return;
   }
 
@@ -277,11 +289,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
       callee->numTimesInlined++;
     }
 
-    if (failed(pms.getPassManager().run(caller->func)))
-      innerPipelineFailed = true;
-
-    caller->doneInlining.copy().emplace();
-    endWork();
+    completeFunctionProcessing(caller);
   };
   LLCL::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
 }
@@ -389,6 +397,8 @@ void AutomaticInline::runOnOperation() {
 
   graph.build(getOperation(), symtab);
   graph.performInlining(getInlineThreshold());
+
+  // If any inner function pipeline failed, then fail the overall pass.
   if (graph.innerPipelineFailed)
     return signalPassFailure();
 
@@ -396,23 +406,13 @@ void AutomaticInline::runOnOperation() {
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
     CompilerTimeTraceScope traceScope("updateDebugInfo");
     LLCL::ForkJoin state(runtime);
-    std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
       if (node.isFunctionDead() || node.callsites.empty())
         continue;
-
-      state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
-        updateScopeDebugInfo(func, *updateAttrName);
-        // Run the function pipeline here.
-        CompilerTimeTraceScope traceScope("optimizeFunction");
-        if (failed(pms.getPassManager().run(func)))
-          innerPipelineFailed = true;
-      });
+      state.fork(
+          [&, func = func] { updateScopeDebugInfo(func, *updateAttrName); });
     }
-
     state.join();
-    if (innerPipelineFailed)
-      signalPassFailure();
   }
 }
 
