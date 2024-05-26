@@ -438,3 +438,29 @@ kgen.func @source_loc_pure() {
   // CHECK-NEXT: return
   kgen.return
 }
+
+// CHECK-LABEL: @param_if_known_trivial
+kgen.generator @param_if_known_trivial(%arg0: index) -> index {
+  // CHECK-NEXT: return %arg0
+  %0 = kgen.param.if <1> -> index {
+    kgen.param.yield %arg0 : index
+  } else {
+    %1 = kgen.param.constant = <0>
+    kgen.param.yield %1 : index
+  }
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @param_if_known_dead
+kgen.generator @param_if_known_dead(%arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK-NEXT: param.if <0>
+  kgen.param.if <0> {
+    // CHECK-NEXT: unreachable
+    pop.store %arg1, %arg0 : !kgen.pointer<index>
+    kgen.param.yield
+  } else {
+    pop.store %arg1, %arg0 : !kgen.pointer<index>
+    kgen.param.yield
+  }
+  kgen.return
+}

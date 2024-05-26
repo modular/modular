@@ -846,6 +846,8 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     build($_builder, $_state, {}, cond,
           ParamDeclArrayAttr::get(cond.getContext(), {}));
   }]>];
+
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

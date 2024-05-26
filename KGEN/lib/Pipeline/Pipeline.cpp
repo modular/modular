@@ -84,8 +84,11 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
     pm.addPass(createRemoveUnusedParams());
     pm.addPass(createEliminateDeadSymbols());
+    pm.addPass(createApplyInliner());
+    pm.addPass(createVerifyParameters(
+        VerifyParametersOptions{/*simplifyParameters=*/true}));
+    pm.addNestedPass<GeneratorOp>(createCanonicalizer());
   }
-  pm.addPass(createApplyInliner());
 }
 
 void KGEN::buildElaborateModulePipeline(
