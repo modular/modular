@@ -240,42 +240,40 @@ fn test_variadic_and_kw_only_params_indirect[x: int]():
 # CHECK-LABEL: lit.func @"initialize_in_addrspace
 fn initialize_in_addrspace(ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr)
-    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}Reference::@"__mlir_ref__{{.*}}([[PTRREF]]){{.*}}mut #lit.lifetime, 1>>
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
 
     # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
     # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}(%anonymous2A)
 
     # Use lit.load/store to move into addrspace 1
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.load.consume %anonymous2A
-    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[REFPTR1]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
+    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
     ptr[] = ExampleRegPassable()
 
 struct SomeRefItemStruct:
-    fn __refitem__(self) -> Reference[Int, __mlir_attr.`false`, __lifetime_of(self)]:
+    fn __getitem__(self) -> ref [__lifetime_of(self)] Int:
         pass
 
 # CHECK-LABEL: lit.func @"test_param_refitem
 fn test_param_refitem[a: SomeRefItemStruct]():
-    # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.lifetime> apply(:{{.*}}__mlir_ref__
+    # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.lifetime> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
     alias x = a[]
 
 # Passing non-default address space through inout arg, must use temporary.
 # CHECK-LABEL: lit.func @"mutate_in_addrspace
 fn mutate_in_addrspace(a: ExampleRegPassable, ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr)
-    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}Reference::@"__mlir_ref__{{.*}}([[PTRREF]]){{.*}}mut #lit.lifetime, 1>>
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
 
     # Use a temporary to get an MLValue in the default address space.
     # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
-    # CHECK-NEXT: [[REGVAL:%.*]] = lit.ref.load [[REFPTR1]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
+    # CHECK-NEXT: [[REGVAL:%.*]] = lit.ref.load [[PTRREF]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
     # CHECK-NEXT: lit.ref.store [[REGVAL]], %anonymous2A
     # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"mutateArg{{.*}}(%a, %anonymous2A)
 
     # Use lit.load/store to move back into addrspace 1
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.load.consume %anonymous2A
-    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[REFPTR1]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
+    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
     a.mutateArg(ptr[])
 
 @register_passable("trivial")

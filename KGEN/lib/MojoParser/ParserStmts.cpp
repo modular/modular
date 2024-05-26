@@ -710,34 +710,41 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   auto emitter = getEmitter();
 
   // Materialize the expression values into IR.
-  CValue resultValue;
+  AnyValue resultValue;
   SignatureType declSig = decl.getSignature();
   ASTType userResultType = decl.getUserResultType();
-  if (declSig.hasMemoryOnlyResult()) {
-    // If the result is memory-only, return into the result slot.
-    ValueDest resultDest(MLValue(decl.getArguments().back()), EC_ReturnValue);
-    if (!emitter.emitExpr(operandExpr, resultDest))
-      return success();
-    // The register result is a None value, or false if it throws.
-    if (decl.isThrows())
-      resultValue = PValue(BoolAttr::get(getContext(), false));
-    else
-      resultValue = PValue(shared.getNoneAttr());
-  } else if (declSig.isRefResult()) {
-    // Returning a reference, emit it as an MValue then coerce.
-    resultValue = emitter.emitExprCValue(
-        operandExpr, EC_ReturnValue, userResultType.getReferenceElementType());
-    if (!resultValue)
-      return {};
 
-    if (!resultValue.isMValue()) {
-      emitter.emitError(operandExpr->getLoc())
-          << "cannot return reference to non-memory value of type "
-          << resultValue.getType();
+  // If the result is memory-only, return into the result slot, otherwise we
+  // just need a value of the right type.
+  ValueDest resultDest(userResultType, EC_ReturnValue);
+  if (declSig.hasMemoryOnlyResult())
+    resultDest = ValueDest(MLValue(decl.getArguments().back()), EC_ReturnValue);
+
+  if (!declSig.isRefResult()) {
+    // Convert the returned value to the returned type of the function.
+    resultValue = emitter.emitExpr(operandExpr, resultDest);
+    if (!resultValue) {
+      resultDest.resetForError();
+      return {};
+    }
+  } else {
+    // Returning a reference, emit it as an MValue then coerce.
+    auto resultMValue = emitter.emitExprCValue(
+        operandExpr, EC_ReturnValue, userResultType.getReferenceElementType());
+    if (!resultMValue) {
+      resultDest.resetForError();
       return {};
     }
 
-    RefType argType = resultValue.getMValueType();
+    if (!resultMValue.isMValue()) {
+      emitter.emitError(operandExpr->getLoc())
+          << "cannot return reference to non-memory value of type "
+          << resultMValue.getType();
+      resultDest.resetForError();
+      return {};
+    }
+
+    RefType argType = resultMValue.getMValueType();
 
     // If the lifetime is an InvalidRefLifetimeAttr then this value is
     // derived from an argument which might be bound (after elaboration)
@@ -747,7 +754,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       emitter.emitError(operandExpr->getLoc())
           << "cannot return a reference to an argument that "
              "might instantiate to @register_passable type "
-          << resultValue.getRValueType();
+          << resultMValue.getRValueType();
+      resultDest.resetForError();
       return {};
     }
 
@@ -769,12 +777,13 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
           diag << "address space: " << argType.getAddressSpace() << " vs "
                << expectedRefType.getAddressSpace();
         }
+        resultDest.resetForError();
         return {};
       }
       // Rebind to make the reference compatible, e.g. converting to a more
       // general lifetime union.
-      resultValue =
-          emitter.rebindValue({resultValue, operandExpr}, userResultType)
+      resultMValue =
+          emitter.rebindValue({resultMValue, operandExpr}, userResultType)
               .getIfCValue();
     }
 
@@ -782,12 +791,25 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
            "cannot declare result type of this attribute");
 
     // We're returning the reference itself, so switch to SRValue.
-    resultValue = SRValue(resultValue.getMValueReference());
+    resultValue = SRValue(resultMValue.getMValueReference());
+    // ... and emit to the ValueDest
+    resultValue = emitter.emitRValue({resultValue, operandExpr}, resultDest);
+    if (!resultValue) {
+      resultDest.resetForError();
+      return success();
+    }
 
-  } else {
-    // Convert the returned value to the returned type of the function.
-    resultValue =
-        emitter.emitExprSRValue(operandExpr, EC_ReturnValue, userResultType);
+    if (declSig.hasMemoryOnlyResult())
+      resultValue = {};
+  }
+
+  // If the result is a memory-only result, then handle the scalar result.
+  if (declSig.hasMemoryOnlyResult()) {
+    // The register result is a None value, or false if it throws.
+    if (decl.isThrows())
+      resultValue = PValue(BoolAttr::get(getContext(), false));
+    else
+      resultValue = PValue(shared.getNoneAttr());
   }
 
   if (!resultValue)

@@ -186,8 +186,16 @@ fn ref_result(inout x: MemoryOnly) -> ref [__lifetime_of(x)] MemoryOnly:
     # CHECK-NEXT: lit.return %x : !lit.ref<!MemoryOnly, mut *"x`">
     return x
 
+# CHECK-LABEL: lit.func @"def_ref_result
+def def_ref_result(inout x: MemoryOnly) -> ref [__lifetime_of(x)] MemoryOnly:
+    # CHECK-NEXT: lit.ref.store %x, %__result__
+    # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return %0
+    return x
+
+
 # CHECK-LABEL: lit.func @"use_ref_result
-fn use_ref_result():
+def use_ref_result():
     # CHECK-NEXT: %a = lit.var.decl "a"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
     # CHECK-NEXT: lit.ref.store [[TMP]], %a
@@ -198,3 +206,9 @@ fn use_ref_result():
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
     # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
 
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}decls"::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
+    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
+    def_ref_result(a) = MemoryOnly()

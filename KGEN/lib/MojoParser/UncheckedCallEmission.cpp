@@ -680,6 +680,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 /// things may still be in parameter space.
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
+
+  // If the callee is returning a RefResult, don't do this.
+  if (calleeSig.isRefResult())
+    return false;
+
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
   MLValue destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
@@ -968,27 +973,31 @@ TypedAttr CallEmitter::emitCallInParamContext(
     operands.push_back(arg);
   }
 
-  Type resultType;
-  if (boundSigType.hasMemoryOnlyResult())
-    resultType =
-        ASTType(boundSigType.getArguments().back()).getReferenceElementType();
-  else if (boundSigType.hasInitSelfArg())
-    resultType =
-        ASTType(boundSigType.getArguments().front()).getReferenceElementType();
-  else {
-    resultType = boundSigType.getResults().front();
-    TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands, resultType);
-
-    // If the result was a returned reference, load it before returning it.
-    if (boundSigType.isRefResult()) {
-      result = ParamOperatorAttr::get(
-          POC::LoadFromMem, result,
-          cast<RefType>(result.getType()).getElementType());
+  TypedAttr result;
+  if (!boundSigType.hasMemoryOnlyResult() && !boundSigType.hasInitSelfArg()) {
+    Type resultType = boundSigType.getResults().front();
+    result = ParamOperatorAttr::get(POC::Apply, operands, resultType);
+  } else {
+    Type resultType;
+    if (boundSigType.hasMemoryOnlyResult())
+      resultType =
+          ASTType(boundSigType.getArguments().back()).getReferenceElementType();
+    else {
+      assert(boundSigType.hasInitSelfArg());
+      resultType = ASTType(boundSigType.getArguments().front())
+                       .getReferenceElementType();
     }
-    return result;
+    // ByRefResult and InitSelf use ApplyResultSlot.
+    result = ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);
   }
-  // ByRefResult and InitSelf use ApplyResultSlot.
-  return ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);
+
+  // If the result was a returned reference, load it before returning it.
+  if (boundSigType.isRefResult()) {
+    result = ParamOperatorAttr::get(
+        POC::LoadFromMem, result,
+        cast<RefType>(result.getType()).getElementType());
+  }
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1340,27 +1349,27 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
-    // Re-emit the value in case a conversion was required or if the result was
-    // a dynamic-lvalue.  In both case we will have emitted into a temporary
-    // slot and 'dest' will have the ultimate location to write to.
-    return emitCResult(MRValue(callArgs.back()), callExpr, dest);
-  }
-
-  if (calleeSig.hasInitSelfArg()) {
+    callResult = MRValue(callArgs.back());
+  } else if (calleeSig.hasInitSelfArg()) {
     // If this is a constructor call with an implicit `init_self` argument, we
     // need to pass it on to the destination.
     if (needInitSelfSlot)
-      return emitCResult(MRValue(callArgs.front()), callExpr, dest);
-    // Otherwise, always return `None` when directly invoking a constructor.
-    // Raising constructors have an ABI result of `i1`.
-    return emitCResult(PValue(shared.getNoneAttr()), callExpr, dest);
+      callResult = MRValue(callArgs.front());
+    else
+      // Otherwise, always return `None` when directly invoking a constructor.
+      // Raising constructors have an ABI result of `i1`.
+      callResult = PValue(shared.getNoneAttr());
   }
 
   // If returning a reference, we need to convert to an MBValue or MLValue from
   // the SRValue we've got.
   if (calleeSig.isRefResult()) {
-    auto resultVal = callResult.getIfSRValue();
-    assert(resultVal && "ref result should always be SRValue result");
+    auto resultVal = emitSRValue({callResult, callExpr}, EC_CallCalleeValue);
+    if (!resultVal) {
+      dest.resetForError();
+      return {};
+    }
+
     if (cast<RefType>(resultVal.getType()).isMutableKnown(true))
       callResult = MLValue(resultVal);
     else

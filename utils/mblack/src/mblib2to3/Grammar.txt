@@ -34,7 +34,7 @@ async_funcdef: ASYNC funcdef
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME] ['->' result_type] ':' suite
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
-result_type: [REF '[' test ']'] test
+result_type: [REF '[' test [',' test ] ']'] test
 
 # The following definition for typedarglist is equivalent to this set of rules:
 #

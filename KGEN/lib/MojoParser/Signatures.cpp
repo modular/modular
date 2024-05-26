@@ -14,7 +14,9 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "llvm/ADT/StringExtras.h"
@@ -1001,6 +1003,74 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     shared.notifyListenerOnArgumentDecl(decl, arg.name, arg.loc);
 }
 
+/// Process the lifetime expression in a `ref [...] T` reference specifier.
+/// T is specified as 'type' and this returns the result !lit.ref type.
+static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
+                                        ASTType type,
+                                        const TypeCheckScopeInfo &scopeInfo) {
+  // Propagate already disgnosed errors.
+  if (isa<TypeCheckErrorType>(type))
+    return type;
+  SharedState &shared = scopeInfo.shared;
+
+  auto hadError = [&]() -> ASTType { return shared.getTypeCheckErrorType(); };
+  ExprEmitter emitter(shared, scopeInfo.declScope, EC_Lifetime);
+
+  // If the lifetime expression is syntactically a 2-element tuple, then
+  // take it apart into a lifetime and address space.
+  ExprNode *addrSpaceExpr = nullptr;
+  if (auto *tuple = dyn_cast<TupleNode>(lifetimeExpr)) {
+    if (tuple->exprs.size() != 2) {
+      emitter.emitError(tuple->getLoc())
+          << "expected specifier with one lifetime or a lifetime and an "
+             "address space"
+          << lifetimeExpr->getRange();
+      return hadError();
+    }
+
+    lifetimeExpr = tuple->exprs[0];
+    addrSpaceExpr = tuple->exprs[1];
+  }
+
+  PValue lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
+  if (!lifetime)
+    return hadError();
+
+  if (!isa<LifetimeType>(lifetime.getType())) {
+    emitter.emitError(lifetimeExpr->getLoc())
+        << "result reference lifetime has unexpected type "
+        << lifetime.getType() << lifetimeExpr->getRange();
+    return hadError();
+  }
+
+  // If we have an address space, emit it.
+  TypedAttr addrSpace;
+  if (addrSpaceExpr) {
+    auto addrSpaceCValue = emitter.emitExprCValue(addrSpaceExpr, EC_Lifetime);
+    // Invoke __mlir_index__ to get Int/AddressSpace to what we need.
+    if (addrSpaceCValue && !isa<IndexType>(addrSpaceCValue.getRValueType())) {
+      ValueDest dest(EC_Lifetime);
+      addrSpaceCValue = emitter.emitNamedMethodCall(
+          "__mlir_index__", {{{addrSpaceCValue, addrSpaceExpr}}}, dest,
+          CallSyntax::kMethodCall, addrSpaceExpr);
+    }
+
+    addrSpace =
+        emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Lifetime).get();
+
+    if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
+      emitter.emitError(lifetimeExpr->getLoc())
+          << "INTERNAL ERROR: __mlir_index didn't return a value of index type"
+          << addrSpace.getType() << lifetimeExpr->getRange();
+      return hadError();
+    }
+  }
+  if (!addrSpace)
+    addrSpace = IntegerAttr::get(IndexType::get(shared.getContext()), 0);
+
+  return RefType::get(type, lifetime, addrSpace);
+}
+
 /// Type check the result type for the function.  `resultTypeExpr` will be
 /// non-null if explicitly specified in source code, and the `resultLoc` will
 /// always be valid point for end of the argument list.
@@ -1041,20 +1111,10 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
 
   // If a result lifetime is specified with `ref [life] Ty`, then form a ref
   // result.
-  if (resultRefLifetimeExpr && !isa<TypeCheckErrorType>(resultType)) {
-    ExprEmitter emitter(shared, declScope, EC_Lifetime);
-    PValue lifetime =
-        emitter.emitExprPValue(resultRefLifetimeExpr, EC_Lifetime);
-    if (lifetime && isa<LifetimeType>(lifetime.getType())) {
-      resultType = RefType::get(resultType, lifetime);
-      tcSignature.argList.effects.setRefResult(true);
-    } else {
-      if (lifetime)
-        emitter.emitError(resultRefLifetimeExpr->getLoc())
-            << "result reference lifetime has unexpected type "
-            << lifetime.getType() << resultRefLifetimeExpr->getRange();
-      resultType = shared.getTypeCheckErrorType();
-    }
+  if (resultRefLifetimeExpr) {
+    resultType = processLifetimeSpecifier(resultRefLifetimeExpr, resultType,
+                                          tcSignature.paramList);
+    tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
   }
 
   // Remember the user-declared result type.

@@ -335,9 +335,12 @@ struct AddressSpace:
 
     alias GENERIC = AddressSpace(0)
 
+    @always_inline("nodebug")
+    fn __mlir_index__(self) -> __mlir_type.index:
+        return self._value.value
+
 
 @value
-@automatically_dereference
 @register_passable("trivial")
 struct Reference[
     type: AnyType,
@@ -358,7 +361,7 @@ struct Reference[
     fn __init__(inout self, value: Self._mlir_type):
         pass
 
-    fn __mlir_ref__(self) -> Self._mlir_type:
+    fn __getitem__(self) -> ref [lifetime, address_space] type:
         while __mlir_attr.true:
             pass
 
@@ -386,6 +389,7 @@ struct Tuple[*element_types: AnyType]:
 struct UnsafePointer[
     T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC
 ]:
+    alias _ref_lifetime = __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`
     alias _ref_type = Reference[
         T,
         __mlir_attr.`1: i1`,
@@ -393,10 +397,14 @@ struct UnsafePointer[
         address_space,
     ]
 
-    fn __refitem__(self) -> Self._ref_type:
+    fn __getitem__(
+        self,
+    ) -> ref [Self._ref_lifetime, address_space._value.value] T:
         while __mlir_attr.true:
             pass
 
-    fn __refitem__(self, offset: Int) -> Self._ref_type:
+    fn __getitem__(
+        self, offset: Int
+    ) -> ref [Self._ref_lifetime, address_space._value.value] T:
         while __mlir_attr.true:
             pass

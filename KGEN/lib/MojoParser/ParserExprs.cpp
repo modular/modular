@@ -994,7 +994,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
     // Parse a result reference if present.
     if (consumeIf(Token::kw_ref)) {
       if (parseToken(Token::l_square, "expected '[' in result reference") ||
-          parseExpression(resultRefLifetimeExpr) ||
+          parseExpressionList(resultRefLifetimeExpr, {}) ||
           parseToken(Token::r_square, "expected ']' in result reference"))
         return failure();
     }
