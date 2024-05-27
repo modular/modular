@@ -13,7 +13,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from math import pow, cos, sin
+from math import cos, sin
 from pathlib import Path
 from testing import assert_true
 
