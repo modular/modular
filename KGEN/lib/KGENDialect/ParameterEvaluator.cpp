@@ -102,12 +102,11 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
-    result = paramValues[declRef.getName()];
     // If the referenced parameter is not bound, forward the reference.
-    if (!result)
-      result = declRef;
+    if (auto it = paramValues.find(declRef.getName()); it != paramValues.end())
+      result = upbindValue(it->second);
     else
-      result = upbindValue(result);
+      result = declRef;
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
     auto values = indexRef.getIsResult() ? ArrayRef(resultParamValues)
