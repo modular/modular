@@ -13,7 +13,6 @@ from math import (
     fma,
     log,
     log1p,
-    pow,
     rsqrt,
     sin,
     sqrt,
