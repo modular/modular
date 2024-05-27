@@ -1120,11 +1120,21 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
                                      StringAttr target, SMLoc smLoc,
                                      SMLoc targetLoc) {
   Location forLoc = translateLocation(targetLoc);
-  VarDeclOp varDeclOp = getEmitter().emitVarDecl(target, getUnresolvedType(),
-                                                 forLoc, VarDeclKind::Implicit);
+
+  // Create a VarDeclOp for the induction variable.  We infer its type from the
+  // call to __next__ down below.
+  VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
+      target, getUnresolvedType(), forLoc, VarDeclKind::Implicit);
+
+  bool isInvalid = false;
   auto notifyVarDecl = [&](ASTDecl &decl) {
     getEmitter().shared.notifyListenerOnVariableDecl(decl, targetLoc);
+    if (isInvalid)
+      decl.setErroneous();
   };
+
+  auto indvarScopeDecl =
+      ScopeDecl{&*indvarDeclOp, targetLoc, target, notifyVarDecl};
 
   // If there is a failure before we parse the for loop body, we still want to
   // call the parser on it so that it builds an ASTDecl node and adds the for
@@ -1132,11 +1142,8 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   // unknown declaration” errors on it besides whatever error is raised while
   // processing the loop header.
   auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
-    (void)parseLocalScopeSuite(
-        curIndent, ScopeDecl{&*varDeclOp, targetLoc, target, [&](ASTDecl &d) {
-                               notifyVarDecl(d);
-                               d.setErroneous();
-                             }});
+    isInvalid = true;
+    (void)parseLocalScopeSuite(curIndent, indvarScopeDecl);
   });
 
   // retrieve the iterator object from the sequence expression
@@ -1152,8 +1159,9 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert,
                                         seqExpr)) {
-    varDeclOp.getResult().setType(RefType::get(
-        shared.getTypeCheckErrorType(), varDeclOp.getType().getLifetime()));
+    auto newRefType =
+        indvarDeclOp.getType().getWithElement(shared.getTypeCheckErrorType());
+    indvarDeclOp.getResult().setType(newRefType);
     return {};
   }
 
@@ -1185,20 +1193,21 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
       builder.create<mlir::index::ConstantOp>(forLoc, 0));
   builder.create<LIT::LoopConditionOp>(forLoc, shouldContinue);
 
-  // Create the body region.
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
   builder.setInsertionPointToStart(bodyBlock);
-  ValueDest ivarDest(varDeclOp, EC_ForIterator);
+  ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), ivarDest,
+          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
           CallSyntax::kImplicitConvert, seqExpr))
     return {};
 
   avoidDroppingDeclOnFail.release();
-  if (failed(parseLocalScopeSuite(
-          curIndent, ScopeDecl{&*varDeclOp, targetLoc, target, notifyVarDecl})))
+
+  // Parse the body of the for loop into a new scope, pushing the iterator
+  // variable into that new scope.
+  if (failed(parseLocalScopeSuite(curIndent, indvarScopeDecl)))
     return failure();
   builder.create<LIT::LoopContinueOp>(forLoc);
 

@@ -69,26 +69,27 @@ fn test_simple(a: Bool):
 # For
 ##===----------------------------------------------------------------------===##
 
-
-struct my_iter:
+# This iterator returns elements by value.
+struct ValueIter:
     fn __init__(inout self): pass
-    fn __next__(inout self: my_iter) -> Int: return 0
-    fn __len__(self: my_iter) -> Int: return 0
+    fn __next__(inout self) -> Int: return 0
+    fn __len__(self) -> Int: return 0
 
-
-struct MyList:
+struct ListValueIter:
     fn __init__(inout self): pass
-    fn __iter__(self) -> my_iter: return my_iter()
+    fn __iter__(self) -> ValueIter: return ValueIter()
+
+fn use(value: Int): pass
 
 
-# CHECK-LABEL: lit.func @"for_range_loop()"
+# CHECK-LABEL: lit.func @"for_range_loop
 fn for_range_loop():
-    var my_list = MyList()
+    var value_iter_list = ListValueIter()
 
     # CHECK: %$RANGE = lit.var.decl "$RANGE" synth
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %my_list
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %value_iter_list
     # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}([[IMMREF]], %$RANGE)
-    for item in my_list:
+    for item in value_iter_list:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
         # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__len__{{.*}}([[IMMREF]])
@@ -101,7 +102,60 @@ fn for_range_loop():
         # CHECK: } else {
         # CHECK-NEXT:   lit.loop.yield
         # CHECK: }
-        pass
+        use(item)
+
+
+# This iterator returns elements by reference, using the mutability and lifetime
+# of the list.
+struct RefIter[list_mutability: Bool, //,
+               list_lifetime: AnyLifetime[list_mutability].type]:
+    fn __init__(inout self): pass
+    fn __next__(inout self) -> ref [list_lifetime] Int: pass
+    fn __len__(self) -> Int: return 0
+
+struct ListWithRefIter:
+    fn __init__(inout self): pass
+    fn __iter__(self: Reference[Self, _, _]) -> RefIter[self.lifetime]:
+        return RefIter[self.lifetime]()
+
+# CHECK-LABEL: lit.func @"for_range_ref_loop
+fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
+                      inout mut_list_ref_iter: ListWithRefIter):
+
+    # CHECK: [[ITEM:%.*]] = lit.var.decl "item"
+    # CHECK-NEXT: %$RANGE = lit.var.decl "$RANGE" synth
+    # CHECK-NEXT: %anonymous2A = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous2A, %mut_list_ref_iter)
+    # CHECK-NEXT: [[MUTREF:%.*]] = lit.ref.load %anonymous2A
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}([[MUTREF]], %$RANGE)
+    for item in mut_list_ref_iter:
+        # CHECK: lit.loop cond {
+        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
+        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__len__{{.*}}([[IMMREF]])
+        # CHECK:   [[INDEX:%.*]] = lit.call {{.*}}__index__{{.*}}([[LENGTH]])
+        # CHECK:   [[MLIR_INDEX:%.*]] = lit.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
+        # CHECK:   [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)
+        # CHECK:   lit.loop.condition [[COND]]
+        # CHECK: } body {
+        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next__{{.*}}(%$RANGE)
+
+        # The int value from this element is captured into item, not the reference.
+        # CHECK: [[ELTVAL:%.*]] = lit.ref.load [[ELTREF]]
+        # CHECK: lit.ref.store [[ELTVAL]], %item
+
+        # CHECK: [[ELTVAL:%.*]] = lit.ref.load %item
+        # CHECK: lit.call {{.*}}use{{.*}}([[ELTVAL]])
+        use(item)
+
+        # The iterator is a mutable var, so this changes the value of the var
+        # not the list element.
+        item = 4
+        # CHECK: lit.ref.store {{.*}}, %item
+
+        # CHECK:   lit.loop.continue
+        # CHECK: } else {
+        # CHECK-NEXT:   lit.loop.yield
+        # CHECK: }
 
 
 # CHECK-LABEL: @"induction_var_scope()"
