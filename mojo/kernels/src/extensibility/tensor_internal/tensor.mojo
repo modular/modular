@@ -36,7 +36,6 @@ print(gray_scale_image.shape())
 ```
 """
 
-import math
 from collections import List
 from pathlib import Path
 from random import rand, randn
@@ -699,7 +698,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
             var idx = indices[0]
             var val = buffer.load[width=width](idx)
-            var res = math.pow(val, exp)
+            var res = pow(val, exp)
             buffer.store(idx, res)
 
         # Use the `elementwise` generator to run `pow` in parallel.
