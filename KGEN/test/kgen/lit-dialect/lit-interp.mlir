@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-parameters=simplify=true | FileCheck %s
+// RUN: kgen-opt %s -verify-parameters='simplify=true enable-interp=true' | FileCheck %s
 
 lit.file_module @module {
   lit.func @store_load(%a: index) -> !kgen.struct<(index, index)> {
