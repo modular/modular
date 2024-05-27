@@ -165,10 +165,6 @@ public:
   /// can find them.
   ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
 
-  /// Return true if this is a struct decl that has a __mlir_ref__ member, this
-  /// allows Reference to automatically decay to an MLValue/MBValue.
-  bool isAutoDereferenceStruct(SharedState &shared) const;
-
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.

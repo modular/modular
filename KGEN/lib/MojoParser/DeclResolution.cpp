@@ -1862,13 +1862,6 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       // Fallthrough the decorator to body resolution.
       return failure();
     }
-
-    // @automatically_dereference for Reference.
-    if (declRef->spelling == "automatically_dereference") {
-      structOp.setIsAutoDereference(true);
-      // Fallthrough the decorator to body resolution to check it.
-      return failure();
-    }
   }
 
   // `x()` forms.
@@ -2150,19 +2143,6 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
       processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
       return success();
     }
-    // @automatically_dereference for Reference.
-    if (declRef->spelling == "automatically_dereference") {
-      if (!lookupSpecialMethod(structDecl, shared,
-                               SpecialFunctionKind::kMLIRRef)) {
-        emitError(
-            decorator->getLoc(),
-            "'@automatically_dereference' requires an '__mlir_ref__' method");
-        structDecl.setErroneous();
-        structOp.setIsAutoDereference(false);
-      }
-      return success();
-    }
-
     return failure();
   }
   return failure();
