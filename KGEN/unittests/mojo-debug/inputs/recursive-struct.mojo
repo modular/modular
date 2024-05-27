@@ -14,9 +14,22 @@ struct Foo:
     var ptr: UnsafePointer[Foo]
 
 
+struct Bar:
+    var x: Int
+    var ptr: UnsafePointer[Bar]
+
+    fn __init__(inout self, x: Int, ptr: UnsafePointer[Bar]):
+        self.x = x
+        self.ptr = ptr
+
+
 fn main():
     var f1: Foo = Foo(7, UnsafePointer[Foo]())
     var f2: Foo = Foo(8, UnsafePointer[Foo](f1))
-    print(f2.ptr[].x)  # breakpoint
+    print(f2.ptr[].x)
 
-    keep_alive(f1, f2)
+    var b1: Bar = Bar(22, UnsafePointer[Bar]())
+    var b2: Bar = Bar(23, UnsafePointer[Bar](b1))
+    print(b2.ptr[].x)  # breakpoint
+
+    keep_alive(f1, f2, b1, b2)
