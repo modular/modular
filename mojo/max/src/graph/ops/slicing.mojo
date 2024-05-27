@@ -185,7 +185,7 @@ def slice(input: Symbol, s: Slice) -> Symbol:
     # - if `s` has no `end` then it uses utils.numerics.max_finite[DType.index]
     #    which causes `len` to be very wrong
     # - slices are allowed to negative-index, and for instance `len(Slice(0, -1)) is -1`
-    dims.append(len(s))
+    dims.append(s.unsafe_indices())
     sym_slices.append(SymbolicSlice(input.graph(), s))
     for i in range(1, t.rank()):
         dims.append(t.dims[i])
