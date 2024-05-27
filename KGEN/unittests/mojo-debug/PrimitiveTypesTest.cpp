@@ -121,10 +121,16 @@ TEST(PrimitiveTypesTest, testRecursiveStruct) {
   /// Make sure pointer to self type can be seen and doesn't crash.
 
   StopContext ctx = buildAndLaunch("recursive-struct.mojo");
+
   SBValue strct = ctx.frame.FindVariable("f2");
   ASSERT_EQ((int)strct.GetNumChildren(), 2);
   SBValue second = strct.GetChildAtIndex(1);
   EXPECT_STREQ(second.GetTypeName(), "!kgen.pointer<none>");
+
+  SBValue strct2 = ctx.frame.FindVariable("b2");
+  ASSERT_EQ((int)strct2.GetNumChildren(), 2);
+  SBValue second2 = strct2.GetChildAtIndex(1);
+  EXPECT_STREQ(second2.GetTypeName(), "!kgen.pointer<none>");
 }
 
 TEST(PrimitiveTypesTest, testTupleAndSIMD) {

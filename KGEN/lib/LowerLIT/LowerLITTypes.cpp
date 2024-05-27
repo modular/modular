@@ -314,8 +314,14 @@ buildDebugInfoForStructRef(DeclRefType ref, StructDecls &structDecls,
 
   auto getDebugInfoType = [&](const std::pair<StringAttr, Type> &nameAndType) {
     auto [name, type] = nameAndType;
-    DebugInfo::DIType fieldDIType =
-        converter.convertDebugType(evaluator.getReboundType(type));
+    auto reboundType = evaluator.getReboundType(type);
+    DebugInfo::DIType fieldDIType = converter.convertDebugType(reboundType);
+    if (!fieldDIType) {
+      if (isa<KGEN::PointerType>(reboundType)) {
+        fieldDIType = converter.convertDebugType(
+            PointerType::get(KGEN::NoneType::get(type.getContext())));
+      }
+    }
     return DebugInfo::DIMemberType::get(name, fieldDIType);
   };
 
