@@ -1078,7 +1078,7 @@ fn slice_impl[
 
         # If the steps are positive we traverse from start, if negative from
         # stop.
-        new_shape[i] = len(slice(start, stop, step))
+        new_shape[i] = slice(start, stop, step).unsafe_indices()
 
     return Tensor[x.type, x.same_rank_param(), out_static_strides](
         new_data, new_shape, new_stride, x.refcount()
