@@ -326,11 +326,11 @@ fn fn_with_implicit_params[p: Int](arg: MyStruct):
 
 # CHECK:          "name": "sep"
 # CHECK:          "passingKind": "pos_or_kw",
-# CHECK:          "type": "StringLiteral"
-# CHECK:      "signature": "pos_only_print(obj: object, /, sep: StringLiteral)",
+# CHECK:          "type": "String"
+# CHECK:      "signature": "pos_only_print(obj: object, /, sep: String)",
 
 
-fn pos_only_print(obj: object, /, sep: StringLiteral):
+fn pos_only_print(obj: object, /, sep: String):
     """Prints an object type.
 
     Args:
