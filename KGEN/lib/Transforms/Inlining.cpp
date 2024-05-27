@@ -75,8 +75,8 @@ public:
   /// Optionally mangle a declaration.
   ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
 
-  /// Mangle attributes, types, and optionally locations in an operation.
-  void mangleElementsIn(Operation *op, bool mangleLocs = true);
+  /// Mangle attributes and types.
+  void mangleElementsIn(Operation *op);
 
   /// Recursively mangle declarations in the nested scope.
   void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph);
@@ -235,27 +235,15 @@ ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,
   return ParamDeclAttr::get(decl.getName(), type);
 }
 
-void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
-  CompilerTimeTraceScope traceScope("AttrTypeMangler::mangleElementsIn");
+void AttrTypeMangler::mangleElementsIn(Operation *op) {
   op->setAttrs(cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary())));
-  if (mangleLocs) {
-    op->setLoc(cast<LocationAttr>(mangleRefsIn(LocationAttr(op->getLoc()))));
-  }
 
   for (OpResult result : op->getResults())
     result.setType(mangleRefsIn(result.getType()));
 
-  for (Region &region : op->getRegions()) {
-    for (Block &block : region) {
-      for (BlockArgument arg : block.getArguments()) {
-        if (mangleLocs) {
-          arg.setLoc(
-              cast<LocationAttr>(mangleRefsIn(LocationAttr(arg.getLoc()))));
-        }
-        arg.setType(mangleRefsIn(arg.getType()));
-      }
-    }
-  }
+  for (Region &region : op->getRegions())
+    for (BlockArgument arg : region.front().getArguments())
+      arg.setType(mangleRefsIn(arg.getType()));
 }
 
 void AttrTypeMangler::recursivelyMangle(Region *scope,
@@ -265,29 +253,12 @@ void AttrTypeMangler::recursivelyMangle(Region *scope,
 
   const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
 
-  for (Operation *op : uses.paramOps) {
-    if (op == scope->getParentOp())
-      continue;
-    mangleElementsIn(op, /*mangleLocs=*/false);
-  }
-  for (auto &[_, decl] : uses.decls) {
-    if (!scope->getParentOp()->isProperAncestor(decl.declOp))
-      continue;
-    mangleElementsIn(decl.declOp, /*mangleLocs=*/false);
-  }
-
-  // We need to mangle location in all ops, not just parametric ones.
-  for (Operation &op : uses.scope->getOps()) {
-    op.setLoc(cast<LocationAttr>(mangleRefsIn(LocationAttr(op.getLoc()))));
-    for (Region &region : op.getRegions()) {
-      for (Block &block : region) {
-        for (BlockArgument arg : block.getArguments()) {
-          arg.setLoc(
-              cast<LocationAttr>(mangleRefsIn(LocationAttr(arg.getLoc()))));
-        }
-      }
-    }
-  }
+  for (Operation *op : uses.paramOps)
+    if (op != scope->getParentOp())
+      mangleElementsIn(op);
+  for (auto &[_, decl] : uses.decls)
+    if (scope->getParentOp()->isProperAncestor(decl.declOp))
+      mangleElementsIn(decl.declOp);
 
   for (Region *nestedScope : uses.nestedDecls)
     recursivelyMangle(nestedScope, graph);
@@ -541,6 +512,13 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                decl.getType()));
     // Register the new declaration.
     propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
+  }
+
+  // When building in debuginfo, mangle parameters in all op locations.
+  if (updateDebugInfo) {
+    scope.getBody().walk([&](Operation *op) {
+      op->setLoc(cast<LocationAttr>(mangler.mangleRefsIn(op->getLoc())));
+    });
   }
 
   // Handle all terminators.
