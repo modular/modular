@@ -73,7 +73,7 @@ fn slice_as_view[
 
         # If the steps are positive we traverse from start, if negative from
         # stop.
-        new_shape[i] = len(slice(start, stop, step))
+        new_shape[i] = slice(start, stop, step).unsafe_indices()
 
     # Create the new view
     return NDBuffer[type, rank](new_data, new_shape, new_stride)
@@ -183,6 +183,6 @@ fn slice_shape[
                 " negative step"
             )
 
-        output_shape[i] = len(slice(start, stop, step))
+        output_shape[i] = slice(start, stop, step).unsafe_indices()
 
     return output_shape
