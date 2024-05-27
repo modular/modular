@@ -89,7 +89,7 @@ struct DynamicTupleBase[
     fn __getitem__(self, owned span: Slice) -> Self:
         span = self._adjust_span(span)
         var result = Self()
-        result._elements.reserve(len(span))
+        result._elements.reserve(span.unsafe_indices())
         for i in range(span.start, span.end, span.step):
             result._elements.append(self[i])
         return result
