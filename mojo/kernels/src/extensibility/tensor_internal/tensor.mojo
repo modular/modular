@@ -677,7 +677,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         self = self**exponent
 
     @always_inline
-    fn __pow__(self, exponent: Int) -> Self:
+    fn __pow__(self, exp: Int) -> Self:
         """Returns a copy of the tensor with each element raised to the power
         of `exponent`.
 
@@ -685,7 +685,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
              For integral values the exponent cannot be negative.
 
         Args:
-            exponent: Integer power to raise tensor to.
+            exp: Integer power to raise tensor to.
 
         Returns:
             An exponentiated copy of tensor.
@@ -699,7 +699,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
             var idx = indices[0]
             var val = buffer.load[width=width](idx)
-            var res = math.pow(val, exponent)
+            var res = math.pow(val, exp)
             buffer.store(idx, res)
 
         # Use the `elementwise` generator to run `pow` in parallel.
