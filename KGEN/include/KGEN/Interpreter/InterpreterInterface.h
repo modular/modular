@@ -100,6 +100,10 @@ public:
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
 
+  /// Exchange raw pointers to interpreter memory to dialect resource references
+  /// upon exit from the interpreter.
+  ErrorOrSuccess externalizeMemory(MutableArrayRef<Attribute> results);
+
   /// Load a single attribute from memory from a memref.
   ErrorOr<TypedAttr> loadAttributeFromMemRef(MemRefAttr memref, Type type);
 
@@ -325,11 +329,6 @@ private:
   /// in-bounds and then compute the offset into the blob.
   ErrorOr<std::pair<MemoryBlob &, int64_t>> getMemory(int64_t addr,
                                                       size_t size);
-
-  /// Exchange raw pointers to interpreter memory to dialect resource references
-  /// upon exit from the interpreter.
-  ErrorOrSuccess externalizeMemory(Region &entry,
-                                   MutableArrayRef<Attribute> results);
 
   ErrorOr<PointerAttr> allocateInternalStackFor(Type type, Type ptrType);
 
