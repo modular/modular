@@ -396,7 +396,7 @@ fn array_equal[
 
 
 fn pretty_print(
-    name: StringLiteral,
+    name: String,
     size: Int,
     rounds: Int,
     time_rec: Float64,
@@ -410,7 +410,7 @@ fn pretty_print(
             "[{:<20}|rounds={}|size={:<4}] recursive: {:>8.3f} (ms), iterative:"
             " {:>8.3f} (ms), ratio: {:>4.2f}x {}"
         ).format(
-            String(name),
+            name,
             String(rounds),
             String(size),
             time_rec,
@@ -427,7 +427,7 @@ fn bench[
     ] () -> NoneType,
     rank: Int,
     size: Int,
-    name: StringLiteral,
+    name: String,
 ]() raises:
     alias N = 100
 
