@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -allow-unregistered-dialect -verify-parameters=simplify=true -verify-parameters | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -allow-unregistered-dialect -verify-parameters='simplify=true enable-interp=true' -verify-parameters | FileCheck %s
 
 kgen.generator @unbound_fn<p0>() {
   kgen.return

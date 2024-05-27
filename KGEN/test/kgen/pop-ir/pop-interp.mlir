@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-parameters=simplify=true | FileCheck %s
+// RUN: kgen-opt %s -verify-parameters='simplify=true enable-interp=true' | FileCheck %s
 
 kgen.generator @symbolic_stack_memory(%arg0: index) -> index {
   %0 = pop.stack_allocation 1 x index

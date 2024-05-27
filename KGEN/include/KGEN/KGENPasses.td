@@ -37,7 +37,9 @@ def VerifyParameters : Pass<"verify-parameters", "ModuleOp"> {
 
   let options = [
     Option<"simplifyParameters", "simplify", "bool", "false",
-           "If true, parameter simplification will run after verification.">
+           "If true, parameter simplification will run after verification.">,
+    Option<"enableInterp", "enable-interp", "bool", "false",
+           "Set this to enable the interpreter. FOR TESTING ONLY!">
   ];
 }
 
