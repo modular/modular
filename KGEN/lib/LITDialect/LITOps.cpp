@@ -1131,7 +1131,6 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/{},
-        /*isAutoDereference=*/{},
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*closureSignature=*/{}, /*docString=*/{},
         /*deprecationWarning=*/{}, /*sourceName=*/{});

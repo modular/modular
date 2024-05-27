@@ -45,7 +45,6 @@ SF(kDel,      "__del__"     , 1, 1, kInvalid, kRequiresOwnedSelfInstMethod|kNone
 
 SF(kBool,    "__bool__"  ,  1, 1, kInvalid, kInstMethod)
 SF(kMLIRI1,  "__mlir_i1__", 1, 1, kInvalid, kInstMethod)
-SF(kMLIRRef, "__mlir_ref__", 1, 1, kInvalid, kInstMethod)
 SF(kAwait,   "__await__" ,  1, 1, kAwait,   0)
 
 SF(kGetItem, "__getitem__", 0, -1, kInvalid, 0)

@@ -366,7 +366,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     KGEN_DecoratorsAttr:$decorators,
     TypeLineageArrayAttr:$parentTypes,
     UnitAttr:$isSynthetic,
-    UnitAttr:$isAutoDereference,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
