@@ -59,6 +59,12 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   // need to be in the IR.
   pm.addPass(createEliminateDeadSymbols());
 
+  if (options.optimizationLevel >= 1) {
+    pm.addNestedPass<GeneratorOp>(createSROA());
+    pm.addNestedPass<GeneratorOp>(createMem2Reg());
+    pm.addNestedPass<GeneratorOp>(createCanonicalizer());
+  }
+
   // Only inline `always_inline_no_debug` functions during parametric inlining.
   // Too much inlining pre-elaboration increases pressure on the elaborator and
   // reduces cache granularity. By restricting inlining to `nodebug` functions,
@@ -85,8 +91,11 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addPass(createRemoveUnusedParams());
     pm.addPass(createEliminateDeadSymbols());
     pm.addPass(createApplyInliner());
+    pm.addPass(createInlineParametric(inlinerOpts));
     pm.addPass(createVerifyParameters(
         VerifyParametersOptions{/*simplifyParameters=*/true}));
+    pm.addNestedPass<GeneratorOp>(createSROA());
+    pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
   }
 }

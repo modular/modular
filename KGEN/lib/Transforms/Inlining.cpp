@@ -701,13 +701,14 @@ struct ParametricInliningGraph
     assert(node->level == node->func.getInlineLevel());
 
     bool shouldInlineAutomatically =
-        node->level == InlineLevel::Automatic &&
+        node->level == InlineLevel::Always &&
         getNumOperations(node->func) < getInlineThreshold();
 
     bool shouldAlwaysInline =
         (node->level >= level && node->level != InlineLevel::Never);
     return shouldInlineAutomatically || shouldAlwaysInline;
   }
+
   /// When a function is finished processing and will be inlined, compute is
   /// callee parameter graph.
   bool prepareForInlining(ParametricInliningGraphNode *node);
@@ -767,9 +768,9 @@ uint64_t ParametricInliningGraph::getInlineThreshold() const {
   case 1:
     return 2;
   case 2:
-    return 3;
-  case 3:
     return 5;
+  case 3:
+    return 8;
   default:
     return 0;
   }

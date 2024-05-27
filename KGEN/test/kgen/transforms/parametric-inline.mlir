@@ -663,7 +663,7 @@ kgen.generator @dependent_types() {
 }
 
 // CHECK-LABEL: kgen.generator @call_me
-kgen.generator @call_me<rank, shape: array<rank, index>>() {
+kgen.generator @call_me<rank, shape: array<rank, index>>() always_inline {
   kgen.return
 }
 
