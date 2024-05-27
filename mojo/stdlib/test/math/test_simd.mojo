@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import iota, pow
+from math import iota
 from sys.info import has_neon, simdwidthof
 
 from testing import *
@@ -132,38 +132,6 @@ fn test_slice():
     print(s2.slice[1]())
 
 
-# CHECK-LABEL: test_pow
-fn test_pow():
-    print("== test_pow")
-
-    alias simd_width = 4
-
-    var simd_val = iota[DType.float32, simd_width]()
-
-    # CHECK: [0.0, 1.0, 4.0, 9.0]
-    print(pow(simd_val, 2.0))
-
-    # CHECK: [inf, 1.0, 0.5, 0.3333333432674408]
-    print(pow(simd_val, -1))
-
-    # CHECK: [0.0, 1.0, 1.41421{{[0-9]+}}, 1.73205{{[0-9]+}}]
-    print(pow(simd_val, 0.5))
-
-    # CHECK: [0.70710{{[0-9]+}}, 0.57735{{[0-9]+}}, 0.5, 0.44721{{[0-9]+}}]
-    print(pow(simd_val + 2, -0.5))
-
-    # CHECK: [0.0, 1.0, 4.0, 9.0]
-    print(pow(simd_val, 2))
-
-    # CHECK: [0.0, 1.0, 8.0, 27.0]
-    print(pow(simd_val, 3))
-
-    var simd_val_int = iota[DType.int32, simd_width]()
-
-    # CHECK: [0, 1, 4, 9]
-    print(pow(simd_val_int, 2))
-
-
 # CHECK-LABEL: test_simd_bool
 fn test_simd_bool():
     print("== test_simd_bool")
@@ -231,7 +199,6 @@ def main():
     test_simd()
     test_iota()
     test_slice()
-    test_pow()
     test_simd_bool()
     test_join()
     issue_1625()
