@@ -927,6 +927,20 @@ Value KGEN::convertParameterToLLVM(
             b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())));
   }
 
+  // We can lower `StoreToMemAttr` by writing the underlying value into a
+  // stack allocation.
+  if (auto store = dyn_cast<StoreToMemAttr>(attr)) {
+    Value value = convertParameterToLLVM(b, tc, imc, scope, store.getValue());
+    if (!value)
+      return {};
+    unsigned align = tc.getTypeABIAlign(value.getType());
+    Value ptr = b.create<LLVM::AllocaOp>(
+        tc.convertType(attr.getType()), value.getType(),
+        b.create<LLVM::ConstantOp>(b.getI64IntegerAttr(1)), align);
+    b.create<LLVM::StoreOp>(value, ptr, align);
+    return ptr;
+  }
+
   // Materialize memrefs from the interpreter.
   if (scope)
     if (auto ref = dyn_cast<MemRefAttr>(attr))

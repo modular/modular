@@ -343,8 +343,7 @@ ErrorOr<TypedAttr &> InterpreterState::getSymbolicMemory(uint64_t slot) {
 }
 
 ErrorOrSuccess
-InterpreterState::externalizeMemory(Region &entry,
-                                    MutableArrayRef<Attribute> results) {
+InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
   // Lazily materialize interpreter memory.
   MemorySpaceAttr interpreterMemorySpace;
   DenseMap<const MemoryBlob *, int64_t> blobIndices;
@@ -661,7 +660,7 @@ InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
   if (result) {
     SmallVector<Attribute> results = result.takeValue();
     // Externalize references to interpreter memory.
-    if (ErrorOrSuccess err = externalizeMemory(region, results); err.isError())
+    if (ErrorOrSuccess err = externalizeMemory(results); err.isError())
       return ErrorTree(region.getLoc(), err.takeError());
     return results;
   }
@@ -728,7 +727,7 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
     value = resultOr.takeValue();
   }
 
-  if (ErrorOrSuccess err = externalizeMemory(region, value); err.isError())
+  if (ErrorOrSuccess err = externalizeMemory(value); err.isError())
     return ErrorTree(region.getLoc(), err.takeError());
   return value;
 }

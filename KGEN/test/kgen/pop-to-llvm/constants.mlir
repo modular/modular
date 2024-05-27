@@ -56,4 +56,13 @@ kgen.func @variadic_constant_1() -> !kgen.variadic<i32> {
   kgen.return %0 : !kgen.variadic<i32>
 }
 
+// CHECK-LABEL: @store_to_mem
+kgen.func @store_to_mem() -> !kgen.pointer<index> {
+  // CHECK-NEXT: %[[ALLOCA:.*]] = alloca i64, i64 1, align 4
+  // CHECK-NEXT: store i64 42, ptr %1, align 4
+  // CHECK-NEXT: ret ptr %[[ALLOCA]]
+  %0 = kgen.param.constant: pointer<index> = <store_to_mem(42)>
+  kgen.return %0 : !kgen.pointer<index>
+}
+
 }
