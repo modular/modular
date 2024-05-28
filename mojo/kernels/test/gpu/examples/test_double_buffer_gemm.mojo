@@ -33,7 +33,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
     copy_local_to_dram,
 )
-from utils import StaticTuple, unroll
+from utils import InlineArray, unroll
 
 
 fn is_benchmark() -> Bool:
@@ -145,11 +145,11 @@ fn sgemm_double_buffer[
     b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x())
 
     # Double buffer in registers (fragments in nvidia terms).
-    var a_reg = StaticTuple[_, 2](
+    var a_reg = InlineArray[_, 2](
         LayoutTensor[a_type, Layout(TM)].stack_allocation(),
         LayoutTensor[a_type, Layout(TM)].stack_allocation(),
     )
-    var b_reg = StaticTuple[_, 2](
+    var b_reg = InlineArray[_, 2](
         LayoutTensor[b_type, Layout(TN)].stack_allocation(),
         LayoutTensor[b_type, Layout(TN)].stack_allocation(),
     )

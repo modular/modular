@@ -245,8 +245,8 @@ fn multistage_gemm[
 
     c_reg_tile.fill(0)
 
-    alias a_frag_type = a_reg_tiles[0].element_type
-    alias b_frag_type = b_reg_tiles[0].element_type
+    alias a_frag_type = __type_of(a_reg_tiles).ElementType.element_type
+    alias b_frag_type = __type_of(b_reg_tiles).ElementType.element_type
 
     # Load shared -> registers for stage 0's mma.
     # TODO: remove the cast.
