@@ -33,8 +33,8 @@ struct _OwnedGraph(Movable):
         owned ctx: _mlir.Context,
         owned op: _mlir.Operation,
     ):
-        self.ctx = ctx^
-        self.op = op^
+        self.ctx = ctx
+        self.op = op
         self.layers = List[String]()
 
     fn current_layer(self) -> String:
@@ -52,8 +52,8 @@ struct _OwnedGraph(Movable):
             return abort[_mlir.Module]("invalid MLIR state for graph")
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.ctx = existing.ctx^
-        self.op = existing.op^
+        self.ctx = existing.ctx
+        self.op = existing.op
         self.layers = existing.layers^
 
     fn __del__(owned self):
@@ -203,7 +203,7 @@ struct Graph(CollectionElement, Stringable):
             ),
         )
 
-        self._graph = Arc(_OwnedGraph(ctx^, op^))
+        self._graph = Arc(_OwnedGraph(ctx, op))
 
     fn __str__(self) -> String:
         """Returns a `String` representation of this `Graph`.

@@ -36,7 +36,7 @@ struct ClientResult:
     alias _FreeValueFnName = "M_freeClientResult"
 
     @staticmethod
-    fn free(lib: DLHandle, ptr: Pointer[ClientResult]):
+    fn free(lib: DLHandle, ptr: UnsafePointer[ClientResult]):
         call_dylib_func(lib, Self._FreeValueFnName, ptr)
 
 
@@ -85,8 +85,8 @@ struct CKServeClientAsync:
 
     fn take_infer_result(
         owned self, lib: DLHandle, request: CInferenceRequest
-    ) -> Pointer[ClientResult]:
-        return call_dylib_func[Pointer[ClientResult]](
+    ) -> UnsafePointer[ClientResult]:
+        return call_dylib_func[UnsafePointer[ClientResult]](
             lib, Self._ModelInferTakeResultFnName, self.ptr, request
         )
 

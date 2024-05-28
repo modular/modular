@@ -30,7 +30,7 @@ struct ProtocolHandler(ServerCallbacks):
 
     fn __moveinit__(inout self: Self, owned existing: Self):
         self._server = existing._server^
-        self._lib = existing._lib^
+        self._lib = existing._lib
 
     fn handle_openai(
         self,
@@ -53,7 +53,7 @@ struct ProtocolHandler(ServerCallbacks):
                     "M_OpenAIInferenceRequest_fillEntry",
                     self._server._ptr,
                     request._ptr,
-                    Pointer.address_of(entry),
+                    UnsafePointer.address_of(entry),
                 )
                 var state = cpython.PyGILState_Ensure()
                 func(entry)

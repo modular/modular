@@ -176,7 +176,7 @@ fn set_tensors[
 
 
 @value
-@register_passable
+@register_passable("trivial")
 struct TensorView:
     """Corresponds to the M_TensorView C type."""
 

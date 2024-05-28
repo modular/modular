@@ -192,8 +192,8 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
 struct MuxInferenceService(InferenceService):
     """Inference service that multiplexes across a list of models."""
 
-    alias versions_dict_type = Dict[String, Pointer[Model]]
-    alias model_dict_type = Dict[String, Pointer[Self.versions_dict_type]]
+    alias versions_dict_type = Dict[String, UnsafePointer[Model]]
+    alias model_dict_type = Dict[String, UnsafePointer[Self.versions_dict_type]]
 
     var _models: List[Model]
     var _version_dicts: List[Self.versions_dict_type]
@@ -217,7 +217,7 @@ struct MuxInferenceService(InferenceService):
             if name not in self._model_dict:
                 self._version_dicts.append(Self.versions_dict_type())
                 var back = self._version_dicts.__get_ref(-1)
-                self._model_dict[name] = LegacyPointer.address_of(back.value)
+                self._model_dict[name] = UnsafePointer.address_of(back.value)
 
             var version = model[].version
             var versioned = self._model_dict[name]
@@ -228,7 +228,7 @@ struct MuxInferenceService(InferenceService):
                     )
                 )
                 var back = self._models.__get_ref(-1)
-                versioned[][version] = LegacyPointer.address_of(back.value)
+                versioned[][version] = UnsafePointer.address_of(back.value)
             else:
                 raise Error(
                     "Cannot add duplicate version: "
