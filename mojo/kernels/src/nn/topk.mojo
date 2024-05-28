@@ -117,7 +117,7 @@ fn _top_k[
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
         var idxs = List[Int64](capacity=shape[axis])
-        idxs.resize(shape[axis], 0)
+        idxs.resize(shape[axis])
         for row_idx in range(start_row, end_row):
             var indices = _get_nd_indices_from_flat_index[rank](
                 row_idx, shape, axis

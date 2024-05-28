@@ -160,10 +160,10 @@ fn non_max_suppression[
         return
 
     var box_idxs = List[Int64](capacity=num_boxes)
-    box_idxs.resize(num_boxes, 0)
+    box_idxs.resize(num_boxes)
 
     var per_class_scores = List[Scalar[type]](capacity=num_boxes)
-    per_class_scores.resize(num_boxes, 0)
+    per_class_scores.resize(num_boxes)
 
     for b in range(batch_size):
         for c in range(num_classes):
