@@ -396,16 +396,16 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       return failure();
     args.push_back(argVal);
 
-    // Make sure any register values in the pack stay live across the entire
-    // call, not just the pop.variadic.create op.  Memory values are kept alive
-    // by their lifetime so they don't need this.
-    if (SignatureType::hasAddress(convention))
+    // Variadic and pack arguments are always passed through memory. An
+    // exception was carved out for trivial register-passable values, which
+    // don't require lifetime tracking.
+    // TODO(MOCO-726): Make variadics always pass through memory.
+    if (SignatureType::hasAddress(convention) ||
+        ASTType(argVal.getType()).isTrivial(callExpr->getLoc(), emitter.shared))
       continue;
-
-    // Don't emit this for trivial types like Int either.
-    if (!ASTType(argVal.getType())
-             .isTrivial(callExpr->getLoc(), emitter.shared))
-      afterCallActions.valuesToKeepAlive.emplace_back(argVal);
+    emitter.shared.emitError(
+        operand.expr->getLoc(),
+        "cannot bind non-trivial value to trivial variadic argument");
   }
 
   // If there are lifetimes on anything, create a uniform representation and
