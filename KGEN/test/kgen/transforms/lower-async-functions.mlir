@@ -1,35 +1,31 @@
-// RUN: kgen-opt -lower-async-functions %s | FileCheck %s
+// RUN: kgen-opt -lower-async-functions -split-input-file %s | FileCheck %s
+
+// COM: Verify Ramp + Resume + Async Calls are transformed correctly.
 
 kgen.func @coroutine1(%arg0: i1) async -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
 
-// CHECK:      kgen.func @coroutine_ramp(%arg0: i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>> {
-// CHECK-NEXT:   %index = kgen.param.constant = <get_sizeof(struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>, current_target())>
-// CHECK-NEXT:   %index_0 = kgen.param.constant = <get_alignof(struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>, current_target())>
-// CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %index_0, %index : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
-// CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep %0[1] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK:      kgen.func @coroutine_ramp(%arg0: i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>> {
+// CHECK-NEXT:   %index = kgen.param.constant = <get_sizeof(struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>, current_target())>
+// CHECK-NEXT:   %index_0 = kgen.param.constant = <get_alignof(struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>, current_target())>
+// CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %index_0, %index : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
+// CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep %0[1] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT:   [[RESUME_FNC_PTR:%.*]] = kgen.create_closure[(!kgen.pointer<none>) -> (): @coroutine_resume]()
 // CHECK-NEXT:   pop.store [[RESUME_FNC_PTR]], [[RESUME_SLOT]] : !kgen.pointer<(!kgen.pointer<none>) -> ()>
-// CHECK-NEXT:   [[FRAME_SLOT:%.*]] = kgen.struct.gep %0[4] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
-// CHECK-NEXT:   [[OPAQUE_FRAME:%.*]] = pop.load [[FRAME_SLOT]]
-// CHECK-NEXT:   [[FRAME:%.*]] = pop.pointer.bitcast [[OPAQUE_FRAME]] : !kgen.pointer<none> to !kgen.pointer<struct<(i1)>>
-// CHECK-NEXT:   [[ARG0_SLOT:%.*]] = kgen.struct.gep [[FRAME]][0] : <struct<(i1)>>
+// CHECK-NEXT:   [[ARG0_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][5] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT:   pop.store %arg0, [[ARG0_SLOT]] : !kgen.pointer<i1>
-// CHECK-NEXT:   kgen.return [[CONTINUATION]] : !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK-NEXT:   kgen.return [[CONTINUATION]] : !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT: }
 
 // CHECK-LABEL: kgen.func @coroutine_resume(%arg0: !kgen.pointer<none>) attributes {coro} {
-// CHECK-NEXT:    [[CONTINUATION:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
-// CHECK-NEXT:    [[FRAME_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][4] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
-// CHECK-NEXT:    [[FRAME_OPAQUE:%.*]] = pop.load [[FRAME_SLOT]]
-// CHECK-NEXT:    [[FRAME:%.*]] = pop.pointer.bitcast [[FRAME_OPAQUE]] : !kgen.pointer<none> to !kgen.pointer<struct<(i1)>>
-// CHECK-NEXT:    [[ARG0_SLOT:%.*]] = kgen.struct.gep [[FRAME]][0] : <struct<(i1)>>
+// CHECK-NEXT:    [[CONTINUATION:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
+// CHECK-NEXT:    [[ARG0_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][5] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT:    [[ARG0:%.*]] = pop.load [[ARG0_SLOT]] : !kgen.pointer<i1>
 // CHECK-NEXT:    hlcf.if [[ARG0]] {
 // CHECK-NEXT:      %idx1 = index.constant 1
-// CHECK-NEXT:      [[PROMISE_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][5] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK-NEXT:      [[PROMISE_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][4] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>
 // CHECK-NEXT:      [[PROMISE_OPAQUE:%.*]] = pop.load [[PROMISE_SLOT]] : !kgen.pointer<pointer<none>>
 // CHECK-NEXT:      [[PROMISE:%.*]] = pop.pointer.bitcast [[PROMISE_OPAQUE]] : !kgen.pointer<none> to !kgen.pointer<index>
 // CHECK-NEXT:      pop.store %idx1, [[PROMISE]] : !kgen.pointer<index>
@@ -38,12 +34,12 @@ kgen.func @coroutine1(%arg0: i1) async -> index {
 // CHECK-NEXT:      hlcf.yield
 // CHECK-NEXT:    }
 // CHECK-NEXT:    %true = index.bool.constant true
-// CHECK-NEXT:    kgen.call @coroutine1_ramp(%true) : (i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK-NEXT:    kgen.call @coroutine1_ramp(%true) : (i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>)>>
 // CHECK-NEXT:    co.await {
 // CHECK-NEXT:      co.await.end
 // CHECK-NEXT:    }
 // CHECK-NEXT:    %idx0 = index.constant 0
-// CHECK-NEXT:    [[PROMISE_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][5] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK-NEXT:    [[PROMISE_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][4] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT:    [[PROMISE_OPAQUE:%.*]] = pop.load [[PROMISE_SLOT]] : !kgen.pointer<pointer<none>>
 // CHECK-NEXT:    [[PROMISE:%.*]] = pop.pointer.bitcast [[PROMISE_OPAQUE]] : !kgen.pointer<none> to !kgen.pointer<index>
 // CHECK-NEXT:    pop.store %idx0, [[PROMISE]] : !kgen.pointer<index>
@@ -69,8 +65,535 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 kgen.func @call_coroutine() {
   %true = index.bool.constant true
   // CHECK: kgen.call @coroutine_ramp(%true) :
-  // CHECK-SAME: (i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+  // CHECK-SAME: (i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, i1)>>
   %result = co.invoke[(i1) async -> index: @coroutine](%true)
   // CHECK-NEXT: kgen.return
   kgen.return
 }
+
+// -----
+
+// COM: Verify Loop With Await In Then Statement Is Correct
+
+// CHECK-LABEL: kgen.func @coroutine1_resume
+kgen.func @coroutine1(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) async -> index {
+  // CHECK-NEXT: [[CONTINUATION:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index, index, i1, index, index)>>
+  // CHECK-NEXT: %idx3 = index.constant 3
+  // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[CONTINUATION]][9]
+  // CHECK-NEXT: pop.store %idx3, [[V4]] : !kgen.pointer<index>
+
+  // CHECK-NEXT: [[V5:%.*]] = kgen.struct.gep [[CONTINUATION]][5]
+  // CHECK-NEXT: [[V6:%.*]] = pop.load [[V5]] : !kgen.pointer<index>
+
+  // CHECK-NEXT: [[V7:%.*]] = kgen.call @foo(%idx3, [[V6]]) : (index, index) -> index
+  // CHECK-NEXT: [[V8:%.*]] = kgen.struct.gep [[CONTINUATION]][6]
+  // CHECK-NEXT: pop.store [[V7]], [[V8]] : !kgen.pointer<index>
+  %idx3 = index.constant 3
+  %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
+
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop "_loop_0" {
+    // CHECK-NEXT: [[V19:%.*]] = kgen.struct.gep [[CONTINUATION]][6]
+    // CHECK-NEXT: [[V20:%.*]] = pop.load [[V19]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V21:%.*]] = kgen.struct.gep [[CONTINUATION]][7]
+    // CHECK-NEXT: [[V22:%.*]] = pop.load [[V21]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V23:%.*]] = kgen.call @bar([[V20]], [[V22]]) : (index, index) -> index
+    %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
+
+
+    // CHECK-NEXT: [[V24:%.*]] = kgen.struct.gep [[CONTINUATION]][8]
+    // CHECK-NEXT: [[V25:%.*]] = pop.load [[V24]] : !kgen.pointer<i1>
+    // CHECK-NEXT: hlcf.if [[V25]] {
+    // CHECK-NEXT:   co.await {
+    // CHECK-NEXT:     co.await.end
+    // CHECK-NEXT:   }
+    // CHECK-NEXT:   hlcf.yield
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT:   hlcf.break "_loop_0"
+    // CHECK-NEXT: }
+    hlcf.if %arg0 {
+       co.await {
+         co.await.end
+       }
+       hlcf.yield
+    } else {
+       hlcf.break "_loop_0"
+    }
+
+    // CHECK-NEXT: [[V26:%.*]] = kgen.struct.gep [[CONTINUATION]][9]
+    // CHECK-NEXT: [[V27:%.*]] = pop.load [[V26]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V28:%.*]] = kgen.struct.gep [[CONTINUATION]][10]
+    // CHECK-NEXT: [[V29:%.*]] = pop.load [[V28]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V30:%.*]] = kgen.call @foo([[V27]], [[V29]]) : (index, index) -> index
+    %result6 = kgen.call @foo(%idx3, %arg2) : (index,index) -> index
+
+    // CHECK-NEXT: hlcf.continue
+    hlcf.continue
+  }
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[V9:%.*]] = kgen.struct.gep [[CONTINUATION]][6]
+  // CHECK-NEXT: [[V10:%.*]] = pop.load [[V9]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep [[CONTINUATION]][5]
+  // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.call @bar([[V10]], [[V12]]) : (index, index) -> index
+  %result5 = kgen.call @bar(%result, %arg1): (index,index) -> index
+
+  // CHECK-NEXT: [[V14:%.*]] = kgen.struct.gep [[CONTINUATION]][4]
+  // CHECK-NEXT: [[V15:%.*]] = pop.load [[V14]] : !kgen.pointer<pointer<none>>
+  // CHECK-NEXT: [[PROMISE:%.*]] = pop.pointer.bitcast [[V15]] : !kgen.pointer<none> to !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[V10]], [[PROMISE]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.return
+  kgen.return %result : index
+}
+
+kgen.func @foo(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @bar(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// -----
+
+// COM: Verify Loop With Await In Else Statement Is Correct
+
+// CHECK-LABEL: kgen.func @coroutine2_resume
+kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
+  // CHECK: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index, i1, index)>>
+  // CHECK-NEXT: %idx3 = index.constant 3
+  // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[NOT_IN_FRAME:%.*]] = kgen.call @foo(%idx3, [[V5]]) : (index, index) -> index
+  %idx3 = index.constant 3
+  %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
+  hlcf.loop "_loop_0" {
+     hlcf.if %arg0 {
+       hlcf.yield
+     } else {
+       // CHECK: } else {
+       // CHECK-NEXT: [[V17:%.*]] = kgen.struct.gep [[CONT]][6]
+       // CHECK-NEXT: [[V18:%.*]] = pop.load [[V17]] : !kgen.pointer<index>
+       // CHECK-NEXT: [[V19:%.*]] = kgen.call @bar([[NOT_IN_FRAME]], [[V18]]) : (index, index) -> index
+       // CHECK-NEXT: co.await {
+       %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
+       co.await {
+         co.await.end
+       }
+       hlcf.break "_loop_0"
+     }
+     hlcf.continue
+  }
+  // CHECK:      [[V8:%.*]] = kgen.struct.gep [[CONT]][8]
+  // CHECK-NEXT: [[V9:%.*]] = pop.load [[V8]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep [[CONT]][4]
+  // CHECK-NEXT: [[V11:%.*]] = pop.load [[V10]] : !kgen.pointer<pointer<none>>
+  // CHECK-NEXT: [[PROMISE:%.*]] = pop.pointer.bitcast [[V11]] : !kgen.pointer<none> to !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[V9]], [[PROMISE]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.return
+  kgen.return %result : index
+}
+
+kgen.func @foo(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @bar(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// -----
+
+// COM: Verify Block With Multiple Awaits Is Correct
+
+// CHECK-LABEL: kgen.func @coroutine3_resume
+kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index, index, i1, index)>>
+
+  %idx3 = index.constant 3
+  // CHECK: [[NIF:%.*]] = kgen.call @foo(%idx3, %{{.*}}) : (index, index) -> index
+  %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
+  // CHECK: hlcf.loop "_loop_0"
+  hlcf.loop "_loop_0" {
+    // CHECK-NEXT: [[V13:%.*]] = kgen.struct.gep [[CONT]][8]
+    // CHECK-NEXT: [[V14:%.*]] = pop.load [[V13]] : !kgen.pointer<i1>
+    // CHECK-NEXT: hlcf.if [[V14]] {
+    // CHECK-NEXT:   hlcf.yield
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: [[V15:%.*]] = kgen.struct.gep [[CONT]][6]
+    // CHECK-NEXT: [[V16:%.*]] = pop.load [[V15]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V17:%.*]] = kgen.call @bar([[NIF]], [[V16]]) : (index, index) -> index
+    // CHECK-NEXT: [[V18:%.*]] = kgen.struct.gep [[CONT]][7]
+    // CHECK-NEXT: pop.store [[V17]], [[V18]] : !kgen.pointer<index>
+    // CHECK-NEXT: co.await {
+    // CHECK-NEXT:   co.await.end
+    // CHECK-NEXT: }
+    // CHECK-NEXT: [[V19:%.*]] = kgen.struct.gep [[CONT]][7]
+    // CHECK-NEXT: [[V20:%.*]] = pop.load [[V19]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V21:%.*]] = kgen.struct.gep [[CONT]][6]
+    // CHECK-NEXT: [[V22:%.*]] = pop.load [[V21]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V23:%.*]] = kgen.call @bar([[V20]], [[V22]]) : (index, index) -> index
+    // CHECK-NEXT: co.await {
+    // CHECK-NEXT:   co.await.end
+    // CHECK-NEXT: }
+    // CHECK-NEXT: hlcf.break "_loop_0"
+    // CHECK-NEXT: }
+     hlcf.if %arg0 {
+        hlcf.yield
+     } else {
+         %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
+         co.await {
+           co.await.end
+         }
+         %result6 = kgen.call @bar(%result4, %arg3): (index,index) -> index
+         co.await {
+           co.await.end
+         }
+        hlcf.break "_loop_0"
+     }
+     hlcf.continue
+  }
+  kgen.return %result : index
+}
+
+kgen.func @foo(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @bar(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// -----
+
+// COM: Verify Nested Control Flow Is Correct
+
+// CHECK-LABEL: kgen.func @coroutine_nested_resume
+kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index, index, i1)>>
+
+  %idx3 = index.constant 3
+  %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
+  hlcf.loop "_loop_0" {
+     hlcf.if %arg0 {
+        hlcf.yield
+     } else {
+         %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
+         // CHECK:      hlcf.loop "_loop_1" {
+         // CHECK-NEXT: [[V23:%.*]] = kgen.struct.gep [[CONT]][8]
+         // CHECK-NEXT: [[V24:%.*]] = pop.load [[V23]] : !kgen.pointer<i1>
+         // CHECK-NEXT: hlcf.if [[V24]] {
+         // CHECK-NEXT:   hlcf.yield
+         // CHECK-NEXT: } else {
+         // CHECK-NEXT:   co.await {
+         // CHECK-NEXT:     co.await.end
+         // CHECK-NEXT:   }
+         // CHECK-NEXT:   [[V25:%.*]] = kgen.struct.gep [[CONT]][7]
+         // CHECK-NEXT:   [[V26:%.*]] = pop.load [[V25]] : !kgen.pointer<index>
+         // CHECK-NEXT:   [[V27:%.*]] = kgen.struct.gep [[CONT]][6]
+         // CHECK-NEXT:   [[V28:%.*]] = pop.load [[V27]] : !kgen.pointer<index>
+         // CHECK-NEXT:   [[V29:%.*]] = kgen.call @bar([[V26]], [[V28]]) : (index, index) -> index
+         // CHECK-NEXT:   hlcf.break "_loop_1"
+         // CHECK-NEXT: }
+         // CHECK-NEXT: hlcf.continue
+         // CHECK-NEXT: }
+         // CHECK-NEXT: [[V18:%.*]] = kgen.struct.gep [[CONT]][7]
+         // CHECK-NEXT: [[V19:%.*]] = pop.load [[V18]] : !kgen.pointer<index>
+         // CHECK-NEXT: [[V20:%.*]] = kgen.struct.gep [[CONT]][6]
+         // CHECK-NEXT: [[V21:%.*]] = pop.load [[V20]] : !kgen.pointer<index>
+         // CHECK-NEXT: [[V22:%.*]] = kgen.call @bar([[V19]], [[V21]]) : (index, index) -> index
+         // CHECK-NEXT: hlcf.break "_loop_0"
+         hlcf.loop "_loop_1" {
+           hlcf.if %arg0 {
+             hlcf.yield
+           } else {
+             co.await {
+               co.await.end
+             }
+             %result6 = kgen.call @bar(%result, %arg3): (index,index) -> index
+             hlcf.break "_loop_1"
+          }
+          hlcf.continue
+         }
+         %result6 = kgen.call @bar(%result, %arg3): (index,index) -> index
+         hlcf.break "_loop_0"
+     }
+     hlcf.continue
+  }
+  kgen.return %result : index
+}
+
+kgen.func @foo(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @bar(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// -----
+
+// COM: Verify that Await Code Loads/Stores From Frame.
+
+// CHECK-LABEL: kgen.func @coroutine2_resume
+kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index, index)>>
+
+  // CHECK-NEXT: %idx3 = index.constant 3
+  // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[NotInFrame:%.*]] = kgen.call @foo(%idx3, [[V5]]) : (index, index) -> index
+  // CHECK-NEXT: [[V7:%.*]] = kgen.struct.gep [[CONT]][7]
+  // CHECK-NEXT: pop.store [[NotInFrame]], [[V7]] : !kgen.pointer<index>
+  // CHECK-NEXT: co.await {
+  // CHECK-NEXT:   [[V13:%.*]] = kgen.struct.gep [[CONT]][6]
+  // CHECK-NEXT:   [[V14:%.*]] = pop.load [[V13]] : !kgen.pointer<index>
+  // CHECK-NEXT:   [[V15:%.*]] = kgen.call @bar([[NotInFrame]], [[V14]]) : (index, index) -> index
+  // CHECK-NEXT:   co.await.end
+  // CHECK-NEXT:  }
+  // CHECK-NEXT:  [[V8:%.*]] = kgen.struct.gep [[CONT]][7]
+  // CHECK-NEXT:  [[V9:%.*]] = pop.load [[V8]] : !kgen.pointer<index>
+  // CHECK-NEXT:  [[V10:%.*]] = kgen.struct.gep [[CONT]][4]
+  // CHECK-NEXT:  [[V11:%.*]] = pop.load [[V10]] : !kgen.pointer<pointer<none>>
+  // CHECK-NEXT:  [[V12:%.*]] =  pop.pointer.bitcast [[V11]] : !kgen.pointer<none> to !kgen.pointer<index>
+  // CHECK-NEXT:  pop.store [[V9]], [[V12]] : !kgen.pointer<index>
+  // CHECK-NEXT:  kgen.return
+  %idx3 = index.constant 3
+  %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
+  co.await {
+    %result2 = kgen.call @bar(%result, %arg3): (index,index) -> index
+    co.await.end
+  }
+  kgen.return %result : index
+}
+
+kgen.func @foo(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @bar(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// -----
+
+// COM: Verify that Block Arguments Are Added To Frame.
+
+// CHECK-LABEL: kgen.func @coroutine_block_args_resume
+kgen.func @coroutine_block_args(%arg0: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index)>>
+
+  // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[CONT]][6]
+  // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V6:%.*]] = hlcf.loop (%arg1 = [[V5]] : index) -> index {
+  // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK-NEXT:  pop.store %arg1, [[V10]] : !kgen.pointer<index>
+  // CHECK-NEXT:  %idx0 = index.constant 0
+  // CHECK-NEXT:  [[V11:%.*]] = index.cmp slt(%arg1, %idx0)
+  // CHECK-NEXT:  hlcf.if [[V11]] {
+  // CHECK-NEXT:    co.await {
+  // CHECK-NEXT:      co.await.end
+  // CHECK-NEXT:    }
+  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:  } else {
+  // CHECK-NEXT:    [[V14:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK-NEXT:    [[V15:%.*]] = pop.load [[V14]] : !kgen.pointer<index>
+  // CHECK-NEXT:    hlcf.break [[V15]] : index
+  // CHECK-NEXT:  }
+  // CHECK-NEXT:  [[V12:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK-NEXT:  [[V13:%.*]] = pop.load [[V12]] : !kgen.pointer<index>
+  // CHECK-NEXT:  hlcf.continue [[V13]] : index
+  // CHECK-NEXT:  }
+  %0 = hlcf.loop (%arg1 = %arg0 : index) -> index {
+    %idx0 = index.constant 0
+    %1 = index.cmp slt(%arg1, %idx0)
+    hlcf.if %1 {
+      co.await {
+        co.await.end
+      }
+      hlcf.yield
+    } else {
+      hlcf.break %arg1 : index
+    }
+    hlcf.continue %arg1 : index
+  }
+  %idx1 = index.constant 1
+  kgen.return %idx1 : index
+}
+
+// -----
+
+// COM: Verify that Block Arguments Are Not Referenced Directly Across Suspension.
+
+// CHECK-LABEL: kgen.func @coroutine_block_args_resume
+kgen.func @coroutine_block_args(%arg0: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index)>>
+  // CHECK: [[V6:%.*]] = hlcf.loop (%arg1 = %{{.*}} : index) -> index {
+  // CHECK: [[V10:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK: pop.store %arg1, [[V10]] : !kgen.pointer<index>
+  // CHECK: co.await {
+  // CHECK: co.await.end
+  // CHECK: }
+  // CHECK: %idx0 = index.constant 0
+  // CHECK: [[V11:%.*]] = kgen.struct.gep [[CONT]][5]
+  // CHECK: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
+  // CHECK: [[V13:%.*]] = index.cmp slt([[V12]], %idx0)
+  %0 = hlcf.loop (%arg5 = %arg0 : index) -> index {
+    co.await {
+      co.await.end
+    }
+    %idx0 = index.constant 0
+    %1 = index.cmp slt(%arg5, %idx0)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      hlcf.break %arg5 : index
+    }
+    hlcf.continue %arg5 : index
+  }
+  %idx1 = index.constant 1
+  kgen.return %idx1 : index
+}
+
+// -----
+
+// COM: Verify that Block Arguments Are Not Put In Frame If Not Needed.
+
+// CHECK-LABEL: kgen.func @coroutine_block_args_resume
+kgen.func @coroutine_block_args(%arg0: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index)>>
+  // CHECK:      hlcf.loop (%arg1 = %{{.*}} : index) -> index {
+  // CHECK-NEXT:   %idx0 = index.constant 0
+  // CHECK-NEXT:   [[V10:%.*]] = index.cmp slt(%arg1, %idx0)
+  // CHECK-NEXT:   hlcf.if [[V10]] {
+  // CHECK-NEXT:     hlcf.yield
+  // CHECK-NEXT:   } else {
+  // CHECK-NEXT:     hlcf.break %arg1 : index
+  // CHECK-NEXT:   }
+  // CHECK-NEXT:     hlcf.continue %arg1 : index
+  // CHECK-NEXT:   }
+  %0 = hlcf.loop (%arg5 = %arg0 : index) -> index {
+    %idx0 = index.constant 0
+    %1 = index.cmp slt(%arg5, %idx0)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      hlcf.break %arg5 : index
+    }
+    hlcf.continue %arg5 : index
+  }
+  co.await {
+    co.await.end
+  }
+  %idx1 = index.constant 1
+  kgen.return %idx1 : index
+}
+
+// -----
+
+// COM: Verify that Unused Arguments Are Not Put In Frame.
+
+// CHECK-LABEL: kgen.func @unused_args_resume
+kgen.func @unused_args(%arg0: index, %arg1: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index)>>
+  co.await {
+    co.await.end
+  }
+  %result = kgen.call @foo(%arg0) : (index) -> index
+  kgen.return %result : index
+}
+
+kgen.func @bar(%arg0: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// -----
+
+// COM: Test Try Raise
+
+// CHECK-LABEL: kgen.func @tryraise_resume
+kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, index, index, index, index)>>
+
+  // CHECK: [[NIF:%.*]] = kgen.call @foo1
+  %result3 = kgen.call @foo1(%arg1) : (index) -> index
+  lit.try {
+    hlcf.elif {
+      %result = kgen.call @bar(%arg2) : (index) -> i1
+      hlcf.elif.yield %result : i1
+    } then {
+      // CHECK: } then {
+      // CHECK-NEXT: [[V7:%.*]] = kgen.struct.gep [[CONT]][6]
+      // CHECK-NEXT: [[V8:%.*]] = pop.load [[V7]] : !kgen.pointer<index>
+      // CHECK-NEXT: [[V9:%.*]] = kgen.call @foo([[V8]]) : (index) -> index
+      // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep [[CONT]][7]
+      // CHECK-NEXT: pop.store [[V9]], [[V10]] : !kgen.pointer<index>
+      // CHECK-NEXT: co.await {
+      // CHECK-NEXT:   co.await.end
+      // CHECK-NEXT: }
+      // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep [[CONT]][7]
+      // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
+      // CHECK-NEXT: lit.try.raise [[V12]] : index
+      %result2 = kgen.call @foo(%arg2) : (index) -> index
+      co.await {
+        co.await.end
+      }
+      lit.try.raise %result2 : index
+    } else {
+      hlcf.yield
+    }
+    lit.try.yield
+  } except (%e: index) {
+    // CHECK:     } except (%arg1: index) {
+    // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep [[CONT]][8]
+    // CHECK-NEXT: pop.store %arg1, [[V10]] : !kgen.pointer<index>
+    // CHECK-NEXT: co.await {
+    // CHECK-NEXT: co.await.end
+    // CHECK-NEXT: }
+    // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep [[CONT]][8]
+    // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]]
+    // CHECK-NEXT: [[V13:%.*]] = kgen.struct.gep [[CONT]][4]
+    // CHECK-NEXT: [[V14:%.*]] = pop.load
+    // CHECK-NEXT: [[V15:%.*]] = pop.pointer.bitcast [[V14]]
+    // CHECK-NEXT: pop.store [[V12]], [[V15]] : !kgen.pointer<index>
+    // CHECK-NEXT: kgen.return
+    co.await {
+      co.await.end
+    }
+    kgen.return %e : index
+  } else {
+    // CHECK: } else {
+    // CHECK-NEXT: [[V10:%.*]] =  kgen.struct.gep [[CONT]][4]
+    // CHECK-NEXT: [[V11:%.*]] = pop.load [[V10]] : !kgen.pointer<pointer<none>>
+    // CHECK-NEXT: [[V12:%.*]] = pop.pointer.bitcast [[V11]] : !kgen.pointer<none> to !kgen.pointer<index>
+    // CHECK-NEXT: pop.store [[NIF]], [[V12]] : !kgen.pointer<index>
+    // CHECK-NEXT: kgen.return
+    kgen.return %result3 : index
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+kgen.func @bar(%arg0: index) -> i1 {
+  %7 = kgen.param.constant: i1 = <0>
+  kgen.return %7 : i1
+}
+kgen.func @foo(%arg0: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+kgen.func @foo1(%arg0: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
