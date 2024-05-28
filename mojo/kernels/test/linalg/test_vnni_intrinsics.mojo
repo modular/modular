@@ -8,21 +8,24 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: avx2
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
 from sys.info import has_avx512f
 
 from buffer import Buffer
 from memory import memcmp
 from LinAlg.vnni_intrinsics import (
+    dot_i16_to_i32_AVX2,
+    dot_i16_to_i32_x86,
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
     dot_i8_to_i32_saturated_x86,
     dot_i8_to_i32_x86,
 )
+from testing import assert_equal
 
 
-fn main():
+def test_i8_to_i32():
     var a = Buffer[DType.uint8, 16 * 64].aligned_stack_allocation[64]()
     var asat = Buffer[DType.uint8, 16 * 64].aligned_stack_allocation[64]()
     var b = Buffer[DType.int8, 64 * 16].aligned_stack_allocation[64]()
@@ -72,10 +75,48 @@ fn main():
         cv16u = cv8ul.join(cv8uh)
         cv16s = cv8sl.join(cv8sh)
 
-    # CHECK: [-97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259, -85226, -83065, -80776, -78359, -75814, -73141, -70340, -67411]
-    print(cv16u)
-    # CHECK: [-33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827, -36842, -36729, -36488, -36119, -35622, -34997, -34244, -33363]
-    print(cv16s)
+    assert_equal(
+        cv16u,
+        SIMD[DType.int32, 16](
+            -97906,
+            -96769,
+            -95504,
+            -94111,
+            -92590,
+            -90941,
+            -89164,
+            -87259,
+            -85226,
+            -83065,
+            -80776,
+            -78359,
+            -75814,
+            -73141,
+            -70340,
+            -67411,
+        ),
+    )
+    assert_equal(
+        cv16s,
+        SIMD[DType.int32, 16](
+            -33138,
+            -34049,
+            -34832,
+            -35487,
+            -36014,
+            -36413,
+            -36684,
+            -36827,
+            -36842,
+            -36729,
+            -36488,
+            -36119,
+            -35622,
+            -34997,
+            -34244,
+            -33363,
+        ),
+    )
 
     var av8u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=8]()
     var av8s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[width=8]()
@@ -85,10 +126,18 @@ fn main():
         c.data.load[width=8](), av8s, bv8
     )
 
-    # CHECK: [-97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259]
-    print(cv8u)
-    # CHECK: [-33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827]
-    print(cv8s)
+    assert_equal(
+        cv8u,
+        SIMD[DType.int32, 8](
+            -97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259
+        ),
+    )
+    assert_equal(
+        cv8s,
+        SIMD[DType.int32, 8](
+            -33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827
+        ),
+    )
 
     var av4u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=4]()
     var av4s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[width=4]()
@@ -98,7 +147,58 @@ fn main():
         c.data.load[width=4](), av4s, bv4
     )
 
-    # CHECK: [-97906, -96769, -95504, -94111]
-    print(cv4u)
-    # CHECK: [-33138, -34049, -34832, -35487]
-    print(cv4s)
+    assert_equal(cv4u, SIMD[DType.int32, 4](-97906, -96769, -95504, -94111))
+    assert_equal(cv4s, SIMD[DType.int32, 4](-33138, -34049, -34832, -35487))
+
+
+def test_i16_to_i32():
+    def test_simd_width[width: Int]():
+        var a = SIMD[DType.int16, width * 2]()
+        var b = SIMD[DType.int16, width * 2]()
+        var c_start = SIMD[DType.int32, width]()
+        var c_golden = SIMD[DType.int32, width]()
+
+        @parameter
+        for i in range(width * 2):
+            a[i] = i * 17 - 191
+            b[i] = i * 19 + 155
+
+        @parameter
+        for i in range(width):
+            c_start[i] = i * 233 - 322
+
+        @parameter
+        for i in range(width):
+            c_golden[i] = c_start[i]
+
+            @parameter
+            for j in range(2):
+                var a_val = a[i * 2 + j].cast[DType.int32]()
+                var b_val = b[i * 2 + j].cast[DType.int32]()
+                c_golden[i] += a_val * b_val
+
+        var c_avx2 = dot_i16_to_i32_AVX2(
+            c_start,
+            bitcast[DType.int32, width](a),
+            bitcast[DType.int32, width](b),
+        )
+        assert_equal(c_golden, c_avx2)
+
+        var c_x86 = dot_i16_to_i32_x86(
+            c_start,
+            bitcast[DType.int32, width](a),
+            bitcast[DType.int32, width](b),
+        )
+        assert_equal(c_golden, c_x86)
+
+    @parameter
+    if has_avx512f():
+        test_simd_width[16]()
+
+    test_simd_width[8]()
+    test_simd_width[4]()
+
+
+def main():
+    test_i8_to_i32()
+    test_i16_to_i32()
