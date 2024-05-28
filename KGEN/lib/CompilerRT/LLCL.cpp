@@ -398,6 +398,23 @@ KGEN_CompilerRT_GetTensorSpecFromAsync(ssize_t *data, ssize_t rank,
   return spec.getEltType().getValue();
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetContextPayloadPtr(size_t index,
+                                     LLCLWrapper<StateContext> rawCtx) {
+  StateContext &ctx = unwrap(rawCtx);
+  return ctx.getStateSlot(index).getUnderlyingPointer();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetContextAndSizeFromAsync(
+    size_t *size, LLCLWrapper<AnyAsyncValueRef> async) {
+  AnyAsyncValueRef &value = unwrap(async);
+  assert(value.isReady());
+  auto &ctx = value.get<StateContext>();
+  *size = ctx.getNumStateSlots();
+  return reinterpret_cast<void *>(&ctx);
+}
+
 //===----------------------------------------------------------------------===//
 // SpinWaiter function
 //===----------------------------------------------------------------------===//
@@ -473,6 +490,10 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_GetValueFromAsync});
   funcs.push_back({"KGEN_CompilerRT_GetTensorSpecFromAsync",
                    (void *)&KGEN_CompilerRT_GetTensorSpecFromAsync});
+  funcs.push_back({"KGEN_CompilerRT_GetContextPayloadPtr",
+                   (void *)&KGEN_CompilerRT_GetContextPayloadPtr});
+  funcs.push_back({"KGEN_CompilerRT_GetContextAndSizeFromAsync",
+                   (void *)&KGEN_CompilerRT_GetContextAndSizeFromAsync});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",

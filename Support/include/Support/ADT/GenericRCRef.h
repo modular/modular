@@ -110,6 +110,9 @@ public:
     }
   }
 
+  /// Returns a void* opaque pointer to the underlying payload
+  void *getOpaquePointer() const { return payload; }
+
   /// Releases and returns the payload as type T*, or returns null if reference
   /// has no payload. If the reference has a payload then the static type id for
   /// T must match the type id held by the reference.
