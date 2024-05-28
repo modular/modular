@@ -10,17 +10,17 @@ lit_tests(
         exclude = ["multiresult_asm_mma.mojo"],
     ),
     data = glob(["inputs/**/*.mojo"]) + [
+        "//:libpython",
         "//KGEN:CompilerRT.distributable",
         "//KGEN:CompilerRT.shared.file",
         "@llvm-project//compiler-rt:orc_rt",
-        "@stock-torch//:libpython",
     ],
     env = {
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
-        "MODULAR_MOJO_PYTHON_LIB": "$(location @stock-torch//:libpython)",
-        "MOJO_PYTHON_LIBRARY": "$(location @stock-torch//:libpython)",
+        "MODULAR_MOJO_PYTHON_LIB": "$(location //:libpython)",
+        "MOJO_PYTHON_LIBRARY": "$(location //:libpython)",
     },
     mojo_deps = [
         "//Kernels/mojo/gpu",
