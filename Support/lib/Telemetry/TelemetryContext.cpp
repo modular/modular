@@ -32,6 +32,8 @@
 #include "opentelemetry/sdk/logs/event_logger_provider_factory.h"
 #include "opentelemetry/sdk/logs/logger_provider.h"
 #include "opentelemetry/sdk/logs/logger_provider_factory.h"
+#include "opentelemetry/sdk/metrics/meter_provider.h"
+#include "opentelemetry/sdk/metrics/meter_provider_factory.h"
 
 #include "opentelemetry/sdk/logs/processor.h"
 #include "opentelemetry/sdk/logs/simple_log_record_processor_factory.h"
@@ -167,6 +169,12 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
       static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
           metricsProvider.get());
   metricsProviderImpl->ForceFlush(timeout);
+  if (userMetricsProvider) {
+    auto userMetricsProviderImpl =
+        static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
+            userMetricsProvider.get());
+    userMetricsProviderImpl->ForceFlush(timeout);
+  }
 
   // Flush logs.
   auto loggerProviderImpl =
@@ -400,4 +408,32 @@ TelemetryContext::TelemetryContext(
   eventLoggerProvider =
       opentelemetry::sdk::logs::EventLoggerProviderFactory::Create();
 #endif // MODULAR_ENABLE_TELEMETRY
+}
+
+bool TelemetryContext::initMetricsReader(
+    std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+  if (userMetricsProvider) {
+    llvm::dbgs() << "Custom metric provider already set\n";
+    return false;
+  }
+  auto userReader = std::shared_ptr<opentelemetry::sdk::metrics::MetricReader>(
+      reader.release());
+  assert(userReader.get() && "user metrics reader is null");
+  auto userProvider =
+      std::make_unique<opentelemetry::sdk::metrics::MeterProvider>(
+          // TODO - SERV-103 - what attributes to put here?
+          //  std::make_unique<opentelemetry::sdk::metrics::ViewRegistry>(),
+          //  otelResources
+      );
+
+  userProvider->AddMetricReader(userReader);
+  userMetricsProvider = std::unique_ptr<opentelemetry::metrics::MeterProvider>(
+      userProvider.release());
+  userMeter = userMetricsProvider->GetMeter("max_serve");
+#else
+  (void)reader;
+  return false;
+#endif
+  return true;
 }

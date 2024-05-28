@@ -26,6 +26,7 @@
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
+#include "opentelemetry/sdk/metrics/metric_reader.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry {
@@ -93,6 +94,13 @@ public:
     return instrumentLevel <= telemetryLevel;
   }
 
+  bool isUserMetric(Level instrumentLevel) const {
+    return instrumentLevel == Level::USER;
+  }
+
+  bool initMetricsReader(
+      std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader);
+
   /// Create a Counter<uint64_t>.
   Counter<uint64_t> createUInt64Counter(
       StringRef name, Level instrumentLevel,
@@ -103,6 +111,18 @@ public:
     // the name is valid or that the returned counter is not NOOP. Same for
     // other instruments.
 #ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel)) {
+      if (userMeter)
+        return Counter<uint64_t>(
+            userMeter->CreateUInt64Counter(name.data(), description.data(),
+                                           unit.data()),
+            attributes);
+      else
+        return Counter<uint64_t>(
+            noopMeter->CreateUInt64Counter(name.data(), description.data(),
+                                           unit.data()),
+            attributes);
+    }
     if (isInstrumentEnabled(instrumentLevel))
       return Counter<uint64_t>(meter->CreateUInt64Counter(name.data(),
                                                           description.data(),
@@ -113,7 +133,6 @@ public:
           noopMeter->CreateUInt64Counter(name.data(), description.data(),
                                          unit.data()),
           attributes);
-    ;
 #else
     return Counter<uint64_t>();
 #endif
@@ -125,6 +144,18 @@ public:
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel)) {
+      if (userMeter)
+        return Counter<double>(
+            userMeter->CreateDoubleCounter(name.data(), description.data(),
+                                           unit.data()),
+            attributes);
+      else
+        return Counter<double>(
+            noopMeter->CreateDoubleCounter(name.data(), description.data(),
+                                           unit.data()),
+            attributes);
+    }
     if (isInstrumentEnabled(instrumentLevel))
       return Counter<double>(meter->CreateDoubleCounter(
                                  name.data(), description.data(), unit.data()),
@@ -144,6 +175,18 @@ public:
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel)) {
+      if (userMeter)
+        return Histogram<uint64_t>(
+            userMeter->CreateUInt64Histogram(name.data(), description.data(),
+                                             unit.data()),
+            attributes);
+      else
+        return Histogram<uint64_t>(
+            noopMeter->CreateUInt64Histogram(name.data(), description.data(),
+                                             unit.data()),
+            attributes);
+    }
     if (isInstrumentEnabled(instrumentLevel))
       return Histogram<uint64_t>(
           meter->CreateUInt64Histogram(name.data(), description.data(),
@@ -165,6 +208,16 @@ public:
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel)) {
+      if (userMeter)
+        return Histogram<double>(
+            userMeter->CreateDoubleHistogram(name, description, unit),
+            attributes);
+      else
+        return Histogram<double>(
+            noopMeter->CreateDoubleHistogram(name, description, unit),
+            attributes);
+    }
     if (isInstrumentEnabled(instrumentLevel))
       return Histogram<double>(
           meter->CreateDoubleHistogram(name, description, unit), attributes);
@@ -195,6 +248,16 @@ public:
         unit = "ms";
       else if constexpr (std::is_same_v<DurationT, std::chrono::seconds>)
         unit = "s";
+    }
+    if (isUserMetric(instrumentLevel)) {
+      if (userMeter)
+        return Timer<uint64_t, DurationT>(
+            userMeter->CreateUInt64Histogram(name, description, unit),
+            attributes);
+      else
+        return Timer<uint64_t, DurationT>(
+            noopMeter->CreateUInt64Histogram(name, description, unit),
+            attributes);
     }
     if (isInstrumentEnabled(instrumentLevel))
       return Timer<uint64_t, DurationT>(
@@ -258,6 +321,8 @@ private:
   Level telemetryLevel;
 #ifdef MODULAR_ENABLE_TELEMETRY
   // Metrics.
+  std::unique_ptr<opentelemetry::metrics::MeterProvider> userMetricsProvider;
+  std::shared_ptr<opentelemetry::metrics::Meter> userMeter;
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
   std::unique_ptr<opentelemetry::metrics::MeterProvider> noopMetricsProvider;
