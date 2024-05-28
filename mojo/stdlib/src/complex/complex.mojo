@@ -64,14 +64,14 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         # Print an opening `[`.
         @parameter
         if size > 1:
-            buf.size += _snprintf(buf.data, 2, "[")
+            buf.size += _snprintf["["](buf.data, 2)
         # Print each element.
         for i in range(size):
             var re = self.re[i]
             var im = self.im[i]
             # Print separators between each element.
             if i != 0:
-                buf.size += _snprintf(buf.data + buf.size, 3, ", ")
+                buf.size += _snprintf[", "](buf.data + buf.size, 3)
 
             buf.size += _snprintf_scalar[type](
                 buf.data + buf.size,
@@ -80,13 +80,13 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
             )
 
             if im != 0:
-                buf.size += _snprintf(buf.data + buf.size, 4, " + ")
+                buf.size += _snprintf[" + "](buf.data + buf.size, 4)
                 buf.size += _snprintf_scalar[type](
                     buf.data + buf.size,
                     _calc_initial_buffer_size(im),
                     im,
                 )
-                buf.size += _snprintf(buf.data + buf.size, 2, "i")
+                buf.size += _snprintf["i"](buf.data + buf.size, 2)
 
             debug_assert(
                 buf.size <= initial_buffer_size,
@@ -96,7 +96,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         # Print a closing `]`.
         @parameter
         if size > 1:
-            buf.size += _snprintf(buf.data + buf.size, 2, "]")
+            buf.size += _snprintf["]"](buf.data + buf.size, 2)
 
         buf.size += 1  # for the null terminator.
         return String(buf)
