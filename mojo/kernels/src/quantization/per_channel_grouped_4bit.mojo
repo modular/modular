@@ -435,7 +435,7 @@ struct Q4sym[
         )
 
         var blob_output_ptr = output_tensor.data.address
-        var base_block_ptr = blob_output_ptr.bitcast[
+        var base_block_ptr = UnsafePointer(blob_output_ptr.address).bitcast[
             Q4sym[group_size, float_dtype]
         ]()
 
@@ -457,7 +457,7 @@ struct Q4sym[
 
                 # TODO: use the memory more directly instead of memcpy
                 var encoded_data = Q4sym[group_size, float_dtype](loaded_group)
-                var src_ptr = Pointer.address_of(encoded_data).bitcast[
+                var src_ptr = UnsafePointer.address_of(encoded_data).bitcast[
                     address_space = output_ptr.address_space
                 ]()
                 memcpy(output_ptr, src_ptr, 1)
@@ -492,7 +492,7 @@ struct Q4sym[
         # TODO: check contiguous inputs and outputs
 
         var uint8_input_ptr = input_tensor.data.address
-        var base_block_ptr = uint8_input_ptr.bitcast[
+        var base_block_ptr = UnsafePointer(uint8_input_ptr.address).bitcast[
             Q4sym[group_size, float_dtype]
         ]()
 
@@ -509,7 +509,7 @@ struct Q4sym[
                 var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[group_size, float_dtype]()
                 memcpy(
-                    Pointer.address_of(encoded),
+                    UnsafePointer.address_of(encoded),
                     base_block_ptr + flat_index_input,
                     1,
                 )
