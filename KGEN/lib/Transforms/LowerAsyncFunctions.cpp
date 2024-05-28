@@ -6,15 +6,17 @@
 
 #include "KGEN/CODialect/CODialect.h"
 #include "KGEN/CODialect/COOps.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
-#include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
@@ -57,11 +59,27 @@ enum ContinuationField {
   ResumeFunction = 1,
   CallbackFn = 2,
   ClosureState = 3,
-  Frame = 4,
-  Promise = 5
+  Promise = 4,
+  Frame = 5
 };
 
-struct COTypeConverter {
+/// Frame Data stores any metadata necessary to transform the async function
+/// into a suspendable procedure. This includes indexing information into the
+/// frame type so that we can generate loads and stores and state information so
+/// we can reuse loaded frame variables when legal.
+struct FrameData {
+  FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo);
+
+  /// Given a value, determine the state of its defining op or block argument.
+  int getDefinitionStateForValue(Value operand) const;
+
+  SmallVector<Type> frameTypes;
+  DenseMap<Value, unsigned> valueToIndexInFrame;
+  DenseMap<Operation *, unsigned> operationToIndexInFrame;
+  DenseMap<Operation *, int> opToState;
+};
+
+struct COTypes {
   Type typeForField(ContinuationField field) {
     switch (field) {
     case State:
@@ -70,24 +88,25 @@ struct COTypeConverter {
       return resumeSignatureType;
     case CallbackFn:
       return callbackSignature;
-    case Frame:
     case Promise:
     case ClosureState:
       return opaquePointerType;
+    case Frame:
+      return StructType::get(cxt, frameData.frameTypes);
     }
   }
-  COTypeConverter(MLIRContext *cxt);
-  COTypeConverter(const COTypeConverter &) = delete;
-  COTypeConverter &operator=(const COTypeConverter &) = delete;
+  COTypes(MLIRContext *cxt, FrameData &frameData);
+  COTypes(const COTypes &) = delete;
+  COTypes &operator=(const COTypes &) = delete;
 
 public:
   Type convertType(Type type) const {
     if (isa<CO::CoroutineType>(type))
       return PointerType::get(continuationType);
-    ;
     return type;
   }
   Type getContinuationType() const { return continuationType; }
+  FrameData &getFrameData() const { return frameData; }
 
 private:
   Type continuationType;
@@ -95,6 +114,7 @@ private:
   Type opaquePointerType;
   Type callbackSignature;
   MLIRContext *cxt;
+  FrameData &frameData;
 };
 
 struct LoweredAsyncFunction {
@@ -104,163 +124,276 @@ struct LoweredAsyncFunction {
   FuncOp resume;
 };
 
-struct LowerAsyncBuildContext {
-  LowerAsyncBuildContext(StringAttr coroAttrName,
-                         COTypeConverter &coTypeConverter,
-                         Shared<SymbolTable &> &sharedTable,
-                         DenseMap<SymbolConstantAttr, SymbolConstantAttr>
-                             &asyncFuncToRampFunctions,
-                         ImplicitLocOpBuilder &builder)
-      : coroAttrName(coroAttrName), coTypeConverter(coTypeConverter),
-        sharedTable(sharedTable),
-        asyncFuncToRampFunctions(asyncFuncToRampFunctions), builder(builder) {}
-  void populateRampFunction(FuncOp rampFunction, FuncOp resumeFunction,
-                            Type frameType) {
-    Type continuationType = coTypeConverter.getContinuationType();
-    builder.setInsertionPointToStart(
-        &rampFunction.getBodyRegion().emplaceBlock());
-    for (Type argument : rampFunction.getSignature().getArguments())
-      rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
-    // Allocate memory for continuation.
-    TypedAttr target = ParamOperatorAttr::get(POC::CurrentTarget, {},
-                                              builder.getType<TargetType>());
-    TypedAttr elementType = TypeConstantAttr::get(
-        continuationType, TypeType::get(continuationType.getContext()));
-    Value sizeOf = builder.create<ParamConstantOp>(
-        ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
-    Value alignOf = builder.create<ParamConstantOp>(
-        ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
-    Value continuation = builder.create<AlignedAllocOp>(
-        PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
-    // Store resume function.
-    Value resumeFunctionSlot =
-        builder.create<StructGEPOp>(continuation, ResumeFunction);
-    Value functionPointer = builder.create<CreateClosureOp>(
-        SymbolConstantAttr::get(SymbolRefAttr::get(builder.getContext(),
-                                                   resumeFunction.getSymName()),
-                                resumeFunction.getSignature()));
-    builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
+using VirtualBlock = Operation *;
 
-    // Store arguments in frame.
-    Value frameSlot = builder.create<StructGEPOp>(continuation, Frame);
-    Value frameOpaque = builder.create<LoadOp>(frameSlot);
-    Value frame = builder.create<PointerBitcastOp>(PointerType::get(frameType),
-                                                   frameOpaque);
-    for (BlockArgument arg : rampFunction.getArguments()) {
-      Value slot = builder.create<StructGEPOp>(frame, arg.getArgNumber());
-      builder.create<StoreOp>(arg, slot);
-    }
-    builder.create<ReturnOp>(continuation);
-  }
+/// Frame Variables is a Cache of extracted frame variables. We may for example
+/// reference a frame variable multiple times within a virtual block. We should
+/// only extract that variable once for that state.
+class FrameVariables {
+public:
+  FrameVariables(ImplicitLocOpBuilder &builder, FrameData &frameData)
+      : builder(builder), frameData(frameData) {}
 
-  void populateResumeFunction(FuncOp resumeFunction, FuncOp funcOp,
-                              Type frameType) {
-    Type continuationType = coTypeConverter.getContinuationType();
-    // Take the body of the original function.
-    resumeFunction.getBodyRegion().takeBody(funcOp.getBodyRegion());
-    resumeFunction.getBodyRegion().insertArgument(
-        (unsigned)0, resumeFunction.getSignature().getArguments()[0],
-        resumeFunction->getLoc());
-    builder.setInsertionPointToStart(&resumeFunction.getBodyRegion().front());
+  /// Given the original operand, return the value extracted from the frame. Use
+  /// a previously extracted value if available.
+  Value getFrameValueForOperand(Value continuation, Value operand,
+                                Operation *opWithUse, int useState);
 
-    // Extract arguments from continuation's frame.
-    Value continuation = builder.create<PointerBitcastOp>(
-        PointerType::get(continuationType), resumeFunction.getArgument(0));
-    Value frameSlot = builder.create<StructGEPOp>(continuation, Frame);
-    Value frameOpaque = builder.create<LoadOp>(frameSlot);
-    Value frame = builder.create<PointerBitcastOp>(PointerType::get(frameType),
-                                                   frameOpaque);
-
-    // Map arguments of func to values extracted from continuation frame.
-    for (BlockArgument argument :
-         resumeFunction.getBodyRegion().front().getArguments().slice(1)) {
-      Value extractedValue =
-          builder.create<StructGEPOp>(frame, argument.getArgNumber() - 1);
-      Value loadedValue = builder.create<LoadOp>(extractedValue);
-      argument.replaceAllUsesWith(loadedValue);
-    }
-    llvm::BitVector args(
-        resumeFunction.getBodyRegion().front().getNumArguments(), true);
-    args.reset(0);
-    resumeFunction.getBodyRegion().front().eraseArguments(args);
-
-    // Replace ReturnOps with set result.
-    resumeFunction.walk([&](ReturnOp returnOp) {
-      if (returnOp.getNumOperands() > 0) {
-        builder.setInsertionPoint(returnOp);
-        Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
-        Value promise = builder.create<LoadOp>(promiseSlot);
-        Value typedPromise = builder.create<PointerBitcastOp>(
-            PointerType::get(funcOp.getSignature().getResults()[0]), promise);
-        builder.create<StoreOp>(returnOp.getOperand(0), typedPromise);
-        builder.create<ReturnOp>();
-        returnOp->erase();
-      }
-    });
-  }
-
-  LoweredAsyncFunction lowerAsyncFunction(FuncOp funcOp) {
-    MLIRContext *cxt = funcOp.getContext();
-    Type continuationType = coTypeConverter.getContinuationType();
-
-    // Create Ramp Function.
-    StringAttr rampName = builder.getStringAttr(funcOp.getSymName() + "_ramp");
-    FunctionType rampFunctionType =
-        builder.getFunctionType(funcOp.getBodyRegion().getArgumentTypes(),
-                                PointerType::get(continuationType));
-    auto rampSignature = SignatureType::get(rampFunctionType);
-    builder.setInsertionPoint(funcOp);
-    FuncOp rampFunction = builder.create<FuncOp>(rampName, rampSignature);
-    rampName = sharedTable.modify(
-        [rampFunction, it = funcOp->getIterator()](SymbolTable &symtab) {
-          return symtab.insert(rampFunction, it);
-        });
-
-    // Create resume function.
-    StringAttr resumeName =
-        builder.getStringAttr(funcOp.getSymName() + "_resume");
-    Type opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
-    SmallVector<Type> inputs;
-    SmallVector<Type> results;
-    inputs.push_back(opaquePointerType);
-    FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
-    auto resumeSignature = SignatureType::get(resumeFunctionType);
-    FuncOp resumeFunction = builder.create<FuncOp>(
-        funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
-    resumeFunction->setAttr(coroAttrName, mlir::UnitAttr::get(cxt));
-    resumeName = sharedTable.modify(
-        [resumeFunction, it = rampFunction->getIterator()](
-            SymbolTable &symtab) { return symtab.insert(resumeFunction, it); });
-
-    // TODO: Calculate Frame.
-    SmallVector<Type> frameTypes;
-    for (Type argumentType : funcOp.getArgumentTypes())
-      frameTypes.push_back(argumentType);
-    Type frameType = StructType::get(frameTypes);
-    populateRampFunction(rampFunction, resumeFunction, frameType);
-    populateResumeFunction(resumeFunction, funcOp, frameType);
-
-    // Update map.
-    SymbolConstantAttr key = SymbolConstantAttr::get(
-        SymbolRefAttr::get(funcOp.getContext(), funcOp.getSymName()),
-        funcOp.getSignature());
-    SymbolConstantAttr value = SymbolConstantAttr::get(
-        SymbolRefAttr::get(cxt, rampFunction.getSymName()),
-        rampFunction.getSignature());
-    asyncFuncToRampFunctions[key] = value;
-    funcOp.erase();
-    return {rampFunction, resumeFunction};
-  }
+  /// Overwrite the cached value for the variable in this state. A state can
+  /// contain nested control flow, resulting in frame variables extracted in
+  /// nested blocks. Sometime we could optimize this so that frame variables
+  /// used multiple times in the same state are extracted in the first shared
+  /// parent block, thus removing the need to overwrite state.
+  void overwriteValue(int state, Value value);
 
 private:
+  ImplicitLocOpBuilder &builder;
+  FrameData &frameData;
+  DenseMap<Value, DenseMap<int, Value>> frameVariables;
+};
+
+/// The LowerAsyncBuildContext is responsible for transforming an async function
+/// into a ramp function and resume function.
+struct LowerAsyncBuildContext {
+  LowerAsyncBuildContext(
+      StringAttr coroAttrName, Shared<SymbolTable &> &sharedTable,
+      DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
+          &asyncFuncToRampFunctions,
+      ImplicitLocOpBuilder &builder)
+      : coroAttrName(coroAttrName), sharedTable(sharedTable),
+        asyncFuncToRampFunctions(asyncFuncToRampFunctions), builder(builder) {}
+
+  /// Given an async function and its frame types, create a ramp function and a
+  /// resume function.
+  LoweredAsyncFunction lowerAsyncFunction(FuncOp funcOp,
+                                          mlir::DominanceInfo &domInfo,
+                                          COTypes &coTypes);
+
+private:
+  /// Given the resume function, the empty ramp function, the original async
+  /// function, and coroutine types, populate the ramp function.
+  void populateRampFunction(FuncOp rampFunction, FuncOp resumeFunction,
+                            FuncOp funcOp, COTypes &coTypes);
+  /// Given the empty resume function, the original async function, and the
+  /// coroutine types, populate the resume function.
+  void populateResumeFunction(FuncOp resumeFunction, FuncOp funcOp,
+                              COTypes &coTypes);
   StringAttr coroAttrName;
-  COTypeConverter &coTypeConverter;
   Shared<SymbolTable &> &sharedTable;
-  DenseMap<SymbolConstantAttr, SymbolConstantAttr> &asyncFuncToRampFunctions;
+  DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
+      &asyncFuncToRampFunctions;
   ImplicitLocOpBuilder &builder;
 };
 
-COTypeConverter::COTypeConverter(MLIRContext *cxt) : cxt(cxt) {
+//===----------------------------------------------------------------------===//
+// LowerAsyncBuildContext
+//===----------------------------------------------------------------------===//
+
+LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
+    FuncOp funcOp, mlir::DominanceInfo &domInfo, COTypes &coTypes) {
+  MLIRContext *cxt = funcOp.getContext();
+  Type continuationType = coTypes.getContinuationType();
+
+  // Create Ramp Function.
+  StringAttr rampName = builder.getStringAttr(funcOp.getSymName() + "_ramp");
+  FunctionType rampFunctionType =
+      builder.getFunctionType(funcOp.getBodyRegion().getArgumentTypes(),
+                              PointerType::get(continuationType));
+  auto rampSignature = SignatureType::get(rampFunctionType);
+  builder.setInsertionPoint(funcOp);
+  FuncOp rampFunction = builder.create<FuncOp>(rampName, rampSignature);
+  rampName = sharedTable.modify(
+      [rampFunction, it = funcOp->getIterator()](SymbolTable &symtab) {
+        return symtab.insert(rampFunction, it);
+      });
+
+  // Create resume function.
+  StringAttr resumeName =
+      builder.getStringAttr(funcOp.getSymName() + "_resume");
+  Type opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
+  SmallVector<Type> inputs;
+  SmallVector<Type> results;
+  inputs.push_back(opaquePointerType);
+  FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
+  auto resumeSignature = SignatureType::get(resumeFunctionType);
+  FuncOp resumeFunction = builder.create<FuncOp>(
+      funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
+  resumeFunction->setAttr(coroAttrName, mlir::UnitAttr::get(cxt));
+  resumeName = sharedTable.modify(
+      [resumeFunction, it = rampFunction->getIterator()](SymbolTable &symtab) {
+        return symtab.insert(resumeFunction, it);
+      });
+
+  populateRampFunction(rampFunction, resumeFunction, funcOp, coTypes);
+  populateResumeFunction(resumeFunction, funcOp, coTypes);
+
+  // Update map.
+  SymbolConstantAttr key = SymbolConstantAttr::get(
+      SymbolRefAttr::get(funcOp.getContext(), funcOp.getSymName()),
+      funcOp.getSignature());
+  SymbolConstantAttr value = SymbolConstantAttr::get(
+      SymbolRefAttr::get(cxt, rampFunction.getSymName()),
+      rampFunction.getSignature());
+  asyncFuncToRampFunctions[key] = {value, coTypes.getContinuationType()};
+  funcOp.erase();
+  return {rampFunction, resumeFunction};
+}
+
+void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
+                                                    FuncOp funcOp,
+                                                    COTypes &coTypes) {
+  Type continuationType = coTypes.getContinuationType();
+  FrameData &frameData = coTypes.getFrameData();
+  // Take the body of the original function.
+  resumeFunction.getBodyRegion().takeBody(funcOp.getBodyRegion());
+  resumeFunction.getBodyRegion().insertArgument(
+      (unsigned)0, resumeFunction.getSignature().getArguments()[0],
+      resumeFunction->getLoc());
+  builder.setInsertionPointToStart(&resumeFunction.getBodyRegion().front());
+  // Extract arguments from continuation's frame.
+  Value continuation = builder.create<PointerBitcastOp>(
+      PointerType::get(continuationType), resumeFunction.getArgument(0));
+
+  // For each new operand, extract operand from frame if it was defined in
+  // previous state. For each op, store in frame if it is used downstream
+  // across a suspension point. For each block, store arguments if they are
+  // accessed across suspnsion points.
+  FrameVariables frameVariables(builder, frameData);
+  SmallVector<std::pair<Region *, Block::iterator>> regionsToProcess;
+  regionsToProcess.push_back({&resumeFunction.getBodyRegion(),
+                              resumeFunction.getBodyRegion().front().begin()});
+  while (!regionsToProcess.empty()) {
+    auto [parentRegion, begin] = regionsToProcess.back();
+    regionsToProcess.pop_back();
+    // Process the ops of a region.
+    for (auto iter = begin; iter != parentRegion->front().end(); ++iter) {
+      Operation *op = &*iter;
+
+      // Store op in frame if needed.
+      auto entry = frameData.operationToIndexInFrame.find(op);
+      if (entry != frameData.operationToIndexInFrame.end()) {
+        builder.setInsertionPointAfter(op);
+        Type frameEntryType = frameData.frameTypes[entry->getSecond()];
+        assert(frameEntryType == op->getResultTypes().front() &&
+               "The frame type slot does not match the value");
+        assert(op->getNumResults() == 1 && "TODO: support multiple results");
+        Value dataSlot = builder.create<StructGEPOp>(
+            continuation, Frame + entry->getSecond());
+        builder.create<StoreOp>(op->getResult(0), dataSlot);
+      }
+
+      // Extract arguments from operands in needed.
+      int useState = frameData.opToState[op];
+      for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+        auto entry = frameData.valueToIndexInFrame.find(operand);
+        if (entry != frameData.valueToIndexInFrame.end()) {
+          // Only extract the value out of the frame if the def was in another
+          // state. Block arguments have been cached in frameVariables because
+          // region block arguments are processed before body ops.
+          int defState = -1;
+          Operation *definingOp = operand.getDefiningOp();
+          if (definingOp)
+            defState = frameData.opToState[definingOp];
+          if (defState == useState)
+            continue;
+          Value image = frameVariables.getFrameValueForOperand(
+              continuation, operand, op, useState);
+          op->setOperand(index, image);
+        }
+      }
+
+      // Store arguments of block if needed.
+      for (Region &region : op->getRegions()) {
+        // Start processing at the first op. Blocks cannot be empty because
+        // they must be terminated.
+        Operation *firstOp = &*region.front().begin();
+        regionsToProcess.push_back({&region, firstOp->getIterator()});
+        if (region.front().getNumArguments() == 0)
+          continue;
+        builder.setInsertionPointToStart(&region.front());
+        int frameValueState = frameData.opToState[firstOp];
+        for (BlockArgument argument : region.front().getArguments()) {
+          auto entry = frameData.valueToIndexInFrame.find(argument);
+          if (entry == frameData.valueToIndexInFrame.end())
+            continue;
+          Value dataSlot = builder.create<StructGEPOp>(
+              continuation, Frame + entry->getSecond());
+          builder.create<StoreOp>(argument, dataSlot);
+          frameVariables.overwriteValue(frameValueState, argument);
+        }
+      }
+    }
+  }
+
+  llvm::BitVector args(resumeFunction.getBodyRegion().front().getNumArguments(),
+                       true);
+  args.reset(0);
+  resumeFunction.getBodyRegion().front().eraseArguments(args);
+
+  // Replace ReturnOps with set result.
+  resumeFunction.walk([&](ReturnOp returnOp) {
+    if (returnOp.getNumOperands() > 0) {
+      builder.setInsertionPoint(returnOp);
+      Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
+      Value promise = builder.create<LoadOp>(promiseSlot);
+      Value typedPromise = builder.create<PointerBitcastOp>(
+          PointerType::get(funcOp.getSignature().getResults()[0]), promise);
+      builder.create<StoreOp>(returnOp.getOperand(0), typedPromise);
+      builder.create<ReturnOp>();
+      returnOp->erase();
+    }
+  });
+}
+void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
+                                                  FuncOp resumeFunction,
+                                                  FuncOp funcOp,
+                                                  COTypes &coTypes) {
+  Type continuationType = coTypes.getContinuationType();
+  FrameData &frameData = coTypes.getFrameData();
+  builder.setInsertionPointToStart(
+      &rampFunction.getBodyRegion().emplaceBlock());
+  for (Type argument : rampFunction.getSignature().getArguments())
+    rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
+  // Allocate memory for continuation.
+  TypedAttr target = ParamOperatorAttr::get(POC::CurrentTarget, {},
+                                            builder.getType<TargetType>());
+  TypedAttr elementType = TypeConstantAttr::get(
+      continuationType, TypeType::get(continuationType.getContext()));
+  Value sizeOf = builder.create<ParamConstantOp>(
+      ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
+  Value alignOf = builder.create<ParamConstantOp>(
+      ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
+  Value continuation = builder.create<AlignedAllocOp>(
+      PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
+  // Store resume function.
+  Value resumeFunctionSlot =
+      builder.create<StructGEPOp>(continuation, ResumeFunction);
+  Value functionPointer =
+      builder.create<CreateClosureOp>(SymbolConstantAttr::get(
+          SymbolRefAttr::get(builder.getContext(), resumeFunction.getSymName()),
+          resumeFunction.getSignature()));
+  builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
+
+  // Store arguments in frame.
+  for (auto [arg, image] :
+       llvm::zip(funcOp.getArguments(), rampFunction.getArguments())) {
+    // If the argument is not in the frame metadata it is unused. Do not
+    // store in frame.
+    if (!frameData.valueToIndexInFrame.contains(arg))
+      continue;
+    unsigned argSlot = frameData.valueToIndexInFrame[arg];
+    Value slot = builder.create<StructGEPOp>(continuation, Frame + argSlot);
+    builder.create<StoreOp>(image, slot);
+  }
+  builder.create<ReturnOp>(continuation);
+}
+
+//===----------------------------------------------------------------------===//
+// CoTypes
+//===----------------------------------------------------------------------===//
+
+COTypes::COTypes(MLIRContext *cxt, FrameData &frameData)
+    : cxt(cxt), frameData(frameData) {
   opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
   SmallVector<Type> inputs;
   SmallVector<Type> results;
@@ -272,34 +405,345 @@ COTypeConverter::COTypeConverter(MLIRContext *cxt) : cxt(cxt) {
   callbackSignature = SignatureType::get(callbackFunctionType);
 
   // Build Continuation Type.
-  std::array<Type, 6> types;
+  size_t size = Frame + frameData.frameTypes.size();
+  SmallVector<Type> types(size);
   types[State] = typeForField(State);
   types[ResumeFunction] = typeForField(ResumeFunction);
   types[CallbackFn] = typeForField(CallbackFn);
   types[ClosureState] = typeForField(ClosureState);
-  types[Frame] = typeForField(Frame);
   types[Promise] = typeForField(Promise);
+  for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
+    types[Frame + index] = frameVariableType;
   continuationType = StructType::get(types);
 }
 
+//===----------------------------------------------------------------------===//
+// FrameVariables
+//===----------------------------------------------------------------------===//
+
+Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
+                                              Operation *opWithUse,
+                                              int useState) {
+  auto entry = frameData.valueToIndexInFrame.find(operand);
+  if (entry == frameData.valueToIndexInFrame.end())
+    return {};
+  DenseMap<int, Value> &frameVariablesForValue =
+      frameVariables.try_emplace(operand).first->getSecond();
+
+  // Reuse existing extracted value if possible.
+  Value image;
+  auto existingImage = frameVariablesForValue.find(useState);
+  bool wasExtractedInThisState = existingImage != frameVariablesForValue.end();
+  // TODO: can this be parent region also?
+  bool wasExtractedInThisRegion =
+      wasExtractedInThisState && existingImage->getSecond().getParentRegion() ==
+                                     opWithUse->getParentRegion();
+  if (wasExtractedInThisRegion) {
+    image = existingImage->getSecond();
+  } else {
+    unsigned frameIndex = entry->getSecond();
+    builder.setInsertionPoint(opWithUse);
+    Value dataSlot =
+        builder.create<StructGEPOp>(continuation, Frame + frameIndex);
+    image = builder.create<LoadOp>(dataSlot);
+    if (wasExtractedInThisState)
+      frameVariablesForValue.erase(existingImage);
+    frameVariablesForValue.insert({useState, image});
+  }
+  return image;
+}
+
+void FrameVariables::overwriteValue(int state, Value value) {
+  DenseMap<int, Value> &frameVariablesForValue =
+      frameVariables.try_emplace(value).first->getSecond();
+  auto existing = frameVariablesForValue.find(state);
+  if (existing != frameVariablesForValue.end())
+    frameVariablesForValue.erase(existing);
+  frameVariablesForValue.insert({state, value});
+}
+
+//===----------------------------------------------------------------------===//
+// FrameData
+//===----------------------------------------------------------------------===//
+
+int FrameData::getDefinitionStateForValue(Value operand) const {
+  Operation *definingOp = operand.getDefiningOp();
+  // Initialize state to the entry state.
+  int defState = -1;
+  if (!definingOp) {
+    BlockArgument blockArgument = cast<BlockArgument>(operand);
+    // We always store the function arguments in the frame because they
+    // originate in the ramp function.
+    Operation *parentOp = blockArgument.getOwner()->getParentOp();
+    if (isa<FuncOp>(parentOp))
+      return defState;
+
+    Operation *firstOp = &*blockArgument.getOwner()->begin();
+    defState = opToState.at(firstOp);
+    // In a loop we want to compare state before entering loop to the use
+    // inside the body.
+    if (isa<HLCF::LoopOp>(parentOp))
+      defState = opToState.at(parentOp);
+    return defState;
+  }
+  return opToState.at(definingOp);
+}
+
+FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo) {
+  // Calculate Control Flow Graph.
+  // We need to know the predecessors of each region so that
+  // we don't process a region until all its predecessors have
+  // been processed.
+  DenseMap<VirtualBlock, SmallVector<VirtualBlock>> predecessors;
+  {
+    SmallVector<Region *> regions;
+    DenseSet<Region *> visited;
+    regions.push_back(&originalFunction.getBodyRegion());
+
+    auto pushSuccessors =
+        [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
+            Operation *controlFlowNode, Operation *controlFlowParent,
+            VirtualBlock current) {
+          for (HLCF::ControlFlowTarget target : targets) {
+            VirtualBlock succ;
+            if (target.index.has_value()) {
+              Region *succRegion =
+                  &controlFlowParent->getRegion(target.index.value());
+              succ = &*succRegion->front().begin();
+              regions.push_back(succRegion);
+            } else {
+              succ = controlFlowParent->getNextNode();
+            }
+            predecessors[succ].push_back(current);
+          }
+        };
+
+    // There are three types of ops that form virtual block boundaries within a
+    // region: control flow nodes, control flow terminators, and coroutine
+    // awaits.
+    while (!regions.empty()) {
+      Region *region = regions.back();
+      regions.pop_back();
+      if (visited.contains(region))
+        continue;
+      visited.insert(region);
+      Operation *lastControlFlowNode = nullptr;
+      Operation *lastAwait = nullptr;
+      for (Operation &op : region->front().getOperations()) {
+        if (isa<ReturnOp, UnreachableOp>(op))
+          continue;
+        if (auto controlFlowTerminator =
+                dyn_cast<HLCF::ControlFlowTerminator>(op)) {
+          SmallVector<HLCF::ControlFlowTarget> targets;
+          SmallVector<Attribute> controlFlowTerminatorOperands(
+              controlFlowTerminator->getNumOperands(), Attribute());
+          controlFlowTerminator.getBranchTargets(controlFlowTerminatorOperands,
+                                                 targets);
+          Operation *curr =
+              lastControlFlowNode
+                  ? lastControlFlowNode->getNextNode()
+                  : &*controlFlowTerminator->getParentRegion()->front().begin();
+          pushSuccessors(targets, controlFlowTerminator,
+                         getParentNode(controlFlowTerminator), curr);
+        }
+        if (auto controlFlowNode = dyn_cast<HLCF::ControlFlowNode>(op)) {
+          lastControlFlowNode = controlFlowNode;
+          SmallVector<HLCF::ControlFlowTarget> targets;
+          SmallVector<Attribute> controlFlowNodeOperands(
+              controlFlowNode->getNumOperands(), Attribute());
+          controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
+          pushSuccessors(targets, controlFlowNode, controlFlowNode,
+                         &*controlFlowNode->getParentRegion()->front().begin());
+        }
+        if (auto await = dyn_cast<CO::CoroutineAwaitOp>(op)) {
+          Operation *next = await->getNextNode();
+          if (!next)
+            continue;
+          Operation *nodeStart =
+              lastAwait ? lastAwait->getNextNode() : &*region->front().begin();
+          lastAwait = await;
+          VirtualBlock awaitVirtualBlock = &await.getBody().front().front();
+          predecessors[awaitVirtualBlock].push_back(nodeStart);
+          predecessors[next].push_back(awaitVirtualBlock);
+          regions.push_back(&await.getBody());
+        }
+      }
+    }
+  }
+
+  // Calculate the state of each op.
+  {
+    SmallVector<std::pair<VirtualBlock, int>> paths;
+    paths.push_back({&*originalFunction.getBodyRegion().front().begin(), 0});
+    DenseMap<VirtualBlock, int> stateOfVirtualBlock;
+    DenseSet<VirtualBlock> visited;
+    auto pushSuccessors =
+        [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
+            Operation *controlFlowVirtualBlock, int currentState,
+            Operation *controlFlowParent) {
+          for (HLCF::ControlFlowTarget target : targets) {
+            if (target.index.has_value())
+              paths.push_back(
+                  {&*controlFlowParent->getRegion(target.index.value())
+                         .front()
+                         .begin(),
+                   currentState});
+            else
+              paths.push_back({controlFlowParent->getNextNode(), currentState});
+          }
+        };
+
+    // The state of a virtual block is the max of the states
+    // of its predecessors.
+    // Dry runs are needed for loops. Because the predecessor of a virtual block
+    // does not dominate it, we first calculate all other predecessors and then
+    // process the target in a dry run to compute the state. Then we process the
+    // target a second time, considering the result of the first pass in its
+    // state computation.
+    SmallVector<VirtualBlock> dryRuns;
+    VirtualBlock poppedDryRun = nullptr;
+    while (!paths.empty()) {
+      auto [virtualBlock, stateAtPred] = paths.back();
+      paths.pop_back();
+      if (visited.contains(virtualBlock))
+        continue;
+
+      bool allPredsHaveProcessed = true;
+      int currentState = stateAtPred;
+      bool needsDryRun;
+      for (VirtualBlock predecessor : predecessors[virtualBlock]) {
+        auto predMaybe = stateOfVirtualBlock.find(predecessor);
+        // A dry run is needed if the predecessor does not dominate the
+        // successor, which is the case in a loop.
+        needsDryRun =
+            virtualBlock->getParentRegion() == predecessor->getParentRegion() &&
+            domInfo.dominates(virtualBlock, predecessor);
+        bool predIsProcessed = predMaybe != stateOfVirtualBlock.end();
+
+        // The needed dry run is already complete. Remove record of it so it's
+        // results can be recorded.
+        if (needsDryRun && predIsProcessed && dryRuns.back() == virtualBlock) {
+          poppedDryRun = dryRuns.back();
+          dryRuns.pop_back();
+        }
+        if (!predIsProcessed) {
+          allPredsHaveProcessed = false;
+          if (needsDryRun) {
+            dryRuns.push_back(virtualBlock);
+            paths.push_back({virtualBlock, stateAtPred});
+          }
+          break;
+        }
+        int stateFromPred = predMaybe->getSecond();
+        if (stateFromPred > currentState)
+          currentState = stateFromPred;
+      }
+      // Another predecessor of this region needs to process before we can
+      // process this region.
+      if (!allPredsHaveProcessed && !needsDryRun)
+        continue;
+      // Iterate through each op in this virtual block to register its state.
+      // The boundaries of a node are defined by awaits, control
+      // flow nodes, and control flow terminators.
+      Operation *current = virtualBlock;
+      while (current) {
+        Operation *op = current;
+        current = op->getNextNode();
+        if (auto await = dyn_cast<CoroutineAwaitOp>(op)) {
+          opToState[op] = currentState;
+          // If the virtual block is equal to the poppedDryRun then this will
+          // result in the coroutine await assuming it's second iteration state
+          // instead of the original. Despite this we still want to update the
+          // state to divide states within the loop. Otherwise we cannot cache
+          // frame variable extractions.
+          int nextState = currentState + 1;
+          if (Operation *next = op->getNextNode())
+            paths.push_back({next, nextState});
+          paths.push_back({&*await.getBody().front().begin(), currentState});
+          break;
+        }
+        opToState[op] = currentState;
+        if (isa<ReturnOp, UnreachableOp>(op))
+          continue;
+        if (auto controlFlowNode = dyn_cast<HLCF::ControlFlowNode>(op)) {
+          SmallVector<HLCF::ControlFlowTarget> targets;
+          SmallVector<Attribute> controlFlowNodeOperands(
+              controlFlowNode->getNumOperands(), Attribute());
+          controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
+          pushSuccessors(targets, controlFlowNode, currentState,
+                         controlFlowNode);
+          break;
+        }
+        if (auto controlFlowTerminator =
+                dyn_cast<HLCF::ControlFlowTerminator>(op)) {
+          SmallVector<HLCF::ControlFlowTarget> targets;
+          SmallVector<Attribute> controlFlowTerminatorOperands(
+              controlFlowTerminator->getNumOperands(), Attribute());
+          controlFlowTerminator.getBranchTargets(controlFlowTerminatorOperands,
+                                                 targets);
+          pushSuccessors(targets, controlFlowTerminator, currentState,
+                         getParentNode(controlFlowTerminator));
+          break;
+        }
+      }
+      stateOfVirtualBlock.insert({virtualBlock, currentState});
+      if (dryRuns.empty()) {
+        visited.insert(virtualBlock);
+      } else if (virtualBlock == poppedDryRun) {
+        poppedDryRun = nullptr;
+        visited.insert(virtualBlock);
+      }
+    }
+  }
+  // Calculate the frame. Whenever there is a use whose def lives in another
+  // state, it must be added to the frame. We need to store the location of the
+  // value in the frame so that when we generate the resume function the frame
+  // values can be extracted.
+  originalFunction.walk([&](Operation *operation) {
+    int useState = opToState[operation];
+    for (Value operand : operation->getOperands()) {
+      if (valueToIndexInFrame.contains(operand))
+        continue;
+
+      // Add to frame if the value was defined in a previous state.
+      int defState = getDefinitionStateForValue(operand);
+      if (defState < useState) {
+        unsigned index = frameTypes.size();
+        frameTypes.push_back(operand.getType());
+        valueToIndexInFrame.insert({operand, index});
+        if (operand.getDefiningOp())
+          operationToIndexInFrame.insert({operand.getDefiningOp(), index});
+      }
+    }
+  });
+}
+
+//===----------------------------------------------------------------------===//
+// LowerAsyncFunctionsPass
+//===----------------------------------------------------------------------===//
+
 void LowerAsyncFunctionsPass::runOnOperation() {
   ModuleOp module = getOperation();
-  COTypeConverter typeConverter(module.getContext());
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   Shared<SymbolTable &> sharedTable(symtab);
-  DenseMap<SymbolConstantAttr, SymbolConstantAttr> asyncFuncToRampFunctions;
+  DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
+      asyncFuncToRampFunctions;
 
   // Convert async functions.
   ImplicitLocOpBuilder b(module->getLoc(), module);
   Operation *op = &*module.getOps().begin();
-  LowerAsyncBuildContext buildContext(coroAttrName, typeConverter, sharedTable,
+  LowerAsyncBuildContext buildContext(coroAttrName, sharedTable,
                                       asyncFuncToRampFunctions, b);
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
   while (op) {
     Operation *next = op->getNextNode();
     if (FuncOp funcOp = dyn_cast<FuncOp>(op)) {
-      if (funcOp.isAsync())
-        buildContext.lowerAsyncFunction(funcOp);
+      if (funcOp.isAsync()) {
+        FrameData frameData(funcOp, domInfo);
+        COTypes cotypes(module.getContext(), frameData);
+        buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes);
+      }
     }
     op = next;
   }
@@ -311,13 +755,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       auto symbol = cast<SymbolConstantAttr>(invokeOp.getCallee());
       auto newSymbolPtr = asyncFuncToRampFunctions.find(symbol);
       if (newSymbolPtr != asyncFuncToRampFunctions.end()) {
-        SymbolConstantAttr newSymbol = newSymbolPtr->getSecond();
-        Type continuationType =
-            typeConverter.convertType(invokeOp->getResultTypes().front());
+        auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
         rewriter.setInsertionPoint(op);
-        auto callOp =
-            rewriter.create<CallOp>(invokeOp->getLoc(), continuationType,
-                                    newSymbol, invokeOp.getOperands());
+        auto callOp = rewriter.create<CallOp>(
+            invokeOp->getLoc(), PointerType::get(continuationType), newSymbol,
+            invokeOp.getOperands());
         rewriter.replaceOp(invokeOp, callOp);
       }
     }
