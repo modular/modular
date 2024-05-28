@@ -24,7 +24,7 @@ from memory.unsafe import DTypePointer, bitcast
 
 from collections import OptionalReg
 from utils.index import Index
-from utils.static_tuple import StaticTuple
+from utils.static_tuple import StaticTuple, InlineArray
 from utils.numerics import get_accum_type
 
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
@@ -773,11 +773,11 @@ fn sgemm_double_buffer_kernel[
     b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x())
 
     # Double buffer in registers (fragments in nvidia terms).
-    var a_reg = StaticTuple[_, 2](
+    var a_reg = InlineArray[_, 2](
         LayoutTensor[a_type, Layout(TM)].stack_allocation(),
         LayoutTensor[a_type, Layout(TM)].stack_allocation(),
     )
-    var b_reg = StaticTuple[_, 2](
+    var b_reg = InlineArray[_, 2](
         LayoutTensor[b_type, Layout(TN)].stack_allocation(),
         LayoutTensor[b_type, Layout(TN)].stack_allocation(),
     )
