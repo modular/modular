@@ -218,5 +218,5 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
         Returns:
           Given bytes as TensorSpec.
         """
-        var ptr = data._as_scalar_pointer().bitcast[Self]()
+        var ptr = UnsafePointer[UInt8]._from_dtype_ptr(data).bitcast[Self]()
         return move_from_pointee(ptr.address)
