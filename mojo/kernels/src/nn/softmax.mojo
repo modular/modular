@@ -4,14 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import (
-    align_down,
-    align_up,
-    ceildiv,
-    exp,
-    log,
-    reciprocal,
-)
+from math import align_down, align_up, ceildiv, exp, log
 from os import abort
 
 from algorithm import sync_parallelize, vectorize
@@ -32,7 +25,7 @@ from utils.index import product
 from utils.static_tuple import StaticTuple
 from utils.numerics import get_accum_type, min_or_neg_inf
 
-from .math import mul, sub, identity
+from .math import mul, sub, identity, reciprocal
 
 # ===----------------------------------------------------------------------===#
 # Utilities
