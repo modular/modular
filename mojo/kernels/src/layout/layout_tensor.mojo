@@ -7,7 +7,7 @@
 from collections.optional import Optional, OptionalReg
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
-from utils import StaticTuple, StaticIntTuple
+from utils import InlineArray, StaticIntTuple
 from utils.numerics import max_finite
 
 from algorithm import vectorize
@@ -434,7 +434,7 @@ struct LayoutTensor[
         axis: Int = 0,
         __tile_size: Int = layout.shape[axis].value() // count,
         __tiled_layout: Layout = Self._compute_tile_layout[__tile_size, axis](),
-    ](self) -> StaticTuple[
+    ](self) -> InlineArray[
         LayoutTensor[
             dtype,
             __tiled_layout[0],
@@ -455,7 +455,7 @@ struct LayoutTensor[
 
         alias stride = layout.stride[axis].value()
 
-        var tiles = StaticTuple[
+        var tiles = InlineArray[
             LayoutTensor[
                 dtype,
                 __tiled_layout[0],
@@ -463,7 +463,7 @@ struct LayoutTensor[
                 element_layout=element_layout,
             ],
             count,
-        ]()
+        ](unsafe_uninitialized=True)
 
         @parameter
         for i in range(count):
