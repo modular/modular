@@ -26,7 +26,6 @@ add_modular_unittest(
   ContextTest.cpp
   TensorTest.cpp
   ModelCollectionTest.cpp
-  AssertTest.cpp
   ValueTest.cpp
 
   LINK_LIBS PRIVATE

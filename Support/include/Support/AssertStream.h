@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef GENERICML_SUPPORT_ASSERT_H
-#define GENERICML_SUPPORT_ASSERT_H
+#ifndef SUPPORT_ASSERT_STREAM_H
+#define SUPPORT_ASSERT_STREAM_H
 
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
@@ -36,7 +36,7 @@ struct FailedAssertion {
   struct Storage {
     std::string message;
     llvm::raw_string_ostream os;
-    Storage() : message(), os(message){};
+    Storage() : message(), os(message) {};
   };
   LLVM_ATTRIBUTE_NOINLINE static Storage &getStorage() {
     static thread_local Storage storage;
@@ -55,4 +55,4 @@ struct FailedAssertion {
   ::M::FailedAssertion(__FILE__, __LINE__).getStorage().os << #e               \
                                                            << " is false.\n"
 
-#endif // GENERICML_SUPPORT_ASSERT_H
+#endif // SUPPORT_ASSERT_STREAM_H

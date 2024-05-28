@@ -25,6 +25,7 @@ add_modular_unittest(
   SupportTests
 
   AlignedAllocTest.cpp
+  AssertStreamTest.cpp
   ASN1Test.cpp
   BCastTest.cpp
   Base64Test.cpp

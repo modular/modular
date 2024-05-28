@@ -6,7 +6,7 @@
 // Tests for GENERICML_ASSERT
 //===----------------------------------------------------------------------===//
 
-#include "GenericML/Support/Assert.h"
+#include "Support/AssertStream.h"
 
 #include "gtest/gtest.h"
 
