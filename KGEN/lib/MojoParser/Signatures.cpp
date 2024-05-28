@@ -853,7 +853,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     if (type.isRegisterPassable(arg.loc, shared) &&
         // We MUST pass non-trivial register types with VariadicListMem,
         // but can't quite use it for all borrowed arguments yet.
-        // TODO: Make variadics always pass through memory.
+        // TODO(MOCO-726): Make variadics always pass through memory.
         (arg.vararg != VarArgKind::VarArg || type.isTrivial(arg.loc, shared)))
       arg.kgenConvention = ArgConvention::BorrowedInReg;
     break;
