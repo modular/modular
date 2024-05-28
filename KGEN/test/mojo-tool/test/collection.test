@@ -16,6 +16,9 @@
 // RUN: not mojo test --co "%S/inputs/doc.mojo@.doc_fn::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-1
 // RUN: not mojo test --co "%S/inputs/doc.mojo@\1::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-2
 
+// Test that relative paths get resolved correctly.
+// RUN: mojo test --co %S/./inputs/ | FileCheck %s
+
 // CHECK-INVALID-SCOPE-0: error: empty scope in test name, expected name after '.'
 // CHECK-INVALID-SCOPE-1: error: empty scope in test name, expected name before '.'
 // CHECK-INVALID-SCOPE-2: error: invalid escape sequence in test name

@@ -77,7 +77,10 @@ TestID &TestID::operator=(const TestID &rhs) {
 
 std::filesystem::path TestID::getFilePath() const {
   std::error_code ec;
-  return std::filesystem::weakly_canonical(path.str(), ec);
+  auto resultPath = std::filesystem::canonical(path.str(), ec);
+  if (ec)
+    return path.str();
+  return resultPath;
 }
 
 TestID TestID::withTest(StringRef test) const {
