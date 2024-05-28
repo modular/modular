@@ -6,6 +6,7 @@
 
 from math import ceildiv
 
+from collections.vector import InlinedFixedVector
 from builtin.dtype import _get_runtime_dtype_size
 from register import *
 from buffer import NDBuffer
@@ -76,6 +77,28 @@ struct StaticTensorSpec[rank: Int]():
             The comparison result.
         """
         return self.shape == rhs.shape and self.dType == rhs.dType
+
+
+@register_passable("trivial")
+struct Context:
+    """Defines a Context structure which holds a ptr to context and has accessors that go to external calls
+    This is currently meant as a mojo-side container for GML::Context."""
+
+    var numSlots: Int
+    var ctxPtr: UnsafePointer[NoneType]
+
+    @always_inline
+    fn __init__(inout self, numSlots: Int, ctxPtr: UnsafePointer[NoneType]):
+        self.numSlots = numSlots
+        self.ctxPtr = ctxPtr
+
+    @always_inline
+    fn __getitem__(self, index: Int) -> UnsafePointer[NoneType]:
+        debug_assert(0 <= index < self.numSlots, "index must be within bounds")
+        return external_call[
+            "KGEN_CompilerRT_GetContextPayloadPtr",
+            UnsafePointer[NoneType],
+        ](index, self.ctxPtr)
 
 
 # ===----------------------------------------------------------------------===#
@@ -217,6 +240,21 @@ fn unpack_tensor_spec[
         shape[i] = int(shape_ptr[i])
     shape_ptr.free()
     return StaticTensorSpec[rank](shape, DType._from_ui8(raw_dtype.value))
+
+
+@mogg_register("builtin.unpack_context")
+@always_inline
+@export
+fn unpack_context(
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+) -> Context:
+    # We want to construct this because we want all payloads to be implemented
+    var numSlots: UInt64 = 0
+    var ctxPtr: UnsafePointer[NoneType] = external_call[
+        "KGEN_CompilerRT_GetContextAndSizeFromAsync",
+        UnsafePointer[NoneType],
+    ](Pointer.address_of(numSlots), async_ptr)
+    return Context(int(numSlots), ctxPtr)
 
 
 @mogg_register("builtin.get_buffer_data")
@@ -384,7 +422,7 @@ fn mgp_buffer_alloc_static[
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-]() raises -> NDBuffer[DType.int8, 1]:
+](ctx: Context) raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(cRawAlign)
     if cRawAlign == UInt64.MAX:
         # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
@@ -399,7 +437,7 @@ fn mgp_buffer_alloc_dynamic[
     aRuntimeSlot: UInt64,
     bRawAlign: UInt64,
     cDevice: StringLiteral,
-](byte_size: Int) raises -> NDBuffer[DType.int8, 1]:
+](ctx: Context, byte_size: Int) raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(bRawAlign)
     if bRawAlign == UInt64.MAX:
         # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
@@ -512,7 +550,9 @@ fn fillBuffer[
 @mogg_register("mgp.buffer.set_with_index")
 @always_inline
 @export
-fn mgp_buffer_set_with_index(buffer: NDBuffer[DType.uint8, 1], *vals: Int):
+fn mgp_buffer_set_with_index(
+    ctx: Context, buffer: NDBuffer[DType.uint8, 1], *vals: Int
+):
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
     debug_assert(
