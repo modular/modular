@@ -743,7 +743,7 @@ fn cublasStrmv(
 @value
 @register_passable("trivial")
 struct cublasPointerMode_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
     alias CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
 
@@ -903,7 +903,7 @@ fn cublasDgemmStridedBatched(
 @value
 @register_passable("trivial")
 struct cublasMath_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_DEFAULT_MATH = cublasMath_t(0)
     alias CUBLAS_TENSOR_OP_MATH = cublasMath_t(1)
     alias CUBLAS_PEDANTIC_MATH = cublasMath_t(2)
@@ -2009,58 +2009,54 @@ fn cublasSrotm(
 @value
 @register_passable("trivial")
 struct cublasGemmAlgo_t:
-    var _value: Int8
+    var _value: Int32
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
     # only useful algorithm options are cublas_gemm_default and algo0 - algo23.
     # We never specify 0-23 in pratice.
 
     alias CUBLAS_GEMM_DEFAULT = cublasGemmAlgo_t(-1)
-
-    # Undocumented or unused types.
-    # alias CUBLAS_GEMM_DFALT = cublasGemmAlgo_t(0)
-    # alias CUBLAS_GEMM_ALGO0 = cublasGemmAlgo_t(2)
-    # alias CUBLAS_GEMM_ALGO1 = cublasGemmAlgo_t(3)
-    # alias CUBLAS_GEMM_ALGO2 = cublasGemmAlgo_t(4)
-    # alias CUBLAS_GEMM_ALGO3 = cublasGemmAlgo_t(5)
-    # alias CUBLAS_GEMM_ALGO4 = cublasGemmAlgo_t(6)
-    # alias CUBLAS_GEMM_ALGO5 = cublasGemmAlgo_t(7)
-    # alias CUBLAS_GEMM_ALGO6 = cublasGemmAlgo_t(8)
-    # alias CUBLAS_GEMM_ALGO7 = cublasGemmAlgo_t(9)
-    # alias CUBLAS_GEMM_ALGO8 = cublasGemmAlgo_t(10)
-    # alias CUBLAS_GEMM_ALGO9 = cublasGemmAlgo_t(11)
-    # alias CUBLAS_GEMM_ALGO10 = cublasGemmAlgo_t(12)
-    # alias CUBLAS_GEMM_ALGO11 = cublasGemmAlgo_t(13)
-    # alias CUBLAS_GEMM_ALGO12 = cublasGemmAlgo_t(14)
-    # alias CUBLAS_GEMM_ALGO13 = cublasGemmAlgo_t(15)
-    # alias CUBLAS_GEMM_ALGO14 = cublasGemmAlgo_t(16)
-    # alias CUBLAS_GEMM_ALGO15 = cublasGemmAlgo_t(17)
-    # alias CUBLAS_GEMM_ALGO16 = cublasGemmAlgo_t(18)
-    # alias CUBLAS_GEMM_ALGO17 = cublasGemmAlgo_t(19)
-    # alias CUBLAS_GEMM_ALGO18 = cublasGemmAlgo_t(20)
-    # alias CUBLAS_GEMM_ALGO19 = cublasGemmAlgo_t(21)
-    # alias CUBLAS_GEMM_ALGO20 = cublasGemmAlgo_t(22)
-    # alias CUBLAS_GEMM_ALGO21 = cublasGemmAlgo_t(23)
-    # alias CUBLAS_GEMM_ALGO22 = cublasGemmAlgo_t(24)
-    # alias CUBLAS_GEMM_ALGO23 = cublasGemmAlgo_t(25)
-    # alias CUBLAS_GEMM_DEFAULT_TENSOR_OP = cublasGemmAlgo_t(26)
-    # alias CUBLAS_GEMM_DFALT_TENSOR_OP = cublasGemmAlgo_t(27)
-    # alias CUBLAS_GEMM_ALGO0_TENSOR_OP = cublasGemmAlgo_t(28)
-    # alias CUBLAS_GEMM_ALGO1_TENSOR_OP = cublasGemmAlgo_t(29)
-    # alias CUBLAS_GEMM_ALGO2_TENSOR_OP = cublasGemmAlgo_t(30)
-    # alias CUBLAS_GEMM_ALGO3_TENSOR_OP = cublasGemmAlgo_t(31)
-    # alias CUBLAS_GEMM_ALGO4_TENSOR_OP = cublasGemmAlgo_t(32)
-    # alias CUBLAS_GEMM_ALGO5_TENSOR_OP = cublasGemmAlgo_t(33)
-    # alias CUBLAS_GEMM_ALGO6_TENSOR_OP = cublasGemmAlgo_t(34)
-    # alias CUBLAS_GEMM_ALGO7_TENSOR_OP = cublasGemmAlgo_t(35)
-    # alias CUBLAS_GEMM_ALGO8_TENSOR_OP = cublasGemmAlgo_t(36)
-    # alias CUBLAS_GEMM_ALGO9_TENSOR_OP = cublasGemmAlgo_t(37)
-    # alias CUBLAS_GEMM_ALGO10_TENSOR_OP = cublasGemmAlgo_t(38)
-    # alias CUBLAS_GEMM_ALGO11_TENSOR_OP = cublasGemmAlgo_t(39)
-    # alias CUBLAS_GEMM_ALGO12_TENSOR_OP = cublasGemmAlgo_t(40)
-    # alias CUBLAS_GEMM_ALGO13_TENSOR_OP = cublasGemmAlgo_t(41)
-    # alias CUBLAS_GEMM_ALGO14_TENSOR_OP = cublasGemmAlgo_t(42)
-    # alias CUBLAS_GEMM_ALGO15_TENSOR_OP = cublasGemmAlgo_t(43)
+    alias CUBLAS_GEMM_ALGO0 = cublasGemmAlgo_t(0)
+    alias CUBLAS_GEMM_ALGO1 = cublasGemmAlgo_t(1)
+    alias CUBLAS_GEMM_ALGO2 = cublasGemmAlgo_t(2)
+    alias CUBLAS_GEMM_ALGO3 = cublasGemmAlgo_t(3)
+    alias CUBLAS_GEMM_ALGO4 = cublasGemmAlgo_t(4)
+    alias CUBLAS_GEMM_ALGO5 = cublasGemmAlgo_t(5)
+    alias CUBLAS_GEMM_ALGO6 = cublasGemmAlgo_t(6)
+    alias CUBLAS_GEMM_ALGO7 = cublasGemmAlgo_t(7)
+    alias CUBLAS_GEMM_ALGO8 = cublasGemmAlgo_t(8)
+    alias CUBLAS_GEMM_ALGO9 = cublasGemmAlgo_t(9)
+    alias CUBLAS_GEMM_ALGO10 = cublasGemmAlgo_t(10)
+    alias CUBLAS_GEMM_ALGO11 = cublasGemmAlgo_t(11)
+    alias CUBLAS_GEMM_ALGO12 = cublasGemmAlgo_t(12)
+    alias CUBLAS_GEMM_ALGO13 = cublasGemmAlgo_t(13)
+    alias CUBLAS_GEMM_ALGO14 = cublasGemmAlgo_t(14)
+    alias CUBLAS_GEMM_ALGO15 = cublasGemmAlgo_t(15)
+    alias CUBLAS_GEMM_ALGO16 = cublasGemmAlgo_t(16)
+    alias CUBLAS_GEMM_ALGO17 = cublasGemmAlgo_t(17)
+    alias CUBLAS_GEMM_ALGO18 = cublasGemmAlgo_t(18)
+    alias CUBLAS_GEMM_ALGO19 = cublasGemmAlgo_t(19)
+    alias CUBLAS_GEMM_ALGO20 = cublasGemmAlgo_t(20)
+    alias CUBLAS_GEMM_ALGO21 = cublasGemmAlgo_t(21)
+    alias CUBLAS_GEMM_ALGO22 = cublasGemmAlgo_t(22)
+    alias CUBLAS_GEMM_ALGO23 = cublasGemmAlgo_t(23)
+    alias CUBLAS_GEMM_DEFAULT_TENSOR_OP = cublasGemmAlgo_t(99)
+    alias CUBLAS_GEMM_ALGO0_TENSOR_OP = cublasGemmAlgo_t(100)
+    alias CUBLAS_GEMM_ALGO1_TENSOR_OP = cublasGemmAlgo_t(101)
+    alias CUBLAS_GEMM_ALGO2_TENSOR_OP = cublasGemmAlgo_t(102)
+    alias CUBLAS_GEMM_ALGO3_TENSOR_OP = cublasGemmAlgo_t(103)
+    alias CUBLAS_GEMM_ALGO4_TENSOR_OP = cublasGemmAlgo_t(104)
+    alias CUBLAS_GEMM_ALGO5_TENSOR_OP = cublasGemmAlgo_t(105)
+    alias CUBLAS_GEMM_ALGO6_TENSOR_OP = cublasGemmAlgo_t(106)
+    alias CUBLAS_GEMM_ALGO7_TENSOR_OP = cublasGemmAlgo_t(107)
+    alias CUBLAS_GEMM_ALGO8_TENSOR_OP = cublasGemmAlgo_t(108)
+    alias CUBLAS_GEMM_ALGO9_TENSOR_OP = cublasGemmAlgo_t(109)
+    alias CUBLAS_GEMM_ALGO10_TENSOR_OP = cublasGemmAlgo_t(110)
+    alias CUBLAS_GEMM_ALGO11_TENSOR_OP = cublasGemmAlgo_t(111)
+    alias CUBLAS_GEMM_ALGO12_TENSOR_OP = cublasGemmAlgo_t(112)
+    alias CUBLAS_GEMM_ALGO13_TENSOR_OP = cublasGemmAlgo_t(113)
+    alias CUBLAS_GEMM_ALGO14_TENSOR_OP = cublasGemmAlgo_t(114)
+    alias CUBLAS_GEMM_ALGO15_TENSOR_OP = cublasGemmAlgo_t(115)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2582,7 +2578,7 @@ fn cublasRotgEx(
 @value
 @register_passable("trivial")
 struct cublasDiagType_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
     alias CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
 
@@ -2609,7 +2605,7 @@ struct cublasDiagType_t:
 @value
 @register_passable("trivial")
 struct ComputeType:
-    var _value: Int8
+    var _value: Int32
     alias COMPUTE_16F = ComputeType(64)
     alias COMPUTE_16F_PEDANTIC = ComputeType(65)
     alias COMPUTE_32F = ComputeType(68)
@@ -3762,7 +3758,7 @@ fn cublasSspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn cublasGemmEx(
+fn cublasGemmEx64(
     handle: Pointer[cublasContext],
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -4613,7 +4609,7 @@ fn cublasAsumEx(
 @value
 @register_passable("trivial")
 struct cublasFillMode_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_FILL_MODE_LOWER = cublasFillMode_t(0)
     alias CUBLAS_FILL_MODE_UPPER = cublasFillMode_t(1)
     alias CUBLAS_FILL_MODE_FULL = cublasFillMode_t(2)
@@ -6054,7 +6050,7 @@ fn cublasDtbmv(
 @value
 @register_passable("trivial")
 struct cublasAtomicsMode_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
     alias CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
 
@@ -6354,7 +6350,7 @@ fn cublasCherkEx(
 @value
 @register_passable("trivial")
 struct cublasSideMode_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
     alias CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
 
@@ -6980,12 +6976,12 @@ fn cublasStrmm(
 @value
 @register_passable("trivial")
 struct cublasOperation_t:
-    var _value: Int8
+    var _value: Int32
     alias CUBLAS_OP_N = cublasOperation_t(0)
     alias CUBLAS_OP_T = cublasOperation_t(1)
     alias CUBLAS_OP_C = cublasOperation_t(2)
-    alias CUBLAS_OP_HERMITAN = cublasOperation_t(3)
-    alias CUBLAS_OP_CONJG = cublasOperation_t(4)
+    alias CUBLAS_OP_HERMITAN = cublasOperation_t(2)
+    alias CUBLAS_OP_CONJG = cublasOperation_t(3)
 
     fn __init__(inout self, value: Int):
         self._value = value

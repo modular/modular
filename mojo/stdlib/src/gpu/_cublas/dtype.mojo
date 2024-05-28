@@ -8,7 +8,7 @@
 @value
 @register_passable("trivial")
 struct Property:
-    var _value: Int8
+    var _value: Int32
     alias MAJOR_VERSION = Property(0)
     alias MINOR_VERSION = Property(1)
     alias PATCH_LEVEL = Property(2)
@@ -38,7 +38,7 @@ struct Property:
 @value
 @register_passable("trivial")
 struct DataType:
-    var _value: Int8
+    var _value: Int32
     alias R_16F = DataType(2)
     alias C_16F = DataType(6)
     alias R_16BF = DataType(14)
