@@ -6,7 +6,7 @@
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from driver import Device, CPUDescriptor
+from driver import Device, CPUDescriptor, get_cuda_device
 from testing import assert_equal
 from tensor import TensorSpec
 
