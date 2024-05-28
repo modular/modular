@@ -98,8 +98,10 @@ public:
     return instrumentLevel == Level::USER;
   }
 
+#ifdef MODULAR_ENABLE_TELEMETRY
   bool initMetricsReader(
       std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader);
+#endif
 
   /// Create a Counter<uint64_t>.
   Counter<uint64_t> createUInt64Counter(
