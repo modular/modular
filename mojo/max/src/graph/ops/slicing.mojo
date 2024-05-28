@@ -8,6 +8,7 @@
 from collections.optional import Optional
 from utils.numerics import max_finite
 
+from _mlir.ir import Attribute, Identifier, NamedAttribute
 from ..error import error
 from ..symbol import SymbolicSlice
 
@@ -304,54 +305,16 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
     var g = values[0].graph()
     if not len(values):
         raise error(g, "must concat at least 1 value")
-    var v0 = values[0]
 
-    var v0_type = v0.tensor_type()
-    var rank = v0_type.rank()
-    var norm_axis = axis + v0_type.rank() if axis < 0 else axis
-    if norm_axis < 0 or norm_axis >= v0_type.rank():
-        raise error(
-            g,
-            "concat axis out of bounds: axis="
-            + String(norm_axis)
-            + ", rank="
-            + String(v0_type.rank()),
-        )
-
-    var concat_dim: Dim = 0
-    for i in range(len(values)):
-        var v_type = values[i].tensor_type()
-        if v_type.rank() != rank:
-            raise error(
-                g,
-                "all concat values must have same rank: rank[0]="
-                + String(rank)
-                + ", rank["
-                + String(i)
-                + "]="
-                + String(v_type.rank()),
-            )
-        var dim = v_type.dims[norm_axis]
-        if concat_dim.is_dynamic() or dim.is_dynamic():
-            concat_dim = Dim.dynamic()
-        elif dim.is_symbolic():
-            raise error(g, "Concat doesn't yet support symbolic dimensions")
-        else:
-            concat_dim = Dim.static(
-                concat_dim.num_elements() + dim.num_elements()
-            )
-
-    var concat_args = List[Symbol]()
-    concat_args.append(g.scalar(Int64(norm_axis)))
-    for i in range(len(values)):
-        concat_args.append(values[i])
-
-    var dims = List[Dim](capacity=rank)
-    for i in range(rank):
-        dims.append(v0_type.dims[i])
-    dims[norm_axis] = concat_dim
-
-    return g.op("mo.concat", concat_args, TensorType(v0_type.dtype, dims))
+    var ctx = g._context()
+    var axisAttr = Attribute.parse(ctx, str(axis))
+    var namedAxisAttr = NamedAttribute(Identifier(ctx, "axis"), axisAttr)
+    return g.nvop(
+        "rmo.concat",
+        values,
+        attrs=List[NamedAttribute](namedAxisAttr),
+        enable_result_type_inference=True,
+    )[0]
 
 
 def stack(values: List[Symbol], axis: Int = 0) -> Symbol:
