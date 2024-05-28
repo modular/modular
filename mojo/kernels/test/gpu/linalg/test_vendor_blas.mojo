@@ -63,31 +63,30 @@ fn run_matmul() raises:
     var alpha = Scalar[DType.float32](1.0)
     var beta = Scalar[DType.float32](0.0)
     var res0 = cublasCreate(Pointer.address_of(handle))
-    print(str(res0))
+    print(res0)
     var res1 = cublasGemmEx(
         handle,
         cublasOperation_t.CUBLAS_OP_N,
         cublasOperation_t.CUBLAS_OP_N,
-        Int32(m),
-        Int32(n),
-        Int32(k),
+        m,
+        n,
+        k,
         Pointer.address_of(alpha).bitcast[NoneType](),
         a_device.bitcast[NoneType](),
         DataType.R_32F,
-        Int32(m),
+        m,
         b_device.bitcast[NoneType](),
         DataType.R_32F,
-        Int32(k),
+        k,
         Pointer.address_of(beta).bitcast[NoneType](),
         c_device.bitcast[NoneType](),
         DataType.R_32F,
-        Int32(m),
+        m,
         ComputeType.COMPUTE_32F,
         cublasGemmAlgo_t.CUBLAS_GEMM_DEFAULT,
     )
-    print(str(res1))
-    cublasDestroy(handle)
-    # print(str(res))
+    print(res1)
+    print(cublasDestroy(handle))
 
     _copy_device_to_host(c_host.data, c_device, m * n)
 
