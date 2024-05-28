@@ -414,6 +414,11 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
       return $_get(elementType.getContext(), elementType, convention);
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    /// Get a variadic type with only the element type changed.
+    VariadicType getWithElementType(Type type);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
