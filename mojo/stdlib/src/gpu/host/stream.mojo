@@ -27,7 +27,7 @@ fn _get_current_stream() -> DTypePointer[DType.invalid]:
 struct Stream(CollectionElement):
     var stream: _StreamHandle
     var owning: Bool
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
 
     @staticmethod
     fn get_current_stream() -> Stream:
@@ -36,7 +36,7 @@ struct Stream(CollectionElement):
     fn __init__(
         inout self,
         stream: _StreamHandle,
-        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ):
         self.stream = stream
         self.owning = False
@@ -48,7 +48,7 @@ struct Stream(CollectionElement):
     fn __init__(
         inout self,
         flags: Int = 0,
-        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         var stream = _StreamHandle()
         self.cuda_dll = cuda_dll
@@ -81,7 +81,7 @@ struct Stream(CollectionElement):
         self.cuda_dll = existing.cuda_dll
         existing.stream = _StreamHandle()
         existing.owning = False
-        existing.cuda_dll = Pointer[CudaDLL]()
+        existing.cuda_dll = UnsafePointer[CudaDLL]()
 
     fn synchronize(self) raises:
         """Wait until a CUDA stream's tasks are completed."""

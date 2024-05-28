@@ -300,12 +300,14 @@ struct JitOptions:
 @register_passable
 struct Module:
     var module: _ModuleHandle
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
 
     fn __init__(inout self, ctx: Context):
         self.__init__(ctx.cuda_dll)
 
-    fn __init__(inout self, cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL]()):
+    fn __init__(
+        inout self, cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL]()
+    ):
         self.module = _ModuleHandle()
         self.cuda_dll = cuda_dll
 
@@ -313,7 +315,9 @@ struct Module:
         self.__init__(path, ctx.cuda_dll)
 
     fn __init__(
-        inout self, path: Path, cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL]()
+        inout self,
+        path: Path,
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         self.cuda_dll = cuda_dll
         var module = _ModuleHandle()
@@ -352,7 +356,7 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
-        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
         """

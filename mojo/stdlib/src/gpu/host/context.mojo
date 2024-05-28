@@ -24,7 +24,7 @@ from .cuda_instance import *
 
 struct Context:
     var ctx: _ContextHandle
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
     var owner: Bool
 
     fn __init__(inout self) raises:
@@ -44,7 +44,7 @@ struct Context:
                 var cuCtxDestroy = self.cuda_dll[].cuCtxDestroy if self.cuda_dll else cuCtxDestroy.load()
                 _check_error(cuCtxDestroy(self.ctx))
                 self.ctx = _ContextHandle()
-                self.cuda_dll = Pointer[CudaDLL]()
+                self.cuda_dll = UnsafePointer[CudaDLL]()
                 self.owner = False
         except e:
             abort(e.__str__())
@@ -57,7 +57,7 @@ struct Context:
         self.cuda_dll = existing.cuda_dll
         self.owner = True
         existing.ctx = _ContextHandle()
-        existing.cuda_dll = Pointer[CudaDLL]()
+        existing.cuda_dll = UnsafePointer[CudaDLL]()
         existing.owner = False
 
     fn __copyinit__(inout self, existing: Self):

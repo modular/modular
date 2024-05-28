@@ -136,15 +136,12 @@ struct _CachedFunctionInfo(Boolable):
         self.func_handle = _FunctionHandle()
         self.error = error
 
-    fn __del__(owned self):
-        pass
-
     fn __bool__(self) -> Bool:
         return self.func_handle.__bool__()
 
 
 @value
-@register_passable
+@register_passable("trivial")
 struct _GlobalPayload:
     var debug: Bool
     var verbose: Bool
@@ -182,7 +179,7 @@ struct Function[
     func_type: AnyRegType, //, func: func_type, _is_failable: Bool = False
 ](Boolable):
     var info: _CachedFunctionInfo
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
 
     alias _impl = _compile_code[
         func, is_failable=_is_failable, emission_kind="asm"
@@ -224,7 +221,7 @@ struct Function[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -264,7 +261,7 @@ struct Function[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -405,7 +402,7 @@ struct Function[
     fn _init_fn[
         func_type: AnyRegType, func: func_type
     ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
-        var res = Pointer[_CachedFunctionInfo].alloc(1)
+        var res = UnsafePointer[_CachedFunctionInfo].alloc(1)
         try:
             var payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
@@ -438,10 +435,12 @@ struct Function[
                         payload.func_attribute.value,
                     )
                 )
-            res.store(_CachedFunctionInfo(module._steal_handle(), func_handle))
+            initialize_pointee_move(
+                res, _CachedFunctionInfo(module._steal_handle(), func_handle)
+            )
         except e:
-            res.store(_CachedFunctionInfo(e))
-        return res.bitcast[NoneType]()
+            initialize_pointee_move(res, _CachedFunctionInfo(e))
+        return res.bitcast[NoneType]().address
 
     @staticmethod
     fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
@@ -482,4 +481,4 @@ struct Function[
 
         _ = payload
 
-        return info_ptr.bitcast[_CachedFunctionInfo]().load()
+        return UnsafePointer(info_ptr.address).bitcast[_CachedFunctionInfo]()[]

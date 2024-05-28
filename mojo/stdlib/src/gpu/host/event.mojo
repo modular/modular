@@ -66,7 +66,7 @@ struct Flag:
 @register_passable
 struct Event:
     var _event: _EventHandle
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
 
     @always_inline
     fn __init__(inout self, ctx: Context, flags: Flag = Flag.DEFAULT) raises:
@@ -78,7 +78,7 @@ struct Event:
     fn __init__(
         inout self,
         flags: Flag = Flag.DEFAULT,
-        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         """Creates an event for the current CUDA context."""
 

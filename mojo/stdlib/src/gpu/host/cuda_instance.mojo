@@ -320,11 +320,11 @@ struct CudaDLL:
 
 
 struct CudaInstance:
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
     var owner: Bool
 
     fn __init__(inout self) raises:
-        self.cuda_dll = Pointer[CudaDLL].alloc(1)
+        self.cuda_dll = UnsafePointer[CudaDLL].alloc(1)
         self.cuda_dll[].__init__()
         self.owner = True
 
@@ -334,7 +334,7 @@ struct CudaInstance:
     fn __moveinit__(inout self, owned existing: Self):
         self.cuda_dll = existing.cuda_dll
         self.owner = True
-        existing.cuda_dll = Pointer[CudaDLL]()
+        existing.cuda_dll = UnsafePointer[CudaDLL]()
         existing.owner = False
 
     fn __copyinit__(inout self, existing: Self):

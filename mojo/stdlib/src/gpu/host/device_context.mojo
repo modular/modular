@@ -14,18 +14,18 @@ from gpu.host.stream import Stream
 @register_passable
 struct DeviceBuffer[type: AnyRegType](Sized):
     var ptr: Pointer[type]
-    var ctx_ptr: Pointer[DeviceContext]
+    var ctx_ptr: UnsafePointer[DeviceContext]
     var size: Int
     var owning: Bool
 
     fn __init__(inout self, ctx: DeviceContext, size: Int) raises:
-        self.ctx_ptr = Pointer[DeviceContext].address_of(ctx)
+        self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.ptr = self.ctx_ptr[].cuda_context.malloc[type](size)
         self.size = size
         self.owning = True
 
     fn __init__(inout self):
-        self.ctx_ptr = Pointer[DeviceContext]()
+        self.ctx_ptr = UnsafePointer[DeviceContext]()
         self.ptr = Pointer[type]()
         self.size = 0
         self.owning = False
@@ -62,11 +62,11 @@ struct DeviceBuffer[type: AnyRegType](Sized):
 
 
 struct DeviceFunction[func_type: AnyRegType, //, func: func_type]:
-    var ctx_ptr: Pointer[DeviceContext]
+    var ctx_ptr: UnsafePointer[DeviceContext]
     var cuda_function: Function[func]
 
     fn __init__(inout self, ctx: DeviceContext) raises:
-        self.ctx_ptr = Pointer[DeviceContext].address_of(ctx)
+        self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.cuda_function = Function[func](self.ctx_ptr[].cuda_context)
 
 

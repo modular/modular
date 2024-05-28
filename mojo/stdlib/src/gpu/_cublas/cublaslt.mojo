@@ -1438,7 +1438,7 @@ fn cublasLtMatmul(
     algo: Pointer[MatmulAlgorithm],
     workspace: Pointer[NoneType],
     workspace_size_in_bytes: Int,
-    stream: Pointer[Stream],
+    stream: UnsafePointer[Stream],
 ) raises -> Result:
     """Execute matrix multiplication (D = alpha * op(A) * op(B) + beta * C).
 
@@ -1470,7 +1470,7 @@ fn cublasLtMatmul(
             Pointer[MatmulAlgorithm],
             Pointer[NoneType],
             Int,
-            Pointer[Stream],
+            UnsafePointer[Stream],
         ) raises -> Result,
     ]()(
         light_handle,
@@ -2881,7 +2881,7 @@ fn cublasLtMatrixTransform(
     _bdesc: Pointer[MatrixLayout],
     _c: Pointer[NoneType],
     _cdesc: Pointer[MatrixLayout],
-    stream: Pointer[Stream],
+    stream: UnsafePointer[Stream],
 ) raises -> Result:
     """Matrix layout conversion helper (C = alpha * op(A) + beta * op(B)).
 
@@ -2909,7 +2909,7 @@ fn cublasLtMatrixTransform(
             Pointer[MatrixLayout],
             Pointer[NoneType],
             Pointer[MatrixLayout],
-            Pointer[Stream],
+            UnsafePointer[Stream],
         ) raises -> Result,
     ]()(
         light_handle,

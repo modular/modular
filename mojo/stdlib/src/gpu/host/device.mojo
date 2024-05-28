@@ -625,11 +625,11 @@ fn device_count() raises -> Int:
 @register_passable("trivial")
 struct Device(StringableRaising):
     var id: Int32
-    var cuda_dll: Pointer[CudaDLL]
+    var cuda_dll: UnsafePointer[CudaDLL]
 
     fn __init__(inout self, id: Int = 0):
         self.id = id
-        self.cuda_dll = Pointer[CudaDLL]()
+        self.cuda_dll = UnsafePointer[CudaDLL]()
 
     fn __init__(inout self, cuda_instance: CudaInstance, id: Int = 0):
         self.id = id
