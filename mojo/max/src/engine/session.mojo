@@ -361,7 +361,8 @@ struct _TorchLoadOptions(CollectionElement):
             graph: MAX Graph.
         """
         self._source = ModelSource(
-            graph._module().c.ptr, FrameworkFormat.MAXGraph
+            LegacyPointer(graph._module().c.ptr.address),
+            FrameworkFormat.MAXGraph,
         )
 
     fn set_model_path(inout self, path: Path):
