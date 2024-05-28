@@ -6,6 +6,7 @@
 
 // RUN: mojo test --co %S/inputs/ | FileCheck %s
 // RUN: mojo test --co %S/inputs/unit_suffix_test.mojo | FileCheck %s --check-prefix=CHECK-FILE
+// RUN: mojo test --co %S/inputs/package | FileCheck %s --check-prefix=CHECK-PACKAGE
 // RUN: mojo test --co "%S/inputs/test_unit_prefix.mojo::test_fn()" | FileCheck %s --check-prefix=CHECK-TEST
 // RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
 // RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
@@ -46,6 +47,13 @@
 // CHECK-FILE:   inputs/unit_suffix_test.mojo>
 // CHECK-FILE:     inputs/unit_suffix_test.mojo::test_fn()>
 // CHECK-FILE:     inputs/unit_suffix_test.mojo::fn_test()>
+
+// CHECK-PACKAGE: inputs/package>
+// CHECK-PACKAGE:   inputs/package/__init__.mojo>
+// CHECK-PACKAGE:     inputs/package/__init__.mojo@package_fn().__doc__>
+// CHECK-PACKAGE:       inputs/package/__init__.mojo@package_fn().__doc__::0>
+// CHECK-PACKAGE:   inputs/package/test/test_inside_package.mojo>
+// CHECK-PACKAGE:     inputs/package/test/test_inside_package.mojo::test_fn()>
 
 // CHECK-TEST: inputs/test_unit_prefix.mojo::test_fn()>
 

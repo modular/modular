@@ -369,11 +369,16 @@ struct Test::TestDiscovery {
     do {
       // The top-level id is already encoded in the path, no need to add it
       // to the test suite.
-      if (isa<ModuleOp>(symOp->getParentOp()))
+      if (isa<ModuleOp, PackageOp>(symOp->getParentOp()))
         break;
       symbols.push_back(printSymbol(symOp.getNameAttr()));
     } while ((symOp = symOp->getParentOfType<mlir::SymbolOpInterface>()));
     std::string testSuiteName = llvm::join(llvm::reverse(symbols), ".");
+
+    // If this is a package, use the filename location of the symbol for the
+    // path. This ensures we grab the right source path for the test id.
+    if (isa<PackageOp>(symOp->getParentOp()))
+      path = symOp->getLoc()->findInstanceOf<FileLineColLoc>().getFilename();
 
     return TestID(path, testSuiteName, testName);
   }
@@ -664,25 +669,41 @@ struct Test::TestDiscovery {
   //===--------------------------------------------------------------------===//
   // Discover: FileSystem
 
-  /// Discovers tests defined within in the given directory.
-  AnyAsyncValueRef discoverTestsInDirectory(const std::filesystem::path &path) {
+  /// Discovers tests defined within in the given directory. If `ignoreModules`
+  /// is true, nested source modules and packages are ignored for collection.
+  AnyAsyncValueRef discoverTestsInDirectory(const std::filesystem::path &path,
+                                            bool ignoreModules = false) {
+    std::vector<AnyAsyncValueRef> asyncChildren;
+
     // If the path is a mojo source package, we parse can directly parse out
     // the tests from the package.
-    if (Filesystem::isMojoSourcePackagePath(path))
-      return discoverTestsInMojoSource(path);
+    bool hasSourcePackageChild = false;
+    if (Filesystem::isMojoSourcePackagePath(path)) {
+      // Process this package if we're allowed. Any nested packages will be
+      // handled as part of this package, so we can ignore them moving forward.
+      if (!ignoreModules) {
+        asyncChildren.emplace_back(discoverTestsInMojoSource(path));
+        hasSourcePackageChild = ignoreModules = true;
+      }
+    } else {
+      // If this wasn't a package directory, we don't need to ignore nested
+      // modules.
+      ignoreModules = false;
+    }
 
     // Otherwise, recursively discover tests in the directory.
     std::error_code ec;
-    std::vector<AnyAsyncValueRef> asyncChildren;
     for (const std::filesystem::directory_entry &entry :
          std::filesystem::directory_iterator(path, ec)) {
       if (ec)
         return AsyncOptionalTest::createReady(runtime, std::nullopt);
 
-      if (entry.is_directory(ec))
-        asyncChildren.emplace_back(discoverTestsInDirectory(entry.path()));
-      else if (Filesystem::isMojoSourceFile(entry.path()))
+      if (entry.is_directory(ec)) {
+        asyncChildren.emplace_back(
+            discoverTestsInDirectory(entry.path(), ignoreModules));
+      } else if (!ignoreModules && Filesystem::isMojoSourceFile(entry.path())) {
         asyncChildren.emplace_back(discoverTestsInMojoSource(entry.path()));
+      }
     }
 
     // If there are no children, we're done.
@@ -695,10 +716,22 @@ struct Test::TestDiscovery {
     auto result = AsyncOptionalTest::allocate(runtime);
     LLCL::andThenAsyncMoving(
         asyncChildren,
-        [path, result = result.copy()](
+        [path, hasSourcePackageChild, result = result.copy()](
             MutableArrayRef<AnyAsyncValueRef> asyncChildren) mutable {
           // Otherwise, await the children and extract out the discovered tests.
           std::vector<Test> children;
+
+          // If there is a source package child, pull out the tests from it.
+          if (hasSourcePackageChild) {
+            auto &pkgChild = asyncChildren.front();
+            if (pkgChild.isError())
+              return std::move(result).setToError(pkgChild.takeDiagnostic());
+            if (auto &test = pkgChild.get<std::optional<Test>>())
+              test->children.swap(children);
+            asyncChildren = asyncChildren.drop_front();
+          }
+
+          // Extract out tests from the children.
           for (AnyAsyncValueRef &asyncChild : asyncChildren) {
             if (asyncChild.isError())
               return std::move(result).setToError(asyncChild.takeDiagnostic());
