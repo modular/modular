@@ -20,7 +20,7 @@ from utils.variant import Variant
 
 from max.engine import InferenceSession, InputSpec, Model
 from max.engine._model_impl import CModel
-from max.engine._utils import handle_from_config
+from max.engine._utils import handle_from_config, call_dylib_func
 from max.serve.service import (
     InferenceRequest,
     InferenceResponse,
@@ -33,32 +33,42 @@ from .callbacks import (
     Guarded,
     NoopServerCallbacks,
     ServerCallbacks,
-    make_callbacks_triple,
+    make_callbacks_quadruple,
 )
 from .config import BATCH_HEAT_MAP_ENABLED, STATS_ENABLED
 
-from ._kserve_impl import ModelInferRequest, ModelInferResponse
-from ._serve_rt import Batch, MuttServerAsync, TensorView
+from .protocol import ProtocolHandler
+from .http.runtime import run_http_rt, PythonEntry
+from ._serve_rt import (
+    InferenceRequestImpl,
+    InferenceResponseImpl,
+    InferenceBatch,
+    ServerAsync,
+    TensorView,
+)
 from .stats import ServerStats, ServerStatsOptions
 from .debug import BatchHeatMap
 
 
-struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
+struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
     """Inference server implementing the KServe protocol over gRPC."""
 
     alias handle_fn_type = async fn (
-        ModelInferRequest, inout Variant[ModelInferResponse, Error]
+        InferenceRequestImpl, inout Variant[InferenceResponseImpl, Error]
     ) capturing -> None
 
     var _lib: DLHandle
     var _session: InferenceSession
     var _num_listeners: Int
-    var _impl: MuttServerAsync
+    var _impl: ServerAsync
     var _stop_flag: Atomic[DType.int64]
 
     var _callbacks: CallbacksPair[
         CallbacksPair[
-            Guarded[ServerStats, STATS_ENABLED],
+            CallbacksPair[
+                ProtocolHandler,
+                Guarded[ServerStats, STATS_ENABLED],
+            ],
             Guarded[BatchHeatMap, BATCH_HEAT_MAP_ENABLED],
         ],
         Callbacks,
@@ -67,8 +77,8 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
     @staticmethod
     fn create(
         address: String, owned session: InferenceSession
-    ) raises -> GRPCInferenceServer[NoopServerCallbacks]:
-        return GRPCInferenceServer(address, NoopServerCallbacks(), session^)
+    ) raises -> InferenceServer[NoopServerCallbacks]:
+        return InferenceServer(address, NoopServerCallbacks(), session^)
 
     fn __init__(
         inout self,
@@ -88,10 +98,11 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
         self._num_listeners = num_listeners
-        self._impl = MuttServerAsync(address, self._lib, self._session)
+        self._impl = ServerAsync(address, self._lib, self._session)
         self._stop_flag = Atomic[DType.int64](0)
 
-        self._callbacks = make_callbacks_triple(
+        self._callbacks = make_callbacks_quadruple(
+            ProtocolHandler(self._impl, self._lib),
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),
             Guarded[BatchHeatMap, BATCH_HEAT_MAP_ENABLED](BatchHeatMap()),
             callbacks^,
@@ -107,8 +118,8 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         @always_inline
         @parameter
         async fn handle(
-            request: ModelInferRequest,
-            inout response: Variant[ModelInferResponse, Error],
+            request: InferenceRequestImpl,
+            inout response: Variant[InferenceResponseImpl, Error],
         ) capturing -> None:
             await service.async_infer(request, response)
 
@@ -118,15 +129,10 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         var rt = Runtime()
         rt.run(self.async_serve[handle_fn]())
 
-    fn signal_stop(inout self: Self):
-        """Signals the server to be stop serving requests."""
-        _ = self._stop_flag.fetch_add(1)
-        self._impl.signal_stop()
-
     async fn async_serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         @always_inline
         @parameter
-        async fn process(batch: Batch) capturing -> None:
+        async fn process(batch: InferenceBatch) capturing -> None:
             var requests = batch.requests()
             var responses = batch.responses()
             var size = len(batch)
@@ -137,23 +143,24 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
                 # TODO: Record start closer to actual request receipt.
                 var start = now()
                 self._callbacks.on_request_receive(req)
-                var respOr = Variant[ModelInferResponse, Error](resp^)
+                var respOr = Variant[InferenceResponseImpl, Error](resp^)
                 await handle_fn(req, respOr)
+
                 if respOr.isa[Error]():
-                    self._impl.push_failed(
-                        batch, i, str(respOr.unsafe_take[Error]())
-                    )
-                    self._callbacks.on_request_fail(req)
+                    var err = str(respOr.unsafe_take[Error]())
+                    self._callbacks.on_request_fail(req, err)
+                    self._impl.push_failed(batch, i, err)
                 else:
+                    var resp = respOr.unsafe_take[InferenceResponseImpl]()
+                    self._callbacks.on_request_ok(start, req, resp)
                     self._impl.push_complete(batch, i)
-                    self._callbacks.on_request_ok(start, req)
-                    _ = respOr.unsafe_take[ModelInferResponse]()
+                    _ = resp^
 
         @always_inline
         @parameter
         async fn listen() capturing -> None:
             while not self._stop_flag.load():
-                var batch = Batch(self._lib, self._session)
+                var batch = InferenceBatch(self._lib, self._session)
                 # TODO: Construct merged request (per model) for batching.
                 await self._impl.pop_ready(batch)
                 var start = now()
@@ -168,12 +175,18 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         var tasks = TaskGroupTaskList[NoneType](self._num_listeners)
         var tg = TaskGroup(rt)
         for _ in range(self._num_listeners):
-            var task = tg.create_task[NoneType](listen())
-            tasks.add(task^)
+            tasks.add(tg.create_task[NoneType](listen()))
+
+        tasks.add(tg.create_task[NoneType](run_http_rt(self._impl._ptr)))
 
         await tg
         _ = tasks^
         self._impl.stop()
+
+    fn signal_stop(inout self):
+        """Signals the server to be stop serving requests."""
+        _ = self._stop_flag.fetch_add(1)
+        self._impl.signal_stop()
 
 
 struct MuxInferenceService(InferenceService):
@@ -230,7 +243,7 @@ struct MuxInferenceService(InferenceService):
         _ = self._models^
         _ = self._session^
 
-    fn init(self, server: GRPCInferenceServer) raises:
+    fn init(self, server: InferenceServer) raises:
         server._impl.init(self._models)
 
     fn infer[
@@ -258,7 +271,7 @@ struct MuxInferenceService(InferenceService):
             var inputs = request.get_input_tensors()
             var outputs = model[].execute(inputs^)
             response[resp_type].set_output_tensors(
-                request.get_requested_outputs(), outputs^
+                request.get_outputs(), outputs^
             )
         except e:
             response.set[Error](e)

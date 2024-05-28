@@ -27,7 +27,7 @@ trait InferenceRequest(CollectionElement):
         """
         ...
 
-    fn get_requested_outputs(self) -> List[String]:
+    fn get_outputs(self) -> List[String]:
         """Returns all requested output names.
 
         Returns:

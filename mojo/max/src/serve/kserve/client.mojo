@@ -14,8 +14,8 @@ from utils.variant import Variant
 from max.engine import InferenceSession, InputSpec, TensorMap
 from max.engine._utils import handle_from_config
 
-from ._kserve_impl import ModelInferRequest, ModelInferResponse
-from ._serve_rt import KServeClientAsync, TensorView
+from ._client_impl import KServeClientAsync
+from .._serve_rt import TensorView, InferenceRequestImpl, InferenceResponseImpl
 
 
 struct GRPCInferenceClient:
@@ -53,14 +53,14 @@ struct GRPCInferenceClient:
         version: String,
         inputs: TensorMap,
         outputs: List[String],
-    ) raises -> ModelInferResponse:
+    ) raises -> InferenceResponseImpl:
         var rt = Runtime()
-        var result = Variant[ModelInferResponse, Error](Error())
+        var result = Variant[InferenceResponseImpl, Error](Error())
         rt.run(self.async_infer(name, version, inputs, outputs, result))
         if result.isa[Error]():
             raise result.unsafe_take[Error]()
         else:
-            return result.unsafe_take[ModelInferResponse]()
+            return result.unsafe_take[InferenceResponseImpl]()
 
     # TODO: Add TensorMap variant that owns tensors.
     async fn async_infer(
@@ -69,13 +69,13 @@ struct GRPCInferenceClient:
         version: String,
         inputs: TensorMap,
         outputs: List[String],
-        inout result: Variant[ModelInferResponse, Error],
+        inout result: Variant[InferenceResponseImpl, Error],
     ) -> None:
-        var request = self._impl.new_infer_request(name, version)
+        var request = self._impl.create_infer_request(name, version)
         try:
             request.set_input_tensors(inputs.keys(), inputs)
-            request.set_requested_outputs(outputs)
-            var response = Variant[ModelInferResponse, Error](Error())
+            request.set_outputs(outputs)
+            var response = Variant[InferenceResponseImpl, Error](Error())
             await self._impl.model_infer(request, response)
             result = response^
         except e:

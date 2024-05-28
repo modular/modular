@@ -6,8 +6,11 @@
 """Provides debugging tools and visualizations."""
 
 from .callbacks import ServerCallbacks
-from ._kserve_impl import ModelInferRequest, ModelInferResponse
-from ._serve_rt import Batch
+from ._serve_rt import (
+    InferenceRequestImpl,
+    InferenceResponseImpl,
+    InferenceBatch,
+)
 
 
 struct ColoredTextCodes:
@@ -51,10 +54,10 @@ struct BatchHeatMap(ServerCallbacks):
     fn on_server_stop(inout self):
         pass
 
-    fn on_batch_receive(inout self, batch: Batch):
+    fn on_batch_receive(inout self, batch: InferenceBatch):
         pass
 
-    fn on_batch_complete(inout self, start_ns: Int, batch: Batch):
+    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
         var size = len(batch)
         # TODO: Grab out from batch  and fix.
         var capacity = 8
@@ -71,11 +74,18 @@ struct BatchHeatMap(ServerCallbacks):
             end="",
         )
 
-    fn on_request_receive(inout self, request: ModelInferRequest):
+    fn on_request_receive(inout self, request: InferenceRequestImpl):
         pass
 
-    fn on_request_ok(inout self, start_ns: Int, request: ModelInferRequest):
+    fn on_request_ok(
+        inout self,
+        start_ns: Int,
+        request: InferenceRequestImpl,
+        response: InferenceResponseImpl,
+    ):
         pass
 
-    fn on_request_fail(inout self, request: ModelInferRequest):
+    fn on_request_fail(
+        inout self, request: InferenceRequestImpl, error: String
+    ):
         pass

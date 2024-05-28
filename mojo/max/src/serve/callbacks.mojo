@@ -5,8 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Provides callback data types and utilities."""
 
-from ._kserve_impl import ModelInferRequest, ModelInferResponse
-from ._serve_rt import Batch
+from ._serve_rt import (
+    InferenceBatch,
+    InferenceRequestImpl,
+    InferenceResponseImpl,
+)
 
 
 trait ServerCallbacks(Movable):
@@ -20,23 +23,32 @@ trait ServerCallbacks(Movable):
         """Called when the server stops."""
         ...
 
-    fn on_batch_receive(inout self, batch: Batch):
+    fn on_batch_receive(inout self, batch: InferenceBatch):
         """Called on receipt of a new batch."""
         ...
 
-    fn on_batch_complete(inout self, start_ns: Int, batch: Batch):
+    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
         """Called on completion of a new batch."""
         ...
 
-    fn on_request_receive(inout self, request: ModelInferRequest):
+    fn on_request_receive(inout self, request: InferenceRequestImpl):
         """Called on receipt of a new request."""
         ...
 
-    fn on_request_ok(inout self, start_ns: Int, request: ModelInferRequest):
+    fn on_request_ok(
+        inout self,
+        start_ns: Int,
+        request: InferenceRequestImpl,
+        response: InferenceResponseImpl,
+    ):
         """Called on a successful completion of a new request."""
         ...
 
-    fn on_request_fail(inout self, request: ModelInferRequest):
+    fn on_request_fail(
+        inout self,
+        request: InferenceRequestImpl,
+        error: String,
+    ):
         """Called on a failed completion of a new request."""
         ...
 
@@ -54,19 +66,26 @@ struct NoopServerCallbacks(ServerCallbacks):
     fn on_server_stop(inout self):
         pass
 
-    fn on_batch_receive(inout self, batch: Batch):
+    fn on_batch_receive(inout self, batch: InferenceBatch):
         pass
 
-    fn on_batch_complete(inout self, start_ns: Int, batch: Batch):
+    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
         pass
 
-    fn on_request_receive(inout self, request: ModelInferRequest):
+    fn on_request_receive(inout self, request: InferenceRequestImpl):
         pass
 
-    fn on_request_ok(inout self, start_ns: Int, request: ModelInferRequest):
+    fn on_request_ok(
+        inout self,
+        start_ns: Int,
+        request: InferenceRequestImpl,
+        response: InferenceResponseImpl,
+    ):
         pass
 
-    fn on_request_fail(inout self, request: ModelInferRequest):
+    fn on_request_fail(
+        inout self, request: InferenceRequestImpl, error: String
+    ):
         pass
 
 
@@ -100,30 +119,37 @@ struct Guarded[T: ServerCallbacks, enabled: Bool](ServerCallbacks):
         if enabled:
             self.cb.on_server_stop()
 
-    fn on_batch_receive(inout self, batch: Batch):
+    fn on_batch_receive(inout self, batch: InferenceBatch):
         @parameter
         if enabled:
             self.cb.on_batch_receive(batch)
 
-    fn on_batch_complete(inout self, start_ns: Int, batch: Batch):
+    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
         @parameter
         if enabled:
             self.cb.on_batch_complete(start_ns, batch)
 
-    fn on_request_receive(inout self, request: ModelInferRequest):
+    fn on_request_receive(inout self, request: InferenceRequestImpl):
         @parameter
         if enabled:
             self.cb.on_request_receive(request)
 
-    fn on_request_ok(inout self, start_ns: Int, request: ModelInferRequest):
+    fn on_request_ok(
+        inout self,
+        start_ns: Int,
+        request: InferenceRequestImpl,
+        response: InferenceResponseImpl,
+    ):
         @parameter
         if enabled:
-            self.cb.on_request_ok(start_ns, request)
+            self.cb.on_request_ok(start_ns, request, response)
 
-    fn on_request_fail(inout self, request: ModelInferRequest):
+    fn on_request_fail(
+        inout self, request: InferenceRequestImpl, error: String
+    ):
         @parameter
         if enabled:
-            self.cb.on_request_fail(request)
+            self.cb.on_request_fail(request, error)
 
 
 struct CallbacksPair[A: ServerCallbacks, B: ServerCallbacks](ServerCallbacks):
@@ -157,29 +183,39 @@ struct CallbacksPair[A: ServerCallbacks, B: ServerCallbacks](ServerCallbacks):
         self.b.on_server_stop()
 
     @always_inline
-    fn on_batch_receive(inout self, batch: Batch):
+    fn on_batch_receive(inout self, batch: InferenceBatch):
         self.a.on_batch_receive(batch)
         self.b.on_batch_receive(batch)
 
     @always_inline
-    fn on_batch_complete(inout self, start_ns: Int, batch: Batch):
+    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
         self.a.on_batch_complete(start_ns, batch)
         self.b.on_batch_complete(start_ns, batch)
 
     @always_inline
-    fn on_request_receive(inout self, request: ModelInferRequest):
+    fn on_request_receive(
+        inout self,
+        request: InferenceRequestImpl,
+    ):
         self.a.on_request_receive(request)
         self.b.on_request_receive(request)
 
     @always_inline
-    fn on_request_ok(inout self, start_ns: Int, request: ModelInferRequest):
-        self.a.on_request_ok(start_ns, request)
-        self.b.on_request_ok(start_ns, request)
+    fn on_request_ok(
+        inout self,
+        start_ns: Int,
+        request: InferenceRequestImpl,
+        response: InferenceResponseImpl,
+    ):
+        self.a.on_request_ok(start_ns, request, response)
+        self.b.on_request_ok(start_ns, request, response)
 
     @always_inline
-    fn on_request_fail(inout self, request: ModelInferRequest):
-        self.a.on_request_fail(request)
-        self.b.on_request_fail(request)
+    fn on_request_fail(
+        inout self, request: InferenceRequestImpl, error: String
+    ):
+        self.a.on_request_fail(request, error)
+        self.b.on_request_fail(request, error)
 
 
 @parameter
