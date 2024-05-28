@@ -334,7 +334,7 @@ struct Device:
             _check_error(result)
 
         var clocks = List[UInt32]()
-        clocks.resize(int(num_clocks), 0)
+        clocks.resize(int(num_clocks))
 
         _check_error(
             _get_dylib_function[
@@ -369,7 +369,7 @@ struct Device:
             _check_error(result)
 
         var clocks = List[UInt32]()
-        clocks.resize(int(num_clocks), 0)
+        clocks.resize(int(num_clocks))
 
         _check_error(
             _get_dylib_function[
