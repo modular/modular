@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_down_residual, ceildiv
+from math import align_down, ceildiv
 from sys.info import alignof, simdwidthof
 
 from algorithm import (
@@ -49,6 +49,7 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+from .math import align_down_residual
 
 
 @value

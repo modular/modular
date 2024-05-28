@@ -256,3 +256,23 @@ fn reciprocal[
         A SIMD vector the elementwise reciprocal of x.
     """
     return 1 / x
+
+
+# ===----------------------------------------------------------------------=== #
+# align_down_residual
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn align_down_residual(value: Int, alignment: Int) -> Int:
+    """Returns the remainder after aligning down value to alignment.
+
+    Args:
+        value: The value to align.
+        alignment: Value to align to.
+
+    Returns:
+        The remainder after aligning down value to the closest multiple of
+        alignment. In other words, value - align_down(value, alignment).
+    """
+    return value - math.align_down(value, alignment)

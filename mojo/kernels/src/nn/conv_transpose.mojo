@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_down_residual, ceildiv
+from math import align_down, ceildiv
 from sys.info import simdwidthof
 
 from algorithm import (
@@ -37,6 +37,7 @@ from .conv_utils import (
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
+from .math import align_down_residual
 
 # TODO: All attributes, except for groups and auto_pad, are supported.
 #       - Kernel assumes groups = 1.
