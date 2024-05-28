@@ -410,9 +410,9 @@ TelemetryContext::TelemetryContext(
 #endif // MODULAR_ENABLE_TELEMETRY
 }
 
+#ifdef MODULAR_ENABLE_TELEMETRY
 bool TelemetryContext::initMetricsReader(
     std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   if (userMetricsProvider) {
     llvm::dbgs() << "Custom metric provider already set\n";
     return false;
@@ -431,9 +431,6 @@ bool TelemetryContext::initMetricsReader(
   userMetricsProvider = std::unique_ptr<opentelemetry::metrics::MeterProvider>(
       userProvider.release());
   userMeter = userMetricsProvider->GetMeter("max_serve");
-#else
-  (void)reader;
-  return false;
-#endif
   return true;
 }
+#endif
