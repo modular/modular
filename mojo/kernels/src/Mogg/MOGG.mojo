@@ -444,8 +444,8 @@ fn to_buffer_list[
     raw_list_ptr: __mlir_type[`!kgen.pointer<scalar<invalid>>`],
 ) -> InlinedFixedVector[NDBuffer[type, rank]]:
     # Cast input list pointer
-    var abi_list_ptr = Pointer(raw_list_ptr).bitcast[ABI_List]()
-    var elems_ptr = Pointer(abi_list_ptr[].elements)
+    var abi_list_ptr = UnsafePointer(raw_list_ptr).bitcast[ABI_List]()
+    var elems_ptr = UnsafePointer(abi_list_ptr[].elements)
     var abi_tensors_ptr = elems_ptr.bitcast[ABI_Tensor]()
 
     # Create output list
