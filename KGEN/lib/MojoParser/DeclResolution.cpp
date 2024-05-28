@@ -1219,24 +1219,34 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Given a value of !kgen.variadic<..> construct a VariadicList and return
 /// the variable declaration holding it.
-static VarDeclOp makeVarArgWrapper(const CValue &argValue, StringAttr argName,
+static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
                                    ASTDecl &parentDecl, ExprEmitter &emitter,
                                    SMLoc loc) {
   // Expr to provide location information.
   SyntheticNode srcLoc(loc);
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
-  auto variadicEltType =
-      cast<VariadicType>(argValue.getRValueType()).getElementType();
-  bool isMem = isa<RefType>(variadicEltType);
+  auto variadicType = cast<VariadicType>(argValue.getType());
+  ASTType variadicEltType = variadicType.getElementType();
+  auto refType = dyn_cast<RefType>(variadicEltType);
   ASTType varListType =
-      emitter.shared.getBuiltinVariadicListType(parentDecl, loc, isMem);
+      emitter.shared.getBuiltinVariadicListType(parentDecl, loc, (bool)refType);
   if (varListType.isTypeCheckErrorType())
     return {};
 
-  // If this is a memory-only type, emit a VarDeclOp:  VaridicListMem needs a
-  // lifetime for its self accesses.  This also provides a user name for the
-  // argument.
+  // If this is a variadic of in-memory values that might not have lifetimes,
+  // forbid taking the lifetime of the values.
+  if (refType && ASTType(refType.getElementType())
+                     .mightBeRegisterPassable(loc, emitter.shared)) {
+    auto newRefType = refType.getWithLifetime(
+        InvalidRefLifetimeAttr::get(refType.isMutable()));
+    argValue = emitter.builder->create<RebindOp>(
+        emitter.translateLocation(loc),
+        variadicType.getWithElementType(newRefType), argValue);
+  }
+
+  // Emit a VarDeclOp: VaridicListMem needs a lifetime for its self accesses.
+  // This also provides a user name for the argument.
   auto mlirLoc = emitter.translateLocation(loc);
   VarDeclOp varDecl =
       emitter.emitVarDecl(argName, UnresolvedType::get(emitter.getContext()),
@@ -1301,8 +1311,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // VarArg arguments are projected into a VariadicList.
     if (funcSignature.isPosVarArg(argIdx)) {
-      auto declOp = makeVarArgWrapper(SRValue(bbArg), argName, decl, emitter,
-                                      argDecl.getLoc());
+      auto declOp =
+          makeVarArgWrapper(bbArg, argName, decl, emitter, argDecl.getLoc());
       if (!declOp)
         return failure();
       declOp.setArgShadowIndex(bbArg.getArgNumber());

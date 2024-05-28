@@ -895,6 +895,10 @@ static ParseResult parseVariadicConvention(AsmParser &p, ArgConvention &conv) {
   return success();
 }
 
+VariadicType VariadicType::getWithElementType(Type type) {
+  return VariadicType::get(type, getConvention());
+}
+
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
 /// contiguous sequence, and the size of that sequence. So, its size would be
 /// the size of a pointer, plus the size of the size type (which has the same
