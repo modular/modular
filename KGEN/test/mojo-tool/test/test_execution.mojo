@@ -10,7 +10,7 @@
 # RUN: not mojo test -I %S/inputs "%s" | FileCheck %s
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
-# RUN: not mojo test -I %S/inputs "%s::test_unit_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
+# RUN: not mojo test -I %S/inputs "%s::test_unit\2Efailure()" | FileCheck %s --check-prefix=CHECK-UNIT
 # RUN: not mojo test -I %S/inputs --diagnostic-format json "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC-JSON
 
 from imported_module import returns_false
@@ -29,7 +29,7 @@ from testing import assert_true
 # CHECK: Unhandled exception caught during execution
 # CHECK: Error: {{.*}} AssertionError: condition was unexpectedly False
 
-# CHECK: Failure: '{{.*}}test_execution.mojo::test_unit_failure()'
+# CHECK: Failure: '{{.*}}test_execution.mojo::test_unit\2Efailure()'
 # CHECK: Unhandled exception caught during execution
 # CHECK: Error: {{.*}}test_execution.mojo:59:16: AssertionError: condition was unexpectedly False
 
@@ -55,7 +55,7 @@ from testing import assert_true
 # CHECK-DOC-JSON:   "testID": "{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__"
 
 
-fn test_unit_failure() raises:
+fn `test_unit.failure`() raises:
     assert_true(returns_false())
     return
 

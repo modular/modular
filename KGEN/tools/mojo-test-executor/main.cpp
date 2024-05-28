@@ -167,11 +167,18 @@ static ErrorOr<ExecutableTest> getUnitTest(const std::filesystem::path &path,
   if (!testName.consume_back("()"))
     return Error("id does not reference a valid test");
 
-  // Our unit tests are currently quite simple, so keep things equally simple
-  // here and define a repl expression that imports the test module and invokes
-  // the test function.
+  ErrorOr<SmallVector<std::string>> names = TestID::parseScopedName(testName);
+  if (names.isError())
+    return names.takeError();
+  // We only expect top-level unit tests right now.
+  if (names->size() != 1)
+    return Error("id does not reference a valid test");
+
+  // Our unit tests are currently quite simple, so keep things equally
+  // simple here and define a repl expression that imports the test module
+  // and invokes the test function.
   std::string contents =
-      llvm::formatv("import `{0}`\n`{0}`.`{1}`()", path.stem(), testName);
+      llvm::formatv("import `{0}`\n`{0}`.`{1}`()", path.stem(), names->back());
   return ExecutableTest{testID, contents};
 }
 
@@ -179,7 +186,7 @@ static ErrorOr<ExecutableTest> getUnitTest(const std::filesystem::path &path,
 /// does not correspond to a valid test.
 static ErrorOr<ExecutableTest>
 getExecutableTest(llvm::SourceMgr &sourceMgr, const std::filesystem::path &path,
-                  const Test &test, ArrayRef<std::string> includeDirs) {
+                  const Test &test) {
   // Process the case where we're looking for a test in a specific test suite.
   if (std::optional<StringRef> suiteName = test.getTestID().getTestSuite()) {
     ErrorOr<SmallVector<std::string>> scopes =
@@ -242,7 +249,7 @@ static mlir::LogicalResult runTestExecutor(ContextRef ctx, ArrayRef<Test> tests,
 
     // Get the test to execute.
     ErrorOr<ExecutableTest> executableTest =
-        getExecutableTest(sourceMgr, path, test, includeDirs);
+        getExecutableTest(sourceMgr, path, test);
     if (executableTest.isError())
       return emitError(executableTest.getError());
     executableTests.push_back(std::move(*executableTest));
