@@ -355,7 +355,7 @@ struct TaskGroupContext:
     alias tg_callback_fn_type = fn (Pointer[NoneType], inout TaskGroup) -> None
 
     var callback: Self.tg_callback_fn_type
-    var task_group: Pointer[TaskGroup]
+    var task_group: UnsafePointer[TaskGroup]
 
 
 @register_passable
@@ -419,7 +419,7 @@ struct TaskGroup:
         LegacyPointer(task._get_ctx[TaskGroupContext]().address).store(
             TaskGroupContext {
                 callback: Self._task_complete_callback,
-                task_group: Pointer[TaskGroup].address_of(self),
+                task_group: UnsafePointer[TaskGroup].address_of(self),
             }
         )
         _async_execute[type](task._handle, self.rt, desired_worker_id)
@@ -453,11 +453,11 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
     """Container to hold a set of TaskGroupTasks alive until they all complete.
     """
 
-    var data: Pointer[TaskGroupTask[type]]
+    var data: UnsafePointer[TaskGroupTask[type]]
     var size: Int
 
     fn __init__(inout self, num_work_items: Int):
-        self.data = Pointer[TaskGroupTask[type]].alloc(num_work_items)
+        self.data = UnsafePointer[TaskGroupTask[type]].alloc(num_work_items)
         self.size = 0
 
     fn add(inout self, owned hdl: TaskGroupTask[type]):
@@ -466,7 +466,7 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
         )
         self.size += 1
 
-    fn __getitem__(self, i: Int) -> Pointer[TaskGroupTask[type]]:
+    fn __getitem__(self, i: Int) -> UnsafePointer[TaskGroupTask[type]]:
         """Returns a pointer to the TaskGroupTask at the specified index.
 
         Note that the returned pointer can only be dereferenced while the
@@ -476,7 +476,7 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
         """
         debug_assert(i < self.size, "index must be within bounds")
         var hdl = (move_from_pointee(self.data.offset(i).address))
-        var ret_val = Pointer[TaskGroupTask[type]].address_of(hdl)
+        var ret_val = UnsafePointer[TaskGroupTask[type]].address_of(hdl)
         return ret_val
 
     fn __len__(self) -> Int:
