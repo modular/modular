@@ -460,6 +460,7 @@ struct Device:
 
 
 @value
+@register_passable("trivial")
 struct _EnableState:
     var state: Int32
 
