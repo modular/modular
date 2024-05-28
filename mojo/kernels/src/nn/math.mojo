@@ -208,3 +208,27 @@ fn tanh[
         The result of the Tanh operation.
     """
     return math.tanh(x)
+
+
+# ===----------------------------------------------------------------------=== #
+# identity
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn identity[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Gets the identity of a SIMD vector.
+
+    Parameters:
+        type: The `dtype` of the input and output SIMD vector.
+        simd_width: The width of the input and output SIMD vector.
+
+    Args:
+        x: The SIMD vector to take identity of.
+
+    Returns:
+        Identity of x, which is x.
+    """
+    return x

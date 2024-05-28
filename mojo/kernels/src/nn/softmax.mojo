@@ -9,7 +9,6 @@ from math import (
     align_up,
     ceildiv,
     exp,
-    identity,
     log,
     reciprocal,
 )
@@ -33,7 +32,7 @@ from utils.index import product
 from utils.static_tuple import StaticTuple
 from utils.numerics import get_accum_type, min_or_neg_inf
 
-from .math import mul, sub
+from .math import mul, sub, identity
 
 # ===----------------------------------------------------------------------===#
 # Utilities

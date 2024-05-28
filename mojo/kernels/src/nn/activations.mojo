@@ -46,15 +46,14 @@ fn dispatch_activation_fn[
 ](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if activation == ActivationType.IDENTITY:
-        return math.identity(val)
+        return val
     elif activation == ActivationType.RELU:
         return relu(val)
     elif activation == ActivationType.GELU:
         return gelu(val)
     else:
         constrained[False, "unsupported activation"]()
-
-    return val
+        return val
 
 
 # ===----------------------------------------------------------------------=== #
