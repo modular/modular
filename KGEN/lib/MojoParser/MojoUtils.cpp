@@ -35,8 +35,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
   // `!kgen.anytype`.
   // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
   // forbid this when traits are fully operational.
-  if (isa<AnyStructType, AnyTraitType, TraitType>(fromType) &&
-      isa<TypeType>(toType))
+  if (isa<AnyStructType, AnyTraitType>(fromType) && isa<TypeType>(toType))
     return true;
 
   // Handle conversions of values that have parametric type.
