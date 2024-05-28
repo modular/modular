@@ -169,13 +169,7 @@ fn _str_fmt_width(str: String, str_width: Int) -> String:
     alias N = 2048
     var x = String._buffer_type()
     x.reserve(N)
-    x.size += _snprintf(
-        x.data,
-        N,
-        "%-*s",
-        str_width,
-        str.unsafe_ptr(),
-    )
+    x.size += _snprintf["%-*s"](x.data, N, str_width, str.unsafe_ptr())
     debug_assert(x.size < N, "Attempted to access outside array bounds!")
     x.size += 1
     return String(x)
@@ -384,35 +378,27 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         var x = String._buffer_type()
         x.reserve(N)
 
-        x.size += _snprintf(x.data + x.size, N, "%-*s, ", name_width, self.name)
+        x.size += _snprintf["%-*s, "](x.data + x.size, N, name_width, self.name)
 
-        x.size += _snprintf(
-            x.data + x.size,
-            N,
-            "%*.6f, ",
-            met_width,
-            self.result.mean(unit=Unit.ms),
+        x.size += _snprintf["%*.6f, "](
+            x.data + x.size, N, met_width, self.result.mean(unit=Unit.ms)
         )
 
-        x.size += _snprintf(
-            x.data + x.size,
-            N,
-            "%*d",
-            iters_width,
-            self.result.iters(),
+        x.size += _snprintf["%*d"](
+            x.data + x.size, N, iters_width, self.result.iters()
         )
 
         var throughput = self._throughput() if self.elems else 0.0
-        x.size += _snprintf(
-            x.data + x.size, N, ", %*.6f", throughput_width, throughput
+        x.size += _snprintf[", %*.6f"](
+            x.data + x.size, N, throughput_width, throughput
         )
         debug_assert(x.size < N, "Attempted to access outside array bounds!")
 
         if len(self.measures) > 0:
             for i in range(len(self.measures)):
                 var rate = self.measures[i].compute(self.result.mean(Unit.s))
-                x.size += _snprintf(
-                    x.data + x.size, N, ", %*.6f", rate_width, rate
+                x.size += _snprintf[", %*.6f"](
+                    x.data + x.size, N, rate_width, rate
                 )
                 debug_assert(
                     x.size < N, "Attempted to access outside array bounds!"
