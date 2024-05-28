@@ -48,9 +48,9 @@ struct FailedAssertion {
 /// Assert that a condition holds. Users can append addition information to the
 /// error message by using the << operator.
 /// ```
-///   GENERICML_ASSERT(false) << "This condition is always false!";
+///   ASSERT_STREAM(false) << "This condition is always false!";
 /// ```
-#define GENERICML_ASSERT(e)                                                    \
+#define ASSERT_STREAM(e)                                                       \
   if (LLVM_UNLIKELY(!(e)))                                                     \
   ::M::FailedAssertion(__FILE__, __LINE__).getStorage().os << #e               \
                                                            << " is false.\n"
