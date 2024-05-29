@@ -21,7 +21,7 @@ alias cublasContext = NoneType
 # Library Load
 # ===----------------------------------------------------------------------===#
 
-alias CUDA_CUBLAS_LIBRARY_PATH = "/usr/local/cuda/lib64/libcublas.so"
+alias CUDA_CUBLAS_LIBRARY_PATH = "/usr/local/cuda/lib64/libcublas.so.12"
 
 
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
@@ -55,31 +55,39 @@ fn _get_dylib_function[
 
 
 # ===----------------------------------------------------------------------===#
-# Wrappers
+# Helpers
 # ===----------------------------------------------------------------------===#
 
 
-# fn cublas_gemm_row_major[
-#     a_type: DType,
-#     a_shape: DimList,
-#     b_type: DType,
-#     b_shape: DimList,
-#     c_type: DType,
-#     c_shape: DimList,
-#     c_is_row_major: Bool = True,
-#     transpose_a: Bool = False,
-#     transpose_b: Bool = False,
-# ](
-#     handle: Pointer[cublasContext],
-#     c: NDBuffer[c_type, 2, c_shape],
-#     a: NDBuffer[a_type, 2, a_shape],
-#     b: NDBuffer[b_type, 2, b_shape],
-# ):
-#     var M = c.dim[0]()
-#     var N = c.dim[1]()
-#     var K = a.dim[1]() if not transpose_a else a.dim[0]()
+@always_inline
+fn check_cublas_error(stat: Result):
+    if stat != Result.SUCCESS:
+        print(stat)
 
-#     pass
+
+@always_inline
+fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
+    @parameter
+    if mojo_type == DType.float32:
+        return DataType.R_32F
+    elif mojo_type == DType.float16:
+        return DataType.R_16F
+    else:
+        constrained[
+            mojo_type == DType.bfloat16,
+            (
+                "Only support FP32, FP16 and BF16. Please extend it if more"
+                " types are needed."
+            ),
+        ]()
+        return DataType.R_16BF
+
+
+@always_inline
+fn _convert_to_cublas_transpose(transpose: Bool) -> cublasOperation_t:
+    return (
+        cublasOperation_t.CUBLAS_OP_T if transpose else cublasOperation_t.CUBLAS_OP_N
+    )
 
 
 # ===----------------------------------------------------------------------===#
