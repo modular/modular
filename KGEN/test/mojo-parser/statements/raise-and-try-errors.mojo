@@ -32,7 +32,7 @@ fn cannotRaise(err: Error):
 
 # Issue #12358
 fn raise_bad_type() raises:
-    raise 42
+    raise str(42)
 
 # https://github.com/modularml/mojo/issues/1230
 # Parser crashes on incomplete decorator
