@@ -1235,9 +1235,34 @@ fn callThing() -> MyStruct:
 
 
 ##===----------------------------------------------------------------------===##
+# Implicit Lifetime Parameters
+##===----------------------------------------------------------------------===##
+
+
+struct SomeType:
+    pass
+
+# COM: An implicit lifetime is passed into a struct parameter inside a trait
+# COM: binding. Ensure this passes `-verify-parameters`.
+# CHECK-LABEL: lit.func @"implicit_lifetime_as_param
+# CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:lifetime<0> *"arg`">, mut *[0,0]>
+fn implicit_lifetime_as_param(arg: SomeType) -> Bound[Match[__lifetime_of(arg)]] :
+    pass
+
+struct Bound[T: AnyType]:
+    pass
+
+@value
+struct Match[lt: __mlir_type.`!lit.lifetime<0>`]:
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Struct field with type of recursive parameter
 # https://github.com/modularml/modular/issues/28580
 ##===----------------------------------------------------------------------===##
+
+
 trait BarTrait:
     pass
 
