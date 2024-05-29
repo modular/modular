@@ -103,10 +103,10 @@ fn fused_reduce_inner_test[
     _copy_device_to_host(res_host1, res_device1, out_size)
 
     for i in range(out_shape.flattened_length()):
-        assert_equal(res_host0[i], expected_vals0[i])
+        assert_equal(str(res_host0[i]), str(expected_vals0[i]))
 
     for i in range(out_shape.flattened_length()):
-        assert_equal(res_host1[i], expected_vals1[i])
+        assert_equal(str(res_host1[i]), str(expected_vals1[i]))
 
     _free(vec_device)
     _free(res_device0)
@@ -199,7 +199,7 @@ fn reduce_inner_test[
     _copy_device_to_host(res_host, res_device, out_size)
 
     for i in range(out_shape.flattened_length()):
-        assert_equal(res_host[i], expected_vals[i])
+        assert_equal(str(res_host[i]), str(expected_vals[i]))
 
     _free(vec_device)
     _free(res_device)
