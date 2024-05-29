@@ -151,6 +151,17 @@ kgen.generator @call_lifetime_lower() {
   kgen.return
 }
 
+kgen.generator @take_lifetime<lt: lifetime<0>>() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @implicit_lifetime_as_param
+kgen.generator @implicit_lifetime_as_param() {
+  // CHECK-NEXT: @take_lifetime<:struct<()> { }>()
+  kgen.call @take_lifetime<:lifetime<0> *[0,0]>() : () -> ()
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @ref_type<p: struct<()>, q: struct<()>>(
 // CHECK-SAME: %arg0: !kgen.pointer<struct<()>>
 // CHECK-SAME: %arg1: !kgen.pointer<struct<()>>)
@@ -443,6 +454,7 @@ kgen.func @pass_it(%y: !ptr) {
 //===----------------------------------------------------------------------===//
 // More Recursive Structs
 //===----------------------------------------------------------------------===//
+
 !bar = !lit.declref<@Bar, !lit.anystruct<@Bar>>
 !foo = !lit.declref<@Foo, !lit.anystruct<@Foo>>
 
