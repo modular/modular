@@ -7,14 +7,11 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from benchmark import Unit, run
-from benchmark import Bench, Bencher, BenchId, keep, BenchConfig
+from benchmark import Bench, Bencher, BenchId, keep, BenchConfig, Unit, run
 from utils.stringref import _memmem, _memchr, _align_down
 
 from bit import countr_zero
 from builtin.dtype import _uint_type_of_width
-from builtin.string import _atol, _isspace
-from memory import DTypePointer, UnsafePointer, memcmp
 
 # ===----------------------------------------------------------------------===#
 # Benchmark Data
@@ -186,13 +183,12 @@ fn bench_find_baseline(inout b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        for _ in range(100):
-            _ = _memmem_baseline(
-                haystack.as_uint8_ptr(),
-                len(haystack),
-                needle.as_uint8_ptr(),
-                len(needle),
-            )
+        _ = _memmem_baseline(
+            haystack.as_uint8_ptr(),
+            len(haystack),
+            needle.as_uint8_ptr(),
+            len(needle),
+        )
 
     b.iter[call_fn]()
 
@@ -202,13 +198,12 @@ fn bench_find_optimized(inout b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        for _ in range(100):
-            _ = _memmem(
-                haystack.as_uint8_ptr(),
-                len(haystack),
-                needle.as_uint8_ptr(),
-                len(needle),
-            )
+        _ = _memmem(
+            haystack.as_uint8_ptr(),
+            len(haystack),
+            needle.as_uint8_ptr(),
+            len(needle),
+        )
 
     b.iter[call_fn]()
 
