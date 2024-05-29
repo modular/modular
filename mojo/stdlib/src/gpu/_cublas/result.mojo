@@ -8,7 +8,7 @@
 @value
 @register_passable("trivial")
 struct Result:
-    var _value: Int8
+    var _value: Int32
     alias SUCCESS = Result(0)
     alias NOT_INITIALIZED = Result(1)
     alias ALLOC_FAILED = Result(3)

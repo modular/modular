@@ -121,7 +121,7 @@ fn cublasLtMatrixTransformDescCreate(
 struct Order:
     """Enum for data ordering ."""
 
-    var _value: Int8
+    var _value: Int32
     alias COL = Order(0)
     """Column-major
 
@@ -215,7 +215,7 @@ struct ClusterShape:
     Typically dimensioned similar to Tile, with the third coordinate unused at this time.
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias SHAPE_AUTO = ClusterShape(0)
     """Let library pick cluster shape automatically.
     """
@@ -505,7 +505,7 @@ struct MatmulAlgorithmCapability:
     """Capabilities Attributes that can be retrieved from an initialized Algo structure
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias SPLITK_SUPPORT = MatmulAlgorithmCapability(0)
     """support for split K, see SPLITK_NUM
 
@@ -683,7 +683,7 @@ fn cublasLtGetStatusString(status: Result) raises -> Pointer[Int8]:
 struct PointerMode:
     """Pointer mode to use for alpha/beta ."""
 
-    var _value: Int8
+    var _value: Int32
     alias HOST = PointerMode(0)
     """matches CUBLAS_POINTER_MODE_HOST, pointer targets a single value host memory.
     """
@@ -826,7 +826,7 @@ struct Search:
     """Matmul heuristic search mode
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias BEST_FIT = Search(0)
     """ask heuristics for best algo for given usecase.
     """
@@ -880,7 +880,7 @@ struct ReductionScheme:
     """Reduction scheme for portions of the dot-product calculated in parallel (a. k. a. "split - K").
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias NONE = ReductionScheme(0)
     """No reduction scheme, dot-product shall be performed in one sequence.
     """
@@ -998,7 +998,7 @@ struct PreferenceOpaque:
 struct cublasLtMatmulDescAttributes_t:
     """Matmul descriptor attributes to define details of the operation. ."""
 
-    var _value: Int8
+    var _value: Int32
     alias CUBLASLT_MATMUL_DESC_COMPUTE_TYPE = cublasLtMatmulDescAttributes_t(0)
     """Compute type, see cudaDataType. Defines data type used for multiply and accumulate operations and the
     accumulator during matrix multiplication.
@@ -1636,7 +1636,7 @@ fn cublasLtMatrixLayoutInit_internal(
 struct Preference:
     """Algo search preference to fine tune the heuristic function. ."""
 
-    var _value: Int8
+    var _value: Int32
     alias SEARCH_MODE = Preference(0)
     """Search mode, see Search.
 
@@ -1757,7 +1757,7 @@ struct AlgorithmConfig:
     """Algo Configuration Attributes that can be set according to the Algo capabilities
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias ID = AlgorithmConfig(0)
     """algorithm index, see cublasLtMatmulAlgoGetIds()
 
@@ -1929,7 +1929,7 @@ struct InnerShape:
     effects.
     """
 
-    var _value: Int8
+    var _value: Int32
     alias UNDEFINED = InnerShape(0)
     alias MMA884 = InnerShape(1)
     alias MMA1684 = InnerShape(2)
@@ -1970,7 +1970,7 @@ struct InnerShape:
 struct LayoutAttribute:
     """Attributes of memory layout ."""
 
-    var _value: Int8
+    var _value: Int32
     alias TYPE = LayoutAttribute(0)
     """Data type, see cudaDataType.
 
@@ -2173,7 +2173,7 @@ struct Stages:
     General order of stages IDs is sorted by stage size first and by number of stages second.
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias STAGES_UNDEFINED = Stages(0)
     alias STAGES_16x1 = Stages(1)
     alias STAGES_16x2 = Stages(2)
@@ -2422,7 +2422,7 @@ struct Epilogue:
     """Postprocessing options for the epilogue
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias DEFAULT = Epilogue(0)
     """No special postprocessing, just scale and quantize results if necessary.
     """
@@ -2595,7 +2595,7 @@ fn cublasLtMatrixLayoutCreate(
 struct PointerModeMask:
     """Mask to define pointer mode capability ."""
 
-    var _value: Int8
+    var _value: Int32
     alias HOST = PointerModeMask(0)
     """see HOST."""
     alias DEVICE = PointerModeMask(1)
@@ -2669,7 +2669,7 @@ struct Tile:
     General order of tile IDs is sorted by size first and by first dimension second.
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias TILE_UNDEFINED = Tile(0)
     alias TILE_8x8 = Tile(1)
     alias TILE_8x16 = Tile(2)
@@ -3026,7 +3026,7 @@ struct TransformDescriptor:
     """Matrix transform descriptor attributes to define details of the operation.
     ."""
 
-    var _value: Int8
+    var _value: Int32
     alias SCALE_TYPE = TransformDescriptor(0)
     """Scale type, see cudaDataType. Inputs are converted to scale type for scaling and summation and results are then
     converted to output type to store in memory.
