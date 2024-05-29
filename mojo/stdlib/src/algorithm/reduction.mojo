@@ -14,9 +14,6 @@ from algorithm import map_reduce
 
 from builtin.math import min as _min
 from math import align_down, ceildiv, iota
-from math import all_true as _all_true
-from math import any_true as _any_true
-from math import none_true as _none_true
 from bit import countr_zero
 from sys.info import (
     is_little_endian,
@@ -1543,8 +1540,8 @@ fn all_true(src: Buffer) -> Bool:
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
         if type == DType.bool:
-            return _all_true(val.cast[DType.bool]())
-        return _all_true(val != 0)
+            return val.cast[DType.bool]().reduce_and()
+        return (val != 0).reduce_and()
 
     @always_inline
     @parameter
@@ -1576,8 +1573,8 @@ fn any_true(src: Buffer) -> Bool:
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
         if type == DType.bool:
-            return _any_true(val.cast[DType.bool]())
-        return _any_true(val != 0)
+            return val.cast[DType.bool]().reduce_or()
+        return (val != 0).reduce_or()
 
     @always_inline
     @parameter
@@ -1610,8 +1607,8 @@ fn none_true(src: Buffer) -> Bool:
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
         if type == DType.bool:
-            return _none_true(val.cast[DType.bool]())
-        return _none_true(val != 0)
+            return not val.cast[DType.bool]().reduce_or()
+        return not (val != 0).reduce_or()
 
     @always_inline
     @parameter
