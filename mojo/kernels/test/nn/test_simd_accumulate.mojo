@@ -70,15 +70,15 @@ def test_accumulate[
     # C results:
     # C[0,0]:[0.0, 0.0, 0.0, 0.0]  C[0,1]:[0.0, 0.0, 0.0, 0.0]
     # C[1,0]:[1.0, 1.0, 1.0, 1.0]  C[1,1]:[1.0, 1.0, 1.0, 1.0]
-    assert_equal(acc[0, 0], SIMD[DType.float32, simd_size](0.0))
-    assert_equal(acc[0, 1], SIMD[DType.float32, simd_size](0.0))
+    assert_equal(acc[0, 0], SIMD[type, simd_size](0.0))
+    assert_equal(acc[0, 1], SIMD[type, simd_size](0.0))
     assert_equal(
         acc[1, 0],
-        SIMD[DType.float32, simd_size](1.0),
+        SIMD[type, simd_size](1.0),
     )
     assert_equal(
         acc[1, 1],
-        SIMD[DType.float32, simd_size](1.0),
+        SIMD[type, simd_size](1.0),
     )
 
     acc.accumulate(length, a, 2 * length, b + kernel_width, kernel_width)
@@ -86,15 +86,15 @@ def test_accumulate[
     # C results:
     # C[0,0]:[0.0, 0.0, 0.0, 0.0]  C[0,1]:[0.0, 0.0, 0.0, 0.0]
     # C[1,0]:[7.0, 7.0, 7.0, 7.0]  C[1,1]:[7.0, 7.0, 7.0, 7.0]
-    assert_equal(acc[0, 0], SIMD[DType.float32, simd_size](0.0))
-    assert_equal(acc[0, 1], SIMD[DType.float32, simd_size](0.0))
+    assert_equal(acc[0, 0], SIMD[type, simd_size](0.0))
+    assert_equal(acc[0, 1], SIMD[type, simd_size](0.0))
     assert_equal(
         acc[1, 0],
-        SIMD[DType.float32, simd_size](7.0),
+        SIMD[type, simd_size](7.0),
     )
     assert_equal(
         acc[1, 1],
-        SIMD[DType.float32, simd_size](7.0),
+        SIMD[type, simd_size](7.0),
     )
 
     acc.accumulate(
@@ -108,15 +108,15 @@ def test_accumulate[
     # C results:
     # C[0,0]:[4.0, 4.0, 4.0, 4.0]     C[0,1]:[4.0, 4.0, 4.0, 4.0]
     # C[1,0]:[19.0, 19.0, 19.0, 19.0] C[1,1]:[19.0, 19.0, 19.0, 19.0]
-    assert_equal(acc[0, 0], SIMD[DType.float32, simd_size](4.0))
-    assert_equal(acc[0, 1], SIMD[DType.float32, simd_size](4.0))
+    assert_equal(acc[0, 0], SIMD[type, simd_size](4.0))
+    assert_equal(acc[0, 1], SIMD[type, simd_size](4.0))
     assert_equal(
         acc[1, 0],
-        SIMD[DType.float32, simd_size](19.0),
+        SIMD[type, simd_size](19.0),
     )
     assert_equal(
         acc[1, 1],
-        SIMD[DType.float32, simd_size](19.0),
+        SIMD[type, simd_size](19.0),
     )
 
 
@@ -162,15 +162,15 @@ def test_accumulate_with_offsets[
     # [0.0, 0.0, 0.0, 0.0]
     # [1.0, 1.0, 1.0, 1.0]
     # [1.0, 1.0, 1.0, 1.0]
-    assert_equal(acc[0, 0], SIMD[DType.float32, simd_size](0.0))
-    assert_equal(acc[0, 1], SIMD[DType.float32, simd_size](0.0))
+    assert_equal(acc[0, 0], SIMD[type, simd_size](0.0))
+    assert_equal(acc[0, 1], SIMD[type, simd_size](0.0))
     assert_equal(
         acc[1, 0],
-        SIMD[DType.float32, simd_size](1.0),
+        SIMD[type, simd_size](1.0),
     )
     assert_equal(
         acc[1, 1],
-        SIMD[DType.float32, simd_size](1.0),
+        SIMD[type, simd_size](1.0),
     )
 
     a_base_offsets[0] = 0
@@ -182,15 +182,15 @@ def test_accumulate_with_offsets[
     # [0.0, 0.0, 0.0, 0.0]
     # [7.0, 7.0, 7.0, 7.0]
     # [7.0, 7.0, 7.0, 7.0]
-    assert_equal(acc[0, 0], SIMD[DType.float32, simd_size](0.0))
-    assert_equal(acc[0, 1], SIMD[DType.float32, simd_size](0.0))
+    assert_equal(acc[0, 0], SIMD[type, simd_size](0.0))
+    assert_equal(acc[0, 1], SIMD[type, simd_size](0.0))
     assert_equal(
         acc[1, 0],
-        SIMD[DType.float32, simd_size](7.0),
+        SIMD[type, simd_size](7.0),
     )
     assert_equal(
         acc[1, 1],
-        SIMD[DType.float32, simd_size](7.0),
+        SIMD[type, simd_size](7.0),
     )
 
     a_base_offsets[0] = length
@@ -210,15 +210,15 @@ def test_accumulate_with_offsets[
     # [4.0, 4.0, 4.0, 4.0]
     # [19.0, 19.0, 19.0, 19.0]
     # [19.0, 19.0, 19.0, 19.0]
-    assert_equal(acc[0, 0], SIMD[DType.float32, simd_size](4.0))
-    assert_equal(acc[0, 1], SIMD[DType.float32, simd_size](4.0))
+    assert_equal(acc[0, 0], SIMD[type, simd_size](4.0))
+    assert_equal(acc[0, 1], SIMD[type, simd_size](4.0))
     assert_equal(
         acc[1, 0],
-        SIMD[DType.float32, simd_size](19.0),
+        SIMD[type, simd_size](19.0),
     )
     assert_equal(
         acc[1, 1],
-        SIMD[DType.float32, simd_size](19.0),
+        SIMD[type, simd_size](19.0),
     )
 
 

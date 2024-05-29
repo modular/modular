@@ -411,8 +411,8 @@ fn pretty_print(
             " {:>8.3f} (ms), ratio: {:>4.2f}x {}"
         ).format(
             name,
-            String(rounds),
-            String(size),
+            str(rounds),
+            str(size),
             time_rec,
             time_iter,
             ratio,
@@ -536,9 +536,9 @@ fn test_pad_constant_nd[
             output_rec, input, paddings.data, constant
         )
         if array_equal(output, output_rec):
-            print("PASS test_pad_constant_nd " + String(rank) + "d")
+            print("PASS test_pad_constant_nd " + str(rank) + "d")
         else:
-            print("FAILED test_pad_constant_nd " + String(rank) + "d")
+            print("FAILED test_pad_constant_nd " + str(rank) + "d")
 
         output_rec_ptr.free()
 
@@ -610,9 +610,9 @@ fn test_pad_reflect_nd[
         pad_reflect_dispatch[recursive=1](output_rec, input, paddings.data)
 
         if array_equal(output, output_rec):
-            print("PASS test_pad_reflect_nd " + String(rank) + "d")
+            print("PASS test_pad_reflect_nd " + str(rank) + "d")
         else:
-            print("FAILED test_pad_reflect_nd " + String(rank) + "d")
+            print("FAILED test_pad_reflect_nd " + str(rank) + "d")
 
         output_rec_ptr.free()
 
