@@ -564,8 +564,11 @@ fn _pack_matmul_b_shape_func_impl[
     # apple_gemv), so assign the transposed B dimensions.
     @parameter
     if not use_apple_accelerate_lib[c_type, a_type, b_type]():
-        output[0] = ceildiv(output[0], tile_n_k[1]) * tile_n_k[1]
-        output[1] = ceildiv(output[1], tile_n_k[0]) * tile_n_k[0]
+        alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+        output[0] = align_up(output[0], factor)
+        output[1] = align_up(output[1], tile_n_k[0])
     else:
         var tmp = output[0]
         output[0] = output[1]
@@ -650,17 +653,20 @@ fn pack_b[
             n_out % tile_n == 0,
             "N dimension of output must be padded to tile_n",
         )
+
         for idx_k in range(0, k_out, tile_k):
+            var tile_k2 = align_up(min(tile_k, k_out - idx_k), factor)
+
             for idx_n in range(0, n_out, tile_n):
                 var packed_dst_view = NDBuffer[b_type, 3](
                     dst_flat.data.offset(dst_offset),
                     DimList(
                         tile_n // inner_size2,
-                        tile_k // factor,
+                        tile_k2 // factor,
                         inner_size2 * factor,
                     ),
                 )
-                var valid_k = min(tile_k, k_in - idx_k)
+                var valid_k = min(tile_k2, k_in - idx_k)
                 var valid_n = min(tile_n, n_in - idx_n)
                 PackMatrixCols[
                     src_shape,
@@ -676,11 +682,11 @@ fn pack_b[
                     # Input is [K, N]:
                     # Starting global offset for packing.
                     Index(idx_k, idx_n),
-                    Index(tile_k, tile_n),
+                    Index(tile_k2, tile_n),
                     # Valid amount of input from the starting offset.
                     Index(valid_k, valid_n),
                 )
-                dst_offset += tile_n * tile_k
+                dst_offset += tile_n * tile_k2
     else:
         # _t = transpose, annoying WAR since variables can't have same name in if/else
         var k_in_t = src.dim[1]()
@@ -989,11 +995,14 @@ struct BTileGenerator[
             var factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
             alias inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
-            var tile_k = align_up(self.tile_n_k[1], factor)
+            var tile_k = self.tile_n_k[1]
+            var tile_k2 = align_up(
+                min(self.tile_n_k[1], valid_data_dim_nk[1]), factor
+            )
 
             var tile_shape_pack = DimList(
                 self.tile_n_k[0] // inner_size2,
-                tile_k // factor,
+                tile_k2 // factor,
                 inner_size2 * factor,
             )
             var tile_k_idx = global_offset.K // tile_k
@@ -1008,7 +1017,7 @@ struct BTileGenerator[
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
                 b_flat.data.offset(
-                    tile_k_idx * tile_k * n_padded + global_offset.N * tile_k
+                    tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2
                 ),
                 tile_shape_pack,
             )
