@@ -109,7 +109,7 @@ fn test_tanh_libm[N: Int = 8192]() raises:
     alias test_dtype = DType.float32
     var x32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
     randn[test_dtype](x32, N, 0, 9.0)
-    print("For N=" + String(N) + " randomly generated vals; mean=0.0, var=9.0")
+    print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # mojo tanh result

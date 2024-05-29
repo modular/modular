@@ -32,8 +32,9 @@ def test_exp_float64():
     assert_almost_equal(exp(Float64(-0.1)), 0.90483)
     assert_almost_equal(exp(Float64(0.1)), 1.10517)
     assert_almost_equal(exp(Float64(2)), 7.38905)
-    assert_equal(str(exp(Float64(89))), 4.4896128193366053e38)
-    assert_equal(str(exp(Float64(108.5230))), 1.3518859659123633e47)
+    # FIXME (40568) should remove str
+    assert_equal(str(exp(Float64(89))), str(4.4896128193366053e38))
+    assert_equal(str(exp(Float64(108.5230))), str(1.3518859659123633e47))
 
 
 @always_inline

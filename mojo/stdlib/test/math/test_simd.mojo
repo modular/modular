@@ -186,11 +186,14 @@ def issue_1625():
     var x = ptr.load[width = 2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
 
+    # FIXME (40568) should directly use the SIMD assert_equal
     assert_equal(
-        evens_and_odds[0], SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)
+        str(evens_and_odds[0]),
+        str(SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)),
     )
     assert_equal(
-        evens_and_odds[1], SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)
+        str(evens_and_odds[1]),
+        str(SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
     )
     ptr.free()
 
