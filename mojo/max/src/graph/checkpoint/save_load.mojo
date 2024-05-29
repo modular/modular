@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""API for saving/loading tensors from file."""
+"""Defines functions to save/load tensors from a checkpoint file."""
 from tensor import Tensor, TensorShape, TensorSpec
 from max.engine import TensorMap
 from pathlib import Path
@@ -34,7 +34,11 @@ fn _write_int[
 def save(tensor_dict: TensorDict, path: Path):
     """Saves a collection of tensors to a file.
 
-    Usage example:
+    The file is saved in a binary format that's specific to MAX. You can then
+    load the checkpoint with
+    [`load()`](/max/reference/mojo/graph/checkpoint/save_load/load).
+
+    For example:
 
     ```mojo
     from max.graph.checkpoint import save, TensorDict
@@ -44,12 +48,13 @@ def save(tensor_dict: TensorDict, path: Path):
         tensors = TensorDict()
         tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
         tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))
-        save(tensors, "/path/to/save")
+        save(tensors, "/path/to/checkpoint.max")
     ```
 
     Args:
         tensor_dict: Tensors to save.
-        path: Path to export checkpoint.
+        path: The location to save the checkpoint file. You can use whatever
+              filename and file extension you want.
     """
     # Write header and metadata
     # TODO: Using _SERIALIZATION_HEADER raises errors.
@@ -172,24 +177,30 @@ def version_to_string(
 
 
 def load(path: Path) -> TensorDict:
-    """Reads tensors from file.
+    """Reads tensors from saved checkpoint file.
 
-    Usage example:
+    This supports only MAX checkpoint files saved with
+    [`save()`](/max/reference/mojo/graph/checkpoint/save_load/save).
+
+    For example:
 
     ```mojo
     from max.graph.checkpoint import load, TensorDict
     from tensor import Tensor, TensorShape
 
     def read_from_disk():
-        tensors = load("/path/to/saved/tensors")
+        tensors = load("/path/to/checkpoint.max")
         x = tensors.get("x").to_tensor[DType.int32]()
     ```
 
     Args:
-        path: Path to export checkpoint.
+        path: Path to existing checkpoint file.
 
-    return:
+    Returns:
         TensorDict containing loaded Tensors.
+
+    Raises:
+        If the checkpoint file was saved with an older serialization format.
     """
     # TODO: Using _SERIALIZATION_HEADER raises errors.
     var header_buf = List[UInt8](

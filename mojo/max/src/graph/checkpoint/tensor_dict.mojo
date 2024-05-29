@@ -46,18 +46,28 @@ struct CheckpointTensor:
 
 
 struct TensorDict(Sized):
-    """A collection of keyed Tensors.
+    """A collection of keyed `Tensor` values used with checkpoint files.
 
-    Usage example:
+    This is the type accepted by
+    [`save()`](/max/reference/mojo/graph/checkpoint/save_load/save) and
+    returned by
+    [`load()`](/max/reference/mojo/graph/checkpoint/save_load/load).
+
+    For example:
 
     ```mojo
-    from max.graph.checkpoint import TensorDict
+    from max.graph.checkpoint import load, save, TensorDict
     from tensor import Tensor, TensorShape
-    tensors = TensorDict()
-    tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
-    tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))
 
-    var x = tensors.get("x").to_tensor[DType.int32]()
+    def write_to_disk():
+        tensors = TensorDict()
+        tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
+        tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))
+        save(tensors, "/path/to/checkpoint.max")
+
+    def read_from_disk():
+        tensors = load("/path/to/checkpoint.max")
+        x = tensors.get("x").to_tensor[DType.int32]()
     ```
     """
 
@@ -67,7 +77,14 @@ struct TensorDict(Sized):
         self._items = Dict[String, CheckpointTensor]()
 
     fn __setitem__[T: DType](inout self, key: String, value: Tensor[T]):
-        """Set a value in the Tensor dict by key.
+        """Supports setting items with the bracket accessor.
+
+        For example:
+
+        ```mojo
+        tensors = TensorDict()
+        tensors["x"] = Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4)
+        ```
 
         Args:
             key: The key to associate with the specified value.
@@ -76,15 +93,47 @@ struct TensorDict(Sized):
         self._items._insert(key, CheckpointTensor.from_tensor(value))
 
     fn set[T: DType](inout self, key: String, value: Tensor[T]):
+        """Adds or updates a tensor in the dictionary.
+
+        Args:
+            key: The name of the tensor.
+            value: The tensor to add.
+        """
         self._items._insert(key, CheckpointTensor.from_tensor(value))
 
     fn set(inout self, key: String, value: CheckpointTensor):
+        """Adds or updates a tensor to the dictionary.
+
+        Args:
+            key: The name of the tensor.
+            value: The tensor to add.
+        """
         self._items._insert(key, value)
 
     fn __getitem__(self, key: String) raises -> CheckpointTensor:
+        """Supports getting items with the bracket accessor.
+
+        For example:
+
+        ```mojo
+        tensors = load("/path/to/checkpoint.max")
+        x = tensors["x"]
+        ```
+
+        Args:
+            key: The name of the tensor.
+        """
         return self._items[key]
 
     fn get(self, key: String) raises -> CheckpointTensor:
+        """Gets a tensor from the dictionary.
+
+        Args:
+            key: The name of the tensor.
+
+        Returns:
+            The tensor.
+        """
         return self._items[key]
 
     fn __len__(self) -> Int:
@@ -95,11 +144,13 @@ struct TensorDict(Sized):
     ) -> _DictEntryIter[
         String, CheckpointTensor, self.is_mutable, self.lifetime
     ]:
+        """Gets an iterable view of all elements in the dictionary."""
         return _DictEntryIter(0, 0, self[]._items)
 
     fn keys(
         self: Reference[Self, _, _]
     ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
+        """Gets an iterable view of all keys in the dictionary."""
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     def __iter__(
@@ -108,7 +159,7 @@ struct TensorDict(Sized):
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     fn __copyinit__(inout self, existing: Self):
-        """Copy an existing dictiontary.
+        """Copies a dictionary.
 
         Args:
             existing: The existing dict.
@@ -116,7 +167,7 @@ struct TensorDict(Sized):
         self._items = existing._items
 
     fn __moveinit__(inout self, owned existing: Self):
-        """Move data of an existing dict into a new one.
+        """Moves data of an existing dictionary into a new one.
 
         Args:
             existing: The existing dict.
