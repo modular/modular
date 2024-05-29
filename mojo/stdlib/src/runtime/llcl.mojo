@@ -190,16 +190,11 @@ fn _get_current_runtime() -> Pointer[NoneType]:
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct Runtime:
     alias ptr_type = Pointer[NoneType]
     var ptr: Self.ptr_type
     var owning: Bool
-
-    # TODO: Probably don't want the runtime to be implicitly copyable.
-    @always_inline("nodebug")
-    fn __copyinit__(self) -> Self:
-        return Self {ptr: self.ptr, owning: False}
 
     fn __init__() -> Runtime:
         """Construct an LLCL Runtime with the same number of threads as
