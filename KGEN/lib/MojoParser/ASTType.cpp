@@ -714,7 +714,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
     printParam(os, paramRef.getParam(), forDiag, demangleParams);
   } else if (isa<TypeType>(type)) {
-    os << "AnyRegType";
+    os << "AnyTrivialRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";
     llvm::interleaveComma(fnType.getInputs(), os,

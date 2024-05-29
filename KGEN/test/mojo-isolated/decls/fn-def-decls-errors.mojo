@@ -73,7 +73,7 @@ fn two_variadics(*a: int, *b: int):
     pass
 
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
-fn two_variadic_packs[*Ts: AnyRegType](*a: *Ts, *b: *Ts):
+fn two_variadic_packs[*Ts: AnyTrivialRegType](*a: *Ts, *b: *Ts):
     pass
 
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
@@ -150,4 +150,3 @@ fn ref_invalid():
 fn return_ref_type_error(a: fn (x: MemoryType) -> ref [__lifetime_of(x)] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'fn(x: MemoryType) -> ref [*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
-

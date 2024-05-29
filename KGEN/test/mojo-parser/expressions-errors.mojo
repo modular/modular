@@ -54,8 +54,8 @@ fn test_func_type():
     alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
     alias float6a: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[AnyRegType](inout *$0) capturing -> None}}
-    alias float7: fn[T: AnyRegType](inout *T) capturing -> None = test_func_type
+    # expected-error @below {{fn[AnyTrivialRegType](inout *$0) capturing -> None}}
+    alias float7: fn[T: AnyTrivialRegType](inout *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
     alias f1: fn (a: Int, StringLiteral) -> Int
@@ -113,7 +113,7 @@ struct MemoryOnlyPair:
 struct NonCopyable:
   fn __init__(inout self): pass
 
-fn generic_on_type_ok[T: AnyRegType](): pass
+fn generic_on_type_ok[T: AnyTrivialRegType](): pass
 
 def testLValuesRvalues() -> None:
   # Test with lvalues
@@ -145,8 +145,8 @@ def testLValuesRvalues() -> None:
 
   var mpPair = MemoryOnlyPair()
 
-  # expected-error @+1 {{cannot implicitly convert 'AnyStruct[MemoryOnlyPair]' value to 'AnyRegType' in alias initializer}}
-  alias T: AnyRegType = MemoryOnlyPair
+  # expected-error @+1 {{cannot implicitly convert 'AnyStruct[MemoryOnlyPair]' value to 'AnyTrivialRegType' in alias initializer}}
+  alias T: AnyTrivialRegType = MemoryOnlyPair
 
 # expected-note @+1 {{function declared here}}
 fn badRef(inout val: Int):

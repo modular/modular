@@ -55,29 +55,29 @@ fn test_kw_args_overload(x: int, y: int):
 
 
 # COM: test parametric overload in the presence of keyword operands.
-fn take_kw_param_infer[A: AnyRegType, B: AnyRegType](a: A, b: B):
+fn take_kw_param_infer[A: AnyTrivialRegType, B: AnyTrivialRegType](a: A, b: B):
     pass
 
 
-fn take_kw_param_infer[B: AnyRegType](a: MyInt, b: B):
+fn take_kw_param_infer[B: AnyTrivialRegType](a: MyInt, b: B):
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_args_param_infer
 fn test_kw_args_param_infer(x: int, f: float, s: MyInt):
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
     take_kw_param_infer[int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
     take_kw_param_infer[int, float](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}<:type index>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type index>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}<:type index>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type index>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 

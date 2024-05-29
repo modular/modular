@@ -197,7 +197,7 @@ fn passFieldToOwnedInt(owned a: MemExample):
 
 
 # Generic type: Issue #14018
-struct MyGenericType[Type: AnyRegType]:
+struct MyGenericType[Type: AnyTrivialRegType]:
     var value: Type
 
     fn __init__(inout self, v: Type):
@@ -220,7 +220,7 @@ fn optimizeCopyElision():
     var a = RegExample()
 
     # We need one copy of 'a' here, not two + dtor.
-    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl 
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[A]])
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a

@@ -144,7 +144,7 @@ fn paramOverload(y: Int):
     pass
 
 
-fn paramOverload[x: Int, T: AnyRegType](y: T):
+fn paramOverload[x: Int, T: AnyTrivialRegType](y: T):
     pass
 
 
@@ -182,7 +182,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call @decls::@"paramOverload({{.*}}Int)"
     paramOverload(x)
 
-    # CHECK-NEXT: lit.call @decls::@"paramOverload[{{.*}}Int,AnyRegType]($1)"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload[{{.*}}Int,AnyTrivialRegType]($1)"
     paramOverload[a](x)
 
     # CHECK-NEXT: lit.call @decls::@"paramOverload{{.*}}<:variadic<!Int> [a, b]>(%x)
@@ -204,7 +204,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     paramOverload2[MyInt(a), b, c]()
 
 
-struct VariadicStruct[*Ts: AnyRegType]:
+struct VariadicStruct[*Ts: AnyTrivialRegType]:
     fn __init__(inout self):
         pass
 
@@ -213,7 +213,7 @@ struct VariadicStruct[*Ts: AnyRegType]:
         pass
 
 
-fn take_variadic_struct[*Ts: AnyRegType](a: VariadicStruct[Ts]):
+fn take_variadic_struct[*Ts: AnyTrivialRegType](a: VariadicStruct[Ts]):
     pass
 
 
@@ -303,7 +303,7 @@ fn testInlineByRef(inout a: AlwaysInlineByRef):
     a.doByRef()
 
 
-fn paramRefFunc[T: AnyRegType](x: T):
+fn paramRefFunc[T: AnyTrivialRegType](x: T):
     pass
 
 

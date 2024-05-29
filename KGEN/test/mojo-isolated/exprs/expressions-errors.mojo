@@ -72,7 +72,7 @@ fn trait_var():
     var type = SomeTrait
 
 
-fn reg_type_func() -> AnyRegType:
+fn reg_type_func() -> AnyTrivialRegType:
     # expected-error @below {{dynamic type values not permitted yet}}
     return Int
 
@@ -82,7 +82,7 @@ fn mem_type_func() -> AnyType:
     return SomeType
 
 
-fn takes_reg_type(t: AnyRegType):
+fn takes_reg_type(t: AnyTrivialRegType):
     pass
 
 

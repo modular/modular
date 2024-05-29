@@ -21,7 +21,7 @@ struct BoxedInt:
         return __mlir_op.`index.add`(self.value, rhs)
 
 
-struct Param[T: AnyRegType]:
+struct Param[T: AnyTrivialRegType]:
     pass
 
 

@@ -107,7 +107,7 @@ trait CFMTraitParams:
 
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
-struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
+struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](CFMTraitParams):
     # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
         pass
