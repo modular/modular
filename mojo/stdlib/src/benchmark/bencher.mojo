@@ -43,7 +43,7 @@ struct BenchMetric(CollectionElement):
 
         Returns:
             The string representation of the metric."""
-        return String(self.name) + " (" + self.unit + ")"
+        return self.name + " (" + self.unit + ")"
 
     fn __eq__(self, other: Self) -> Bool:
         """Compares two metrics for equality.
@@ -76,7 +76,7 @@ struct BenchMetric(CollectionElement):
         Returns:
             True if 'alt_name' is valid alternative of the metric's name.
         """
-        return String(self.name).lower() == String(alt_name).lower()
+        return self.name.lower() == alt_name.lower()
 
     @staticmethod
     fn get_metric_from_list(
@@ -98,13 +98,13 @@ struct BenchMetric(CollectionElement):
         var err: String = "\n"
         err += "------------------------------------------------------------\n"
         err += "------------------------------------------------------------\n"
-        err += "Couldn't match metric [" + String(name) + "]\n"
+        err += "Couldn't match metric [" + name + "]\n"
         err += "Available throughput metrics (case-insensitive) in the list:\n"
         for m in metric_list:
-            err += "    metric: [" + String(m[].name).lower() + "]\n"
+            err += "    metric: [" + m[].name.lower() + "]\n"
         err += "------------------------------------------------------------\n"
         err += "------------------------------------------------------------\n"
-        err += "[ERROR]: metric [" + String(name) + "] is NOT supported!\n"
+        err += "[ERROR]: metric [" + name + "] is NOT supported!\n"
         raise Error(err)
 
 
@@ -142,7 +142,7 @@ struct ThroughputMeasure(CollectionElement):
         self.value = value
 
     fn __str__(self) -> String:
-        return String(self.metric)
+        return str(self.metric)
 
     fn compute(self, elapsed_sec: Float64) -> Float64:
         """Compute throughput rate for this metric per unit of time (second).
@@ -349,7 +349,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
 
         for i in range(len(self.measures)):
             var rate = self.measures[i].compute(self.result.mean(unit=Unit.s))
-            elems = elems + "," + String(rate)
+            elems = elems + "," + str(rate)
 
         return (
             self.name
@@ -715,7 +715,7 @@ struct Bench:
             )
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
-                    var measure_name = String(measure[])
+                    var measure_name = str(measure[])
                     report += _str_fmt_width(
                         ", " + measure_name, RATE_WIDTH + 2
                     )
@@ -728,7 +728,7 @@ struct Bench:
             report += String("name, met (ms), iters, throughput (Gelems/s)")
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
-                    report += ", " + String(measure[])
+                    report += ", " + str(measure[])
             report += "\n"
 
             for i in range(num_runs):
