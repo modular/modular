@@ -20,9 +20,7 @@ add_modular_library(KGENJIT
   MC
 
   LINK_LIBS PUBLIC
-  KGENToLLVM
   KGENToolCommon
-  KGENPipeline
 
   MCache
   MCompilerSupport
@@ -30,8 +28,5 @@ add_modular_library(KGENJIT
   MSupport
   LLCLCompilerSupport
 
-  MLIRIndexToLLVM
   MLIRTargetLLVMIRExport
-  MLIRBytecodeWriter
-  MLIRBytecodeReader
 )

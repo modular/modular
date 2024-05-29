@@ -43,7 +43,7 @@ add_subdirectory(lib/Elaborator)
 add_subdirectory(lib/MOGGPreElab)
 
 # KGEN compiler and JIT.
-add_subdirectory(lib/Pipeline)
+add_subdirectory(lib/Compiler/Pipeline)
 add_subdirectory(lib/ToolCommon)
 add_subdirectory(lib/CompilerRT)
 add_subdirectory(lib/ExecutionEngine/JIT)

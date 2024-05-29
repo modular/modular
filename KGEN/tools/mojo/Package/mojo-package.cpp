@@ -356,10 +356,10 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
 
   // Run various check passes now to propagate warnings and errors up to the
   // user.
-  mlir::PassManager pm(theModule.getContext());
+  KGENCompiler compiler(*theModule.getContext(), packageArgs.compileOptions);
+  mlir::PassManager &pm = compiler.getPassManager();
   configurePassManager(pm);
-  buildCheckLITPipeline(pm, packageArgs.compileOptions);
-  if (failed(pm.run(theModule)))
+  if (failed(compiler.runCheckLITPipeline(theModule)))
     return Error("errors occurred during compilation");
 
   return std::make_pair(std::move(packageModule), thePackage);

@@ -272,9 +272,10 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          TargetInfoAttr target,
                          ArrayRef<const char *> arguments,
                          M::Context &maxContext) {
-  mlir::PassManager pm(&context);
-  configurePassManager(pm);
+  KGENCompiler compiler(context, options);
+  mlir::PassManager &pm = compiler.getPassManager();
 
+  configurePassManager(pm);
   ExecutionEngineOptions eeOptions;
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
@@ -294,8 +295,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 
   // Compile the moduleOp down to the post-elaboration phase,
   // because before that phase we don't have flat symbols.
-  if (ErrorOrSuccess err =
-          KGEN::runKGENPipeline(pm, moduleOp, options, true, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, true, target))
     return state.reportError(err.getError());
 
   if (ErrorOrSuccess err = objectCompilerLayer.add("exec", moduleOp))

@@ -38,7 +38,6 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/TargetParser/Host.h"
 
 #include <utility>
 

@@ -18,6 +18,7 @@
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Pipeline/Pipeline.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
@@ -372,49 +373,6 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   return readCaptureArgs(func.getContext(), buf.copy());
 }
 
-//===----------------------------------------------------------------------===//
-// runLibraryGenerationPipeline
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
-    ModuleOp module, const KGEN::CompilationOptions &compileOptions,
-    bool materializeDependencies) {
-  auto cacheBackend = getMojoCacheBackend();
-  if (cacheBackend.isError())
-    return cacheBackend.takeError();
-  auto transformCache =
-      RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
-
-  // Generate a library from the module, processing the pipeline up to the
-  // elaboration phase.
-  mlir::PassManager genLibPM(module.getContext());
-  configurePassManager(genLibPM);
-  buildGenerateLibraryPipeline(genLibPM, compileOptions);
-  if (materializeDependencies) {
-    genLibPM.addPass(createMaterializePackagesWithDefaultGen(compileOptions));
-  }
-  LLCL::Runtime &runtime =
-      *loadContext(module.getContext())->get<LLCL::Runtime>();
-  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
-      genLibPM,
-      Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-          "KGEN::runLibraryGenerationPipeline", "mojo.compiler.cache.miss.time",
-          {{"pipeline", "KGEN"}}),
-      Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-          "KGEN::runLibraryGenerationPipeline"));
-  LLCL::await(ready);
-  if (ready.isError())
-    return ready.takeDiagnostic().getMessage().copy();
-
-  // Strip the implicit package exports, we don't need these because we're going
-  // to link the package into an existing module as-is.
-  for (ExportInterface op : module.getOps<ExportInterface>())
-    if (op.isPackageExported())
-      op.setNotExported();
-  return success();
-}
-
 static ErrorOr<BufferRef> specializePackageLinkForPreElaborationLinking(
     PackageLinkOp packageLink, const KGEN::CompilationOptions &compileOptions) {
   auto cacheBackend = getMojoCacheBackend();
@@ -431,30 +389,31 @@ static ErrorOr<BufferRef> specializePackageLinkForPreElaborationLinking(
   auto runTransform = [&](WriteableBufferRef buf,
                           LLCL::AnyAsyncValueRef chain) mutable {
     auto output = AsyncValueRef<BufferRef>::allocate(chain.getRuntime());
-    std::move(chain).andThenSync(
-        [&, output = output.copy(),
-         buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
-          if (chain.isError())
-            return std::move(output).setToError(chain.takeDiagnostic());
-          auto setError = [&](Error err) {
-            return std::move(output).setToError(
-                LLCL::getMLIRDiagnostic(std::move(err), packageLink->getLoc()));
-          };
+    std::move(chain).andThenSync([&, output = output.copy(),
+                                  buf = std::move(buf)](
+                                     AnyAsyncValueRef &&chain) mutable {
+      if (chain.isError())
+        return std::move(output).setToError(chain.takeDiagnostic());
+      auto setError = [&](Error err) {
+        return std::move(output).setToError(
+            LLCL::getMLIRDiagnostic(std::move(err), packageLink->getLoc()));
+      };
 
-          // Read in the bytecode and run the library generation pipeline.
-          OwningOpRef<ModuleOp> packageModuleOr =
-              readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
-          if (!packageModuleOr)
-            return setError("unable to load parsed module bytecode");
-          if (auto err = runLibraryGenerationPipeline(*packageModuleOr,
-                                                      compileOptions))
-            return setError(err.takeError());
+      // Read in the bytecode and run the library generation pipeline.
+      OwningOpRef<ModuleOp> packageModuleOr =
+          readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
+      if (!packageModuleOr)
+        return setError("unable to load parsed module bytecode");
 
-          // Write the bytecode back out to the buffer.
-          if (failed(mlir::writeBytecodeToFile(*packageModuleOr, *buf)))
-            return setError("failed to write bytecode for package module");
-          return std::move(output).emplace(std::move(buf));
-        });
+      KGENCompiler compiler(*(packageModuleOr->getContext()), compileOptions);
+      if (auto err = compiler.runLibraryGenerationPipeline(*packageModuleOr))
+        return setError(err.takeError());
+
+      // Write the bytecode back out to the buffer.
+      if (failed(mlir::writeBytecodeToFile(*packageModuleOr, *buf)))
+        return setError("failed to write bytecode for package module");
+      return std::move(output).emplace(std::move(buf));
+    });
     return output;
   };
   auto onCacheHit = [](BufferRef buf) { return buf; };
@@ -573,17 +532,16 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   return std::move(engine);
 }
 
-ErrorOrSuccess
-KGEN::runKGENPipeline(mlir::PassManager &pm, ModuleOp theModule,
-                      const KGEN::CompilationOptions &compilationOptions,
-                      bool isJIT, TargetInfoAttr target, bool isSearch) {
+ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule, bool isJIT,
+                                             TargetInfoAttr target,
+                                             bool isSearch) {
 
   // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
 
   // Populate the passes.
-  buildGenerateLibraryPipeline(pm, compilationOptions);
-  populateElaborateModulePasses(pm, target, compilationOptions);
+  buildGenerateLibraryPipeline(pm, options);
+  populateElaborateModulePasses(pm, target, options);
 
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
   auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
@@ -609,14 +567,62 @@ KGEN::runKGENPipeline(mlir::PassManager &pm, ModuleOp theModule,
         theModule, transformCache.copy(),
         ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm,
         Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-            "KGEN::runKGENPipeline", "mojo.compiler.cache.miss.time",
+            "KGENCompiler::runKGENPipeline", "mojo.compiler.cache.miss.time",
             {{"pipeline", "KGEN"}}),
         Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-            "KGEN::runKGENPipeline"));
+            "KGENCompiler::runKGENPipeline"));
     LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();
   }
 
   return ErrorOrSuccess();
+}
+
+ErrorOrSuccess
+KGENCompiler::runLibraryGenerationPipeline(ModuleOp module,
+                                           bool materializeDependencies) {
+  auto cacheBackend = getMojoCacheBackend();
+  if (cacheBackend.isError())
+    return cacheBackend.takeError();
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
+
+  // Generate a library from the module, processing the pipeline up to the
+  // elaboration phase.
+  configurePassManager(pm);
+  buildGenerateLibraryPipeline(pm, options);
+  if (materializeDependencies)
+    pm.addPass(createMaterializePackagesWithDefaultGen(options));
+
+  LLCL::Runtime &runtime =
+      *loadContext(module.getContext())->get<LLCL::Runtime>();
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
+      pm,
+      Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
+          "KGEN::runLibraryGenerationPipeline", "mojo.compiler.cache.miss.time",
+          {{"pipeline", "KGEN"}}),
+      Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
+          "KGEN::runLibraryGenerationPipeline"));
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+
+  // Strip the implicit package exports, we don't need these because we're going
+  // to link the package into an existing module as-is.
+  for (ExportInterface op : module.getOps<ExportInterface>())
+    if (op.isPackageExported())
+      op.setNotExported();
+  return success();
+}
+
+LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
+  buildCheckLITPipeline(pm, options);
+  return pm.run(module);
+}
+
+LogicalResult KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
+  buildGenerateLibraryPipeline(pm, options);
+  return pm.run(module);
 }
