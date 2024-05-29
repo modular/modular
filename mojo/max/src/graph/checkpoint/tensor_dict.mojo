@@ -63,10 +63,10 @@ struct TensorDict(Sized):
         tensors = TensorDict()
         tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
         tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))
-        save(tensors, "/path/to/checkpoint.max")
+        save(tensors, "/path/to/checkpoint.maxckpt")
 
     def read_from_disk():
-        tensors = load("/path/to/checkpoint.max")
+        tensors = load("/path/to/checkpoint.maxckpt")
         x = tensors.get("x").to_tensor[DType.int32]()
     ```
     """
@@ -102,7 +102,7 @@ struct TensorDict(Sized):
         self._items._insert(key, CheckpointTensor.from_tensor(value))
 
     fn set(inout self, key: String, value: CheckpointTensor):
-        """Adds or updates a tensor to the dictionary.
+        """Adds or updates a tensor in the dictionary.
 
         Args:
             key: The name of the tensor.
@@ -116,7 +116,7 @@ struct TensorDict(Sized):
         For example:
 
         ```mojo
-        tensors = load("/path/to/checkpoint.max")
+        tensors = load("/path/to/checkpoint.maxckpt")
         x = tensors["x"]
         ```
 
