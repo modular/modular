@@ -555,6 +555,7 @@ export class MojoSDKManager extends DisposableContext {
       let sdkNames = possibleSDKs.map(sdk => sdk.config.version.toString());
       let selected = await vscode.window.showQuickPick(sdkNames, {
         placeHolder : "Select the Mojo SDK to use!",
+        ignoreFocusOut : true,
       });
       if (selected) {
         sdk = possibleSDKs.find(sdk =>
