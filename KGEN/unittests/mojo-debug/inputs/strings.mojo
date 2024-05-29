@@ -28,5 +28,5 @@ fn main():
         s2 += str(i)
     var s3 = String()
     test(s2)
-    var s4 = Pointer[String].address_of(s2)
+    var s4 = UnsafePointer[String].address_of(s2)
     print(literal, s1, s2, s3, s4)  # breakpoint
