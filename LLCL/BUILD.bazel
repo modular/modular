@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library")
-load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -65,9 +64,10 @@ modular_cc_library(
     ],
 )
 
-globals_library(
+modular_shared_library(
     name = "RuntimeGlobals",
     srcs = glob(["lib/Runtime/Globals/*.cpp"]),
+    output_name = "LLCLRuntimeGlobals",
     deps = [
         ":CompilerSupport",
         ":RuntimeHeaders",

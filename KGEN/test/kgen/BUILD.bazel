@@ -4,12 +4,12 @@ lit_tests(
     name = "kgen",
     srcs = glob(["**/*.mlir"]),
     data = [
-        "//KGEN:CompilerRT.shared.file",
+        "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
+        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
     },
     tools = [
         "//KGEN/tools/hash-mlir",

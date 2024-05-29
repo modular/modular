@@ -1,9 +1,8 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "modular_shared_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
-load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
@@ -912,7 +911,7 @@ cc_distributable_static_library(
     deps = [
         ":CompilerRT.static",
         "//ArraySupport",
-        "//CUDASupport:Globals",
+        "//CUDASupport:Globals.static",
         "//Config",
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals.static",
@@ -955,7 +954,7 @@ modular_cc_test(
     deps = [":CompilerRT.distributable"],
 )
 
-globals_library(
+modular_shared_library(
     name = "CompilerRT",
     srcs = glob([
         "lib/CompilerRT/*.cpp",
@@ -967,7 +966,7 @@ globals_library(
     local_defines = [
         "MODULAR_BUILDING_COMPILERRT",
     ],
-    strip_include_prefix = "include",
+    output_name = "KGENCompilerRTShared",
     deps = [
         "//ArraySupport",
         "//CUDASupport:CUDASupportHeaders",
@@ -987,8 +986,8 @@ globals_library(
 )
 
 opt_wrapper(
-    name = "CompilerRT.shared.file.opt",
-    dep = ":CompilerRT.shared.file",
+    name = "CompilerRT.opt",
+    dep = ":CompilerRT",
 )
 
 # TODO: Move to configure.bzl?
@@ -1337,7 +1336,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/MojoLLDB/*.h"]),
 )
 
-globals_library(
+modular_shared_library(
     name = "MojoLLDB",
     srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
@@ -1348,6 +1347,7 @@ globals_library(
     local_defines = [
         "MODULAR_BUILDING_LIBRARY",
     ],
+    strip_include_prefix = None,
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",
