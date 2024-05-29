@@ -48,9 +48,9 @@ export class MojoLSPProxy {
    */
   private docsStateHandler: MojoDocumentsStateHandler;
   /**
-   * A count for how many times the server was restarted.
+   * The time when the proxy was initialized.
    */
-  private restartCount = 0;
+  private initTime = Date.now();
   /**
    * The initialization params used to launch the server. They are gotten from
    * the client as part of the `initialize` request and have to be reused
@@ -143,12 +143,12 @@ export class MojoLSPProxy {
     this.client.console.log(`The mojo-lsp-server binary exited with signal '${
         status.signal}' and exit code '${status.code}'.`);
 
-    this.restartCount++;
-    // If we restart too many times, then something weird might be going on,
-    // so we just fail the entire proxy for a full restart.
-    if (this.restartCount === 100) {
+    const timeSinceInitInMins = Math.floor(Date.now() - this.initTime / 60000);
+    // We only allow one restart per minute to prevent VSCode from disabling the
+    // LSP. VSCode allows 4 crashes every 3 minutes.
+    if (timeSinceInitInMins >= 1) {
       this.client.console.log(
-          "The mojo-lsp-server binary has exited unsuccessfully too many times. The proxy will terminate.");
+          "The mojo-lsp-server binary has exited unsuccessfully. The proxy will terminate.");
       if (status.signal !== null)
         process.kill(process.pid, status.signal);
       process.exit(status.code!);
