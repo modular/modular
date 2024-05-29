@@ -71,7 +71,7 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringLiteral, result_type: AnyRegType
+    func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() -> result_type:
     constrained[os_is_macos(), "operating system must be macOS"]()
     return _ffi_get_dylib_function[
