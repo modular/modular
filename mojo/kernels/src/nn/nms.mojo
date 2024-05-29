@@ -189,7 +189,7 @@ fn non_max_suppression[
 
             @parameter
             @always_inline
-            fn _greater_than[ty: AnyRegType](lhs: ty, rhs: ty) -> Bool:
+            fn _greater_than[ty: AnyTrivialRegType](lhs: ty, rhs: ty) -> Bool:
                 return (
                     per_class_scores[int(rebind[Int64](lhs))]
                     >= per_class_scores[int(rebind[Int64](rhs))]

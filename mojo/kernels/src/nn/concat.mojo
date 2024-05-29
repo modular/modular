@@ -34,7 +34,7 @@ from utils import StaticIntTuple, product, StaticTuple
 # which can be either a VariadicList or a FixedVector. For now, we use this to
 # manually convert to a FixedVector.
 fn variadic_list_to_vector[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](elems: VariadicList[type]) -> InlinedFixedVector[type]:
     var vector = InlinedFixedVector[type](len(elems))
     for i in range(len(elems)):
