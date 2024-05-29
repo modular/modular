@@ -376,6 +376,11 @@ public:
   ASTDecl *lookupBuiltinTrait(StringRef traitName, ASTDecl *context, SMLoc loc);
 
   /// Lookup the specified name, and check that it is a non-parameterized type.
+  /// This emits a diagnostic on error and returns null, or returns the ASTDecl
+  /// of the type on success.
+  ASTDecl *lookupNamedTypeDecl(StringRef name, ASTDecl &context,
+                               llvm::SMLoc loc);
+  /// Lookup the specified name, and check that it is a non-parameterized type.
   /// This emits a diagnostic on error and returns null, or returns the type on
   /// success.
   ASTType lookupNamedType(StringRef name, ASTDecl &context, llvm::SMLoc loc);
@@ -417,11 +422,11 @@ public:
   ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupNamedType("VariadicPack", context, loc);
   }
-  ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("Coroutine", context, loc);
+  ASTDecl *getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedTypeDecl("Coroutine", context, loc);
   }
-  ASTType getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("RaisingCoroutine", context, loc);
+  ASTDecl *getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedTypeDecl("RaisingCoroutine", context, loc);
   }
   ASTType getOwnedKwargsDictType(llvm::SMLoc loc);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);

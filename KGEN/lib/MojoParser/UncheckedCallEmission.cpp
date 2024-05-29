@@ -1015,23 +1015,34 @@ TypedAttr CallEmitter::emitCallInParamContext(
 /// type, or `RaisingCoroutine` type in the case of a raising function. This
 /// function looks up the corresponding coroutine type and binds its result
 /// type.
-static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
-                                     SMLoc loc, SignatureType sig) {
-  ASTType coroType = sig.isThrows()
-                         ? shared.getBuiltinRaisingCoroutineType(declScope, loc)
-                         : shared.getBuiltinCoroutineType(declScope, loc);
-  if (!coroType) {
+static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
+                                     const ExprNode *expr, SignatureType sig) {
+  auto [declScope, _, shared] = scopeInfo;
+  SMLoc loc = expr->getLoc();
+  ASTDecl *decl = sig.isThrows()
+                      ? shared.getBuiltinRaisingCoroutineType(declScope, loc)
+                      : shared.getBuiltinCoroutineType(declScope, loc);
+  if (!decl) {
     shared.emitError(loc,
                      "internal error: could not find builtin 'Coroutine' type");
     return {};
   }
   // If the async function throws, extract the normal result type.
-  Type resultType = ASTType(sig).getSignatureUserResultType();
+  ASTType resultType = ASTType(sig).getSignatureUserResultType();
 
   // Bind the result type to the base coroutine type.
-  auto typeExpr =
-      TypeConstantAttr::get(resultType, TypeType::get(shared.getContext()));
-  return BindTypeAttr::get(PValue(coroType), typeExpr);
+  ParamBindings paramBinds(scopeInfo);
+  paramBinds.add(expr, PValue(resultType));
+
+  auto structOp = cast<StructDeclOp>(decl);
+  ASTType coroType = structOp.bindReference();
+  ParameterExprArrayAttr bindings = paramBinds.verifyBindings(
+      structOp, cast<AnyStructType>(coroType.getMetaType()).getSignature(),
+      expr->getLoc(), /*partial=*/false);
+  if (!bindings)
+    return {};
+
+  return BindTypeAttr::get(PValue(coroType), bindings);
 }
 
 /// Emit warnings about incorrect code in a direct call.  This is invoked after
@@ -1319,8 +1330,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // `!co.routine<T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(loc, target.get(),
                                                implicitLifetimes, callArgs);
-      ASTType coroType =
-          getBoundCoroutineType(shared, declScope, callExpr->getLoc(), sig);
+      ASTType coroType = getBoundCoroutineType(getScopeInfo(), callExpr, sig);
       if (!coroType) {
         dest.resetForError();
         return {};
