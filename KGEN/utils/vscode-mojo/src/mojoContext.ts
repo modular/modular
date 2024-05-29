@@ -36,7 +36,7 @@ export class MojoContext extends DisposableContext {
   /**
    *  Activate the Mojo context, and start the language clients.
    */
-  async activate(launchAndDebugLanguageServer: boolean = false) {
+  async activate() {
     this.loggingService.main
         .logInfo("Activating the Mojo Context.")
 
@@ -47,16 +47,10 @@ export class MojoContext extends DisposableContext {
               this.dispose();
               await this.activate();
             }));
-    this.pushSubscription(vscode.commands.registerCommand(
-        'mojo.restart-and-debug-lsp', async () => {
-          // Dispose and reactivate the context.
-          this.dispose();
-          await this.activate(/*launchAndDebugLanguageServer=*/ true);
-        }));
 
     // Initialize the testing support.
     let testContext = new MojoTestContext(this);
-    testContext.activate();
+    await testContext.activate();
     this.pushSubscription(testContext);
 
     // Initialize the formatter.
@@ -73,9 +67,9 @@ export class MojoContext extends DisposableContext {
     this.pushSubscription(new MojoDecoratorContext());
 
     // Initialize the LSPs
-    this.lspContext = new MojoLSPContext(this, launchAndDebugLanguageServer);
-    this.pushSubscription(this.lspContext);
+    this.lspContext = new MojoLSPContext(this);
     await this.lspContext.activate();
+    this.pushSubscription(this.lspContext);
 
     this.loggingService.main.logInfo("MojoContext activated.");
   }

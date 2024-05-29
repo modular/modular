@@ -170,6 +170,11 @@
         "title": "Restart the Mojo LSP Server and Attach the Debugger to it"
       },
       {
+        "category": "Developer",
+        "command": "mojo.restart-lsp",
+        "title": "Restart the Mojo LSP Server (Without the Debugger Attached)"
+      },
+      {
         "category": "Mojo",
         "command": "mojo.restart",
         "title": "Restart the Extension"

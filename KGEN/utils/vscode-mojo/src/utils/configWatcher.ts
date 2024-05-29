@@ -50,16 +50,25 @@ async function promptRestart(settingName: string, promptMessage: string) {
 export async function activate(
     workspaceFolder: vscode.WorkspaceFolder|undefined, settings: string[],
     paths: string[]): Promise<DisposableContext> {
+  // Flag that controls whether a restart event was issued. This is used to
+  // prevent multiple simultaneous restarts caused by, for example, multiple
+  // watchers being triggered at once.
+  let restartIssued = false;
+  const promptRestartOnce = (promptMessage: string) => {
+    if (restartIssued)
+      return;
+    restartIssued = true;
+    promptRestart('onSettingsChanged', promptMessage);
+  };
+
   const disposables = new DisposableContext();
   // When a configuration change happens, check to see if we should restart.
   disposables.pushSubscription(vscode.workspace.onDidChangeConfiguration(event => {
     for (const setting of settings) {
       const expandedSetting = `mojo.${setting}`;
       if (event.affectsConfiguration(expandedSetting, workspaceFolder)) {
-        promptRestart(
-            'onSettingsChanged',
-            `setting '${
-                expandedSetting}' has changed. Do you want to reload the server?`);
+        promptRestartOnce(`setting '${
+            expandedSetting}' has changed. Do you want to reload the server?`);
       }
     }
   }));
@@ -76,8 +85,7 @@ export async function activate(
     const fileWatcher = chokidar.watch(serverPath, fileWatcherConfig);
     fileWatcher.on('all', (event, _filename, _details) => {
       if (event != 'unlink') {
-        promptRestart(
-            'onSettingsChanged',
+        promptRestartOnce(
             'mojo language server file has changed. Do you want to reload the server?');
       }
     });
