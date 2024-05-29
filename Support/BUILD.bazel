@@ -1,7 +1,6 @@
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
-load("//bazel:api.bzl", "modular_cc_library")
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
-load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
 package(default_visibility = ["//visibility:public"])
@@ -870,13 +869,13 @@ modular_cc_library(
     ],
 )
 
-globals_library(
+modular_shared_library(
     name = "Globals",
     srcs = glob(["lib/Globals/*.cpp"]),
     hdrs = glob(["include/Support/Globals/*.h"]) + [
         "include/Support/SymbolExport.h",
     ],
-    strip_include_prefix = "include",
+    output_name = "MSupportGlobals",
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
 )

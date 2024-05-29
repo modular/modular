@@ -15,9 +15,9 @@ lit_tests(
         "-Xlldb run": "-Xlldb 'process launch'",
     },
     data = glob(["Inputs/*.mojo"]) + [
+        "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
-        "//KGEN:CompilerRT.shared.file",
-        "//KGEN:MojoLLDB.shared.file",
+        "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
         "//utils:lit-lldb-init.in",
@@ -28,11 +28,11 @@ lit_tests(
         "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
         # TODO: Enable when https://github.com/llvm/llvm-project/pull/91688 is in
         # "LLDB_ARGDUMPER_PATH": "$(location @llvm-project//lldb:lldb-argdumper)",
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
+        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
         "MODULAR_MOJO_DRIVER_PATH": "$(location //KGEN/tools/mojo)",
         "MODULAR_MOJO_LLDB_PATH": "$(location //KGEN:mojo-lldb)",
-        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
+        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB)",
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
     },
     exec_properties = {
