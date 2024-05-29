@@ -215,12 +215,12 @@ fn fn_with_overload(arg: Int):
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_parameter_references",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_parameter_references[arg1_type: AnyRegType, arg2_type: AnyRegType](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
+# CHECK:     "signature": "fn_with_parameter_references[arg1_type: AnyTrivialRegType, arg2_type: AnyTrivialRegType](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
 
 
 fn fn_with_parameter_references[
-    arg1_type: AnyRegType,
-    arg2_type: AnyRegType,
+    arg1_type: AnyTrivialRegType,
+    arg2_type: AnyTrivialRegType,
 ](
     func: __mlir_type[`(`, arg1_type, `,`, arg2_type, `) -> ()`],
     arg1: arg1_type,

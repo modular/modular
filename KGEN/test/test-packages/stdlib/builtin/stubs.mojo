@@ -9,7 +9,7 @@ alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
 alias NoneType = __mlir_type.`!kgen.none`
-alias AnyRegType = __mlir_type.`!kgen.type`
+alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 
 alias `0` = __mlir_attr.`0 : index`
 alias `1` = __mlir_attr.`1 : index`
@@ -182,7 +182,7 @@ struct Slice:
         return
 
     fn __init__[
-        T0: AnyRegType, T1: AnyRegType, T2: AnyRegType
+        T0: AnyTrivialRegType, T1: AnyTrivialRegType, T2: AnyTrivialRegType
     ](start: T0, end: T1, step: T2) -> Self:
         return Self {}
 
@@ -214,7 +214,7 @@ trait AnyType:
 
 @value
 @register_passable
-struct Coroutine[T: AnyRegType]:
+struct Coroutine[T: AnyTrivialRegType]:
     var value: __mlir_type.`!co.routine`
 
     fn __await__(self) -> T:
@@ -224,7 +224,7 @@ struct Coroutine[T: AnyRegType]:
 
 @value
 @register_passable
-struct RaisingCoroutine[T: AnyRegType]:
+struct RaisingCoroutine[T: AnyTrivialRegType]:
     var value: __mlir_type.`!co.routine`
 
     fn __await__(self) raises -> T:
@@ -238,7 +238,7 @@ struct RaisingCoroutine[T: AnyRegType]:
 
 
 @register_passable
-struct VariadicList[type: AnyRegType]:
+struct VariadicList[type: AnyTrivialRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
 
     fn __init__(inout self, value: Self._mlir_type):
@@ -302,7 +302,9 @@ struct VariadicPack[
 
 
 @register_passable
-struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
+struct __ParameterClosureCaptureList[
+    fn_type: AnyTrivialRegType, fn_ref: fn_type
+]:
     var value: __mlir_type.`!kgen.pointer<none>`
 
     # Parameter closure invariant requires this function be marked 'capturing'.

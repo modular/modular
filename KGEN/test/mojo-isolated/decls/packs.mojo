@@ -194,7 +194,7 @@ fn packBorrowed[*Ts: AnyType](*args: *Ts):
 
 
 # Ensure that parameters can be bound correctly.
-fn variadicParameter[*Ts: AnyRegType](x: Int):
+fn variadicParameter[*Ts: AnyTrivialRegType](x: Int):
     pass
 
 

@@ -683,8 +683,9 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   if (isa<TypeType>(elementType)) {
     emitter.emitError(arg.loc)
-        << "variadic pack elements declared as 'AnyRegType' are removed,"
-        << " please declare elements as 'AnyType' instead of 'AnyRegType'";
+        << "variadic pack elements declared as 'AnyTrivialRegType' are removed,"
+        << " please declare elements as 'AnyType' instead of "
+           "'AnyTrivialRegType'";
     return {};
   }
 

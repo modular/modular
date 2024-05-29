@@ -25,15 +25,15 @@ struct Thing:
 
 
 # COM: Test various things related to interfacing with generic types.
-fn anytype[T: AnyRegType]():
+fn anytype[T: AnyTrivialRegType]():
     pass
 
 
-fn anytype_arg[T: AnyRegType](x: T):
+fn anytype_arg[T: AnyTrivialRegType](x: T):
     pass
 
 
-fn anytype_result[T: AnyRegType]() -> T:
+fn anytype_result[T: AnyTrivialRegType]() -> T:
     pass
 
 
@@ -56,19 +56,19 @@ fn metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound{{.*}}: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyRegType]()"<:type !Thing>>
+    # CHECK: bound{{.*}}: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyTrivialRegType]()"<:type !Thing>>
     alias bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
-    # CHECK: call {{.*}}@"anytype_result[AnyRegType]()"<:type !Thing>
+    # CHECK: call {{.*}}@"anytype_result[AnyTrivialRegType]()"<:type !Thing>
     var v: Thing = anytype_result[Thing]()
 
     # COM: Test that argument type inference works correctly.
-    # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:type !Thing>
+    # CHECK: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:type !Thing>
     anytype_arg(v)
 
     # COM: Test inferring from a non-materializable type.
     alias nm_alias = NMType()
     # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply_result_slot({{.*}}@Thing::@"__init__
-    # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:type !Thing>([[MVAL]])
+    # CHECK: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:type !Thing>([[MVAL]])
     anytype_arg(nm_alias)

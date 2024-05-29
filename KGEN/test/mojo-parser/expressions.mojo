@@ -199,7 +199,7 @@ struct RegPassable:
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.signature
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow, |)
-struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
+struct StructWithFuncParam[comparator: fn[T: AnyTrivialRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
     # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
     fn f(self):

@@ -144,16 +144,18 @@ InflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
 }
 
 InflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
-  return initDiag() << "result cannot bind AnyRegType type to memory-only type "
-                    << outputType;
+  return initDiag()
+         << "result cannot bind AnyTrivialRegType type to memory-only type "
+         << outputType;
 }
 
 InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
                                             Type expectedType) const {
   InflightDiag diag = initDiag();
   describeArgumentNo(diag, expectedArgIdx);
-  return std::move(diag) << " cannot bind AnyRegType type to memory-only type "
-                         << expectedType;
+  return std::move(diag)
+         << " cannot bind AnyTrivialRegType type to memory-only type "
+         << expectedType;
 }
 
 /// Attach extra type conversion error detail or hints to the user when
@@ -900,7 +902,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // If the arguments or results got bound to a memory-only type then their
     // argument convention needs to change.  We cannot support this until we get
     // proper type traits.
-    // TODO: Don't let memory types bind to AnyRegType.
+    // TODO: Don't let memory types bind to AnyTrivialRegType.
     if (!ASTType(expectedType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 

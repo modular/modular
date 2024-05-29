@@ -45,7 +45,7 @@ struct AStruct:
         self.tuple = Tuple[Int, Int8, Float32](1, 87, 123.125)
 
 
-struct ParamStruct[T: AnyRegType]:
+struct ParamStruct[T: AnyTrivialRegType]:
     var t: T
 
     fn __init__(inout self, t: T):

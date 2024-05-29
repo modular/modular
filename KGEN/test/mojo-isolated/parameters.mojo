@@ -197,7 +197,7 @@ struct TypeParameter[T: __mlir_type.`!kgen.type`]:
 # CHECK-LABEL: lit.struct.decl @ParamSubst
 # CHECK-SAME: <[[TYPE:.*]]: type, shape: variadic<[[TYPE]]>>
 struct ParamSubst[
-    T: AnyRegType,
+    T: AnyTrivialRegType,
     shape: __mlir_type[`!kgen.variadic<`, T,`>`],
   ]: pass
 
@@ -760,7 +760,7 @@ fn testDependentField():
     takeAbstraction2(lvalue.value)
 
 
-fn tail_types[T: AnyRegType, *U: AnyType](a: T, *b: *U):
+fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
     pass
 
 # CHECK-LABEL: lit.func @"call_with_tail_types()"
@@ -774,12 +774,12 @@ fn call_with_tail_types():
 
 # COM: We can't infer parameters from the default value, but we need to test if
 # COM: if other parameters are inferred correctly in their presence.
-fn infer_with_default_arg[T: AnyRegType](a: T, b: Int = 7):
+fn infer_with_default_arg[T: AnyTrivialRegType](a: T, b: Int = 7):
     pass
 
 # CHECK-LABEL: lit.func @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call @{{.*}}::@"infer_with_default_arg[AnyRegType]($0,{{.*}}::Int)"<:type !Int>
+    # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,{{.*}}::Int)"<:type !Int>
     infer_with_default_arg(128)
 
 fn fn_with_param[x: Int](y: Abstraction[x]):
@@ -1021,17 +1021,17 @@ fn test_default_param_struct_all_default():
 
 
 # COM: Issue #22763
-fn IntForType[T: AnyRegType]() -> Int:
+fn IntForType[T: AnyTrivialRegType]() -> Int:
     return 1
 
-struct StructWithParametricDefaultValue[T: AnyRegType, N: Int = IntForType[T]()]:
+struct StructWithParametricDefaultValue[T: AnyTrivialRegType, N: Int = IntForType[T]()]:
     pass
 
 # CHECK-LABEL: lit.func @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": anystruct<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :type !Int
-    # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyRegType]()"{{.*}}<:type !Int>)>
+    # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:type !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##

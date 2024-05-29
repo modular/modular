@@ -262,9 +262,10 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   }
 
   // TODO: We're not handling a lot of important things, e.g. conversion from
-  // AnyStruct -> TraitType; conversion from AnyStruct -> AnyRegType; implicit
-  // conversions that cause us to see i1->Bool and similar things here, etc.
-  // as such, we can't treat conversion errors for unknown things as failures.
+  // AnyStruct -> TraitType; conversion from AnyStruct -> AnyTrivialRegType;
+  // implicit conversions that cause us to see i1->Bool and similar things here,
+  // etc. as such, we can't treat conversion errors for unknown things as
+  // failures.
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN TYPES:\n"; actualType.dump();
              expectedType.dump(); llvm::errs() << "\n");
   return failure();
@@ -280,7 +281,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (actualAttr.getType() != expectedAttr.getType()) {
     // FIXME: Enforce attribute type convertibility.
     // This breaks, e.g.:
-    // TypeConstantAttr(T, SomeStruct) <-> TypeConstantAttr(Param, AnyRegType)
+    // TypeConstantAttr(T, SomeStruct) <-> TypeConstantAttr(Param,
+    // AnyTrivialRegType)
     (void)matchTypes(actualAttr.getType(), expectedAttr.getType());
   }
 

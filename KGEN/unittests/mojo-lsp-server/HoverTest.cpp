@@ -564,7 +564,7 @@ fn print(x: StringLiteral):
 fn print(x: Bool):
     pass
 
-fn function[type: AnyRegType](arg: type):
+fn function[type: AnyTrivialRegType](arg: type):
     print("string")
     print(arg)
   )");

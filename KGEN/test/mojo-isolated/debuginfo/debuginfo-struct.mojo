@@ -28,7 +28,7 @@ struct MyRP[A: Int]:
 
 # CHECK: lit.struct.decl @MyData
 # CHECK-SAME: sourceName = #[[SOURCENAME_DATA]]
-struct MyData[A: Int, B: MyRP[3], C: AnyRegType]:
+struct MyData[A: Int, B: MyRP[3], C: AnyTrivialRegType]:
     var a: Int
     var b: MyRP[3]
     var c: C
