@@ -3,4 +3,4 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""The root package for the Mojo MAX Engine APIs."""
+"""The root package for all MAX APIs in Mojo."""
