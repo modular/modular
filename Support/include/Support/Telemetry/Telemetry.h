@@ -99,15 +99,33 @@ public:
   }
 
 #ifdef MODULAR_ENABLE_TELEMETRY
-  bool initMetricsReader(
+  bool initUserMetricsReader(
       std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader);
 #endif
 
-  /// Create a Counter<uint64_t>.
+  bool clearUserMetricsReader();
+
   Counter<uint64_t> createUInt64Counter(
       StringRef name, Level instrumentLevel,
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
+    return createCounter<uint64_t>(name, instrumentLevel, attributes,
+                                   description, unit);
+  }
+
+  Counter<double> createDoubleCounter(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
+    return createCounter<double>(name, instrumentLevel, attributes, description,
+                                 unit);
+  }
+
+  template <typename T>
+  Counter<T>
+  createCounter(StringRef name, Level instrumentLevel,
+                const llvm::StringMap<MetricAttributeValue> &attributes = {},
+                StringRef description = "", StringRef unit = "") {
     // TODO: If the name is invalid, it looks like OTel logs the error and
     // returns a NOOP counter. Instead, we should probably try to assert that
     // the name is valid or that the returned counter is not NOOP. Same for
@@ -115,59 +133,19 @@ public:
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (isUserMetric(instrumentLevel)) {
       if (userMeter)
-        return Counter<uint64_t>(
-            userMeter->CreateUInt64Counter(name.data(), description.data(),
-                                           unit.data()),
-            attributes);
+        return createCounterImpl<T>(userMeter, name, description, unit,
+                                    attributes);
       else
-        return Counter<uint64_t>(
-            noopMeter->CreateUInt64Counter(name.data(), description.data(),
-                                           unit.data()),
-            attributes);
+        return createCounterImpl<T>(noopMeter, name, description, unit,
+                                    attributes);
     }
     if (isInstrumentEnabled(instrumentLevel))
-      return Counter<uint64_t>(meter->CreateUInt64Counter(name.data(),
-                                                          description.data(),
-                                                          unit.data()),
-                               attributes);
+      return createCounterImpl<T>(meter, name, description, unit, attributes);
     else
-      return Counter<uint64_t>(
-          noopMeter->CreateUInt64Counter(name.data(), description.data(),
-                                         unit.data()),
-          attributes);
+      return createCounterImpl<T>(noopMeter, name, description, unit,
+                                  attributes);
 #else
-    return Counter<uint64_t>();
-#endif
-  }
-
-  /// Create a Counter<double>.
-  Counter<double> createDoubleCounter(
-      StringRef name, Level instrumentLevel,
-      const llvm::StringMap<MetricAttributeValue> &attributes = {},
-      StringRef description = "", StringRef unit = "") {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (isUserMetric(instrumentLevel)) {
-      if (userMeter)
-        return Counter<double>(
-            userMeter->CreateDoubleCounter(name.data(), description.data(),
-                                           unit.data()),
-            attributes);
-      else
-        return Counter<double>(
-            noopMeter->CreateDoubleCounter(name.data(), description.data(),
-                                           unit.data()),
-            attributes);
-    }
-    if (isInstrumentEnabled(instrumentLevel))
-      return Counter<double>(meter->CreateDoubleCounter(
-                                 name.data(), description.data(), unit.data()),
-                             attributes);
-    else
-      return Counter<double>(noopMeter->CreateDoubleCounter(
-                                 name.data(), description.data(), unit.data()),
-                             attributes);
-#else
-    return Counter<double>();
+    return Counter<T>();
 #endif
   }
 
@@ -176,32 +154,8 @@ public:
       StringRef name, Level instrumentLevel,
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (isUserMetric(instrumentLevel)) {
-      if (userMeter)
-        return Histogram<uint64_t>(
-            userMeter->CreateUInt64Histogram(name.data(), description.data(),
-                                             unit.data()),
-            attributes);
-      else
-        return Histogram<uint64_t>(
-            noopMeter->CreateUInt64Histogram(name.data(), description.data(),
-                                             unit.data()),
-            attributes);
-    }
-    if (isInstrumentEnabled(instrumentLevel))
-      return Histogram<uint64_t>(
-          meter->CreateUInt64Histogram(name.data(), description.data(),
-                                       unit.data()),
-          attributes);
-    else
-      return Histogram<uint64_t>(
-          noopMeter->CreateUInt64Histogram(name.data(), description.data(),
-                                           unit.data()),
-          attributes);
-#else
-    return Histogram<uint64_t>();
-#endif
+    return createHistogram<uint64_t>(name, instrumentLevel, attributes,
+                                     description, unit);
   }
 
   /// Create a Histogram<double>.
@@ -209,26 +163,32 @@ public:
       StringRef name, Level instrumentLevel,
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
+    return createHistogram<double>(name, instrumentLevel, attributes,
+                                   description, unit);
+  }
+
+  /// Create a Histogram<uint64_t
+  template <typename T>
+  Histogram<T>
+  createHistogram(StringRef name, Level instrumentLevel,
+                  const llvm::StringMap<MetricAttributeValue> &attributes = {},
+                  StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (isUserMetric(instrumentLevel)) {
       if (userMeter)
-        return Histogram<double>(
-            userMeter->CreateDoubleHistogram(name, description, unit),
-            attributes);
+        return createHistogramImpl<T>(userMeter, name, description, unit,
+                                      attributes);
       else
-        return Histogram<double>(
-            noopMeter->CreateDoubleHistogram(name, description, unit),
-            attributes);
+        return createHistogramImpl<T>(noopMeter, name, description, unit,
+                                      attributes);
     }
     if (isInstrumentEnabled(instrumentLevel))
-      return Histogram<double>(
-          meter->CreateDoubleHistogram(name, description, unit), attributes);
+      return createHistogramImpl<T>(meter, name, description, unit, attributes);
     else
-      return Histogram<double>(
-          noopMeter->CreateDoubleHistogram(name, description, unit),
-          attributes);
+      return createHistogramImpl<T>(noopMeter, name, description, unit,
+                                    attributes);
 #else
-    return Histogram<double>();
+    return Histogram<T>();
 #endif
   }
 
@@ -333,6 +293,57 @@ private:
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
 #endif
+
+  // Utility function to help make code cleaner
+  template <typename T>
+  Counter<T>
+  createCounterImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                    StringRef name, StringRef description, StringRef unit,
+                    const llvm::StringMap<MetricAttributeValue> &attributes) {}
+  template <>
+  Counter<uint64_t>
+  createCounterImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                    StringRef name, StringRef description, StringRef unit,
+                    const llvm::StringMap<MetricAttributeValue> &attributes) {
+    return Counter<uint64_t>(
+        m->CreateUInt64Counter(name.data(), description.data(), unit.data()),
+        attributes);
+  }
+  template <>
+  Counter<double>
+  createCounterImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                    StringRef name, StringRef description, StringRef unit,
+                    const llvm::StringMap<MetricAttributeValue> &attributes) {
+    return Counter<double>(
+        m->CreateDoubleCounter(name.data(), description.data(), unit.data()),
+        attributes);
+  }
+
+  // Utility function to help make code cleaner
+  template <typename T>
+  Histogram<T>
+  createHistogramImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                      StringRef name, StringRef description, StringRef unit,
+                      const llvm::StringMap<MetricAttributeValue> &attributes) {
+  }
+  template <>
+  Histogram<uint64_t>
+  createHistogramImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                      StringRef name, StringRef description, StringRef unit,
+                      const llvm::StringMap<MetricAttributeValue> &attributes) {
+    return Histogram<uint64_t>(
+        m->CreateUInt64Histogram(name.data(), description.data(), unit.data()),
+        attributes);
+  }
+  template <>
+  Histogram<double>
+  createHistogramImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                      StringRef name, StringRef description, StringRef unit,
+                      const llvm::StringMap<MetricAttributeValue> &attributes) {
+    return Histogram<double>(
+        m->CreateDoubleHistogram(name.data(), description.data(), unit.data()),
+        attributes);
+  }
 };
 
 } // namespace M::Telemetry
