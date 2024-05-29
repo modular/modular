@@ -15,7 +15,7 @@
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
     # CHECK: %0 = kgen.param.constant: !StringLiteral = <{:string "thing"}>
-    # CHECK: [[ERR:%.*]] = lit.call {{.*}}@error::@Error::@"__init__{{.*}}"(%0) : !lit.signature<("value": !StringLiteral borrow) ownedresult -> !Error>
+    # CHECK: [[ERR:%.*]] = lit.call {{.*}}@error::@Error::@"__init__{{.*}}"(%0) : !lit.signature<("value": !StringLiteral borrow) -> !Error>
     # CHECK: lit.ref.store [[ERR]], %__error__
     # CHECK-NEXT: lit.raise
     raise "thing"

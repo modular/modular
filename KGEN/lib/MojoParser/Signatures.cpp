@@ -1207,16 +1207,9 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
     // We know the ABI register result will be None now, which is trivial.
     if (!tcSignature.argList.effects.isThrows())
       fullResultType = shared.getNoneType();
-
-    rp = TypeConvention::RegisterPassableTrivial;
   }
 
   tcSignature.fullResultType = fullResultType;
-
-  // If the result of the function is a non-trivial type, mark the function
-  // effect as having an owned result so ownership tracking will notice it.
-  if (rp != TypeConvention::RegisterPassableTrivial)
-    tcSignature.argList.effects.setOwnedRegisterResult();
 }
 
 /// Emit the argument types, default values, and result type and determine

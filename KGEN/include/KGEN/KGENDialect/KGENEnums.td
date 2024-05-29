@@ -196,8 +196,6 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
   /// This function captures state.
   I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
-  /// The return value of this function is a non-trivial owned register value.
-  I16BitEnumAttrCaseBit<"OwnedResult", 3, "ownedresult">,
   /// This local function has state that may live beyond its defined scope.
   I16BitEnumAttrCaseBit<"Escaping", 4, "escaping">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.

@@ -37,7 +37,6 @@ public:
   bool isThrows() const { return get(Impl::Throws); }
   bool isAsync() const { return get(Impl::Async); }
   bool isCapturing() const { return get(Impl::Capturing); }
-  bool hasOwnedRegisterResult() { return get(Impl::OwnedResult); }
   bool isEscaping() const { return get(Impl::Escaping); }
   bool isRefResult() const { return get(Impl::RefResult); }
 
@@ -45,9 +44,6 @@ public:
   FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
   FnEffects setCapturing(bool capturing = true) {
     return set(Impl::Capturing, capturing);
-  }
-  FnEffects setOwnedRegisterResult(bool ownedRegisterResult = true) {
-    return set(Impl::OwnedResult, ownedRegisterResult);
   }
   FnEffects setEscaping(bool escaping = true) {
     return set(Impl::Escaping, escaping);
