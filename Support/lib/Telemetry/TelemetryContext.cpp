@@ -160,7 +160,28 @@ static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
 }
 #endif // MODULAR_ENABLE_TELEMETRY
 
-TelemetryContext::~TelemetryContext() { flush(kShutdownFlushTimeout); }
+TelemetryContext::~TelemetryContext() {
+  flush(kShutdownFlushTimeout);
+#ifdef MODULAR_ENABLE_TELEMETRY
+  // Flush metrics.
+  auto metricsProviderImpl =
+      static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
+          metricsProvider.get());
+  metricsProviderImpl->Shutdown();
+  if (userMetricsProvider) {
+    auto userMetricsProviderImpl =
+        static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
+            userMetricsProvider.get());
+    userMetricsProviderImpl->Shutdown();
+  }
+
+  // Flush logs.
+  auto loggerProviderImpl =
+      std::static_pointer_cast<opentelemetry::sdk::logs::LoggerProvider>(
+          loggerProvider);
+  loggerProviderImpl->Shutdown();
+#endif // MODULAR_ENABLE_TELEMETRY
+}
 
 void TelemetryContext::flush(std::chrono::microseconds timeout) {
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -411,7 +432,7 @@ TelemetryContext::TelemetryContext(
 }
 
 #ifdef MODULAR_ENABLE_TELEMETRY
-bool TelemetryContext::initMetricsReader(
+bool TelemetryContext::initUserMetricsReader(
     std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader) {
   if (userMetricsProvider) {
     llvm::dbgs() << "Custom metric provider already set\n";
@@ -434,3 +455,17 @@ bool TelemetryContext::initMetricsReader(
   return true;
 }
 #endif
+
+bool TelemetryContext::clearUserMetricsReader() {
+#ifdef MODULAR_ENABLE_TELEMETRY
+  if (!userMetricsProvider) {
+    return false;
+  }
+
+  userMetricsProvider.reset();
+  userMeter.reset();
+  return true;
+#else
+  return false;
+#endif
+}
