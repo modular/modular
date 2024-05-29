@@ -1050,26 +1050,32 @@ ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
   return nullptr;
 }
 
-ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
-                                     llvm::SMLoc loc) {
+ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
+                                          llvm::SMLoc loc) {
   LookupResult result =
       lookupAndResolveDecl(name, loc, context, /*searchParentScopes=*/true);
   if (result.isErroneous())
-    return getTypeCheckErrorType();
+    return {};
   if (result.isFailure()) {
     emitError(loc, "could not find an '") << name << "' type";
-    return getTypeCheckErrorType();
+    return {};
   }
   // The overload set may contain multiple entries, but if it is a struct, it
   // must be a single entry and therefore we can just check that one.
   ASTDecl &firstDecl = *result.getIfSuccess()[0];
-  auto structOp = dyn_cast<StructDeclOp>(firstDecl);
-  if (!structOp) {
+  if (!isa<StructDeclOp>(firstDecl)) {
     auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
     diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
-    return getTypeCheckErrorType();
+    return {};
   }
-  return structOp.bindReference();
+  return &firstDecl;
+}
+
+ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
+                                     llvm::SMLoc loc) {
+  if (ASTDecl *decl = lookupNamedTypeDecl(name, context, loc))
+    return cast<StructDeclOp>(decl).bindReference();
+  return getTypeCheckErrorType();
 }
 
 ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
