@@ -556,9 +556,11 @@ export class MojoSDKManager extends DisposableContext {
 
     // Push a subscription for changes to any of the SDK paths.
     this.pushSubscription(await configWatcher.activate(undefined, [], [
-      sdk.config.mojoLLDBVSCodePath, sdk.config.mojoDriverPath,
-      sdk.config.mojoLanguageServerPath, sdk.config.mojoLLDBPluginPath,
-      sdk.config.lldbPath
+      sdk.config.mojoLLDBVSCodePath,
+      sdk.config.mojoDriverPath,
+      sdk.config.mojoLanguageServerPath,
+      sdk.config.mojoLLDBPluginPath,
+      sdk.config.lldbPath,
     ]));
 
     // Now that we have a resolved SDK, warn if it's out of date.
