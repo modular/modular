@@ -41,7 +41,7 @@ struct AsyncStruct(AsyncTrait):
 
 
 # CHECK-LABEL: lit.struct.decl @AsyncStructReg
-@register_passable
+@register_passable("trivial")
 struct AsyncStructReg(AsyncTrait):
     # CHECK-LABEL: lit.func @"foobar{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}>
     async fn foobar(self):

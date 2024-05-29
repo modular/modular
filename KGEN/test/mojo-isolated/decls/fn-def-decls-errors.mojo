@@ -150,3 +150,22 @@ fn ref_invalid():
 fn return_ref_type_error(a: fn (x: MemoryType) -> ref [__lifetime_of(x)] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'fn(x: MemoryType) -> ref [*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
+
+@register_passable
+struct SBValue:
+    pass
+
+# expected-error @below {{TODO: borrowed non-trivial register-passable arguments are not yet supported in async functions}}
+async fn invalid_sb_value(value: SBValue):
+    pass
+
+# expected-error @below {{TODO: borrowed non-trivial register-passable arguments are not yet supported in async functions}}
+async fn invalid_sb_value_variadic(*value: SBValue):
+    pass
+
+async fn borrowed_generic_arg[T: AnyType](value: T):
+    pass
+
+fn invalid_sbvalue_borrow(value: SBValue):
+    # expected-error @below {{TODO: cannot bind non-trivial register-passable value to borrowed generic argument yet}}
+    _ = borrowed_generic_arg(value)
