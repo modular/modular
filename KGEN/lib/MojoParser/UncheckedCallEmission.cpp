@@ -1324,13 +1324,13 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   Type resultType = expectedCalleeType.getResults()[0];
   CValue callResult;
   if (auto target = callee.getIfPValue()) {
-    if (auto sig = dyn_cast<SignatureType>(target.getType());
-        sig && sig.isAsync()) {
+    if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!co.routine<T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(loc, target.get(),
                                                implicitLifetimes, callArgs);
-      ASTType coroType = getBoundCoroutineType(getScopeInfo(), callExpr, sig);
+      ASTType coroType =
+          getBoundCoroutineType(getScopeInfo(), callExpr, calleeSig);
       if (!coroType) {
         dest.resetForError();
         return {};
