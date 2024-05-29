@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
 
 modular_cc_library(
     name = "Support",
+    testonly = True,
     srcs = ["Support.cpp"],
     hdrs = ["Support.h"],
     deps = [
@@ -9,7 +10,7 @@ modular_cc_library(
         "//KGEN:lldb19.0.0git",
         "//KGEN/tools/mojo-lsp-test-client",
         "//KGEN/unittests:include_shim",
-        "@googletest//:gtest",
+        "@llvm-project//third-party/unittest:gtest",
     ],
 )
 
