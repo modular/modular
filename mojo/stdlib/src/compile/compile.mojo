@@ -52,7 +52,7 @@ fn _noop_populate(ptr: Pointer[NoneType]) capturing:
 
 @always_inline
 fn _compile_info_asm_failable_impl[
-    func_type: AnyRegType,
+    func_type: AnyTrivialRegType,
     func: func_type,
     /,
     target: __mlir_type.`!kgen.target` = _current_target(),
@@ -87,7 +87,7 @@ fn _compile_info_asm_failable_impl[
 
 @always_inline
 fn _compile_info_asm_non_failable_impl[
-    func_type: AnyRegType,
+    func_type: AnyTrivialRegType,
     func: func_type,
     /,
     target: __mlir_type.`!kgen.target` = _current_target(),
@@ -118,7 +118,7 @@ fn _compile_info_asm_non_failable_impl[
 
 @always_inline
 fn _compile_info_llvm_failable_impl[
-    func_type: AnyRegType,
+    func_type: AnyTrivialRegType,
     func: func_type,
     /,
     target: __mlir_type.`!kgen.target` = _current_target(),
@@ -153,7 +153,7 @@ fn _compile_info_llvm_failable_impl[
 
 @always_inline
 fn _compile_info_llvm_non_failable_impl[
-    func_type: AnyRegType,
+    func_type: AnyTrivialRegType,
     func: func_type,
     /,
     target: __mlir_type.`!kgen.target` = _current_target(),
@@ -184,7 +184,7 @@ fn _compile_info_llvm_non_failable_impl[
 
 @always_inline
 fn compile_info[
-    func_type: AnyRegType, //,
+    func_type: AnyTrivialRegType, //,
     func: func_type,
     /,
     *,
@@ -224,7 +224,7 @@ fn compile_info[
 
 
 fn compile_code[
-    func_type: AnyRegType, //,
+    func_type: AnyTrivialRegType, //,
     func: func_type,
     /,
     *,
