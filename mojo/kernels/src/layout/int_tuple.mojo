@@ -62,7 +62,7 @@ fn is_tuple(t: IntTuple) -> Bool:
 # Python-style reduce functions
 # FIXME: Can we unify the two versions?
 fn reduce[
-    T: AnyRegType, func: fn (owned a: T, b: IntTuple) capturing -> T
+    T: AnyTrivialRegType, func: fn (owned a: T, b: IntTuple) capturing -> T
 ](t: IntTuple, initializer: T) -> T:
     var result: T = initializer
     for e in t:
