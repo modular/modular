@@ -375,7 +375,7 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
   if (!vtable.getEntries().empty())
     p << '[';
 
-  if (auto ref = ::dyn_cast<DeclRefType>(type.getValue())) {
+  if (auto ref = ::dyn_cast<DeclRefType>(type.getMlirType())) {
     // Use the alias printer if suitable.
     if (failed(p.printAlias(ref))) {
       p << ref.getSymbol();
@@ -386,7 +386,7 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
       }
     }
   } else {
-    printKGENType(p, type.getValue());
+    printKGENType(p, type.getMlirType());
   }
 
   if (!vtable.getEntries().empty()) {

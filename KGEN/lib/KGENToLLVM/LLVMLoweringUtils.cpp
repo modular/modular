@@ -227,7 +227,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       auto constant = dyn_cast<ConcreteTypeConstantAttr>(elementType);
       if (!constant)
         return {};
-      Type converted = convertType(constant.getValue());
+      Type converted = convertType(constant.getMlirType());
       if (!converted)
         return {};
       types.push_back(converted);

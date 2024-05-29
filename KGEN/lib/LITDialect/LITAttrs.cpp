@@ -581,7 +581,7 @@ static TypedAttr getOrFoldBindType(TypedAttr typeValue,
   // Assume the inputs are verified. If the type value is a `DeclRefType` then
   // bind it and return a type constant.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(typeValue)) {
-    if (auto decl = dyn_cast<DeclRefType>(typeCst.getValue())) {
+    if (auto decl = dyn_cast<DeclRefType>(typeCst.getMlirType())) {
       auto bound =
           DeclRefType::get(decl.getSymbol(), type.getParamValues(), type);
       return TypeConstantAttr::get(bound, type);

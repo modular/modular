@@ -695,7 +695,7 @@ struct ConvertPOPPackLoad : ConvertPOPToLLVMPattern<PackLoadOp> {
           rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), inputStruct, idx);
       // Dig the original pointer type out of
       // #kgen.concretetype.constant<!kgen.pointer<i32>>
-      Type origPointerTy = cast<TypeConstantAttr>(origTypeAttr).getValue();
+      Type origPointerTy = cast<TypeConstantAttr>(origTypeAttr).getMlirType();
       elt = rewriter
                 .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
                                                           origPointerTy, elt)

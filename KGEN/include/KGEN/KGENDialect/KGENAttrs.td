@@ -344,15 +344,15 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
   let cppBaseClassName = "TypeConstantAttr";
 
   let parameters = (ins
-    "Type":$value,
+    "Type":$mlirType,
     AttributeSelfTypeParameter<"", "Type">:$type,
     VTableParam:$vTable
   );
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type),
+    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type),
                                    "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type,
+    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type,
                                         "VTableAttr":$vtable),
                                    "", "TypedAttr">,
   ];
@@ -361,10 +361,11 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static ConcreteTypeConstantAttr getFromBytecode(
-        Type value, Type type, VTableAttr vtable);
+        Type mlirType, Type type, VTableAttr vtable);
   }];
 
-  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
+  let assemblyFormat =
+    "`<` $mlirType (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -392,21 +393,21 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
   let genStorageClass = 0;
 
   let parameters = (ins
-    "Type":$value,
+    "Type":$mlirType,
     AttributeSelfTypeParameter<"", "Type">:$type,
     VTableParam:$vTable
   );
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$value,
+    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$mlirType,
                                         "Type":$type, "VTableAttr":$vtable),
                                    "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$value,
+    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$mlirType,
                                         "Type":$type),
                                    "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type),
+    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type),
                                    "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type,
+    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type,
                                         "VTableAttr":$vtable),
                                    "", "TypedAttr">,
   ];
@@ -415,10 +416,11 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static ParameterizedTypeConstantAttr getFromBytecode(
-        Type value, Type type, VTableAttr vtable);
+        Type mlirType, Type type, VTableAttr vtable);
   }];
 
-  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
+  let assemblyFormat =
+    "`<` $mlirType (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
   let skipDefaultBuilders = 1;
 }
 

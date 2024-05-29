@@ -66,7 +66,7 @@ Type ParamRefType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
   if (auto constant = llvm::dyn_cast<TypeConstantAttr>(param))
-    return constant.getValue();
+    return constant.getMlirType();
 
   // Otherwise, form the ParamRefType like normal.
   return Base::get(param.getContext(), param);
@@ -123,7 +123,7 @@ static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
   VTableAttr vtable = type.getVTable();
   if (!vtable.getEntries().empty())
     p << '[';
-  printKGENType(p, type.getValue());
+  printKGENType(p, type.getMlirType());
   if (!vtable.getEntries().empty()) {
     p << ", {";
     p.printStrippedAttrOrType(vtable);
@@ -997,7 +997,7 @@ static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {
   for (const TypedAttr &type : types) {
     if (auto constant = llvm::dyn_cast<TypeConstantAttr>(type))
-      resolvedTypes.push_back(constant.getValue());
+      resolvedTypes.push_back(constant.getMlirType());
     else
       return failure();
   }
@@ -1207,7 +1207,7 @@ ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
   SmallVector<TypedAttr> values;
   int64_t offset = 0;
   for (TypedAttr elTypeAttr : typeList.getValues()) {
-    Type elType = ::cast<TypeConstantAttr>(elTypeAttr).getValue();
+    Type elType = ::cast<TypeConstantAttr>(elTypeAttr).getMlirType();
     auto dl = llvm::cast<DataLayoutInterface>(elType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =

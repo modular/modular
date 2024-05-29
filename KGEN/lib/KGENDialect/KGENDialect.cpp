@@ -78,7 +78,7 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
         return AliasResult::NoAlias;
 
       // Special case decl ref types.
-      if (auto ref = dyn_cast<DeclRefTypeInterface>(typeCst.getValue())) {
+      if (auto ref = dyn_cast<DeclRefTypeInterface>(typeCst.getMlirType())) {
         if (std::optional<StringRef> aliasName = ref.getAliasName()) {
           os << *aliasName;
           return AliasResult::OverridableAlias;

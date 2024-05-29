@@ -294,7 +294,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   auto actualTypeConst = dyn_cast<TypeConstantAttr>(actualAttr);
   auto expectedTypeConst = dyn_cast<TypeConstantAttr>(expectedAttr);
   if (actualTypeConst && expectedTypeConst)
-    return matchTypes(actualTypeConst.getValue(), expectedTypeConst.getValue());
+    return matchTypes(actualTypeConst.getMlirType(),
+                      expectedTypeConst.getMlirType());
 
   // If both parameters are operator expressions, match them up lexically.
   auto actualOp = dyn_cast<ParamOperatorAttr>(actualAttr);
