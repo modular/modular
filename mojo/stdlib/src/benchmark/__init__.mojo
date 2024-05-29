@@ -153,5 +153,8 @@ from .benchmark import (
     Report,
     run,
 )
+
+from .quick_bench import QuickBench
+
 from .compiler import keep
 from .memory import clobber_memory

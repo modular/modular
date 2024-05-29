@@ -1,0 +1,331 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: mojo %s --tabular --no-progress| FileCheck %s
+from benchmark import (
+    QuickBench,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+
+from time import sleep
+from math import exp, tanh
+from random import randint
+
+
+fn vec_reduce[N: Int, type: DType](x: DTypePointer[type]) -> Scalar[type]:
+    var total: Scalar[type] = 0
+    for i in range(N):
+        total += x[i]
+    return total
+
+
+fn vec_add[
+    N: Int, type: DType
+](x: DTypePointer[type], y: DTypePointer[type]) -> DTypePointer[type]:
+    for i in range(N):
+        x[i] += y[i]
+    return x
+
+
+fn dummy() -> None:
+    sleep(0.5)
+
+
+fn dummy(x0: Int) -> Float32:
+    return x0
+
+
+fn dummy(x0: Int, x1: Int) -> Float32:
+    return x0 + x1
+
+
+fn dummy(x0: Int, x1: Int, x2: Int) -> Float32:
+    return x0 + x1 + x2
+
+
+fn dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
+    return x0 + x1 + x2 + x3
+
+
+fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
+    return x0 + x1 + x2 + x3 + x4
+
+
+fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
+    return x0 + x1 + x2 + x3 + x4 + x5
+
+
+fn dummy(
+    x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int
+) -> Float32:
+    return x0 + x1 + x2 + x3 + x4 + x5 + x6
+
+
+fn dummy(
+    x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int, x7: Int
+) -> Float32:
+    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7
+
+
+fn dummy(
+    x0: Int,
+    x1: Int,
+    x2: Int,
+    x3: Int,
+    x4: Int,
+    x5: Int,
+    x6: Int,
+    x7: Int,
+    x8: Int,
+) -> Float32:
+    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8
+
+
+fn dummy(
+    x0: Int,
+    x1: Int,
+    x2: Int,
+    x3: Int,
+    x4: Int,
+    x5: Int,
+    x6: Int,
+    x7: Int,
+    x8: Int,
+    x9: Int,
+) -> Float32:
+    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9
+
+
+fn test_overloaded() raises:
+    var qb = QuickBench()
+
+    qb.run[T_out=NoneType](
+        dummy,
+        bench_id=BenchId("dummy_none"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+    qb.run[Int, T_out=Float32](
+        dummy,
+        1,
+        bench_id=BenchId("dummy_1"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        bench_id=BenchId("dummy_2"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        bench_id=BenchId("dummy_3"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        bench_id=BenchId("dummy_4"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        5,
+        bench_id=BenchId("dummy_5"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        bench_id=BenchId("dummy_6"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        bench_id=BenchId("dummy_7"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        bench_id=BenchId("dummy_8"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        bench_id=BenchId("dummy_9"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
+        dummy,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        bench_id=BenchId("dummy_10"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
+        ),
+    )
+
+    qb.dump_report()
+
+
+fn test_mojo_math() raises:
+    var qb = QuickBench()
+    qb.run(
+        exp[DType.float32, 4],
+        1.0,
+        bench_id=BenchId("exp"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
+        ),
+    )
+    qb.run(
+        tanh[DType.float32, 4],
+        1.0,
+        bench_id=BenchId("tanh"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
+        ),
+    )
+    qb.dump_report()
+
+
+fn test_custom() raises:
+    alias N = 1024
+    alias alignment = 64
+    alias type = DType.int32
+    var x = DTypePointer[type].alloc(N, alignment=alignment)
+    var y = DTypePointer[type].alloc(N, alignment=alignment)
+    randint[type](x, N, 0, 255)
+    randint[type](y, N, 0, 255)
+
+    var qb = QuickBench()
+
+    qb.run(
+        vec_reduce[N, type],
+        x,
+        bench_id=BenchId("vec_reduce"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
+        ),
+    )
+
+    qb.run(
+        vec_add[N, type],
+        x,
+        y,
+        bench_id=BenchId("vec_add"),
+        measures=List[ThroughputMeasure](
+            ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
+        ),
+    )
+
+    qb.dump_report()
+
+
+fn main() raises:
+    # CHECK: Benchmark results
+    # CHECK: name, met (ms)    , iters   , throughput (Gelems/s)   , Bytes (GB/s)
+    # CHECKL exp ,
+    # CHECKL tanh,
+    test_mojo_math()
+
+    # CHECK: Benchmark results
+    # CHECK: name      , met (ms)    , iters   , throughput (Gelems/s)   , FLOPS (GFLOPS/s)
+    # CHECK: vec_reduce,
+    # CHECK: vec_add   ,
+    test_custom()
+
+    # CHECK: Benchmark results
+    # CHECK: name      , met (ms)    , iters    , throughput (Gelems/s)   , FLOPS (GFLOPS/s)
+    # CHECK: dummy_none,
+    # CHECK: dummy_1   ,
+    # CHECK: dummy_2   ,
+    # CHECK: dummy_3   ,
+    # CHECK: dummy_4   ,
+    # CHECK: dummy_5   ,
+    # CHECK: dummy_6   ,
+    # CHECK: dummy_7   ,
+    # CHECK: dummy_8   ,
+    # CHECK: dummy_9   ,
+    # CHECK: dummy_10  ,
+    test_overloaded()
