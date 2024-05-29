@@ -65,7 +65,7 @@ fn get_tensor_spec(view: TensorView) -> TensorSpec:
 fn get_tensors[
     size_fn: StringLiteral,
     get_tensor_fn: StringLiteral,
-    T: AnyRegType,
+    T: AnyTrivialRegType,
 ](lib: DLHandle, ptr: T, session: InferenceSession) raises -> TensorMap:
     var map = session.new_tensor_map()
     var size = call_dylib_func[Int64](lib, size_fn, ptr)
@@ -86,7 +86,7 @@ fn buffer_str[type: DType](map: TensorMap, name: String) raises -> StringRef:
 
 fn set_tensors[
     add_tensor_fn: StringLiteral,
-    T: AnyRegType,
+    T: AnyTrivialRegType,
 ](lib: DLHandle, ptr: T, names: List[String], map: TensorMap) raises:
     for i in range(len(names)):
         var name = names[i]

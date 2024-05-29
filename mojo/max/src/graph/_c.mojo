@@ -48,7 +48,7 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 
 
 @always_inline
-fn cfunc[func_name: StringLiteral, T: AnyRegType]() -> T:
+fn cfunc[func_name: StringLiteral, T: AnyTrivialRegType]() -> T:
     var f = _get_dylib_function[
         "MOF_LIB", func_name, _init_dylib, _destroy_dylib, T
     ]()
