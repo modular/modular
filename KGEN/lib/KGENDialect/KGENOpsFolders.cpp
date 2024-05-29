@@ -1404,14 +1404,14 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
   // Move the address over the elements before the one we are reading.
   unsigned index = idxAttr.getInt();
   for (unsigned i = 0; i != index; ++i) {
-    auto eltType = cast<TypeConstantAttr>(typeElts[i]).getValue();
+    auto eltType = cast<TypeConstantAttr>(typeElts[i]).getMlirType();
     auto dl = cast<DataLayoutInterface>(eltType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
-  Type targetType = cast<TypeConstantAttr>(typeElts[index]).getValue();
+  Type targetType = cast<TypeConstantAttr>(typeElts[index]).getMlirType();
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));

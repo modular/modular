@@ -211,7 +211,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(CO::CoroutineType type) {
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
   SmallVector<Type> types;
   for (TypedAttr attr : type.getVariadicIfResolved().getValues())
-    types.push_back(cast<ConcreteTypeConstantAttr>(attr).getValue());
+    types.push_back(cast<ConcreteTypeConstantAttr>(attr).getMlirType());
   return buildDebugStructTypeFromTypeAttrs(
       types, StringAttr::get(type.getContext(), mlir::debugString(type)));
 }

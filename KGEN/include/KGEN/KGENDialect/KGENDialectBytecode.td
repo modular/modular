@@ -139,13 +139,13 @@ def VTableEntryAttr : DialectAttribute<(attr
 )>;
 
 def WrappedConcreteTypeConstantAttr : DialectAttribute<(attr
-  Type:$value,
+  Type:$mlirType,
   Type:$type,
   ConcreteAttribute<"VTableAttr">:$vTable
 )>;
 
 def WrappedParameterizedTypeConstantAttr : DialectAttribute<(attr
-  Type:$value,
+  Type:$mlirType,
   Type:$type,
   ConcreteAttribute<"VTableAttr">:$vTable
 )>;

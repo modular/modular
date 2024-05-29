@@ -33,7 +33,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 
   // Avoid MLIRContext round trip in common case.
   if (auto type = dyn_cast<TypeConstantAttr>(typeParamExpr)) {
-    mlirType = type.getValue();
+    mlirType = type.getMlirType();
     return;
   }
 
@@ -321,7 +321,7 @@ RefPackType ASTType::getVariadicPackInfo() const {
 }
 
 ASTType ASTType::getKwargsDictValueType() const {
-  return cast<TypeConstantAttr>(getParamBindings()[0]).getValue();
+  return cast<TypeConstantAttr>(getParamBindings()[0]).getMlirType();
 }
 
 ASTType ASTType::getKwargsDictRefValueType() const {
@@ -510,7 +510,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
   }
   if (auto typeAttr = dyn_cast<TypeConstantAttr>(param)) {
-    ASTType(typeAttr.getValue()).print(os, forDiag);
+    ASTType(typeAttr.getMlirType()).print(os, forDiag);
     return;
   }
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {

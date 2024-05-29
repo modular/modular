@@ -1416,7 +1416,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
           auto tca = cast<TypeConstantAttr>(value);
-          auto drt = cast<DeclRefType>(tca.getValue());
+          auto drt = cast<DeclRefType>(tca.getMlirType());
           ArrayRef<TypedAttr> paramValues = drt.getParamValues();
           assert(paramValues.size() == 1 &&
                  "_types tuple ParamValues must be size 1");

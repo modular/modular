@@ -46,8 +46,8 @@ class TypeConstantAttr : public Attribute {
 public:
   using Attribute::Attribute;
 
-  /// Returns the constant type value.
-  Type getValue() const;
+  /// Returns the type-representation of this constant type value.
+  Type getMlirType() const;
 
   /// Get the metatype.
   Type getType() const;
@@ -56,9 +56,9 @@ public:
   VTableAttr getVTable() const;
 
   /// Get a type constant attribute.
-  static TypedAttr get(Type value, Type type);
+  static TypedAttr get(Type mlirType, Type type);
   /// Get a type constant attribute with a vtable.
-  static TypedAttr get(Type value, Type type, VTableAttr vtable);
+  static TypedAttr get(Type mlirType, Type type, VTableAttr vtable);
 
   /// Returns true if the given type is classified as a concrete type.
   static bool isConcreteType(Type type);

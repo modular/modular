@@ -171,12 +171,12 @@ std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
 // TypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr TypeConstantAttr::get(Type value, Type type) {
-  return ParameterizedTypeConstantAttr::get(value, type);
+TypedAttr TypeConstantAttr::get(Type mlirType, Type type) {
+  return ParameterizedTypeConstantAttr::get(mlirType, type);
 }
 
-TypedAttr TypeConstantAttr::get(Type value, Type type, VTableAttr vtable) {
-  return ParameterizedTypeConstantAttr::get(value, type, vtable);
+TypedAttr TypeConstantAttr::get(Type mlirType, Type type, VTableAttr vtable) {
+  return ParameterizedTypeConstantAttr::get(mlirType, type, vtable);
 }
 
 bool TypeConstantAttr::classof(Attribute attr) {
@@ -196,32 +196,33 @@ bool TypeConstantAttr::isConcreteType(Type type) {
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type,
+TypedAttr ConcreteTypeConstantAttr::get(Type mlirType, Type type,
                                         VTableAttr vtable) {
-  auto *ctx = value.getContext();
+  auto *ctx = mlirType.getContext();
   // FIXME: Because types with index references not considered parametric, if
   // the index reference is subistituted with a parameter reference, it becomes
   // parametric. This is kind of a gross hack.
-  if (isParameterizedType(value))
-    return ParameterizedTypeConstantAttr::Base::get(ctx, value, type, vtable);
+  if (isParameterizedType(mlirType))
+    return ParameterizedTypeConstantAttr::Base::get(ctx, mlirType, type,
+                                                    vtable);
 
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
-  if (auto refType = ::dyn_cast<ParamRefType>(value))
+  if (auto refType = ::dyn_cast<ParamRefType>(mlirType))
     if (vtable.getEntries().empty())
       return refType.getParam();
 
-  return Base::get(ctx, value, type, vtable);
+  return Base::get(ctx, mlirType, type, vtable);
 }
 
-TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
-  return get(value, type, VTableAttr::get(type.getContext(), {}));
+TypedAttr ConcreteTypeConstantAttr::get(Type mlirType, Type type) {
+  return get(mlirType, type, VTableAttr::get(type.getContext(), {}));
 }
 
 ConcreteTypeConstantAttr
-ConcreteTypeConstantAttr::getFromBytecode(Type value, Type type,
+ConcreteTypeConstantAttr::getFromBytecode(Type mlirType, Type type,
                                           VTableAttr vtable) {
-  return Base::get(value.getContext(), value, type, vtable);
+  return Base::get(mlirType.getContext(), mlirType, type, vtable);
 }
 
 /// Always a constant by definition.
@@ -231,37 +232,37 @@ bool ConcreteTypeConstantAttr::isConstant() const { return true; }
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
+TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type mlirType,
                                              Type type, VTableAttr vtable) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
-  if (auto refType = ::dyn_cast<ParamRefType>(value))
+  if (auto refType = ::dyn_cast<ParamRefType>(mlirType))
     if (vtable.getEntries().empty())
       return refType.getParam();
 
-  if (isParameterizedType(value))
-    return Base::get(ctx, value, type, vtable);
-  return ConcreteTypeConstantAttr::Base::get(ctx, value, type, vtable);
+  if (isParameterizedType(mlirType))
+    return Base::get(ctx, mlirType, type, vtable);
+  return ConcreteTypeConstantAttr::Base::get(ctx, mlirType, type, vtable);
 }
 
-TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
+TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type mlirType,
                                              Type type) {
-  return get(ctx, value, type, VTableAttr::get(ctx, {}));
+  return get(ctx, mlirType, type, VTableAttr::get(ctx, {}));
 }
 
-TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type,
+TypedAttr ParameterizedTypeConstantAttr::get(Type mlirType, Type type,
                                              VTableAttr vtable) {
-  return get(type.getContext(), value, type, vtable);
+  return get(type.getContext(), mlirType, type, vtable);
 }
 
-TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type) {
-  return get(type.getContext(), value, type);
+TypedAttr ParameterizedTypeConstantAttr::get(Type mlirType, Type type) {
+  return get(type.getContext(), mlirType, type);
 }
 
 ParameterizedTypeConstantAttr
-ParameterizedTypeConstantAttr::getFromBytecode(Type value, Type type,
+ParameterizedTypeConstantAttr::getFromBytecode(Type mlirType, Type type,
                                                VTableAttr vtable) {
-  return Base::get(value.getContext(), value, type, vtable);
+  return Base::get(mlirType.getContext(), mlirType, type, vtable);
 }
 
 /// Always not a constant by definition.
@@ -2004,7 +2005,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!typeCst || !target)
     return {};
   std::optional<int64_t> size = DataLayoutInterface::getTypeStoreSize(
-      target.getTarget(), typeCst.getValue());
+      target.getTarget(), typeCst.getMlirType());
   if (!size)
     return {};
 
@@ -2026,7 +2027,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!typeCst || !target)
     return {};
   std::optional<int64_t> size = DataLayoutInterface::getTypeABIAlign(
-      target.getTarget(), typeCst.getValue());
+      target.getTarget(), typeCst.getMlirType());
   if (!size)
     return {};
 
@@ -2154,7 +2155,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
 
   // Fold rebinds of a DeclRefType. Unify metatypes so information is not lost.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(input))
-    return TypeConstantAttr::get(typeCst.getValue(), resultType);
+    return TypeConstantAttr::get(typeCst.getMlirType(), resultType);
   return {};
 }
 
@@ -2362,11 +2363,12 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
   // Map each type from a PointerType of the element type.
   for (auto elt : variadic.getValues()) {
     auto eltCst = dyn_cast<TypeConstantAttr>(elt);
-    if (!eltCst || !isa<PointerType>(eltCst.getValue()))
+    if (!eltCst || !isa<PointerType>(eltCst.getMlirType()))
       return {};
 
     results.push_back(ParameterizedTypeConstantAttr::get(
-        cast<PointerType>(eltCst.getValue()).getElementType(), resultEltType));
+        cast<PointerType>(eltCst.getMlirType()).getElementType(),
+        resultEltType));
   }
   return VariadicAttr::get(results, cast<VariadicType>(resultType));
 }
@@ -2639,8 +2641,8 @@ TypedAttr KGEN::emitMLIROperationCall(
 // Attribute Implementation
 //===----------------------------------------------------------------------===//
 
-Type TypeConstantAttr::getValue() const {
-  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
+Type TypeConstantAttr::getMlirType() const {
+  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->mlirType;
 }
 
 Type TypeConstantAttr::getType() const {
@@ -2653,8 +2655,8 @@ VTableAttr TypeConstantAttr::getVTable() const {
 
 Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
 
-Type ParameterizedTypeConstantAttr::getValue() const {
-  return getImpl()->value;
+Type ParameterizedTypeConstantAttr::getMlirType() const {
+  return getImpl()->mlirType;
 }
 
 VTableAttr ParameterizedTypeConstantAttr::getVTable() const {
