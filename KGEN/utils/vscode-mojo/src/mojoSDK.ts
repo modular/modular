@@ -23,11 +23,13 @@ import * as configWatcher from './utils/configWatcher';
  * This class represents a Mojo SDK version.
  */
 export class MojoSDKVersion {
-  constructor(title: string, major: number, minor: number, patch: number) {
+  constructor(title: string, major: number, minor: number, patch: number,
+              driverPath: string) {
     this.title = title;
     this.minor = minor;
     this.major = major;
     this.patch = patch;
+    this.driverPath = driverPath;
   }
 
   /**
@@ -42,8 +44,12 @@ export class MojoSDKVersion {
    */
   toString(): string {
     // If this is a dev build, format the title differently.
-    if (this.isDev())
-      return `${this.title} (dev)`;
+    if (this.isDev()) {
+      // We include the path to the modular repo, which is three levels up from
+      // the mojo driver path.
+      const repo = path.join(path.parse(this.driverPath).dir, "..", "..", "..");
+      return `${this.title} (dev) - ${repo}`;
+    }
 
     // Otherwise, just format the version number.
     return `${this.title} (${this.major}.${this.minor}.${this.patch})`;
@@ -53,6 +59,7 @@ export class MojoSDKVersion {
   minor: number;
   major: number;
   patch: number;
+  driverPath: string;
 }
 
 /**
@@ -126,7 +133,8 @@ export class MojoSDKConfig {
       if (configSection.includes("nightly"))
         title += " (nightly)";
 
-      return new MojoSDKVersion(title, +match[1], +match[2], +match[3]);
+      return new MojoSDKVersion(title, +match[1], +match[2], +match[3],
+                                driverPath);
     } catch (e) {
       loggingService.main.logError(
           "Unable to parse version from `mojo` driver: ", e);
