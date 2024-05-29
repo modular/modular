@@ -176,7 +176,7 @@ fn test_model_tuple_input_different_dtypes() raises:
     )
     var output_tensor = outputs.get[DType.int32]("output")
 
-    assert_equal(output_tensor.spec(), "5xint32")
+    assert_equal(str(output_tensor.spec()), "5xint32")
 
     for i in range(5):
         assert_equal(output_tensor[i], i)
