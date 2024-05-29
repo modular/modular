@@ -31,12 +31,15 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
   if (fromType.isEqualCanon(toType))
     return true; // No rebind needed!
 
-  // Permit upcasting any `!lit.anystruct` to `!kgen.type` or
-  // `!kgen.anytype`.
-  // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
-  // forbid this when traits are fully operational.
-  if (isa<AnyStructType, AnyTraitType>(fromType) && isa<TypeType>(toType))
-    return true;
+  // Trait metatypes are allowed to upcast to trivial types.
+  if (isa<TypeType>(toType)) {
+    if (isa<AnyTraitType>(fromType))
+      return true;
+    if (auto structType = dyn_cast<AnyStructType>(fromType)) {
+      return ASTType(structType).getRegisterPassability(SMLoc(), shared) ==
+             TypeConvention::RegisterPassableTrivial;
+    }
+  }
 
   // Handle conversions of values that have parametric type.
   if (isa<ParamRefType>(fromType) || isa<ParamRefType>(toType)) {

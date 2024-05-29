@@ -113,9 +113,6 @@ struct MemoryOnlyPair:
 struct NonCopyable:
   fn __init__(inout self): pass
 
-# expected-note @+1 {{function declared here}}
-fn generic_on_type_bad[T: AnyRegType](a: T): pass
-
 fn generic_on_type_ok[T: AnyRegType](): pass
 
 def testLValuesRvalues() -> None:
@@ -148,11 +145,8 @@ def testLValuesRvalues() -> None:
 
   var mpPair = MemoryOnlyPair()
 
-  # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind AnyRegType type to memory-only type 'MemoryOnlyPair'}}
-  generic_on_type_bad[MemoryOnlyPair](mpPair)
-
-  # This should be allowed.
-  generic_on_type_ok[MemoryOnlyPair]()
+  # expected-error @+1 {{cannot implicitly convert 'AnyStruct[MemoryOnlyPair]' value to 'AnyRegType' in alias initializer}}
+  alias T: AnyRegType = MemoryOnlyPair
 
 # expected-note @+1 {{function declared here}}
 fn badRef(inout val: Int):

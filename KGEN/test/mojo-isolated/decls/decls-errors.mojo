@@ -215,17 +215,6 @@ fn callWithOverloadedArg():
   # expected-note @below {{try resolving the overloaded function first}}
   takeFuncArgument(overloadedFunc)
 
-# expected-note @below {{function declared here}}
-fn takeGenericResultFn[T: AnyRegType](f: fn() -> T): pass
-
-fn returnMemType() -> MemType:
-    return MemType()
-
-fn passMemTypeResultGeneric():
-    # expected-error @below {{invalid call to 'takeGenericResultFn': argument #0 cannot be converted from 'fn() -> MemType'}}
-    # expected-note @below {{memory-only type bound to generic result type: payload returns 'MemType' by reference}}
-    takeGenericResultFn[MemType](returnMemType)
-
 # expected-error @+1 {{unexpected token in expression}}
 fn invalidStarExpression(*x: *): pass
 
