@@ -467,12 +467,15 @@ struct LayoutTensor[
 
         @parameter
         for i in range(count):
-            tiles[i] = LayoutTensor[
-                dtype,
-                __tiled_layout[0],
-                address_space=address_space,
-                element_layout=element_layout,
-            ](self.ptr.offset(i * __tile_size * stride))
+            initialize_pointee_move(
+                UnsafePointer.address_of(tiles._get_reference_unsafe(i)),
+                LayoutTensor[
+                    dtype,
+                    __tiled_layout[0],
+                    address_space=address_space,
+                    element_layout=element_layout,
+                ](self.ptr.offset(i * __tile_size * stride)),
+            )
 
         return tiles
 
