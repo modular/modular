@@ -13,27 +13,33 @@ from tensor import TensorSpec
 def test_from_device_memory():
     var dev = Device(CPUDescriptor(numa_id=2))
 
-    var dt = dev.allocate(
+    var dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var anytensor = AnyMemory(dt^)
+    var anymemory = AnyMemory(dm^)
 
-    assert_equal(anytensor.get_rank(), 2)
+    assert_equal(anymemory.get_rank(), 2)
 
 
 def test_from_tensor():
     var dev = Device(CPUDescriptor(numa_id=2))
 
-    var dt = dev.allocate(
+    var dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dm^.get_tensor[DType.float32, 2]()
 
-    var anytensor = AnyMemory(tensor^)
+    tensor[(0, 0)] = 1
 
-    assert_equal(anytensor.get_rank(), 2)
+    var anymemory = AnyMemory(tensor^)
+
+    assert_equal(anymemory.get_rank(), 2)
+
+    var dm_back = anymemory^.device_memory()
+    var tensor2 = dm_back^.get_tensor[DType.float32, 2]()
+    assert_equal(tensor2[0, 0], 1)
 
 
 def _function_that_takes_anymemory(owned t1: AnyMemory, owned t2: AnyMemory):
