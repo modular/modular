@@ -257,15 +257,6 @@ void buildElaborateModulePipeline(mlir::PassManager &pm, TargetInfoAttr target,
                                   ElaboratorCompileAsmFn compileAsmFn,
                                   PackageGenLibraryFn packageGenLibraryFn);
 
-//===----------------------------------------------------------------------===//
-// PostElaborationPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the post-elaboration optimization and simplification passes.
-/// These passes are intended to run immediately after the elaborator.
-void buildPostElaborationPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
-
 } // namespace KGEN
 } // namespace M
 

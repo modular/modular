@@ -222,7 +222,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
   TimingScope timing = timingManager->getRootScope();
 
-  mlir::PassManager pm(ctx);
+  KGENCompiler compiler(*ctx, options);
+  mlir::PassManager &pm = compiler.getPassManager();
+
   if (failed(applyPassManagerCLOptions(pm)))
     return failure();
   pm.enableTiming(timing);
@@ -330,8 +332,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {
-    buildGenerateLibraryPipeline(pm, options);
-    if (failed(pm.run(*theModule)))
+    if (failed(compiler.runLibraryGenerationPipeline(*theModule)))
       return failure(clOptions.reportError("compilation failed"));
     return emitModuleIR(*theModule, clOptions);
   }
@@ -354,8 +355,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Compiles the module through KGEN compiler pipeline.
   // We don't need to try to look anything up.
-  if (ErrorOrSuccess err = KGEN::runKGENPipeline(
-          pm, *theModule, options, clOptions.cmd == Command::kExecute, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(
+          *theModule, clOptions.cmd == Command::kExecute, target))
     return failure(clOptions.reportError(err.getError()));
 
   // If all we're doing is generating a library file or elaborating, we're done

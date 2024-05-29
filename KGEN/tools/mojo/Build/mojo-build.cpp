@@ -137,7 +137,8 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
                        ModuleOp moduleOp, TargetInfoAttr target,
                        BufferRef &archive) {
-  mlir::PassManager pm(&context);
+  KGENCompiler compiler(context, options);
+  mlir::PassManager &pm = compiler.getPassManager();
   configurePassManager(pm);
 
   // Compile the moduleOp down to the post-elaboration phase, because before
@@ -145,8 +146,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   auto objectCompiler =
       ObjectCompiler::create(pm, ".mojo_cache", options, false);
 
-  if (ErrorOrSuccess err =
-          KGEN::runKGENPipeline(pm, moduleOp, options, false, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, false, target))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.

@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Pipeline.h"
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
