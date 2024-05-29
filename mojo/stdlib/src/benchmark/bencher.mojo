@@ -506,7 +506,7 @@ struct Bench:
         self.bench_function[input_closure](bench_id, throughput_elems)
 
     fn bench_with_input[
-        T: AnyRegType,
+        T: AnyTrivialRegType,
         bench_fn: fn (inout Bencher, T) capturing -> None,
     ](
         inout self,
@@ -515,7 +515,7 @@ struct Bench:
         throughput_elems: Optional[Int] = None,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
-        """Benchmarks an input function with input args of type AnyRegType.
+        """Benchmarks an input function with input args of type AnyTrivialRegType.
 
         Parameters:
             T: Benchmark function input type.
