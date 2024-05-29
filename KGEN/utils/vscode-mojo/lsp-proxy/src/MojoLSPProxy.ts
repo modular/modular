@@ -6,20 +6,26 @@
 
 import {
   DiagnosticSeverity,
+  DidChangeNotebookDocumentParams,
   DidChangeTextDocumentParams,
+  DidCloseNotebookDocumentParams,
   DidCloseTextDocumentParams,
+  DidOpenNotebookDocumentParams,
   DidOpenTextDocumentParams,
   InitializeParams,
   InitializeResult,
   PublishDiagnosticsNotification,
-  PublishDiagnosticsParams
+  PublishDiagnosticsParams,
 } from 'vscode-languageserver-protocol';
 import {
   createConnection as createClientConnection,
   ProposedFeatures,
 } from 'vscode-languageserver/node';
 
-import {MojoDocument} from './MojoDocument';
+import {
+  MojoDocument,
+  MojoDocumentsStateHandler,
+} from './MojoDocument';
 import {MojoLSPServer} from './MojoLSPServer';
 import {Client, ExitStatus, RequestParamsWithDocument, URI} from './types';
 
@@ -38,9 +44,9 @@ export class MojoLSPProxy {
    */
   private server: MojoLSPServer|undefined;
   /**
-   * The list of documents currently tracked by the proxy.
+   * The state handler for all the documents notified by the client.
    */
-  private trackedDocuments = new Map<URI, MojoDocument>();
+  private docsStateHandler: MojoDocumentsStateHandler;
   /**
    * A count for how many times the server was restarted.
    */
@@ -54,6 +60,7 @@ export class MojoLSPProxy {
 
   constructor() {
     this.client = createClientConnection(ProposedFeatures.all);
+    this.docsStateHandler = new MojoDocumentsStateHandler(this.client);
     this.registerProxies();
   }
 
@@ -70,15 +77,15 @@ export class MojoLSPProxy {
                                                 crashTrigger: URI|
                                                 undefined): string {
     let errorMessage = "A crash happened in the Mojo Language Server";
-    if (doc.isCrashTrigger) {
+    if (this.docsStateHandler.isCrashTrigger(doc)) {
       errorMessage +=
-          " when processing this file. The Language Server will try to " +
-          "reprocess this file once it is edited again.";
+          " when processing this document. The Language Server will try to " +
+          "reprocess this document once it is edited again.";
     } else {
       if (crashTrigger !== undefined)
         errorMessage += " when processing " + crashTrigger;
       errorMessage += ". The Language Server will try to reprocess this " +
-                      "file automatically.";
+                      "document automatically.";
     }
     errorMessage +=
         " Please report this issue in " +
@@ -93,21 +100,22 @@ export class MojoLSPProxy {
    * We also mark the possible culprit doc appropriately.
    */
   private prepareTrackedDocsForRestart() {
+    this.docsStateHandler.urisTrackedByServer.clear();
     // In order to identify the crash trigger, we use the simple heuristic of
     // assuming that the oldest pending request is the one that caused the
     // crash. This should work most the times, as most crashes should originate
     // when the server is processing a request. However, if the crash happens at
     // any other moment, e.g., when reading its stdin, we would need a more
-    // complex mechanism.
-    const crashTrigger =
+    // complex mechanism to identify the actual issue.
+    const crashTriggerURI =
         (this.server?.getOldestPendingRequest() as RequestParamsWithDocument |
          undefined)
             ?.textDocument?.uri;
-    for (const doc of this.trackedDocuments.values()) {
-      doc.isCrashTrigger = doc.textDocument.uri === crashTrigger;
-      doc.trackedByServer = false;
+    for (const doc of this.docsStateHandler.getAllDocs()) {
+      if (doc.uri == crashTriggerURI)
+        this.docsStateHandler.markAsCrashTrigger(doc);
       const errorMessage =
-          this.createDiagnosticErrorMessageUponCrash(doc, crashTrigger);
+          this.createDiagnosticErrorMessageUponCrash(doc, crashTriggerURI);
 
       const diagnostic: PublishDiagnosticsParams = {
         diagnostics : [ {
@@ -119,8 +127,8 @@ export class MojoLSPProxy {
           severity : DiagnosticSeverity.Error,
           source : "mojo"
         } ],
-        uri : doc.textDocument.uri,
-        version : doc.textDocument.version
+        uri : doc.uri,
+        version : doc.version
       };
       this.client.sendNotification(PublishDiagnosticsNotification.method,
                                    diagnostic);
@@ -224,76 +232,36 @@ export class MojoLSPProxy {
 
     // Client notifications - normal documents
     this.client.onDidOpenTextDocument((params: DidOpenTextDocumentParams) => {
-      const doc = new MojoDocument(params.textDocument);
-      this.trackedDocuments.set(params.textDocument.uri, doc);
-      doc.trackedByServer = true;
-      this.server!.sendNotification(params, "textDocument/didOpen");
+      this.docsStateHandler.onDidOpenTextDocument(params, this.server!);
     });
 
     this.client.onDidCloseTextDocument((params: DidCloseTextDocumentParams) => {
-      this.trackedDocuments.delete(params.textDocument.uri);
-      this.server!.sendNotification(params, "textDocument/didClose");
+      this.docsStateHandler.onDidCloseTextDocument(params, this.server!);
     });
 
-    this.client.onDidChangeTextDocument((params:
-                                             DidChangeTextDocumentParams) => {
-      const doc = this.trackedDocuments.get(params.textDocument.uri);
-      if (!doc) {
-        this.client.console.log(
-            `Updating a document non-tracked by the proxy '${
-                params.textDocument.uri}'.`);
-        this.server!.sendNotification(params, "textDocument/didChange");
-      } else {
-        // If we cannot apply changes locally, we just stop tracking that file,
-        // but we still send the notifications as usual to the server just to
-        // have additional error logs. This should be an extremely rare error
-        // anyway.
-        if (!doc.applyChanges(params, this.client)) {
-          this.client.console.error(`Couldn't update the document '${
-              params.textDocument
-                  .uri}' in the proxy. It will stop being tracked by the proxy.`);
-          this.trackedDocuments.delete(params.textDocument.uri);
-          this.server!.sendNotification(params, "textDocument/didChange");
-          return;
-        }
-        // If the document is not tracked by the server, then we just had a
-        // crash. In order to have it tracked by the server, we need to issue a
-        // `didOpen` notification with the entire text upon modifications,
-        // instead of a `didChange` notification.
-        if (!doc.trackedByServer)
-          this.openDocManually(doc);
-        else
-          this.server!.sendNotification(params, "textDocument/didChange");
-      }
-    });
+    this.client.onDidChangeTextDocument(
+        (params: DidChangeTextDocumentParams) => {
+          this.docsStateHandler.onDidChangeTextDocument(params, this.server!);
+        });
 
     // Client notifications - notebooks
     const notebooks = this.client.notebooks.synchronization;
     notebooks.onDidOpenNotebookDocument(
-        this.notificationPassthrough("notebookDocument/didOpen"));
-    notebooks.onDidCloseNotebookDocument(
-        this.notificationPassthrough("notebookDocument/didClose"));
-    notebooks.onDidChangeNotebookDocument(
-        this.notificationPassthrough("notebookDocument/didChange"));
-  }
+        (params: DidOpenNotebookDocumentParams) => {
+          this.docsStateHandler.onDidOpenNotebookDocument(params, this.server!);
+        });
 
-  /**
-   * Send a manual didOpen notification to the server with the full contents of
-   * the doc, as tracked by the proxy.
-   */
-  private openDocManually(doc: MojoDocument) {
-    const didOpenParams: DidOpenTextDocumentParams = {
-      textDocument : {
-        languageId : doc.textDocument.languageId,
-        uri : doc.textDocument.uri,
-        text : doc.textDocument.getText(),
-        // This version should be different to anything that comes from the IDE.
-        version : -1
-      }
-    };
-    doc.trackedByServer = true;
-    doc.isCrashTrigger = false;
-    this.server!.sendNotification(didOpenParams, "textDocument/didOpen");
+    notebooks.onDidCloseNotebookDocument(
+        (params: DidCloseNotebookDocumentParams) => {
+          this.docsStateHandler.onDidCloseNotebookDocument(params,
+                                                           this.server!);
+        });
+
+    notebooks.onDidChangeNotebookDocument(
+        (params: DidChangeNotebookDocumentParams) => {
+          this.docsStateHandler.onDidChangeNotebookDocument(params, this.client,
+                                                            this.server!);
+        });
   }
 
   /**
@@ -303,21 +271,17 @@ export class MojoLSPProxy {
   private relayRequestWithDocument(method: string) {
     return (params: RequestParamsWithDocument) => {
       const uri: URI = params.textDocument.uri;
-      const doc = this.trackedDocuments.get(uri);
-      // If try to run a request on file that is not tracked by the server,
-      // then we need to reopen the doc because we just had a crash recently.
+      // If try to run a request on a document that is not tracked by the
+      // server, then we need to reopen it because we just had a crash recently.
       // However, if it's a crash trigger, we don't reopen it and wait for edits
-      // to happen.
-      if (doc !== undefined && !doc.isCrashTrigger && !doc.trackedByServer)
-        this.openDocManually(doc);
+      // to happen first.
+      const owningDoc =
+          this.docsStateHandler.getOwningTextOrNotebookDocument(uri);
+      if (owningDoc !== undefined &&
+          !this.docsStateHandler.isCrashTrigger(owningDoc) &&
+          !this.docsStateHandler.isTrackedByServer(owningDoc))
+        owningDoc.openDocumentOnServer(this.server!, this.docsStateHandler);
       return this.server!.sendRequest(params, method) as any;
     }
-  }
-
-  /**
-   * Helper method to reduce boilerplate when setting up a notification proxy.
-   */
-  private notificationPassthrough(method: string): (params: any) => void {
-    return (params: any) => this.server!.sendNotification(params, method);
   }
 }
