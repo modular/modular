@@ -214,8 +214,8 @@ fn main():
         pass
 
     try:
-        var str = argv()[1]
-        var x = atol(str)
+        var s = argv()[1]
+        var x = atol(s)
         var y = atol(argv()[2])
 
         @__copy_capture(x)
@@ -237,6 +237,6 @@ fn main():
         takeClosure(f2, y)
 
         # CHECK: 22
-        print(makeEscapingClosureWithUselessCopyDecorator(x)(x))
+        print(makeEscapingClosureWithUselessCopyDecorator(str(x))(str(x)))
     except e:
         print(e)
