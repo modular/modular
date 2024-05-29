@@ -54,6 +54,41 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
 }
 
 //===----------------------------------------------------------------------===//
+// IndexRefAttrInterface
+//===----------------------------------------------------------------------===//
+
+def IndexRefAttrInterface : AttrInterface<"IndexRefAttrInterface"> {
+  let description = [{
+    Index-based parameter references are a relative parameter referencing scheme
+    that uses a pair of integers to reference parameters in a name-agnostic way.
+    They contain a depth and an index. The depth indicates how many parameter
+    scopes exist between the parameter being referenced and the reference
+    itself. The index is simply the parameter number at the referenced scope.
+
+    This interace allows other kinds (see `LIT::ImplicitLifetimeRefAttr`) of
+    index-based references to interplay with parts of the KGEN parameter system.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Get the depth of the index reference.
+    }], "size_t", "getDepth">,
+    InterfaceMethod<[{
+      Get the index of the referenced parameter.
+    }], "size_t", "getIndex">,
+    InterfaceMethod<[{
+      Change the depth and index of the parameter without changing the semantics
+      of the parameter it refers to. This method also supplies the new
+      subelements of the attribute.
+    }], "IndexRefAttrInterface", "replace",
+      (ins "size_t":$depth, "size_t":$index, "ArrayRef<Attribute>":$attrs,
+           "ArrayRef<Type>":$types)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // DeclRefAttrInterface
 //===----------------------------------------------------------------------===//
 

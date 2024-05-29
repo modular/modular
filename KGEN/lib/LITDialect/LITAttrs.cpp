@@ -759,6 +759,18 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, bool isMutable) {
 }
 
 //===----------------------------------------------------------------------===//
+// ImplicitLifetimeRefAttr
+//===----------------------------------------------------------------------===//
+
+IndexRefAttrInterface
+ImplicitLifetimeRefAttr::replace(size_t depth, size_t index,
+                                 ArrayRef<Attribute> attrs,
+                                 ArrayRef<Type> types) const {
+  assert(attrs.empty() && types.size() == 1);
+  return ImplicitLifetimeRefAttr::get(depth, index, types.front());
+}
+
+//===----------------------------------------------------------------------===//
 // LITStructAttr
 //===----------------------------------------------------------------------===//
 

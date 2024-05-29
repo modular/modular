@@ -77,6 +77,19 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
                                   ref.getIsResult(), ref.getIndex(),
                                   replaceImpl(ref.getType(), depth));
   }
+  if (auto itf = dyn_cast<IndexRefAttrInterface>(attr)) {
+    if (itf.getDepth() < depth)
+      return itf;
+    // Replace subelements and then replace the whole reference with the
+    // adjusted depth.
+    SmallVector<Attribute, 2> attrs;
+    SmallVector<Type, 2> types;
+    attr.walkImmediateSubElements(
+        [&](Attribute attr) { attrs.push_back(replaceImpl(attr, depth)); },
+        [&](Type type) { types.push_back(replaceImpl(type, depth)); });
+    return itf.replace(itf.getDepth() + adjustDepth, itf.getIndex(), attrs,
+                       types);
+  }
   return nullptr;
 }
 

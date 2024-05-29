@@ -605,7 +605,8 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
 //===----------------------------------------------------------------------===//
 
 def ImplicitLifetimeRefAttr
-    : LITTypedAttr<"ImplicitLifetimeRef", "lifetime_ref"> {
+  : LITTypedAttr<"ImplicitLifetimeRef", "lifetime_ref",
+    [DeclareAttrInterfaceMethods<IndexRefAttrInterface>]> {
   let summary = "Reference to an unbound implicit lifetime parameter.";
   let description = [{
     The `#lit.lifetime_ref` attribute is a reference to an unbound implicit
