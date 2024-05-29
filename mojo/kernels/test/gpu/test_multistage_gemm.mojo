@@ -52,6 +52,27 @@ from layout.tensor_core import (
     get_mma_shape,
     get_fragment_size,
 )
+from utils.index import StaticIntTuple, Index
+
+
+# fmt: off
+@always_inline
+fn block_swizzle_by_scale[scale0: Int](
+    block_idx: StaticIntTuple[2], grid_dim: StaticIntTuple[2]
+) -> StaticIntTuple[2]:
+    var scale = scale0
+    var num_partitions = (1 << scale)
+    while (grid_dim[0] & (num_partitions - 1)) != 0 and scale > 1:
+        scale -= 1
+        num_partitions = (1 << scale)
+
+    var bx = block_idx[0] >> scale
+    var by = (block_idx[1] << scale)  + ((block_idx[0]) & ((1 << scale) - 1))
+    bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
+    by = by % grid_dim[1]
+
+    return Index(bx, by)
+# fmt: on
 
 
 fn is_benchmark() -> Bool:
@@ -192,6 +213,13 @@ fn multistage_gemm[
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
+    # Only apply block swizzling for half precision types.
+    alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
+
+    var block_idx = block_swizzle_by_scale[3](
+        Index(BlockIdx.x(), BlockIdx.y()), Index(N // BN, M // BM)
+    ) if swizzle_block else Index(BlockIdx.x(), BlockIdx.y())
+
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
@@ -236,10 +264,10 @@ fn multistage_gemm[
             swizzle=xor_2bits_per8T,
         ](
             a_smem_tile.vectorize[1, simd_size](),
-            a.tile[BM, BK](BlockIdx.y(), stage).vectorize[1, simd_size](),
+            a.tile[BM, BK](block_idx[1], stage).vectorize[1, simd_size](),
         )
 
-        var b_tile_coords = args_to_tuple[transpose_b](stage, BlockIdx.x())
+        var b_tile_coords = args_to_tuple[transpose_b](stage, block_idx[0])
 
         copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
             b_smem_tile.vectorize[1, simd_size](),
@@ -549,12 +577,12 @@ fn multistage_gemm[
                     ](
                         a_smem_prefetch_tile.vectorize[1, simd_size](),
                         a.tile[BM, BK](
-                            BlockIdx.y(), prefetch_tile_id % num_k_tiles
+                            block_idx[1], prefetch_tile_id % num_k_tiles
                         ).vectorize[1, simd_size](),
                     )
 
                     var b_tile_coords = args_to_tuple[transpose_b](
-                        prefetch_tile_id % num_k_tiles, BlockIdx.x()
+                        prefetch_tile_id % num_k_tiles, block_idx[0]
                     )
 
                     copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
@@ -571,7 +599,7 @@ fn multistage_gemm[
                 barrier()
 
     # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
+    var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
     # For bf16, each thread's fragment has 2x2 fp32 values. Casting to bf16 and
