@@ -387,7 +387,7 @@ fn mip_xor(x: Bool, y: Bool) -> Bool:
 @mogg_register("mip.select")
 @always_inline
 @export
-fn mip_select[T: AnyRegType](cond: Bool, true: T, false: T) -> T:
+fn mip_select[T: AnyTrivialRegType](cond: Bool, true: T, false: T) -> T:
     return true if cond else false
 
 

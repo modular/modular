@@ -360,7 +360,7 @@ fn print_index(i: Int):
 @mogg_register("test_type_parameter_deduction")
 @export
 fn test_type_parameter_deduction[
-    A: AnyRegType, B: AnyRegType
+    A: AnyTrivialRegType, B: AnyTrivialRegType
 ](arg0: A, arg1: B) -> A:
     return arg0
 
