@@ -569,17 +569,17 @@ struct AwaitableCInferenceBatch:
 struct CServerAsync:
     var ptr: DTypePointer[DType.invalid]
 
-    alias _NewFnName = "M_newMuttServer"
-    alias _FreeFnName = "M_freeMuttServer"
+    alias _NewFnName = "M_newKServeServer"
+    alias _FreeFnName = "M_freeKServeServer"
 
-    alias _InitFnName = "M_muttInit"
-    alias _RunFnName = "M_muttRun"
-    alias _StopFnName = "M_muttStopServer"
-    alias _SignalStopFnName = "M_muttSignalStopServer"
+    alias _InitFnName = "M_kserveInit"
+    alias _RunFnName = "M_kserveRun"
+    alias _StopFnName = "M_kserveStopServer"
+    alias _SignalStopFnName = "M_kserveSignalStopServer"
 
-    alias _PopReadyFnName = "M_muttPopReady"
-    alias _PushCompleteFnName = "M_muttPushComplete"
-    alias _PushFailedFnName = "M_muttPushFailed"
+    alias _PopReadyFnName = "M_kservePopReady"
+    alias _PushCompleteFnName = "M_kservePushComplete"
+    alias _PushFailedFnName = "M_kservePushFailed"
 
     @staticmethod
     fn new(lib: DLHandle, address: StringRef) -> CServerAsync:
