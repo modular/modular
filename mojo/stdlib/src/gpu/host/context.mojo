@@ -70,7 +70,9 @@ struct Context:
         var cuCtxSynchronize = self.cuda_dll[].cuCtxSynchronize if self.cuda_dll else cuCtxSynchronize.load()
         _check_error(cuCtxSynchronize())
 
-    fn malloc[type: AnyRegType](self, count: Int) raises -> Pointer[type]:
+    fn malloc[
+        type: AnyTrivialRegType
+    ](self, count: Int) raises -> Pointer[type]:
         """Allocates GPU device memory."""
 
         var ptr = Pointer[Int]()
@@ -84,7 +86,7 @@ struct Context:
         return self.malloc[Scalar[type]](count)
 
     fn malloc_managed[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, count: Int) raises -> Pointer[type]:
         """Allocates memory that will be automatically managed by the Unified Memory system.
         """
@@ -105,7 +107,7 @@ struct Context:
     ](self, count: Int) raises -> DTypePointer[type]:
         return self.malloc_managed[Scalar[type]](count)
 
-    fn free[type: AnyRegType](self, ptr: Pointer[type]) raises:
+    fn free[type: AnyTrivialRegType](self, ptr: Pointer[type]) raises:
         """Frees allocated GPU device memory."""
 
         var cuMemFree = self.cuda_dll[].cuMemFree if self.cuda_dll else cuMemFree.load()
@@ -115,7 +117,7 @@ struct Context:
         self.free(ptr._as_scalar_pointer())
 
     fn copy_host_to_device[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self, device_dest: Pointer[type], host_src: Pointer[type], count: Int
     ) raises:
@@ -145,7 +147,7 @@ struct Context:
         )
 
     fn copy_host_to_device_async[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self,
         device_dst: Pointer[type],
@@ -182,7 +184,7 @@ struct Context:
         )
 
     fn copy_device_to_host[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self, host_dest: Pointer[type], device_src: Pointer[type], count: Int
     ) raises:
@@ -212,7 +214,7 @@ struct Context:
         )
 
     fn copy_device_to_host_async[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self,
         host_dest: Pointer[type],
@@ -249,7 +251,7 @@ struct Context:
         )
 
     fn copy_device_to_device_async[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self, dst: Pointer[type], src: Pointer[type], count: Int, stream: Stream
     ) raises:
@@ -279,7 +281,7 @@ struct Context:
         )
 
     fn memset[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, device_dest: Pointer[type], val: UInt8, count: Int) raises:
         """Sets the memory range of N 8-bit values to a specified value."""
 
@@ -353,7 +355,7 @@ struct Context:
 
     @always_inline
     fn copy_device_to_device[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self,
         device_dest: Pointer[type],
@@ -387,7 +389,7 @@ struct Context:
         )
 
     fn malloc_async[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, count: Int, stream: Stream) raises -> Pointer[type]:
         """Allocates memory with stream ordered semantics."""
 
@@ -401,7 +403,7 @@ struct Context:
         return ptr.bitcast[type]()
 
     fn free_async[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, ptr: Pointer[type], stream: Stream) raises:
         """Frees memory with stream ordered semantics."""
 

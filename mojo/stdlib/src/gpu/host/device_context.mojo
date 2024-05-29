@@ -12,7 +12,7 @@ from gpu.host.stream import Stream
 
 
 @register_passable
-struct DeviceBuffer[type: AnyRegType](Sized):
+struct DeviceBuffer[type: AnyTrivialRegType](Sized):
     var ptr: Pointer[type]
     var ctx_ptr: UnsafePointer[DeviceContext]
     var size: Int
@@ -49,7 +49,7 @@ struct DeviceBuffer[type: AnyRegType](Sized):
         return self.size
 
     fn create_sub_buffer[
-        view_type: AnyRegType
+        view_type: AnyTrivialRegType
     ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
         if sizeof[view_type]() * (offset + size) > sizeof[type]() * self.size:
             raise Error("offset and size exceed original buffer size")
@@ -61,7 +61,7 @@ struct DeviceBuffer[type: AnyRegType](Sized):
         return sub_buffer
 
 
-struct DeviceFunction[func_type: AnyRegType, //, func: func_type]:
+struct DeviceFunction[func_type: AnyTrivialRegType, //, func: func_type]:
     var ctx_ptr: UnsafePointer[DeviceContext]
     var cuda_function: Function[func]
 
@@ -87,12 +87,12 @@ struct DeviceContext:
         self.cuda_stream = existing.cuda_stream
 
     fn create_buffer[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, size: Int) raises -> DeviceBuffer[type]:
         return DeviceBuffer[type](self, size)
 
     fn compile_function[
-        func_type: AnyRegType, //, func: func_type
+        func_type: AnyTrivialRegType, //, func: func_type
     ](self) raises -> DeviceFunction[func]:
         return DeviceFunction[func](self)
 
@@ -114,26 +114,26 @@ struct DeviceContext:
         )
 
     fn enqueue_copy_to_device[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, buf: DeviceBuffer[type], ptr: Pointer[type]) raises:
         self.cuda_context.copy_host_to_device_async(
             buf.ptr, ptr, len(buf), self.cuda_stream
         )
 
     fn enqueue_copy_from_device[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, ptr: Pointer[type], buf: DeviceBuffer[type]) raises:
         self.cuda_context.copy_device_to_host_async(
             ptr, buf.ptr, len(buf), self.cuda_stream
         )
 
     fn copy_to_device_sync[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, buf: DeviceBuffer[type], ptr: Pointer[type]) raises:
         self.cuda_context.copy_host_to_device(buf.ptr, ptr, len(buf))
 
     fn copy_from_device_sync[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](self, ptr: Pointer[type], buf: DeviceBuffer[type]) raises:
         self.cuda_context.copy_device_to_host(ptr, buf.ptr, len(buf))
 

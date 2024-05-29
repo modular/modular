@@ -19,7 +19,7 @@ from .event import Flag
 
 
 @register_passable("trivial")
-struct _dylib_function[fn_name: StringLiteral, type: AnyRegType]:
+struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
     fn __init__(inout self) raises:
         pass
 

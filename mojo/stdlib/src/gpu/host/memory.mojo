@@ -17,7 +17,7 @@ from .stream import Stream, _StreamHandle
 # ===----------------------------------------------------------------------===#
 
 
-fn _malloc[type: AnyRegType](count: Int) raises -> Pointer[type]:
+fn _malloc[type: AnyTrivialRegType](count: Int) raises -> Pointer[type]:
     """Allocates GPU device memory."""
 
     var ptr = Pointer[Int]()
@@ -33,7 +33,7 @@ fn _malloc[type: DType](count: Int) raises -> DTypePointer[type]:
     return _malloc[Scalar[type]](count)
 
 
-fn _malloc_managed[type: AnyRegType](count: Int) raises -> Pointer[type]:
+fn _malloc_managed[type: AnyTrivialRegType](count: Int) raises -> Pointer[type]:
     """Allocates memory that will be automatically managed by the Unified Memory system.
     """
     alias CU_MEM_ATTACH_GLOBAL = UInt32(1)
@@ -55,7 +55,7 @@ fn _malloc_managed[type: DType](count: Int) raises -> DTypePointer[type]:
     return _malloc_managed[Scalar[type]](count)
 
 
-fn _free[type: AnyRegType](ptr: Pointer[type]) raises:
+fn _free[type: AnyTrivialRegType](ptr: Pointer[type]) raises:
     """Frees allocated GPU device memory."""
 
     _check_error(
@@ -70,7 +70,7 @@ fn _free[type: DType](ptr: DTypePointer[type]) raises:
 
 
 fn _copy_host_to_device[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](device_dest: Pointer[type], host_src: Pointer[type], count: Int) raises:
     """Copies memory from host to device."""
 
@@ -99,7 +99,7 @@ fn _copy_host_to_device[
 
 
 fn _copy_host_to_device_async[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](
     device_dst: Pointer[type],
     host_src: Pointer[type],
@@ -138,7 +138,7 @@ fn _copy_host_to_device_async[
 
 
 fn _copy_device_to_host[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](host_dest: Pointer[type], device_src: Pointer[type], count: Int) raises:
     """Copies memory from device to host."""
 
@@ -167,7 +167,7 @@ fn _copy_device_to_host[
 
 
 fn _copy_device_to_host_async[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](
     host_dest: Pointer[type],
     device_src: Pointer[type],
@@ -206,7 +206,7 @@ fn _copy_device_to_host_async[
 
 
 fn _copy_device_to_device_async[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](dst: Pointer[type], src: Pointer[type], count: Int, stream: Stream) raises:
     """Copies memory from device to device asynchronously."""
 
@@ -234,7 +234,7 @@ fn _copy_device_to_device_async[
 
 
 fn _memset[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](device_dest: Pointer[type], val: UInt8, count: Int) raises:
     """Sets the memory range of N 8-bit values to a specified value."""
 
@@ -323,7 +323,7 @@ fn _memset_async[
 
 @always_inline
 fn _copy_device_to_device[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](device_dest: Pointer[type], device_src: Pointer[type], count: Int,) raises:
     """Copies memory from device to device."""
 
@@ -359,7 +359,7 @@ fn _copy_device_to_device[
 
 
 fn _malloc_async[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](count: Int, stream: Stream) raises -> Pointer[type]:
     """Allocates memory with stream ordered semantics."""
 
@@ -373,7 +373,9 @@ fn _malloc_async[
     return ptr.bitcast[type]()
 
 
-fn _free_async[type: AnyRegType](ptr: Pointer[type], stream: Stream) raises:
+fn _free_async[
+    type: AnyTrivialRegType
+](ptr: Pointer[type], stream: Stream) raises:
     """Frees memory with stream ordered semantics."""
 
     _check_error(

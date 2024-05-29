@@ -51,7 +51,7 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyRegType, bypass_L1_16B: Bool = True
+    size: Int, type: AnyTrivialRegType, bypass_L1_16B: Bool = True
 ](
     src: Pointer[type, AddressSpace.GLOBAL],
     dst: Pointer[type, AddressSpace.SHARED],
@@ -79,7 +79,7 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyRegType, bypass_L1_16B: Bool = True
+    size: Int, type: AnyTrivialRegType, bypass_L1_16B: Bool = True
 ](
     src: Pointer[type, AddressSpace.GLOBAL],
     dst: Pointer[type, AddressSpace.SHARED],
@@ -135,7 +135,7 @@ fn async_copy_wait_all():
 
 @always_inline
 fn dynamic_shared_memory[
-    type: AnyRegType,
+    type: AnyTrivialRegType,
     alignment: Int,
 ]() -> Pointer[type, _GPUAddressSpace.SHARED]:
     """Gets a pointer to dynamic shared memory.

@@ -65,7 +65,7 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringLiteral, result_type: AnyRegType
+    func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         "CUDA_DRIVER_LIBRARY",

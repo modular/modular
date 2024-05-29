@@ -176,7 +176,9 @@ struct _GlobalPayload:
 @value
 @register_passable
 struct Function[
-    func_type: AnyRegType, //, func: func_type, _is_failable: Bool = False
+    func_type: AnyTrivialRegType, //,
+    func: func_type,
+    _is_failable: Bool = False,
 ](Boolable):
     var info: _CachedFunctionInfo
     var cuda_dll: UnsafePointer[CudaDLL]
@@ -400,7 +402,7 @@ struct Function[
 
     @staticmethod
     fn _init_fn[
-        func_type: AnyRegType, func: func_type
+        func_type: AnyTrivialRegType, func: func_type
     ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
         var res = UnsafePointer[_CachedFunctionInfo].alloc(1)
         try:
@@ -453,7 +455,7 @@ struct Function[
     @staticmethod
     @always_inline
     fn _get_global_cache_info[
-        func_type: AnyRegType, func: func_type
+        func_type: AnyTrivialRegType, func: func_type
     ](
         debug: Bool = False,
         verbose: Bool = False,
