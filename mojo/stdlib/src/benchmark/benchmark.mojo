@@ -291,7 +291,7 @@ struct Report(CollectionElement):
         if len(self.runs) == 0:
             return 0
         var min = max_finite[DType.float64]()
-        for i in range(1, len(self.runs)):
+        for i in range(len(self.runs)):
             if self.runs[i]._is_significant and self.runs[i].mean(unit) < min:
                 min = self.runs[i].mean(unit)
         return min
