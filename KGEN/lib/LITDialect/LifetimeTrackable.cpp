@@ -110,21 +110,41 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {
-    if (auto call = dyn_cast<KGENCallOpInterface>(res.getOwner())) {
-      if (call.getCalleeType().hasOwnedRegisterResult()) {
-        name = StringAttr::get(v.getContext(), "(call result)");
-        isIndirect = false;
-        startsUninit = true;
-        endInitState = EndsUninit;
-      }
-    }
-    if (auto call = dyn_cast<LIT::CallIndirectOp>(res.getOwner())) {
-      if (call.getCallee().getType().hasOwnedRegisterResult()) {
-        name = StringAttr::get(v.getContext(), "(call result)");
-        isIndirect = false;
-        startsUninit = true;
-        endInitState = EndsUninit;
-      }
+    auto handleCallResult = [&]() {
+      // As a microoptimization for CheckLifetimes, don't track None result
+      // types, which are very common: they are the return types of memory-only
+      // calls and exception-throwing calls.
+      if (isa<KGEN::NoneType, IntegerType>(v.getType()))
+        return;
+
+      // We have several different common cases, including:
+      // 1) a trivial MLIR type that doesn't matter, or a register passable
+      //    trivial type that we can track it for convenience.  We filtered a
+      //    few common ones above, but there are many more.
+      // 2) an non-trivial register passable (e.g. Arc) which we need to track
+      //    as being defined by the call and needing to be consumed before the
+      //    function exit.
+      // 3) a ref-result type, which is tracked by lifetime tracking but isn't
+      //    owned.  We don't (and can't) track this, but CheckLifetimes will
+      //    notice the lifetime it contains.
+
+      // If this is a ref result (#3) or a raw !lit.ref returned with
+      // __mlir_type, we *can't* track it as an owned result, because this
+      // doesn't own the value!
+      if (isa<RefType>(v.getType()))
+        return;
+
+      // Otherwise we tell CheckLifetimes to track it because it is either an
+      // owned register result or it doesn't matter because it is trivial.
+      name = StringAttr::get(v.getContext(), "(call result)");
+      isIndirect = false;
+      startsUninit = true;
+      endInitState = EndsUninit;
+    };
+
+    if (isa<KGENCallOpInterface, LIT::CallIndirectOp>(res.getOwner())) {
+      handleCallResult();
+      return;
     }
   }
 
@@ -463,12 +483,13 @@ getCallOpEffects(Operation &op,
   }
 
   // If the result is defining an owned register value, then we treat this as
-  // a definition.
-  if (signature.hasOwnedRegisterResult()) {
-    results.push_back(ResultEffect::regDefine);
-  } else if (op.getNumResults()) {
+  // a definition
+  if (op.getNumResults()) {
     assert(op.getNumResults() == 1);
-    results.push_back(ResultEffect::ignore);
+    results.push_back(
+        isa<KGEN::NoneType, IntegerType, RefType>(op.getResult(0).getType())
+            ? ResultEffect::ignore
+            : ResultEffect::regDefine);
   }
 }
 

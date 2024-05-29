@@ -889,7 +889,7 @@ struct ValueReg:
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %a: !Int borrow,
 # CHECK-SAME:  %b: !StructExample
-# CHECK-SAME: ) ownedresult -> !ValueReg
+# CHECK-SAME: ) -> !ValueReg
 # CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
 # CHECK-NEXT: lit.return %0
 # CHECK-NEXT: lit.end_func

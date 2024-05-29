@@ -34,11 +34,6 @@ LIT::FuncOp StructEmitter::createFunction(
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
     bool synthetic) {
-  // If the result of the function is a non-trivial type, mark the function
-  // effect as having an owned result so ownership tracking will notice it.
-  if (ASTType(resultType).getRegisterPassability(loc, shared) !=
-      TypeConvention::RegisterPassableTrivial)
-    fnEffects.setOwnedRegisterResult();
 
   // This starts with implicit lifetimes and then gets explicitly declared input
   // params.

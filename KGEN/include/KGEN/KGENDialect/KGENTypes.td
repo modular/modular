@@ -219,9 +219,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     bool isAsync() const { return getFnEffects().isAsync(); }
     bool isCapturing() const { return getFnEffects().isCapturing(); }
     bool isEscaping() const { return getFnEffects().isEscaping(); }
-    bool hasOwnedRegisterResult() const {
-      return getFnEffects().hasOwnedRegisterResult();
-    }
     bool isRefResult() const { return getFnEffects().isRefResult(); }
 
     /// Return the convention for the specified value argument.

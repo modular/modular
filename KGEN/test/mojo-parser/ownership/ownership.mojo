@@ -43,7 +43,7 @@ struct MemPair:
 @register_passable
 struct RegExample:
   fn __init__(inout self):
-    return
+    return 
   fn __copyinit__(inout self, existing: Self): # CHECK: lit.func @"__copyinit__
     return
 
@@ -332,6 +332,10 @@ fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
 fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
   return a.f2
 
+
+fn return_ref(inout a: FieldSensitiveMemExample) -> ref [__lifetime_of(a)] FieldSensitiveMemExample:
+  return a
+
 # CHECK-LABEL: lit.func @"test_result_optimization
 fn test_result_optimization():
   # CHECK-NEXT: %example = lit.var.decl "example"
@@ -342,7 +346,7 @@ fn test_result_optimization():
 
   # CHECK: [[IMMREF:%.*]] = lit.ref.immut %example
   # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
-  # CHECK-NEXT: lit.call @ownership{{.*}}([[IMMREF]], %__call_result_tmp__)
+  # CHECK-NEXT: lit.call {{.*}}use_and_return{{.*}}([[IMMREF]], %__call_result_tmp__)
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %__call_result_tmp__
   # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}(%example, [[IMMREF]])
@@ -360,6 +364,24 @@ fn test_result_optimization():
   # CHECK-NEXT: [[MUTREF:%.*]] = kgen.rebind [[F1_2]]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[MUTREF]])
   # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %__call_result_tmp___0)
+
+  # Mutating self through a reference forces a temporary.
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
+  # CHECK-NEXT: [[RETREF:%.*]] = lit.call {{.*}}return_ref{{.*}}(%example)
+  # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
+  # CHECK-NEXT: lit.call {{.*}}use_and_return{{.*}}([[IMMREF]], [[TMPVAR]])
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[TMPVAR]]
+
+  # Delete the old thing at the reference pointed-to-by return_ref before we
+  # copy into it.
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[RETREF]])
+
+  # FieldSensitiveMem doesn't have a moveinit.
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[RETREF]], [[IMMREF]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[TMPVAR]])
+  return_ref(example) = use_and_return(example)
+
+
 
   example.mutate()
   # CHECK-NEXT: lit.call @{{.*}}@"mutate{{.*}}(%example)
@@ -542,7 +564,7 @@ struct ExoticDelExample:
 
 # CHECK-LABEL: lit.func @"def_borrowed
 # CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> borrow_in_mem
-def def_borrowed(borrowed a: MemExample) -> None:
+def def_borrowed(a: MemExample) -> None:
   # CHECK: lit.ref.store %none, %__result__
   # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
   # CHECK-NEXT: return [[FALSE]]

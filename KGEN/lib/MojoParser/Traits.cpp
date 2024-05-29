@@ -58,7 +58,6 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
 /// TODO: Remove these special initializer forms.
 static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
                                                      ASTType selfType,
-                                                     bool trivial,
                                                      bool isRegInit) {
   // This function does two things: if the self type is in the result slot, it
   // moves it to the return, mindful of error handling, and if it is found in
@@ -90,9 +89,6 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       --numImplicitLifetimeDecls;
 
       replacedResult = true;
-      // Make sure to set the `ownedresult` bit if the type is not trivial.
-      if (!trivial)
-        fnEffects.setOwnedRegisterResult();
       // Move the self type into the result.
       resultType = selfType;
       continue;
@@ -447,8 +443,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
       // register-passable.
       LITSignatureType traitSignature = newSignature;
       if (regPassable) {
-        newSignature = getRegisterPassableSignature(newSignature, selfType,
-                                                    rpTrivial, isRegInit);
+        newSignature =
+            getRegisterPassableSignature(newSignature, selfType, isRegInit);
       }
 
       // Omit errors for certain special functions where the parser will

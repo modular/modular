@@ -1100,7 +1100,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
   float1: fn(MemoryType) -> MemoryType,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!RegType, |) ownedresult -> !RegType
+  # CHECK-SAME: %{{.*}}: {{.*}}(!RegType, |) -> !RegType
   float2: fn(owned RegType) -> RegType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none

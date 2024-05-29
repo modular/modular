@@ -96,7 +96,7 @@ struct TestParamStruct[A: Int]:
     alias B = A+A+1
     # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__add__{{.*}}, [[B]], [[A]])>
     alias C = B+A
-    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}#TestParamStruct <:!Int {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> = <apply(:!lit.signature<() -> {{.*}}#TestParamStruct <:!Int {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int [[C]]>
     var temp: TestParamStruct[C]
@@ -233,7 +233,7 @@ struct TwoParams[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.func @"signature_capture{{.*}}"<
 # CHECK-SAME: a: !Int,
-# CHECK-SAME: f: !lit.signature<<"b": !Int>() ownedresult -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
+# CHECK-SAME: f: !lit.signature<<"b": !Int>() -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 

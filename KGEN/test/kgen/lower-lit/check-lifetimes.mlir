@@ -371,14 +371,14 @@ lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
 
 !Reg = !lit.declref<@Reg>
 lit.struct.decl @Reg register_passable attributes {
-    copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg borrow) ownedresult -> !Reg>,
+    copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg borrow) -> !Reg>,
     destructor = #kgen.symbol.constant<@Reg::@__del__> : !lit.signature<(!Reg) -> !kgen.none>
 } {
   lit.func @__del__(%self: !Reg, |) {
     kgen.return
   }
   // FIXME: Wrong copyinit signature.
-  lit.func @__copyinit__(%other: !Reg owned) ownedresult -> !Reg attributes {specialFnKind = 7 : i8} {
+  lit.func @__copyinit__(%other: !Reg owned) -> !Reg attributes {specialFnKind = 7 : i8} {
     kgen.return %other : !Reg
   }
 }
@@ -393,7 +393,7 @@ lit.func @copy_del_reg_value() {
   // CHECK: lit.ref.store
   // CHECK: [[LOAD:%.*]] = lit.ref.load %x
   // CHECK: [[COPY:%.*]] = lit.call @Reg::@__copyinit__([[LOAD]])
-  %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
+  %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg borrow, |) -> !Reg>
   // CHECK: [[ORIG:%.*]] = lit.ref.load %x
   // CHECK: call @Reg::@__del__([[ORIG]])
   // CHECK: call @Reg::@__del__([[COPY]])
@@ -1497,7 +1497,7 @@ lit.struct.decl @Foo
     // CHECK-NEXT: } then {
     // CHECK-NEXT:   %[[MYSTR:.*]] = lit.ref.struct.ger %self[str] : <@String, mut selfLife> from @Foo
     // CHECK-NEXT:   %3 = lit.call @String::@__del__[mut selfLife](%[[MYSTR]]) : !lit.signature<[1]("self": !lit.ref<@String, mut *[0,0]> owned_in_mem, |) -> !kgen.none>
-    // CHECK-NEXT:   %[[ERROR:.*]] = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !lit.declref<@Error>>
+    // CHECK-NEXT:   %[[ERROR:.*]] = lit.call @Error::@__init__() : !lit.signature<() -> !lit.declref<@Error>>
     // CHECK-NEXT:   lit.ref.store %[[ERROR]], %__error__ : <@Error, mut errorLife>
     // CHECK-NEXT:   %[[V0:.*]] = kgen.param.constant: i1 = <1>
     // CHECK-NEXT:   lit.error_return %[[V0]] : i1
@@ -1507,7 +1507,7 @@ lit.struct.decl @Foo
     hlcf.elif {
       hlcf.elif.yield %cond : i1
     } then {
-      %9 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !Error>
+      %9 = lit.call @Error::@__init__() : !lit.signature<() -> !Error>
       lit.ref.store %9, %__error__ : <!Error, mut errorLife>
       %10 = kgen.param.constant: i1 = <1>
       lit.error_return %10 : i1
