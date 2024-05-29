@@ -170,15 +170,15 @@ fn test_vectorize[
     var bench_id = BenchId(
         str(op)
         + ", N="
-        + String(N)
+        + str(N)
         + ", simd="
-        + String(simd_width)
+        + str(simd_width)
         + ", const_operand="
-        + String(const_operand)
+        + str(const_operand)
         + ", dtype="
-        + String(dtype)
+        + str(dtype)
         + ", unroll_factor="
-        + String(unroll_factor)
+        + str(unroll_factor)
     )
 
     m.bench_function[bench_](bench_id, throughput_elems=N)
