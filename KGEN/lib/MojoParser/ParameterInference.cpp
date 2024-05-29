@@ -709,14 +709,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   return failure();
 };
 
-LogicalResult
-ParameterInferenceState::inferOneParam(const ParamBindings::Binding &binding,
-                                       Type expectedType) {
+void ParameterInferenceState::inferOneParam(
+    const ParamBindings::Binding &binding, Type expectedType) {
   // Don't infer from unpacked parameters.
   if (isa<UnpackedAttr>(binding.value))
-    return success();
+    return;
   curArgExpr = binding.expr;
-  return matchTypes(binding.getType(), expectedType);
+  (void)matchTypes(binding.getType(), expectedType);
 }
 
 /// Given a signature type that has some of its parameter bindings known, burn
@@ -849,11 +848,8 @@ LogicalResult ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     if (paramListAttr.isVariadic(idx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
       Type varArgsEltType = expectedVariadic.getElementType();
-      while (posIdx != numPosParams) {
-        if (failed(inferOneParam(givenBindings.posOperands[posIdx++],
-                                 varArgsEltType)))
-          return failure();
-      }
+      while (posIdx != numPosParams)
+        inferOneParam(givenBindings.posOperands[posIdx++], varArgsEltType);
       continue;
     }
 
@@ -862,8 +858,7 @@ LogicalResult ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     if (posIdx == numPosParams) {
       if (std::optional<ParamBindings::Binding> param =
               givenBindings.findKwArg(paramListAttr.getName(idx))) {
-        if (failed(inferOneParam(*param, expectedType)))
-          return failure();
+        inferOneParam(*param, expectedType);
         continue;
       }
 
@@ -878,9 +873,7 @@ LogicalResult ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 
     // In the typical case, this isn't a variadic or keyword parameter. It
     // must be a positional binding.
-    if (failed(
-            inferOneParam(givenBindings.posOperands[posIdx++], expectedType)))
-      return failure();
+    inferOneParam(givenBindings.posOperands[posIdx++], expectedType);
   }
 
   return success();

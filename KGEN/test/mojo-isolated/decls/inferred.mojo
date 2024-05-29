@@ -63,6 +63,10 @@ struct InferredStruct[x: int, //, y: int, z: ParamType[x]]:
     pass
 
 
+struct InferredStructConversion[x: int, //, y: AnyTrivialRegType, z: ParamType[x]]:
+    pass
+
+
 # CHECK-LABEL: lit.func @"test_inferred_params
 fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_param_from_arg{{.*}}<x>(%0)
@@ -97,3 +101,6 @@ fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
     alias partially_bound_type = InferredStruct[`1`]
     # CHECK-NEXT: anystruct<#InferredStruct <x, 1, :[[PARAMTYPE]]<x> y>> = <#lit.bind_type<:{{.*}} [[PARTIALLY_BOUND]], [x, y]>>
     alias fully_bound_type = partially_bound_type[y]
+
+    # CHECK-NEXT: InferredStructConversion<x, :type !Int, :[[PARAMTYPE]]<x> y>
+    var inferred_type: InferredStructConversion[Int, y]
