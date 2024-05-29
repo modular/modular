@@ -21,12 +21,9 @@ struct DType:
 # CHECK-LABEL: lit.struct.decl @SIMD
 # CHECK-SAMEL <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
 # CHECK-SAME: register_passable
-@register_passable
+@register_passable("trivial")
 struct SIMD[dt: DType, size: Int]:
     var value: __mlir_type[`!pop.simd<`, size.value, `, `, dt.value, `>`]
-
-    fn __copyinit__(existing: Self) -> Self:
-        return Self{value: existing.value}
 
     fn __add__(lhs, rhs: Self) -> Self:
         while __mlir_attr.true:
@@ -169,9 +166,8 @@ struct Pair[dt: DType]:
 
   # CHECK: lit.func @"__init__{{.*}} -> {{.*}}#Pair <:!DType dt>{{.*}}> attributes {{.*}}isStatic
   fn __init__(a: SIMD[dt, 42]) -> Pair[dt]:
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-    # CHECK: %1 = kgen.param.constant: !Int = <{4}>
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}#SIMD <:!DType dt, :!Int {42}>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
+    # CHECK: %0 = kgen.param.constant: !Int = <{4}>
+    # CHECK: %1 = lit.struct.create(a=%a, b=%0) : ({{.*}}#SIMD <:!DType dt, :!Int {42}>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -187,8 +183,7 @@ fn useParameterizedField[x: Pair[DType.float32]]():
 
 # CHECK-LABEL: lit.func @"makePair
 fn makePair(a: SIMD[DType.float32, 42], b: Int) -> Pair[DType.float32]:
-  # CHECK: [[TMP1:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-  # CHECK:  = lit.struct.create(a=[[TMP1]], b=%b)
+  # CHECK:  = lit.struct.create(a=%a, b=%b)
   return Pair[DType.float32]{a: a, b: b}
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
