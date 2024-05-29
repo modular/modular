@@ -1001,6 +1001,8 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
     break;
   }
   lspDiag.message = mainDiag.getMessage().str();
+  if (lspDiag.message.empty())
+    lspDiag.message = "Mojo parser error";
 
   // Attach any notes to the main diagnostic as related information.
   if (diags.size() > 1) {
