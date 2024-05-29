@@ -788,13 +788,20 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     break;
   case ArgConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
+      // "Convert" an SBValue to an MBValue by performing a bitcopy of the value
+      // into an untracked stack allocation.
+      // FIXME(MOCO-725): This doesn't work in async functions, because the
+      // borrowed argument is captured.
+      if (calleeSig.isAsync()) {
+        emitter.emitError(argValAndExpr.expr->getLoc())
+            << "TODO: cannot bind non-trivial register-passable value to "
+               "borrowed generic argument yet";
+      }
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
       Value ptr = emitter.builder->create<POP::StackAllocationOp>(
           argLoc, PointerType::get(sbValue.getType()), 1);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
-      // Given a legacy pointer, get it to a reference.
-      // TODO(references): RefFromPointerOp should take a novel lifetime.
       auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/false);
       auto ref =
           emitter.builder->create<RefFromPointerOp>(argLoc, ptr, immortal,
