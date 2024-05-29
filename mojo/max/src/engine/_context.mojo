@@ -119,7 +119,7 @@ struct RuntimeConfig:
             return
         else:
             if device == _Device.CUDA:
-                self.ptr.set_device(self.lib, device)
+                self.ptr.set_device(self.lib, str(device))
 
         self.ptr.set_api_language(self.lib, "mojo")
 

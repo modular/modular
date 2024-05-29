@@ -339,9 +339,9 @@ struct OwningVector[T: Movable](Sized):
 
     fn get(self, idx: Int) raises -> UnsafePointer[T]:
         if idx >= self.size:
-            raise "requested index(" + String(
+            raise "requested index(" + str(
                 idx
-            ) + ") exceeds size of vector(" + self.size + ")"
+            ) + ") exceeds size of vector(" + str(self.size) + ")"
         return self.ptr + idx
 
     fn __len__(self) -> Int:

@@ -30,7 +30,9 @@ def error[T: Stringable](graph: Optional[Graph], message: T) -> Error:
     """
     var message_string: String
     if graph:
-        message_string = graph.value()[].current_layer() + " - " + message
+        message_string = (
+            str(graph.value()[].current_layer()) + " - " + str(message)
+        )
     else:
         message_string = str(message)
     return (

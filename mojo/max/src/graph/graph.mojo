@@ -307,7 +307,7 @@ struct Graph(CollectionElement, Stringable):
                 "index out of bounds: "
                 + str(n)
                 + ", graph has "
-                + num_args
+                + str(num_args)
                 + " arguments",
             )
         return Symbol(self._graph, self._body().argument(n))

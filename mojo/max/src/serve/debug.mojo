@@ -30,7 +30,7 @@ struct ColoredTextCodes:
         Returns:
             The ASCII color coded string.
         """
-        return chr(27) + "[37;4" + min(max(0, idx), 7) + "m"
+        return chr(27) + "[37;4" + str(min(max(0, idx), 7)) + "m"
 
     @staticmethod
     fn reset() -> String:

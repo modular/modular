@@ -147,7 +147,7 @@ struct KServeClientAsync:
         var result_ptr = self._ptr.take_infer_result(self._lib, request._ptr)
         var result = result_ptr[]
         if result.code != 0:
-            response.set[Error](Error(result.error))
+            response.set[Error](Error(str(result.error)))
         else:
             response.set[InferenceResponseImpl](
                 InferenceResponseImpl(

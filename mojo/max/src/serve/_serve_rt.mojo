@@ -387,10 +387,10 @@ struct InferenceRequestImpl(InferenceRequest):
         return self._ptr.payload_type(self._lib)
 
     fn get_model_name(self) raises -> String:
-        return self._ptr.model_name(self._lib)
+        return str(self._ptr.model_name(self._lib))
 
     fn get_model_version(self) raises -> String:
-        return self._ptr.model_version(self._lib)
+        return str(self._ptr.model_version(self._lib))
 
     fn get_input_tensors(self) raises -> TensorMap:
         return get_tensors[

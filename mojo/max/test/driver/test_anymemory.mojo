@@ -53,7 +53,8 @@ def test_implicit_conversion():
         TensorSpec(DType.float32, 2, 2),
     )
 
-    assert_equal(_function_that_takes_anymemory(tensor^, dt2^), 4)
+    # FIXME (40568) should remove str
+    assert_equal(str(_function_that_takes_anymemory(tensor^, dt2^)), str(4))
 
 
 def main():

@@ -184,7 +184,7 @@ struct TensorDict(Sized):
             else:
                 contents += ", "
             try:
-                contents += key + ": " + self._items[key].spec
+                contents += key + ": " + str(self._items[key].spec)
             except:
                 # Should never happen.
                 contents += key + ": " + "(contents could not be read)"

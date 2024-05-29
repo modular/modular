@@ -44,9 +44,9 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
         raise error(
             g,
             "gather axis out of bounds: axis="
-            + String(axis)
+            + str(axis)
             + ", rank="
-            + String(input_type.rank()),
+            + str(input_type.rank()),
         )
 
     var dims = List[Dim]()
