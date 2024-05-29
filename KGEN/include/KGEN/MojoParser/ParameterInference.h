@@ -127,8 +127,7 @@ private:
   }
 
   /// Infer parameters from a single parameter binding.
-  LogicalResult inferOneParam(const ParamBindings::Binding &binding,
-                              Type expectedType);
+  void inferOneParam(const ParamBindings::Binding &binding, Type expectedType);
 
   /// These are the bindings originally provided to the callable. These are used
   /// to infer parameters from other parameter values.

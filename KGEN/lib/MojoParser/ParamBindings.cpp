@@ -629,6 +629,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag->attachNote(*opLoc) << baseName << " declared here";
       }};
 
+  SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
     ParameterInferenceState inferrence(*this, bindingsSoFar, evaluator,
@@ -645,7 +646,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.
-    inferenceDiags.addFailure(bindingsSoFar.size(), SyntheticNode(exprLoc),
+    inferenceDiags.addFailure(bindingsSoFar.size(), errorLoc,
                               InferenceFailure::NotFoundFailure());
     return PValue();
   };
