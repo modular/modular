@@ -164,9 +164,7 @@ def test_2dslice_with_step_row_column():
 def test_round_trip():
     var dev = Device(CPUDescriptor(numa_id=2))
 
-    var dt = dev.allocate(
-        TensorSpec(DType.float32, 10, 2),
-    )
+    var dt = dev.allocate(TensorSpec(DType.float32, 10, 2), str("mytensor"))
     var tensor = dt^.get_tensor[DType.float32, 2]()
 
     var val = 1
@@ -179,7 +177,8 @@ def test_round_trip():
 
     var dt2 = tensor^.get_device_memory()
     assert_equal(
-        str(dt2), "DeviceMemory(Device(type=CPU,numa_id=2),Spec(10x2xfloat32))"
+        str(dt2),
+        "DeviceMemory(mytensor,Device(type=CPU,numa_id=2),Spec(10x2xfloat32))",
     )
 
     var tensor2 = dt2^.get_tensor[DType.float32, 2]()

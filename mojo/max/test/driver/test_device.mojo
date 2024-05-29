@@ -36,6 +36,12 @@ def test_device_memory():
         str(dt2), "DeviceMemory(Device(type=CPU,numa_id=2),Spec(3x2xfloat32))"
     )
 
+    var dt3 = dev.allocate(TensorSpec(DType.float32, 3, 2), str("foo"))
+    assert_equal(
+        str(dt3),
+        "DeviceMemory(foo,Device(type=CPU,numa_id=2),Spec(3x2xfloat32))",
+    )
+
 
 def main():
     test_device()
