@@ -121,7 +121,7 @@ fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
 
 
 fn _async_execute[
-    type: AnyRegType
+    type: AnyTrivialRegType
 ](handle: AnyCoroutine, rt: Runtime, desired_worker_id: Int,):
     external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
         _coro_resume_fn, handle, rt.ptr, desired_worker_id
@@ -270,7 +270,7 @@ struct Runtime:
         )
 
     fn create_task[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         self,
         owned handle: Coroutine[type],
@@ -285,7 +285,9 @@ struct Runtime:
         _async_execute[type](handle._handle, self, desired_worker_id)
         return Task[type](handle^)
 
-    fn run[type: AnyRegType](self, owned handle: Coroutine[type]) -> type:
+    fn run[
+        type: AnyTrivialRegType
+    ](self, owned handle: Coroutine[type]) -> type:
         var t = self.create_task(handle^)
         var result = t.wait()
         return result
@@ -296,7 +298,7 @@ struct Runtime:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyRegType]:
+struct Task[type: AnyTrivialRegType]:
     var handle: Coroutine[type]
 
     fn __init__(inout self, owned handle: Coroutine[type]):
@@ -359,7 +361,7 @@ struct TaskGroupContext:
 
 
 @register_passable
-struct TaskGroupTask[type: AnyRegType]:
+struct TaskGroupTask[type: AnyTrivialRegType]:
     """A task that belongs to a TaskGroup. This object retains ownership of the
     underlying coroutine handle, which can be used to query the results of the
     task once the taskgroup completes.
@@ -409,7 +411,7 @@ struct TaskGroup:
             _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
     fn create_task[
-        type: AnyRegType
+        type: AnyTrivialRegType
     ](
         inout self,
         owned task: Coroutine[type],
@@ -449,7 +451,7 @@ struct TaskGroup:
 # ===----------------------------------------------------------------------===#
 
 
-struct TaskGroupTaskList[type: AnyRegType](Sized):
+struct TaskGroupTaskList[type: AnyTrivialRegType](Sized):
     """Container to hold a set of TaskGroupTasks alive until they all complete.
     """
 
