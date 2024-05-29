@@ -187,9 +187,7 @@ export class InlineLocalVariablesProvider implements
     }
 
     const uri = vscode.Uri.file(path);
-    const lspServer =
-        await this.context.lspContext?.getOrActivateLanguageClient(
-            uri, /*launchAndDebugLanguageServer=*/ false);
+    const lspServer = this.context.lspContext?.lspClient;
     if (lspServer === undefined)
       return [];
 

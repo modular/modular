@@ -127,7 +127,7 @@
           ]
         },
         "mojo.lsp.includeDirs": {
-          "scope": "resource",
+          "scope": "machine",
           "type": "array",
           "description": "List of directories to append to the search path list used to resolve imported modules in a document.",
           "items": {
