@@ -339,10 +339,6 @@ export class MojoSDKManager extends DisposableContext {
     this.loggingService = loggingService;
     this.context = context;
 
-    // Whenever we have different workspace folders, we clear the internal
-    // config cache to allow for more precise SDK config resolution.
-    this.pushSubscription(vscode.workspace.onDidChangeWorkspaceFolders(
-        () => { this.sdk = undefined; }));
     this.pushSubscription(vscode.commands.registerCommand(
         "mojo.sdk.install", () => { this.promptInstallSDK(); }))
   }
