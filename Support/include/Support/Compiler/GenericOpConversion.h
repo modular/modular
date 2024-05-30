@@ -44,8 +44,9 @@ ErrorOr<TargetOp> convertGraphOp(SourceOp op,
 
   // The builder should automatically add a body, so we remove it, and replace
   // it with the body of the source op.
-  newOp.eraseBody();
-  rewriter.inlineRegionBefore(op.getBody(), newOp.getBody(), newOp.end());
+  newOp.getBody().front().erase();
+  rewriter.inlineRegionBefore(op.getBody(), newOp.getBody(),
+                              newOp.getBody().end());
 
   rewriter.eraseOp(op);
   return newOp;
