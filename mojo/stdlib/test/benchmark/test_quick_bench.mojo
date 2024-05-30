@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: asan
 # RUN: mojo %s --tabular --no-progress| FileCheck %s
 from benchmark import (
     QuickBench,
