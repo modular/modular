@@ -19,7 +19,7 @@ from sys.info import num_physical_cores, triple_is_nvidia_cuda
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, Function, Stream
 from runtime import tracing
-from runtime.llcl import Runtime, TaskGroup, TaskGroupTaskList
+from runtime.llcl import Runtime, TaskGroup
 from runtime.tracing import Trace, TraceLevel
 
 from utils.numerics import FlushDenormals
@@ -354,17 +354,14 @@ fn sync_parallelize[
     var num_threads = rt.parallelism_level()
     var num_per_lq_tasks = num_work_items // num_threads
     var num_global_queue_tasks = num_work_items % num_threads
-    var tasks = TaskGroupTaskList[NoneType](num_work_items)
     var tg = TaskGroup(rt)
     var count = 0
     for i in range(num_per_lq_tasks):
         for j in range(num_threads):
-            var task = tg.create_task[NoneType](task_fn(count), j)
-            tasks.add(task^)
+            _ = tg.create_task[NoneType](task_fn(count), j)
             count += 1
     for k in range(num_global_queue_tasks):
-        var task = tg.create_task[NoneType](task_fn(count))
-        tasks.add(task^)
+        _ = tg.create_task[NoneType](task_fn(count))
         count += 1
 
     # execute Nth task inline. When using local queues, we need to know
@@ -372,7 +369,6 @@ fn sync_parallelize[
     # This involves plumbing workerIDTLS from the threadpool. It may be
     # worth to do this. Until then we schedule all tasks through addTask
     tg.wait()
-    _ = tasks^
 
 
 @always_inline
