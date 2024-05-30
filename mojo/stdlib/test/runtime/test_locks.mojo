@@ -11,8 +11,6 @@ from time import sleep, time_function, now
 from runtime.llcl import (
     Runtime,
     TaskGroup,
-    TaskGroupTask,
-    TaskGroupTaskList,
 )
 from testing import assert_equal
 
@@ -43,14 +41,12 @@ fn test_basic_lock() raises:
 
     @parameter
     fn test_atomic() capturing -> None:
-        var tasks = TaskGroupTaskList[Int](maxI * maxJ)
         with Runtime() as rt:
             var tg = TaskGroup(rt)
             for i in range(0, maxI):
                 for j in range(0, maxJ):
-                    tasks.add(tg.create_task[Int](inc()))
+                    tg.create_task[Int](inc())
             tg.wait()
-            _ = tasks^
 
     var time_ns = time_function[test_atomic]()
     # print("Total time taken ", time_ns / (1_000_000_000), " s")

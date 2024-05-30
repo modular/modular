@@ -356,16 +356,45 @@ struct TaskGroupContext:
 
 
 @register_passable
-struct TaskGroupTask[type: AnyTrivialRegType]:
+struct _TaskGroupBox(CollectionElement):
+    """This struct is a type-erased owning box for an opaque coroutine."""
+
+    var handle: AnyCoroutine
+
+    fn __init__[
+        type: AnyTrivialRegType
+    ](inout self, owned coro: Coroutine[type]):
+        var handle = coro._handle
+        __mlir_op.`lit.ownership.mark_destroyed`(Reference(coro).value)
+        self.handle = handle
+
+    fn get[type: AnyTrivialRegType](self) -> type:
+        return __mlir_op.`co.get_results`[_type=type](self.handle)
+
+    fn __del__(owned self):
+        __mlir_op.`co.destroy`(self.handle)
+
+    # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
+    # should never get called.
+    fn __copyinit__(inout self, existing: Self):
+        abort("_TaskGroupBox.__copyinit__ should never get called")
+        while True:
+            pass
+
+
+@register_passable
+struct TaskGroupTask[type: AnyTrivialRegType, lifetime: MutableLifetime]:
     """A task that belongs to a TaskGroup. This object retains ownership of the
     underlying coroutine handle, which can be used to query the results of the
     task once the taskgroup completes.
     """
 
-    var handle: Coroutine[type]
+    var handle_ref: Reference[_TaskGroupBox, True, lifetime]
 
-    fn __init__(inout self, owned handle: Coroutine[type]):
-        self.handle = handle^
+    fn __init__(
+        inout self, handle_ref: Reference[_TaskGroupBox, True, lifetime]
+    ):
+        self.handle_ref = handle_ref
 
     fn get(self) -> type:
         """Get the task's result value. This should only be called once the
@@ -374,13 +403,14 @@ struct TaskGroupTask[type: AnyTrivialRegType]:
         Returns:
             The task's result value.
         """
-        return self.handle.get()
+        return self.handle_ref[].get[type]()
 
 
 struct TaskGroup:
     var counter: Atomic[DType.index]
     var chain: Chain
     var rt: Runtime
+    var tasks: List[_TaskGroupBox]
 
     fn __init__(inout self, rt: Runtime):
         var chain = Chain()
@@ -388,6 +418,7 @@ struct TaskGroup:
         self.counter = 1
         self.chain = chain
         self.rt = rt
+        self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(owned self):
         _del_llcl_chain(UnsafePointer[Chain].address_of(self.chain))
@@ -411,7 +442,7 @@ struct TaskGroup:
         inout self,
         owned task: Coroutine[type],
         desired_worker_id: Int = -1,
-    ) -> TaskGroupTask[type]:
+    ) -> TaskGroupTask[type, __lifetime_of(self)]:
         self.counter += 1
         LegacyPointer(task._get_ctx[TaskGroupContext]().address).store(
             TaskGroupContext {
@@ -420,7 +451,8 @@ struct TaskGroup:
             }
         )
         _async_execute[type](task._handle, self.rt, desired_worker_id)
-        return task^
+        self.tasks.append(_TaskGroupBox(task^))
+        return self.tasks.__get_ref(-1)
 
     @staticmethod
     fn await_body_impl(hdl: AnyCoroutine, inout task_group: TaskGroup):
@@ -439,50 +471,6 @@ struct TaskGroup:
     fn wait(inout self):
         self._task_complete()
         _async_wait(UnsafePointer[Chain].address_of(self.chain))
-
-
-# ===----------------------------------------------------------------------===#
-# TaskGroupTaskList
-# ===----------------------------------------------------------------------===#
-
-
-struct TaskGroupTaskList[type: AnyTrivialRegType](Sized):
-    """Container to hold a set of TaskGroupTasks alive until they all complete.
-    """
-
-    var data: UnsafePointer[TaskGroupTask[type]]
-    var size: Int
-
-    fn __init__(inout self, num_work_items: Int):
-        self.data = UnsafePointer[TaskGroupTask[type]].alloc(num_work_items)
-        self.size = 0
-
-    fn add(inout self, owned hdl: TaskGroupTask[type]):
-        __get_address_as_uninit_lvalue(self.data.offset(self.size).address) = (
-            hdl^
-        )
-        self.size += 1
-
-    fn __getitem__(self, i: Int) -> UnsafePointer[TaskGroupTask[type]]:
-        """Returns a pointer to the TaskGroupTask at the specified index.
-
-        Note that the returned pointer can only be dereferenced while the
-        TaskGroupTaskList is in scope as the underlying tasks get destroyed
-        in the destructor of the TaskGroupTaskList.
-        Remove this implementation once #35168 lands since Lists should suffice
-        """
-        debug_assert(i < self.size, "index must be within bounds")
-        var hdl = (move_from_pointee(self.data.offset(i).address))
-        var ret_val = UnsafePointer[TaskGroupTask[type]].address_of(hdl)
-        return ret_val
-
-    fn __len__(self) -> Int:
-        return self.size
-
-    fn __del__(owned self):
-        for i in range(self.size):
-            destroy_pointee(self.data.offset(i).address)
-        self.data.free()
 
 
 # ===----------------------------------------------------------------------===#
