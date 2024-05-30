@@ -253,16 +253,20 @@ fn flash_attention[
         "only support float32 in llama 2.",
     ]()
 
-    # If propagate static shapes.
-    # constrained[q_shape.at[2]().get() == 128, "Only support 32 heads."]()
-    # constrained[q_shape.at[3]().get() == 128, "Only support depth = 128."]()
+    constrained[
+        q_shape.all_known[2, 4](),
+        "Only support static head (H) and depth (D) dimensions",
+    ]()
 
     # q shape [batch_size, seq_len, # heads, depth]
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
-    var num_heads = q.dim[2]()
-    var depth = q.dim[3]()
+    alias num_heads = q_shape.get[2]()
+    alias depth = q_shape.get[3]()
+
+    # TODO: this restriction will be lifted soon.
+    constrained[depth == 128, "Only support depth (D) = 128."]()
 
     alias qtile_num_rows = 32
     alias ktile_num_rows = 128
@@ -283,8 +287,8 @@ fn flash_attention[
                     BM=qtile_num_rows,
                     BN=ktile_num_rows,
                     BK=16,
-                    depth=128,  # llama2 shape
-                    num_heads=32,  # llama2 shape
+                    depth=depth,
+                    num_heads=num_heads,
                     TM=8,
                     TN=4,
                     num_threads=128,
@@ -316,8 +320,8 @@ fn flash_attention[
                     BM=qtile_num_rows,
                     BN=ktile_num_rows,
                     BK=16,
-                    depth=128,  # llama2 shape
-                    num_heads=32,  # llama2 shape
+                    depth=depth,
+                    num_heads=num_heads,
                     TM=8,
                     TN=4,
                     num_threads=128,
