@@ -114,6 +114,14 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 // LITDialectBytecodeInterface
 //===----------------------------------------------------------------------===//
 
+using WrappedBindTypeAttr = WrappedAttrType<BindTypeAttr>;
+using WrappedStructExtractAttr = WrappedAttrType<LIT::StructExtractAttr>;
+using WrappedLifetimeUnionAttr = WrappedAttrType<LifetimeUnionAttr>;
+using WrappedLifetimeMutCastAttr = WrappedAttrType<LifetimeMutCastAttr>;
+
+//===----------------------------------------------------------------------===//
+// Utilities
+
 using LIT::StructExtractAttr;
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
@@ -163,6 +171,7 @@ struct LITDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
     return ::writeType(type, writer);
   }
 };
+
 } // namespace
 
 //===----------------------------------------------------------------------===//

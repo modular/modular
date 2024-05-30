@@ -454,6 +454,13 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
     AttrBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
                      "AnyStructType":$type), "", "TypedAttr">
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static BindTypeAttr getFromBytecode(
+        TypedAttr typeValue, ArrayRef<TypedAttr> values, AnyStructType type);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -556,6 +563,11 @@ def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
     TypedAttr getOperand(size_t i) const {
       return getOperands()[i];
     }
+
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static LifetimeUnionAttr getFromBytecode(
+        ArrayRef<TypedAttr> operands, LifetimeType type);
   }];
 }
 
@@ -597,6 +609,11 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
         return castAttr.getOperand();
       return value;
     }
+
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static LifetimeMutCastAttr getFromBytecode(
+        TypedAttr operand, LifetimeType type);
   }];
 }
 
@@ -722,6 +739,13 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
                      "Type":$resultType), "", "TypedAttr">
 
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static StructExtractAttr getFromBytecode(
+        TypedAttr structValue, StringAttr field, Type type);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
