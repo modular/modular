@@ -6,6 +6,7 @@
 """Provides C bindings to ServeRT."""
 
 from sys.ffi import DLHandle
+from memory import UnsafePointer
 from memory.unsafe import DTypePointer, Pointer
 from builtin.coroutine import _coro_resume_fn, _suspend_async
 from runtime.llcl import Runtime, Chain, ChainPromise
@@ -24,10 +25,9 @@ from .._serve_rt import (
 )
 
 
-@value
-@register_passable
 struct ClientResult:
-    """Corresponds to the M_ClientResult C type."""
+    """Corresponds to the M_ClientResult C type; should only be used as a Pointer.
+    """
 
     var response: DTypePointer[DType.invalid]
     var error: CString
@@ -40,12 +40,11 @@ struct ClientResult:
         call_dylib_func(lib, Self._FreeValueFnName, ptr)
 
 
-@value
-@register_passable("trivial")
 struct CKServeClientAsync:
     """Corresponds to the M_KServeClient C type."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var _lib: DLHandle
+    var _ptr: DTypePointer[DType.invalid]
 
     alias _NewFnName = "M_newKServeClient"
     alias _FreeFnName = "M_freeKServeClient"
@@ -55,103 +54,121 @@ struct CKServeClientAsync:
     alias _ModelInferCreateRequestFnName = "M_modelInferCreateRequest"
     alias _ModelInferTakeResultFnName = "M_modelInferTakeResult"
 
-    @staticmethod
-    fn new(lib: DLHandle, address: StringRef) -> CKServeClientAsync:
-        return call_dylib_func[CKServeClientAsync](
-            lib, Self._NewFnName, address
+    fn __init__(inout self, lib: DLHandle, address: StringRef):
+        self._lib = lib
+        self._ptr = DTypePointer[DType.invalid]()
+        call_dylib_func(
+            self._lib,
+            Self._NewFnName,
+            address,
+            UnsafePointer.address_of(self._ptr),
         )
 
-    fn free(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._FreeFnName, self.ptr)
-
-    fn run(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._RunFnName, self.ptr)
-
-    # ModelInfer
-
-    fn model_infer(
-        owned self, lib: DLHandle, request: CInferenceRequest
-    ) -> Pointer[Chain]:
-        return call_dylib_func[Pointer[Chain]](
-            lib, Self._ModelInferFnName, self.ptr, request
+    fn __moveinit__(inout self, owned existing: Self):
+        self._lib = existing._lib
+        self._ptr = exchange[DTypePointer[DType.invalid]](
+            existing._ptr, DTypePointer[DType.invalid]()
         )
+
+    fn __del__(owned self):
+        call_dylib_func(self._lib, Self._FreeFnName, self._ptr)
+
+    fn run(inout self):
+        call_dylib_func(self._lib, Self._RunFnName, self._ptr)
+
+    fn model_infer(inout self, request: CInferenceRequest) -> Chain:
+        var chain = Chain()
+        call_dylib_func(
+            self._lib,
+            Self._ModelInferFnName,
+            self._ptr,
+            request._ptr,
+            UnsafePointer.address_of(chain.storage),
+        )
+        return chain
 
     fn create_infer_request(
-        owned self, lib: DLHandle, name: StringRef, version: StringRef
+        inout self, name: StringRef, version: StringRef
     ) -> CInferenceRequest:
-        return call_dylib_func[CInferenceRequest](
-            lib, Self._ModelInferCreateRequestFnName, self.ptr, name, version
+        var ptr = DTypePointer[DType.invalid]()
+        call_dylib_func(
+            self._lib,
+            Self._ModelInferCreateRequestFnName,
+            self._ptr,
+            name,
+            version,
+            UnsafePointer.address_of(ptr),
         )
+        return CInferenceRequest(self._lib, ptr, owning=True)
 
     fn take_infer_result(
-        owned self, lib: DLHandle, request: CInferenceRequest
+        inout self, request: CInferenceRequest
     ) -> UnsafePointer[ClientResult]:
-        return call_dylib_func[UnsafePointer[ClientResult]](
-            lib, Self._ModelInferTakeResultFnName, self.ptr, request
+        # The result is allocated inline and read directly into the passed
+        # memory. This is because we have the full type corresponding to the C
+        # type and don't need indirection.
+        var result = UnsafePointer[ClientResult]()
+        call_dylib_func(
+            self._lib,
+            Self._ModelInferTakeResultFnName,
+            self._ptr,
+            request._ptr,
+            UnsafePointer.address_of(result),
         )
-
-    # TODO: Fill in rest of {method, new, take} triples.
+        return result
 
 
 struct KServeClientAsync:
-    var _ptr: CKServeClientAsync
-    var _lib: DLHandle
+    var _impl: CKServeClientAsync
     var _session: InferenceSession
 
     fn __init__(
         inout self,
-        address: String,
         lib: DLHandle,
+        address: String,
         owned session: InferenceSession,
     ):
-        self._ptr = CKServeClientAsync.new(lib, address._strref_dangerous())
-        self._lib = lib
+        self._impl = CKServeClientAsync(lib, address._strref_dangerous())
         self._session = session^
 
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self._ptr = exchange[CKServeClientAsync](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
-        self._lib = existing._lib
+        self._impl = existing._impl^
         self._session = existing._session^
 
-    fn __copyinit__(inout self: Self, existing: Self):
-        self._ptr = existing._ptr
-        self._lib = existing._lib
-        self._session = existing._session
-
-    fn __del__(owned self):
-        self._ptr.free(self._lib)
-        _ = self._session^
-
-    fn run(self):
-        self._ptr.run(self._lib)
+    fn run(inout self):
+        self._impl.run()
 
     fn create_infer_request(
-        self, name: String, version: String
+        inout self, name: String, version: String
     ) -> InferenceRequestImpl:
         return InferenceRequestImpl(
-            self._ptr.create_infer_request(
-                self._lib, name._strref_dangerous(), version._strref_dangerous()
+            self._impl.create_infer_request(
+                name._strref_dangerous(), version._strref_dangerous()
             ),
-            self._lib,
             self._session,
         )
 
     async fn model_infer(
-        self,
+        inout self,
         request: InferenceRequestImpl,
         inout response: Variant[InferenceResponseImpl, Error],
     ):
-        _ = await ChainPromise(self._ptr.model_infer(self._lib, request._ptr)[])
-        var result_ptr = self._ptr.take_infer_result(self._lib, request._ptr)
-        var result = result_ptr[]
-        if result.code != 0:
-            response.set[Error](Error(str(result.error)))
+        await ChainPromise(self._impl.model_infer(request._impl))
+        var result = self._impl.take_infer_result(request._impl)
+        if result[].code != 0:
+            # The response should be null in this case.
+            response.set[Error](Error(str(result[].error)))
         else:
+            # This hands ownership of the response to the underlying
+            # InferenceRequest object. It will be freed separately when this
+            # object is freed.
             response.set[InferenceResponseImpl](
                 InferenceResponseImpl(
-                    result.response, self._lib, self._session, True
+                    CInferenceResponse(
+                        self._impl._lib, result[].response, owning=True
+                    ),
+                    self._session,
                 )
             )
-        ClientResult.free(self._lib, result_ptr)
+        # Free the allocated result.
+        ClientResult.free(self._impl._lib, result)

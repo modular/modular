@@ -26,6 +26,25 @@ from max.tensor import TensorSpec
 # ===----------------------------------------------------------------------=== #
 
 
+@value
+@register_passable("trivial")
+struct TensorView:
+    """Corresponds to the M_TensorView C type."""
+
+    var name: StringRef
+    var dtype: StringRef
+    var shape: UnsafePointer[Int64]
+    var rank: Int
+    var contents: UnsafePointer[UInt8]
+    var contentsSize: Int
+
+    alias _FreeValueFnName = "M_freeTensorView"
+
+    @staticmethod
+    fn free(lib: DLHandle, ptr: Pointer[TensorView]):
+        call_dylib_func(lib, Self._FreeValueFnName, ptr)
+
+
 fn get_tensor_spec(view: TensorView) -> TensorSpec:
     var dtype = view.dtype
     var shape = List[Int](capacity=view.rank)
@@ -65,13 +84,19 @@ fn get_tensor_spec(view: TensorView) -> TensorSpec:
 fn get_tensors[
     size_fn: StringLiteral,
     get_tensor_fn: StringLiteral,
-    T: AnyTrivialRegType,
-](lib: DLHandle, ptr: T, session: InferenceSession) raises -> TensorMap:
+](
+    lib: DLHandle, ptr: DTypePointer[DType.invalid], session: InferenceSession
+) raises -> TensorMap:
     var map = session.new_tensor_map()
     var size = call_dylib_func[Int64](lib, size_fn, ptr)
     for i in range(size):
-        var view_ptr = call_dylib_func[Pointer[TensorView]](
-            lib, get_tensor_fn, ptr, i
+        var view_ptr = Pointer[TensorView]()
+        call_dylib_func(
+            lib,
+            get_tensor_fn,
+            ptr,
+            i,
+            UnsafePointer.address_of(view_ptr),
         )
         var view = view_ptr.load()
         map.borrow(view.name, get_tensor_spec(view), view.contents)
@@ -86,8 +111,12 @@ fn buffer_str[type: DType](map: TensorMap, name: String) raises -> StringRef:
 
 fn set_tensors[
     add_tensor_fn: StringLiteral,
-    T: AnyTrivialRegType,
-](lib: DLHandle, ptr: T, names: List[String], map: TensorMap) raises:
+](
+    lib: DLHandle,
+    ptr: DTypePointer[DType.invalid],
+    names: List[String],
+    map: TensorMap,
+) raises:
     for i in range(len(names)):
         var name = names[i]
         var spec = map.get_spec(name)
@@ -175,31 +204,11 @@ fn set_tensors[
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-@register_passable("trivial")
-struct TensorView:
-    """Corresponds to the M_TensorView C type."""
-
-    var name: StringRef
-    var dtype: StringRef
-    var shape: UnsafePointer[Int64]
-    var rank: Int
-    var contents: UnsafePointer[UInt8]
-    var contentsSize: Int
-
-    alias _FreeValueFnName = "M_freeTensorView"
-
-    @staticmethod
-    fn free(lib: DLHandle, ptr: Pointer[TensorView]):
-        call_dylib_func(lib, Self._FreeValueFnName, ptr)
-
-
-@value
-@register_passable("trivial")
 struct CInferenceBatch:
     """Corresponds to the InfererenceBatch C type."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var _lib: DLHandle
+    var _ptr: DTypePointer[DType.invalid]
 
     alias _NewFnName = "M_newBatch"
     alias _FreeFnName = "M_freeBatch"
@@ -207,77 +216,76 @@ struct CInferenceBatch:
     alias _RequestAtFn = "M_batchRequestAt"
     alias _ResponseAtFn = "M_batchResponseAt"
 
-    @staticmethod
-    fn new(lib: DLHandle) -> CInferenceBatch:
-        return call_dylib_func[CInferenceBatch](lib, Self._NewFnName)
-
-    fn free(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._FreeFnName, self.ptr)
-
-    fn size(self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._SizeFnName, self.ptr)
-
-    fn request_at(self, lib: DLHandle, index: Int64) -> CInferenceRequest:
-        return call_dylib_func[CInferenceRequest](
-            lib, Self._RequestAtFn, self.ptr, index
+    fn __init__(inout self, lib: DLHandle):
+        self._lib = lib
+        self._ptr = DTypePointer[DType.invalid]()
+        call_dylib_func(
+            self._lib, Self._NewFnName, UnsafePointer.address_of(self._ptr)
         )
 
-    fn response_at(self, lib: DLHandle, index: Int64) -> CInferenceResponse:
-        return call_dylib_func[CInferenceResponse](
-            lib, Self._ResponseAtFn, self.ptr, index
+    fn __init__(inout self, lib: DLHandle, ptr: DTypePointer[DType.invalid]):
+        self._lib = lib
+        self._ptr = ptr
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._lib = existing._lib
+        self._ptr = exchange[DTypePointer[DType.invalid]](
+            existing._ptr, DTypePointer[DType.invalid]()
         )
 
+    fn __del__(owned self):
+        call_dylib_func(self._lib, Self._FreeFnName, self._ptr)
 
-struct InferenceBatch(Sized, CollectionElement):
-    var _ptr: CInferenceBatch
-    var _lib: DLHandle
+    fn size(self) -> Int64:
+        return call_dylib_func[Int64](self._lib, Self._SizeFnName, self._ptr)
+
+    fn request_at(self, index: Int64) -> CInferenceRequest:
+        var ptr = DTypePointer[DType.invalid]()
+        call_dylib_func[NoneType](
+            self._lib,
+            Self._RequestAtFn,
+            self._ptr,
+            index,
+            UnsafePointer.address_of(ptr),
+        )
+        return CInferenceRequest(self._lib, ptr)
+
+    fn response_at(self, index: Int64) -> CInferenceResponse:
+        var ptr = DTypePointer[DType.invalid]()
+        call_dylib_func[NoneType](
+            self._lib,
+            Self._ResponseAtFn,
+            self._ptr,
+            index,
+            UnsafePointer.address_of(ptr),
+        )
+        return CInferenceResponse(self._lib, ptr)
+
+
+struct InferenceBatch(Sized, Movable):
+    var _impl: CInferenceBatch
     var _session: InferenceSession
 
     fn __init__(inout self, lib: DLHandle, owned session: InferenceSession):
-        self._ptr = CInferenceBatch.new(lib)
-        self._lib = lib
-        self._session = session^
-
-    fn __init__(
-        inout self,
-        ptr: CInferenceBatch,
-        lib: DLHandle,
-        owned session: InferenceSession,
-    ):
-        self._ptr = ptr
-        self._lib = lib
+        self._impl = CInferenceBatch(lib)
         self._session = session^
 
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self._ptr = exchange[CInferenceBatch](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
-        self._lib = existing._lib
+        self._impl = existing._impl^
         self._session = existing._session^
 
-    fn __copyinit__(inout self: Self, existing: Self):
-        self._ptr = existing._ptr
-        self._lib = existing._lib
-        self._session = existing._session
-
-    fn __del__(owned self):
-        self._ptr.free(self._lib)
-        _ = self._session^
-
     fn __len__(self) -> Int:
-        return int(self._ptr.size(self._lib))
+        return int(self._impl.size())
 
     fn request_at(self, index: Int64) -> InferenceRequestImpl:
         return InferenceRequestImpl(
-            self._ptr.request_at(self._lib, index),
-            self._lib,
+            self._impl.request_at(index),
             self._session,
         )
 
     fn response_at(self, index: Int64) -> InferenceResponseImpl:
         return InferenceResponseImpl(
-            self._ptr.response_at(self._lib, index),
-            self._lib,
+            self._impl.response_at(index),
             self._session,
         )
 
@@ -299,11 +307,16 @@ struct InferenceBatch(Sized, CollectionElement):
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-@register_passable("trivial")
 struct CInferenceRequest:
-    var ptr: DTypePointer[DType.invalid]
+    # These are never owned, and only refer to the existing request memory
+    # within some foreign object. They could be made owned by adding a flag
+    # here and handling creation/destruction internally.
 
+    var _lib: DLHandle
+    var _ptr: DTypePointer[DType.invalid]
+    var _owning: Bool
+
+    alias _FreeFnName = "M_InferenceRequest_free"
     alias _APITypeFnName = "M_InferenceRequest_apiType"
     alias _PayloadTypeFnName = "M_InferenceRequest_payloadType"
 
@@ -318,105 +331,127 @@ struct CInferenceRequest:
     alias _OutputAtFnName = "M_InferenceRequest_outputAt"
     alias _AddOutputFnName = "M_InferenceRequest_addOutput"
 
-    fn api_type(owned self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._APITypeFnName, self.ptr)
+    fn __init__(
+        inout self,
+        lib: DLHandle,
+        ptr: DTypePointer[DType.invalid],
+        owning: Bool = False,
+    ):
+        self._lib = lib
+        self._ptr = ptr
+        self._owning = owning
 
-    fn payload_type(owned self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._PayloadTypeFnName, self.ptr)
+    fn __moveinit__(inout self, owned existing: Self):
+        self._lib = existing._lib
+        self._ptr = exchange[DTypePointer[DType.invalid]](
+            existing._ptr, DTypePointer[DType.invalid]()
+        )
+        self._owning = existing._owning
 
-    fn model_name(owned self, lib: DLHandle) -> CString:
-        return call_dylib_func[CString](lib, Self._ModelNameFnName, self.ptr)
+    fn __copyinit__(inout self, existing: Self):
+        self._lib = existing._lib
+        self._ptr = existing._ptr
+        self._owning = False
 
-    fn model_version(owned self, lib: DLHandle) -> CString:
-        return call_dylib_func[CString](lib, Self._ModelVersionFnName, self.ptr)
+    fn __del__(owned self):
+        if self._owning:
+            call_dylib_func(self._lib, Self._FreeFnName, self._ptr)
 
-    fn inputs_size(owned self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._InputsSizeFnName, self.ptr)
+    fn api_type(self) -> Int64:
+        return call_dylib_func[Int64](self._lib, Self._APITypeFnName, self._ptr)
 
-    fn input_at(owned self, lib: DLHandle, index: Int64) -> CString:
-        return call_dylib_func[CString](
-            lib, Self._OutputAtFnName, self.ptr, index
+    fn payload_type(self) -> Int64:
+        return call_dylib_func[Int64](
+            self._lib, Self._PayloadTypeFnName, self._ptr
         )
 
-    fn add_input(owned self, lib: DLHandle, name: StringRef):
-        call_dylib_func[NoneType](lib, Self._AddOutputFnName, self.ptr, name)
-
-    fn outputs_size(owned self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._OutputsSizeFnName, self.ptr)
-
-    fn output_at(owned self, lib: DLHandle, index: Int64) -> CString:
+    fn model_name(self) -> CString:
         return call_dylib_func[CString](
-            lib, Self._OutputAtFnName, self.ptr, index
+            self._lib, Self._ModelNameFnName, self._ptr
         )
 
-    fn add_output(owned self, lib: DLHandle, name: StringRef):
-        call_dylib_func[NoneType](lib, Self._AddOutputFnName, self.ptr, name)
+    fn model_version(self) -> CString:
+        return call_dylib_func[CString](
+            self._lib, Self._ModelVersionFnName, self._ptr
+        )
+
+    fn inputs_size(self) -> Int64:
+        return call_dylib_func[Int64](
+            self._lib, Self._InputsSizeFnName, self._ptr
+        )
+
+    fn input_at(self, index: Int64) -> CString:
+        return call_dylib_func[CString](
+            self._lib, Self._OutputAtFnName, self._ptr, index
+        )
+
+    fn add_input(self, name: StringRef):
+        call_dylib_func[NoneType](
+            self._lib, Self._AddOutputFnName, self._ptr, name
+        )
+
+    fn outputs_size(self) -> Int64:
+        return call_dylib_func[Int64](
+            self._lib, Self._OutputsSizeFnName, self._ptr
+        )
+
+    fn output_at(self, index: Int64) -> CString:
+        return call_dylib_func[CString](
+            self._lib, Self._OutputAtFnName, self._ptr, index
+        )
+
+    fn add_output(self, name: StringRef):
+        call_dylib_func[NoneType](
+            self._lib, Self._AddOutputFnName, self._ptr, name
+        )
 
 
+@value
 struct InferenceRequestImpl(InferenceRequest):
-    var _ptr: CInferenceRequest
-    var _lib: DLHandle
+    var _impl: CInferenceRequest
     var _session: InferenceSession
 
     fn __init__(
         inout self,
-        ptr: CInferenceRequest,
-        lib: DLHandle,
+        owned impl: CInferenceRequest,
         owned session: InferenceSession,
     ):
-        self._ptr = ptr
-        self._lib = lib
+        self._impl = impl^
         self._session = session^
 
-    fn __moveinit__(inout self, owned existing: Self):
-        self._ptr = exchange[CInferenceRequest](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
-        self._lib = existing._lib
-        self._session = existing._session^
-
-    fn __copyinit__(inout self, existing: Self):
-        self._ptr = existing._ptr
-        self._lib = existing._lib
-        self._session = existing._session
-
     fn get_api_type(self) -> Int64:
-        return self._ptr.api_type(self._lib)
+        return self._impl.api_type()
 
     fn get_payload_type(self) -> Int64:
-        return self._ptr.payload_type(self._lib)
+        return self._impl.payload_type()
 
     fn get_model_name(self) raises -> String:
-        return str(self._ptr.model_name(self._lib))
+        return str(self._impl.model_name())
 
     fn get_model_version(self) raises -> String:
-        return str(self._ptr.model_version(self._lib))
+        return str(self._impl.model_version())
 
     fn get_input_tensors(self) raises -> TensorMap:
         return get_tensors[
             CInferenceRequest._InputsSizeFnName,
             CInferenceRequest._InputAtFnName,
-            CInferenceRequest,
-        ](self._lib, self._ptr, self._session)
+        ](self._impl._lib, self._impl._ptr, self._session)
 
     fn set_input_tensors(self, names: List[String], map: TensorMap) raises:
-        set_tensors[
-            CInferenceRequest._AddInputFnName,
-            CInferenceRequest,
-        ](self._lib, self._ptr, names, map)
+        set_tensors[CInferenceRequest._AddInputFnName,](
+            self._impl._lib, self._impl._ptr, names, map
+        )
 
     fn get_outputs(self) -> List[String]:
         # TODO: Pass back an array.
-        var result = List[String](
-            capacity=int(self._ptr.outputs_size(self._lib))
-        )
-        for i in range(self._ptr.outputs_size(self._lib)):
-            result.append(self._ptr.output_at(self._lib, i).__str__())
+        var result = List[String](capacity=int(self._impl.outputs_size()))
+        for i in range(self._impl.outputs_size()):
+            result.append(self._impl.output_at(i).__str__())
         return result^
 
     fn set_outputs(self, outputs: List[String]) -> None:
         for output in outputs:
-            self._ptr.add_output(self._lib, output[]._strref_dangerous())
+            self._impl.add_output(output[]._strref_dangerous())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -424,10 +459,10 @@ struct InferenceRequestImpl(InferenceRequest):
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-@register_passable("trivial")
 struct CInferenceResponse:
-    var ptr: DTypePointer[DType.invalid]
+    var _lib: DLHandle
+    var _ptr: DTypePointer[DType.invalid]
+    var _owning: Bool
 
     alias _FreeFnName = "M_InferenceResponse_free"
 
@@ -438,70 +473,70 @@ struct CInferenceResponse:
     alias _OutputAtFnName = "M_InferenceResponse_outputAt"
     alias _AddOutputFnName = "M_InferenceResponse_addOutput"
 
-    fn api_type(owned self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._APITypeFnName, self.ptr)
-
-    fn payload_type(owned self, lib: DLHandle) -> Int64:
-        return call_dylib_func[Int64](lib, Self._PayloadTypeFnName, self.ptr)
-
-    fn free(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._FreeFnName, self.ptr)
-
-
-struct InferenceResponseImpl(InferenceResponse):
-    var _ptr: CInferenceResponse
-    var _lib: DLHandle
-    var _session: InferenceSession
-    var _owning: Bool
-
     fn __init__(
         inout self,
-        ptr: CInferenceResponse,
         lib: DLHandle,
-        owned session: InferenceSession,
+        ptr: DTypePointer[DType.invalid],
         owning: Bool = False,
     ):
-        self._ptr = ptr
         self._lib = lib
-        self._session = session^
+        self._ptr = ptr
         self._owning = owning
 
     fn __moveinit__(inout self, owned existing: Self):
-        self._ptr = exchange[CInferenceResponse](
+        self._lib = existing._lib
+        self._ptr = exchange[DTypePointer[DType.invalid]](
             existing._ptr, DTypePointer[DType.invalid]()
         )
-        self._lib = existing._lib
-        self._session = existing._session^
         self._owning = existing._owning
 
     fn __copyinit__(inout self, existing: Self):
-        self._ptr = existing._ptr
         self._lib = existing._lib
-        self._session = existing._session
-        self._owning = existing._owning
+        self._ptr = existing._ptr
+        self._owning = False
 
     fn __del__(owned self):
         if self._owning:
-            self._ptr.free(self._lib)
+            call_dylib_func(self._lib, Self._FreeFnName, self._ptr)
+
+    fn api_type(self) -> Int64:
+        return call_dylib_func[Int64](self._lib, Self._APITypeFnName, self._ptr)
+
+    fn payload_type(self) -> Int64:
+        return call_dylib_func[Int64](
+            self._lib, Self._PayloadTypeFnName, self._ptr
+        )
+
+
+@value
+struct InferenceResponseImpl(InferenceResponse):
+    var _impl: CInferenceResponse
+    var _session: InferenceSession
+
+    fn __init__(
+        inout self,
+        owned impl: CInferenceResponse,
+        owned session: InferenceSession,
+    ):
+        self._impl = impl^
+        self._session = session^
 
     fn get_api_type(self) -> Int64:
-        return self._ptr.api_type(self._lib)
+        return self._impl.api_type()
 
     fn get_payload_type(self) -> Int64:
-        return self._ptr.payload_type(self._lib)
+        return self._impl.payload_type()
 
     fn get_output_tensors(self) raises -> TensorMap:
         return get_tensors[
             CInferenceResponse._OutputsSizeFnName,
             CInferenceResponse._OutputAtFnName,
-            CInferenceResponse,
-        ](self._lib, self._ptr, self._session)
+        ](self._impl._lib, self._impl._ptr, self._session)
 
     fn set_output_tensors(self, names: List[String], map: TensorMap) raises:
-        set_tensors[
-            CInferenceResponse._AddOutputFnName,
-            CInferenceResponse,
-        ](self._lib, self._ptr, names, map)
+        set_tensors[CInferenceResponse._AddOutputFnName,](
+            self._impl._lib, self._impl._ptr, names, map
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -511,36 +546,27 @@ struct InferenceResponseImpl(InferenceResponse):
 # TODO: Migrate to ChainPromise and delete M_asyncBatch* functions.
 
 
-@value
-@register_passable("trivial")
 struct AsyncCInferenceBatch:
-    var ptr: DTypePointer[DType.invalid]
+    var _lib: DLHandle
+    var _ptr: DTypePointer[DType.invalid]
 
+    alias _PopReadyFnName = "M_kservePopReady"
     alias _AsyncAndThenFnName = "M_asyncBatchAndThen"
     alias _GetFnName = "M_asyncBatchGet"
     alias _FreeValueFnName = "M_freeAsyncBatch"
 
-    fn get(self, lib: DLHandle) -> CInferenceBatch:
-        return call_dylib_func[CInferenceBatch](lib, Self._GetFnName, self)
-
-    fn free(self, lib: DLHandle):
-        call_dylib_func(lib, Self._FreeValueFnName, self)
-
-
-struct AwaitableCInferenceBatch:
-    var _ptr: AsyncCInferenceBatch
-    var _lib: DLHandle
-
-    fn __init__(
-        inout self,
-        ptr: AsyncCInferenceBatch,
-        lib: DLHandle,
-    ):
-        self._ptr = ptr
+    fn __init__(inout self, lib: DLHandle, server: CServerAsync):
         self._lib = lib
+        self._ptr = DTypePointer[DType.invalid]()
+        call_dylib_func(
+            self._lib,
+            self._PopReadyFnName,
+            server._ptr,
+            UnsafePointer.address_of(self._ptr),
+        )
 
     fn __del__(owned self):
-        self._ptr.free(self._lib)
+        call_dylib_func(self._lib, Self._FreeValueFnName, self._ptr)
 
     @always_inline
     fn __await__(self) -> CInferenceBatch:
@@ -549,14 +575,20 @@ struct AwaitableCInferenceBatch:
         fn await_body(cur_hdl: AnyCoroutine):
             call_dylib_func(
                 self._lib,
-                AsyncCInferenceBatch._AsyncAndThenFnName,
+                Self._AsyncAndThenFnName,
                 _coro_resume_fn,
                 self._ptr,
                 cur_hdl,
             )
 
         _suspend_async[await_body]()
-        return self._ptr.get(self._lib)
+
+        # Return the allocated batch.
+        var ptr = DTypePointer[DType.invalid]()
+        call_dylib_func(
+            self._lib, Self._GetFnName, self._ptr, UnsafePointer.address_of(ptr)
+        )
+        return CInferenceBatch(self._lib, ptr)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -564,10 +596,9 @@ struct AwaitableCInferenceBatch:
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-@register_passable("trivial")
 struct CServerAsync:
-    var ptr: DTypePointer[DType.invalid]
+    var _lib: DLHandle
+    var _ptr: DTypePointer[DType.invalid]
 
     alias _NewFnName = "M_newKServeServer"
     alias _FreeFnName = "M_freeKServeServer"
@@ -577,72 +608,76 @@ struct CServerAsync:
     alias _StopFnName = "M_kserveStopServer"
     alias _SignalStopFnName = "M_kserveSignalStopServer"
 
-    alias _PopReadyFnName = "M_kservePopReady"
     alias _PushCompleteFnName = "M_kservePushComplete"
     alias _PushFailedFnName = "M_kservePushFailed"
 
-    @staticmethod
-    fn new(lib: DLHandle, address: StringRef) -> CServerAsync:
-        return call_dylib_func[CServerAsync](lib, Self._NewFnName, address)
-
-    fn free(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._FreeFnName, self.ptr)
-
-    fn init(owned self, lib: DLHandle, models: List[CCompiledModel]):
+    fn __init__(inout self, lib: DLHandle, address: StringRef):
+        self._lib = lib
+        self._ptr = DTypePointer[DType.invalid]()
         call_dylib_func(
-            lib, Self._InitFnName, self.ptr, models.data, len(models)
+            self._lib,
+            Self._NewFnName,
+            address,
+            UnsafePointer.address_of(self._ptr),
         )
 
-    fn run(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._RunFnName, self.ptr)
-
-    fn stop(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._StopFnName, self.ptr)
-
-    fn signal_stop(owned self, lib: DLHandle):
-        call_dylib_func(lib, Self._SignalStopFnName, self.ptr)
-
-    async fn pop_ready(owned self, lib: DLHandle) -> CInferenceBatch:
-        var ptr = call_dylib_func[AsyncCInferenceBatch](
-            lib, self._PopReadyFnName, self.ptr
+    fn __moveinit__(inout self, owned existing: Self):
+        self._lib = existing._lib
+        self._ptr = exchange[DTypePointer[DType.invalid]](
+            existing._ptr, DTypePointer[DType.invalid]()
         )
-        var batch = AwaitableCInferenceBatch(ptr, lib)
-        return await batch
+
+    fn __del__(owned self):
+        call_dylib_func(self._lib, Self._FreeFnName, self._ptr)
+
+    fn init(inout self, models: List[CCompiledModel]):
+        call_dylib_func(
+            self._lib, Self._InitFnName, self._ptr, models.data, len(models)
+        )
+
+    fn run(inout self):
+        call_dylib_func(self._lib, Self._RunFnName, self._ptr)
+
+    fn stop(inout self):
+        call_dylib_func(self._lib, Self._StopFnName, self._ptr)
+
+    fn signal_stop(inout self):
+        call_dylib_func(self._lib, Self._SignalStopFnName, self._ptr)
+
+    async fn pop_ready(inout self, inout batch: CInferenceBatch):
+        batch = await AsyncCInferenceBatch(self._lib, self)
 
     fn push_complete(
-        owned self,
-        lib: DLHandle,
+        inout self,
         batch: CInferenceBatch,
         index: Int64,
     ):
         call_dylib_func(
-            lib,
+            self._lib,
             self._PushCompleteFnName,
-            self.ptr,
-            batch.ptr,
+            self._ptr,
+            batch._ptr,
             index,
         )
 
     fn push_failed(
-        owned self,
-        lib: DLHandle,
+        inout self,
         batch: CInferenceBatch,
         index: Int64,
         message: String,
     ):
         call_dylib_func(
-            lib,
+            self._lib,
             self._PushFailedFnName,
-            self.ptr,
-            batch.ptr,
+            self._ptr,
+            batch._ptr,
             index,
             message._strref_dangerous(),
         )
 
 
 struct ServerAsync:
-    var _ptr: CServerAsync
-    var _lib: DLHandle
+    var _impl: CServerAsync
     var _session: InferenceSession
 
     fn __init__(
@@ -651,47 +686,35 @@ struct ServerAsync:
         lib: DLHandle,
         owned session: InferenceSession,
     ):
-        self._ptr = CServerAsync.new(lib, address._strref_dangerous())
-        self._lib = lib
+        self._impl = CServerAsync(lib, address._strref_dangerous())
         self._session = session^
 
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self._ptr = exchange[CServerAsync](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
-        self._lib = existing._lib
+        self._impl = existing._impl^
         self._session = existing._session^
 
-    fn __copyinit__(inout self: Self, existing: Self):
-        self._ptr = existing._ptr
-        self._lib = existing._lib
-        self._session = existing._session
-
-    fn __del__(owned self):
-        self._ptr.free(self._lib)
-        _ = self._session^
-
-    fn init(self, models: List[Model]):
+    fn init(inout self, models: List[Model]):
         var ptrs = List[CCompiledModel](capacity=len(models))
         for model in models:
             ptrs.append(model[]._compiled_model.ptr)
-        self._ptr.init(self._lib, ptrs)
+        self._impl.init(ptrs)
 
-    fn run(self):
-        self._ptr.run(self._lib)
+    fn run(inout self):
+        self._impl.run()
 
-    fn stop(self):
-        self._ptr.stop(self._lib)
+    fn stop(inout self):
+        self._impl.stop()
 
-    fn signal_stop(self):
-        self._ptr.signal_stop(self._lib)
+    fn signal_stop(inout self):
+        self._impl.signal_stop()
 
-    async fn pop_ready(self, inout batch: InferenceBatch) -> None:
-        var ptr = await self._ptr.pop_ready(self._lib)
-        batch = InferenceBatch(ptr, self._lib, self._session)
+    async fn pop_ready(inout self, inout batch: InferenceBatch):
+        await self._impl.pop_ready(batch._impl)
 
-    fn push_complete(self, batch: InferenceBatch, index: Int64):
-        self._ptr.push_complete(self._lib, batch._ptr, index)
+    fn push_complete(inout self, batch: InferenceBatch, index: Int64):
+        self._impl.push_complete(batch._impl, index)
 
-    fn push_failed(self, batch: InferenceBatch, index: Int64, message: String):
-        self._ptr.push_failed(self._lib, batch._ptr, index, message)
+    fn push_failed(
+        inout self, batch: InferenceBatch, index: Int64, message: String
+    ):
+        self._impl.push_failed(batch._impl, index, message)

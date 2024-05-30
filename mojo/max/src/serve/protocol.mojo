@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides basic Python server wrapping."""
 
+from memory.unsafe import DTypePointer
 from python.python import _get_global_python_itf
 from sys.ffi import DLHandle
 
@@ -19,16 +20,12 @@ from ._serve_rt import (
 
 
 struct ProtocolHandler:
-    var _server: ServerAsync
+    var _ptr: DTypePointer[DType.invalid]
     var _lib: DLHandle
 
-    fn __init__(inout self, server: ServerAsync, lib: DLHandle):
-        self._server = server
+    fn __init__(inout self, lib: DLHandle, ptr: DTypePointer[DType.invalid]):
         self._lib = lib
-
-    fn __moveinit__(inout self: Self, owned existing: Self):
-        self._server = existing._server^
-        self._lib = existing._lib
+        self._ptr = ptr
 
     fn handle_python(
         self,
@@ -49,8 +46,8 @@ struct ProtocolHandler:
                 call_dylib_func[NoneType](
                     self._lib,
                     "M_OpenAIInferenceRequest_fillEntry",
-                    self._server._ptr,
-                    request._ptr,
+                    self._ptr,
+                    request._impl._ptr,
                     UnsafePointer.address_of(entry),
                 )
                 var state = cpython.PyGILState_Ensure()

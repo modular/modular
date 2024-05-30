@@ -44,7 +44,7 @@ struct GRPCInferenceClient:
         """
         self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
-        self._impl = KServeClientAsync(address, self._lib, self._session)
+        self._impl = KServeClientAsync(self._lib, address, self._session)
         self._impl.run()
 
     fn infer(

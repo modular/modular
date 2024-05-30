@@ -100,7 +100,7 @@ struct InferenceServer[
         self._impl = ServerAsync(address, self._lib, self._session)
         self._stop_flag = Atomic[DType.int64](0)
 
-        self._handler = ProtocolHandler(self._impl, self._lib)
+        self._handler = ProtocolHandler(self._lib, self._impl._impl._ptr)
         self._callbacks = CallbackSet(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),
             Guarded[BatchHeatMap, BATCH_HEAT_MAP_ENABLED](BatchHeatMap()),
@@ -167,8 +167,8 @@ struct InferenceServer[
         @parameter
         async fn listen() capturing -> None:
             while not self._stop_flag.load():
-                var batch = InferenceBatch(self._lib, self._session)
                 # TODO: Construct merged request (per model) for batching.
+                var batch = InferenceBatch(self._lib, self._session)
                 await self._impl.pop_ready(batch)
                 var start = now()
                 self._callbacks.on_batch_receive(len(batch))
@@ -183,7 +183,7 @@ struct InferenceServer[
         for _ in range(self._num_listeners):
             _ = tg.create_task(listen())
 
-        _ = tg.create_task(run_http_rt(self._impl._ptr))
+        _ = tg.create_task(run_http_rt(self._impl._impl))
 
         await tg
         self._impl.stop()
@@ -248,7 +248,7 @@ struct MuxInferenceService(InferenceService):
         _ = self._models^
         _ = self._session^
 
-    fn init(self, server: InferenceServer) raises:
+    fn init(inout self, inout server: InferenceServer) raises:
         server._impl.init(self._models)
 
     fn infer[

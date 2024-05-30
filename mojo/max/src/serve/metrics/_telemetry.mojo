@@ -157,16 +157,17 @@ struct PrometheusMetricsEndPoint:
         self.lib = handle_from_config("serving", ".serve_lib")
         self.ptr = DTypePointer[DType.invalid]()
         var endpoint_ref = end_point._strref_dangerous()
-        self.ptr = call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func(
             self.lib,
             "M_createCustomMetricsPrometheus",
             endpoint_ref.data,
+            UnsafePointer.address_of(self.ptr),
         )
         end_point._strref_keepalive()
 
     fn __del__(owned self: Self):
         """Destroys the prometheus end-point."""
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func(
             self.lib,
             "M_freeCustomMetricsPrometheus",
             self.ptr,
