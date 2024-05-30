@@ -9,7 +9,7 @@ from max.engine import TensorMap
 from pathlib import Path
 from collections.dict import _DictKeyIter, _DictEntryIter
 
-from .tensor_dict import TensorDict, CheckpointTensor
+from .tensor_dict import TensorDict, _CheckpointTensor
 
 # 0x93 🔥 + + 0x93
 alias _SERIALIZATION_HEADER = InlineArray[Int8, 8](
@@ -85,7 +85,7 @@ def save(tensor_dict: TensorDict, path: Path):
 
     for key_ref in tensor_dict:
         var key = key_ref[]
-        var spec = tensor_dict[key].spec
+        var spec = tensor_dict._get(key).spec
         tensor_keys.append(key)
 
         metadata_size += (
@@ -97,7 +97,7 @@ def save(tensor_dict: TensorDict, path: Path):
             + sizeof[UInt64]()  # Tensor Offset
         )
         tensor_offsets.append(last_tensor_offset)
-        last_tensor_offset += tensor_dict[key].spec.bytecount()
+        last_tensor_offset += tensor_dict._get(key).spec.bytecount()
 
     # Now that we know the metadata size, we can correct the tensor offsets.
     var first_tensor_offset = (
@@ -124,7 +124,7 @@ def save(tensor_dict: TensorDict, path: Path):
             _write_int(key_size, f)
             f.write(key)
 
-            var spec = tensor_dict[key].spec
+            var spec = tensor_dict._get(key).spec
             var dtype: UInt8 = spec.dtype()._as_i8()
             _write_int(dtype, f)
             var rank: UInt8 = spec.rank()
@@ -139,8 +139,8 @@ def save(tensor_dict: TensorDict, path: Path):
         # Write out each tensor.
         for i in range(len(tensor_keys)):
             var key = tensor_keys[i]
-            var ptr = tensor_dict[key].ptr
-            var tensor_size = tensor_dict[key].spec.bytecount()
+            var ptr = tensor_dict._get(key).ptr
+            var tensor_size = tensor_dict._get(key).spec.bytecount()
             f._write(ptr.bitcast[DType.int8](), tensor_size)
 
 
@@ -169,7 +169,7 @@ struct _KeysAndSpecs:
 
 
 @always_inline
-def version_to_string(
+def _version_to_string(
     major_version: UInt32 = _SERIALIZATION_MAJOR_FORMAT,
     minor_version: UInt32 = _SERIALIZATION_MAJOR_FORMAT,
 ) -> String:
@@ -220,9 +220,9 @@ def load(path: Path) -> TensorDict:
         if major_version > _SERIALIZATION_MAJOR_FORMAT:
             raise (
                 "Cannot read from checkpoint version "
-                + version_to_string(major_version, minor_version)
+                + _version_to_string(major_version, minor_version)
                 + ". Current version: "
-                + version_to_string()
+                + _version_to_string()
             )
         var metadata_size = _read_int[DType.uint64](f)
 
@@ -260,6 +260,6 @@ def load(path: Path) -> TensorDict:
             var ks = keys_and_specs[i]
             var bytes = f.read_bytes(ks.spec.bytecount())
             var ptr = DTypePointer(bytes.steal_data()).bitcast[DType.uint8]()
-            var tensor = CheckpointTensor(ptr, ks.spec)
-            ret.set(ks.key, tensor)
+            var tensor = _CheckpointTensor(ptr, ks.spec)
+            ret._set(ks.key, tensor)
         return ret

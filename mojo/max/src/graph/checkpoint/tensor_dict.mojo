@@ -9,7 +9,7 @@ from collections.dict import _DictKeyIter, _DictEntryIter
 
 
 @value
-struct CheckpointTensor:
+struct _CheckpointTensor:
     """A wrapper around a Tensor pointer that can be saved/loaded from disk."""
 
     var ptr: DTypePointer[DType.uint8]
@@ -20,7 +20,7 @@ struct CheckpointTensor:
         owned ptr: DTypePointer[DType.uint8],
         owned spec: TensorSpec,
     ):
-        """Creates a CheckpointTensor.
+        """Creates a _CheckpointTensor.
 
         Args:
             ptr: Pointer to tensor data.
@@ -28,6 +28,15 @@ struct CheckpointTensor:
         """
         self.ptr = ptr
         self.spec = spec^
+
+    fn copy_to_tensor[T: DType](owned self) -> Tensor[T]:
+        """Returns a deep copy of the Tensor data."""
+        var num_elements = self.spec.num_elements()
+        var spec = self.spec
+        var self_ptr = self.ptr.bitcast[T]()
+        var ptr = DTypePointer[T].alloc(num_elements)
+        memcpy(ptr, self_ptr, num_elements)
+        return Tensor[T](spec, ptr)
 
     fn to_tensor[T: DType](owned self) -> Tensor[T]:
         """Converts this object to a Tensor."""
@@ -39,7 +48,7 @@ struct CheckpointTensor:
 
     @staticmethod
     fn from_tensor(owned tensor: Tensor) -> Self:
-        """Creates a CheckpointTensor from a Tensor."""
+        """Creates a _CheckpointTensor from a Tensor."""
         var spec = tensor.spec()
         var ptr = tensor._steal_ptr().bitcast[DType.uint8]()
         return Self(ptr, spec)
@@ -67,14 +76,14 @@ struct TensorDict(Sized):
 
     def read_from_disk():
         tensors = load("/path/to/checkpoint.maxckpt")
-        x = tensors.get("x").to_tensor[DType.int32]()
+        x = tensors.get[DType.int32]("x")
     ```
     """
 
-    var _items: Dict[String, CheckpointTensor]
+    var _items: Dict[String, _CheckpointTensor]
 
     def __init__(inout self):
-        self._items = Dict[String, CheckpointTensor]()
+        self._items = Dict[String, _CheckpointTensor]()
 
     fn __setitem__[T: DType](inout self, key: String, value: Tensor[T]):
         """Supports setting items with the bracket accessor.
@@ -90,7 +99,7 @@ struct TensorDict(Sized):
             key: The key to associate with the specified value.
             value: The data to store in the dictionary.
         """
-        self._items._insert(key, CheckpointTensor.from_tensor(value))
+        self._items._insert(key, _CheckpointTensor.from_tensor(value))
 
     fn set[T: DType](inout self, key: String, value: Tensor[T]):
         """Adds or updates a tensor in the dictionary.
@@ -99,9 +108,26 @@ struct TensorDict(Sized):
             key: The name of the tensor.
             value: The tensor to add.
         """
-        self._items._insert(key, CheckpointTensor.from_tensor(value))
+        self._items._insert(key, _CheckpointTensor.from_tensor(value))
 
-    fn set(inout self, key: String, value: CheckpointTensor):
+    fn get[type: DType](self, key: String) raises -> Tensor[type]:
+        """Gets a tensor from the dictionary.
+
+        Currently, this returns a copy of the tensor. For better performance,
+        use `Dict.pop()`.
+
+        This method may change in the future to return an immutable reference
+        instead of a mutable tensor copy.
+
+        Args:
+            key: The name of the tensor.
+
+        Returns:
+            A copy of the tensor.
+        """
+        return self._items[key].copy_to_tensor[type]()
+
+    fn _set(inout self, key: String, value: _CheckpointTensor):
         """Adds or updates a tensor in the dictionary.
 
         Args:
@@ -110,23 +136,19 @@ struct TensorDict(Sized):
         """
         self._items._insert(key, value)
 
-    fn __getitem__(self, key: String) raises -> CheckpointTensor:
-        """Supports getting items with the bracket accessor.
-
-        For example:
-
-        ```mojo
-        tensors = load("/path/to/checkpoint.maxckpt")
-        x = tensors["x"]
-        ```
+    fn _get(self, key: String) raises -> _CheckpointTensor:
+        """Gets a raw `CheckpointTensor` value from the dictionary.
 
         Args:
             key: The name of the tensor.
         """
         return self._items[key]
 
-    fn get(self, key: String) raises -> CheckpointTensor:
-        """Gets a tensor from the dictionary.
+    fn pop[type: DType](inout self, key: String) raises -> Tensor[type]:
+        """Removes a tensor from the dictionary.
+
+        This function moves the Tensor pointer out of the dictionary and returns
+        it to the caller.
 
         Args:
             key: The name of the tensor.
@@ -134,7 +156,7 @@ struct TensorDict(Sized):
         Returns:
             The tensor.
         """
-        return self._items[key]
+        return self._items.pop(key).to_tensor[type]()
 
     fn __len__(self) -> Int:
         return len(self._items)
@@ -142,20 +164,24 @@ struct TensorDict(Sized):
     fn items(
         self: Reference[Self, _, _]
     ) -> _DictEntryIter[
-        String, CheckpointTensor, self.is_mutable, self.lifetime
+        String, _CheckpointTensor, self.is_mutable, self.lifetime
     ]:
         """Gets an iterable view of all elements in the dictionary."""
         return _DictEntryIter(0, 0, self[]._items)
 
     fn keys(
         self: Reference[Self, _, _]
-    ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
+    ) -> _DictKeyIter[
+        String, _CheckpointTensor, self.is_mutable, self.lifetime
+    ]:
         """Gets an iterable view of all keys in the dictionary."""
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     def __iter__(
         self: Reference[Self, _, _]
-    ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
+    ) -> _DictKeyIter[
+        String, _CheckpointTensor, self.is_mutable, self.lifetime
+    ]:
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     fn __copyinit__(inout self, existing: Self):
