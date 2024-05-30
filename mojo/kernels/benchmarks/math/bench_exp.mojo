@@ -14,7 +14,7 @@ from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
 from sys.arg import argv
 
-from math.polynomial import EvaluationMethod, polynomial_evaluate
+from math.polynomial import polynomial_evaluate
 from algorithm.functional import vectorize
 from benchmark import keep
 from benchmark import Bencher, BenchId, Bench
@@ -276,9 +276,7 @@ fn _exp_taylor3[
         0.0013888888888888888889,
         0.00019841269841269841270,
     )
-    return polynomial_evaluate[
-        type, simd_width, coefficients  # , method = EvaluationMethod.ESTRIN
-    ](x)
+    return polynomial_evaluate[type, simd_width, coefficients](x)
 
 
 @always_inline
