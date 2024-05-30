@@ -890,7 +890,7 @@ struct BTileGenerator[
     ) -> BTileGenerator[
         config, a_type, b_type, c_type, shape, transpose_b, b_packed
     ]:
-        var b_tile_stack_ptr = DTypePointer[b_type].get_null()
+        var b_tile_stack_ptr = DTypePointer[b_type]()
 
         debug_assert(
             not (transpose_b and b_packed),
