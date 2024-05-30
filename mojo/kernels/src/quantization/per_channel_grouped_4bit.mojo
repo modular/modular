@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, ceil, ceildiv, is_power_of_2
+from math import align_down, ceil, ceildiv
+from bit import is_power_of_two
 from sys.info import has_avx2, has_neon_int8_dotprod, sizeof
 
 from algorithm import sync_parallelize
@@ -274,7 +275,7 @@ struct Q4sym[
     fn _check_constraints():
         # TODO
         constrained[
-            is_power_of_2(group_size), "`group_size` must be a power of 2."
+            is_power_of_two(group_size), "`group_size` must be a power of 2."
         ]()
         constrained[
             group_size == 8 or group_size == 16 or group_size == 32,
