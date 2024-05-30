@@ -10,8 +10,6 @@ from sys.ffi import DLHandle
 from runtime.llcl import (
     Runtime,
     TaskGroup,
-    TaskGroupTask,
-    TaskGroupTaskList,
     Atomic,
 )
 from tensor import TensorSpec
@@ -172,15 +170,13 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         self._impl.run()
 
         var rt = Runtime()
-        var tasks = TaskGroupTaskList[NoneType](self._num_listeners)
         var tg = TaskGroup(rt)
         for _ in range(self._num_listeners):
-            tasks.add(tg.create_task[NoneType](listen()))
+            tg.create_task[NoneType](listen())
 
-        tasks.add(tg.create_task[NoneType](run_http_rt(self._impl._ptr)))
+        tg.create_task[NoneType](run_http_rt(self._impl._ptr))
 
         await tg
-        _ = tasks^
         self._impl.stop()
 
     fn signal_stop(inout self):
