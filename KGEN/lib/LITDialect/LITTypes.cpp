@@ -319,82 +319,47 @@ StringAttr DeclRefType::getName() {
 
 static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
                                           Type metatype) {
-  Type typeValue;
-  bool parsingVTable = succeeded(p.parseOptionalLSquare());
-  auto vtable = VTableAttr::get(p.getContext(), {});
-
-  SymbolRefAttr symbol;
-  OptionalParseResult result = p.parseOptionalAttribute(symbol);
-  if (result.has_value()) {
-    if (failed(*result))
-      return failure();
-    SmallVector<TypedAttr> values;
-    if (parseParameterValues(p, values))
-      return failure();
-    Type declRefMetaType = metatype;
-    if (succeeded(p.parseOptionalColon()))
-      if (parseKGENType(p, declRefMetaType))
+  auto typeParser = [metatype](AsmParser &p,
+                               Type &typeValue) -> OptionalParseResult {
+    SymbolRefAttr symbol;
+    OptionalParseResult result = p.parseOptionalAttribute(symbol);
+    if (result.has_value()) {
+      if (failed(*result))
         return failure();
-    typeValue = DeclRefType::get(symbol, values, declRefMetaType);
-  } else {
-    result = parseOptionalKGENType(p, typeValue);
-    if (!result.has_value()) {
-      // If a '[' was seen, require a type to be present.
-      if (parsingVTable)
-        return p.emitError(p.getCurrentLocation(), "expected a type");
-      return {};
+      SmallVector<TypedAttr> values;
+      if (parseParameterValues(p, values))
+        return failure();
+      Type declRefMetaType = metatype;
+      if (succeeded(p.parseOptionalColon()))
+        if (parseKGENType(p, declRefMetaType))
+          return failure();
+      typeValue = DeclRefType::get(symbol, values, declRefMetaType);
+    } else {
+      result = parseOptionalKGENType(p, typeValue);
     }
-    if (failed(*result))
-      return failure();
-  }
-
-  // Parse the vtable if a '[' was seen.
-  if (parsingVTable) {
-    if (p.parseComma() || p.parseLBrace() ||
-        (p.parseOptionalRBrace() &&
-         (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
-          p.parseRBrace())) ||
-        p.parseRSquare())
-      return failure();
-  }
-
-  value = TypeConstantAttr::get(typeValue, metatype, vtable);
-  return mlir::success();
+    return result;
+  };
+  return parseSugaredTypeValue(p, value, metatype, typeParser);
 }
 
 static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
                                     Type metatype) {
-  auto type = dyn_cast<TypeConstantAttr>(value);
-  if (!type)
-    return failure();
-
-  if (succeeded(p.printAlias(type)))
-    return success();
-
-  VTableAttr vtable = type.getVTable();
-  if (!vtable.getEntries().empty())
-    p << '[';
-
-  if (auto ref = ::dyn_cast<DeclRefType>(type.getMlirType())) {
-    // Use the alias printer if suitable.
-    if (failed(p.printAlias(ref))) {
-      p << ref.getSymbol();
-      printParameterValues(p, ref.getParamValues());
-      if (ref.getMetaType() != metatype) {
-        p << " : ";
-        printKGENType(p, ref.getMetaType());
+  auto typePrinter = [metatype](AsmPrinter &p, Type type) {
+    if (auto ref = ::dyn_cast<DeclRefType>(type)) {
+      // Use the alias printer if suitable.
+      if (failed(p.printAlias(ref))) {
+        p << ref.getSymbol();
+        printParameterValues(p, ref.getParamValues());
+        if (ref.getMetaType() != metatype) {
+          p << " : ";
+          printKGENType(p, ref.getMetaType());
+        }
       }
+    } else {
+      printKGENType(p, type);
     }
-  } else {
-    printKGENType(p, type.getMlirType());
-  }
-
-  if (!vtable.getEntries().empty()) {
-    p << ", {";
-    p.printStrippedAttrOrType(vtable);
-    p << "}]";
-  }
-  return success();
+  };
+  return printSugaredTypeValue(p, value, typePrinter);
 }
 
 AnyStructType AnyStructType::get(SymbolRefAttr symbol,

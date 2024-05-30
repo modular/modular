@@ -80,64 +80,13 @@ ParamRefType ParamRefType::getFromBytecode(TypedAttr param) {
 // TypeType
 //===----------------------------------------------------------------------===//
 
-/// Implementation of the parsing logic for sugar types (e.g. !kgen.anytype).
-static OptionalParseResult parseSugaredTypeValue(AsmParser &p, TypedAttr &value,
-                                                 Type type) {
-  Type typeValue;
-  bool parsingVTable = succeeded(p.parseOptionalLSquare());
-  auto vtable = VTableAttr::get(p.getContext(), {});
-
-  OptionalParseResult result = parseOptionalKGENType(p, typeValue);
-  if (!result.has_value()) {
-    // If a '[' was seen, require a type to be present.
-    if (parsingVTable)
-      return p.emitError(p.getCurrentLocation(), "expected a type");
-    return {};
-  }
-  if (failed(*result))
-    return failure();
-
-  // Parse the vtable if a '[' was seen.
-  if (parsingVTable) {
-    if (p.parseComma() || p.parseLBrace() ||
-        (p.parseOptionalRBrace() &&
-         (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
-          p.parseRBrace())) ||
-        p.parseRSquare())
-      return failure();
-  }
-
-  value = TypeConstantAttr::get(typeValue, type, vtable);
-  return mlir::success();
-}
-
-/// Implementation of the printing logic for sugar types (e.g. !kgen.anytype).
-static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
-  auto type = dyn_cast<TypeConstantAttr>(value);
-  if (!type)
-    return failure();
-
-  if (succeeded(p.printAlias(type)))
-    return success();
-
-  VTableAttr vtable = type.getVTable();
-  if (!vtable.getEntries().empty())
-    p << '[';
-  printKGENType(p, type.getMlirType());
-  if (!vtable.getEntries().empty()) {
-    p << ", {";
-    p.printStrippedAttrOrType(vtable);
-    p << "}]";
-  }
-  return success();
-}
-
 OptionalParseResult TypeType::parseValue(AsmParser &p, TypedAttr &value) const {
-  return parseSugaredTypeValue(p, value, *this);
+  return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
 LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printSugaredTypeValue(p, value);
+  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
+  return printSugaredTypeValue(p, value, typePrinter);
 }
 
 std::optional<int64_t> TypeType::getTypeSize(TargetInfoAttr target) const {
@@ -568,10 +517,6 @@ LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
     return success();
   return emitError() << "address space parameter `" << addressSpace
                      << "` must be an index type";
-}
-
-PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
-  return PointerType::get(ParamRefType::get(elementType), addressSpace);
 }
 
 PointerType PointerType::get(Type elementType, unsigned addressSpace) {
