@@ -102,7 +102,8 @@ def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Computes the matrix multiplication of two symbolic tensors.
 
     The last two dimensions of each tensor are treated as matricies and multiplied,
-    and the remaining dimensions are broadcast dimensions.
+    and the remaining dimensions are broadcast dimensions. If `rhs` is rank 2,
+    this delegates to `matmul_by_matrix()` for better performance.
 
     Args:
         lhs: The left-hand-side of the matmul.
@@ -143,7 +144,7 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     multiplied, and the remaining dimensions are broadcast dimensions.
 
     This supports arbitrary-rank `rhs` inputs, but may be less performant than
-    `matmul_by_matrix`.
+    `matmul_by_matrix` if `rhs` is rank 2.
 
     Args:
         lhs: The left-hand-side of the matmul.
@@ -175,12 +176,14 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
 def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Computes the matrix multiplication of two symbolic tensors.
 
-    The last two dimensions of each tensor are treated as matricies and multiplied,
-    and the remaining dimensions are broadcast dimensions.
+    The last two dimensions in `lhs` are treated as matricies and multiplied
+    by `rhs` (which must be a 2D tensor). Any remaining dimensions in `lhs`
+    are broadcast dimensions.
 
     Args:
         lhs: The left-hand-side of the matmul.
-        rhs: The right-hand-side of the matmul. Must have rank exactly 2.
+        rhs: The right-hand-side of the matmul.
+             Must be rank 2 (a 2D tensor/matrix).
 
     Returns:
         A symbolic tensor representing he result of broadcasting the two
