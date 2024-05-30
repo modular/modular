@@ -10,9 +10,6 @@ lit_tests(
     custom_substitutions = {
         # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
         "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -Xlldb -x -Xlldb --source-quietly -Xlldb -S -Xlldb ../../../utils/lit-lldb-init.in",
-        # TODO: Remove when https://github.com/llvm/llvm-project/pull/91688 is in
-        "-Xlldb 'run'": "-Xlldb 'process launch'",
-        "-Xlldb run": "-Xlldb 'process launch'",
     },
     data = glob(["Inputs/*.mojo"]) + [
         "//KGEN:CompilerRT",
@@ -26,8 +23,7 @@ lit_tests(
     ],
     env = {
         "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
-        # TODO: Enable when https://github.com/llvm/llvm-project/pull/91688 is in
-        # "LLDB_ARGDUMPER_PATH": "$(location @llvm-project//lldb:lldb-argdumper)",
+        "LLDB_ARGDUMPER_PATH": "$(location @llvm-project//lldb:lldb-argdumper)",
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
         "MODULAR_MOJO_DRIVER_PATH": "$(location //KGEN/tools/mojo)",
