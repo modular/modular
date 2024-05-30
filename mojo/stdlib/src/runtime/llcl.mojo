@@ -348,11 +348,13 @@ struct Task[
 
 
 @register_passable("trivial")
-struct TaskGroupContext:
-    alias tg_callback_fn_type = fn (Pointer[NoneType], inout TaskGroup) -> None
+struct TaskGroupContext[is_mut: Bool, //, lifetime: AnyLifetime[is_mut].type]:
+    alias tg_callback_fn_type = fn (
+        Pointer[NoneType], inout TaskGroup[lifetime]
+    ) -> None
 
     var callback: Self.tg_callback_fn_type
-    var task_group: UnsafePointer[TaskGroup]
+    var task_group: UnsafePointer[TaskGroup[lifetime]]
 
 
 @register_passable
@@ -406,7 +408,7 @@ struct TaskGroupTask[type: AnyTrivialRegType, lifetime: MutableLifetime]:
         return self.handle_ref[].get[type]()
 
 
-struct TaskGroup:
+struct TaskGroup[is_mut: Bool, //, lifetime: AnyLifetime[is_mut].type]:
     var counter: Atomic[DType.index]
     var chain: Chain
     var rt: Runtime
@@ -429,10 +431,12 @@ struct TaskGroup:
         return prev - 1
 
     @staticmethod
-    fn _task_complete_callback(hdl: Pointer[NoneType], inout tg: TaskGroup):
+    fn _task_complete_callback(
+        hdl: Pointer[NoneType], inout tg: TaskGroup[lifetime]
+    ):
         tg._task_complete()
 
-    fn _task_complete(inout self: TaskGroup):
+    fn _task_complete(inout self):
         if self._counter_decr() == 0:
             _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
@@ -441,11 +445,15 @@ struct TaskGroup:
         owned task: Coroutine[*_],
         desired_worker_id: Int = -1,
     ) -> TaskGroupTask[task.type, __lifetime_of(self)]:
+        # TODO(MOCO-771): Enforce that `task.lifetime` is a subset of
+        # `Self.lifetime`.
         self.counter += 1
-        LegacyPointer(task._get_ctx[TaskGroupContext]().address).store(
-            TaskGroupContext {
+        LegacyPointer(
+            task._get_ctx[TaskGroupContext[lifetime]]().address
+        ).store(
+            TaskGroupContext[lifetime] {
                 callback: Self._task_complete_callback,
-                task_group: UnsafePointer[TaskGroup].address_of(self),
+                task_group: UnsafePointer[Self].address_of(self),
             }
         )
         _async_execute[task.type](task._handle, self.rt, desired_worker_id)
@@ -453,7 +461,7 @@ struct TaskGroup:
         return self.tasks.__get_ref(-1)
 
     @staticmethod
-    fn await_body_impl(hdl: AnyCoroutine, inout task_group: TaskGroup):
+    fn await_body_impl(hdl: AnyCoroutine, inout task_group: Self):
         _async_and_then(hdl, UnsafePointer[Chain].address_of(task_group.chain))
         task_group._task_complete()
 

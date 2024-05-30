@@ -93,14 +93,14 @@ fn test_runtime_taskgroup():
 
     @parameter
     async fn run_as_group(rt: Runtime) -> Int:
-        var tg = TaskGroup(rt)
+        var tg = TaskGroup[__lifetime_of()](rt)
         var t0 = tg.create_task(return_value[1]())
         var t1 = tg.create_task(return_value[2]())
         await tg
         return t0.get() + t1.get()
 
     with Runtime(4) as rt:
-        var tg = TaskGroup(rt)
+        var tg = TaskGroup[__lifetime_of()](rt)
         var t0 = tg.create_task(run_as_group(rt))
         var t1 = tg.create_task(run_as_group(rt))
         tg.wait()

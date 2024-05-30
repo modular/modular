@@ -42,7 +42,7 @@ fn test_basic_lock() raises:
     @parameter
     fn test_atomic() capturing -> None:
         with Runtime() as rt:
-            var tg = TaskGroup(rt)
+            var tg = TaskGroup[__lifetime_of()](rt)
             for i in range(0, maxI):
                 for j in range(0, maxJ):
                     tg.create_task(inc())
