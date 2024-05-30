@@ -51,6 +51,7 @@ from ._serve_rt import (
 
 
 struct InferenceServer[
+    HTTP_SERVER_ENABLED: Bool = False,
     Callbacks: ServerCallbacks = NoopServerCallbacks,
     EnableProtocol: Bool = False,
 ]:
@@ -74,10 +75,14 @@ struct InferenceServer[
     ]
 
     @staticmethod
-    fn create(
+    fn create[
+        HTTP_SERVER_ENABLED: Bool = False
+    ](
         address: String, owned session: InferenceSession
-    ) raises -> InferenceServer[NoopServerCallbacks]:
-        return InferenceServer(address, NoopServerCallbacks(), session^)
+    ) raises -> InferenceServer[HTTP_SERVER_ENABLED, NoopServerCallbacks]:
+        return InferenceServer[HTTP_SERVER_ENABLED](
+            address, NoopServerCallbacks(), session^
+        )
 
     fn __init__(
         inout self,
@@ -183,7 +188,9 @@ struct InferenceServer[
         for _ in range(self._num_listeners):
             _ = tg.create_task(listen())
 
-        _ = tg.create_task(run_http_rt(self._impl._impl))
+        @parameter
+        if HTTP_SERVER_ENABLED:
+            _ = tg.create_task(run_http_rt(self._impl._impl))
 
         await tg
         self._impl.stop()
