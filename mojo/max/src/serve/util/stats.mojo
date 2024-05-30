@@ -6,18 +6,10 @@
 """Provides server statistics collecting capabilities."""
 
 from benchmark import Unit
-from os import Atomic
 from runtime import BlockingScopedLock, BlockingSpinLock
 from time import now
 
-from utils.variant import Variant
-
-from .callbacks import ServerCallbacks, NoopServerCallbacks
-from ._serve_rt import (
-    InferenceBatch,
-    InferenceRequestImpl,
-    InferenceResponseImpl,
-)
+from .callbacks import ServerCallbacks
 
 
 @value
@@ -96,7 +88,7 @@ struct ServerStats(ServerCallbacks):
         if self.options.printAtEnd:
             self.print()
 
-    fn on_batch_receive(inout self, batch: InferenceBatch):
+    fn on_batch_receive(inout self, batch_size: Int):
         alias print_interval = 1024
         var pos: Int = 0
         with BlockingScopedLock(self.lock):
@@ -106,27 +98,20 @@ struct ServerStats(ServerCallbacks):
             print()
             self.print()
 
-    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
+    fn on_batch_complete(inout self, start_ns: Int, batch_size: Int):
         with BlockingScopedLock(self.lock):
             self.total_request_ns += now() - start_ns
 
-    fn on_request_receive(inout self, request: InferenceRequestImpl):
+    fn on_request_receive(inout self):
         with BlockingScopedLock(self.lock):
             self.total_requests += 1
 
-    fn on_request_ok(
-        inout self,
-        start_ns: Int,
-        request: InferenceRequestImpl,
-        response: InferenceResponseImpl,
-    ):
+    fn on_request_ok(inout self, start_ns: Int):
         with BlockingScopedLock(self.lock):
             self.total_request_ns += now() - start_ns
             self.total_ok_requests += 1
 
-    fn on_request_fail(
-        inout self, request: InferenceRequestImpl, error: String
-    ):
+    fn on_request_fail(inout self, error: String):
         with BlockingScopedLock(self.lock):
             self.total_failed_requests += 1
 

@@ -3,24 +3,22 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Provides server statistics collecting capabilities."""
+"""Provides basic Python server wrapping."""
 
-from python.python import _get_global_python_itf, Python
+from python.python import _get_global_python_itf
 from sys.ffi import DLHandle
 
 from max.engine._utils import call_dylib_func
 
 from .server import ServerAsync
 from .http.runtime import PythonEntry
-from .callbacks import ServerCallbacks, NoopServerCallbacks
 from ._serve_rt import (
-    InferenceBatch,
     InferenceRequestImpl,
     InferenceResponseImpl,
 )
 
 
-struct ProtocolHandler(ServerCallbacks):
+struct ProtocolHandler:
     var _server: ServerAsync
     var _lib: DLHandle
 
@@ -32,7 +30,7 @@ struct ProtocolHandler(ServerCallbacks):
         self._server = existing._server^
         self._lib = existing._lib
 
-    fn handle_openai(
+    fn handle_python(
         self,
         request: InferenceRequestImpl,
         func: fn (PythonEntry) escaping -> None,
@@ -59,29 +57,8 @@ struct ProtocolHandler(ServerCallbacks):
                 func(entry)
                 cpython.PyGILState_Release(state)
 
-    fn on_server_start(inout self):
-        pass
-
-    fn on_server_stop(inout self):
-        pass
-
-    fn on_batch_receive(inout self, batch: InferenceBatch):
-        pass
-
-    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
-        pass
-
-    fn on_request_receive(inout self, request: InferenceRequestImpl):
-        fn handle(entry: PythonEntry) -> None:
-            var request = PythonObject(entry.request)
-            print(request)
-            # TODO: Assign input tensors from request.messages!
-
-        self.handle_openai(request, handle)
-
-    fn on_request_ok(
+    fn handle_ok(
         inout self,
-        start_ns: Int,
         request: InferenceRequestImpl,
         response: InferenceResponseImpl,
     ):
@@ -92,11 +69,9 @@ struct ProtocolHandler(ServerCallbacks):
             var cpython = _get_global_python_itf().cpython()
             cpython.Py_IncRef(response.py_object)
 
-        self.handle_openai(request, handle)
+        self.handle_python(request, handle)
 
-    fn on_request_fail(
-        inout self, request: InferenceRequestImpl, error: String
-    ):
+    fn handle_fail(inout self, request: InferenceRequestImpl, error: String):
         fn handle(entry: PythonEntry) -> None:
             var handler = PythonObject(entry.handler)
             try:
@@ -104,4 +79,4 @@ struct ProtocolHandler(ServerCallbacks):
             except e:
                 print(e)
 
-        self.handle_openai(request, handle)
+        self.handle_python(request, handle)

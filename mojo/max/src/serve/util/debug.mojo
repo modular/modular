@@ -6,11 +6,6 @@
 """Provides debugging tools and visualizations."""
 
 from .callbacks import ServerCallbacks
-from ._serve_rt import (
-    InferenceRequestImpl,
-    InferenceResponseImpl,
-    InferenceBatch,
-)
 
 
 struct ColoredTextCodes:
@@ -54,38 +49,28 @@ struct BatchHeatMap(ServerCallbacks):
     fn on_server_stop(inout self):
         pass
 
-    fn on_batch_receive(inout self, batch: InferenceBatch):
+    fn on_batch_receive(inout self, batch_size: Int):
         pass
 
-    fn on_batch_complete(inout self, start_ns: Int, batch: InferenceBatch):
-        var size = len(batch)
-        # TODO: Grab out from batch  and fix.
+    fn on_batch_complete(inout self, start_ns: Int, batch_size: Int):
         var capacity = 8
-        var idx = size - 1
+        var idx = batch_size - 1
         if capacity > 8:
-            # Rescale
-            idx = size * 8 // capacity
+            idx = batch_size * 8 // capacity
         print(
             ColoredTextCodes.code(idx)
             + "["
-            + str(size)
+            + str(batch_size)
             + "]"
             + ColoredTextCodes.reset(),
             end="",
         )
 
-    fn on_request_receive(inout self, request: InferenceRequestImpl):
+    fn on_request_receive(inout self):
         pass
 
-    fn on_request_ok(
-        inout self,
-        start_ns: Int,
-        request: InferenceRequestImpl,
-        response: InferenceResponseImpl,
-    ):
+    fn on_request_ok(inout self, start_ns: Int):
         pass
 
-    fn on_request_fail(
-        inout self, request: InferenceRequestImpl, error: String
-    ):
+    fn on_request_fail(inout self, error: String):
         pass

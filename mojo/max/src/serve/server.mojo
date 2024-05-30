@@ -26,14 +26,18 @@ from max.serve.service import (
     FileModel,
 )
 
-from .callbacks import (
-    CallbacksPair,
+from .util import (
+    ServerCallbacks,
     Guarded,
     NoopServerCallbacks,
     ServerCallbacks,
-    make_callbacks_quadruple,
+    CallbackSet,
+    BATCH_HEAT_MAP_ENABLED,
+    STATS_ENABLED,
+    ServerStats,
+    ServerStatsOptions,
+    BatchHeatMap,
 )
-from .config import BATCH_HEAT_MAP_ENABLED, STATS_ENABLED
 
 from .protocol import ProtocolHandler
 from .http.runtime import run_http_rt, PythonEntry
@@ -44,11 +48,12 @@ from ._serve_rt import (
     ServerAsync,
     TensorView,
 )
-from .stats import ServerStats, ServerStatsOptions
-from .debug import BatchHeatMap
 
 
-struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
+struct InferenceServer[
+    Callbacks: ServerCallbacks = NoopServerCallbacks,
+    EnableProtocol: Bool = False,
+]:
     """Inference server implementing the KServe protocol over gRPC."""
 
     alias handle_fn_type = async fn (
@@ -61,14 +66,10 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
     var _impl: ServerAsync
     var _stop_flag: Atomic[DType.int64]
 
-    var _callbacks: CallbacksPair[
-        CallbacksPair[
-            CallbacksPair[
-                ProtocolHandler,
-                Guarded[ServerStats, STATS_ENABLED],
-            ],
-            Guarded[BatchHeatMap, BATCH_HEAT_MAP_ENABLED],
-        ],
+    var _handler: ProtocolHandler
+    var _callbacks: CallbackSet[
+        Guarded[ServerStats, STATS_ENABLED],
+        Guarded[BatchHeatMap, BATCH_HEAT_MAP_ENABLED],
         Callbacks,
     ]
 
@@ -99,8 +100,8 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         self._impl = ServerAsync(address, self._lib, self._session)
         self._stop_flag = Atomic[DType.int64](0)
 
-        self._callbacks = make_callbacks_quadruple(
-            ProtocolHandler(self._impl, self._lib),
+        self._handler = ProtocolHandler(self._impl, self._lib)
+        self._callbacks = CallbackSet(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),
             Guarded[BatchHeatMap, BATCH_HEAT_MAP_ENABLED](BatchHeatMap()),
             callbacks^,
@@ -140,17 +141,25 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
 
                 # TODO: Record start closer to actual request receipt.
                 var start = now()
-                self._callbacks.on_request_receive(req)
+                self._callbacks.on_request_receive()
                 var respOr = Variant[InferenceResponseImpl, Error](resp^)
                 await handle_fn(req, respOr)
 
                 if respOr.isa[Error]():
                     var err = str(respOr.unsafe_take[Error]())
-                    self._callbacks.on_request_fail(req, err)
+                    self._callbacks.on_request_fail(err)
+
+                    @parameter
+                    if EnableProtocol:
+                        self._handler.handle_fail(req, err)
                     self._impl.push_failed(batch, i, err)
                 else:
                     var resp = respOr.unsafe_take[InferenceResponseImpl]()
-                    self._callbacks.on_request_ok(start, req, resp)
+                    self._callbacks.on_request_ok(start)
+
+                    @parameter
+                    if EnableProtocol:
+                        self._handler.handle_ok(req, resp)
                     self._impl.push_complete(batch, i)
                     _ = resp^
 
@@ -162,9 +171,9 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
                 # TODO: Construct merged request (per model) for batching.
                 await self._impl.pop_ready(batch)
                 var start = now()
-                self._callbacks.on_batch_receive(batch)
+                self._callbacks.on_batch_receive(len(batch))
                 await process(batch)
-                self._callbacks.on_batch_complete(start, batch)
+                self._callbacks.on_batch_complete(start, len(batch))
                 _ = batch^
 
         self._impl.run()
