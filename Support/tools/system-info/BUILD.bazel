@@ -1,4 +1,6 @@
-cc_binary(
+load("//bazel:api.bzl", "modular_cc_binary")
+
+modular_cc_binary(
     name = "system-info",
     srcs = glob(["*.cpp"]),
     visibility = ["//visibility:public"],

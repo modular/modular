@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "modular_shared_library")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
@@ -1259,7 +1259,7 @@ genrule(
 )
 
 # TODO: Delete once https://github.com/llvm/llvm-project/pull/91549 is in
-cc_binary(
+modular_cc_binary(
     name = "lldb19.0.0git",
     additional_linker_inputs = select({
         "@platforms//os:linux": [
@@ -1316,7 +1316,7 @@ alias(
 )
 
 # TODO: Replace with copy_file when https://github.com/llvm/llvm-project/pull/91549 is in
-cc_binary(
+modular_cc_binary(
     name = "mojo-lldb",
     srcs = [
         "//:third-party/llvm-project/lldb/tools/driver/Driver.cpp",

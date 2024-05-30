@@ -1,6 +1,8 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
+modular_cc_binary(
     name = "hash-mlir",
     srcs = glob(["*.cpp"]),
     deps = [
