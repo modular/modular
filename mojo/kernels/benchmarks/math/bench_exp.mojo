@@ -208,7 +208,7 @@ fn _exp_taylor0[
         0.0013888888888888888889,
         0.00019841269841269841270,
     )
-    return polynomial_evaluate[type, simd_width, coefficients](x)
+    return polynomial_evaluate[coefficients](x)
 
 
 @always_inline
@@ -276,7 +276,7 @@ fn _exp_taylor3[
         0.0013888888888888888889,
         0.00019841269841269841270,
     )
-    return polynomial_evaluate[type, simd_width, coefficients](x)
+    return polynomial_evaluate[coefficients](x)
 
 
 @always_inline
@@ -308,8 +308,6 @@ fn _exp_taylor_mlas[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return polynomial_evaluate[
-        type,
-        simd_width,
         List[SIMD[type, simd_width]](
             1.0,
             1.0,
