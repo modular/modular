@@ -12,6 +12,10 @@
 
 namespace M {
 
+//===----------------------------------------------------------------------===//
+// Readers and Writers
+//===----------------------------------------------------------------------===//
+
 /// ODS helper for parsing an enum.
 template <typename T>
 LogicalResult readIntegral(mlir::DialectBytecodeReader &reader, T &result) {
@@ -42,6 +46,25 @@ void writeIntegralArray(mlir::DialectBytecodeWriter &writer,
                         ArrayRef<T> values) {
   writer.writeList(values, [&](T value) { writeIntegral(writer, value); });
 }
+
+//===----------------------------------------------------------------------===//
+// WrappedAttrType
+//===----------------------------------------------------------------------===//
+
+/// This class provides a bytecode specific wrapper that invokes a special
+/// bytecode `get` method of an attribute or type. This is useful for types that
+/// override their `get` methods to perform additional logic (which we want to
+/// avoid for bytecode, where we already know the values are in the canonical
+/// form).
+template <typename T>
+struct WrappedAttrType : public T {
+  using T::T;
+
+  template <typename... Ts>
+  static T get(Ts &&...ts) {
+    return T::getFromBytecode(std::forward<Ts>(ts)...);
+  }
+};
 
 } // namespace M
 

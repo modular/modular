@@ -132,7 +132,7 @@ def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"AnyStructType">:$type
 )>;
 
-def BindTypeAttr : DialectAttribute<(attr
+def WrappedBindTypeAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
   TypedAttrArray:$values,
   ConcreteType<"AnyStructType">:$type
@@ -142,12 +142,12 @@ def LifetimeAttr : DialectAttribute<(attr
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def LifetimeUnionAttr : DialectAttribute<(attr
+def WrappedLifetimeUnionAttr : DialectAttribute<(attr
   TypedAttrArray:$operands,
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def LifetimeMutCastAttr : DialectAttribute<(attr
+def WrappedLifetimeMutCastAttr : DialectAttribute<(attr
   TypedAttr:$operand,
   ConcreteType<"LifetimeType">:$type
 )>;
@@ -169,7 +169,7 @@ def LITStructAttr : DialectAttribute<(attr
   ConcreteType<"DeclRefType">:$type
 )>;
 
-def StructExtractAttr : DialectAttribute<(attr
+def WrappedStructExtractAttr : DialectAttribute<(attr
   TypedAttr:$structValue,
   StringAttr:$field,
   Type:$type
@@ -214,16 +214,16 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnboundMLIROperationAttr,
     UnpackedAttr,
     ModuleAttr,
-    BindTypeAttr,
+    WrappedBindTypeAttr,
     LifetimeAttr,
     ImplicitLifetimeRefAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
-    StructExtractAttr,
+    WrappedStructExtractAttr,
     TypeLineageAttr,
     TypeConventionAttr,
-    LifetimeUnionAttr,
-    LifetimeMutCastAttr,
+    WrappedLifetimeUnionAttr,
+    WrappedLifetimeMutCastAttr,
     VarDeclKindAttr,
     InvalidRefLifetimeAttr,
     RefPackAttr,

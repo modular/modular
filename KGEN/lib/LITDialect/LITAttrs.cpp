@@ -457,6 +457,12 @@ Type UnboundMLIROperationAttr::getType() const {
 // BindTypeAttr
 //===----------------------------------------------------------------------===//
 
+BindTypeAttr BindTypeAttr::getFromBytecode(TypedAttr typeValue,
+                                           ArrayRef<TypedAttr> values,
+                                           AnyStructType type) {
+  return Base::get(type.getContext(), typeValue, values, type);
+}
+
 static ParseResult parseBindTypeParams(AsmParser &p,
                                        SmallVectorImpl<TypedAttr> &values,
                                        TypedAttr typeValue) {
@@ -608,6 +614,12 @@ TypedAttr BindTypeAttr::get(MLIRContext *context, TypedAttr typeValue,
 // LifetimeUnionAttr
 //===----------------------------------------------------------------------===//
 
+LifetimeUnionAttr
+LifetimeUnionAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
+                                   LifetimeType type) {
+  return Base::get(type.getContext(), operands, type);
+}
+
 static bool unionArgCompare(TypedAttr lhs, TypedAttr rhs) {
   // Ignore LifetimeMutCastAttr's for comparison.
   return ParameterAttr::compare(LifetimeMutCastAttr::strip(lhs),
@@ -713,6 +725,11 @@ TypedAttr LifetimeUnionAttr::get(MLIRContext *ctx,
 //===----------------------------------------------------------------------===//
 // LifetimeMutCastAttr
 //===----------------------------------------------------------------------===//
+
+LifetimeMutCastAttr LifetimeMutCastAttr::getFromBytecode(TypedAttr operand,
+                                                         LifetimeType type) {
+  return Base::get(type.getContext(), operand, type);
+}
 
 TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
   auto curTy = ::cast<LifetimeType>(operand.getType());
@@ -894,6 +911,12 @@ ErrorOr<TypedAttr> LIT::createUninitializedValueOf(Type type,
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
+
+LIT::StructExtractAttr
+LIT::StructExtractAttr::getFromBytecode(TypedAttr structValue, StringAttr field,
+                                        Type type) {
+  return Base::get(type.getContext(), structValue, field, type);
+}
 
 TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue,
                                       StructFieldOp fieldOp) {
