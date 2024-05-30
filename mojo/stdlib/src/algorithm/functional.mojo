@@ -355,7 +355,7 @@ fn sync_parallelize[
     var num_threads = rt.parallelism_level()
     var num_per_lq_tasks = num_work_items // num_threads
     var num_global_queue_tasks = num_work_items % num_threads
-    var tg = TaskGroup(rt)
+    var tg = TaskGroup[__lifetime_of()](rt)
     var count = 0
     for i in range(num_per_lq_tasks):
         for j in range(num_threads):
