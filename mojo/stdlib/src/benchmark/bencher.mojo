@@ -201,6 +201,15 @@ struct BenchConfig(CollectionElement):
     """Whether or not to show the progress of each benchmark."""
     var tabular_view: Bool
     """Whether to print results in csv readable/tabular format."""
+    var verbose_timing: Bool
+    """Whether to print verbose timing results."""
+
+    alias VERBOSE_TIMING_LABELS = List[String](
+        "min (ms)", "mean (ms)", "max (ms)", "duration (ms)"
+    )
+    """Labels to print verbose timing results."""
+
+    # TODO: to add median and stddev to verbose-timing
 
     fn __init__(
         inout self,
@@ -238,6 +247,7 @@ struct BenchConfig(CollectionElement):
         self.show_progress = True
         # TODO: set tabular_view=True as default
         self.tabular_view = False
+        self.verbose_timing = False
 
         @parameter
         fn argparse() raises:
@@ -254,6 +264,8 @@ struct BenchConfig(CollectionElement):
                     self.tabular_view = True
                 elif args[i] == "--no-progress":
                     self.show_progress = False
+                elif args[i] == "--verbose":
+                    self.verbose_timing = True
 
         argparse()
 
@@ -306,12 +318,16 @@ struct BenchmarkInfo(CollectionElement, Stringable):
     var measures: List[ThroughputMeasure]
     """Optional arg used to represent a list of ThroughputMeasure's."""
 
+    var verbose_timing: Bool
+    """Whether to print verbose timing results."""
+
     fn __init__(
         inout self,
         name: String,
         result: Report,
         elems: Optional[Int],
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        verbose_timing: Bool = False,
     ):
         """Constructs a Benchmark Info object to return Benchmark report and Stats.
 
@@ -320,12 +336,14 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             result: The output report after executing a benchmark.
             elems: Optional arg used to represent a specific metric like throughput.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            verbose_timing: Whether to print verbose timing results.
         """
 
         self.name = name
         self.result = result
         self.elems = elems
         self.measures = measures
+        self.verbose_timing = verbose_timing
 
     # TODO: to be removed
     fn _throughput(self) -> Float64:
@@ -351,6 +369,17 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             var rate = self.measures[i].compute(self.result.mean(unit=Unit.s))
             elems = elems + "," + str(rate)
 
+        # add verbose-timing results
+        if self.verbose_timing:
+            var verbose_timing_vals = List[Float64](
+                self.result.min(unit=Unit.ms),
+                self.result.mean(unit=Unit.ms),
+                self.result.max(unit=Unit.ms),
+                self.result.duration(unit=Unit.ms),
+            )
+            for t in verbose_timing_vals:
+                elems = elems + "," + str(t[])
+
         return (
             self.name
             + ","
@@ -368,7 +397,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         """
 
         var name_width = column_width[0]
-        var met_width = column_width[1]
+        var time_width = column_width[1]
         var iters_width = column_width[2]
         var throughput_width = column_width[3]
         var rate_width = column_width[4]
@@ -378,31 +407,39 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         var x = String._buffer_type()
         x.reserve(N)
 
-        x.size += _snprintf["%-*s, "](x.data + x.size, N, name_width, self.name)
+        @always_inline
+        @parameter
+        fn _append[fmt: StringLiteral, type: AnyType](width: Int, s: type):
+            x.size += _snprintf[fmt](x.data + x.size, N, width, s)
+            debug_assert(
+                x.size < N, "Attempted to access outside array bounds!"
+            )
 
-        x.size += _snprintf["%*.6f, "](
-            x.data + x.size, N, met_width, self.result.mean(unit=Unit.ms)
-        )
-
-        x.size += _snprintf["%*d"](
-            x.data + x.size, N, iters_width, self.result.iters()
-        )
+        _append["%-*s, "](name_width, self.name)
+        _append["%*.6f, "](time_width, self.result.mean(unit=Unit.ms))
+        _append["%*d"](iters_width, self.result.iters())
 
         var throughput = self._throughput() if self.elems else 0.0
-        x.size += _snprintf[", %*.6f"](
-            x.data + x.size, N, throughput_width, throughput
-        )
-        debug_assert(x.size < N, "Attempted to access outside array bounds!")
+        _append[", %*.6f"](throughput_width, throughput)
 
         if len(self.measures) > 0:
             for i in range(len(self.measures)):
                 var rate = self.measures[i].compute(self.result.mean(Unit.s))
-                x.size += _snprintf[", %*.6f"](
-                    x.data + x.size, N, rate_width, rate
-                )
-                debug_assert(
-                    x.size < N, "Attempted to access outside array bounds!"
-                )
+                _append[", %*.6f"](rate_width, rate)
+
+        if self.verbose_timing:
+            # verbose-timing details
+            var verbose_timing_vals = List[Float64](
+                self.result.min(unit=Unit.ms),
+                self.result.mean(unit=Unit.ms),
+                self.result.max(unit=Unit.ms),
+                self.result.duration(unit=Unit.ms),
+            )
+
+            for t in verbose_timing_vals:
+                var detail = t[]
+                _append[", %*.6f"](time_width, detail)
+
         x.size += 1
         debug_assert(x.size < N, "Attempted to access outside array bounds!")
         return String(x)
@@ -679,7 +716,13 @@ struct Bench:
         )
 
         self.info_vec.append(
-            BenchmarkInfo(full_name, res, throughput_elems, measures)
+            BenchmarkInfo(
+                full_name,
+                res,
+                throughput_elems,
+                measures,
+                self.config.verbose_timing,
+            )
         )
 
         # TODO: revise: checking against the first one to ensure consistency.
@@ -698,20 +741,24 @@ struct Bench:
             var NAME_WIDTH = self._get_max_name_width()
             var ITERS_WIDTH = max(len(", iters "), self._get_max_iters_width())
 
-            alias MET_WIDTH = 12
+            alias TIME_WIDTH = 12
             alias THROUGHPUT_WIDTH = 24
             alias RATE_WIDTH = 16
 
             report += (
                 _str_fmt_width("name", NAME_WIDTH)
-                + _str_fmt_width(", met (ms) ", MET_WIDTH + 2)
+                + _str_fmt_width(", met (ms) ", TIME_WIDTH + 2)
                 + _str_fmt_width(", iters ", ITERS_WIDTH + 2)
                 + _str_fmt_width(
                     ", throughput (Gelems/s) ", THROUGHPUT_WIDTH + 2
                 )
             )
             var width_list = VariadicList[Int](
-                NAME_WIDTH, MET_WIDTH, ITERS_WIDTH, THROUGHPUT_WIDTH, RATE_WIDTH
+                NAME_WIDTH,
+                TIME_WIDTH,
+                ITERS_WIDTH,
+                THROUGHPUT_WIDTH,
+                RATE_WIDTH,
             )
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
@@ -719,6 +766,13 @@ struct Bench:
                     report += _str_fmt_width(
                         ", " + measure_name, RATE_WIDTH + 2
                     )
+
+                if self.config.verbose_timing:
+                    for t in self.config.VERBOSE_TIMING_LABELS:
+                        var measure_name = t[]
+                        report += _str_fmt_width(
+                            ", " + measure_name, TIME_WIDTH + 2
+                        )
             report += "\n"
 
             for i in range(num_runs):
@@ -729,6 +783,11 @@ struct Bench:
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
                     report += ", " + str(measure[])
+
+                if self.config.verbose_timing:
+                    for t in self.config.VERBOSE_TIMING_LABELS:
+                        var measure_name = t[]
+                        report += ", " + measure_name
             report += "\n"
 
             for i in range(num_runs):
