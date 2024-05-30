@@ -15,9 +15,9 @@ from .._serve_rt import CServerAsync
 @register_passable
 struct PythonEntry:
     fn __init__(inout self):
-        self.request = PyObjectPtr.null_ptr()
-        self.response = PyObjectPtr.null_ptr()
-        self.handler = PyObjectPtr.null_ptr()
+        self.request = PyObjectPtr()
+        self.response = PyObjectPtr()
+        self.handler = PyObjectPtr()
 
     var request: PyObjectPtr
     var response: PyObjectPtr

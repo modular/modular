@@ -129,7 +129,7 @@ struct TorchInputSpec(Movable):
             lib,
             Self.NewTorchInputSpecFnName,
             self.shape.data,
-            DTypePointer[DType.invalid].get_null(),
+            DTypePointer[DType.invalid](),
             len(self.shape),
             EngineDType(self.dtype),
             status.ptr,
@@ -413,7 +413,7 @@ struct CompiledModel:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CCompiledModel](
-            existing.ptr, DTypePointer[DType.invalid].get_null()
+            existing.ptr, DTypePointer[DType.invalid]()
         )
         self.lib = existing.lib
         self.session = existing.session^

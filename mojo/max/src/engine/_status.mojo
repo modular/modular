@@ -54,7 +54,7 @@ struct Status:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CStatus](
-            existing.ptr, DTypePointer[DType.invalid].get_null()
+            existing.ptr, DTypePointer[DType.invalid]()
         )
         self.lib = existing.lib
 

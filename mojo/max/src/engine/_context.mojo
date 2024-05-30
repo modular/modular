@@ -125,7 +125,7 @@ struct RuntimeConfig:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CRuntimeConfig](
-            existing.ptr, DTypePointer[DType.invalid].get_null()
+            existing.ptr, DTypePointer[DType.invalid]()
         )
         self.lib = existing.lib
 
@@ -172,7 +172,7 @@ struct RuntimeContext:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CRuntimeContext](
-            existing.ptr, DTypePointer[DType.invalid].get_null()
+            existing.ptr, DTypePointer[DType.invalid]()
         )
         self.lib = existing.lib
 

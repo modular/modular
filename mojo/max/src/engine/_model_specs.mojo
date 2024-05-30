@@ -84,7 +84,7 @@ struct TensorNames(Sized):
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CTensorNameArray](
-            existing.ptr, DTypePointer[DType.invalid].get_null()
+            existing.ptr, DTypePointer[DType.invalid]()
         )
         self.length = existing.length
         self.lib = existing.lib

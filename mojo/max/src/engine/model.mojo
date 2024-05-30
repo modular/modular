@@ -55,7 +55,7 @@ struct Model:
         """
         self._ctx = existing._ctx
         self._ptr = exchange[CModel](
-            existing._ptr, DTypePointer[DType.invalid].get_null()
+            existing._ptr, DTypePointer[DType.invalid]()
         )
         self._lib = existing._lib
         self._session = existing._session^
