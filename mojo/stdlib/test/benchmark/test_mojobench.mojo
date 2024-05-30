@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: asan
 # RUN: mojo %s -r 2 -o %t.csv | FileCheck %s
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
 # RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
