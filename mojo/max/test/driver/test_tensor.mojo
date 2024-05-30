@@ -245,6 +245,28 @@ def test_set_through_slice():
     assert_equal(tensor[1, 0], 4)
 
 
+def test_kv_cache():
+    var cpu = Device()
+    alias type = DType.float32
+    alias shape = Tuple(2)  # cannot do len(shape) if this is declared as (2)
+    var tensors = List[Tensor[type, len(shape)]]()
+    for _ in range(2):
+        var dt = cpu.allocate(TensorSpec(type, shape))
+        var tensor = dt.get_tensor[type, len(shape)]()
+        tensor[0] = 1
+        tensor[1] = 2
+
+    for t in tensors:
+        assert_equal(
+            t[]._ptr[0],
+            1,
+        )
+        assert_equal(
+            t[]._ptr[1],
+            2,
+        )
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -254,3 +276,4 @@ def main():
     test_round_trip()
     test_copy()
     test_set_through_slice()
+    test_kv_cache()
