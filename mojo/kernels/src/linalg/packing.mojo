@@ -424,12 +424,12 @@ struct PackMatrixCols[
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
         var nr = column_inner_size
-        for i in range(0, align_up(kc, vnni_cols), vnni_cols):
+        for i in range(0, self.pack_tile_dim[0], vnni_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
 
                     @parameter
-                    for l in range(4):
+                    for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
                         var val = 0 if local_idx[0] >= kc or local_idx[
                             1
