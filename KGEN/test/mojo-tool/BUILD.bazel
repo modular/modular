@@ -14,7 +14,6 @@ lit_tests(
             "format/mojo-format.test",  # TODO: Requires mblack
             "test/test_execution.mojo",  # TODO: Debug crash
             "debug/mojo-lldb-version.mojo",  # TODO: LLDB
-            "build-project/build-project.mojo",  # TODO: flaky
         ],
     ),
     data = [
