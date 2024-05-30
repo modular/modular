@@ -172,9 +172,9 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         var rt = Runtime()
         var tg = TaskGroup(rt)
         for _ in range(self._num_listeners):
-            tg.create_task[NoneType](listen())
+            _ = tg.create_task(listen())
 
-        tg.create_task[NoneType](run_http_rt(self._impl._ptr))
+        _ = tg.create_task(run_http_rt(self._impl._ptr))
 
         await tg
         self._impl.stop()
