@@ -8,6 +8,7 @@
 #include "ArraySupport/TensorBufferRef.h"
 #include "CUDASupport/Globals/Globals.h"
 #include "KGEN/CompilerRT/MojoCallContext.h"
+#include "KGEN/CompilerRT/MojoValue.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
@@ -17,7 +18,6 @@
 #include "LLCL/Support/TimerHeap.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/ML/TensorSpec.h"
-#include "Support/MojoValue.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 

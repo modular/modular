@@ -15,6 +15,7 @@ set(SOURCES
   LLCL.cpp
   Memory.cpp
   MojoCallContext.cpp
+  MojoValue.cpp
   Python.cpp
   Random.cpp
   Support.cpp
