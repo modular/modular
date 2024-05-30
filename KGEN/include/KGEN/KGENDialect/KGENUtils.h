@@ -161,6 +161,15 @@ void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 /// Parse an array of parameter type values.
 ParseResult parseTypeParamValues(AsmParser &p, SmallVector<TypedAttr> &values);
 
+/// Pretty print a type value. Caller specifies how types are printed.
+LogicalResult
+printSugaredTypeValue(AsmPrinter &p, TypedAttr value,
+                      llvm::function_ref<void(AsmPrinter &, Type)> typePrinter);
+/// Parse a pretty printed a type value. Caller specifies how types are parsed.
+OptionalParseResult parseSugaredTypeValue(
+    AsmParser &p, TypedAttr &value, Type type,
+    llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser);
+
 /// Print a parameter value that is known to have `index` type.
 void printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value);
 void printIndexParamValue(AsmPrinter &p, Attribute value);

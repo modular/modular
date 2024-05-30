@@ -338,8 +338,6 @@ def PointerType : KGENType<"Pointer", "pointer", [
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
-                                        CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
                                         CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,

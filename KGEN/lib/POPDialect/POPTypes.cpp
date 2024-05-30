@@ -25,15 +25,6 @@ using namespace POP;
 // Pretty Type Parsing and Printing utilities
 //===----------------------------------------------------------------------===//
 
-template <typename TypeT>
-static ParseResult parsePrettyTypeImpl(AsmParser &p, TypedAttr &typeExpr) {
-  Type type = TypeT::parse(p);
-  if (!type)
-    return failure();
-  typeExpr = TypeConstantAttr::get(type, TypeType::get(p.getContext()));
-  return success();
-}
-
 static Type parseScalarType(AsmParser &p) {
   TypedAttr resultDType;
 
