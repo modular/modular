@@ -214,7 +214,11 @@ trait AnyType:
 
 @value
 @register_passable
-struct Coroutine[T: AnyTrivialRegType]:
+struct Coroutine[
+    is_mut: __mlir_type.i1, //,
+    T: AnyTrivialRegType,
+    lifetime: __mlir_type[`!lit.lifetime<`, is_mut, `>`],
+]:
     var value: __mlir_type.`!co.routine`
 
     fn __await__(self) -> T:
@@ -224,7 +228,11 @@ struct Coroutine[T: AnyTrivialRegType]:
 
 @value
 @register_passable
-struct RaisingCoroutine[T: AnyTrivialRegType]:
+struct RaisingCoroutine[
+    is_mut: __mlir_type.i1, //,
+    T: AnyTrivialRegType,
+    lifetime: __mlir_type[`!lit.lifetime<`, is_mut, `>`],
+]:
     var value: __mlir_type.`!co.routine`
 
     fn __await__(self) raises -> T:
