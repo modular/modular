@@ -1451,7 +1451,7 @@ fn pad_constant[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[type, rank],
-    paddings_buf: NDBuffer[paddings_type, 2],
+    paddings_buf: NDBuffer[paddings_type, 1],
     constant_buf: NDBuffer[constant_type, 1],
     output_buf: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
@@ -1472,7 +1472,7 @@ fn pad_reflect[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[type, rank],
-    paddings_buf: NDBuffer[paddings_type, 2],
+    paddings_buf: NDBuffer[paddings_type, 1],
     output_buf: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1491,7 +1491,7 @@ fn pad_repeat[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[type, rank],
-    paddings_buf: NDBuffer[paddings_type, 2],
+    paddings_buf: NDBuffer[paddings_type, 1],
     output_buf: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
