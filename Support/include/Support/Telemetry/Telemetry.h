@@ -292,7 +292,6 @@ private:
   //  Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
-#endif
 
   // Utility function to help make code cleaner
   template <typename T>
@@ -344,6 +343,7 @@ private:
         m->CreateDoubleHistogram(name.data(), description.data(), unit.data()),
         attributes);
   }
+#endif
 };
 
 } // namespace M::Telemetry
