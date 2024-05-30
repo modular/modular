@@ -1461,7 +1461,35 @@ RefType DefArgumentWrapperDLValue::getMBValueTypeFromDefArgument() const {
 }
 
 void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
-  os << "def argument wrapper";
+  os << "def argument wrapper of type " << elementType;
+}
+
+// This hook is called before an argument is passed inout.
+LValue
+DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
+                                                 ExprEmitter &emitter) const {
+  // Okay, if the def argument is mutated, we need to snap into action and
+  // lazily build a shadow in the function entry.
+  auto func = cast<FuncOp>(argDecl->getParentDecl());
+  ExprEmitter entryEmitter(emitter.shared, *argDecl->getParentDecl(),
+                           OpBuilder::atBlockBegin(func.getBody()));
+  StringAttr argName = func.getSignature().getArgName(argIndex);
+
+  // Create the shadow box and copy the argument into it.  This will emit an
+  // error at the specified location if the underlying type isn't copyable.
+  VarDeclOp declOp = entryEmitter.makeArgLValueVarSlot(argRef, argName, loc);
+
+  // Emission can fail when the type is non-copyable.
+  if (!declOp) {
+    argDecl->setErroneous();
+    return LValue();
+  }
+
+  declOp.setArgShadowIndex(argIndex);
+
+  // Update the representation so we don't do this again.
+  argDecl->setIRValue(MLValue(declOp));
+  return MLValue(declOp);
 }
 
 CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
@@ -1475,28 +1503,12 @@ void DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
                                           ExprEmitter &emitter) const {
   // Okay, if the def argument is mutated, we need to snap into action and
   // lazily build a shadow in the function entry.
-  auto func = cast<FuncOp>(argDecl->getParentDecl());
-  ExprEmitter entryEmitter(emitter.shared, *argDecl->getParentDecl(),
-                           OpBuilder::atBlockBegin(func.getBody()));
-  StringAttr argName = func.getSignature().getArgName(argIndex);
-
-  // Create the shadow box and copy the argument into it.  This will emit an
-  // error if the underlying type isn't copyable.
-  VarDeclOp declOp =
-      entryEmitter.makeArgLValueVarSlot(argRef, argName, value.expr->getLoc());
-
-  // Emission can fail when the type is non-copyable.
-  if (!declOp) {
-    argDecl->setErroneous();
+  LValue newVal = prepareForInoutAccess(value.expr->getLoc(), emitter);
+  if (!newVal)
     return;
-  }
-
-  declOp.setArgShadowIndex(argIndex);
-  // Update the representation so we don't do this again.
-  argDecl->setIRValue(MLValue(declOp));
 
   // Ok, now emit a normal store.
-  emitter.emitStoreToLValue(value, MLValue(declOp), ExprContext::EC_Assignment);
+  emitter.emitStoreToLValue(value, newVal, ExprContext::EC_Assignment);
 }
 
 //===----------------------------------------------------------------------===//

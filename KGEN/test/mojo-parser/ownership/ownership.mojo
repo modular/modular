@@ -332,6 +332,8 @@ fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
 fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
   return a.f2
 
+fn use_inout_and_return(inout a: FieldSensitiveMemExample) -> FieldSensitiveMemExample: 
+  return a
 
 fn return_ref(inout a: FieldSensitiveMemExample) -> ref [__lifetime_of(a)] FieldSensitiveMemExample:
   return a
@@ -381,13 +383,21 @@ fn test_result_optimization():
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[TMPVAR]])
   return_ref(example) = use_and_return(example)
 
-
-
-  example.mutate()
   # CHECK-NEXT: lit.call @{{.*}}@"mutate{{.*}}(%example)
+  example.mutate()
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
+
+# CHECK-LABEL: lit.func @"impl_mutable_arg
+def impl_mutable_arg(a: FieldSensitiveMemExample, inout b: FieldSensitiveMemExample) -> None:
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%b)
+  # CHECK-NEXT: %a_0 = lit.var.decl "a" arg(0)
+  # CHECK-NEXT: lit.call {{.*}}@"__copyinit__{{.*}}(%a_0, %a)
+  # CHECK-NEXT: lit.call {{.*}}use_inout_and_return{{.*}}(%a_0, %b)
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%a_0)
+
+  b = use_inout_and_return(a)
 
 ##===----------------------------------------------------------------------===##
 # Consume Expressions

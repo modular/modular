@@ -746,7 +746,9 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     // Otherwise, this may be a scalar value being passed through a borrowed
     // convention (e.g. for trait-bound value).  These will get anonymous
     // memory locations so they'll never alias.
-    if (value.ir.isSValue() || value.ir.getIfPValue())
+    if (value.ir.isSValue() || value.ir.getIfPValue() ||
+        // def argument slot.
+        value.ir.getIfDLValue())
       continue;
 
     llvm_unreachable("Unknown value kind for memory convention");
@@ -828,11 +830,23 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
 
+    // If this the first mutation to a def box, make sure to emit the box to
+    // a local variable (materializing the value) before we emit a load.
+    // Otherwise we'll load from the original argument and store back to the
+    // box.  This is functionally correct, but weird and causes an additional
+    // temporary to be generated because there is no MLValue.
+    if (auto dlv = lv.getIfDLValue()) {
+      lv = dlv->prepareForInoutAccess(argValAndExpr.expr->getLoc(), emitter);
+      if (!lv)
+        return {};
+    }
+
     // If this is already an MLValue in the default address space, we can pass
     // in the reference directly.
-    if (auto ref = lv.getIfMLValue())
+    if (auto ref = lv.getIfMLValue()) {
       if (lv.getMValueType().isDefaultAddrSpace())
         return ref;
+    }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
