@@ -45,7 +45,7 @@ fn test_basic_lock() raises:
             var tg = TaskGroup(rt)
             for i in range(0, maxI):
                 for j in range(0, maxJ):
-                    tg.create_task[Int](inc())
+                    tg.create_task(inc())
             tg.wait()
 
     var time_ns = time_function[test_atomic]()

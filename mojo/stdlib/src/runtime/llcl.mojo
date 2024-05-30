@@ -264,25 +264,21 @@ struct Runtime:
             ](self.ptr)
         )
 
-    fn create_task[
-        type: AnyTrivialRegType
-    ](
+    fn create_task(
         self,
-        owned handle: Coroutine[type],
+        owned handle: Coroutine[*_],
         desired_worker_id: Int = -1,
-    ) -> Task[type]:
+    ) -> Task[handle.type, handle.lifetime]:
         """Run the coroutine as a task on the LLCL Runtime."""
         var ctx: UnsafePointer[AsyncContext] = handle._get_ctx[
             AsyncContext
         ]().address
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
         ctx[].callback = AsyncContext.complete
-        _async_execute[type](handle._handle, self, desired_worker_id)
-        return Task[type](handle^)
+        _async_execute[handle.type](handle._handle, self, desired_worker_id)
+        return Task[handle.type, handle.lifetime](handle^)
 
-    fn run[
-        type: AnyTrivialRegType
-    ](self, owned handle: Coroutine[type]) -> type:
+    fn run(self, owned handle: Coroutine[*_]) -> handle.type:
         var t = self.create_task(handle^)
         var result = t.wait()
         return result
@@ -293,10 +289,14 @@ struct Runtime:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyTrivialRegType]:
-    var handle: Coroutine[type]
+struct Task[
+    is_mut: Bool, //,
+    type: AnyTrivialRegType,
+    lifetime: AnyLifetime[is_mut].type,
+]:
+    var handle: Coroutine[type, lifetime]
 
-    fn __init__(inout self, owned handle: Coroutine[type]):
+    fn __init__(inout self, owned handle: Coroutine[type, lifetime]):
         self.handle = handle^
 
     fn get(self) -> type:
@@ -436,13 +436,11 @@ struct TaskGroup:
         if self._counter_decr() == 0:
             _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
-    fn create_task[
-        type: AnyTrivialRegType
-    ](
+    fn create_task(
         inout self,
-        owned task: Coroutine[type],
+        owned task: Coroutine[*_],
         desired_worker_id: Int = -1,
-    ) -> TaskGroupTask[type, __lifetime_of(self)]:
+    ) -> TaskGroupTask[task.type, __lifetime_of(self)]:
         self.counter += 1
         LegacyPointer(task._get_ctx[TaskGroupContext]().address).store(
             TaskGroupContext {
@@ -450,7 +448,7 @@ struct TaskGroup:
                 task_group: UnsafePointer[TaskGroup].address_of(self),
             }
         )
-        _async_execute[type](task._handle, self.rt, desired_worker_id)
+        _async_execute[task.type](task._handle, self.rt, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
         return self.tasks.__get_ref(-1)
 

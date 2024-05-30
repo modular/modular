@@ -73,12 +73,12 @@ fn test_runtime_task():
 
     @parameter
     async fn test_llcl_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
-        return await rt.create_task[Int](
-            test_llcl_add[1](a)
-        ) + await rt.create_task[Int](test_llcl_add[2](b))
+        return await rt.create_task(test_llcl_add[1](a)) + await rt.create_task(
+            test_llcl_add[2](b)
+        )
 
     with Runtime(4) as rt:
-        var task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
+        var task = rt.create_task(test_llcl_add_two_of_them(rt, 10, 20))
         # CHECK: 33
         print(task.wait())
 
@@ -94,15 +94,15 @@ fn test_runtime_taskgroup():
     @parameter
     async fn run_as_group(rt: Runtime) -> Int:
         var tg = TaskGroup(rt)
-        var t0 = tg.create_task[Int](return_value[1]())
-        var t1 = tg.create_task[Int](return_value[2]())
+        var t0 = tg.create_task(return_value[1]())
+        var t1 = tg.create_task(return_value[2]())
         await tg
         return t0.get() + t1.get()
 
     with Runtime(4) as rt:
         var tg = TaskGroup(rt)
-        var t0 = tg.create_task[Int](run_as_group(rt))
-        var t1 = tg.create_task[Int](run_as_group(rt))
+        var t0 = tg.create_task(run_as_group(rt))
+        var t1 = tg.create_task(run_as_group(rt))
         tg.wait()
         # CHECK: 6
         print(t0.get() + t1.get())
