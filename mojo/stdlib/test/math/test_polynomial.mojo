@@ -3,168 +3,49 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
 from math.polynomial import _horner_evaluate, polynomial_evaluate
 
+from testing import assert_equal
 
-# CHECK-LABEL: test_polynomial_evaluate_degree3
-fn test_polynomial_evaluate_degree3():
-    print("== test_polynomial_evaluate_degree3")
 
-    alias simd_width = 1
-    alias coeefs = List[SIMD[DType.float64, simd_width]](
-        1000.0,
-        1.0,
-        1.0,
-    )
+def test_polynomial_evaluate_degree3():
     # Evaluate 1000 + x + x^2
-    var y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
+    alias coeffs = List[SIMD[DType.float64, 1]](1000.0, 1.0, 1.0)
 
-    # CHECK: 1002.0
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
-
-    # CHECK: 1002.0
-    print(y)
-
-    y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 1000.11
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 1000.11
-    print(y)
+    assert_equal(_horner_evaluate[coeffs](1.0), 1002.0)
+    assert_equal(polynomial_evaluate[coeffs](1.0), 1002.0)
+    assert_equal(_horner_evaluate[coeffs](0.1), 1000.11)
+    assert_equal(polynomial_evaluate[coeffs](0.1), 1000.11)
 
 
-# CHECK-LABEL: test_polynomial_evaluate_degree4
-fn test_polynomial_evaluate_degree4():
-    print("== test_polynomial_evaluate_degree4")
-
-    alias simd_width = 1
-    alias coeefs = List[SIMD[DType.float64, simd_width]](
-        1000.0,
-        99.0,
-        -43.0,
-        12.0,
-        -14.0,
-    )
+def test_polynomial_evaluate_degree4():
     # Evalaute 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
-    var y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
-
-    # CHECK: 1054.0
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
-
-    # CHECK: 1054.0
-    print(y)
-
-    y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 1009.4806
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 1009.4806
-    print(y)
-
-
-# CHECK-LABEL: test_polynomial_evaluate_degree10
-fn test_polynomial_evaluate_degree10():
-    print("== test_polynomial_evaluate_degree10")
-
-    alias simd_width = 1
-    alias coeefs = List[SIMD[DType.float64, simd_width]](
-        20.0,
-        9.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        43.0,
-        10.0,
+    alias coeffs = List[SIMD[DType.float64, 1]](
+        1000.0, 99.0, -43.0, 12.0, -14.0
     )
-    # Evaluate
-    # 20.0 + 9.0 x + 1.0 x^2 + 1.0 x^3 + 1.0 x^4 + 1.0 x^5 + 1.0 x^6 +
+
+    assert_equal(_horner_evaluate[coeffs](1.0), 1054.0)
+    assert_equal(polynomial_evaluate[coeffs](1.0), 1054.0)
+    assert_equal(_horner_evaluate[coeffs](0.1), 1009.4806)
+    assert_equal(polynomial_evaluate[coeffs](0.1), 1009.4806)
+
+
+def test_polynomial_evaluate_degree10():
+    # Evaluate 20.0 + 9.0 x + 1.0 x^2 + 1.0 x^3 + 1.0 x^4 + 1.0 x^5 + 1.0 x^6 +
     # 1.0 x^7 + 1.0 x^8 + 43.0 x^9 + 10.0 x^10
-    var y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
+    alias coeffs = List[SIMD[DType.float64, 1]](
+        20.0, 9.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 43.0, 10.0
+    )
 
-    # CHECK: 89.0
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
-
-    # CHECK: 89.0
-    print(y)
-
-    y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 20.91{{[0-9]+}}
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 20.91{{[0-9]+}}
-    print(y)
+    assert_equal(_horner_evaluate[coeffs](1.0), 89.0)
+    assert_equal(polynomial_evaluate[coeffs](1.0), 89.0)
+    assert_equal(_horner_evaluate[coeffs](0.1), 20.911111154)
+    assert_equal(polynomial_evaluate[coeffs](0.1), 20.911111154)
 
 
-fn main():
+def main():
     test_polynomial_evaluate_degree3()
     test_polynomial_evaluate_degree4()
     test_polynomial_evaluate_degree10()
