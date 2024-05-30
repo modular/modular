@@ -650,6 +650,37 @@ def ImplicitLifetimeRefAttr
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeSetAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeSetAttr : LITTypedAttr<"LifetimeSet", "lifetime.set"> {
+  let summary = "a set of lifetimes with different mutabilities";
+  let description = [{
+    The `#lit.lifetime.set` attribute contains a set of distinct lifetimes with
+    distict mutabilities. This tracks the individual mutabilities of each
+    element and propagates them. It can be converted to a single lifetime value
+    via `#lit.lifetime.union`.
+
+    Example:
+
+    ```mlir
+    #lit.lifetime.set<{mut a, imm b, (is_mut) c}>
+    ```
+  }];
+
+
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$operands,
+                        AttributeSelfTypeParameter<"", "LifetimeSetType">:$type);
+  let assemblyFormat = "`<` custom<LifetimeSet>($operands) `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser.
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeSetType":$type)>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // UnresolvedAliasValueAttr
 //===----------------------------------------------------------------------===//
 

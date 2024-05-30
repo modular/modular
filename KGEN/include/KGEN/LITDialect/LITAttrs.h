@@ -19,6 +19,7 @@ namespace LIT {
 class AnyStructType;
 class DeclRefType;
 class LifetimeType;
+class LifetimeSetType;
 class RefPackType;
 class TraitType;
 class UnpackedType;

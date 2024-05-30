@@ -33,6 +33,7 @@ void LITDialect::registerTypes() {
   dialect->registerMnemonicType<AnyStructType>();
   dialect->registerMnemonicType<TraitType>();
   dialect->registerMnemonicType<LifetimeType>();
+  dialect->registerMnemonicType<LifetimeSetType>();
 
   // Register the DeclRefType parser.
   getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
@@ -579,6 +580,32 @@ bool LifetimeType::isMutableKnown(bool value) {
   if (auto cst = ::dyn_cast<BoolAttr>(getIsMutable()))
     return cst.getValue() == value;
   return false;
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeSetType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult LifetimeSetType::parseValue(AsmParser &p,
+                                                TypedAttr &value) const {
+  SmallVector<TypedAttr> lifetimes;
+  OptionalParseResult result = parseOptionalLifetimeSet(p, lifetimes);
+  if (result.has_value()) {
+    if (failed(*result))
+      return failure();
+    value = LifetimeSetAttr::get(getContext(), lifetimes, *this);
+    return mlir::success();
+  }
+  return std::nullopt;
+}
+
+LogicalResult LifetimeSetType::printValue(AsmPrinter &p,
+                                          TypedAttr value) const {
+  if (auto set = ::dyn_cast<LifetimeSetAttr>(value)) {
+    printLifetimeSet(p, set.getOperands());
+    return success();
+  }
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
