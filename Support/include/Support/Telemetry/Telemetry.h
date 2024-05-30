@@ -292,30 +292,24 @@ private:
   //  Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
+#endif
 
+#ifdef MODULAR_ENABLE_TELEMETRY
   // Utility function to help make code cleaner
   template <typename T>
   Counter<T>
   createCounterImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
                     StringRef name, StringRef description, StringRef unit,
-                    const llvm::StringMap<MetricAttributeValue> &attributes) {}
-  template <>
-  Counter<uint64_t>
-  createCounterImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
-                    StringRef name, StringRef description, StringRef unit,
                     const llvm::StringMap<MetricAttributeValue> &attributes) {
-    return Counter<uint64_t>(
-        m->CreateUInt64Counter(name.data(), description.data(), unit.data()),
-        attributes);
-  }
-  template <>
-  Counter<double>
-  createCounterImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
-                    StringRef name, StringRef description, StringRef unit,
-                    const llvm::StringMap<MetricAttributeValue> &attributes) {
-    return Counter<double>(
-        m->CreateDoubleCounter(name.data(), description.data(), unit.data()),
-        attributes);
+    if constexpr (std::is_same_v<T, uint64_t>) {
+      return Counter<uint64_t>(
+          m->CreateUInt64Counter(name.data(), description.data(), unit.data()),
+          attributes);
+    } else if constexpr (std::is_same_v<T, double>) {
+      return Counter<double>(
+          m->CreateDoubleCounter(name.data(), description.data(), unit.data()),
+          attributes);
+    }
   }
 
   // Utility function to help make code cleaner
@@ -324,25 +318,19 @@ private:
   createHistogramImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
                       StringRef name, StringRef description, StringRef unit,
                       const llvm::StringMap<MetricAttributeValue> &attributes) {
+    if constexpr (std::is_same_v<T, uint64_t>) {
+      return Histogram<uint64_t>(m->CreateUInt64Histogram(name.data(),
+                                                          description.data(),
+                                                          unit.data()),
+                                 attributes);
+    } else if constexpr (std::is_same_v<T, double>) {
+      return Histogram<double>(m->CreateDoubleHistogram(name.data(),
+                                                        description.data(),
+                                                        unit.data()),
+                               attributes);
+    }
   }
-  template <>
-  Histogram<uint64_t>
-  createHistogramImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
-                      StringRef name, StringRef description, StringRef unit,
-                      const llvm::StringMap<MetricAttributeValue> &attributes) {
-    return Histogram<uint64_t>(
-        m->CreateUInt64Histogram(name.data(), description.data(), unit.data()),
-        attributes);
-  }
-  template <>
-  Histogram<double>
-  createHistogramImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
-                      StringRef name, StringRef description, StringRef unit,
-                      const llvm::StringMap<MetricAttributeValue> &attributes) {
-    return Histogram<double>(
-        m->CreateDoubleHistogram(name.data(), description.data(), unit.data()),
-        attributes);
-  }
+
 #endif
 };
 

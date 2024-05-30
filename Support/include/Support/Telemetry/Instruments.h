@@ -88,7 +88,10 @@ private:
 template <typename T>
 class Histogram {
 public:
-  void record(T value) {}
+  void
+  record(T value,
+         std::initializer_list<std::pair<llvm::StringRef, MetricAttributeValue>>
+             additionalAttributes = {}) {}
 
 private:
   friend class TelemetryContext;
