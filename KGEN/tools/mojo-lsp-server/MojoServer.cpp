@@ -1453,8 +1453,7 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
     // Try to decipher a token kind from the alias value.
     if (isa<ModuleAttr>(aliasValue))
       return SemanticTokenKind::kModule;
-    if (isa<KGEN::ConcreteTypeConstantAttr,
-            KGEN::ParameterizedTypeConstantAttr>(aliasValue))
+    if (isa<KGEN::TypeConstantAttr>(aliasValue))
       return SemanticTokenKind::kType;
     return SemanticTokenKind::kVariable;
   }

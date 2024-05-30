@@ -138,13 +138,7 @@ def VTableEntryAttr : DialectAttribute<(attr
   ConcreteAttribute<"TypedAttr">:$method
 )>;
 
-def WrappedConcreteTypeConstantAttr : DialectAttribute<(attr
-  Type:$mlirType,
-  Type:$type,
-  ConcreteAttribute<"VTableAttr">:$vTable
-)>;
-
-def WrappedParameterizedTypeConstantAttr : DialectAttribute<(attr
+def WrappedTypeConstantAttr : DialectAttribute<(attr
   Type:$mlirType,
   Type:$type,
   ConcreteAttribute<"VTableAttr">:$vTable
@@ -240,8 +234,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamIndexRefAttr,
     VTableAttr,
     VTableEntryAttr,
-    WrappedConcreteTypeConstantAttr,
-    WrappedParameterizedTypeConstantAttr,
+    WrappedTypeConstantAttr,
     DTypeConstantAttr,
     IntLiteralAttr,
     SymbolConstantAttr,

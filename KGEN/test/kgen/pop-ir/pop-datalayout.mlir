@@ -15,16 +15,16 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   kgen.param.constant: !kgen.int_literal = <get_alignof(array<1, i8>, #target)>
   // CHECK-NEXT: <4>
   kgen.param.constant: !kgen.int_literal = <get_alignof(array<4, i30>, #target)>
-  // CHECK-NEXT: <get_alignof(array<N, i8>, #kgen.target<{{.*}}>)>
+  // CHECK-NEXT: <1>
   kgen.param.constant: !kgen.int_literal = <get_alignof(array<N, i8>, #target)>
 
   // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_sizeof(pointer<scalar<invalid>>, #target)>
   // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_alignof(pointer<array<4, i32>>, #target)>
-  // CHECK-NEXT: <get_sizeof(pointer<T>, #kgen.target<{{.*}}>)>
+  // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_sizeof(pointer<T>, #target)>
-  // CHECK-NEXT: <get_alignof(pointer<T>, #kgen.target<{{.*}}>)>
+  // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_alignof(pointer<T>, #target)>
 
   // CHECK-NEXT: <4>

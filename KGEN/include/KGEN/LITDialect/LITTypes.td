@@ -212,8 +212,7 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
 
     ```mlir
     // Concrete type value.
-    #kgen.concretetype.constant<!lit.declref<@SomeStruct>>
-      : !lit.anystruct<@SomeStruct>
+    #kgen.type<!lit.declref<@SomeStruct>> : !lit.anystruct<@SomeStruct>
 
     // Parametric type value.
     #kgen.param.decl.ref<"some_type"> : !lit.anystruct<@SomeStruct>
@@ -320,8 +319,7 @@ def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
 
     ```mlir
     // Concrete type value for 'Int' converted for use as Stringable value.
-    #kgen.concretetype.constant<!lit.declref<@Int>>
-      : !lit.anytrait<@Stringable>
+    #kgen.type<!lit.declref<@Int>> : !lit.anytrait<@Stringable>
 
     // Parametric type value.
     #kgen.param.decl.ref<"some_type"> : !lit.anytrait<@Stringable>

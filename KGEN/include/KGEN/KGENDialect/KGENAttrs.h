@@ -35,38 +35,6 @@ class TargetType;
 class VariadicType;
 class VariadicAttr;
 class VTableAttr;
-
-//===----------------------------------------------------------------------===//
-// TypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-/// Base class for MLIR type constant attributes. This attribute represents a
-/// constant MLIR type expression.
-class TypeConstantAttr : public Attribute {
-public:
-  using Attribute::Attribute;
-
-  /// Returns the type-representation of this constant type value.
-  Type getMlirType() const;
-
-  /// Get the metatype.
-  Type getType() const;
-
-  /// Returns the constant type vtable.
-  VTableAttr getVTable() const;
-
-  /// Get a type constant attribute.
-  static TypedAttr get(Type mlirType, Type type);
-  /// Get a type constant attribute with a vtable.
-  static TypedAttr get(Type mlirType, Type type, VTableAttr vtable);
-
-  /// Returns true if the given type is classified as a concrete type.
-  static bool isConcreteType(Type type);
-
-  /// Support type inquiry.
-  static bool classof(Attribute attr);
-};
-
 } // namespace KGEN
 } // namespace M
 

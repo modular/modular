@@ -123,10 +123,7 @@ struct WrappedAttrType : public T {
 using WrappedParamRefType = WrappedAttrType<ParamRefType>;
 using WrappedVariantType = WrappedAttrType<VariantType>;
 
-using WrappedConcreteTypeConstantAttr =
-    WrappedAttrType<ConcreteTypeConstantAttr>;
-using WrappedParameterizedTypeConstantAttr =
-    WrappedAttrType<ParameterizedTypeConstantAttr>;
+using WrappedTypeConstantAttr = WrappedAttrType<TypeConstantAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
 
 //===----------------------------------------------------------------------===//

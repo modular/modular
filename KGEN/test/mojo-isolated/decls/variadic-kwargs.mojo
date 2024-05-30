@@ -11,8 +11,8 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.concretetype.constant<index,
-# CHECK-DAG: #[[MEM_ONLY:.*]] = #kgen.parameterizedtype.constant<!MemOnly,
+# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.type<index,
+# CHECK-DAG: #[[MEM_ONLY:.*]] = #kgen.type<!MemOnly,
 
 
 # CHECK-LABEL: lit.func @"variadic_kwargs
