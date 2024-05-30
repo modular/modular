@@ -33,10 +33,10 @@ struct Chain(Boolable):
     var storage: Pointer[Int]
 
     fn __init__(inout self):
-        self.storage = Pointer[Int].get_null()
+        self.storage = Pointer[Int]()
 
     fn __bool__(self) -> Bool:
-        return self.storage != Pointer[Int].get_null()
+        return self.storage != Pointer[Int]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -488,7 +488,7 @@ struct MojoCallContextPtr:
 
     @always_inline
     fn __init__() -> MojoCallContextPtr:
-        return MojoCallContextPtr {ptr: DTypePointer[DType.invalid].get_null()}
+        return MojoCallContextPtr {ptr: DTypePointer[DType.invalid]()}
 
     @always_inline
     fn __init__(ptr: Self.ptr_type) -> MojoCallContextPtr:
