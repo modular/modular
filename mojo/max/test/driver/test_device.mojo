@@ -48,6 +48,12 @@ def test_device_memory():
         "DeviceMemory(Device(type=CPU,numa_id=2),Spec(128xuint8))",
     )
 
+    var dt5 = dev.allocate(TensorSpec(DType.float32, 1))
+    var ptr = dt5.data_unsafe()
+    var t5 = dt5^.get_tensor[DType.float32, 1]()
+    t5[0] = 22
+    assert_equal(rebind[DTypePointer[DType.float32]](ptr).load(), t5[0])
+
 
 def test_kv_cache():
     var cpu = Device(CPUDescriptor(numa_id=2))

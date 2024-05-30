@@ -248,7 +248,7 @@ def test_set_through_slice():
 def test_kv_cache():
     var cpu = Device()
     alias type = DType.float32
-    alias shape = Tuple(2)  # cannot do len(shape) if this is declared as (2)
+    alias shape = (2,)
     var tensors = List[Tensor[type, len(shape)]]()
     for _ in range(2):
         var dt = cpu.allocate(TensorSpec(type, shape))
@@ -267,6 +267,21 @@ def test_kv_cache():
         )
 
 
+def test_raw_data():
+    var dev = Device()
+
+    alias type = DType.float32
+    alias shape = (1,)
+    var dt = dev.allocate(
+        TensorSpec(type, shape),
+    )
+
+    var t = dt^.get_tensor[DType.float32, len(shape)]()
+    var ptr = t.data_unsafe()
+    t[0] = 22
+    assert_equal(ptr.load(), t[0])
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -277,3 +292,4 @@ def main():
     test_copy()
     test_set_through_slice()
     test_kv_cache()
+    test_raw_data()
