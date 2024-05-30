@@ -233,7 +233,7 @@ fn pad_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[input_type, input_rank],
-    paddings_buf: NDBuffer[paddings_type, 2],
+    paddings_buf: NDBuffer[paddings_type, 1],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -256,15 +256,15 @@ fn pad_shape[
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
-    if paddings_buf.dim(0) != input_rank or paddings_buf.dim(1) != 2:
-        raise Error("[pad] paddings shape must be (input_rank, 2)")
+    if paddings_buf.dim(0) != 2 * input_rank:
+        raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()
 
     for axis in range(input_rank):
-        var pre_pad = int(paddings_buf[axis, 0])
-        var post_pad = int(paddings_buf[axis, 1])
+        var pre_pad = int(paddings_buf[2 * axis])
+        var post_pad = int(paddings_buf[2 * axis + 1])
         output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
 
     return output_shape
