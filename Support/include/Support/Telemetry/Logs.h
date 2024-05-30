@@ -49,10 +49,10 @@ enum class Severity : uint8_t {
 };
 
 using AttributeValue =
-    std::variant<bool, int32_t, int64_t, uint32_t, double, const char *,
-                 llvm::StringRef, llvm::ArrayRef<const bool>,
-                 llvm::ArrayRef<const int32_t>, llvm::ArrayRef<const int64_t>,
-                 llvm::ArrayRef<const uint32_t>, llvm::ArrayRef<const double>,
+    std::variant<bool, int32_t, int64_t, uint32_t, uint64_t, double,
+                 llvm::StringRef, llvm::ArrayRef<bool>, llvm::ArrayRef<int32_t>,
+                 llvm::ArrayRef<int64_t>, llvm::ArrayRef<uint32_t>,
+                 llvm::ArrayRef<double>, ArrayRef<uint64_t>, ArrayRef<uint8_t>,
                  llvm::ArrayRef<llvm::StringRef>>;
 
 #endif // MODULAR_ENABLE_TELEMETRY
