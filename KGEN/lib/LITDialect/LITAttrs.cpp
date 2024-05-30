@@ -762,6 +762,16 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, bool isMutable) {
 // ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
 
+bool ImplicitLifetimeRefAttr::isConstant() const { return false; }
+
+std::optional<bool> ImplicitLifetimeRefAttr::isLessThan(Attribute rhs) const {
+  auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(rhs);
+  if (!ref)
+    return false;
+  return std::make_tuple(getDepth(), getIndex()) <
+         std::make_tuple(ref.getDepth(), ref.getIndex());
+}
+
 IndexRefAttrInterface
 ImplicitLifetimeRefAttr::replace(size_t depth, size_t index,
                                  ArrayRef<Attribute> attrs,
