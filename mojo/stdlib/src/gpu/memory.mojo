@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs memory operations."""
 
-from math import is_power_of_2
 from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 
 from gpu.host._utils import _check_error
