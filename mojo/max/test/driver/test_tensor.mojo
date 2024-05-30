@@ -277,7 +277,7 @@ def test_raw_data():
     )
 
     var t = dt^.get_tensor[DType.float32, len(shape)]()
-    var ptr = t.data_unsafe()
+    var ptr = t.unsafe_ptr()
     t[0] = 22
     assert_equal(ptr.load(), t[0])
 
