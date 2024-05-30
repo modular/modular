@@ -173,6 +173,9 @@ kgen.generator @lifetime_union<x: !lit.lifetime<0>, y: !lit.lifetime<0>>() {
                                  #kgen.param.decl.ref<"y"> :!lit.lifetime<0>>
         : !lit.lifetime<0>} : () -> ()
 
+  // CHECK-NEXT: "d"() {a = #lit.lifetime.union<#lit.lifetime_ref<0, 1> : !lit.lifetime<0>, #lit.lifetime_ref<1, 0> : !lit.lifetime<0>> : !lit.lifetime<0>}
+  "d"() {a = #lit.lifetime.union<#lit.lifetime_ref<1, 0> : !lit.lifetime<0>, #lit.lifetime_ref<0, 1> : !lit.lifetime<0>> : !lit.lifetime<0>} : () -> ()
+
   // CHECK-NEXT: kgen.param.declare nothing: lifetime<0> = <#lit.lifetime>
   kgen.param.declare nothing: !lit.lifetime<0> = <#lit.lifetime>
   // CHECK-NEXT:  kgen.param.declare nothing_2: lifetime<0> = <#lit.lifetime>
