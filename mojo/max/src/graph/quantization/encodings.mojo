@@ -59,9 +59,35 @@ struct BFloat16Encoding(QuantizationEncoding):
         )
 
     @staticmethod
-    def id() -> String:
+    fn id() -> String:
         """Identifier for the bfloat16 quantized encoding."""
         return "bfloat16"
+
+
+struct Float32Encoding(QuantizationEncoding):
+    """The float32 quantization encoding.
+
+    This encoding is essentially an identity operation.
+    It exists in order to be a default case for code that is generic over
+    quantization encoding.
+    """
+
+    @staticmethod
+    def quantize(_tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
+        """Unimplemented quantize method for float32.
+
+        Since float32 is an identity encoding, it shouldn't define a quantize method.
+        In particular, float32 values should be used with non-quantized ops,
+        which expect dtype float32.
+        This is in contrast to quantized ops, which expect dtype uint8 operands.
+        So raise an exception here to avoid accidental bugs.
+        """
+        raise "float32 quantize intentionally not implemented"
+
+    @staticmethod
+    fn id() -> String:
+        """Identifier for the float32 quantized encoding."""
+        return "float32"
 
 
 @value
@@ -192,6 +218,6 @@ struct Q4_0Encoding(QuantizationEncoding):
         return quantized
 
     @staticmethod
-    def id() -> String:
+    fn id() -> String:
         """Identifier for the Q4_0 quantized encoding."""
-        return "Q4_0"
+        return "q4_0"

@@ -6,9 +6,7 @@
 
 """Optimized quantized operators."""
 
-from os import abort
-
-from max.graph.quantization import QuantizationEncoding
+from max.graph.quantization import QuantizationEncoding, Q4_0Encoding
 
 from .custom_ops import custom
 
@@ -94,7 +92,7 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
         The dequantized result (a floating point tensor).
     """
 
-    if encoding.id() == "Q4_0":
+    if encoding.id() == Q4_0Encoding.id():
         return _q4_0_matmul(lhs, rhs)
-    else:
-        return abort[Symbol]("unreachable: unknown `QuantizationEncoding`")
+
+    raise "unknown quantization encoding in qmatmul: " + encoding.id()

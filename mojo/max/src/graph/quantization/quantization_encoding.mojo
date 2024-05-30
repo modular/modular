@@ -61,6 +61,6 @@ trait QuantizationEncoding:
         ...
 
     @staticmethod
-    def id() -> String:
+    fn id() -> String:
         """Returns a unique string identifier for this quantization encoding."""
         ...
