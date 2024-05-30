@@ -320,6 +320,12 @@ BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
 RefType BaseDLValue::getMBValueTypeFromDefArgument() const { return RefType(); }
 
+// This hook is called before an argument is passed inout.
+LValue BaseDLValue::prepareForInoutAccess(SMLoc loc,
+                                          ExprEmitter &emitter) const {
+  return DLValue(RCRef<BaseDLValue>::copy(const_cast<BaseDLValue *>(this)));
+}
+
 //===----------------------------------------------------------------------===//
 // DiscardDLValue
 //===----------------------------------------------------------------------===//

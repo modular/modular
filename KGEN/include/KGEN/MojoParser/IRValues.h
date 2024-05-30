@@ -687,6 +687,11 @@ public:
 
   virtual ~BaseDLValue();
   virtual void print(raw_ostream &os) const = 0;
+
+  // This hook is called before an argument is passed inout.
+  virtual LValue prepareForInoutAccess(llvm::SMLoc loc,
+                                       ExprEmitter &emitter) const;
+
   virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const = 0;
@@ -780,6 +785,12 @@ class DefArgumentWrapperDLValue : public BaseDLValue {
 public:
   DefArgumentWrapperDLValue(ASTDecl *argDecl, BValue argRef, ASTType eltType,
                             size_t argIndex);
+
+  // This hook is called before an argument is passed inout.  The specified
+  // location indicates where diagnostics should be produced if this cannot be
+  // done.  This returns null on failure.
+  LValue prepareForInoutAccess(llvm::SMLoc loc,
+                               ExprEmitter &emitter) const override;
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
