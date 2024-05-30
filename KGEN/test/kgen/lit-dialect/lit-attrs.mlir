@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | kgen-opt -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: "pog.metadata"
@@ -175,6 +175,20 @@ kgen.generator @lifetime_union<x: !lit.lifetime<0>, y: !lit.lifetime<0>>() {
 
   // CHECK-NEXT: "d"() {a = #lit.lifetime.union<#lit.lifetime_ref<0, 1> : !lit.lifetime<0>, #lit.lifetime_ref<1, 0> : !lit.lifetime<0>> : !lit.lifetime<0>}
   "d"() {a = #lit.lifetime.union<#lit.lifetime_ref<1, 0> : !lit.lifetime<0>, #lit.lifetime_ref<0, 1> : !lit.lifetime<0>> : !lit.lifetime<0>} : () -> ()
+
+  kgen.param.declare is_mut: i1 = <0>
+  kgen.param.declare a: lifetime<1> = <?>
+  kgen.param.declare b: lifetime<0> = <?>
+  kgen.param.declare c: lifetime<is_mut> = <?>
+
+  // CHECK: <{(is_mut) c, mut a, imm b}>
+  kgen.param.constant: lifetime.set = <{imm b, mut a, (is_mut) c, mut a}>
+  // CHECK-NEXT: <{mut a}>
+  kgen.param.constant: lifetime.set = <{imm (mutcast mut a)}>
+  // CHECK-NEXT: <{}>
+  kgen.param.constant: lifetime.set = <{mut #lit.lifetime, imm #lit.invalid.ref.lifetime}>
+  // CHECK-NEXT: <{mut a, imm b}>
+  kgen.param.constant: lifetime.set = <{mut {(mutcast imm b), a}}>
 
   // CHECK-NEXT: kgen.param.declare nothing: lifetime<0> = <#lit.lifetime>
   kgen.param.declare nothing: !lit.lifetime<0> = <#lit.lifetime>

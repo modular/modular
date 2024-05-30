@@ -626,6 +626,18 @@ static bool unionArgCompare(TypedAttr lhs, TypedAttr rhs) {
                                 LifetimeMutCastAttr::strip(rhs));
 }
 
+static void removeDuplicates(SmallVectorImpl<TypedAttr> &operands) {
+  if (operands.size() > 1) {
+    for (size_t i = 0, e = operands.size() - 1; i != e; ++i) {
+      if (operands[i] != operands[i + 1])
+        continue;
+
+      operands.erase(operands.begin() + i + 1);
+      --e, --i;
+    }
+  }
+}
+
 TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
                                  LifetimeType type) {
 
@@ -669,15 +681,7 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   llvm::stable_sort(operands, unionArgCompare);
 
   // Remove duplicates which will now be sorted next to each other.
-  if (operands.size() > 1) {
-    for (size_t i = 0, e = operands.size() - 1; i != e; ++i) {
-      if (operands[i] != operands[i + 1])
-        continue;
-
-      operands.erase(operands.begin() + i + 1);
-      --e, --i;
-    }
-  }
+  removeDuplicates(operands);
 
   // If no results, return a plain lifetime attr.
   if (operands.empty())
@@ -795,6 +799,48 @@ ImplicitLifetimeRefAttr::replace(size_t depth, size_t index,
                                  ArrayRef<Type> types) const {
   assert(attrs.empty() && types.size() == 1);
   return ImplicitLifetimeRefAttr::get(depth, index, types.front());
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeSetAttr
+//===----------------------------------------------------------------------===//
+
+LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
+                                     ArrayRef<TypedAttr> operands,
+                                     LifetimeSetType type) {
+  SmallVector<TypedAttr> newOperands;
+  for (TypedAttr operand : operands) {
+    // Recursively flatten sets into each other. We know this one is already
+    // flattened.
+    if (auto set = ::dyn_cast<LifetimeSetAttr>(operand)) {
+      llvm::append_range(newOperands, set.getOperands());
+      continue;
+    }
+    // These lifetimes don't carry any information. Just drop them.
+    if (::isa<LifetimeAttr, InvalidRefLifetimeAttr>(operand))
+      continue;
+    // Break up unions into their constituents without mutcasts.
+    if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {
+      for (TypedAttr lifetime : unionAttr.getOperands())
+        newOperands.push_back(LifetimeMutCastAttr::strip(lifetime));
+      continue;
+    }
+    newOperands.push_back(LifetimeMutCastAttr::strip(operand));
+  }
+
+  // Now sort the operands by mutability and value.
+  llvm::stable_sort(newOperands, [&](TypedAttr lhs, TypedAttr rhs) {
+    TypedAttr lhsMut = ::cast<LifetimeType>(lhs.getType()).isMutable();
+    TypedAttr rhsMut = ::cast<LifetimeType>(rhs.getType()).isMutable();
+    if (ParameterAttr::compare(lhsMut, rhsMut))
+      return true;
+    if (ParameterAttr::compare(rhsMut, lhsMut))
+      return false;
+    return ParameterAttr::compare(lhs, rhs);
+  });
+  removeDuplicates(newOperands);
+
+  return Base::get(ctx, newOperands, type);
 }
 
 //===----------------------------------------------------------------------===//

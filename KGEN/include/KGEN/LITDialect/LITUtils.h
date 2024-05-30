@@ -112,6 +112,29 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
+/// Parse an optional passing convention and variadicness. The the given index
+/// will be added to the appropriate index array if a variadicness is present.
+ParseResult parseConventionAndVariadicness(
+    AsmParser &p, ArgConvention &convention,
+    SmallVectorImpl<size_t> &variadicIndices, ssize_t &argPackIndex,
+    ArgConvention &origArgPackConvention, size_t idx);
+
+enum class Variadicness : uint8_t;
+/// Print an optional passing convention and variadicness.
+void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
+                                    Variadicness variadicness);
+
+/// Parse and print a lifetime set.
+ParseResult parseLifetimeSet(AsmParser &p,
+                             SmallVectorImpl<TypedAttr> &lifetimes);
+OptionalParseResult
+parseOptionalLifetimeSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
+void printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
+
+//===----------------------------------------------------------------------===//
+// Pog Utils
+//===----------------------------------------------------------------------===//
+
 /// Count the number of inferred passing kinds.
 size_t countNumInferredKinds(ArrayRef<PogMetadataAttr> pogs);
 size_t countNumInferredKinds(PogListAttr pogListAttr);
@@ -134,17 +157,6 @@ enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
 SmallVector<Variadicness> getVariadicness(PogListAttr pogListAttr);
-
-/// Parse an optional passing convention and variadicness. The the given index
-/// will be added to the appropriate index array if a variadicness is present.
-ParseResult parseConventionAndVariadicness(
-    AsmParser &p, ArgConvention &convention,
-    SmallVectorImpl<size_t> &variadicIndices, ssize_t &argPackIndex,
-    ArgConvention &origArgPackConvention, size_t idx);
-
-/// Print an optional passing convention and variadicness.
-void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
-                                    Variadicness variadicness);
 
 //===----------------------------------------------------------------------===//
 // PassingKindParser / PassingKindPrinter
@@ -263,7 +275,7 @@ public:
         numPositional(countNumInferredKinds(pogs) + countNumPositional(pogs)),
         defaultPosStart(numPositional - defaultsPos.size()),
         kwOnlyEnd(pogs.size() - countNumImplicitKinds(pogs)),
-        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
+        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()) {};
 
   DefaultValueHandler(PogListAttr pogListAttr);
 

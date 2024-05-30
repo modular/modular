@@ -106,8 +106,7 @@ ParseResult LIT::parseLifetimeParamValue(AsmParser &p, TypedAttr &result) {
       mutability = BoolAttr::get(p.getContext(), true);
     } else {
       // !lit.ref<T, mut=expr, lifetime  ==> parametric
-      if (parseParamValue(p, mutability, p.getBuilder().getI1Type()) ||
-          p.parseComma())
+      if (parseI1ParamValue(p, mutability) || p.parseComma())
         return failure();
     }
     type = LifetimeType::get(mutability);
@@ -484,6 +483,62 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   name = StringAttr::get(p.getContext(), argName);
   return success();
 }
+
+ParseResult LIT::parseLifetimeSet(AsmParser &p,
+                                  SmallVectorImpl<TypedAttr> &lifetimes) {
+  OptionalParseResult result = parseOptionalLifetimeSet(p, lifetimes);
+  if (!result.has_value())
+    return p.emitError(p.getCurrentLocation(), "expected a '{'");
+  return *result;
+}
+
+OptionalParseResult
+LIT::parseOptionalLifetimeSet(AsmParser &p,
+                              SmallVectorImpl<TypedAttr> &lifetimes) {
+  if (failed(p.parseOptionalLBrace()))
+    return std::nullopt;
+  if (succeeded(p.parseOptionalRBrace()))
+    return mlir::success();
+
+  auto parseLifetime = [&]() -> ParseResult {
+    TypedAttr mut;
+    if (succeeded(p.parseOptionalKeyword("mut")))
+      mut = BoolAttr::get(p.getContext(), true);
+    else if (succeeded(p.parseOptionalKeyword("imm")))
+      mut = BoolAttr::get(p.getContext(), false);
+    else if (p.parseLParen() || parseI1ParamValue(p, mut) || p.parseRParen())
+      return failure();
+    return parseParamValue(p, lifetimes.emplace_back(), LifetimeType::get(mut));
+  };
+  if (p.parseCommaSeparatedList(parseLifetime))
+    return failure();
+  return p.parseRBrace();
+}
+
+void LIT::printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
+  p << '{';
+  auto printLifetime = [&](TypedAttr lifetime) {
+    auto type = cast<LifetimeType>(lifetime.getType());
+    TypedAttr mut = type.isMutable();
+    // If the mutability is known, pretty print it. Otherwise, print the
+    // parametric mutability expression within parens.
+    if (auto known = dyn_cast<BoolAttr>(mut)) {
+      p << (known.getValue() ? "mut" : "imm");
+    } else {
+      p << '(';
+      printParamValue(p, mut);
+      p << ')';
+    }
+    p << ' ';
+    printParamValue(p, lifetime);
+  };
+  llvm::interleaveComma(lifetimes, p, printLifetime);
+  p << '}';
+}
+
+//===----------------------------------------------------------------------===//
+// Pog Utils
+//===----------------------------------------------------------------------===//
 
 size_t LIT::countNumInferredKinds(ArrayRef<PogMetadataAttr> pogs) {
   size_t num = 0;

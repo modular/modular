@@ -374,11 +374,32 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeSetType
+//===----------------------------------------------------------------------===//
+
+def LIT_LifetimeSetType : LITType<"LifetimeSet", "lifetime.set",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "a singleton type representing a lifetime set";
+  let description = [{
+    The `!lit.lifetime.set` type is a singleton type that represents a lifetime
+    set. A lifetime set is a collection of different lifetimes.
+
+    Example:
+
+    ```mlir
+    !lit.lifetime.set
+    ```
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
 // RefType
 //===----------------------------------------------------------------------===//
 
 def LIT_RefType : LITType<"Ref", "ref",
-                        [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "lifetime-bound reference type";
   let description = [{
     This type represents a typed reference to a memory object with a lifetime.
