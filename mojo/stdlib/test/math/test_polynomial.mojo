@@ -5,12 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math.polynomial import (
-    EvaluationMethod,
-    _estrin_evaluate,
-    _horner_evaluate,
-    polynomial_evaluate,
-)
+from math.polynomial import _horner_evaluate, polynomial_evaluate
 
 
 # CHECK-LABEL: test_polynomial_evaluate_degree3
@@ -33,41 +28,16 @@ fn test_polynomial_evaluate_degree3():
     # CHECK: 1002.0
     print(y)
 
-    y = _estrin_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
-
-    # CHECK: 1002.0
-    print(y)
-
     y = polynomial_evaluate[
         DType.float64,
         simd_width,
         coeefs,
-    ](1.0)
-
-    # CHECK: 1002.0
-    print(y)
-
-    y = polynomial_evaluate[
-        DType.float64, simd_width, coeefs, method = EvaluationMethod.ESTRIN
     ](1.0)
 
     # CHECK: 1002.0
     print(y)
 
     y = _horner_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 1000.11
-    print(y)
-
-    y = _estrin_evaluate[
         DType.float64,
         simd_width,
         coeefs,
@@ -108,15 +78,6 @@ fn test_polynomial_evaluate_degree4():
     # CHECK: 1054.0
     print(y)
 
-    y = _estrin_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](1.0)
-
-    # CHECK: 1054.0
-    print(y)
-
     y = polynomial_evaluate[
         DType.float64,
         simd_width,
@@ -135,15 +96,6 @@ fn test_polynomial_evaluate_degree4():
     # CHECK: 1009.4806
     print(y)
 
-    y = _estrin_evaluate[
-        DType.float64,
-        simd_width,
-        coeefs,
-    ](0.1)
-
-    # CHECK: 1009.4806
-    print(y)
-
     y = polynomial_evaluate[
         DType.float64,
         simd_width,
@@ -154,7 +106,6 @@ fn test_polynomial_evaluate_degree4():
     print(y)
 
 
-# COM: Note that the estrin method currently goes up to degree 9
 # CHECK-LABEL: test_polynomial_evaluate_degree10
 fn test_polynomial_evaluate_degree10():
     print("== test_polynomial_evaluate_degree10")
