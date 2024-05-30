@@ -1,6 +1,8 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
+modular_cc_binary(
     name = "mojo-repl-entry-point",
     srcs = glob(["*.cpp"]),
     # We need to prevent inline function expansion to guarentee our entry

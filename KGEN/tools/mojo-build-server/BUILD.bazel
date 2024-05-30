@@ -1,3 +1,4 @@
+load("//bazel:api.bzl", "modular_cc_binary")
 load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,7 +12,7 @@ kgen_kernel(
     ],
 )
 
-cc_binary(
+modular_cc_binary(
     name = "mojo-build-server",
     srcs = ["empty.c"],
     deps = [

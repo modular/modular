@@ -1,3 +1,4 @@
+load("//bazel:api.bzl", "modular_cc_binary")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
 driver_option_tablegen(
@@ -34,7 +35,7 @@ driver_option_tablegen(
     ],
 )
 
-cc_binary(
+modular_cc_binary(
     name = "greeter-cli",
     srcs = glob([
         "**/*.cpp",
