@@ -26,7 +26,6 @@ add_modular_library(MSupport
   IPRational.cpp
   JSON.cpp
   MicroBenchmark.cpp
-  MojoValue.cpp
   PlatformLibNames.cpp
   Process.cpp
   Random.cpp
