@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoBuildServer.h"
+#include "Project.h"
 
 #include "KGEN/Support/Configuration.h"
-#include "Support/Filesystem/Paths.h"
 
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Program.h"
@@ -26,23 +26,6 @@ static ErrorOr<std::string> getMojoDriverPath(KGEN::MojoConfig &config) {
   return path.str();
 }
 
-/// Returns all Mojo source package directories at the top level of the given
-/// `root` directory.
-static SmallVector<std::filesystem::path>
-getMojoSourcePackageDirectories(const std::filesystem::path &root,
-                                std::error_code &ec) {
-  SmallVector<std::filesystem::path> result;
-  std::filesystem::directory_iterator it(root, ec);
-  if (ec)
-    return result;
-
-  for (const auto &path : it)
-    if (Filesystem::isMojoSourcePackagePath(path))
-      result.push_back(path);
-
-  return result;
-}
-
 ErrorOr<BuildResult>
 MojoBuildServer::buildWorkspace(const std::filesystem::path &path) {
   // Grab the path to the `mojo` driver.
@@ -54,33 +37,31 @@ MojoBuildServer::buildWorkspace(const std::filesystem::path &path) {
   if (driverPathOr.isError())
     return driverPathOr.takeError();
 
-  // We do not yet define a Mojo project manifest, so we cannot be certain what
-  // to build within our workspace. For the time being, look for a directory
-  // named 'src' at the root of the workspace, and build a Mojo package from
-  // each Mojo source package directory within 'src'. If there's nothing to
-  // build, return a "cancelled" result.
-  std::error_code ec;
-  std::filesystem::path srcDir = path / "src";
-  if (!std::filesystem::is_directory(srcDir, ec) || ec)
-    return BuildResult::NothingToDo;
+  // Create a representation of the project, collecting information about the
+  // build targets defined therein.
+  ErrorOr<Project> projectOr = Project::create(path);
+  if (projectOr.isError())
+    return projectOr.takeError();
 
-  SmallVector<std::filesystem::path> packageDirs =
-      getMojoSourcePackageDirectories(srcDir, ec);
-  if (packageDirs.empty() || ec)
+  // Return early if there's nothing to build.
+  if (projectOr->getTargets().empty())
     return BuildResult::NothingToDo;
 
   // Create a directory for build artifacts.
   std::filesystem::path buildDirectory = path / ".build";
+  std::error_code ec;
   std::filesystem::create_directory(buildDirectory, ec);
   if (ec)
     return Error(llvm::formatv("could not create build directory '{0}': {1}",
                                buildDirectory, ec.message()));
 
-  // For now, as a simple proof of concept, this sequentially builds the
-  // packages in the workspace. In the future, this should be parallelized.
-  for (const auto &packageDir : packageDirs) {
+  // For now, as a simple proof of concept, this sequentially builds all project
+  // targets. In the future, this should be parallelized.
+  for (const auto &target : projectOr->getTargets()) {
+    // We can assume, for now, that every single project target is built the
+    // same way: a `mojo package` invocation.
     SmallVector<StringRef> driverArgs{*driverPathOr, "package",
-                                      packageDir.c_str(), "-o",
+                                      target.getValue().uri, "-o",
                                       buildDirectory.c_str()};
     std::string errorMessage;
     int exitCode = llvm::sys::ExecuteAndWait(
