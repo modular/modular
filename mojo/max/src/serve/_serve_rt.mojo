@@ -425,6 +425,9 @@ struct InferenceRequestImpl(InferenceRequest):
     fn get_payload_type(self) -> Int64:
         return self._impl.payload_type()
 
+    fn get_ptr(self) -> DTypePointer[DType.invalid]:
+        return self._impl._ptr
+
     fn get_model_name(self) raises -> String:
         return str(self._impl.model_name())
 
@@ -692,6 +695,13 @@ struct ServerAsync:
     fn __moveinit__(inout self: Self, owned existing: Self):
         self._impl = existing._impl^
         self._session = existing._session^
+
+    fn __del__(owned self):
+        _ = self._session^
+
+    fn init(inout self, model: Model):
+        var ptrs = List(model._compiled_model.ptr)
+        self._impl.init(ptrs)
 
     fn init(inout self, models: List[Model]):
         var ptrs = List[CCompiledModel](capacity=len(models))

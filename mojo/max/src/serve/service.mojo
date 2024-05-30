@@ -13,6 +13,16 @@ from max.engine import InputSpec, TensorMap, Model
 trait InferenceRequest(CollectionElement):
     """A trait for singular inference requests."""
 
+    fn get_api_type(self) -> Int64:
+        ...
+
+    fn get_payload_type(self) -> Int64:
+        ...
+
+    # TODO: Remove!
+    fn get_ptr(self) -> DTypePointer[DType.invalid]:
+        ...
+
     fn get_model_name(self) raises -> String:
         ...
 
@@ -48,6 +58,12 @@ trait InferenceRequest(CollectionElement):
 trait InferenceResponse(CollectionElement):
     """A trait for singular inference responses."""
 
+    fn get_api_type(self) -> Int64:
+        ...
+
+    fn get_payload_type(self) -> Int64:
+        ...
+
     fn get_output_tensors(self) raises -> TensorMap:
         """Returns all output tensors.
 
@@ -71,7 +87,7 @@ trait InferenceService:
 
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
-    ](self, request: req_type, inout response: resp_type) raises -> None:
+    ](inout self, request: req_type, inout response: resp_type) raises -> None:
         """Runs a single inference request.
 
         Parameters:
@@ -87,7 +103,7 @@ trait InferenceService:
     async fn async_infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
     ](
-        self, request: req_type, inout response: Variant[resp_type, Error]
+        inout self, request: req_type, inout response: Variant[resp_type, Error]
     ) -> None:
         """Asynchronously runs a single inference request.
 

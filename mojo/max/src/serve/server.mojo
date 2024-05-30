@@ -40,7 +40,7 @@ from .util import (
 )
 
 from .protocol import ProtocolHandler
-from .http.runtime import run_http_rt, PythonEntry
+from .http.runtime import run_http_rt
 from ._serve_rt import (
     InferenceRequestImpl,
     InferenceResponseImpl,
@@ -118,7 +118,7 @@ struct InferenceServer[
 
     fn serve[
         service_type: InferenceService
-    ](inout self, service: service_type) -> None:
+    ](inout self, inout service: service_type) -> None:
         @always_inline
         @parameter
         async fn handle(
@@ -260,7 +260,7 @@ struct MuxInferenceService(InferenceService):
 
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
-    ](self, request: req_type, inout response: resp_type) raises -> None:
+    ](inout self, request: req_type, inout response: resp_type) raises -> None:
         var respOr = Variant[resp_type, Error](response^)
         var rt = Runtime()
         rt.run(self.async_infer(request, respOr))
@@ -272,7 +272,7 @@ struct MuxInferenceService(InferenceService):
     async fn async_infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
     ](
-        self, request: req_type, inout response: Variant[resp_type, Error]
+        inout self, request: req_type, inout response: Variant[resp_type, Error]
     ) -> None:
         try:
             var name = request.get_model_name()
