@@ -107,13 +107,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "MojoValue",
-    srcs = ["lib/MojoValue.cpp"],
-    hdrs = ["include/Support/MojoValue.h"],
-    deps = [":Base"],
-)
-
-modular_cc_library(
     name = "Buffer",
     srcs = ["lib/Buffer.cpp"],
     hdrs = ["include/Support/Buffer.h"],
