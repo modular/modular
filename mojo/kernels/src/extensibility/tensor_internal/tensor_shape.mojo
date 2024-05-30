@@ -350,9 +350,7 @@ struct _Rep32(EqualityComparable):
 struct _RepOutOfLine(EqualityComparable):
     """A general storage kind which stores the dimensions on the heap."""
 
-    alias _padding_size = (
-        13 - sizeof[DTypePointer[DType.invalid]._mlir_type]()
-    )
+    alias _padding_size = (13 - sizeof[DTypePointer[DType.invalid]]())
     var dims: DTypePointer[DType.index]
     """The heap allocated dimensions."""
     # FIXME: This isn't correct for big endian systems, but we check with
