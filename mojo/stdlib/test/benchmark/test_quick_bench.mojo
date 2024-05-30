@@ -301,6 +301,8 @@ fn test_custom() raises:
     )
 
     qb.dump_report()
+    x.free()
+    y.free()
 
 
 fn main() raises:
