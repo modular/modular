@@ -23,5 +23,4 @@ You also may add a quantized node in your graph with
 """
 
 from .quantization_encoding import QuantizationEncoding
-from .bfloat16_encoding import BFloat16Encoding
-from .q4_0_encoding import BlockQ40, Q4_0Encoding
+from .encodings import _BlockQ40 as BlockQ40, BFloat16Encoding, Q4_0Encoding

@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the Q4_0 quantization encoding matching that in GGML."""
+"""Implementations of quantization encodings."""
+
 from buffer import Buffer
 from tensor import Tensor, TensorShape
 from utils import InlineArray
@@ -12,8 +13,59 @@ from utils import InlineArray
 from .quantization_encoding import QuantizationEncoding
 
 
+struct BFloat16Encoding(QuantizationEncoding):
+    """The bfloat16 quantization encoding.
+
+    Like float32, the bfloat16 encoding uses 8 bits to store the exponent
+    value, so it has the same numeric range as float32. However, it has just 7
+    bits for the mantissa (compared to 23 bits available in float32), so it has
+    less precision for the fractional part. This is often a better trade-off
+    for ML applications, compared to traditional float16, which has less
+    numeric range because it uses only 5 bits to store the exponent (though it
+    has better precision with 10 bits for the mantissa)."""
+
+    @staticmethod
+    def quantize(tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
+        """Quantizes the full-precision input tensor to bfloat16.
+
+        Only supports quantizing from float16 and float32, using a direct
+        elementwise cast.
+
+        Args:
+            tensor: Full-precision tensor to quantize to bfloat16.
+
+        Returns:
+            Quantized bfloat16 tensor.
+        """
+        if not tensor.num_elements():
+            return Tensor[DType.uint8]()
+
+        # Quantize to bfloat16 via elementwise cast.
+        quantized = tensor.astype[DType.bfloat16]()
+
+        # Compute bytes buffer shape as the tensor shape with 2 bytes per
+        # bfloat16 element in the innermost dimension.
+        # Note that this implies the storage is row major.
+        tensor_shape = tensor.shape()
+        buff_dims = List[Int]()
+        for i in range(tensor_shape.rank() - 1):
+            buff_dims.append(tensor_shape[i])
+
+        buff_dims.append(2 * tensor_shape[-1])
+
+        return Tensor(
+            TensorShape(buff_dims^),
+            quantized._steal_ptr().bitcast[DType.uint8](),
+        )
+
+    @staticmethod
+    def id() -> String:
+        """Identifier for the bfloat16 quantized encoding."""
+        return "bfloat16"
+
+
 @value
-struct BlockQ40:
+struct _BlockQ40:
     """4-bit quantization.
 
     Constraints:
@@ -74,23 +126,23 @@ struct Q4_0Encoding(QuantizationEncoding):
         if not tensor.num_elements():
             return Tensor[DType.uint8]()
 
-        alias elems_per_block = BlockQ40.elements_per_block()
+        alias elems_per_block = _BlockQ40.elements_per_block()
         tensor_shape = tensor.shape()
         cols = tensor_shape[-1]
         if cols % elems_per_block != 0:
             raise "num elements in row must be a multiple of Q4_0 block size"
 
         # Q4_0 quantizes row-wise, so compute the output shape as the same as
-        # the input shape, except with the last dimension packed as BlockQ40.
+        # the input shape, except with the last dimension packed as _BlockQ40.
         buff_dims = List[Int]()
         for i in range(tensor_shape.rank() - 1):
             buff_dims.append(tensor_shape[i])
         # Compute number of bytes in last block, which is packed.
-        buff_dims.append((cols // elems_per_block) * sizeof[BlockQ40]())
+        buff_dims.append((cols // elems_per_block) * sizeof[_BlockQ40]())
 
-        # Allocate the output buffer and interpret it as an array of BlockQ40.
+        # Allocate the output buffer and interpret it as an array of _BlockQ40.
         quantized = Tensor[DType.uint8](TensorShape(buff_dims^))
-        quantized_ptr = rebind[UnsafePointer[BlockQ40]](quantized.unsafe_ptr())
+        quantized_ptr = rebind[UnsafePointer[_BlockQ40]](quantized.unsafe_ptr())
 
         tensor_ptr = tensor.unsafe_ptr()
 
