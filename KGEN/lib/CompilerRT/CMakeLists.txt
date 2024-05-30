@@ -15,7 +15,6 @@ set(SOURCES
   LLCL.cpp
   Memory.cpp
   MojoCallContext.cpp
-  MojoValue.cpp
   Python.cpp
   Random.cpp
   Support.cpp
@@ -36,6 +35,7 @@ add_modular_library(KGENCompilerRT
   MSupport
   MSupportML
   MThreading
+  Runtime
 )
 
 target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT -DMAX_CONFIG_SECTION=${MAX_CONFIG_SECTION})
@@ -55,6 +55,7 @@ add_modular_library(KGENCompilerRTShared SHARED
   MSupportGlobals
   MSupportML
   MThreading
+  Runtime
 )
 
 target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT -DMAX_CONFIG_SECTION=${MAX_CONFIG_SECTION})
@@ -113,6 +114,7 @@ set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.LLCLRuntime>
   $<TARGET_OBJECTS:obj.LLCLSupport>
   $<TARGET_OBJECTS:obj.CUDASupport>
+  $<TARGET_OBJECTS:obj.Runtime>
 )
 
 if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
