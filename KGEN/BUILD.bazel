@@ -1075,8 +1075,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Pipeline",
-    srcs = glob(["lib/Pipeline/*.cpp"]),
+    srcs = glob(["lib/Compiler/Pipeline/*.cpp"]),
+    hdrs = glob(["lib/Compiler/Pipeline/*.h"]),
     deps = [
+        ":CompilerHeaders",
         ":Elaborator",
         ":KGENPassesIncGen",
         ":LowerLIT",
