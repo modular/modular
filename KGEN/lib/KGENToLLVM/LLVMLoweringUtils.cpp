@@ -224,7 +224,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     SmallVector<Type> types;
     types.reserve(elements.size());
     for (TypedAttr elementType : elements) {
-      auto constant = dyn_cast<ConcreteTypeConstantAttr>(elementType);
+      auto constant = dyn_cast<TypeConstantAttr>(elementType);
       if (!constant)
         return {};
       Type converted = convertType(constant.getMlirType());

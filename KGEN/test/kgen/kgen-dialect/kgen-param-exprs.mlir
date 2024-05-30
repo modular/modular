@@ -17,7 +17,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
 
     // Type folding.
     // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.type
-    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<:type mlirType>> : !kgen.type
+    use4 = #kgen.type<!kgen.paramref<:type mlirType>> : !kgen.type
 
 
   } : () -> ()
@@ -813,6 +813,6 @@ kgen.generator @get_likage_name() {
 // CHECK-LABEL: @unification
 kgen.generator @unification() {
   // CHECK: T0: type = <@unification : !metatype.type>
-  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.concretetype.constant<!lit.declref<@unification, !metatype.type>>)>
+  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.type<!lit.declref<@unification, !metatype.type>>)>
   kgen.return
 }

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
+
 fn mogg_register(x: StringLiteral):
     pass
 
@@ -16,7 +17,9 @@ struct MemoryType:
 struct ParamType[a: Int]:
     pass
 
-# CHECK: [[PARAM:#.*]] = #kgen.parameterizedtype.constant<!lit.declref<#ParamType <:!Int a>
+
+# CHECK: [[PARAM:#.*]] = #kgen.type<!lit.declref<#ParamType <:!Int a>
+
 
 # CHECK: lit.func @"custom_op_args
 # CHECK-NEXT: mogg.arg_conformances = [#kgen<exprs[{{.*}}]>, #kgen<exprs[{{.*}}]>]

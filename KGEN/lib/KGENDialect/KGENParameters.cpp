@@ -184,7 +184,7 @@ void ParameterCollector::collectUsesFromAttr(
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
   // Parameterized type constants are by definition unresolved expressions.
-  bool hasNestedConstExpr = isa<ParameterizedTypeConstantAttr>(attr);
+  bool hasNestedConstExpr = false;
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.

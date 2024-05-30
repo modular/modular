@@ -313,84 +313,29 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConcreteTypeConstantAttr
+// TypeConstantAttr
 //===----------------------------------------------------------------------===//
 
 def VTableParam
   : DefaultValuedParameter<"VTableAttr", "VTableAttr::get($_ctxt, {})">;
 
-def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
-    "concretetype.constant"> {
-  let summary = "Constant !kgen.type MLIR type without parameter references";
+def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
+  let summary = "Constant !kgen.type MLIR type";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
     `TypeAttr` in that it is an attribute that refers to a type.  The difference
     is that it is a `TypedAttr` so it can be a parameter expression, and has
     'kgen.type' itself.
 
-    The bound type must not have type parameters.
-
     Example:
 
     ```mlir
-    #kgen.concretetype.constant<!myType, vtable={
+    #kgen.type<!myType, vtable={
       "method1" : <() -> index> = @method1,
       "method2" : <() -> index> = @method2
     }> : !kgen.type
     ```
   }];
-
-  // Inherit from a base class.
-  let cppBaseClassName = "TypeConstantAttr";
-
-  let parameters = (ins
-    "Type":$mlirType,
-    AttributeSelfTypeParameter<"", "Type">:$type,
-    VTableParam:$vTable
-  );
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type),
-                                   "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type,
-                                        "VTableAttr":$vtable),
-                                   "", "TypedAttr">,
-  ];
-
-  let extraClassDeclaration = [{
-    /// A specific builder used to build the attribute from a bytecode context,
-    /// providing a slightly different context from the normal builder.
-    static ConcreteTypeConstantAttr getFromBytecode(
-        Type mlirType, Type type, VTableAttr vtable);
-  }];
-
-  let assemblyFormat =
-    "`<` $mlirType (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
-}
-
-//===----------------------------------------------------------------------===//
-// ParameterizedTypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-/// This represents a parameter whose value is an MLIR type.  It is like
-/// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
-/// refers to an MLIR type and has 'kgen.type' itself.
-def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
-    "ParameterizedTypeConstant", "parameterizedtype.constant"> {
-  let summary = "Constant !kgen.type MLIR type with parameter references";
-  let description = [{
-    This represents a parameter whose value is an MLIR type.  It is similar to
-    `TypeAttr` in that it is an attribute refers to a type.  The difference is
-    that it is a `TypedAttr` so it can be a parameter expression, and has
-    'kgen.type' itself.
-
-    The bound type is known to have type parameters.
-  }];
-
-  // Inherit from a base class and re-use ConcreteTypeConstantAttr's storage.
-  let cppBaseClassName = "TypeConstantAttr";
-  let storageClass = KGEN_ConcreteTypeConstantAttr.storageClass;
-  let genStorageClass = 0;
 
   let parameters = (ins
     "Type":$mlirType,
@@ -402,9 +347,6 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
     AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$mlirType,
                                         "Type":$type, "VTableAttr":$vtable),
                                    "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$mlirType,
-                                        "Type":$type),
-                                   "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type),
                                    "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type,
@@ -415,7 +357,7 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static ParameterizedTypeConstantAttr getFromBytecode(
+    static TypeConstantAttr getFromBytecode(
         Type mlirType, Type type, VTableAttr vtable);
   }];
 

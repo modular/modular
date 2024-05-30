@@ -693,8 +693,7 @@ struct ConvertPOPPackLoad : ConvertPOPToLLVMPattern<PackLoadOp> {
          llvm::enumerate(origInputPack.getValues(), resultType.getBody())) {
       Value elt =
           rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), inputStruct, idx);
-      // Dig the original pointer type out of
-      // #kgen.concretetype.constant<!kgen.pointer<i32>>
+      // Dig the original pointer type out of #kgen.type<!kgen.pointer<i32>>.
       Type origPointerTy = cast<TypeConstantAttr>(origTypeAttr).getMlirType();
       elt = rewriter
                 .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
