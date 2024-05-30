@@ -14,7 +14,7 @@ fn takeClosure(formatter: Coroutine[Int]) -> Int:
 
 
 @no_inline
-fn makeClosure(x: Int) -> Coroutine[Int]:
+fn makeClosure(x: Int) -> Coroutine[Int, __lifetime_of()]:
     var z = x * x
 
     @__copy_capture(z)

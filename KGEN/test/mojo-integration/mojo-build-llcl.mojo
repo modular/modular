@@ -23,11 +23,11 @@ fn main():
 
     @parameter
     async fn test_llcl_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
-        return await rt.create_task[Int](
-            test_llcl_add[1](a)
-        ) + await rt.create_task[Int](test_llcl_add[2](b))
+        return await rt.create_task(test_llcl_add[1](a)) + await rt.create_task(
+            test_llcl_add[2](b)
+        )
 
     with Runtime(4) as rt:
-        var task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
+        var task = rt.create_task(test_llcl_add_two_of_them(rt, 10, 20))
         # CHECK: 33
         print(task.wait())

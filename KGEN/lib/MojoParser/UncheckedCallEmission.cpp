@@ -1016,7 +1016,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
 /// function looks up the corresponding coroutine type and binds its result
 /// type.
 static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
-                                     const ExprNode *expr, SignatureType sig) {
+                                     const ExprNode *expr, SignatureType sig,
+                                     TypedAttr lifetime) {
   auto [declScope, _, shared] = scopeInfo;
   SMLoc loc = expr->getLoc();
   ASTDecl *decl = sig.isThrows()
@@ -1033,6 +1034,7 @@ static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
   // Bind the result type to the base coroutine type.
   ParamBindings paramBinds(scopeInfo);
   paramBinds.add(expr, PValue(resultType));
+  paramBinds.add(expr, lifetime);
 
   auto structOp = cast<StructDeclOp>(decl);
   ASTType coroType = structOp.bindReference();
@@ -1094,6 +1096,22 @@ shouldEmitParameterCall(LITSignatureType calleeSig,
          (llvm::any_of(argumentValues, isNonMaterializable) ||
           ASTType(calleeSig.getUserResultType())
               .getNonmaterializableTarget(shared));
+}
+
+/// Compute the union of all references lifetimes in a set of function call
+/// arguments.
+static TypedAttr computeArgumentsLifetime(AsyncCallOp call) {
+  SmallVector<std::pair<Value, OperandEffect>> operands;
+  SmallVector<ResultEffect> results;
+  SmallVector<TypedAttr> lifetimes;
+  // Check lifetime accesses on the types. We need to forward this to the
+  // coroutine since it is a transitive capture.
+  LIT::getOperationEffects(*call, operands, results, lifetimes);
+  // Collect the implicit lifetimes of the arguments.
+  for (Value value : call.getOperands())
+    if (auto ref = dyn_cast<RefType>(value.getType()))
+      lifetimes.push_back(ref.getLifetime());
+  return LifetimeUnionAttr::get(call.getContext(), lifetimes);
 }
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
@@ -1329,8 +1347,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // `!co.routine<T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(loc, target.get(),
                                                implicitLifetimes, callArgs);
-      ASTType coroType =
-          getBoundCoroutineType(getScopeInfo(), callExpr, calleeSig);
+      ASTType coroType = getBoundCoroutineType(
+          getScopeInfo(), callExpr, calleeSig, computeArgumentsLifetime(call));
       if (!coroType) {
         dest.resetForError();
         return {};
