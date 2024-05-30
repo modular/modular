@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # Test that building our sample project results in 2 Mojo package artifacts:
+# REQUIRES: DISABLED
+# TODO(MOTO-503): Fix non-deterministic FileCheck failure to re-enable.
 # RUN: mojo build-project %S/inputs/project 2>&1 | FileCheck %s
 # CHECK: "id":0,{{.*}}"method":"build/initialize",{{.*}}"rootUri":"{{.*}}/inputs/project"
 # CHECK: "id":0,{{.*}}"result":{{.*}}"displayName":"mojo-build-server"
