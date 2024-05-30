@@ -768,6 +768,12 @@ EnvAttr EnvAttr::extend(EnvAttr attr) {
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
+ParamOperatorAttr
+ParamOperatorAttr::getFromBytecode(POC opcode, ArrayRef<TypedAttr> operands,
+                                   Type type) {
+  return Base::get(type.getContext(), opcode, operands, type);
+}
+
 static FailureOr<SignatureType>
 verifyBindSignature(ArrayRef<TypedAttr> operands,
                     function_ref<InFlightDiagnostic()> emitError) {

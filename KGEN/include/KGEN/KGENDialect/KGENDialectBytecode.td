@@ -166,7 +166,7 @@ def EnvAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$values
 )>;
 
-def ParamOperatorAttr : DialectAttribute<(attr
+def WrappedParamOperatorAttr : DialectAttribute<(attr
   EnumAttr<"POC">:$opcode,
   TypedAttrArray:$operands,
   Type:$type
@@ -240,7 +240,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     SymbolConstantAttr,
     TargetParamAttr,
     EnvAttr,
-    ParamOperatorAttr,
+    WrappedParamOperatorAttr,
     MLIROpAttr,
     DecoratorsAttr,
     ExportKindAttr,

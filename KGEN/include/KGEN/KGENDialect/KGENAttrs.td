@@ -822,6 +822,11 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     /// Return (x-y) which is the same as (add x, (neg y)).  The `operand` value
     /// must have `index` type.
     static TypedAttr getSub(TypedAttr lhs, TypedAttr rhs);
+
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static ParamOperatorAttr getFromBytecode(
+        POC opcode, ArrayRef<TypedAttr> operands, Type type);
   }];
 }
 
