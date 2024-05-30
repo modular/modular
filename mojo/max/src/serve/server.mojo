@@ -170,7 +170,7 @@ struct InferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
         self._impl.run()
 
         var rt = Runtime()
-        var tg = TaskGroup(rt)
+        var tg = TaskGroup[__lifetime_of()](rt)
         for _ in range(self._num_listeners):
             _ = tg.create_task(listen())
 
