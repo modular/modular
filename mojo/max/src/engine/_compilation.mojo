@@ -6,7 +6,7 @@
 
 from collections import Optional
 from memory.unsafe import DTypePointer
-from sys.ffi import DLHandle
+from sys.ffi import DLHandle, C_char
 from sys import external_call
 from collections import List
 from pathlib import Path
@@ -147,17 +147,17 @@ struct TorchInputSpec(Movable):
         engine_lib: DLHandle,
     ) raises:
         var converted_shape = Self.shape_type()
-        var converted_dim_names = List[DTypePointer[DType.int8]]()
+        var converted_dim_names = List[UnsafePointer[C_char]]()
         converted_shape.reserve(len(shape))
         for dim in shape:
             if dim[].is_static():
                 converted_shape.append(dim[].static_value())
-                converted_dim_names.append(DTypePointer[DType.int8]())
+                converted_dim_names.append(UnsafePointer[C_char]())
             else:
                 converted_shape.append(
                     CTensorSpec.get_dynamic_dimension_value(engine_lib)
                 )
-                converted_dim_names.append(dim[]._name.unsafe_ptr())
+                converted_dim_names.append(dim[]._name.unsafe_cstr_ptr())
 
         self.shape = converted_shape^
         self.dtype = dtype

@@ -26,7 +26,7 @@ fn _write_int[
     type: Intable
 ](object: Reference[type, _, _, AddressSpace.GENERIC], f: FileHandle) raises:
     """Writes an int value to a file."""
-    var ptr = UnsafePointer(object[]).bitcast[Int8]()
+    var ptr = UnsafePointer(object[]).bitcast[UInt8]()
     var size = sizeof[type]()
     f._write(ptr, size)
 
@@ -139,9 +139,11 @@ def save(tensor_dict: TensorDict, path: Path):
         # Write out each tensor.
         for i in range(len(tensor_keys)):
             var key = tensor_keys[i]
-            var ptr = tensor_dict._get(key).ptr
+            var ptr = UnsafePointer[UInt8]._from_dtype_ptr(
+                tensor_dict._get(key).ptr
+            )
             var tensor_size = tensor_dict._get(key).spec.bytecount()
-            f._write(ptr.bitcast[DType.int8](), tensor_size)
+            f._write(ptr, tensor_size)
 
 
 @always_inline
