@@ -85,7 +85,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     OptionalAttr<SymbolRefAttr>:$precompiledBodyRef,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
+    OptionalAttr<TypeAttr>:$coroutineType
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -114,7 +115,8 @@ def KGEN_FuncOp : KGENOp<"func", [
       if (!llvmMetadata)
         llvmMetadata = DictionaryAttr::get(name.getContext());
       build($_builder, $_state, name, signature, decorators, inlineLevel,
-            exportKind, /*precompiledBodyRef=*/{}, llvmMetadata);
+            exportKind, /*precompiledBodyRef=*/{},
+            llvmMetadata, /*coroutineType=*/{});
     }]>,
   ];
 }
