@@ -125,7 +125,10 @@ struct TensorDict(Sized):
         Returns:
             A copy of the tensor.
         """
-        return self._items[key].copy_to_tensor[type]()
+        try:
+            return self._items[key].copy_to_tensor[type]()
+        except e:
+            raise "Error when getting key '" + key + "': " + str(e)
 
     fn _set(inout self, key: String, value: _CheckpointTensor):
         """Adds or updates a tensor in the dictionary.
@@ -156,7 +159,10 @@ struct TensorDict(Sized):
         Returns:
             The tensor.
         """
-        return self._items.pop(key).to_tensor[type]()
+        try:
+            return self._items.pop(key).to_tensor[type]()
+        except e:
+            raise "Error when getting key '" + key + "': " + str(e)
 
     fn __len__(self) -> Int:
         return len(self._items)
