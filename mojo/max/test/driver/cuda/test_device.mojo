@@ -65,7 +65,7 @@ def test_copy_d2d():
     input_cpu = input^.get_device_memory()
     var gpu_tensor1 = input_cpu.copy_to(gpu)
     var gpu_tensor2 = gpu.allocate(gpu_tensor1.get_tensor_spec())
-    gpu_tensor1.copy_to(gpu_tensor2)
+    gpu_tensor1.copy_into(gpu_tensor2)
     var output_cpu = gpu_tensor2.copy_to(cpu)
 
     input = input_cpu^.get_tensor[DType.float32, 2]()

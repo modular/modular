@@ -204,7 +204,7 @@ def test_copy():
             val += 1
 
     src_dev_tensor = src^.get_device_memory()
-    src_dev_tensor.copy_to(dst_dev_tensor)
+    src_dev_tensor.copy_into(dst_dev_tensor)
     var dst_dev_tensor2 = src_dev_tensor.copy_to(cpu2)
 
     var dst = dst_dev_tensor^.get_tensor[DType.float32, 2]()
