@@ -126,7 +126,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
 
   // Check reference downcasting.  The only thing allowed to disagree is the
   // lifetime set / mutability.
-  if (auto fromRef = dyn_cast<RefType>(fromType))
+  if (auto fromRef = dyn_cast<RefType>(fromType)) {
     if (auto toRef = dyn_cast<RefType>(toType)) {
       // Element types and address space have to be exactly equal.
       if (fromRef.getAddressSpace() != toRef.getAddressSpace())
@@ -166,6 +166,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
           toLifetimeType);
       return toLifetime == lifetimeUnion;
     }
+  }
 
   auto from = dyn_cast<LITSignatureType>(fromType);
   auto to = dyn_cast<LITSignatureType>(toType);

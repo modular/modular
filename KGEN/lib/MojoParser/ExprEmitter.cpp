@@ -961,6 +961,11 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       canConvertWithRebind(rvType, requiredType, shared))
     return true;
 
+  // Lifetimes and lifetime sets can convert between each other.
+  if (isa<LifetimeType, LifetimeSetType>(rvType) &&
+      isa<LifetimeType, LifetimeSetType>(requiredType))
+    return true;
+
   // Check to see if we already cached this convertibility check.
   std::optional<bool> cache =
       shared.getCachedImplicitConvertibility(rvType, requiredType);
@@ -1403,6 +1408,22 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
             value = rebindValue({cValue, expr}, requiredType);
             return emitResult(value, expr, dest);
           }
+        }
+      }
+
+      // Handle conversions between lifetimes and lifetime sets.
+      if (isa<LifetimeType, LifetimeSetType>(rvalueType) &&
+          isa<LifetimeType, LifetimeSetType>(requiredType)) {
+        // This can only be done in the parameter domain.
+        if (TypedAttr value = cValue.getIfPValue()) {
+          if (isa<LifetimeType>(rvalueType)) {
+            value = LifetimeSetAttr::get(value,
+                                         cast<LifetimeSetType>(requiredType));
+          } else {
+            value = LifetimeSetUnionAttr::get(value,
+                                              cast<LifetimeType>(requiredType));
+          }
+          return emitResult(value, expr, dest);
         }
       }
 

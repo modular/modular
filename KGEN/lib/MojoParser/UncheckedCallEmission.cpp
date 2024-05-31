@@ -1125,7 +1125,7 @@ static TypedAttr computeArgumentsLifetime(AsyncCallOp call) {
   for (Value value : call.getOperands())
     if (auto ref = dyn_cast<RefType>(value.getType()))
       lifetimes.push_back(ref.getLifetime());
-  return LifetimeUnionAttr::get(call.getContext(), lifetimes);
+  return LifetimeSetAttr::get(call.getContext(), lifetimes);
 }
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
