@@ -677,6 +677,9 @@ def LifetimeSetAttr : LITTypedAttr<"LifetimeSet", "lifetime.set"> {
   let builders = [
     // Override the default builder used by the generated parser.
     AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeSetType":$type)>,
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$operands,
+                                        "LifetimeSetType":$type)>,
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands)>
   ];
 
   let extraClassDeclaration = [{
@@ -684,6 +687,42 @@ def LifetimeSetAttr : LITTypedAttr<"LifetimeSet", "lifetime.set"> {
     /// providing a slightly different context from the normal builder.
     static LifetimeSetAttr getFromBytecode(
         ArrayRef<TypedAttr> operands, LifetimeSetType type);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeSetUnionAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeSetUnionAttr : LITTypedAttr<"LifetimeSetUnion",
+                                        "lifetime.set.union"> {
+  let summary = "converts a lifetime set to a single coarse lifetime";
+  let description = [{
+    The `#lit.lifetime.set.union` attribute converts a `!lit.lifetime.set` value
+    to a single coarse-grained lifetime value by converting passing the elements
+    into a `#lit.lifetime.union`.
+  }];
+
+  let parameters = (ins "TypedAttr":$value,
+                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+  let assemblyFormat = "`<` $value `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser.
+    AttrBuilder<(ins "TypedAttr":$value, "LifetimeType":$type), [{
+      return get(value, type);
+    }], "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value,
+                                        "LifetimeType":$type),
+    [{}], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static LifetimeSetUnionAttr getFromBytecode(
+        TypedAttr value, LifetimeType type);
   }];
 }
 

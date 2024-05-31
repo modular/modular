@@ -163,6 +163,11 @@ def WrappedLifetimeSetAttr : DialectAttribute<(attr
   ConcreteType<"LifetimeSetType">:$type
 )>;
 
+def WrappedLifetimeSetUnionAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  ConcreteType<"LifetimeType">:$type
+)>;
+
 def UnresolvedAliasValueAttr : DialectAttribute<(attr
   Type:$type
 )>;
@@ -223,6 +228,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     LifetimeAttr,
     ImplicitLifetimeRefAttr,
     WrappedLifetimeSetAttr,
+    WrappedLifetimeSetUnionAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
     WrappedStructExtractAttr,

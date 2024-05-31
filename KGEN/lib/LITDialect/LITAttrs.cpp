@@ -813,6 +813,16 @@ LifetimeSetAttr LifetimeSetAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
 LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
                                      ArrayRef<TypedAttr> operands,
                                      LifetimeSetType type) {
+  return get(operands, type);
+}
+
+LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
+                                     ArrayRef<TypedAttr> operands) {
+  return get(operands, LifetimeSetType::get(ctx));
+}
+
+LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
+                                     LifetimeSetType type) {
   SmallVector<TypedAttr> newOperands;
   for (TypedAttr operand : operands) {
     // Recursively flatten sets into each other. We know this one is already
@@ -845,7 +855,25 @@ LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
   });
   removeDuplicates(newOperands);
 
-  return Base::get(ctx, newOperands, type);
+  return Base::get(type.getContext(), newOperands, type);
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeSetUnionAttr
+//===----------------------------------------------------------------------===//
+
+LifetimeSetUnionAttr LifetimeSetUnionAttr::getFromBytecode(TypedAttr value,
+                                                           LifetimeType type) {
+  return Base::get(type.getContext(), value, type);
+}
+
+TypedAttr LifetimeSetUnionAttr::get(TypedAttr value, LifetimeType type) {
+  // Fold `set.union(set) -> union`.
+  if (auto set = ::dyn_cast<LifetimeSetAttr>(value)) {
+    return LifetimeMutCastAttr::get(
+        LifetimeUnionAttr::get(type.getContext(), set.getOperands()), type);
+  }
+  return Base::get(type.getContext(), value, type);
 }
 
 //===----------------------------------------------------------------------===//
