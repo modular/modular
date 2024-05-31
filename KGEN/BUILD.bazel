@@ -1408,7 +1408,7 @@ $(location :gen_maptlotlib_initialization_tool) \
     tools = [":gen_maptlotlib_initialization_tool"],
 )
 
-modular_cc_library(
+modular_shared_library(
     name = "MojoJupyter",
     srcs = glob(["lib/MojoJupyter/*.cpp"]) + [":gen_maptlotlib_initialization"],
     hdrs = glob([
