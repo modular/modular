@@ -590,7 +590,8 @@ static TypedAttr getOrFoldBindType(TypedAttr typeValue,
     if (auto decl = dyn_cast<DeclRefType>(typeCst.getMlirType())) {
       auto bound =
           DeclRefType::get(decl.getSymbol(), type.getParamValues(), type);
-      return TypeConstantAttr::get(bound, type);
+      // DeclRefType has identical type/value representation.
+      return TypeConstantAttr::get(bound, bound, type);
     }
   }
   return BindTypeAttr::Base::get(type.getContext(), typeValue, values, type);

@@ -126,6 +126,12 @@ kgen.generator @trait() {
   kgen.param.declare type: trait<@Trait> = <@MyStructParams<1, :dtype f32, :type i32>>
   // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, {"method" : () -> () = @method}]>
   kgen.param.declare vtable: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, {"method" : () -> () = @method}]>
+  // CHECK-NEXT: trait<@Trait> = <@MyStructParams<1, :dtype f32, :type i32>>
+  kgen.param.declare type_same: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<1, :dtype f32, :type i32>]>
+  // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<2, :dtype f64, :type i64>]>
+  kgen.param.declare type_diff: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<2, :dtype f64, :type i64>]>
+  // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<2, :dtype f64, :type i64>, {"method" : () -> () = @method}]>
+  kgen.param.declare vtable_diff: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<2, :dtype f64, :type i64>, {"method" : () -> () = @method}]>
   kgen.return
 }
 

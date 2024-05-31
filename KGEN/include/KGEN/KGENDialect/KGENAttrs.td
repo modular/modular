@@ -327,26 +327,48 @@ def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
     is that it is a `TypedAttr` so it can be a parameter expression, and has
     'kgen.type' itself.
 
+    The `typeValue` field encodes the value-representation of a type, while the
+    `mlirType` field encodes the type-representation of the type.
+
     Example:
 
     ```mlir
-    #kgen.type<!myType, {
+    // Default asm format.
+    #kgen.type<!myTypeValue, !myMlirType, {
       "method1" : <() -> index> = @method1,
       "method2" : <() -> index> = @method2
     }> : !kgen.type
+
+    // MlirType is omitted if same as typeValue.
+    #kgen.type<!myTypeValue, {
+      "method1" : <() -> index> = @method1
+    }> : !kgen.type
+
+    // VTable is omitted if empty.
+    #kgen.type<!myTypeValue> : !kgen.type
     ```
   }];
 
   let parameters = (ins
+    "Type":$typeValue,
     "Type":$mlirType,
     AttributeSelfTypeParameter<"", "Type">:$type,
     VTableParam:$vTable
   );
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$mlirType,
+    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$typeValue,
+                                        "Type":$mlirType, "Type":$type,
+                                        "VTableAttr":$vtable),
+                                   "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$typeValue, "Type":$mlirType,
+                                        "Type":$type),
+                                   "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$typeValue, "Type":$mlirType,
                                         "Type":$type, "VTableAttr":$vtable),
                                    "", "TypedAttr">,
+    // Builders for identical typeValue & mlirType cases.
+    // Only available temporarily until proper the type/value-domain split.
     AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type),
                                    "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type,
@@ -358,7 +380,10 @@ def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static TypeConstantAttr getFromBytecode(
-        Type mlirType, Type type, VTableAttr vtable);
+        Type typeValue, Type mlirType, Type type, VTableAttr vtable);
+
+    /// Whether the type constant has identical value & type representation.
+    bool hasIdenticalRepresentation();
   }];
 
   let hasCustomAssemblyFormat = 1;

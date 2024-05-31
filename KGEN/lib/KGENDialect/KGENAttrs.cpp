@@ -195,32 +195,46 @@ void TypeConstantAttr::print(AsmPrinter &p) const {
   p << '>';
 }
 
-TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type mlirType, Type type,
-                                VTableAttr vtable) {
+TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
+                                Type type, VTableAttr vtable) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
   if (auto refType = ::dyn_cast<ParamRefType>(mlirType))
-    if (vtable.getEntries().empty())
+    if (mlirType == typeValue && vtable.getEntries().empty())
       return refType.getParam();
 
-  return Base::get(ctx, mlirType, type, vtable);
+  return Base::get(ctx, typeValue, mlirType, type, vtable);
+}
+
+TypedAttr TypeConstantAttr::get(Type typeValue, Type mlirType, Type type,
+                                VTableAttr vtable) {
+  return get(mlirType.getContext(), typeValue, mlirType, type, vtable);
+}
+
+TypedAttr TypeConstantAttr::get(Type typeValue, Type mlirType, Type type) {
+  return get(typeValue, mlirType, type, VTableAttr::get(type.getContext(), {}));
 }
 
 TypedAttr TypeConstantAttr::get(Type mlirType, Type type, VTableAttr vtable) {
-  return get(mlirType.getContext(), mlirType, type, vtable);
+  return get(mlirType, mlirType, type, vtable);
 }
 
 TypedAttr TypeConstantAttr::get(Type mlirType, Type type) {
-  return get(mlirType, type, VTableAttr::get(type.getContext(), {}));
+  return get(mlirType, mlirType, type);
 }
 
-TypeConstantAttr TypeConstantAttr::getFromBytecode(Type mlirType, Type type,
+TypeConstantAttr TypeConstantAttr::getFromBytecode(Type typeValue,
+                                                   Type mlirType, Type type,
                                                    VTableAttr vtable) {
-  return Base::get(mlirType.getContext(), mlirType, type, vtable);
+  return Base::get(mlirType.getContext(), typeValue, mlirType, type, vtable);
 }
 
 bool TypeConstantAttr::isConstant() const {
   return !isParameterizedType(getMlirType());
+}
+
+bool TypeConstantAttr::hasIdenticalRepresentation() {
+  return getMlirType() == getTypeValue() && getVTable().getEntries().empty();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2116,7 +2130,8 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
 
   // Fold rebinds of a DeclRefType. Unify metatypes so information is not lost.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(input))
-    return TypeConstantAttr::get(typeCst.getMlirType(), resultType);
+    return TypeConstantAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
+                                 resultType);
   return {};
 }
 
@@ -2328,6 +2343,7 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
       return {};
 
     results.push_back(TypeConstantAttr::get(
+        cast<PointerType>(eltCst.getTypeValue()).getElementType(),
         cast<PointerType>(eltCst.getMlirType()).getElementType(),
         resultEltType));
   }
