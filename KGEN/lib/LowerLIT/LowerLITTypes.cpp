@@ -152,9 +152,11 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
   addReplacement([=](LifetimeMutCastAttr) { return emptyStruct; });
   addReplacement([=](InvalidRefLifetimeAttr) { return emptyStruct; });
   addReplacement([=](ImplicitLifetimeRefAttr) { return emptyStruct; });
+  addReplacement([=](LifetimeSetAttr) { return emptyStruct; });
 
   // !lit.lifetime -> !kgen.struct<()>
   addReplacement([=](LifetimeType) { return emptyStructType; });
+  addReplacement([=](LifetimeSetType) { return emptyStructType; });
 
   using AttrResult = std::pair<Attribute, WalkResult>;
   auto noneType = KGEN::NoneType::get(ctx);
