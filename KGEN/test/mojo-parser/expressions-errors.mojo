@@ -454,7 +454,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, b, 0]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
-fn transfer_warnings():
+fn transfer_warnings(borrowed_arg: CopyAndInitMemType):
   var mem3 = CopyAndInitMemType()
 
   # Test pointless transfers from RValues and trivial values.
@@ -470,11 +470,13 @@ fn transfer_warnings():
   var someInt = 4
   _ = someInt^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
 
-  # Check lifetimes doesn't track trivial LValue's either.
-  # https://github.com/modularml/mojo/issues/1604
   var someInt2 = 4
   someInt2 = 4
   _ = someInt2^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
+
+  # MOCO-757: Transfer ^ of borrowed arg leads to double free
+  # expected-error @+1 {{cannot transfer out of immutable reference}}
+  _ = borrowed_arg^
 
 # Issue #1708: https://github.com/modularml/mojo/issues/1708
 # Issue #1699: https://github.com/modularml/mojo/issues/1699

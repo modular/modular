@@ -2569,6 +2569,12 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return emitter.emitResult(SRValue(newVal), this, dest);
   }
 
+  // If the memory type isn't mutable, then we can't transfer out of it.
+  if (!cast<RefType>(value.getType()).isMutableKnown(true)) {
+    emitter.emitError(getLoc(), "cannot transfer out of immutable reference");
+    return {};
+  }
+
   // For memory values, we create a new lifetime since this is a conceptually
   // new thing and the old thing is dead.
   StringAttr lifetimeAttr = emitter.declScope.mangleParamName(
