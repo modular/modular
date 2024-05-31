@@ -18,7 +18,9 @@ enum AsyncContinuationField {
   CallbackFn = 2,
   ClosureState = 3,
   Promise = 4,
-  Frame = 5
+  ErrorSlot = 5,
+  ResultSlot = 6,
+  Frame = 7
 };
 
 } // namespace M::KGEN

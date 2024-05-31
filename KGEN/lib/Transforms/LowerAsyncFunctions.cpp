@@ -52,7 +52,10 @@ public:
 /// frame type so that we can generate loads and stores and state information so
 /// we can reuse loaded frame variables when legal.
 struct FrameData {
-  FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo);
+  /// Error value and result value are excluded from the frame
+  FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
+            Value errorValue, Value resultValue);
+  FrameData() {}
 
   /// Given a value, determine the state of its defining op or block argument.
   int getDefinitionStateForValue(Value operand) const;
@@ -74,6 +77,8 @@ struct COTypes {
       return callbackSignature;
     case Promise:
     case ClosureState:
+    case ErrorSlot:
+    case ResultSlot:
       return opaquePointerType;
     case Frame:
       return StructType::get(cxt, frameData.frameTypes);
@@ -91,12 +96,14 @@ public:
   }
   Type getContinuationType() const { return continuationType; }
   FrameData &getFrameData() const { return frameData; }
+  Type getHeaderType() const { return headerType; }
 
 private:
   Type continuationType;
   Type resumeSignatureType;
   Type opaquePointerType;
   Type callbackSignature;
+  Type headerType;
   MLIRContext *cxt;
   FrameData &frameData;
 };
@@ -115,8 +122,10 @@ using VirtualBlock = Operation *;
 /// only extract that variable once for that state.
 class FrameVariables {
 public:
-  FrameVariables(ImplicitLocOpBuilder &builder, FrameData &frameData)
-      : builder(builder), frameData(frameData) {}
+  FrameVariables(ImplicitLocOpBuilder &builder, FrameData &frameData,
+                 Value errorValue, Value resultValue)
+      : builder(builder), frameData(frameData), errorValue(errorValue),
+        resultValue(resultValue) {}
 
   /// Given the original operand, return the value extracted from the frame. Use
   /// a previously extracted value if available.
@@ -134,6 +143,8 @@ private:
   ImplicitLocOpBuilder &builder;
   FrameData &frameData;
   DenseMap<Value, DenseMap<int, Value>> frameVariables;
+  Value errorValue;
+  Value resultValue;
 };
 
 /// The LowerAsyncBuildContext is responsible for transforming an async function
@@ -151,7 +162,8 @@ struct LowerAsyncBuildContext {
   /// resume function.
   LoweredAsyncFunction lowerAsyncFunction(FuncOp funcOp,
                                           mlir::DominanceInfo &domInfo,
-                                          COTypes &coTypes);
+                                          COTypes &coTypes, Value errorValue,
+                                          Value memoryResultValue);
 
 private:
   /// Given the resume function, the empty ramp function, the original async
@@ -161,7 +173,8 @@ private:
   /// Given the empty resume function, the original async function, and the
   /// coroutine types, populate the resume function.
   void populateResumeFunction(FuncOp resumeFunction, FuncOp funcOp,
-                              COTypes &coTypes);
+                              COTypes &coTypes, Value errorValue,
+                              Value memoryResultValue);
   Shared<SymbolTable &> &sharedTable;
   DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
       &asyncFuncToRampFunctions;
@@ -173,14 +186,20 @@ private:
 //===----------------------------------------------------------------------===//
 
 LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
-    FuncOp funcOp, mlir::DominanceInfo &domInfo, COTypes &coTypes) {
+    FuncOp funcOp, mlir::DominanceInfo &domInfo, COTypes &coTypes,
+    Value errorValue, Value memoryResultValue) {
   MLIRContext *cxt = funcOp.getContext();
   Type continuationType = coTypes.getContinuationType();
 
   // Create Ramp Function.
   StringAttr rampName = builder.getStringAttr(funcOp.getSymName() + "_ramp");
+  int start = 0;
+  if (funcOp.isThrows())
+    ++start;
+  if (funcOp.getSignature().hasMemoryOnlyResult())
+    ++start;
   FunctionType rampFunctionType =
-      builder.getFunctionType(funcOp.getBodyRegion().getArgumentTypes(),
+      builder.getFunctionType(funcOp.getSignature().getArguments().slice(start),
                               PointerType::get(continuationType));
   auto rampSignature = SignatureType::get(rampFunctionType);
   builder.setInsertionPoint(funcOp);
@@ -209,7 +228,8 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
       });
 
   populateRampFunction(rampFunction, resumeFunction, funcOp, coTypes);
-  populateResumeFunction(resumeFunction, funcOp, coTypes);
+  populateResumeFunction(resumeFunction, funcOp, coTypes, errorValue,
+                         memoryResultValue);
 
   // Update map.
   SymbolConstantAttr key = SymbolConstantAttr::get(
@@ -225,7 +245,9 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
 
 void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
                                                     FuncOp funcOp,
-                                                    COTypes &coTypes) {
+                                                    COTypes &coTypes,
+                                                    Value errorValue,
+                                                    Value memoryResultValue) {
   Type continuationType = coTypes.getContinuationType();
   FrameData &frameData = coTypes.getFrameData();
   // Take the body of the original function.
@@ -242,7 +264,8 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
   // previous state. For each op, store in frame if it is used downstream
   // across a suspension point. For each block, store arguments if they are
   // accessed across suspnsion points.
-  FrameVariables frameVariables(builder, frameData);
+  FrameVariables frameVariables(builder, frameData, errorValue,
+                                memoryResultValue);
   SmallVector<std::pair<Region *, Block::iterator>> regionsToProcess;
   regionsToProcess.push_back({&resumeFunction.getBodyRegion(),
                               resumeFunction.getBodyRegion().front().begin()});
@@ -270,7 +293,8 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       int useState = frameData.opToState[op];
       for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
         auto entry = frameData.valueToIndexInFrame.find(operand);
-        if (entry != frameData.valueToIndexInFrame.end()) {
+        if (entry != frameData.valueToIndexInFrame.end() ||
+            operand == errorValue || operand == memoryResultValue) {
           // Only extract the value out of the frame if the def was in another
           // state. Block arguments have been cached in frameVariables because
           // region block arguments are processed before body ops.
@@ -396,6 +420,11 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData)
   types[CallbackFn] = typeForField(CallbackFn);
   types[ClosureState] = typeForField(ClosureState);
   types[Promise] = typeForField(Promise);
+  types[ErrorSlot] = typeForField(ErrorSlot);
+  types[ResultSlot] = typeForField(ResultSlot);
+
+  // Header type omits the variable sized frame.
+  headerType = StructType::get(types);
   for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
     types[Frame + index] = frameVariableType;
   continuationType = StructType::get(types);
@@ -409,7 +438,8 @@ Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
                                               Operation *opWithUse,
                                               int useState) {
   auto entry = frameData.valueToIndexInFrame.find(operand);
-  if (entry == frameData.valueToIndexInFrame.end())
+  if (entry == frameData.valueToIndexInFrame.end() && operand != errorValue &&
+      operand != resultValue)
     return {};
   DenseMap<int, Value> &frameVariablesForValue =
       frameVariables.try_emplace(operand).first->getSecond();
@@ -425,11 +455,21 @@ Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
   if (wasExtractedInThisRegion) {
     image = existingImage->getSecond();
   } else {
-    unsigned frameIndex = entry->getSecond();
     builder.setInsertionPoint(opWithUse);
-    Value dataSlot =
-        builder.create<StructGEPOp>(continuation, Frame + frameIndex);
-    image = builder.create<LoadOp>(dataSlot);
+    if (operand == errorValue) {
+      Value dataSlot = builder.create<StructGEPOp>(continuation, ErrorSlot);
+      Value ptr = builder.create<LoadOp>(dataSlot);
+      image = builder.create<PointerBitcastOp>(errorValue.getType(), ptr);
+    } else if (operand == resultValue) {
+      Value dataSlot = builder.create<StructGEPOp>(continuation, ResultSlot);
+      Value ptr = builder.create<LoadOp>(dataSlot);
+      image = builder.create<PointerBitcastOp>(resultValue.getType(), ptr);
+    } else {
+      unsigned frameIndex = entry->getSecond();
+      Value dataSlot =
+          builder.create<StructGEPOp>(continuation, Frame + frameIndex);
+      image = builder.create<LoadOp>(dataSlot);
+    }
     if (wasExtractedInThisState)
       frameVariablesForValue.erase(existingImage);
     frameVariablesForValue.insert({useState, image});
@@ -473,7 +513,8 @@ int FrameData::getDefinitionStateForValue(Value operand) const {
   return opToState.at(definingOp);
 }
 
-FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo) {
+FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
+                     Value errorValue, Value resultValue) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -683,9 +724,14 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo) {
   // state, it must be added to the frame. We need to store the location of the
   // value in the frame so that when we generate the resume function the frame
   // values can be extracted.
+
   originalFunction.walk([&](Operation *operation) {
     int useState = opToState[operation];
     for (Value operand : operation->getOperands()) {
+      // Results and Errors are stored in the header of the continuation, not in
+      // the frame.
+      if (operand == errorValue || operand == resultValue)
+        continue;
       if (valueToIndexInFrame.contains(operand))
         continue;
 
@@ -723,9 +769,26 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     Operation *next = op->getNextNode();
     if (FuncOp funcOp = dyn_cast<FuncOp>(op)) {
       if (funcOp.isAsync()) {
-        FrameData frameData(funcOp, domInfo);
+        Value errorValue;
+        Value memoryResultValue;
+        if (funcOp.isThrows() || funcOp.getSignature().hasMemoryOnlyResult()) {
+          int errorIndex = -1, resultIndex = -1;
+          for (auto [i, convention] :
+               llvm::enumerate(funcOp.getSignature().getArgConventions())) {
+            if (convention == M::KGEN::ArgConvention::ByRefError)
+              errorIndex = i;
+            else if (convention == M::KGEN::ArgConvention::ByRefResult)
+              resultIndex = i;
+          }
+          if (errorIndex > -1)
+            errorValue = funcOp.getArgument(errorIndex);
+          if (resultIndex > -1)
+            memoryResultValue = funcOp.getArgument(resultIndex);
+        }
+        FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue);
         COTypes cotypes(module.getContext(), frameData);
-        buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes);
+        buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
+                                        memoryResultValue);
       }
     }
     op = next;
@@ -733,6 +796,12 @@ void LowerAsyncFunctionsPass::runOnOperation() {
 
   // Apply all other CO lowerings.
   mlir::IRRewriter rewriter(b);
+  FrameData empty;
+  COTypes opaqueCoroutineTypes(module.getContext(), empty);
+  mlir::AttrTypeReplacer replacer;
+  Type headerType = PointerType::get(opaqueCoroutineTypes.getHeaderType());
+  replacer.addReplacement([&](CoroutineType type) { return headerType; });
+  replacer.recursivelyReplaceElementsIn(module, true, true, true);
   module.walk([&](Operation *op) {
     if (auto invokeOp = dyn_cast<InvokeOp>(op)) {
       auto symbol = cast<SymbolConstantAttr>(invokeOp.getCallee());
@@ -745,6 +814,21 @@ void LowerAsyncFunctionsPass::runOnOperation() {
             invokeOp.getOperands());
         rewriter.replaceOp(invokeOp, callOp);
       }
+    } else if (auto setErrorResultOp = dyn_cast<SetByRefErrorAndResultOp>(op)) {
+      rewriter.setInsertionPoint(op);
+      Value continuation = setErrorResultOp.getOperand(0);
+      auto setByRefArgument = [&](Value argument, unsigned index) {
+        Value slot =
+            rewriter.create<StructGEPOp>(op->getLoc(), continuation, index);
+        Value typedSlot = rewriter.create<PointerBitcastOp>(
+            op->getLoc(), KGEN::PointerType::get(argument.getType()), slot);
+        rewriter.create<StoreOp>(op->getLoc(), argument, typedSlot);
+      };
+      if (Value error = setErrorResultOp.getError())
+        setByRefArgument(error, AsyncContinuationField::ErrorSlot);
+      if (Value result = setErrorResultOp.getResult())
+        setByRefArgument(result, AsyncContinuationField::ResultSlot);
+      op->erase();
     }
   });
 }
