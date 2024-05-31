@@ -9,7 +9,9 @@ from layout import LayoutTensor, Layout
 from layout.int_tuple import to_int, depth
 from layout.layout import make_layout
 
+from gpu.id import ThreadIdx
 from gpu.memory import async_copy
+
 from memory.reference import AddressSpace, _GPUAddressSpace
 
 from buffer import NDBuffer
@@ -1302,3 +1304,34 @@ fn copy_to_nd_buffer_masked[
             src_thread_local,
             distribute_mask,
         )
+
+
+# Copies `src_buffer` to `dst_tensor` asynchronously, the work is distributed
+# to `thread_layout` of threads.
+#
+fn copy_from_nd_buffer_async[
+    dst_rank: Int,
+    src_rank: Int,
+    dtype: DType,
+    dst_address_space: AddressSpace,
+    dst_data_layout: Layout,
+    src_buff_shape: DimList,
+    dst_element_layout: Layout,
+    thread_layout: Layout,
+    is_async: Bool = False,
+    swizzle: OptionalReg[_swizzle_signature] = None,
+](
+    dst_tensor: LayoutTensor[
+        dtype,
+        dst_data_layout,
+        dst_rank,
+        address_space=dst_address_space,
+        element_layout=dst_element_layout,
+    ],
+    src_buffer: NDBuffer[dtype, src_rank, src_buff_shape],
+):
+    copy_from_nd_buffer[thread_layout=thread_layout, is_async=True](
+        dst_tensor.distribute[thread_layout](ThreadIdx.x()),
+        src_buffer,
+        ThreadIdx.x(),
+    )
