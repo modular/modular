@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -import-mojo --kgen-print-inline-vtables | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --kgen-print-inline-type-values | FileCheck %s
 
 
 # COM: Just check that conformance checking succeeds.

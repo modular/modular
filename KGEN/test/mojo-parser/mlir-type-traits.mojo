@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo --kgen-print-inline-vtables %s | FileCheck %s
+# RUN: kgen-translate -import-mojo --kgen-print-inline-type-values %s | FileCheck %s
 
 
 trait Composition(Movable, Copyable):

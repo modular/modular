@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo package %S/inputs/test_package -o %T/test_package_trait.mojopkg
-# RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s --kgen-print-inline-vtables | FileCheck %s
+# RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s --kgen-print-inline-type-values | FileCheck %s
 
 from test_package_trait.module import (
     ImplicitlyConformingPackageTrait,

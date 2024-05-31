@@ -1,4 +1,4 @@
-// RUN: kgen-opt -elaborate-generators --kgen-print-inline-vtables %s | FileCheck %s
+// RUN: kgen-opt -elaborate-generators --kgen-print-inline-type-values %s | FileCheck %s
 
 kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32

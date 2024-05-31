@@ -1,5 +1,5 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters --kgen-print-inline-vtables | FileCheck %s
-// RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect --kgen-print-inline-vtables | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters --kgen-print-inline-type-values | FileCheck %s
+// RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect --kgen-print-inline-type-values | FileCheck %s
 
 lit.struct.decl @MyStruct {}
 lit.struct.decl @MyStructParams<a, b: dtype, c: type> {}

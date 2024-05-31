@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --kgen-print-inline-vtables | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
 
 # CHECK-LABEL: lit.trait.decl @Trait
@@ -107,7 +107,9 @@ trait CFMTraitParams:
 
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
-struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](CFMTraitParams):
+struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
+    CFMTraitParams
+):
     # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
         pass

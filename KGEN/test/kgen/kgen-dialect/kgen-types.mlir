@@ -1,5 +1,5 @@
-// RUN: kgen-opt %s | kgen-opt --kgen-print-inline-vtables | FileCheck %s
-// RUN: kgen-opt -emit-bytecode %s | kgen-opt --kgen-print-inline-vtables | FileCheck %s
+// RUN: kgen-opt %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
+// RUN: kgen-opt -emit-bytecode %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 // CHECK-LABEL: @genericSugar<scalar: type, T: type>
 // CHECK-SAME: %arg0: !kgen.pointer<*"scalar">, %arg1: !kgen.pointer<T>

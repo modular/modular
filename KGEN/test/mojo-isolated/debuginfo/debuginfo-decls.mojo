@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s --kgen-print-inline-vtables -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
 
 ##===----------------------------------------------------------------------===##
