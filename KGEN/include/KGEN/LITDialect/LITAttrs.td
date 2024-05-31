@@ -678,6 +678,13 @@ def LifetimeSetAttr : LITTypedAttr<"LifetimeSet", "lifetime.set"> {
     // Override the default builder used by the generated parser.
     AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeSetType":$type)>,
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static LifetimeSetAttr getFromBytecode(
+        ArrayRef<TypedAttr> operands, LifetimeSetType type);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

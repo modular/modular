@@ -118,6 +118,7 @@ using WrappedBindTypeAttr = WrappedAttrType<BindTypeAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<LIT::StructExtractAttr>;
 using WrappedLifetimeUnionAttr = WrappedAttrType<LifetimeUnionAttr>;
 using WrappedLifetimeMutCastAttr = WrappedAttrType<LifetimeMutCastAttr>;
+using WrappedLifetimeSetAttr = WrappedAttrType<LifetimeSetAttr>;
 
 //===----------------------------------------------------------------------===//
 // Utilities
