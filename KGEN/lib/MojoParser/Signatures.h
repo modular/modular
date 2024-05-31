@@ -88,8 +88,9 @@ struct ParsedArgument {
     kConventionInOut = 1,          // inout x
     kConventionOwned = 2,          // owned x
     kConventionBorrowed = 3,       // borrowed x
-    kConventionByRefResult = 4,    // No syntax: result slot
-    kConventionInitSelfResult = 5, // No syntax: __init__(inout self) argument
+    kConventionRef = 4,            // ref [lifetime, addrspace] x
+    kConventionByRefResult = 5,    // No syntax: result slot
+    kConventionInitSelfResult = 6, // No syntax: __init__(inout self) argument
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.
@@ -103,6 +104,8 @@ struct ParsedArgument {
   StringAttr name;
   const ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;
+  // If this is a ref convention, this specifies the lifetime expression.
+  ExprNode *refLifetimeExpr = nullptr;
 
   /// This gets set to true when there is a /diagnosed/ error that should
   /// prevent subsequent references to this argument.

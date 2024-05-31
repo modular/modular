@@ -436,6 +436,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
     return {kValidType, expectedType};
   }
+  case ArgConvention::Ref:
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
     // Ignore the pointer type on memory conventions when matching types.

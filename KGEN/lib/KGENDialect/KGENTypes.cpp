@@ -188,6 +188,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
     return false;
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:
+  case ArgConvention::Ref:
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:

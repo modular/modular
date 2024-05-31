@@ -106,7 +106,8 @@ public:
   /// Value suitable for passing to the callee with the specified convention.
   /// This handles promotion of PValues to dynamic values as needed.
   Value emitPreemittedArgumentAsDynamicValue(ASTExprAnd<AnyValue> argValAndExpr,
-                                             ArgConvention convention);
+                                             ArgConvention convention,
+                                             Type declaredArgType);
 
   /// If this is a call to a @always_inline function (and there's only one
   /// possible callee), this method tries to fold the entire function body into
@@ -227,7 +228,17 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     convention = calleeSig.getPackVarArgConvention(argIdx);
   }
 
+  // Depending on how mutable a ref argument is, we convert it to InOut or
+  // BorrowedInMem for sake of argument passing.
+  if (convention == ArgConvention::Ref) {
+    convention = cast<RefType>(expectedType).isMutableKnown(true)
+                     ? ArgConvention::InOut
+                     : ArgConvention::BorrowedInMem;
+  }
+
   switch (convention) {
+  case ArgConvention::Ref:
+    llvm_unreachable("handled above");
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
@@ -240,7 +251,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ArgConvention::BorrowedInReg:
   case ArgConvention::BorrowedInMem: {
     // by-val arguments are converted to the expected r-value type.
-    if (SignatureType::hasAddress(convention))
+    if (convention == ArgConvention::OwnedInMem ||
+        convention == ArgConvention::BorrowedInMem)
       expectedType = cast<RefType>(expectedType).getElementType();
 
     if (convention == ArgConvention::OwnedInReg ||
@@ -391,7 +403,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // create a variadic or pack sequence.
   SmallVector<Value> args;
   for (auto &operand : remainingOperands) {
-    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention);
+    Value argVal =
+        emitPreemittedArgumentAsDynamicValue(operand, convention, expectedType);
     if (!argVal)
       return failure();
     args.push_back(argVal);
@@ -759,11 +772,22 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 }
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
-    ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention) {
+    ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
+    Type declaredArgType) {
   assert(emitter.builder && "Should only be called in dynamic context");
+
+  // Depending on how mutable a ref argument is, we convert it to InOut or
+  // BorrowedInMem for sake of argument passing.
+  if (convention == ArgConvention::Ref) {
+    convention = cast<RefType>(declaredArgType).isMutableKnown(true)
+                     ? ArgConvention::InOut
+                     : ArgConvention::BorrowedInMem;
+  }
 
   Value arg;
   switch (convention) {
+  case ArgConvention::Ref:
+    assert(0 && "handled above");
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("this is handled specially during call emission");
@@ -1214,13 +1238,13 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         convention = ArgConvention::BorrowedInReg;
     }
 
-    Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(argValAndExpr,
-                                                                 convention);
+    Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
+        argValAndExpr, convention, declaredArgType);
     if (!arg)
       return {};
 
     // See if we have an implicit lifetime bound for this argument.
-    if (SignatureType::hasAddress(convention)) {
+    if (SignatureType::hasImplicitLifetime(convention)) {
       implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
     } else if (calleeSig.isPosVarArg(argIdx)) {
       // If this is a variadic, it will have a wrapper around the ref.

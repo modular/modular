@@ -180,9 +180,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   case ArgConvention::BorrowedInMem:
-    // Borrowed memory objects don't need lifetime tracking given that they are
-    // immutable, but we do want to reason about their aliasing properties for
-    // return slot optimization etc.
+  case ArgConvention::InOut:
+  case ArgConvention::Ref:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsInit;
@@ -216,11 +215,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endInitState = InitOnNormal;
     isFullObjectLiveOnEntry = true;
     break;
-  case ArgConvention::InOut:
-    isIndirect = true;
-    startsUninit = false;
-    endInitState = EndsInit;
-    break;
+
   case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
@@ -348,7 +343,8 @@ getCallOpEffects(Operation &op,
   /// handling them specifically allows us to be field sensitive in cases where
   /// the access is directly attributable to a Value.
   auto getOperandEffectForConvention =
-      [throws = signature.isThrows()](ArgConvention conv) -> OperandEffect {
+      [throws = signature.isThrows()](ArgConvention conv,
+                                      Type argType) -> OperandEffect {
     switch (conv) {
     case ArgConvention::OwnedInReg:
       return OperandEffect::regConsume;
@@ -360,6 +356,10 @@ getCallOpEffects(Operation &op,
       return OperandEffect::memLoad;
     case ArgConvention::InOut:
       return OperandEffect::memInOut;
+    case ArgConvention::Ref: {
+      bool isMut = cast<RefType>(argType).isMutableKnown(true);
+      return isMut ? OperandEffect::memInOut : OperandEffect::memLoad;
+    }
     case ArgConvention::ByRefError:
       return OperandEffect::memStoreConditional;
     case ArgConvention::ByRefResult:
@@ -376,8 +376,8 @@ getCallOpEffects(Operation &op,
   auto addArgument = [&](Value arg, ArgConvention conv,
                          bool noIndirect = false) {
     // Get normal argument effect.
-    auto effect = getOperandEffectForConvention(conv);
     Type argType = arg.getType();
+    auto effect = getOperandEffectForConvention(conv, argType);
 
     // If this is a borrowed register of a !lit.ref, then we know that this is
     // an explicitly declared low-level reference.

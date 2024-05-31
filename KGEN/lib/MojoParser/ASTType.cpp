@@ -677,6 +677,17 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         if (!name.empty())
           os << name.getValue() << ": ";
 
+        if (convention == ArgConvention::Ref) {
+          os << "ref [";
+          auto refType = cast<RefType>(type);
+          printParam(os, refType.getLifetime(), forDiag, demangleParams);
+          if (!refType.isDefaultAddrSpace()) {
+            os << ", ";
+            printParam(os, refType.getLifetime(), forDiag, demangleParams);
+          }
+          os << ']';
+        }
+
         if (SignatureType::hasAddress(convention))
           type = type.getReferenceElementType();
         type.print(os, forDiag);

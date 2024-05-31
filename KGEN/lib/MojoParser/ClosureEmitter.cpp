@@ -419,7 +419,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     SmallVector<TypedAttr> implicitLifetimes;
     auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
     for (auto [arg, conv] : llvm::zip(arguments, calleeSig.getArgConventions()))
-      if (SignatureType::hasAddress(conv))
+      if (SignatureType::hasImplicitLifetime(conv))
         implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
     auto callResult = builder.create<CallIndirectOp>(
@@ -1053,7 +1053,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     SmallVector<TypedAttr> implicitLifetimes;
     auto finalSig = cast<SignatureType>(typedSymbol.getType());
     for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
-      if (SignatureType::hasAddress(conv))
+      if (SignatureType::hasImplicitLifetime(conv))
         implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
     Value result =
