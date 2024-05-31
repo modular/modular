@@ -52,7 +52,8 @@ struct TileMask[
         var mask = StaticTuple[Bool, rank]()
 
         @parameter
-        fn _compute_in_bound[axis: Int]():
+        for axis in range(rank):
+
             @parameter
             if element_size[axis] == 1:
                 mask[axis] = (
@@ -65,8 +66,6 @@ struct TileMask[
                     + element_size[axis]
                 ) < self.max_dim[axis]
 
-        unroll[_compute_in_bound, rank]()
-
         return mask
 
     # Returns the element size can be accessed.
@@ -78,7 +77,7 @@ struct TileMask[
         var size = StaticIntTuple[rank]()
 
         @parameter
-        fn _compute_size[i: Int]():
+        for i in range(rank):
             if dim_mask[i]:
                 size[i] = element_size[i]
             else:
@@ -86,8 +85,6 @@ struct TileMask[
                     i
                 ] * element_stride[i]
                 size[i] = max(0, self.max_dim[i] - start_index)
-
-        unroll[_compute_size, rank]()
 
         return size
 
@@ -106,10 +103,8 @@ fn _tile_mask[
     var tile_offset = StaticIntTuple[rank]()
 
     @parameter
-    fn _fill_tile_offset[i: Int]():
+    for i in range(rank):
         tile_offset[i] = tile_sizes[i].get() * tile_coords[i]
-
-    unroll[_fill_tile_offset, rank]()
 
     return TileMask[rank, __sizes, __element_stride](shape, tile_offset)
 
@@ -121,10 +116,9 @@ fn __to_static_tuple[
     var res = StaticIntTuple[rank]()
 
     @parameter
-    fn _fill_res[i: Int]():
+    for i in range(rank):
         res[i] = sizes[i]
 
-    unroll[_fill_res, rank]()
     return res
 
 
@@ -152,10 +146,8 @@ fn __get_shape_as_tuple[
     var res = StaticIntTuple[rank]()
 
     @parameter
-    fn _fill_shape[i: Int]():
+    for i in range(rank):
         res[i] = to_int(thread_layout.shape[i])
-
-    unroll[_fill_shape, rank]()
 
     return res
 
@@ -180,13 +172,11 @@ fn _distribute_mask[
     )
 
     @parameter
-    fn _compute_offset[i: Int]():
+    for i in range(rank):
         alias shape_i = to_int(thread_layout.shape[i])
         alias stride_i = to_int(thread_layout.stride[i])
         var thread_coord_i = (thread_id // stride_i) % shape_i
         res.offset[i] += thread_coord_i
-
-    unroll[_compute_offset, rank]()
 
     return res
 
@@ -203,13 +193,11 @@ fn __distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
     var res = StaticTuple[Dim][thread_layout.rank()]()
 
     @parameter
-    fn _get_dim[i: Int]():
+    for i in range(thread_layout.rank()):
         if shape.at[i]().is_dynamic():
             res[i] = Dim()
         else:
             res[i] = shape.at[i]() // to_int(thread_layout.shape[i])
-
-    unroll[_get_dim, thread_layout.rank()]()
 
     if thread_layout.rank() == 1:
         return DimList(res[0])
@@ -243,23 +231,19 @@ fn distribute[
     var res_shape = StaticIntTuple[rank]()
 
     @parameter
-    fn _fill_shape_and_stride[i: Int]():
+    for i in range(rank):
         alias thread_shape_i = to_int(thread_layout.shape[i])
         res_shape[i] = buff.dynamic_shape[i] // thread_shape_i
         res_strides[i] = buff.dynamic_stride[i] * thread_shape_i
 
-    unroll[_fill_shape_and_stride, rank]()
-
     var thread_offset: Scalar[DType.int32] = 0
 
     @parameter
-    fn _compute_offset[i: Int]():
+    for i in range(rank):
         alias shape_i = to_int(thread_layout.shape[i])
         alias stride_i = to_int(thread_layout.stride[i])
         var thread_coords_i = (thread_id // stride_i) % shape_i
         thread_offset += thread_coords_i * buff.dynamic_stride[i]
-
-    unroll[_compute_offset, rank]()
 
     @parameter
     if swizzle:
@@ -297,15 +281,13 @@ fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
     var res = StaticTuple[Dim, rank]()
 
     @parameter
-    fn _fill_shape[i: Int]():
+    for i in range(rank):
         alias size_i = sizes[i]
 
         if shape.at[i]().is_dynamic():
             res[i] = Dim()
         else:
             res[i] = shape.at[i]() // size_i
-
-    unroll[_fill_shape, rank]()
 
     @parameter
     if rank == 1:
@@ -322,10 +304,9 @@ fn __to_static_tuple[*sizes: Int, rank: Int]() -> StaticIntTuple[rank]:
     var vals = StaticIntTuple[rank]()
 
     @parameter
-    fn _fill[i: Int]():
+    for i in range(rank):
         vals[i] = sizes[i]
 
-    unroll[_fill, rank]()
     return vals
 
 
@@ -452,12 +433,10 @@ fn vectorize[
     ]()
 
     @parameter
-    fn _fill_layout_data[i: Int]():
+    for i in range(rank):
         element_layout.stride[i] = buff.dynamic_stride[i]
         buff_shape[i] = buff.dynamic_shape[i] // sizes[i]
         buff_stride[i] = buff.dynamic_stride[i] * sizes[i]
-
-    unroll[_fill_layout_data, rank]()
 
     return Tuple(
         NDBuffer[dtype, rank, _res_shape](
@@ -509,7 +488,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         alias alignment = alignof[dst.element_type]()
 
         @parameter
-        fn _copy_vector[i: Int]():
+        for i in range(num_elements):
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(
                 i * vec_size
             )
@@ -537,7 +516,6 @@ fn _copy_nd_buffer_to_layout_tensor[
                     width=vec_size, alignment=alignment
                 ](src_element)
 
-        unroll[_copy_vector, num_elements]()
     # 2d-vector load/store
     elif (
         tensor_element_layout.rank() == 2
@@ -547,12 +525,12 @@ fn _copy_nd_buffer_to_layout_tensor[
         alias vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
-        fn copy_by_element[i: Int]():
+        for i in range(num_elements):
             alias dst_offset = layout(i)
             var src_offset = _get_element_idx(i, src)
 
             @parameter
-            fn copy_by_vec[j: Int]():
+            for j in range(num_copies):
                 alias dst_idx = dst_offset + tensor_element_layout(j)
                 var src_idx = src_offset + _get_element_idx(
                     j, buff_element_layout
@@ -581,14 +559,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                         alignment = alignof[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
-            unroll[copy_by_vec, num_copies]()
-
-        unroll[copy_by_element, num_elements]()
     # Scalar case.
     else:
 
         @parameter
-        fn _copy_element[i: Int]():
+        for i in range(num_elements * dst.element_size):
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
             var src_idx = _get_element_idx(i, src, buff_element_layout)
 
@@ -603,8 +578,6 @@ fn _copy_nd_buffer_to_layout_tensor[
                 async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
-
-        unroll[_copy_element, num_elements * dst.element_size]()
 
 
 @always_inline("nodebug")
@@ -665,7 +638,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         alias alignment = alignof[dst.element_type]()
 
         @parameter
-        fn _copy_vector[i: Int]():
+        for i in range(num_elements):
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(
                 i * vec_size
             )
@@ -693,7 +666,6 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     width=vec_size, alignment=alignment
                 ](src_element)
 
-        unroll[_copy_vector, num_elements]()
     # 2d-vector load/store
     elif (
         tensor_element_layout.rank() == 2
@@ -704,12 +676,12 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         alias vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
-        fn copy_by_element[i: Int]():
+        for i in range(num_elements):
             alias dst_offset = layout(i)
             var src_offset = _get_element_idx(i, src)
 
             @parameter
-            fn copy_by_vec[j: Int]():
+            for j in range(num_copies):
                 alias dst_idx = dst_offset + tensor_element_layout(j)
                 var src_idx = src_offset + _get_element_idx(
                     j, buff_element_layout
@@ -738,12 +710,10 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                         alignment = alignof[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
-            unroll[copy_by_vec, num_copies]()
-
-        unroll[copy_by_element, num_elements]()
     # Scalar case.
     else:
-
+        # This @parameter for for some reason doesn't produce the same results.
+        # for i in range(num_elements * dst.element_size):
         @parameter
         fn _copy_element[i: Int]():
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
@@ -814,7 +784,7 @@ fn _copy_layout_tensor_to_nd_buffer[
         alias alignment = alignof[src.element_type]()
 
         @parameter
-        fn _copy_vector[i: Int]():
+        for i in range(num_elements):
             var dst_idx = _get_element_idx(
                 i * vec_size, dst, buff_element_layout
             )
@@ -829,7 +799,6 @@ fn _copy_layout_tensor_to_nd_buffer[
                 src_element
             )
 
-        unroll[_copy_vector, num_elements]()
     # 2d-vector load/store
     elif (
         tensor_element_layout.rank() == 2
@@ -839,14 +808,14 @@ fn _copy_layout_tensor_to_nd_buffer[
         alias vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
-        fn copy_by_element[i: Int]():
+        for i in range(num_elements):
             # Offset to the current element.
             var dst_offset = _get_element_idx(i, dst)
 
             alias src_offset = layout(i)
 
             @parameter
-            fn copy_by_vec[j: Int]():
+            for j in range(num_copies):
                 var dst_idx = dst_offset + _get_element_idx(
                     j, buff_element_layout
                 )
@@ -861,20 +830,14 @@ fn _copy_layout_tensor_to_nd_buffer[
                     width=vec_width,
                     alignment = alignof[SIMD[dtype, vec_width]](),
                 ](dst_idx, src_vec)
-
-            unroll[copy_by_vec, num_copies]()
-
-        unroll[copy_by_element, num_elements]()
     # Scalar case.
     else:
 
         @parameter
-        fn _copy_element[i: Int]():
+        for i in range(num_elements * src.element_size):
             alias src_idx = make_layout(tensor_element_layout, src.layout)(i)
             var dst_idx = _get_element_idx(i, dst, buff_element_layout)
             dst.data[dst_idx] = src.ptr[src_idx]
-
-        unroll[_copy_element, num_elements * src.element_size]()
 
 
 @always_inline
@@ -935,7 +898,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         alias alignment = alignof[src.element_type]()
 
         @parameter
-        fn _copy_vector[i: Int]():
+        for i in range(num_elements):
             var dst_idx = _get_element_idx(
                 i * vec_size, dst, buff_element_layout
             )
@@ -950,7 +913,6 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                 src_element
             )
 
-        unroll[_copy_vector, num_elements]()
     # 2d-vector load/store
     elif (
         tensor_element_layout.rank() == 2
@@ -960,14 +922,14 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         alias vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
-        fn copy_by_element[i: Int]():
+        for i in range(num_elements):
             # Offset to the current element.
             var dst_offset = _get_element_idx(i, dst)
 
             alias src_offset = layout(i)
 
             @parameter
-            fn copy_by_vec[j: Int]():
+            for j in range(num_copies):
                 var dst_idx = dst_offset + _get_element_idx(
                     j, buff_element_layout
                 )
@@ -983,9 +945,6 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                     alignment = alignof[SIMD[dtype, vec_width]](),
                 ](dst_idx, src_vec)
 
-            unroll[copy_by_vec, num_copies]()
-
-        unroll[copy_by_element, num_elements]()
     # Scalar case.
     else:
 
