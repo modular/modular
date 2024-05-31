@@ -138,7 +138,10 @@ kgen.generator @use_struct_param(%arg0: !lit.declref<@StructParam<:@Struct #lit.
 kgen.generator @lifetime_lower<p: !lit.lifetime<0>>(%a: !lit.lifetime<1>) {
 
   // CHECK: kgen.param.declare A: struct<()> = <{ }>
-  kgen.param.declare A : !lit.lifetime<1> = <#lit.lifetime>
+  kgen.param.declare A: !lit.lifetime<1> = <#lit.lifetime>
+
+  // CHECK: kgen.param.declare B: struct<()> = <{ }>
+  kgen.param.declare B: lifetime.set = <{imm p}>
   kgen.return
 }
 
