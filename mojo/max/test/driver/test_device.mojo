@@ -12,40 +12,36 @@ from tensor import TensorSpec
 
 
 def test_device():
-    var dev = Device(CPUDescriptor(numa_id=2))
-    assert_equal(str(dev), "Device(type=CPU,numa_id=2)")
+    var dev = Device(CPUDescriptor())
+    assert_equal(str(dev), "Device(type=CPU)")
 
     var dev2 = dev
     assert_equal(str(dev), str(dev2))
 
 
 def test_device_memory():
-    var dev = Device(CPUDescriptor(numa_id=2))
+    var dev = Device()
 
     var dt1 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
-    assert_equal(
-        str(dt1), "DeviceMemory(Device(type=CPU,numa_id=2),Spec(2x2xfloat32))"
-    )
+    assert_equal(str(dt1), "DeviceMemory(Device(type=CPU),Spec(2x2xfloat32))")
 
     var dt2 = dev.allocate(
         TensorSpec(DType.float32, 3, 2),
     )
-    assert_equal(
-        str(dt2), "DeviceMemory(Device(type=CPU,numa_id=2),Spec(3x2xfloat32))"
-    )
+    assert_equal(str(dt2), "DeviceMemory(Device(type=CPU),Spec(3x2xfloat32))")
 
     var dt3 = dev.allocate(TensorSpec(DType.float32, 3, 2), str("foo"))
     assert_equal(
         str(dt3),
-        "DeviceMemory(foo,Device(type=CPU,numa_id=2),Spec(3x2xfloat32))",
+        "DeviceMemory(foo,Device(type=CPU),Spec(3x2xfloat32))",
     )
 
     var dt4 = dev.allocate(bytecount=128)
     assert_equal(
         str(dt4),
-        "DeviceMemory(Device(type=CPU,numa_id=2),Spec(128xuint8))",
+        "DeviceMemory(Device(type=CPU),Spec(128xuint8))",
     )
 
     var dt5 = dev.allocate(TensorSpec(DType.float32, 1))
@@ -56,7 +52,7 @@ def test_device_memory():
 
 
 def test_kv_cache():
-    var cpu = Device(CPUDescriptor(numa_id=2))
+    var cpu = Device(CPUDescriptor())
     alias type = DType.float32
     alias shape = (2, 2)
     var allocs = List[DeviceMemory]()
@@ -66,7 +62,7 @@ def test_kv_cache():
     for t in allocs:
         assert_equal(
             str(t[]),
-            "DeviceMemory(Device(type=CPU,numa_id=2),Spec(2x2xfloat32))",
+            "DeviceMemory(Device(type=CPU),Spec(2x2xfloat32))",
         )
 
 

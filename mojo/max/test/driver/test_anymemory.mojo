@@ -11,7 +11,7 @@ from tensor import TensorSpec
 
 
 def test_from_device_memory():
-    var dev = Device(CPUDescriptor(numa_id=2))
+    var dev = Device(CPUDescriptor())
 
     var dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -23,7 +23,7 @@ def test_from_device_memory():
 
 
 def test_from_tensor():
-    var dev = Device(CPUDescriptor(numa_id=2))
+    var dev = Device(CPUDescriptor())
 
     var dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -47,7 +47,7 @@ def _function_that_takes_anymemory(owned t1: AnyMemory, owned t2: AnyMemory):
 
 
 def test_implicit_conversion():
-    var dev = Device(CPUDescriptor(numa_id=2))
+    var dev = Device(CPUDescriptor())
 
     var dt1 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
