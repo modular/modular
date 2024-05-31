@@ -133,8 +133,10 @@ struct DeadArgumentElimination {
 
   using UseVector = SmallVector<RetOrArg, 5>;
 
-  DeadArgumentElimination(CallGraph &callGraph, MLIRContext *context)
-      : callGraph(callGraph), context(context) {}
+  DeadArgumentElimination(CallGraph &callGraph, MLIRContext *context,
+                          ModuleOp module, const SymbolTable &symbolTable)
+      : callGraph(callGraph), context(context), module(module),
+        symbolTable(symbolTable) {}
 
   void run();
 
@@ -181,6 +183,8 @@ private:
 
   CallGraph &callGraph;
   MLIRContext *context;
+  ModuleOp module;
+  const SymbolTable &symbolTable;
 
   /// Remove dead arguments, results and related operations from func in node.
   void removeDeadStuffFromFunction(CallGraphNode *node);
@@ -188,6 +192,10 @@ private:
   /// Rewrite callees CallOps and its uses in the caller with new function
   /// signature if there are dead stuff being removed.
   void rewriteCalleesFromFunction(CallGraphNode *node);
+
+  /// Mark any functions that are referenced by any operations other than a
+  /// CallOp as live since they maybe called indirectly later.
+  void markLiveMaybeIndirectCalled();
 };
 } // namespace
 
@@ -313,6 +321,9 @@ DeadArgumentElimination::surveyUses(const RetOrArg &retOrArg,
 /// it uses any of its incoming arguments or whether any callers use the return
 /// value. This fills in the LiveValues set and Uses map.
 void DeadArgumentElimination::surveyFunction(FuncOp func) {
+  if (liveFunctions.contains(func))
+    return;
+
   if (func.isExported() || func.isExternal()) {
     markLive(func);
     return;
@@ -578,7 +589,43 @@ void DeadArgumentElimination::print() {
     llvm::dbgs() << "  " << value.getDescription() << "\n";
 }
 
+void DeadArgumentElimination::markLiveMaybeIndirectCalled() {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](SymbolConstantAttr attr) {
+    Operation *op =
+        symbolTable.lookup(cast<FlatSymbolRefAttr>(attr.getSymbol()).getAttr());
+
+    FuncOp func = dyn_cast_if_present<FuncOp>(op);
+    if (!func)
+      return;
+    markLive(func);
+
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "Function " << func.getName()
+        << " maybe live due references other than a CallOp. Mark live.\n");
+  });
+
+  module.walk([&](Operation *op) {
+    // Only support caller is CallOp for now, so that things like
+    // AsyncCallOp, kgen.create_closure which are KGENCallOpInterface but
+    // should be marked as always Live.
+    if (isa<KGEN::CallOp>(op))
+      return WalkResult::advance();
+
+    walker.walk(op->getAttrDictionary());
+    for (Type type : op->getResultTypes())
+      walker.walk(type);
+    for (Region &region : op->getRegions())
+      for (Type type : region.getArgumentTypes())
+        walker.walk(type);
+    return WalkResult::advance();
+  });
+}
+
 void DeadArgumentElimination::run() {
+  markLiveMaybeIndirectCalled();
+
   // SurveyFunctions to determine liveliness for arguments and result values.
   // This loop needs to run before rewriting happens.
   std::vector<CallGraphNode *> nodes;
@@ -613,6 +660,7 @@ void DeadArgumentEliminationPass::runOnOperation() {
 
   CallGraph cg(symtab);
   cg.build(getOperation(), symtab);
-  DeadArgumentElimination dae(cg, getOperation().getContext());
+  DeadArgumentElimination dae(cg, getOperation().getContext(), getOperation(),
+                              symtab);
   dae.run();
 }

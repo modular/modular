@@ -64,3 +64,32 @@ kgen.func export @h_dead1(%arg: index) -> index {
   %0 = kgen.call @g_dead_arg1(%arg) : (index) -> index
   kgen.return %0: index
 }
+
+// -----
+
+// COM: There is reference to f_maybe_live that is not a kgen.call.
+// COM: Mark it as live so that we don't mess up with the API for things like kgen.call_indirect.
+// CHECK-LABEL: kgen.func @f_maybe_live(%arg0: index, %arg1: index) -> index {
+kgen.func @f_maybe_live(%arg0: index, %arg1: index) -> index {
+  kgen.return %arg1: index
+}
+
+kgen.func @f_reference() {
+  %0 = kgen.param.constant: (index borrow, index borrow) -> index = <@f_maybe_live>
+  kgen.return
+}
+
+// -----
+
+// COM: Don't do anything for kgen.create_closure's callee.
+// CHECK-LABEL: kgen.func @closure_callee(%arg0: index, %arg1: index) capturing -> index
+ kgen.func @closure_callee(%arg0: index, %arg1: index) capturing -> index {
+   kgen.return %arg1: index
+ }
+
+ kgen.func @closure_caller() -> index {
+   %idx0 = index.constant 0
+   %0 = kgen.create_closure[(index, index) capturing -> index: @closure_callee](%idx0)
+   %1 = kgen.call_indirect %0(%idx0) : (index) capturing -> index
+   kgen.return %1: index
+ }
