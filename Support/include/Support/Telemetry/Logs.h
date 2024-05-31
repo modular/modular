@@ -91,9 +91,9 @@ public:
     if (codedError.isError()) {
       llvm::StringMap<AttributeValue> attributesWithError{attributes};
       attributesWithError["error_component"] =
-          codedError.getComponentAsString();
-      attributesWithError["error_id"] = codedError.getIdAsString();
-      attributesWithError["error"] = codedError.getErrorAsString();
+          StringRef(codedError.getComponentAsString());
+      attributesWithError["error_id"] = StringRef(codedError.getIdAsString());
+      attributesWithError["error"] = StringRef(codedError.getErrorAsString());
       return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L0,
                        attributesWithError);
     }
