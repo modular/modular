@@ -333,7 +333,10 @@ struct Buffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            f._write(self.data.bitcast[DType.int8](), self.bytecount())
+            var ptr = UnsafePointer[UInt8, address_space]._from_dtype_ptr(
+                self.data.bitcast[DType.uint8]()
+            )
+            f._write(ptr, self.bytecount())
 
     @staticmethod
     @always_inline("nodebug")
@@ -1367,7 +1370,10 @@ struct NDBuffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            f._write(self.data.bitcast[DType.int8](), self.bytecount())
+            var ptr = UnsafePointer[UInt8, address_space]._from_dtype_ptr(
+                self.data.bitcast[DType.uint8]()
+            )
+            f._write(ptr, self.bytecount())
 
     @always_inline
     fn fill(self, val: Scalar[type]):
