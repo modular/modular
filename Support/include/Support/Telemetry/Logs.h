@@ -48,12 +48,18 @@ enum class Severity : uint8_t {
   kFatal
 };
 
-using AttributeValue =
-    std::variant<bool, int32_t, int64_t, uint32_t, uint64_t, double,
-                 llvm::StringRef, llvm::ArrayRef<bool>, llvm::ArrayRef<int32_t>,
-                 llvm::ArrayRef<int64_t>, llvm::ArrayRef<uint32_t>,
-                 llvm::ArrayRef<double>, ArrayRef<uint64_t>, ArrayRef<uint8_t>,
-                 llvm::ArrayRef<llvm::StringRef>>;
+struct AttributeValue
+    : std::variant<bool, int32_t, int64_t, uint32_t, uint64_t, double,
+                   llvm::StringRef, llvm::ArrayRef<bool>,
+                   llvm::ArrayRef<int32_t>, llvm::ArrayRef<int64_t>,
+                   llvm::ArrayRef<uint32_t>, llvm::ArrayRef<double>,
+                   ArrayRef<uint64_t>, ArrayRef<uint8_t>,
+                   llvm::ArrayRef<llvm::StringRef>> {
+  using variant::variant;
+
+  template <typename T>
+  AttributeValue(T &&) : variant(false) {}
+};
 
 #endif // MODULAR_ENABLE_TELEMETRY
 
