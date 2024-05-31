@@ -141,9 +141,7 @@ def CO_CoroutineAwaitEndOp : COOp<"await.end", [Terminator,
 
 def CO_InvokeOp : COOp<"invoke", [
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
-    TypesMatchWith<"callee argument types", "callee", "operands",
-                   "cast<SignatureType>($_self).getArguments()">]> {
+    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
   let summary = "invoke an async function, forming a coroutine";
   let description = [{
     The `co.invoke` operation calls an `async` parametric callable. It returns
@@ -163,7 +161,7 @@ def CO_InvokeOp : COOp<"invoke", [
   let results = (outs CoroutineType:$coroutine);
 
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee) `(` $operands `)` attr-dict
+  `` custom<AsyncParametricCallee>($callee, $operands, type($operands)) attr-dict
   }];
 
   let hasVerifier = 1;
@@ -328,5 +326,4 @@ def CO_DestroyOp : COOp<"destroy"> {
   let arguments = (ins Res<CoroutineType, "", [MemFree]>:$coroutine);
   let assemblyFormat = "$coroutine attr-dict";
 }
-
 #endif // COOPS_TD

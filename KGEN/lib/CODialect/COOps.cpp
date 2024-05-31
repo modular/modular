@@ -80,6 +80,46 @@ LogicalResult InvokeOp::verify() {
   return success();
 }
 
+static ParseResult parseAsyncParametricCallee(
+    OpAsmParser &p, TypedAttr &callee,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+    SmallVectorImpl<Type> &operandTypes) {
+  if (failed(parseParametricCallee(p, callee)))
+    return failure();
+  SignatureType calleeSignature = cast<SignatureType>(callee.getType());
+  // Operands match signature arguments with the exception that byref error and
+  // byref result are omitted.
+  unsigned start = 0;
+  if (calleeSignature.isThrows())
+    ++start;
+  if (calleeSignature.hasInitSelfArg() || calleeSignature.hasMemoryOnlyResult())
+    ++start;
+  unsigned i = 0;
+  ArrayRef<Type> argumentTypes(calleeSignature.getArguments().slice(start));
+  if (failed(p.parseCommaSeparatedList(AsmParser::Delimiter::Paren,
+                                       [&]() -> ParseResult {
+                                         OpAsmParser::UnresolvedOperand operand;
+                                         if (failed(p.parseOperand(operand)))
+                                           return failure();
+                                         operands.push_back(operand);
+                                         Type type = argumentTypes[i];
+                                         ++i;
+                                         operandTypes.push_back(type);
+                                         return success();
+                                       })))
+    return failure();
+  return success();
+}
+
+static void printAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
+                                       TypedAttr callee, ValueRange operands,
+                                       TypeRange operandTypes) {
+  printParametricCallee(p, op, callee);
+  p << "(";
+  p.printOperands(operands);
+  p << ")";
+}
+
 //===----------------------------------------------------------------------===//
 // ExecuteOp
 //===----------------------------------------------------------------------===//
