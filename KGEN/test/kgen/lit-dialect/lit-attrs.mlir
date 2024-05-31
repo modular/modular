@@ -190,6 +190,9 @@ kgen.generator @lifetime_union<x: !lit.lifetime<0>, y: !lit.lifetime<0>>() {
   // CHECK-NEXT: <{mut a, imm b}>
   kgen.param.constant: lifetime.set = <{mut {(mutcast imm b), a}}>
 
+  // CHECK-NEXT: <{(mutcast mut a), b}>
+  kgen.param.constant: lifetime<0> = <#lit.lifetime.set.union<#lit.lifetime.set<{mut a, imm b}> : !lit.lifetime.set>>
+
   // CHECK-NEXT: kgen.param.declare nothing: lifetime<0> = <#lit.lifetime>
   kgen.param.declare nothing: !lit.lifetime<0> = <#lit.lifetime>
   // CHECK-NEXT:  kgen.param.declare nothing_2: lifetime<0> = <#lit.lifetime>
