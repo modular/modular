@@ -50,9 +50,9 @@ struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
 //===----------------------------------------------------------------------===//
 
 struct KGENDialectAliasOptions {
-  llvm::cl::opt<bool> printInlineVTables{
-      "kgen-print-inline-vtables",
-      llvm::cl::desc("Print type vtables inline. Used for FileCheck testing."),
+  llvm::cl::opt<bool> printInlineTypeValues{
+      "kgen-print-inline-type-values",
+      llvm::cl::desc("Print type values inline. Used for FileCheck testing."),
       llvm::cl::init(false)};
 };
 
@@ -72,9 +72,9 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 
   AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
     if (auto typeCst = dyn_cast<TypeConstantAttr>(attr)) {
-      // Alias the type constant if it has a vtable.
-      if (clOptions->printInlineVTables ||
-          typeCst.getVTable().getEntries().empty())
+      // Do not alias the type constant if it is a simple mlir Type.
+      if (clOptions->printInlineTypeValues ||
+          typeCst.hasIdenticalRepresentation())
         return AliasResult::NoAlias;
 
       // Special case decl ref types.

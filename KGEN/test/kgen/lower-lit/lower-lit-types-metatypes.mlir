@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-lit-types -verify-parameters --kgen-print-inline-vtables %s | FileCheck %s
+// RUN: kgen-opt -lower-lit-types -verify-parameters --kgen-print-inline-type-values %s | FileCheck %s
 
 lit.struct.decl @Container<T: trait<@Trait>> {
   lit.struct.field x: !kgen.paramref<:trait<@Trait> T>

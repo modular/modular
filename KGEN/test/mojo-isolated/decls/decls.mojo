@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --kgen-print-inline-vtables | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
 
 ##===----------------------------------------------------------------------===##
@@ -1068,7 +1068,6 @@ fn coroutine_lifetimes():
     var access = lifetime_access(LifetimeAccess[__lifetime_of(y)]())
 
 
-
 ##===----------------------------------------------------------------------===##
 # Nested Functions
 ##===----------------------------------------------------------------------===##
@@ -1275,15 +1274,20 @@ fn callThing() -> MyStruct:
 struct SomeType:
     pass
 
+
 # COM: An implicit lifetime is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.func @"implicit_lifetime_as_param
 # CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:lifetime<0> *"arg`">, mut *[0,0]>
-fn implicit_lifetime_as_param(arg: SomeType) -> Bound[Match[__lifetime_of(arg)]] :
+fn implicit_lifetime_as_param(
+    arg: SomeType,
+) -> Bound[Match[__lifetime_of(arg)]]:
     pass
+
 
 struct Bound[T: AnyType]:
     pass
+
 
 @value
 struct Match[lt: __mlir_type.`!lit.lifetime<0>`]:

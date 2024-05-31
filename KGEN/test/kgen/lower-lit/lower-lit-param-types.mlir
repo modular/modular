@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit -verify-parameters --kgen-print-inline-vtables | FileCheck %s
+// RUN: kgen-opt %s -lower-lit -verify-parameters --kgen-print-inline-type-values | FileCheck %s
 
 lit.struct.decl @Thing<T: trait<@Foo>> {
 }
