@@ -448,15 +448,13 @@ struct PackMatrixCols[
         constrained[use_i8mm]()
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
-        alias column_inner_size2 = column_inner_size // 2
+        alias nr = column_inner_size // 2
         for i in range(0, align_up(kc, i8mm_cols), i8mm_cols):
-            for j in range(ceildiv(nc, column_inner_size2)):
-                for p in range(0, column_inner_size2, i8mm_rows):
+            for j in range(self.pack_tile_dim[1] // nr):
+                for p in range(0, nr, i8mm_rows):
                     for i2 in range(i8mm_cols):
                         for p2 in range(i8mm_rows):
-                            var local_idx = Index(
-                                i + i2, column_inner_size2 * j + p + p2
-                            )
+                            var local_idx = Index(i + i2, nr * j + p + p2)
                             var val = 0 if local_idx[0] >= kc or local_idx[
                                 1
                             ] >= nc else self.original_matrix[
