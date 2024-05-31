@@ -253,9 +253,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createLowerLoops());
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
-  // FIXME(MOCO-756): Dead argument elimination can miscompile code if there is
-  // sufficient function pointer indirection.
-  // if (options.optimizationLevel >= 2)
-  //   pm.addPass(createDeadArgumentElimination());
+  if (options.optimizationLevel >= 2)
+    pm.addPass(createDeadArgumentElimination());
   pm.addPass(createEliminateDeadSymbols());
 }
