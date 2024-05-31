@@ -161,11 +161,28 @@ void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 /// Parse an array of parameter type values.
 ParseResult parseTypeParamValues(AsmParser &p, SmallVector<TypedAttr> &values);
 
-/// Pretty print a type value. Caller specifies how types are printed.
+/// Print the body of a type-value (without any surrounding brackets). Caller
+/// specifies how types are printed.
+void printTypeValueBody(
+    AsmPrinter &p, TypeConstantAttr type,
+    llvm::function_ref<void(AsmPrinter &, Type)> typePrinter);
+/// Parse the body of a type-value (without any surrounding brackets). Caller
+/// specifies how types are parsed.
+/// If the caller knows the type has identical type-value representation, it
+/// can set the additional flag to abort after the first type is parsed.
+OptionalParseResult parseTypeValueBody(
+    AsmParser &p, TypedAttr &value, Type type,
+    llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser,
+    bool knownIdenticalRepresentation = false);
+
+/// Pretty print a type-value:
+/// If the type-value has identical type/value representation, just print the
+/// type-value Type itself. Otherwise print the entire type-value surrounded by
+/// square brackets.
 LogicalResult
 printSugaredTypeValue(AsmPrinter &p, TypedAttr value,
                       llvm::function_ref<void(AsmPrinter &, Type)> typePrinter);
-/// Parse a pretty printed a type value. Caller specifies how types are parsed.
+/// Parse a pretty-printed type-value.
 OptionalParseResult parseSugaredTypeValue(
     AsmParser &p, TypedAttr &value, Type type,
     llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser);

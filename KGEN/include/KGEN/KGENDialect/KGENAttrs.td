@@ -330,7 +330,7 @@ def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
     Example:
 
     ```mlir
-    #kgen.type<!myType, vtable={
+    #kgen.type<!myType, {
       "method1" : <() -> index> = @method1,
       "method2" : <() -> index> = @method2
     }> : !kgen.type
@@ -361,8 +361,7 @@ def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
         Type mlirType, Type type, VTableAttr vtable);
   }];
 
-  let assemblyFormat =
-    "`<` $mlirType (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
+  let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
 }
 

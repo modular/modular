@@ -44,16 +44,16 @@ fn generic_arg[T: SimpleTrait](x: T) -> int:
 
 
 # CHECK: kgen.func @"{{.*}}generic_arg
+# CHECK-SAME: %arg0: index
+# CHECK-NEXT: <3>
+
+# CHECK: kgen.func @"{{.*}}generic_arg
 # CHECK-SAME: %arg0: !kgen.pointer<struct<() memoryOnly>>
 # CHECK-NEXT: <1>
 
 # CHECK: kgen.func @"{{.*}}generic_arg
 # CHECK-SAME: %arg0: !kgen.struct<()>
 # CHECK-NEXT: <2>
-
-# CHECK: kgen.func @"{{.*}}generic_arg
-# CHECK-SAME: %arg0: index
-# CHECK-NEXT: <3>
 
 
 @export

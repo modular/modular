@@ -171,6 +171,30 @@ std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
 // TypeConstantAttr
 //===----------------------------------------------------------------------===//
 
+Attribute TypeConstantAttr::parse(AsmParser &p, Type type) {
+  if (p.parseLess())
+    return {};
+
+  TypedAttr value;
+  OptionalParseResult result =
+      parseTypeValueBody(p, value, type, parseOptionalKGENType);
+  if (!result.has_value()) {
+    p.emitError(p.getCurrentLocation(), "expected a type value");
+    return {};
+  }
+
+  if (failed(*result) || p.parseGreater())
+    return {};
+  return value;
+}
+
+void TypeConstantAttr::print(AsmPrinter &p) const {
+  p << '<';
+  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
+  printTypeValueBody(p, *this, typePrinter);
+  p << '>';
+}
+
 TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type mlirType, Type type,
                                 VTableAttr vtable) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to

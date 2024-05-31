@@ -350,6 +350,49 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
       [&] { return parseTypeParamValue(p, values.emplace_back()); });
 }
 
+void KGEN::printTypeValueBody(
+    AsmPrinter &p, TypeConstantAttr type,
+    llvm::function_ref<void(AsmPrinter &, Type)> typePrinter) {
+  typePrinter(p, type.getMlirType());
+  VTableAttr vtable = type.getVTable();
+  if (!vtable.getEntries().empty()) {
+    p << ", {";
+    p.printStrippedAttrOrType(vtable);
+    p << "}";
+  }
+}
+
+OptionalParseResult KGEN::parseTypeValueBody(
+    AsmParser &p, TypedAttr &value, Type type,
+    llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser,
+    bool knownIdenticalRepresentation) {
+  Type mlirType;
+  auto vtable = VTableAttr::get(p.getContext(), {});
+
+  OptionalParseResult result = typeParser(p, mlirType);
+  if (!result.has_value())
+    return {}; // Not a type-value at all.
+
+  if (failed(*result))
+    return failure();
+
+  if (knownIdenticalRepresentation || failed(p.parseOptionalComma())) {
+    // This type-value has identical type/value representation. Stop here.
+    value = TypeConstantAttr::get(mlirType, type, vtable);
+    return mlir::success();
+  }
+
+  // Parse the vtable.
+  if (p.parseLBrace() ||
+      (p.parseOptionalRBrace() &&
+       (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
+        p.parseRBrace())))
+    return failure();
+
+  value = TypeConstantAttr::get(mlirType, type, vtable);
+  return mlir::success();
+}
+
 LogicalResult KGEN::printSugaredTypeValue(
     AsmPrinter &p, TypedAttr value,
     llvm::function_ref<void(AsmPrinter &, Type)> typePrinter) {
@@ -360,46 +403,35 @@ LogicalResult KGEN::printSugaredTypeValue(
   if (succeeded(p.printAlias(type)))
     return success();
 
-  VTableAttr vtable = type.getVTable();
-  if (!vtable.getEntries().empty())
+  const bool nonTrivial = !type.getVTable().getEntries().empty();
+  if (nonTrivial)
     p << '[';
-  typePrinter(p, type.getMlirType());
-  if (!vtable.getEntries().empty()) {
-    p << ", {";
-    p.printStrippedAttrOrType(vtable);
-    p << "}]";
-  }
+
+  printTypeValueBody(p, type, typePrinter);
+
+  if (nonTrivial)
+    p << "]";
   return success();
 }
 
 OptionalParseResult KGEN::parseSugaredTypeValue(
     AsmParser &p, TypedAttr &value, Type type,
     llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser) {
-  Type typeValue;
-  bool parsingVTable = succeeded(p.parseOptionalLSquare());
-  auto vtable = VTableAttr::get(p.getContext(), {});
+  bool nonTrivial = succeeded(p.parseOptionalLSquare());
 
-  OptionalParseResult result = typeParser(p, typeValue);
-  if (!result.has_value()) {
+  OptionalParseResult bodyParseResult = parseTypeValueBody(
+      p, value, type, typeParser, /*knownIdenticalRepresentation=*/!nonTrivial);
+  if (!bodyParseResult.has_value()) {
     // If a '[' was seen, require a type to be present.
-    if (parsingVTable)
+    if (nonTrivial)
       return p.emitError(p.getCurrentLocation(), "expected a type");
     return {};
   }
-  if (failed(*result))
+  if (failed(*bodyParseResult))
     return failure();
 
-  // Parse the vtable if a '[' was seen.
-  if (parsingVTable) {
-    if (p.parseComma() || p.parseLBrace() ||
-        (p.parseOptionalRBrace() &&
-         (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
-          p.parseRBrace())) ||
-        p.parseRSquare())
-      return failure();
-  }
-
-  value = TypeConstantAttr::get(typeValue, type, vtable);
+  if (nonTrivial && failed(p.parseRSquare()))
+    return failure();
   return mlir::success();
 }
 
