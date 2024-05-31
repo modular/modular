@@ -46,12 +46,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:  ^bb5:  // 2 preds: ^bb3, ^bb4
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  }
-  llvm.func @coro(%continuation: !llvm.ptr) attributes { coro } {
+  llvm.func @coro(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
     %cond = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:
@@ -110,12 +110,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:  ^bb6:  // 2 preds: ^bb4, ^bb5
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  }
-  llvm.func @coro_multiple_suspends(%continuation: !llvm.ptr) attributes { coro } {
+  llvm.func @coro_multiple_suspends(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
     %cond = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:
@@ -178,7 +178,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    llvm.call @print([[COND]])
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
@@ -186,7 +186,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    llvm.call @print2(%0) : (i1) -> ()
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
@@ -194,12 +194,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    llvm.call @print3(%0) : (i1) -> ()
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  }
-  llvm.func @no_suspoints(%continuation: !llvm.ptr) attributes { coro } {
+  llvm.func @no_suspoints(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
     %cond = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:
@@ -222,25 +222,25 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    llvm.call @print(%2) : (i1) -> ()
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:    ^bb5:  // pred: ^bb3
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:    ^bb6:  // pred: ^bb3
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
-// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
 // CHECK-NEXT:    llvm.return
-  llvm.func @multiple_exits(%continuation: !llvm.ptr) attributes { coro } {
+  llvm.func @multiple_exits(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
     %cond = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:

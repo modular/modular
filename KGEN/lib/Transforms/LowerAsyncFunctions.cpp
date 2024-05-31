@@ -12,6 +12,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/TransformUtils/AsyncUtils.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -42,26 +43,9 @@ struct LowerAsyncFunctionsPass
     : impl::LowerAsyncFunctionsBase<LowerAsyncFunctionsPass> {
 public:
   using LowerAsyncFunctionsBase::LowerAsyncFunctionsBase;
-
-  LogicalResult initialize(MLIRContext *ctx) override {
-    coroAttrName = StringAttr::get(ctx, "coro");
-    return success();
-  }
   void runOnOperation() override;
-
-private:
-  StringAttr coroAttrName;
 };
 } // namespace
-
-enum ContinuationField {
-  State = 0,
-  ResumeFunction = 1,
-  CallbackFn = 2,
-  ClosureState = 3,
-  Promise = 4,
-  Frame = 5
-};
 
 /// Frame Data stores any metadata necessary to transform the async function
 /// into a suspendable procedure. This includes indexing information into the
@@ -80,7 +64,7 @@ struct FrameData {
 };
 
 struct COTypes {
-  Type typeForField(ContinuationField field) {
+  Type typeForField(AsyncContinuationField field) {
     switch (field) {
     case State:
       return IndexType::get(cxt);
@@ -156,11 +140,11 @@ private:
 /// into a ramp function and resume function.
 struct LowerAsyncBuildContext {
   LowerAsyncBuildContext(
-      StringAttr coroAttrName, Shared<SymbolTable &> &sharedTable,
+      Shared<SymbolTable &> &sharedTable,
       DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
           &asyncFuncToRampFunctions,
       ImplicitLocOpBuilder &builder)
-      : coroAttrName(coroAttrName), sharedTable(sharedTable),
+      : sharedTable(sharedTable),
         asyncFuncToRampFunctions(asyncFuncToRampFunctions), builder(builder) {}
 
   /// Given an async function and its frame types, create a ramp function and a
@@ -178,7 +162,6 @@ private:
   /// coroutine types, populate the resume function.
   void populateResumeFunction(FuncOp resumeFunction, FuncOp funcOp,
                               COTypes &coTypes);
-  StringAttr coroAttrName;
   Shared<SymbolTable &> &sharedTable;
   DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
       &asyncFuncToRampFunctions;
@@ -218,7 +201,8 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
   auto resumeSignature = SignatureType::get(resumeFunctionType);
   FuncOp resumeFunction = builder.create<FuncOp>(
       funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
-  resumeFunction->setAttr(coroAttrName, mlir::UnitAttr::get(cxt));
+  resumeFunction.setCoroutineTypeAttr(
+      mlir::TypeAttr::get(coTypes.getContinuationType()));
   resumeName = sharedTable.modify(
       [resumeFunction, it = rampFunction->getIterator()](SymbolTable &symtab) {
         return symtab.insert(resumeFunction, it);
@@ -733,8 +717,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   // Convert async functions.
   ImplicitLocOpBuilder b(module->getLoc(), module);
   Operation *op = &*module.getOps().begin();
-  LowerAsyncBuildContext buildContext(coroAttrName, sharedTable,
-                                      asyncFuncToRampFunctions, b);
+  LowerAsyncBuildContext buildContext(sharedTable, asyncFuncToRampFunctions, b);
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
   while (op) {
     Operation *next = op->getNextNode();

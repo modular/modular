@@ -8,6 +8,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/AsyncUtils.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -37,23 +38,16 @@ struct LowerSuspensionPointsPass
 
   void runOnOperation() override;
   LogicalResult initialize(MLIRContext *ctx) override {
-    coroAttrName = StringAttr::get(ctx, "coro");
+    coroAttrName = StringAttr::get(ctx, "coroutineType");
     return success();
   }
   StringAttr coroAttrName;
 };
 } // namespace
 
-enum ContinuationFields { State = 0, ClosureState = 1, ClosureFunction = 2 };
-
 struct BuildContext {
-  BuildContext(LLVMBuilder &builder) : builder(builder) {
-    // Continuation type: !llvm.struct<(i8, ptr, ptr)>
-    Type ptrType = LLVMPointerType::get(builder.getContext());
-    continuationType = LLVMStructType::getLiteral(
-        builder.getContext(),
-        ArrayRef<Type>({builder.getI32Type(), ptrType, ptrType}));
-  }
+  BuildContext(LLVMBuilder &builder, Type continuationType)
+      : builder(builder), continuationType(continuationType) {}
   void emitUpdateState(Value continuation) {
     GEPOp slot = builder.create<GEPOp>(
         /*resultType=*/LLVMPointerType::get(builder.getContext()),
@@ -66,16 +60,19 @@ struct BuildContext {
     builder.create<StoreOp>(newState, slot);
   }
 
-  Value getContinuationField(Value operand, ContinuationFields fieldIndex) {
+  Value getContinuationField(Value operand, AsyncContinuationField fieldIndex) {
     Type type;
     switch (fieldIndex) {
     case State:
       type = builder.getI32Type();
       break;
-    case ClosureFunction:
+    case CallbackFn:
     case ClosureState:
       type = LLVMPointerType::get(builder.getContext());
       break;
+    default:
+      assert(false && "LowerSuspension points need not handle continuation "
+                      "fields frame, promise, or resume");
     }
     GEPOp slot = builder.create<GEPOp>(
         /*resultType=*/LLVMPointerType::get(builder.getContext()),
@@ -118,6 +115,7 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
   LLVMFuncOp funcOp = cast<LLVMFuncOp>(func);
   if (!funcOp->hasAttr(coroAttrName))
     return success();
+  TypeAttr coroType = cast<TypeAttr>(funcOp->getAttr(coroAttrName));
   TargetInfoAttr target = lookupTargetInfo(funcOp);
   if (!target) {
     mlir::emitError(func->getLoc(),
@@ -128,7 +126,7 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
   LLVMBuilder b(opBuilder, target);
 
   // Find all suspension points. Create a new block for each suspension point.
-  BuildContext buildContext(b);
+  BuildContext buildContext(b, coroType.getValue());
   SmallVector<Block *> exitPaths;
   Block *block = &*(func->getRegion(0).begin());
   while (block) {
@@ -172,7 +170,7 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
       values.push_back(i);
 
     Value state = buildContext.getContinuationField(
-        funcOp.getBody().getArgument(0), ContinuationFields::State);
+        funcOp.getBody().getArgument(0), AsyncContinuationField::State);
     values.push_back(0);
     buildContext.blockList.push_back(&initialBlock);
     SmallVector<ValueRange> operands(buildContext.blockList.size());
@@ -194,9 +192,9 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
     Operation *terminator = current->getTerminator();
     b.setInsertionPoint(terminator);
     Value callbackFnPtr = buildContext.getContinuationField(
-        continuation, ContinuationFields::ClosureFunction);
+        continuation, AsyncContinuationField::CallbackFn);
     Value parent = buildContext.getContinuationField(
-        continuation, ContinuationFields::ClosureState);
+        continuation, AsyncContinuationField::ClosureState);
     SmallVector<Type> params;
     b.create<CallOp>(LLVMFunctionType::get(b.getContext(), ptrType, params, 0),
                      ValueRange({callbackFnPtr, parent}));
