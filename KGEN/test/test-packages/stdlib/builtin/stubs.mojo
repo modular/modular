@@ -215,9 +215,7 @@ trait AnyType:
 @value
 @register_passable
 struct Coroutine[
-    is_mut: __mlir_type.i1, //,
-    T: AnyTrivialRegType,
-    lifetime: __mlir_type[`!lit.lifetime<`, is_mut, `>`],
+    T: AnyTrivialRegType, lifetimes: __mlir_type.`!lit.lifetime.set`
 ]:
     var value: __mlir_type.`!co.routine`
 

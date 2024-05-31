@@ -479,6 +479,8 @@ getCallOpEffects(Operation &op,
       // with the mutability of the target access.
       if (isa<LifetimeType>(paramValue.getType()))
         lifetimes.push_back(paramValue);
+      else if (auto set = dyn_cast<LifetimeSetAttr>(paramValue))
+        llvm::append_range(lifetimes, set.getOperands());
     }
   }
 
