@@ -3,18 +3,19 @@ load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
 package(default_visibility = ["//visibility:public"])
 
 modular_cc_library(
-    name = "CompilerSupportHeaders",
+    name = "CompilerSupport.headers",
     hdrs = glob([
         "include/LLCL/CompilerSupport/*.h",
     ]),
+    visibility = ["//Support:__subpackages__"],
     deps = [
-        ":RuntimeHeaders",
+        ":Runtime.headers",
         "//Support:Threading",
     ],
 )
 
 modular_cc_library(
-    name = "RuntimeHeaders",
+    name = "Runtime.headers",
     hdrs = glob([
         "include/LLCL/Runtime/*.h",
         "include/LLCL/Runtime/Globals/*.h",
@@ -23,13 +24,13 @@ modular_cc_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        ":SupportHeaders",
-        "//Support:ProfilingHeaders",
+        ":Support.headers",
+        "//Support:Profiling.headers",
     ],
 )
 
 modular_cc_library(
-    name = "SupportHeaders",
+    name = "Support.headers",
     hdrs = glob(["include/LLCL/Support/*.h"]),
     visibility = ["//visibility:private"],
 )
@@ -57,7 +58,7 @@ modular_cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        ":RuntimeHeaders",
+        ":Runtime.headers",
         ":Support",
         "//Support:ADT",
         "//Support:Profiling",
@@ -70,8 +71,8 @@ modular_shared_library(
     output_name = "LLCLRuntimeGlobals",
     deps = [
         ":CompilerSupport",
-        ":RuntimeHeaders",
-        ":SupportHeaders",
+        ":Runtime.headers",
+        ":Support.headers",
         "//Support:Base",
         "//Support:Profiling",
         "//Support:SymbolExport",

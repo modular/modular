@@ -377,8 +377,9 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "ProfilingHeaders",
+    name = "Profiling.headers",
     hdrs = glob(["include/Support/Profiling/*.h"]),
+    visibility = ["//LLCL:__subpackages__"],
     deps = [
         ":Base",
     ],
@@ -599,7 +600,7 @@ modular_cc_library(
         ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
-        "//LLCL:CompilerSupportHeaders",
+        "//LLCL:CompilerSupport.headers",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Target",
     ],

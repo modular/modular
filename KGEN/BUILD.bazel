@@ -517,7 +517,7 @@ modular_cc_library(
         ":HLCFEnumsIncGen",
         ":HLCFInterfacesIncGen",
         ":Interpreter",
-        ":KGENDialectHeaders",
+        ":KGENDialect.headers",
         "//Support:ADT",
         "//Support:Base",
         "//Support:Compiler",
@@ -811,7 +811,7 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "KGENDialectHeaders",
+    name = "KGENDialect.headers",
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
     visibility = ["//visibility:private"],
     deps = [
@@ -864,7 +864,7 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "ToolCommonHeaders",
+    name = "ToolCommon.headers",
     hdrs = [
         "include/KGEN/ToolCommon/CLOptions.h",
         "include/KGEN/ToolCommon/CompilationOptions.h",
@@ -878,10 +878,10 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "CompilerHeaders",
+    name = "Compiler.headers",
     hdrs = glob(["include/KGEN/Compiler/*.h"]),
     deps = [
-        ":ExecutionEngineHeaders",
+        ":ExecutionEngine.headers",
     ],
 )
 
@@ -890,13 +890,13 @@ modular_cc_library(
     srcs = glob(["lib/Compiler/*.cpp"]),
     hdrs = glob(["include/KGEN/Compiler/*.h"]),
     deps = [
-        ":ExecutionEngineHeaders",
+        ":ExecutionEngine.headers",
         ":JIT",
         ":KGENDialect",
         ":KGENDialectIncGen",
         ":KGENInterfacesIncGen",
         ":Pipeline",
-        ":ToolCommonHeaders",
+        ":ToolCommon.headers",
         ":VersionHeader",
         "//LLCL:CompilerSupport",
         "//Support:DebugInfoTransforms",
@@ -970,7 +970,7 @@ modular_shared_library(
     output_name = "KGENCompilerRTShared",
     deps = [
         "//ArraySupport",
-        "//CUDASupport:CUDASupportHeaders",
+        "//CUDASupport:CUDASupport.headers",
         "//CUDASupport:Globals",
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
@@ -1023,7 +1023,7 @@ modular_cc_library(
     deps = [
         ":KGENDialect",
         ":LITDialect",
-        ":ToolCommonHeaders",
+        ":ToolCommon.headers",
         "//Support:DebugInfoTransforms",
         "@llvm-project//mlir:IR",
     ],
@@ -1050,7 +1050,7 @@ modular_cc_library(
     deps = [
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
-        ":ToolCommonHeaders",
+        ":ToolCommon.headers",
         ":TransformUtils",
         "//LLCL:Runtime",
         "//Support:DebugInfoDialect",
@@ -1068,7 +1068,7 @@ modular_cc_library(
     deps = [
         ":KGENDialect",
         ":LITDialect",
-        ":ToolCommonHeaders",
+        ":ToolCommon.headers",
         ":VersionHeader",
         "//Cache",
         "//LLCL:CompilerSupport",
@@ -1080,7 +1080,7 @@ modular_cc_library(
     srcs = glob(["lib/Compiler/Pipeline/*.cpp"]),
     hdrs = glob(["lib/Compiler/Pipeline/*.h"]),
     deps = [
-        ":CompilerHeaders",
+        ":Compiler.headers",
         ":Elaborator",
         ":KGENPassesIncGen",
         ":LowerLIT",
@@ -1161,7 +1161,7 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "ExecutionEngineHeaders",
+    name = "ExecutionEngine.headers",
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
 )
 
@@ -1188,10 +1188,10 @@ modular_cc_library(
     ]),
     hdrs = glob(["include/KGEN/ExecutionEngine/JIT/*.h"]),
     deps = [
-        ":CompilerHeaders",
-        ":ExecutionEngineHeaders",
+        ":Compiler.headers",
+        ":ExecutionEngine.headers",
         ":KGENDialect",
-        ":ToolCommonHeaders",
+        ":ToolCommon.headers",
         ":VersionHeader",
         "//Cache",
         "//Support:Buffer",
@@ -1212,7 +1212,7 @@ modular_cc_library(
         ":LITDialect",
         ":MOGGPreElab",
         ":POPDialect",
-        ":ToolCommonHeaders",
+        ":ToolCommon.headers",
         "//Cache",
         "//Support:CommonCLOptions",
         "//Support:DebugInfoDialect",
@@ -1336,7 +1336,7 @@ modular_cc_binary(
 )
 
 modular_cc_library(
-    name = "MojoLLDBHeaders",
+    name = "MojoLLDBPublicHeaders",
     hdrs = glob(["include/KGEN/MojoLLDB/*.h"]),
 )
 
@@ -1355,7 +1355,7 @@ modular_shared_library(
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",
-        ":MojoLLDBHeaders",
+        ":MojoLLDBPublicHeaders",
         ":MojoTooling",
         ":ObjectCompiler",
         ":liblldb.wrapper",
@@ -1424,7 +1424,7 @@ modular_shared_library(
     deps = [
         ":KGENDialect",
         ":MojoLLDB",
-        ":MojoLLDBHeaders",
+        ":MojoLLDBPublicHeaders",
         ":MojoTooling",
         ":liblldb.wrapper",
         ":lldb19.0.0git",
