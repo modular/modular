@@ -14,7 +14,6 @@ set(SOURCES
   Initialize.cpp
   LLCL.cpp
   Memory.cpp
-  MojoCallContext.cpp
   Python.cpp
   Random.cpp
   Support.cpp
