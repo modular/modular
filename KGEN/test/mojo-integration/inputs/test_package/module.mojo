@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn identity[T: Movable](data: T) -> T:
+fn identity[T: Movable](owned data: T) -> T:
     return data^
 
 
