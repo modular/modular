@@ -3758,6 +3758,16 @@ fn logical_and[
     return x & y
 
 
+@mogg_register("mo.or")
+@always_inline
+fn logical_or[
+    simd_width: Int
+](x: SIMD[DType.bool, simd_width], y: SIMD[DType.bool, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x | y
+
+
 @mogg_register("mo.not")
 @always_inline
 fn logical_not[
