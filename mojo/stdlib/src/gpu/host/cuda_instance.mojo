@@ -17,6 +17,8 @@ from .function import _FunctionHandle
 from .device import Device
 from .event import Flag
 
+from sys.ffi import C_char
+
 
 @register_passable("trivial")
 struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
@@ -188,19 +190,19 @@ alias cuFuncSetAttribute = _dylib_function[
 
 alias cuModuleLoad = _dylib_function[
     "cuModuleLoad",
-    fn (Pointer[_ModuleHandle], DTypePointer[DType.int8]) -> Result,
+    fn (Pointer[_ModuleHandle], UnsafePointer[C_char]) -> Result,
 ]
 
 alias cuModuleLoadData = _dylib_function[
     "cuModuleLoadData",
-    fn (Pointer[_ModuleHandle], DTypePointer[DType.int8]) -> Result,
+    fn (Pointer[_ModuleHandle], UnsafePointer[UInt8]) -> Result,
 ]
 
 alias cuModuleLoadDataEx = _dylib_function[
     "cuModuleLoadDataEx",
     fn (
         Pointer[_ModuleHandle],
-        DTypePointer[DType.int8],
+        UnsafePointer[UInt8],
         UInt32,
         Pointer[JitOptions],
         Pointer[Pointer[NoneType]],
@@ -216,7 +218,7 @@ alias cuModuleGetFunction = _dylib_function[
     fn (
         Pointer[_FunctionHandle],
         _ModuleHandle,
-        DTypePointer[DType.int8],
+        UnsafePointer[C_char],
     ) -> Result,
 ]
 

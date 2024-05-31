@@ -325,7 +325,8 @@ struct Module:
 
         _check_error(
             cuModuleLoad.load()(
-                Pointer.address_of(module), path_cstr.unsafe_ptr()
+                Pointer.address_of(module),
+                path_cstr.unsafe_cstr_ptr(),
             )
         )
         _ = path_cstr
@@ -474,7 +475,9 @@ struct Module:
         var cuModuleGetFunction = self.cuda_dll[].cuModuleGetFunction if self.cuda_dll else cuModuleGetFunction.load()
         _check_error(
             cuModuleGetFunction(
-                Pointer.address_of(func), self.module, name_cstr.unsafe_ptr()
+                Pointer.address_of(func),
+                self.module,
+                name_cstr.unsafe_cstr_ptr(),
             )
         )
 
