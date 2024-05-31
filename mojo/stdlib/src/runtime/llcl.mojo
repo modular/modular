@@ -490,7 +490,7 @@ struct MojoCallContextPtr:
     C++ runtime to coordinate execution with Mojo kernels.
     """
 
-    # Actually a KGEN::MojoCallContext*
+    # Actually a MojoCallContext*
     alias ptr_type = DTypePointer[DType.invalid]
     var ptr: Self.ptr_type
 
