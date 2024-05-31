@@ -58,7 +58,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
             dims.append(input_type.dims[i])
 
     return g.op(
-        "mo.gather",
+        "rmo.mo.gather",
         List[Symbol](input, indices, g.scalar(Int64(axis))),
         TensorType(input_type.dtype, dims),
     )
@@ -135,7 +135,7 @@ def slice(
     var step = stack(steps, axis=0)
 
     return g.op(
-        "mo.slice",
+        "rmo.mo.slice",
         List[Symbol](input, start, stop, step),
         TensorType(input_type.dtype, out_shape),
     )
@@ -159,7 +159,7 @@ def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
     """
     var g = condition.graph()
     return g.op(
-        "mo.select",
+        "rmo.mo.select",
         List[Symbol](condition, x, y),
         x.tensor_type(),
     )
@@ -272,7 +272,7 @@ def split[
         out_types.append(TensorType(type.dtype, out_dims))
 
     return g.nvop(
-        "mo.split",
+        "rmo.mo.split",
         List[Symbol](
             input, g.vector[DType.int64](split_sizes), g.scalar(Int64(axis))
         ),

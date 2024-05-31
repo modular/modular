@@ -144,7 +144,7 @@ def avg_pool(
     )
 
     return g.op(
-        "mo.avg_pool",
+        "rmo.mo.avg_pool",
         List[Symbol](
             input,
             filter_constant,
@@ -238,7 +238,7 @@ def conv2d(
     output_type.dims[3] = filter_type.dims[3]
 
     return g.op(
-        "mo.conv",
+        "rmo.mo.conv",
         List[Symbol](
             input,
             filter,
@@ -376,7 +376,7 @@ def conv3d(
     output_type.dims[4] = filter_type.dims[4]
 
     return g.op(
-        "mo.conv",
+        "rmo.mo.conv",
         List[Symbol](
             input,
             filter,
@@ -448,7 +448,7 @@ def max_pool(
     )
 
     return g.op(
-        "mo.max_pool",
+        "rmo.mo.max_pool",
         List[Symbol](
             input,
             filter_constant,

@@ -321,7 +321,7 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             The operation result.
         """
-        return self.graph().op("mo.negative", self, self.tensor_type())
+        return self.graph().op("rmo.mo.negative", self, self.tensor_type())
 
     fn __pow__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise raise to power.

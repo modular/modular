@@ -60,7 +60,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     var rhs_matrix_dims = rhs_shape[rhs_rank - 2 : rhs_rank]
 
     var broadcast_dims_shape = g.op(
-        "mo.broadcast_shape",
+        "rmo.mo.broadcast_shape",
         List[Symbol](lhs_broadcast_dims, rhs_broadcast_dims),
         TensorType(DType.int64, broadcast_rank - 2),
     )
@@ -80,7 +80,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     )
 
     var broadcast_lhs = g.op(
-        "mo.broadcast_to",
+        "rmo.mo.broadcast_to",
         List[Symbol](lhs, lhs_broadcast_shape),
         TensorType(lhs_type.dtype, lhs_final_dims),
     )
@@ -90,7 +90,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     )
 
     var broadcast_rhs = g.op(
-        "mo.broadcast_to",
+        "rmo.mo.broadcast_to",
         List[Symbol](rhs, rhs_broadcast_shape),
         TensorType(rhs_type.dtype, rhs_final_dims),
     )
@@ -169,7 +169,9 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     var out_type = TensorType(lhs_type.dtype, dims)
 
     return g.op(
-        "mo.batch_matmul", List[Symbol](broadcast_lhs, broadcast_rhs), out_type
+        "rmo.mo.batch_matmul",
+        List[Symbol](broadcast_lhs, broadcast_rhs),
+        out_type,
     )
 
 
@@ -215,7 +217,7 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     matmul_dims.append(Dim.dynamic())
     matmul_dims.append(lhs_type.dim(-1))
     var matmul_out = g.op(
-        "mo.matmul",
+        "rmo.mo.matmul",
         List[Symbol](reshape(lhs, reshape_shape, matmul_dims), rhs),
         TensorType(lhs_type.dtype, Dim.dynamic(), rhs_type.dim(-1)),
     )
@@ -261,7 +263,7 @@ def band_part(
     """
     var g = input.graph()
     return g.op(
-        "mo.linalg.band_part",
+        "rmo.mo.linalg.band_part",
         List[Symbol](
             input,
             num_lower.reshape(),
@@ -323,7 +325,7 @@ def range_fill(start: Symbol, limit: Symbol, step: Symbol) -> Symbol:
     g = limit.graph()
 
     return g.op(
-        "mo.range",
+        "rmo.mo.range",
         List[Symbol](
             start,
             limit,
@@ -368,7 +370,7 @@ def tile(input: Symbol, repeats: List[Int64]) -> Symbol:
             )
 
     return g.op(
-        "mo.tile",
+        "rmo.mo.tile",
         List[Symbol](
             input,
             g.vector(repeats),
