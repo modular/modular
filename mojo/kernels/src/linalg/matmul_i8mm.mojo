@@ -179,7 +179,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         # This inner kernels works with non-transposed A.
         var K = a.dim(1)
         var a_ptr = a.data.offset(
-            global_offset.M * K + global_offset.K + 2 * kl
+            global_offset.M * K + 2 * global_offset.K + 2 * kl
         )
 
         # Prefetch B matrix.

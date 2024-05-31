@@ -449,7 +449,7 @@ struct PackMatrixCols[
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
         alias nr = column_inner_size // 2
-        for i in range(0, align_up(kc, i8mm_cols), i8mm_cols):
+        for i in range(0, self.pack_tile_dim[0], i8mm_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(0, nr, i8mm_rows):
                     for i2 in range(i8mm_cols):
