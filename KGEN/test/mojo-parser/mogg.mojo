@@ -18,7 +18,7 @@ struct ParamType[a: Int]:
     pass
 
 
-# CHECK: [[PARAM:#.*]] = #kgen.type<!lit.declref<#ParamType <:!Int a>
+# CHECK: [[PARAM:#.*]] = #kgen.type<@mogg::@ParamType<:!Int a>
 
 
 # CHECK: lit.func @"custom_op_args
