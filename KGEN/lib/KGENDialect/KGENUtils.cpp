@@ -353,7 +353,11 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
 void KGEN::printTypeValueBody(
     AsmPrinter &p, TypeConstantAttr type,
     llvm::function_ref<void(AsmPrinter &, Type)> typePrinter) {
-  typePrinter(p, type.getMlirType());
+  typePrinter(p, type.getTypeValue());
+  if (type.getMlirType() != type.getTypeValue()) {
+    p << ", ";
+    typePrinter(p, type.getMlirType());
+  }
   VTableAttr vtable = type.getVTable();
   if (!vtable.getEntries().empty()) {
     p << ", {";
@@ -366,10 +370,10 @@ OptionalParseResult KGEN::parseTypeValueBody(
     AsmParser &p, TypedAttr &value, Type type,
     llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser,
     bool knownIdenticalRepresentation) {
-  Type mlirType;
+  Type typeValue, mlirType;
   auto vtable = VTableAttr::get(p.getContext(), {});
 
-  OptionalParseResult result = typeParser(p, mlirType);
+  OptionalParseResult result = typeParser(p, typeValue);
   if (!result.has_value())
     return {}; // Not a type-value at all.
 
@@ -378,18 +382,40 @@ OptionalParseResult KGEN::parseTypeValueBody(
 
   if (knownIdenticalRepresentation || failed(p.parseOptionalComma())) {
     // This type-value has identical type/value representation. Stop here.
-    value = TypeConstantAttr::get(mlirType, type, vtable);
+    value = TypeConstantAttr::get(typeValue, typeValue, type, vtable);
     return mlir::success();
   }
 
-  // Parse the vtable.
-  if (p.parseLBrace() ||
-      (p.parseOptionalRBrace() &&
-       (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
-        p.parseRBrace())))
-    return failure();
+  // Parse the mlirType if a vtable is not seen immediately.
+  bool seenVTable = succeeded(p.parseOptionalLBrace());
+  if (seenVTable) {
+    // mlirType is identical to typeValue.
+    mlirType = typeValue;
+  } else {
+    OptionalParseResult result = typeParser(p, mlirType);
+    if (!result.has_value())
+      return p.emitError(p.getCurrentLocation(), "expected a type");
+    if (failed(*result))
+      return failure();
 
-  value = TypeConstantAttr::get(mlirType, type, vtable);
+    if (failed(p.parseOptionalComma())) {
+      // No vtable.
+      value = TypeConstantAttr::get(typeValue, mlirType, type, vtable);
+      return mlir::success();
+    }
+
+    seenVTable = succeeded(p.parseOptionalLBrace());
+  }
+
+  // Parse the vtable if a '{' was seen.
+  if (seenVTable) {
+    if (p.parseOptionalRBrace() &&
+        (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
+         p.parseRBrace()))
+      return failure();
+  }
+
+  value = TypeConstantAttr::get(typeValue, mlirType, type, vtable);
   return mlir::success();
 }
 
@@ -403,7 +429,7 @@ LogicalResult KGEN::printSugaredTypeValue(
   if (succeeded(p.printAlias(type)))
     return success();
 
-  const bool nonTrivial = !type.getVTable().getEntries().empty();
+  const bool nonTrivial = !type.hasIdenticalRepresentation();
   if (nonTrivial)
     p << '[';
 
