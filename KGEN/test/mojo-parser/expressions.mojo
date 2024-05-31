@@ -1373,13 +1373,23 @@ fn variadic_attr_callee[key_type: CollectionElement](
 # Test that parameter inference works with implicit conversions - in this case
 # that we can infer the parameters of 'thing_taking_reference' even though x
 # needs to be built as a Reference.
-fn thing_taking_reference[type: AnyType](arg: Reference[type, _, _]): pass
+fn thing_taking_reference[
+  type: AnyType, 
+  #//, # This doesn't work yet for some reason.
+  # TODO: Add _.
+  is_mutable: Bool,
+  lifetime: AnyLifetime[is_mutable].type,
+](ref[lifetime] arg: type): pass
+fn thing_taking_reference2[type: AnyType](arg: Reference[type, _, _]): pass
 
 # CHECK-LABEL: lit.func @"test_thing_taking_reference
 fn test_thing_taking_reference(inout x: String):
-# CHECK: lit.call {{.*}}@Reference::@"__init__
-# CHECK-SAME: <:!AnyType #String1, :!Bool {:i1 1}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+  # CHECK-NEXT: lit.call {{.*}}thing_taking_reference{{.*}}(%x)
   thing_taking_reference(x)
+# CHECK-NEXT: %anonymous2A = lit.var.decl
+# CHECK-NEXT: lit.call {{.*}}@Reference::@"__init__
+# CHECK-SAME: <:!AnyType #String1, :!Bool {:i1 1}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+  thing_taking_reference2(x)
 
 struct StructWithStaticMethods:
    @staticmethod

@@ -345,7 +345,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     return shared.emitError(funcOp.getLoc(), message);
   };
 
-  // If the argument list has a byref result or byref error, ignore it for type
+  // If the argument list has a inout result or inout error, ignore it for type
   // checking purposes.
   while (!parsedArgs.empty() && parsedArgs.back().convention ==
                                     ParsedArgument::kConventionByRefResult) {
@@ -1041,12 +1041,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
     // Parse a result reference if present.
-    if (p.consumeIf(Token::kw_ref)) {
-      if (p.parseToken(Token::l_square, "expected '[' in result reference") ||
-          p.parseExpressionList(resultRefLifetimeExpr, {}) ||
-          p.parseToken(Token::r_square, "expected ']' in result reference"))
-        /*intentionally ignore the problem*/;
-    }
+    (void)p.parseRefSpecifier(resultRefLifetimeExpr);
+
     // Parse the result type expression.
     // If this result parsing fails, then we just continue on as if none was
     // specified.
@@ -1331,6 +1327,17 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       } else {
         argDecl.setErroneous();
       }
+      continue;
+    }
+
+    // Ref convention works with registers and def functions without any funny
+    // business.
+    if (convention == ArgConvention::Ref) {
+      // TODO: Merge MBValue and MLValue.
+      if (convention == ArgConvention::BorrowedInMem)
+        setDecl(MBValue(bbArg));
+      else
+        setDecl(MLValue(bbArg));
       continue;
     }
 

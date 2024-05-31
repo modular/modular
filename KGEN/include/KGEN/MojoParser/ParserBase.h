@@ -240,6 +240,11 @@ public:
   /// Parse a 'suite' production into the declaration specified by `decl`.
   ParseResult parseSuite(ASTDecl &decl);
 
+  /// If the current token is looking at 'ref [exprlist]' production, parse it
+  /// into expr, otherwise leave it as null and return success.  If we see a
+  /// 'ref' token and have a parse error, return failure and return null.
+  ParseResult parseRefSpecifier(ExprNode *&expr);
+
 public:
   Lexer &lexer;
 

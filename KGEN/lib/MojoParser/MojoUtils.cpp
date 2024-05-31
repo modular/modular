@@ -208,7 +208,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
            from.getArguments(), to.getArguments(), from.getArgConventions())) {
     Type fromTyCmp = fromTy;
     Type toTyCmp = toTy;
-    if (SignatureType::hasAddress(conv)) {
+    if (SignatureType::hasImplicitLifetime(conv)) {
       fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
       toTyCmp = ASTType(toTyCmp).getReferenceElementType();
     }

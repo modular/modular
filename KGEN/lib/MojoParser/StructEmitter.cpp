@@ -48,7 +48,7 @@ LIT::FuncOp StructEmitter::createFunction(
   for (auto [argNo, argType, argConv] :
        llvm::enumerate(argTypes, argConventions)) {
     adjustedArgTypes.push_back(argType);
-    if (!SignatureType::hasAddress(argConv))
+    if (!SignatureType::hasImplicitLifetime(argConv))
       continue;
 
     // Dig out the lifetime decl.
@@ -648,7 +648,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl,
          llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
       // Strip the pointer type if present.
       Type argType = type;
-      if (SignatureType::hasAddress(conv))
+      if (SignatureType::hasImplicitLifetime(conv))
         argType = ASTType(argType).getReferenceElementType();
       StructFieldOp op = field;
       if (argType != op.getType()) {

@@ -483,6 +483,25 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   AnyValue value = operand.ir;
   curArgExpr = operand.expr;
 
+  auto resolveOperandCValue = [&]() -> CValue {
+    if (auto argVal = value.getIfCValue())
+      return argVal;
+
+    OverloadSetUValue orValue = value.getIfOverloadSet();
+    assert(orValue && "Unknown UValue!");
+    // Try to refine the OverloadSetUValue into a PValue.
+    CValue argVal = orValue->getDirectSymbol(expectedType);
+    if (!argVal)
+      return {};
+    // If we have a reference to an overloaded method like foo(a.method),
+    // then we can't resolve it.
+    // TODO(partial application => closures): Given we just resolved argVal,
+    // we could form the "a.method" expression with a closure.
+    if (orValue->baseValue) // Cannot merge base value.
+      return {};
+    return argVal;
+  };
+
   // We'll bind the next provided value.
   switch (expectedConvention) {
   case ArgConvention::InitSelf:
@@ -508,9 +527,39 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
                       expectedType.getReferenceElementType());
   }
 
+  case ArgConvention::Ref: {
+    // Infer the lifetime and address space before inferring the element type.
+    CValue argVal = resolveOperandCValue();
+    if (!argVal)
+      return failure();
+
+    RefType valueRefType;
+    if (value.isMValue())
+      valueRefType = cast<RefType>(value.getMValueReference().getType());
+    else if (value.getIfPValue() && isParamContext)
+      valueRefType =
+          RefType::getImmortal(argVal.getRValueType(), /*isMut=*/true);
+
+    // As a special hack, look through DefArgumentWrapperDLValue to the
+    // underlying MBValue that it may contain.  This is for two reasons:
+    //  1) We don't want to infer mutability from the argument even though
+    //     it is a DLValue, because we'd force copy-out + writeback,
+    //     materializing the def argument box.
+    //  2) We have significant bugs around lifetime inference from SBValues
+    //     and DLValues because we're not materializing the box in time.  This
+    //     is tracked by MOCO-684.
+    // Solve this by hacking this important case specifically.
+    if (auto dlValue = value.getIfDLValue())
+      if (auto refType = dlValue->getMBValueTypeFromDefArgument())
+        valueRefType = refType;
+
+    if (valueRefType)
+      return matchTypes(valueRefType, expectedType);
+    return success();
+  }
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:
-    // Otherwise,we expect an r-value to match up, ignoring the reference type
+    // Otherwise, we expect an r-value to match up, ignoring the reference type
     // from the convention.
     expectedType = expectedType.getReferenceElementType();
     break;
@@ -521,38 +570,27 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     llvm_unreachable("none convention not permitted in lit");
   }
 
-  // Okay, we got a normal value argument convention and stripped off any
-  // ArgConvention-related !lit.ref from the expected type.
-  CValue argVal = value.getIfCValue();
-  if (!argVal) {
-    if (auto initValue = operand.ir.getIfInitializer()) {
-      // Check to see if the expected type has an initializer with the
-      // specified operands.  Remove any parameters from the expected type
-      // since those are what we're inferring from the arguments.  The result
-      // 'actualType' will have those newly inferred parameters.
-      ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
-      auto [initFn, erroneousDecl] = emitter.canConstructType(
-          expectedType.getWithoutParameters(emitter.shared), initValue.get(),
-          operand.expr);
-      // If there were declaration errors, assume success to not raise
-      // spurious errors due to not resolving to those erroneous
-      // declarations.
-      return success(bool(initFn) || erroneousDecl);
-    }
-
-    OverloadSetUValue orValue = value.getIfOverloadSet();
-    assert(orValue && "Unknown UValue!");
-    // Try to refine the OverloadSetUValue into a PValue.
-    argVal = orValue->getDirectSymbol(expectedType);
-    if (!argVal)
-      return failure();
-    // If we have a reference to an overloaded method like foo(a.method),
-    // then we can't resolve it.
-    // TODO(partial application => closures): Given we just resolved argVal,
-    // we could form the "a.method" expression with a closure.
-    if (orValue->baseValue) // Cannot merge base value.
-      return failure();
+  // Check to see if the expected type has an initializer with the
+  // specified operands.  Remove any parameters from the expected type
+  // since those are what we're inferring from the arguments.  The result
+  // 'actualType' will have those newly inferred parameters.
+  if (auto initValue = operand.ir.getIfInitializer()) {
+    ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+    auto [initFn, erroneousDecl] = emitter.canConstructType(
+        expectedType.getWithoutParameters(emitter.shared), initValue.get(),
+        operand.expr);
+    // If there were declaration errors, assume success to not raise
+    // spurious errors due to not resolving to those erroneous
+    // declarations.
+    return success(bool(initFn) || erroneousDecl);
   }
+
+  // Okay, we got a normal value argument convention and stripped off any
+  // ArgConvention-related !lit.ref from the expected type.  See if we can
+  // resolve the argument to a CValue.
+  CValue argVal = resolveOperandCValue();
+  if (!argVal)
+    return failure();
 
   // If the argument types exactly match, then they are good.
   ASTType argType = argVal.getRValueType();

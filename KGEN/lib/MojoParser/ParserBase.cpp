@@ -177,3 +177,19 @@ void ParserBase::skipUntilIndentation(
     consumeToken();
   }
 }
+
+/// If the current token is looking at 'ref [exprlist]' production, parse it
+/// into expr, otherwise leave it as null and return success.  If we see a
+/// 'ref' token and have a parse error, return failure and return null.
+ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr) {
+  expr = nullptr;
+  if (!consumeIf(Token::kw_ref))
+    return success();
+
+  if (parseToken(Token::l_square, "expected '[' in result reference") ||
+      parseExpressionList(expr, {}) ||
+      parseToken(Token::r_square, "expected ']' in result reference"))
+    return failure();
+
+  return success();
+}

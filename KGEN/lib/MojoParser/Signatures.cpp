@@ -25,6 +25,82 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+/// Process the lifetime expression in a `ref [...] T` reference specifier.
+/// T is specified as 'type' and this returns the result !lit.ref type.
+static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
+                                        ASTType type,
+                                        const TypeCheckScopeInfo &scopeInfo) {
+  // Propagate already disgnosed errors.
+  if (isa<TypeCheckErrorType>(type))
+    return type;
+  SharedState &shared = scopeInfo.shared;
+
+  auto hadError = [&]() -> ASTType { return shared.getTypeCheckErrorType(); };
+  ExprEmitter emitter(shared, scopeInfo.declScope, EC_Lifetime);
+
+  // If the lifetime expression is syntactically a 2-element tuple, then
+  // take it apart into a lifetime and address space.
+  ExprNode *addrSpaceExpr = nullptr;
+  if (auto *tuple = dyn_cast<TupleNode>(lifetimeExpr)) {
+    if (tuple->exprs.size() != 2) {
+      emitter.emitError(tuple->getLoc())
+          << "expected specifier with one lifetime or a lifetime and an "
+             "address space"
+          << lifetimeExpr->getRange();
+      return hadError();
+    }
+
+    lifetimeExpr = tuple->exprs[0];
+    addrSpaceExpr = tuple->exprs[1];
+  }
+
+  // Emit the lifetime expression if it is a normal expression.
+  PValue lifetime;
+  if (lifetimeExpr->kind != ExprNode::kDiscardLiteral) {
+    lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
+  } else {
+    emitter.emitError(lifetimeExpr->getLoc())
+        << "`_` not supported in ref argument yet" << lifetimeExpr->getRange();
+    return hadError();
+  }
+  if (!lifetime)
+    return hadError();
+
+  if (!isa<LifetimeType>(lifetime.getType())) {
+    emitter.emitError(lifetimeExpr->getLoc())
+        << "result reference lifetime has unexpected type "
+        << lifetime.getType() << lifetimeExpr->getRange();
+    return hadError();
+  }
+
+  // If we have an address space, emit it.
+  TypedAttr addrSpace;
+  if (addrSpaceExpr) {
+    auto addrSpaceCValue = emitter.emitExprCValue(addrSpaceExpr, EC_Lifetime);
+    // Invoke __mlir_index__ to get Int/AddressSpace to what we need.
+    if (addrSpaceCValue && !isa<IndexType>(addrSpaceCValue.getRValueType())) {
+      ValueDest dest(EC_Lifetime);
+      addrSpaceCValue = emitter.emitNamedMethodCall(
+          "__mlir_index__", {{{addrSpaceCValue, addrSpaceExpr}}}, dest,
+          CallSyntax::kMethodCall, addrSpaceExpr);
+    }
+
+    addrSpace =
+        emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Lifetime).get();
+
+    if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
+      emitter.emitError(lifetimeExpr->getLoc())
+          << "INTERNAL ERROR: __mlir_index didn't return a value of index type"
+          << addrSpace.getType() << lifetimeExpr->getRange();
+      return hadError();
+    }
+  }
+  if (!addrSpace)
+    addrSpace = IntegerAttr::get(IndexType::get(shared.getContext()), 0);
+
+  return RefType::get(type, lifetime, addrSpace);
+}
+
 //===----------------------------------------------------------------------===//
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
@@ -34,7 +110,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
-  // Any owned/borrowed/inout keyword sets convention.
+  // Any owned/borrowed/inout/ref keyword sets convention.
   // TODO: Turn all of these into soft keywords.
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
@@ -42,8 +118,13 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     convention = kConventionBorrowed;
   else if (p.consumeIf(Token::kw_inout))
     convention = kConventionInOut;
+  else if (p.getToken().is(Token::kw_ref)) {
+    if (succeeded(p.parseRefSpecifier(refLifetimeExpr)))
+      convention = kConventionRef;
+  }
+
   while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
-                            Token::kw_inout)) {
+                            Token::kw_inout, Token::kw_ref)) {
     p.emitTokenError("argument already has a convention specified");
     p.consumeToken();
   }
@@ -847,6 +928,18 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
     arg.kgenConvention = ArgConvention::OwnedInReg;
     break;
+  case ParsedArgument::kConventionRef:
+    assert(arg.refLifetimeExpr && "No lifetime expr for convention!");
+    if (arg.vararg != VarArgKind::None) {
+      // There should be no reason this isn't supportable.
+      shared.emitError(
+          arg.loc, "TODO: variadics not supported with 'ref' convention yet");
+      arg.vararg = VarArgKind::None;
+    }
+    type = processLifetimeSpecifier(arg.refLifetimeExpr, type,
+                                    tcSignature.paramList);
+    arg.kgenConvention = ArgConvention::Ref;
+    break;
   case ParsedArgument::kConventionBorrowed: {
     arg.kgenConvention = ArgConvention::BorrowedInMem;
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
@@ -886,6 +979,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     // The VariadicPack itself is passed as borrowed except for owned
     // convention: this allows the callee to consume the pack.
     switch (arg.convention) {
+    case ParsedArgument::kConventionRef:
     case ParsedArgument::kConventionUnspec:
     case ParsedArgument::kConventionByRefResult:
     case ParsedArgument::kConventionInitSelfResult:
@@ -908,11 +1002,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // Values passed by memory need an associated lifetime parameter, and need to
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
-  if (!SignatureType::hasAddress(arg.kgenConvention) ||
-      arg.vararg == VarArgKind::KWVarArg) {
-    fullType = type;
-  } else {
+  if (SignatureType::hasImplicitLifetime(arg.kgenConvention) &&
+      arg.vararg != VarArgKind::KWVarArg) {
     fullType = makeImplicitRefTypeForArg(arg, idx, type, tcSignature);
+  } else {
+    fullType = type;
   }
 
   // If this is a valid vararg argument, then we pass it as a variadic type.
@@ -985,20 +1079,20 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::InOut:
   case ArgConvention::InitSelf:
   case ArgConvention::OwnedInMem:
-    // OwnedInMem passes ownership of the argument into the callee so we
-    // can directly mutate it if we want to.
-    argIRValue = MLValue(blockArg);
+  case ArgConvention::Ref:
+  case ArgConvention::BorrowedInMem:
+    // TODO: Collapse MLValue and MBValue.
+    if (cast<RefType>(fullType).isMutableKnown(true))
+      argIRValue = MLValue(blockArg);
+    else
+      argIRValue = MBValue(blockArg);
     break;
   case ArgConvention::OwnedInReg:
-    // NOTE: we're treating this as an SRValue, even though it will get
-    // wrapped and turned into an SLValue within the body.
+    // NOTE: This will get wrapped and turned into an SLValue within the body.
     argIRValue = SRValue(blockArg);
     break;
   case ArgConvention::BorrowedInReg:
     argIRValue = SBValue(blockArg);
-    break;
-  case ArgConvention::BorrowedInMem:
-    argIRValue = MBValue(blockArg);
     break;
   case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
@@ -1015,74 +1109,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // arguments will be notified when they are fully resolved later).
   if (!fnDecl)
     shared.notifyListenerOnArgumentDecl(decl, arg.name, arg.loc);
-}
-
-/// Process the lifetime expression in a `ref [...] T` reference specifier.
-/// T is specified as 'type' and this returns the result !lit.ref type.
-static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
-                                        ASTType type,
-                                        const TypeCheckScopeInfo &scopeInfo) {
-  // Propagate already disgnosed errors.
-  if (isa<TypeCheckErrorType>(type))
-    return type;
-  SharedState &shared = scopeInfo.shared;
-
-  auto hadError = [&]() -> ASTType { return shared.getTypeCheckErrorType(); };
-  ExprEmitter emitter(shared, scopeInfo.declScope, EC_Lifetime);
-
-  // If the lifetime expression is syntactically a 2-element tuple, then
-  // take it apart into a lifetime and address space.
-  ExprNode *addrSpaceExpr = nullptr;
-  if (auto *tuple = dyn_cast<TupleNode>(lifetimeExpr)) {
-    if (tuple->exprs.size() != 2) {
-      emitter.emitError(tuple->getLoc())
-          << "expected specifier with one lifetime or a lifetime and an "
-             "address space"
-          << lifetimeExpr->getRange();
-      return hadError();
-    }
-
-    lifetimeExpr = tuple->exprs[0];
-    addrSpaceExpr = tuple->exprs[1];
-  }
-
-  PValue lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
-  if (!lifetime)
-    return hadError();
-
-  if (!isa<LifetimeType>(lifetime.getType())) {
-    emitter.emitError(lifetimeExpr->getLoc())
-        << "result reference lifetime has unexpected type "
-        << lifetime.getType() << lifetimeExpr->getRange();
-    return hadError();
-  }
-
-  // If we have an address space, emit it.
-  TypedAttr addrSpace;
-  if (addrSpaceExpr) {
-    auto addrSpaceCValue = emitter.emitExprCValue(addrSpaceExpr, EC_Lifetime);
-    // Invoke __mlir_index__ to get Int/AddressSpace to what we need.
-    if (addrSpaceCValue && !isa<IndexType>(addrSpaceCValue.getRValueType())) {
-      ValueDest dest(EC_Lifetime);
-      addrSpaceCValue = emitter.emitNamedMethodCall(
-          "__mlir_index__", {{{addrSpaceCValue, addrSpaceExpr}}}, dest,
-          CallSyntax::kMethodCall, addrSpaceExpr);
-    }
-
-    addrSpace =
-        emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Lifetime).get();
-
-    if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
-      emitter.emitError(lifetimeExpr->getLoc())
-          << "INTERNAL ERROR: __mlir_index didn't return a value of index type"
-          << addrSpace.getType() << lifetimeExpr->getRange();
-      return hadError();
-    }
-  }
-  if (!addrSpace)
-    addrSpace = IntegerAttr::get(IndexType::get(shared.getContext()), 0);
-
-  return RefType::get(type, lifetime, addrSpace);
 }
 
 /// Type check the result type for the function.  `resultTypeExpr` will be
