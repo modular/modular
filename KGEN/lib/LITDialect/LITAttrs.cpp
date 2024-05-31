@@ -805,6 +805,11 @@ ImplicitLifetimeRefAttr::replace(size_t depth, size_t index,
 // LifetimeSetAttr
 //===----------------------------------------------------------------------===//
 
+LifetimeSetAttr LifetimeSetAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
+                                                 LifetimeSetType type) {
+  return Base::get(type.getContext(), operands, type);
+}
+
 LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
                                      ArrayRef<TypedAttr> operands,
                                      LifetimeSetType type) {
