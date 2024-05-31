@@ -326,4 +326,31 @@ def CO_DestroyOp : COOp<"destroy"> {
   let arguments = (ins Res<CoroutineType, "", [MemFree]>:$coroutine);
   let assemblyFormat = "$coroutine attr-dict";
 }
+
+//===----------------------------------------------------------------------===//
+// SetByRefArgumentsOp
+//===----------------------------------------------------------------------===//
+
+def CO_SetByRefErrorAndResultOp : COOp<"set_byref_error_result"> {
+  let summary = "Set the by ref arguments of the coroutine.";
+  let description = [{
+    The `co.set_byref_error_result` operation sets the by reference result
+    value and the by reference error value of the async function.
+
+    Example:
+
+    ```mlir
+    co.set_byref_error_result %hdl(%0, %1) :
+      !kgen.pointer<index>, !kgen.pointer<index>
+    ```
+  }];
+
+  let arguments = (ins Arg<CoroutineType, "", [MemWrite]>:$coroutine,
+                       AnyType:$error, AnyType:$result);
+  let assemblyFormat = [{
+    $coroutine `(` $error `,` $result `)`
+    attr-dict `:` type($error) `,` type($result)
+  }];
+}
+
 #endif // COOPS_TD
