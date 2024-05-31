@@ -268,7 +268,7 @@ struct Runtime:
         self,
         owned handle: Coroutine[*_],
         desired_worker_id: Int = -1,
-    ) -> Task[handle.type, handle.lifetime]:
+    ) -> Task[handle.type, handle.lifetimes]:
         """Run the coroutine as a task on the LLCL Runtime."""
         var ctx: UnsafePointer[AsyncContext] = handle._get_ctx[
             AsyncContext
@@ -276,7 +276,7 @@ struct Runtime:
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
         ctx[].callback = AsyncContext.complete
         _async_execute[handle.type](handle._handle, self, desired_worker_id)
-        return Task[handle.type, handle.lifetime](handle^)
+        return Task[handle.type, handle.lifetimes](handle^)
 
     fn run(self, owned handle: Coroutine[*_]) -> handle.type:
         var t = self.create_task(handle^)
@@ -289,14 +289,10 @@ struct Runtime:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[
-    is_mut: Bool, //,
-    type: AnyTrivialRegType,
-    lifetime: AnyLifetime[is_mut].type,
-]:
-    var handle: Coroutine[type, lifetime]
+struct Task[type: AnyTrivialRegType, lifetimes: LifetimeSet]:
+    var handle: Coroutine[type, lifetimes]
 
-    fn __init__(inout self, owned handle: Coroutine[type, lifetime]):
+    fn __init__(inout self, owned handle: Coroutine[type, lifetimes]):
         self.handle = handle^
 
     fn get(self) -> type:
@@ -348,13 +344,13 @@ struct Task[
 
 
 @register_passable("trivial")
-struct TaskGroupContext[is_mut: Bool, //, lifetime: AnyLifetime[is_mut].type]:
+struct TaskGroupContext[lifetimes: LifetimeSet]:
     alias tg_callback_fn_type = fn (
-        Pointer[NoneType], inout TaskGroup[lifetime]
+        Pointer[NoneType], inout TaskGroup[lifetimes]
     ) -> None
 
     var callback: Self.tg_callback_fn_type
-    var task_group: UnsafePointer[TaskGroup[lifetime]]
+    var task_group: UnsafePointer[TaskGroup[lifetimes]]
 
 
 @register_passable
@@ -408,7 +404,7 @@ struct TaskGroupTask[type: AnyTrivialRegType, lifetime: MutableLifetime]:
         return self.handle_ref[].get[type]()
 
 
-struct TaskGroup[is_mut: Bool, //, lifetime: AnyLifetime[is_mut].type]:
+struct TaskGroup[lifetimes: LifetimeSet]:
     var counter: Atomic[DType.index]
     var chain: Chain
     var rt: Runtime
@@ -432,7 +428,7 @@ struct TaskGroup[is_mut: Bool, //, lifetime: AnyLifetime[is_mut].type]:
 
     @staticmethod
     fn _task_complete_callback(
-        hdl: Pointer[NoneType], inout tg: TaskGroup[lifetime]
+        hdl: Pointer[NoneType], inout tg: TaskGroup[lifetimes]
     ):
         tg._task_complete()
 
@@ -445,13 +441,13 @@ struct TaskGroup[is_mut: Bool, //, lifetime: AnyLifetime[is_mut].type]:
         owned task: Coroutine[*_],
         desired_worker_id: Int = -1,
     ) -> TaskGroupTask[task.type, __lifetime_of(self)]:
-        # TODO(MOCO-771): Enforce that `task.lifetime` is a subset of
-        # `Self.lifetime`.
+        # TODO(MOCO-771): Enforce that `task.lifetimes` is a subset of
+        # `Self.lifetimes`.
         self.counter += 1
         LegacyPointer(
-            task._get_ctx[TaskGroupContext[lifetime]]().address
+            task._get_ctx[TaskGroupContext[lifetimes]]().address
         ).store(
-            TaskGroupContext[lifetime] {
+            TaskGroupContext[lifetimes] {
                 callback: Self._task_complete_callback,
                 task_group: UnsafePointer[Self].address_of(self),
             }
