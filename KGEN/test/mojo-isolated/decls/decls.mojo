@@ -733,7 +733,7 @@ struct StructExample:
         StructExample.static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> byref) -> !kgen.none
+    # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> inout) -> !kgen.none
     fn mutatingMethod(inout self):
         pass
 
@@ -1057,7 +1057,7 @@ fn coroutine_lifetimes():
     # CHECK: var.decl "y" var : {{.*}}mut [[Y_LT:.*]]>
     var y: Awaitable
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
-    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[2]("x": !lit.ref<!Awaitable, mut *[0,0]> byref, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem) async -> !kgen.none>
+    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[2]("x": !lit.ref<!Awaitable, mut *[0,0]> inout, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]]](%x, [[Y_IMM]])
     # CHECK: [[CORO_VAL:%.*]] = lit.call {{.*}}Coroutine::@"__init__{{.*}}<:i1 0, :type none, :lifetime<0> {(mutcast mut [[X_LT]]), (mutcast mut [[Y_LT]])}>([[CORO]])
     # CHECK: store [[CORO_VAL]], %coro : <{{.*}}Coroutine<:i1 0, :type none, :lifetime<0> {(mutcast mut [[X_LT]]), (mutcast mut [[Y_LT]])}>

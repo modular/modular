@@ -1415,11 +1415,11 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
           CallOperands({{contextVal, contextExp}}), contextExp,
           CallSyntax::kMethodCall)) {
     // If there is no exit method, we can pass the argument as an RValue so the
-    // enter method can consume the value... unless __enter__ takes self byref.
+    // enter method can consume the value... unless __enter__ takes self inout.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
         signature && !signature.getArgConventions().empty()) {
       auto firstArgConvention = signature.getArgConventions()[0];
-      if (firstArgConvention != ArgConvention::ByRef && !hasExitMethod)
+      if (firstArgConvention != ArgConvention::InOut && !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
 
       // One error that people hit is defining a context manager with both an

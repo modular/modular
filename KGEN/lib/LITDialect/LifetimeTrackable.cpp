@@ -216,7 +216,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endInitState = InitOnNormal;
     isFullObjectLiveOnEntry = true;
     break;
-  case ArgConvention::ByRef:
+  case ArgConvention::InOut:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsInit;
@@ -358,7 +358,7 @@ getCallOpEffects(Operation &op,
       return OperandEffect::regUse;
     case ArgConvention::BorrowedInMem:
       return OperandEffect::memLoad;
-    case ArgConvention::ByRef:
+    case ArgConvention::InOut:
       return OperandEffect::memInOut;
     case ArgConvention::ByRefError:
       return OperandEffect::memStoreConditional;

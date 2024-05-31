@@ -72,12 +72,12 @@ lit.func @decorated_fn()
 // CHECK-LABEL: @generic_types_retain_convention
 lit.func @generic_types_retain_convention[imm a]<T: type>(
   // CHECK: %arg0: !kgen.paramref<T> borrow,
-  // CHECK: %arg1: !lit.ref<T, imm *[0,0]> byref,
+  // CHECK: %arg1: !lit.ref<T, imm *[0,0]> inout,
   // CHECK: %arg2: !kgen.paramref<T> owned,
   // CHECK: %arg3: index borrow,
   // CHECK: %arg4: !kgen.pointer<index> owned
   %p: !kgen.paramref<T> borrow,
-  %q: !lit.ref<T, imm a> byref,
+  %q: !lit.ref<T, imm a> inout,
   %r: !kgen.paramref<T> owned,
   %s1: index borrow,
   %s2: !kgen.pointer<index> owned
@@ -315,8 +315,8 @@ lit.func @return_raise_or(%cond: i1, %err: !lit.declref<@Error>) -> !kgen.varian
 }
 
 // CHECK-LABEL: kgen.generator @removeMetadata
-// CHECK-SAME: (%arg0: !lit.ref<index, imm *[0,0]> byref) throws ->
-lit.func @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> byref) throws -> !kgen.variant<@Error, index> {
+// CHECK-SAME: (%arg0: !lit.ref<index, imm *[0,0]> inout) throws ->
+lit.func @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> inout) throws -> !kgen.variant<@Error, index> {
   %0 = index.constant 0
   %1 = kgen.variant.create %0, 1 : <@Error, index>
   kgen.return %1 : !kgen.variant<@Error, index>

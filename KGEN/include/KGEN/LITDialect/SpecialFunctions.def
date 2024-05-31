@@ -37,7 +37,7 @@ SF(kMoveInit, "__moveinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
 
 // These are the register-passable forms of init methods, these have the same
 // name (eg __init__) as normal init methods but are detected by semantic
-// analysis when they return Self instead of taking it byref.
+// analysis when they return Self instead of taking it inout.
 SF(kInitReg,     ""         , 0, -1, kInvalid, kRegInit|kImplicitlyStaticMethod)
 SF(kCopyInitReg, ""         , 1, 1, kInvalid, kRegInit|kInstMethod|kCannotRaise)
 SF(kMoveInitReg, ""         , 1, 1, kInvalid, kRegInit|kInstMethod|kCannotRaise)

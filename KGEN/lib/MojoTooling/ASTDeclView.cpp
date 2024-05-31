@@ -763,7 +763,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
       defaultValue = generatePValueString(defaultAttr);
 
     auto declConvention = ArgumentDeclView::Convention::kBorrowed;
-    if (convention == ArgConvention::ByRef ||
+    if (convention == ArgConvention::InOut ||
         convention == ArgConvention::InitSelf)
       declConvention = ArgumentDeclView::Convention::kInOut;
     else if (convention == ArgConvention::OwnedInMem ||

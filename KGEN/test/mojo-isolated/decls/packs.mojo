@@ -110,7 +110,7 @@ fn test_owned_trait():
 # Check the argument pack.
 # CHECK-LABEL: lit.func @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> byref|pack)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> inout|pack)
 fn takeInoutSomeTraitPack[*Ts: SomeTrait](inout *rest: *Ts):
     pass
 

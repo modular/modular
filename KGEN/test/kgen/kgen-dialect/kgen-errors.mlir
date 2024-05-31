@@ -430,15 +430,15 @@ kgen.generator @apply_error<fn: () -> ()>() {
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.generator @callee(%owned: !kgen.pointer<i32> byref) {
+kgen.generator @callee(%owned: !kgen.pointer<i32> inout) {
   kgen.return
 }
 
 kgen.generator @caller(%arg: !kgen.pointer<i32> owned) {
   // Ok
-  kgen.call @callee(%arg) : (!kgen.pointer<i32> byref) -> ()
+  kgen.call @callee(%arg) : (!kgen.pointer<i32> inout) -> ()
 
-  // expected-error @+1 {{symbol use argument #0 has convention owned but @callee expected convention byref}}
+  // expected-error @+1 {{symbol use argument #0 has convention owned but @callee expected convention inout}}
   kgen.call @callee(%arg) : (!kgen.pointer<i32> owned) -> ()
   kgen.return
 }

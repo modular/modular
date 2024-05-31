@@ -733,7 +733,7 @@ fn variadic_field_sensitivity():
 
 # CHECK-LABEL: lit.func @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, byref> borrow|var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, inout> borrow|var)
 fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__

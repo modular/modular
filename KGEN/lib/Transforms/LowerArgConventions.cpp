@@ -150,7 +150,7 @@ static LoweredSignature lowerSignature(SignatureType sig) {
   }
 
   if (s.abiLowering != LoweredSignature::Neither || !s.changedIndices.empty()) {
-    // Erase byref results promoted to register results from the argument list.
+    // Erase inout results promoted to register results from the argument list.
     s.dropOperandsFrom(newInputTypes);
     s.dropOperandsFrom(newConvs);
 
@@ -236,7 +236,7 @@ static void lowerCallOpImpl(
         res.replaceAllUsesWith(none);
       }
 
-      // Then just store the new callee result into the old byref result.
+      // Then just store the new callee result into the old inout result.
       res.setType(newSig.getResults()[0]);
       b.create<POP::StoreOp>(res, oldOperands[s.valIdx]);
     }

@@ -272,7 +272,7 @@ struct VariadicListMem[
 
     fn __init__(
         inout self,
-        value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, byref>`],
+        value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, inout>`],
     ):
         pass
 

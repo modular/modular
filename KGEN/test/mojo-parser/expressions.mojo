@@ -641,7 +641,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}int::Int,{{.*}}int::Int&)"{{.*}}(%a: !Int borrow, %b: !lit.ref<!Int, mut {{.*}}> byref) -> !kgen.none
+# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}int::Int,{{.*}}int::Int&)"{{.*}}(%a: !Int borrow, %b: !lit.ref<!Int, mut {{.*}}> inout) -> !kgen.none
 fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: [[BI:%.*]] = kgen.rebind %b {{.*}}#lit.invalid.ref.lifetime
   # CHECK-NEXT: lit.ref.store %a, [[BI]]
@@ -1106,7 +1106,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
   float3: fn(owned MemoryType) -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> byref, |) -> !kgen.none
+  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> inout, |) -> !kgen.none
   float4: fn(inout Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
