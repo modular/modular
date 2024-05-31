@@ -233,7 +233,8 @@ public:
     SmallVector<LLVM::DbgValueOp> mutantDebugValues;
   };
 
-  llvm::MapVector<Value, SmallVector<ProcessableVariable>> trackers;
+  llvm::MapVector<LLVM::DILocalVariableAttr, SmallVector<ProcessableVariable>>
+      trackers;
 };
 } // namespace
 
@@ -284,7 +285,7 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
     if (!dbgValueInfo.primaryValueOp)
       continue;
 
-    summary.trackers[dbgValueInfo.primaryValueOp.getValue()].push_back(
+    summary.trackers[dbgValueInfo.primaryValueOp.getVarInfo()].push_back(
         dbgValueInfo);
   }
 
@@ -299,7 +300,8 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
     DebugVariableSummary debugVariableSummary =
         filterAndSummarizeDebugVariables(func);
 
-    for (auto &[primaryValue, trackers] : debugVariableSummary.trackers) {
+    for (auto &[varInfo, trackers] : debugVariableSummary.trackers) {
+      Value primaryValue = trackers[0].primaryValueOp.getValue();
       // Don't build debug information for simple constants.
       if (primaryValue.getDefiningOp<LLVM::ConstantOp>() &&
           isa<IntegerType, FloatType>(primaryValue.getType()))

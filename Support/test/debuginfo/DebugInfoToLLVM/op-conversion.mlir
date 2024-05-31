@@ -199,12 +199,15 @@ func.func @undef_value_and_kill() -> i32 {
 
 // CHECK-LABEL: func @two_value_to_addr_op
 func.func @two_value_to_addr_op() -> !llvm.ptr {
-  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
-  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[COUNT0:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC0:.*]] = llvm.alloca %[[COUNT0]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
-  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
-  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC0]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC1]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC1]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC0]] : !llvm.ptr
   // CHECK: return %[[VALUE]] : !llvm.ptr
 
   %value = "test.op"() : () -> !llvm.ptr
@@ -215,12 +218,15 @@ func.func @two_value_to_addr_op() -> !llvm.ptr {
 
 // CHECK-LABEL: func @one_value_one_value_and_kill
 func.func @one_value_one_value_and_kill() -> !llvm.ptr {
-  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
-  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[COUNT0:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC0:.*]] = llvm.alloca %[[COUNT0]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
-  // CHECK: llvm.intr.dbg.declare #[[LOCAL_VAR2]] = %[[ALLOC]] : !llvm.ptr
-  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC0]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC1]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #[[LOCAL_VAR2]] = %[[ALLOC1]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC0]] : !llvm.ptr
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] = %[[UNDEF]]
   // CHECK: return %[[VALUE]] : !llvm.ptr
