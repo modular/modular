@@ -14,9 +14,7 @@ from algorithm import map_reduce
 
 from builtin.math import min as _min
 from math import align_down, ceildiv, iota
-from bit import countr_zero
 from sys.info import (
-    is_little_endian,
     simdwidthof,
     sizeof,
     triple_is_nvidia_cuda,
@@ -27,7 +25,6 @@ from algorithm.functional import _get_num_workers
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import Dim, DimList
-from builtin.dtype import _uint_type_of_width
 from collections import Optional
 from gpu.host import Stream
 from memory.unsafe import bitcast
@@ -36,39 +33,6 @@ from utils.index import Index, StaticIntTuple, StaticTuple
 from utils.loop import unroll
 
 from ._gpu.reduction import reduce_launch
-
-# ===----------------------------------------------------------------------===#
-# Utilities
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _index_of_first_one[width: Int](val: SIMD[DType.bool, width]) -> Int:
-    """Computes the index of the first one in the input value.
-
-    The input is assumed to contain at least one non-zero element.
-
-    Args:
-      val: The mask containing ones and zeros.
-
-    Returns:
-      The index of the first one in the input mask.
-    """
-
-    constrained[is_little_endian(), "only correct on little endian systems"]()
-
-    @parameter
-    if width == 1:
-        return 0
-    elif width == 2:
-        return 0 if val[0] else 1
-    elif width < 8 or width > 64:
-        return int(
-            llvm_intrinsic["llvm.experimental.cttz.elts", Int8](val, False)
-        )
-    else:
-        return int(countr_zero(bitcast[_uint_type_of_width[width]()](val)))
-
 
 # ===----------------------------------------------------------------------===#
 # ND indexing helper

@@ -20,7 +20,7 @@ from algorithm import (
     sum,
     variance,
 )
-from algorithm.reduction import _index_of_first_one, _reduce_generator, max, min
+from algorithm.reduction import _reduce_generator, max, min
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 
@@ -374,86 +374,6 @@ fn test_boolean():
 
     # CHECK: True
     print(none_true(vector))
-
-
-# CHECK-LABEL: test_index_of_first_one
-fn test_index_of_first_one():
-    print("== test_index_of_first_one")
-
-    # CHECK: 0
-    print(_index_of_first_one(SIMD[DType.bool, 4](True, False, True, False)))
-
-    # CHECK: 2
-    print(_index_of_first_one(SIMD[DType.bool, 4](False, False, True, True)))
-
-    # CHECK: 2
-    print(_index_of_first_one(SIMD[DType.bool, 4](False, False, True, False)))
-
-    # CHECK: 1
-    print(_index_of_first_one(SIMD[DType.bool, 4](False, True, True, False)))
-
-    # CHECK: 1
-    print(_index_of_first_one(SIMD[DType.bool, 4](False, True, True, True)))
-
-    # CHECK: 0
-    print(
-        _index_of_first_one(
-            SIMD[DType.bool, 8](
-                True, False, True, False, True, False, True, False
-            )
-        )
-    )
-
-    # CHECK: 1
-    print(
-        _index_of_first_one(
-            SIMD[DType.bool, 8](
-                False, True, True, False, True, False, True, False
-            )
-        )
-    )
-
-    # CHECK: 5
-    print(
-        _index_of_first_one(
-            SIMD[DType.bool, 8](
-                False, False, False, False, False, True, False, False
-            )
-        )
-    )
-
-    # CHECK: 7
-    print(
-        _index_of_first_one(
-            SIMD[DType.bool, 8](
-                False, False, False, False, False, False, False, True
-            )
-        )
-    )
-
-    # CHECK: 7
-    print(
-        _index_of_first_one(
-            SIMD[DType.bool, 16](
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                True,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                True,
-            )
-        )
-    )
 
 
 # CHECK-LABEL: test_argn
@@ -995,7 +915,6 @@ fn main() raises:
     test_3d_reductions_axis_1()
     test_3d_reductions_axis_2()
     test_boolean()
-    test_index_of_first_one()
     test_argn()
     test_argn_2()
     test_argn_2_test_2()
