@@ -82,7 +82,7 @@ enum VarArgKind {
 struct ParsedArgument {
   SMLoc loc;
   LexerCursor cursor;
-  // Specify argument passing convention, e.g. owned/byref etc.
+  // Specify argument passing convention, e.g. owned/inout etc.
   enum {
     kConventionUnspec = 0,         // Nothing specified
     kConventionInOut = 1,          // inout x

@@ -872,7 +872,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     break;
   }
   case ParsedArgument::kConventionInOut:
-    arg.kgenConvention = ArgConvention::ByRef;
+    arg.kgenConvention = ArgConvention::InOut;
     break;
   case ParsedArgument::kConventionInitSelfResult:
     arg.kgenConvention = ArgConvention::InitSelf;
@@ -899,7 +899,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.kgenConvention = ArgConvention::BorrowedInReg;
       break;
     case ParsedArgument::kConventionInOut:
-      arg.kgenVariadicConvention = ArgConvention::ByRef;
+      arg.kgenVariadicConvention = ArgConvention::InOut;
       arg.kgenConvention = ArgConvention::BorrowedInReg;
       break;
     }
@@ -982,7 +982,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("should never need to handle result slots");
-  case ArgConvention::ByRef:
+  case ArgConvention::InOut:
   case ArgConvention::InitSelf:
   case ArgConvention::OwnedInMem:
     // OwnedInMem passes ownership of the argument into the callee so we

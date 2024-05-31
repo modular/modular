@@ -495,7 +495,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
                           expectedType.getReferenceElementType());
       }
     [[fallthrough]];
-  case ArgConvention::ByRef:
+  case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref.

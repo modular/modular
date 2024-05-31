@@ -51,7 +51,7 @@ struct LifetimeTrackable {
   enum ExitInitState {
     /// Value is never initialized upon function exit.
     EndsUninit,
-    /// Value is always initialized upon function exit (e.g. as with a byref
+    /// Value is always initialized upon function exit (e.g. as with a inout
     /// argument).
     EndsInit,
     /// Value is initialized upon a normal function exit (e.g. as with a

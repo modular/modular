@@ -228,7 +228,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   }
 
   switch (convention) {
-  case ArgConvention::ByRef:
+  case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
   case ArgConvention::InitSelf:
@@ -596,7 +596,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       // have a default argument for each missing operand.
       TypedAttr defaultOr = defaultHandler.getDefault(argIdx);
       assert(defaultOr);
-      assert(convention != ArgConvention::ByRef &&
+      assert(convention != ArgConvention::InOut &&
              "by_ref argument cannot have defaults");
       argumentValues.push_back({PValue(defaultOr), callExpr});
       continue;
@@ -823,7 +823,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           argValAndExpr.expr->getLocation(emitter), result);
     return result;
   }
-  case ArgConvention::ByRef:
+  case ArgConvention::InOut:
   case ArgConvention::InitSelf: {
     // We know that the operand is an LValue, but it might be
     // dynamic/computed.
@@ -1203,10 +1203,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     if (calleeSig.isPosVarArg(argIdx))
       convention = ArgConvention::BorrowedInReg;
 
-    // Owned and borrowed packs are passed as expected, but byref is passed
+    // Owned and borrowed packs are passed as expected, but inout is passed
     // borrowed.
     if (calleeSig.isPackVarArg(argIdx)) {
-      if (convention == ArgConvention::ByRef)
+      if (convention == ArgConvention::InOut)
         convention = ArgConvention::BorrowedInReg;
       else if (convention == ArgConvention::OwnedInMem)
         convention = ArgConvention::OwnedInReg;
@@ -1250,7 +1250,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   }
 
   // Now that we have the lifetimes for the arguments, we can calculate what the
-  // substituted signature should be.  This will take in the wrong byref-result
+  // substituted signature should be.  This will take in the wrong inout-result
   // lifetime as an input, but we know that it cannot be referenced in the type
   // anyway, because there is no way to name it in the Mojo program.
   FunctionType expectedCalleeType =
@@ -1259,7 +1259,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
             llvm_unreachable("substitution should always succeed");
           });
 
-  // With that done, we can know what type the byref result slot should have.
+  // With that done, we can know what type the inout result slot should have.
   // We see if we can emit directly into the ValueDest slot, and if not, we
   // create a VarDecl temporary and allow emitResult to copy it over to the
   // destination.

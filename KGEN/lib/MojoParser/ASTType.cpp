@@ -645,7 +645,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         if (convention == ArgConvention::OwnedInMem ||
             convention == ArgConvention::OwnedInReg)
           os << "owned ";
-        else if (convention == ArgConvention::ByRef ||
+        else if (convention == ArgConvention::InOut ||
                  convention == ArgConvention::InitSelf)
           os << "inout ";
       };

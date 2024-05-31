@@ -889,7 +889,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     auto convention = conventionX;
     ASTType argType = argTypeX;
 
-    // We do not mangle byref results into the signature.
+    // We do not mangle inout results into the signature.
     if (SignatureType::isResultSlot(convention))
       continue;
 
@@ -931,7 +931,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     case ArgConvention::BorrowedInReg:
     case ArgConvention::BorrowedInMem:
       break;
-    case ArgConvention::ByRef:
+    case ArgConvention::InOut:
       mangledName += '&';
       break;
     case ArgConvention::InitSelf:

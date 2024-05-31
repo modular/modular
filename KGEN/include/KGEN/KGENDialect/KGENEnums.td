@@ -161,7 +161,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function and must be initialized when the function returns.
-  I32EnumAttrCase<"ByRef", 5, "byref">,
+  I32EnumAttrCase<"InOut", 5, "inout">,
 
   /// This is used on the last argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.

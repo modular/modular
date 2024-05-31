@@ -169,7 +169,7 @@ static void addTypeConversionDetail(InflightDiag &diag,
     diag.attachNote(loc) << "try resolving the overloaded function first";
     return;
   }
-  // Try to detect mismatched byref result type.
+  // Try to detect mismatched inout result type.
   auto lhsSig = dyn_cast<SignatureType>(operandType);
   auto rhsSig = dyn_cast<SignatureType>(argType);
   if (lhsSig && rhsSig) {
@@ -420,7 +420,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         return {kValidType, expectedType};
       }
     [[fallthrough]];
-  case ArgConvention::ByRef:
+  case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref.

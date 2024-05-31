@@ -76,7 +76,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
         // Rewrite InitSelf if  the type implements init in the deprecated way.
         // TODO: Remove this support.
         (conv == ArgConvention::InitSelf && isRegInit)) {
-      // Don't modify a byref result of an unrelated type. If the function
+      // Don't modify a inout result of an unrelated type. If the function
       // raises, then the result is always returned through memory.
       if (ASTType(type).getReferenceElementType().mlirType != selfType ||
           traitSig.isThrows()) {
@@ -208,7 +208,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     case ArgConvention::ByRefError:
       continue; // Ignore this, it will be assigned to later.
 
-    case ArgConvention::ByRef:
+    case ArgConvention::InOut:
       value = MLValue(arg);
       break;
     case ArgConvention::OwnedInMem:

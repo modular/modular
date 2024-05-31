@@ -15,12 +15,12 @@ trait Trait:
     fn f0(self: Self):
         ...
 
-    # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none
+    # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> inout) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f1(inout self: Self):
         ...
 
-    # CHECK: lit.func @"f2{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none attributes
+    # CHECK: lit.func @"f2{{.*}}(%self: !lit.ref<{{.*}}> inout) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
     fn f2(inout self: Self):
         pass
@@ -30,7 +30,7 @@ trait Trait:
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4{{.*}}(%self: !lit.ref<{{.*}}> byref, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
+    # CHECK: lit.func @"f4{{.*}}(%self: !lit.ref<{{.*}}> inout, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
