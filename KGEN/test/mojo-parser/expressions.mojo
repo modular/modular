@@ -1374,8 +1374,8 @@ fn variadic_attr_callee[key_type: CollectionElement](
 # that we can infer the parameters of 'thing_taking_reference' even though x
 # needs to be built as a Reference.
 fn thing_taking_reference[
-  type: AnyType, 
-  #//, # This doesn't work yet for some reason.
+  type: AnyType,
+  //,
   # TODO: Add _.
   is_mutable: Bool,
   lifetime: AnyLifetime[is_mutable].type,
