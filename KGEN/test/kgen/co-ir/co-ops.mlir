@@ -59,18 +59,17 @@ kgen.func @call_async_fn(%arg0: index) -> !co.routine {
   kgen.return %0 : !co.routine
 }
 
-kgen.func @throwing_coroutine(%__error__: !kgen.pointer<index> byref_error,
-                     %__result__: !kgen.pointer<index> byref_result) throws|async -> i1 {
+kgen.func @throwing_coroutine(%arg0: index, %__error__: !kgen.pointer<index> byref_error, %__result__: !kgen.pointer<index> byref_result) throws|async -> i1 {
   %true = index.bool.constant true
   kgen.return %true : i1
 }
 
 // CHECK-LABEL: kgen.func @call_throwing_coro
-kgen.func @call_throwing_coro() {
+kgen.func @call_throwing_coro(%arg0: index) {
   %size = index.constant 1
   %align = index.constant 8
-  // CHECK: %0 = co.invoke[(!kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine]()
-  %0 = co.invoke[(!kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine]()
+  // CHECK: %0 = co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine](%arg0)
+  %0 = co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine](%arg0)
   %1 = pop.aligned_alloc %align, %size : <index>
   %2 = pop.aligned_alloc %align, %size : <index>
   // CHECK: co.set_byref_error_result %0(%1, %2) : !kgen.pointer<index>

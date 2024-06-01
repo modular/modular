@@ -83,8 +83,11 @@ LogicalResult SuspendOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult InvokeOp::verify() {
-  if (!cast<SignatureType>(getCallee().getType()).isAsync())
+  auto signature = cast<SignatureType>(getCallee().getType());
+  if (!signature.isAsync())
     return emitOpError("callable must be 'async'");
+  if (signature.hasInitSelfArg())
+    return emitOpError("callable cannot have an 'init_self' argument");
   return success();
 }
 
@@ -94,27 +97,18 @@ static ParseResult parseAsyncParametricCallee(
     SmallVectorImpl<Type> &operandTypes) {
   if (failed(parseParametricCallee(p, callee)))
     return failure();
-  SignatureType calleeSignature = cast<SignatureType>(callee.getType());
   // Operands match signature arguments with the exception that byref error and
   // byref result are omitted.
-  unsigned start = 0;
-  if (calleeSignature.isThrows())
-    ++start;
-  if (calleeSignature.hasInitSelfArg() || calleeSignature.hasMemoryOnlyResult())
-    ++start;
-  unsigned i = 0;
-  ArrayRef<Type> argumentTypes(calleeSignature.getArguments().slice(start));
-  if (failed(p.parseCommaSeparatedList(AsmParser::Delimiter::Paren,
-                                       [&]() -> ParseResult {
-                                         OpAsmParser::UnresolvedOperand operand;
-                                         if (failed(p.parseOperand(operand)))
-                                           return failure();
-                                         operands.push_back(operand);
-                                         Type type = argumentTypes[i];
-                                         ++i;
-                                         operandTypes.push_back(type);
-                                         return success();
-                                       })))
+  SignatureType signature = cast<SignatureType>(callee.getType());
+  ArrayRef<Type> argumentTypes = signature.getArguments().drop_back(
+      signature.hasMemoryOnlyResult() + signature.isThrows());
+  llvm::append_range(operandTypes, argumentTypes);
+
+  // Parse the untyped operands.
+  if (failed(p.parseCommaSeparatedList(
+          AsmParser::Delimiter::Paren, [&]() -> ParseResult {
+            return p.parseOperand(operands.emplace_back());
+          })))
     return failure();
   return success();
 }
