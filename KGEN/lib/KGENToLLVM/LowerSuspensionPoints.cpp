@@ -86,49 +86,47 @@ struct BuildContext {
   Type continuationType;
 };
 
-static void addSuspensionPoint(CoroutineAwaitOp await, Block *currentBlock,
+static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
                                BuildContext &buildContext) {
   LLVMFuncOp func = cast<LLVMFuncOp>(currentBlock->getParent()->getParentOp());
   Value continuation = func.getBody().getArgument(0);
-  buildContext.builder.setInsertionPoint(await);
+  buildContext.builder.setInsertionPoint(suspend);
   buildContext.emitUpdateState(continuation);
-  // Copy operations from await region. They represent code to execute after
+  // Move operations from suspend region. They represent code to execute after
   // update state but before return.
-  Operation *current = &await.getRegion().front().front();
+  Operation *current = &suspend.getRegion().front().front();
   while (current) {
     Operation *next = current->getNextNode();
-    if (auto nestedAwait = dyn_cast<CoroutineAwaitOp>(current))
-      assert(false && "cannot have an await nested inside an await");
-    else if (auto awaitEnd = dyn_cast<CoroutineAwaitEndOp>(current))
+    assert(!isa<SuspendOp>(current) &&
+           "cannot have a suspend nested inside a suspend");
+    if (isa<SuspendEndOp>(current))
       break;
-    else
-      current->moveBefore(await);
+    current->moveBefore(suspend);
     current = next;
   }
   buildContext.builder.create<ReturnOp>(ValueRange({}));
-  Block *newBlock = currentBlock->splitBlock(await);
+  Block *newBlock = currentBlock->splitBlock(suspend);
   buildContext.blockList.push_back(newBlock);
 }
 
-static LogicalResult lowerSuspensionPoints(Operation *func,
+static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
                                            StringAttr coroAttrName) {
-  LLVMFuncOp funcOp = cast<LLVMFuncOp>(func);
   if (!funcOp->hasAttr(coroAttrName))
     return success();
   TypeAttr coroType = cast<TypeAttr>(funcOp->getAttr(coroAttrName));
   TargetInfoAttr target = lookupTargetInfo(funcOp);
   if (!target) {
-    mlir::emitError(func->getLoc(),
+    mlir::emitError(funcOp.getLoc(),
                     "could not find an enclosing target specification");
     return failure();
   }
-  ImplicitLocOpBuilder opBuilder(func->getLoc(), func->getContext());
+  ImplicitLocOpBuilder opBuilder(funcOp.getLoc(), funcOp.getContext());
   LLVMBuilder b(opBuilder, target);
 
   // Find all suspension points. Create a new block for each suspension point.
   BuildContext buildContext(b, coroType.getValue());
   SmallVector<Block *> exitPaths;
-  Block *block = &*(func->getRegion(0).begin());
+  Block *block = &funcOp.getBody().front();
   while (block) {
     Block *nextBlock = block->getNextNode();
     bool continueInResume = false;
@@ -138,11 +136,11 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
       if (isa<ReturnOp>(current))
         exitPaths.push_back(continueInResume ? buildContext.blockList.back()
                                              : block);
-      if (auto await = dyn_cast<CoroutineAwaitOp>(current)) {
-        current = await->getNextNode();
+      if (auto suspend = dyn_cast<SuspendOp>(current)) {
+        current = suspend->getNextNode();
         Block *b = continueInResume ? buildContext.blockList.back() : block;
-        addSuspensionPoint(await, b, buildContext);
-        await->erase();
+        addSuspensionPoint(suspend, b, buildContext);
+        suspend->erase();
         continueInResume = true;
         continue;
       }

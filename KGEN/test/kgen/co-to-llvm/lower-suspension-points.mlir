@@ -56,10 +56,10 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:
     %someContinuation = llvm.call @anotherTask() : () -> !llvm.ptr
-    co.await {
+    co.suspend {
       %cond1 = llvm.call @getElementFromContext(%someContinuation) : (!llvm.ptr) -> i1
       llvm.call @print(%cond1) : (i1) -> ()
-	  co.await.end
+	    co.suspend.end
     }
     %cond1 = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.call @print(%cond1) : (i1) -> ()
@@ -120,14 +120,14 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:
     %someContinuation = llvm.call @anotherTask() : () -> !llvm.ptr
-    co.await {
+    co.suspend {
       %cond1 = llvm.call @getElementFromContext(%someContinuation) : (!llvm.ptr) -> i1
       llvm.call @print(%cond1) : (i1) -> ()
-	  co.await.end
+	    co.suspend.end
     }
     %someContinuation2 = llvm.call @anotherTask() : () -> !llvm.ptr
-    co.await {
-      co.await.end
+    co.suspend {
+      co.suspend.end
     }
     %cond1 = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.call @print(%cond1) : (i1) -> ()
@@ -245,8 +245,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     llvm.cond_br %cond, ^bb1, ^bb2
   ^bb1:
     %someContinuation2 = llvm.call @anotherTask() : () -> !llvm.ptr
-    co.await {
-      co.await.end
+    co.suspend {
+      co.suspend.end
     }
     %cond1 = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.call @print(%cond1) : (i1) -> ()

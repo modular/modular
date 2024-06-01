@@ -280,7 +280,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def LowerSuspensionPoints : Pass<"lower-suspension-points",
-                               "mlir::LLVM::LLVMFuncOp"> {
+                                 "mlir::LLVM::LLVMFuncOp"> {
   let summary = "Lower suspension points in resume functions";
   let description = [{
     Lower away the suspension points into a state machine.
