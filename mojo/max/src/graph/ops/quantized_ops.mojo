@@ -10,6 +10,7 @@ from max.graph.quantization import (
     QuantizationEncoding,
     Q4_0Encoding,
     Q4_KEncoding,
+    Q6_KEncoding,
 )
 
 from .custom_ops import custom
@@ -26,8 +27,13 @@ def _repack_quantized_weights[
             List[Symbol](rhs),
             TensorType(DType.uint8, rhs_type.dim(0), rhs_type.dim(1)),
         )
-    elif encoding.id() == Q4_KEncoding.id():
+    if encoding.id() == Q4_KEncoding.id():
         return ops.custom["vroom_q4_k_repack_weights"](
+            List[Symbol](rhs),
+            TensorType(DType.uint8, rhs_type.dim(0), rhs_type.dim(1)),
+        )
+    if encoding.id() == Q6_KEncoding.id():
+        return ops.custom["vroom_q6_k_repack_weights"](
             List[Symbol](rhs),
             TensorType(DType.uint8, rhs_type.dim(0), rhs_type.dim(1)),
         )
@@ -44,8 +50,13 @@ def _packed_qmatmul[
             List[Symbol](lhs_matrix, rhs_repack),
             TensorType(DType.float32, Dim.dynamic(), rhs_type.dim(0)),
         )
-    elif encoding.id() == Q4_KEncoding.id():
+    if encoding.id() == Q4_KEncoding.id():
         return ops.custom["vroom_q4_k_matmul"](
+            List[Symbol](lhs_matrix, rhs_repack),
+            TensorType(DType.float32, Dim.dynamic(), rhs_type.dim(0)),
+        )
+    if encoding.id() == Q6_KEncoding.id():
+        return ops.custom["vroom_q6_k_matmul"](
             List[Symbol](lhs_matrix, rhs_repack),
             TensorType(DType.float32, Dim.dynamic(), rhs_type.dim(0)),
         )

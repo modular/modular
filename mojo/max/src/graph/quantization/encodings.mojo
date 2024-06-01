@@ -337,7 +337,12 @@ struct Q6_KEncoding(QuantizationEncoding):
 
     @staticmethod
     def quantize(_tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
-        """Quantizes the full-precision tensor `tensor` to Q6_K."""
+        """Quantizes the full-precision tensor `tensor` to Q6_K.
+
+        The quantize method is not yet implemented.
+        However, since Q6_K quantized ops are supported, Q6_KEncoding is still
+        provided to allow code to be generic over quantization encoding type.
+        """
         raise "quantize not implemented for Q6_KEncoding. Please file an issue!"
 
     @staticmethod
