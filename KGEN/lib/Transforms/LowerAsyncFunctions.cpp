@@ -89,11 +89,6 @@ struct COTypes {
   COTypes &operator=(const COTypes &) = delete;
 
 public:
-  Type convertType(Type type) const {
-    if (isa<CO::CoroutineType>(type))
-      return PointerType::get(continuationType);
-    return type;
-  }
   Type getContinuationType() const { return continuationType; }
   FrameData &getFrameData() const { return frameData; }
   Type getHeaderType() const { return headerType; }
@@ -338,9 +333,10 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
   args.reset(0);
   resumeFunction.getBodyRegion().front().eraseArguments(args);
 
-  // Replace ReturnOps with set result.
-  resumeFunction.walk([&](ReturnOp returnOp) {
-    if (returnOp.getNumOperands() > 0) {
+  resumeFunction.walk([&](Operation *op) {
+    if (auto returnOp = dyn_cast<ReturnOp>(op);
+        returnOp && returnOp.getNumOperands()) {
+      // Replace ReturnOps with set result.
       builder.setInsertionPoint(returnOp);
       Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
       Value promise = builder.create<LoadOp>(promiseSlot);
@@ -349,6 +345,11 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       builder.create<StoreOp>(returnOp.getOperand(0), typedPromise);
       builder.create<ReturnOp>();
       returnOp->erase();
+    } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
+      // Replace uses of the suspend argument with the continuation.
+      Region &body = suspend.getBody();
+      body.getArgument(0).replaceAllUsesWith(continuation);
+      body.eraseArgument(0);
     }
   });
 }
@@ -580,17 +581,17 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
           pushSuccessors(targets, controlFlowNode, controlFlowNode,
                          &*controlFlowNode->getParentRegion()->front().begin());
         }
-        if (auto await = dyn_cast<CO::CoroutineAwaitOp>(op)) {
-          Operation *next = await->getNextNode();
+        if (auto suspend = dyn_cast<CO::SuspendOp>(op)) {
+          Operation *next = suspend->getNextNode();
           if (!next)
             continue;
           Operation *nodeStart =
               lastAwait ? lastAwait->getNextNode() : &*region->front().begin();
-          lastAwait = await;
-          VirtualBlock awaitVirtualBlock = &await.getBody().front().front();
+          lastAwait = suspend;
+          VirtualBlock awaitVirtualBlock = &suspend.getBody().front().front();
           predecessors[awaitVirtualBlock].push_back(nodeStart);
           predecessors[next].push_back(awaitVirtualBlock);
-          regions.push_back(&await.getBody());
+          regions.push_back(&suspend.getBody());
         }
       }
     }
@@ -674,17 +675,17 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
       while (current) {
         Operation *op = current;
         current = op->getNextNode();
-        if (auto await = dyn_cast<CoroutineAwaitOp>(op)) {
+        if (auto suspend = dyn_cast<CO::SuspendOp>(op)) {
           opToState[op] = currentState;
           // If the virtual block is equal to the poppedDryRun then this will
-          // result in the coroutine await assuming it's second iteration state
-          // instead of the original. Despite this we still want to update the
-          // state to divide states within the loop. Otherwise we cannot cache
-          // frame variable extractions.
+          // result in the coroutine suspend assuming it's second iteration
+          // state instead of the original. Despite this we still want to update
+          // the state to divide states within the loop. Otherwise we cannot
+          // cache frame variable extractions.
           int nextState = currentState + 1;
           if (Operation *next = op->getNextNode())
             paths.push_back({next, nextState});
-          paths.push_back({&*await.getBody().front().begin(), currentState});
+          paths.push_back({&*suspend.getBody().front().begin(), currentState});
           break;
         }
         opToState[op] = currentState;

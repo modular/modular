@@ -41,33 +41,41 @@ LogicalResult HandleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseSuspendBody(OpAsmParser &p, Region &body) {
-  OpAsmParser::Argument arg;
-  if (p.parseArgument(arg))
-    return failure();
-  arg.type = CoroutineType::get(p.getContext());
-  return p.parseRegion(body, arg);
+  SmallVector<OpAsmParser::Argument, 1> args;
+  if (succeeded(p.parseOptionalArrow())) {
+    if (p.parseArgument(args.emplace_back()))
+      return failure();
+    args.back().type = CoroutineType::get(p.getContext());
+  }
+  return p.parseRegion(body, args);
 }
 
 static void printSuspendBody(OpAsmPrinter &p, Operation *op, Region &body) {
-  p.printRegionArgument(body.getArgument(0), /*argAttrs=*/{},
-                        /*omitType=*/true);
-  p << ' ';
+  if (body.getNumArguments()) {
+    p << "-> ";
+    p.printRegionArgument(body.getArgument(0), /*argAttrs=*/{},
+                          /*omitType=*/true);
+    p << ' ';
+  }
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 void SuspendOp::getAsmBlockArgumentNames(
     Region &region, llvm::function_ref<void(Value, StringRef)> setNameFn) {
   // Sugar the SSA value name
-  setNameFn(region.getArgument(0), "hdl");
+  if (region.getNumArguments())
+    setNameFn(region.getArgument(0), "hdl");
 }
 
 LogicalResult SuspendOp::verify() {
   Region &body = getBody();
+  if (body.getNumArguments() == 0)
+    return success();
   if (body.getNumArguments() == 1 &&
       isa<CoroutineType>(body.getArgument(0).getType()))
     return success();
   return emitOpError("expected its body region to have a "
-                     "single `!co.routine` type argument");
+                     "single `!co.routine` type argument or no arguments");
 }
 
 //===----------------------------------------------------------------------===//
