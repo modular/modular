@@ -689,7 +689,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
-  auto decl = dyn_cast<LIT::FuncOp>(getParentDecl());
+  auto func = dyn_cast<LIT::FuncOp>(getParentDecl());
   auto loc = consumeToken(Token::kw_return).getLoc();
 
   // If there is an expression list present, parse it.
@@ -702,7 +702,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.
-  if (!decl) {
+  if (!func) {
     emitError(loc, "cannot return from this context");
     return success();
   }
@@ -711,14 +711,17 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Materialize the expression values into IR.
   AnyValue resultValue;
-  SignatureType declSig = decl.getSignature();
-  ASTType userResultType = decl.getUserResultType();
+  SignatureType declSig = func.getSignature();
+  ASTType userResultType = func.getUserResultType();
 
   // If the result is memory-only, return into the result slot, otherwise we
-  // just need a value of the right type.
+  // just need a value of the right type. If the function has a named result
+  // slot, we allow it to omit the expression.
   ValueDest resultDest(userResultType, EC_ReturnValue);
-  if (declSig.hasMemoryOnlyResult())
-    resultDest = ValueDest(MLValue(decl.getArguments().back()), EC_ReturnValue);
+  if (func.getNamedResultAttr() && operandExpr == &noneExpr)
+    resultDest = ValueDest(shared.getNoneType(), EC_ReturnValue);
+  else if (declSig.hasMemoryOnlyResult())
+    resultDest = ValueDest(MLValue(func.getArguments().back()), EC_ReturnValue);
 
   if (!declSig.isRefResult()) {
     // Convert the returned value to the returned type of the function.
@@ -806,7 +809,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // If the result is a memory-only result, then handle the scalar result.
   if (declSig.hasMemoryOnlyResult()) {
     // The register result is a None value, or false if it throws.
-    if (decl.isThrows())
+    if (func.isThrows())
       resultValue = PValue(BoolAttr::get(getContext(), false));
     else
       resultValue = PValue(shared.getNoneAttr());
@@ -820,7 +823,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     resultValue = PValue(BoolAttr::get(getContext(), false));
 
   auto resultVal = emitter.emitSRValue(
-      {resultValue, operandExpr}, EC_ReturnValue, decl.getMLIRResultType());
+      {resultValue, operandExpr}, EC_ReturnValue, func.getMLIRResultType());
   if (!resultVal)
     return {};
   ImplicitLocOpBuilder b(translateLocation(loc), builder);

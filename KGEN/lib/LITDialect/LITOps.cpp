@@ -913,8 +913,8 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
         /*isSynthetic=*/none, ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
         FlatSymbolRefAttr(), StringAttr(), StringAttr(),
-        b.getStringAttr(sourceName), DocStringAttr(), StringAttr(),
-        DictionaryAttr::get(ctx));
+        b.getStringAttr(sourceName), StringAttr(), DocStringAttr(),
+        StringAttr(), DictionaryAttr::get(ctx));
   state.regions[0]->push_back(new Block());
 }
 
@@ -932,8 +932,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), StringAttr(), sourceName, DocStringAttr(), StringAttr(),
-        DictionaryAttr::get(ctx));
+        StringAttr(), StringAttr(), sourceName, StringAttr(), DocStringAttr(),
+        StringAttr(), DictionaryAttr::get(ctx));
   result.regions[0]->push_back(new Block());
 }
 

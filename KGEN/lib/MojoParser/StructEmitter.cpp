@@ -236,8 +236,8 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
     }
   };
 
-  // Initializers get a default return.
-  if (sig.hasInitSelfArg())
+  // Initializers and functions with named results get a default return.
+  if (sig.hasInitSelfArg() || func.getNamedResultAttr())
     return makeNoneReturn();
 
   ASTType resultType = func.getUserResultType();

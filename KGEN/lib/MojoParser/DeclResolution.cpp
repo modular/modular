@@ -557,28 +557,30 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
 namespace {
 struct FnDecorators : public SharedStateUser {
   FnDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
-               StringRef baseName, FnEffects effects)
+               StringRef baseName, TypeCheckedFnSignature &tcSignature)
       : SharedStateUser(shared), decl(decl), sigDecl(sigDecl),
-        funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName), effects(effects) {}
+        funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName),
+        tcSignature(tcSignature) {}
 
   /// Apply a function signature decorator.
-  LogicalResult apply(ExprNode *decorator, FnEffects &effects);
+  LogicalResult apply(ExprNode *decorator);
 
 private:
   void applyStaticMethod(const DeclRefNode &node);
   void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
                               StringRef decorator);
   void applyLLVMMetadata(const CallNode &node);
+  void applyNamedResult(const CallNode &node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
   LIT::FuncOp funcOp;
   StringRef baseName;
-  FnEffects effects;
+  TypeCheckedFnSignature &tcSignature;
 };
 } // namespace
 
-LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
+LogicalResult FnDecorators::apply(ExprNode *decorator) {
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export")
@@ -591,7 +593,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
     else if (declRef->spelling == "no_inline")
       funcOp.setInlineLevel(InlineLevel::Never);
     else if (declRef->spelling == "parameter")
-      effects.setCapturing();
+      tcSignature.argList.effects.setCapturing();
     else
       return failure();
     return success();
@@ -614,6 +616,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
         applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
+      else if (declRef->spelling == "__named_result")
+        applyNamedResult(*callNode);
       else
         return failure();
       return success();
@@ -730,6 +734,29 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
       attrs.append(value.name, attr);
   }
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
+}
+
+void FnDecorators::applyNamedResult(const CallNode &node) {
+  DeclRefNode *dre;
+  if (node.operands.size() != 1 ||
+      !(dre = dyn_cast<DeclRefNode>(node.operands.front().expr))) {
+    emitError(node.getLoc(), "`@__named_result` expected an identifier");
+    return;
+  }
+  MutableArrayRef<ParsedArgument> args = tcSignature.argList.parsedArgs;
+  if (args.empty() ||
+      args.back().kgenConvention != ArgConvention::ByRefResult) {
+    // TODO: We should make this decorator force the function to have a
+    // `byref_result` instead, even for regpassable types.
+    emitError(decl.getLoc())
+        << "named results can only be used on functions with in-memory "
+           "results, result type "
+        << tcSignature.resultType << " is register-passable";
+    return;
+  }
+  auto name = StringAttr::get(getContext(), dre->spelling);
+  funcOp.setNamedResultAttr(name);
+  args.back().name = name;
 }
 
 /// Process an extensibility decorator by generating additional trait binding
@@ -1069,11 +1096,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  FnDecorators fnDecorators(decl, sigDecl, shared, baseName,
-                            fnSignature.effects);
+  FnDecorators fnDecorators(decl, sigDecl, shared, baseName, tcSignature);
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-        return fnDecorators.apply(decorator, fnSignature.effects);
+        return fnDecorators.apply(decorator);
       });
 
   // Propagate errors and the parsed decls in the signature.
@@ -1390,6 +1416,13 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // Otherwise, this is a borrowed register value.
     assert(convention == ArgConvention::BorrowedInReg);
     setBorrowedDecl(SBValue(bbArg));
+  }
+
+  // If the function has a named result slot, bind it here.
+  if (StringAttr namedResult = funcOp.getNamedResultAttr()) {
+    assert(funcSignature.hasMemoryOnlyResult() && "already checked");
+    Value result = funcOp.getArguments().back();
+    addFullyResolvedDecl(MLValue(result), namedResult, decl.getLoc(), &decl);
   }
 
   Block *body = funcOp.getBody();

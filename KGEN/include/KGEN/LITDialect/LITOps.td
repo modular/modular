@@ -79,6 +79,7 @@ def LIT_FuncOp : LITOp<"func", [
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$preElaborationName,
     OptionalAttr<StrAttr>:$sourceName,
+    OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
