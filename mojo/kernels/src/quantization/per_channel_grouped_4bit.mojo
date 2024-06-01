@@ -854,7 +854,7 @@ fn q4_k_dequantize_impl(
     )
     for block_idx in range(num_blocks):
         var src_ptr = input_q4_k_ptr + block_idx
-        var dst_ptr = output_ptr + (block_idx * block_QK_K.quantized_k)
+        var dst_ptr = output_ptr + (block_idx * block_nelems)
 
         # d
         var b_scale = src_ptr[].base_scale.cast[DType.float32]()
@@ -901,3 +901,103 @@ fn q4_k_dequantize_impl(
                     ]()
                     - m2
                 )
+
+
+######
+# Q6_K
+######
+
+
+@always_inline
+fn _to_dtype_pointer[
+    type: DType
+](array: InlineArray[Scalar[type]]) -> DTypePointer[type]:
+    return DTypePointer[type](array.unsafe_ptr())
+
+
+struct block_Q6_K:
+    alias group_size = 16
+    alias group_count = block_QK_K.quantized_k // Self.group_size
+
+    # Low 4 bits.
+    var q_bits_lo: InlineArray[UInt8, block_QK_K.quantized_k // 2]
+    # High 2 bits.
+    var q_bits_hi: InlineArray[UInt8, block_QK_K.quantized_k // 4]
+    # int8 scales.
+    var q_scales: InlineArray[Int8, block_Q6_K.group_size]
+    # Superblock scale.
+    var base_scale: Float16
+
+
+fn q6_k_dequantize_impl(
+    input_tensor: NDBuffer[DType.uint8, 2],
+    output_tensor: NDBuffer[DType.float32, 2],
+    output_shape: StaticIntTuple[2],
+):
+    alias group_nelems = block_Q6_K.group_size
+    alias block_nelems = block_QK_K.quantized_k
+    alias block_nbytes = sizeof[block_Q6_K]()
+
+    var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
+    var input_q6_k_ptr = UnsafePointer[block_Q6_K](
+        address=int(input_tensor.data.address)
+    )
+    var dst_ptr = UnsafePointer[Float32](
+        address=int(output_tensor.data.address)
+    )
+    var dst_idx = 0
+    for block_idx in range(num_blocks):
+        var src_ptr = input_q6_k_ptr + block_idx
+
+        var d = src_ptr[].base_scale.cast[DType.float32]()
+
+        var ql = src_ptr[].q_bits_lo.unsafe_ptr()
+        var qh = src_ptr[].q_bits_hi.unsafe_ptr()
+        var sc = src_ptr[].q_scales.unsafe_ptr()
+
+        # Process 8 groups at a time.
+        @parameter
+        for _ in range(0, block_Q6_K.group_count, 8):
+
+            @parameter
+            for l in range(32):
+                var sc_idx = l // 16
+                var q1 = ((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)).cast[
+                    DType.int8
+                ]() - 32
+                var q2 = ((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)).cast[
+                    DType.int8
+                ]() - 32
+                var q3 = ((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4)).cast[
+                    DType.int8
+                ]() - 32
+                var q4 = ((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)).cast[
+                    DType.int8
+                ]() - 32
+
+                dst_ptr[l + 0] = (
+                    d
+                    * sc[sc_idx + 0].cast[DType.float32]()
+                    * q1.cast[DType.float32]()
+                )
+                dst_ptr[l + 32] = (
+                    d
+                    * sc[sc_idx + 2].cast[DType.float32]()
+                    * q2.cast[DType.float32]()
+                )
+                dst_ptr[l + 64] = (
+                    d
+                    * sc[sc_idx + 4].cast[DType.float32]()
+                    * q3.cast[DType.float32]()
+                )
+                dst_ptr[l + 96] = (
+                    d
+                    * sc[sc_idx + 6].cast[DType.float32]()
+                    * q4.cast[DType.float32]()
+                )
+
+            dst_ptr += 128
+            dst_idx += 128
+            ql += 64
+            qh += 32
+            sc += 8
