@@ -418,6 +418,35 @@ fn callerFn(borrowed arg0: BorrowStruct):
 
 
 ##===----------------------------------------------------------------------===##
+# Named Results
+##===----------------------------------------------------------------------===##
+
+
+struct SomeResultType:
+    fn __init__(inout self):
+        pass
+
+
+# CHECK-LABEL: lit.func @"named_result
+# CHECK-SAME: %out: !lit.ref<!SomeResultType, {{.*}}> byref_result
+# CHECK-SAME: namedResult = "out"
+@__named_result(out)
+fn named_result() -> SomeResultType:
+    # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
+    SomeResultType.__init__(out)
+    # CHECK: lit.return %none
+    return
+    # CHECK-NEXT: lit.end_func
+
+
+# CHECK-LABEL: lit.func @"named_result_return_expr
+@__named_result(out)
+fn named_result_return_expr() -> SomeResultType:
+    # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
+    return SomeResultType()
+
+
+##===----------------------------------------------------------------------===##
 # Default arguments and variadics.
 ##===----------------------------------------------------------------------===##
 

@@ -214,6 +214,15 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     use(d)  # Ok
 
 
+@__named_result(out)
+# expected-note @below {{'out' declared here}}
+fn uninitialized_result(c: Bool) -> MemExample:
+    if c:
+        # expected-error @below {{'out' is uninitialized at return from this function}}
+        return
+    out = MemExample()
+
+
 ##===----------------------------------------------------------------------===##
 # Complex aggregates
 ##===----------------------------------------------------------------------===##
