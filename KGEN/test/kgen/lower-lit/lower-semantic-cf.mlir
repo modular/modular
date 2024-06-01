@@ -585,7 +585,7 @@ lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
 // CHECK-LABEL: lit.func @coroutine_await
 lit.func @coroutine_await(%arg0: i1) {
   // CHECK-NEXT: co.suspend
-  co.suspend -> %hdl0 {
+  co.suspend (%hdl0) {
     hlcf.if %arg0 {
       // CHECK: kgen.return
       lit.return

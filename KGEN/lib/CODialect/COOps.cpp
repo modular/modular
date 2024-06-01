@@ -42,8 +42,8 @@ LogicalResult HandleOp::verify() {
 
 static ParseResult parseSuspendBody(OpAsmParser &p, Region &body) {
   SmallVector<OpAsmParser::Argument, 1> args;
-  if (succeeded(p.parseOptionalArrow())) {
-    if (p.parseArgument(args.emplace_back()))
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseArgument(args.emplace_back()) || p.parseRParen())
       return failure();
     args.back().type = CoroutineType::get(p.getContext());
   }
@@ -52,10 +52,10 @@ static ParseResult parseSuspendBody(OpAsmParser &p, Region &body) {
 
 static void printSuspendBody(OpAsmPrinter &p, Operation *op, Region &body) {
   if (body.getNumArguments()) {
-    p << "-> ";
+    p << '(';
     p.printRegionArgument(body.getArgument(0), /*argAttrs=*/{},
                           /*omitType=*/true);
-    p << ' ';
+    p << ") ";
   }
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
