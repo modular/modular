@@ -28,4 +28,6 @@ from .encodings import (
     BFloat16Encoding,
     Float32Encoding,
     Q4_0Encoding,
+    Q4_KEncoding,
+    Q6_KEncoding,
 )

@@ -6,7 +6,6 @@
 
 """Implementations of quantization encodings."""
 
-from buffer import Buffer
 from tensor import Tensor, TensorShape
 from utils import InlineArray
 
@@ -221,3 +220,127 @@ struct Q4_0Encoding(QuantizationEncoding):
     fn id() -> String:
         """Identifier for the Q4_0 quantized encoding."""
         return "q4_0"
+
+
+# Note that there is a compile definition in ggml-quants.h that allows setting
+# `QK_K=64`, which is useful for models with rows unaligned to 256 bits.
+alias QK_K = 256
+"""Size of superblock quantized elements, in bytes."""
+
+alias K_SCALE_SIZE = 12
+"""Size of superblock scales and mins, in bytes."""
+
+
+@value
+struct _BlockQ4K:
+    """4-bit quantization.
+
+    8 blocks of 32 elements each.
+    Weights are represented as `x = a * q + b`.
+    Effectively 4.5 bits per weight.
+
+    Constraints:
+        The data layout must exactly match `block_q4_K` from ggml-quants.h.
+    """
+
+    var d: Float16
+    """Super-block scale for quantized scales."""
+
+    var dmin: Float16
+    """Super-block scale for quantized mins."""
+
+    var scales: InlineArray[UInt8, K_SCALE_SIZE]
+    """Scales and mins, quantized with 6 bits."""
+
+    var qs: InlineArray[UInt8, QK_K // 2]
+    """4-bit quants."""
+
+    def __init__(
+        inout self,
+        d: Float16,
+        dmin: Float16,
+        scales: InlineArray[UInt8, K_SCALE_SIZE],
+        qs: InlineArray[UInt8, QK_K // 2],
+    ):
+        constrained[
+            sizeof[Self]() == 2 * sizeof[Float16]() + K_SCALE_SIZE + QK_K // 2
+        ]()
+
+        self.d = d
+        self.dmin = dmin
+        self.scales = scales
+        self.qs = qs
+
+
+struct Q4_KEncoding(QuantizationEncoding):
+    """The Q4_K quantization encoding."""
+
+    @staticmethod
+    def quantize(_tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
+        """Quantizes the full-precision tensor `tensor` to Q4_K.
+
+        The quantize method is not yet implemented.
+        However, since Q4_K quantized ops are supported, Q4_KEncoding is still
+        provided to allow code to be generic over quantization encoding type.
+        """
+        raise "quantize not implemented for Q4_KEncoding. Please file an issue!"
+
+    @staticmethod
+    fn id() -> String:
+        """Identifier for the Q4_K quantized encoding."""
+        return "q4_k"
+
+
+@value
+struct _BlockQ6K:
+    """6-bit quantization.
+
+    16 blocks of 16 elements each.
+    Weights are represented as `x = a * q`.
+    Effectively 6.5625 bits per weight.
+
+    Constraints:
+        The data layout must exactly match `block_q6_K` from ggml-quants.h.
+    """
+
+    var ql: InlineArray[UInt8, QK_K // 2]
+    """Quants: lower 4 bits."""
+
+    var qh: InlineArray[UInt8, QK_K // 2]
+    """Quants: upper 2 bits."""
+    var scales: InlineArray[Int8, QK_K // 16]
+    """Scales: quantized with 8 bits."""
+
+    var d: Float16
+    """Super-block scale."""
+
+    def __init__(
+        inout self,
+        ql: InlineArray[UInt8, QK_K // 2],
+        qh: InlineArray[UInt8, QK_K // 2],
+        scales: InlineArray[Int8, QK_K // 16],
+        d: Float16,
+    ):
+        constrained[
+            sizeof[Self]()
+            == (2 * (QK_K // 2)) + (QK_K // 16) + sizeof[Float16]()
+        ]()
+
+        self.ql = ql
+        self.qh = qh
+        self.scales = scales
+        self.d = d
+
+
+struct Q6_KEncoding(QuantizationEncoding):
+    """The Q6_K quantization encoding."""
+
+    @staticmethod
+    def quantize(_tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
+        """Quantizes the full-precision tensor `tensor` to Q6_K."""
+        raise "quantize not implemented for Q6_KEncoding. Please file an issue!"
+
+    @staticmethod
+    fn id() -> String:
+        """Identifier for the Q6_K quantized encoding."""
+        return "q6_k"
