@@ -792,3 +792,112 @@ fn ggml_q4_0_matmul_impl[
 
     a_quant_base_ptr.free()
     a_scale_base_ptr.free()
+
+
+######
+# Q4_K
+######
+
+
+struct block_QK_K:
+    alias quantized_k = 256
+
+
+struct block_Q4_K:
+    alias group_size = 32
+    alias group_count = block_QK_K.quantized_k // Self.group_size
+
+    var base_scale: Float16
+    var base_min: Float16
+    var q_scales_and_mins: InlineArray[
+        UInt8, (2 * block_Q4_K.group_count * 6) // 8
+    ]
+    # 256 total elements / 8 groups => 32 elements per group.
+    var q_bits: InlineArray[UInt8, block_QK_K.quantized_k // 2]
+
+
+fn scale_min_k4(
+    src_ptr: UnsafePointer[block_Q4_K], g: Int
+) -> (Float32, Float32):
+    if g < 4:
+        var q_scale = src_ptr[].q_scales_and_mins[g] & 63
+        var q_min = src_ptr[].q_scales_and_mins[g + 4] & 63
+
+        return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
+    else:
+        var q_scale_lo = src_ptr[].q_scales_and_mins[g + 4] & 15
+        var q_min_lo = src_ptr[].q_scales_and_mins[g + 4] >> 4
+        var q_scale_hi = src_ptr[].q_scales_and_mins[g - 4] >> 6
+        var q_min_hi = src_ptr[].q_scales_and_mins[g - 0] >> 6
+        var q_scale = (q_scale_hi << 4) | q_scale_lo
+        var q_min = (q_min_hi << 4) | q_min_lo
+
+        return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
+
+
+fn q4_k_dequantize_impl(
+    input_tensor: NDBuffer[DType.uint8, 2],
+    output_tensor: NDBuffer[DType.float32, 2],
+):
+    alias group_nelems = block_Q4_K.group_size
+    # 2 elements per byte.
+    alias group_nbytes = group_nelems // 2
+    alias block_nelems = block_QK_K.quantized_k
+    alias block_nbytes = sizeof[block_Q4_K]()
+
+    var num_blocks = input_tensor.num_elements() // block_nbytes
+    var input_q4_k_ptr = UnsafePointer[block_Q4_K](
+        address=int(input_tensor.data.address)
+    )
+    var output_ptr = UnsafePointer[Float32](
+        address=int(output_tensor.data.address)
+    )
+    for block_idx in range(num_blocks):
+        var src_ptr = input_q4_k_ptr + block_idx
+        var dst_ptr = output_ptr + (block_idx * block_QK_K.quantized_k)
+
+        # d
+        var b_scale = src_ptr[].base_scale.cast[DType.float32]()
+        # min
+        var b_min = src_ptr[].base_min.cast[DType.float32]()
+
+        # Process 2 groups at a time to load 6-bit scales/mins.
+        @parameter
+        for group_idx in range(0, block_Q4_K.group_count, 2):
+            var q_scale: Float32
+            var q_min: Float32
+
+            # group_idx: low bits
+            q_scale, q_min = scale_min_k4(src_ptr, group_idx)
+            var d1 = b_scale * q_scale
+            var m1 = b_min * q_min
+
+            # group_idx + 1: high bits
+            q_scale, q_min = scale_min_k4(src_ptr, group_idx + 1)
+            var d2 = b_scale * q_scale
+            var m2 = b_min * q_min
+
+            var q_bits_idx = group_idx * group_nbytes
+            var dst_idx = group_idx * group_nelems
+
+            # Dequantize 1st group bits.
+            @parameter
+            for elem_idx in range(group_nelems):
+                dst_ptr[dst_idx + elem_idx] = (
+                    d1
+                    * (src_ptr[].q_bits[q_bits_idx + elem_idx] & 0xF).cast[
+                        DType.float32
+                    ]()
+                    - m1
+                )
+
+            # Dequantize 2nd group bits.
+            @parameter
+            for elem_idx in range(group_nelems):
+                dst_ptr[dst_idx + group_nelems + elem_idx] = (
+                    d2
+                    * (src_ptr[].q_bits[q_bits_idx + elem_idx] >> 4).cast[
+                        DType.float32
+                    ]()
+                    - m2
+                )
