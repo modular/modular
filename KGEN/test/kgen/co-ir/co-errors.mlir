@@ -24,3 +24,15 @@ kgen.func @invalid_callee() {
   %0 = co.invoke[() -> (): @not_async]()
   kgen.return
 }
+
+// -----
+
+kgen.func @throwing_init(%arg0: !kgen.pointer<index> init_self) async {
+  kgen.return
+}
+
+kgen.func @invalid_invoke(%arg0: !kgen.pointer<index>) {
+  // expected-error @below {{callable cannot have an 'init_self' argument}}
+  %0 = co.invoke[(!kgen.pointer<index> init_self) async -> (): @throwing_init](%arg0)
+  kgen.return
+}
