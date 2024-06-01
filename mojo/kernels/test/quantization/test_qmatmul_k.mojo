@@ -58,13 +58,14 @@ fn quantize_a_Q8_K(
 
 
 fn dot_product_QK_K[
+    b_scales_type: DType,
     *,
     group_size: Int,
     b_zero_point: Int32 = 0,
 ](
     a_quant_data: DTypePointer[DType.int8],
     b_quant_data: DTypePointer[DType.uint8],
-    b_scales: DTypePointer[DType.uint8],
+    b_scales: DTypePointer[b_scales_type],
 ) -> Int32:
     var sum: Int32 = 0
     for i in range(_block_QK_K.quantized_k):

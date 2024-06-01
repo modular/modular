@@ -58,7 +58,7 @@ struct _block_Q6_K:
 
     var q_bits_lo: InlineArray[UInt8, _block_QK_K.quantized_k // 2]
     var q_bits_hi: InlineArray[UInt8, _block_QK_K.quantized_k // 4]
-    var q_scales: InlineArray[UInt8, _block_Q6_K.group_size]
+    var q_scales: InlineArray[Int8, _block_Q6_K.group_size]
     var base_scale: Float16
 
 
@@ -195,7 +195,7 @@ struct _block_Q4_K_packed[block_n: Int = 1]:
 
 struct _block_Q6_K_packed[block_n: Int = 1]:
     var base_scales: InlineArray[Float16, block_n]
-    var q_scales: InlineArray[UInt8, _block_Q6_K.group_count * block_n]
+    var q_scales: InlineArray[Int8, _block_Q6_K.group_count * block_n]
     var q_bits: _packed_int6_array[_block_QK_K.quantized_k * block_n]
 
 
