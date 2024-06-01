@@ -637,8 +637,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                        /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.
-    if (failed(inferrence.infer(expectedParamTypes, paramListAttr)))
-      return PValue();
+    inferrence.infer(expectedParamTypes, paramListAttr);
 
     // See if we inferred information about the next value.
     if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))

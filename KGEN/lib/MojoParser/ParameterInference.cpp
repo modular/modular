@@ -848,13 +848,13 @@ static bool hasInferredParams(PogListAttr paramListAttr) {
          params.front().getPassingKind() == PassingKind::Inferred;
 }
 
-LogicalResult ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
-                                             PogListAttr paramListAttr) {
+void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
+                                    PogListAttr paramListAttr) {
   // If the parameter list has any inferred parameters, then we have to infer
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.
   if (!hasInferredParams(paramListAttr))
-    return success();
+    return;
 
   auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
 
@@ -905,16 +905,14 @@ LogicalResult ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
       if (defaultHandler.getDefault(idx))
         continue;
 
-      // Otherwise, this is a missing parameter.
-      return failure();
+      // Otherwise, this is a missing parameter. Just skip it.
+      continue;
     }
 
     // In the typical case, this isn't a variadic or keyword parameter. It
     // must be a positional binding.
     inferOneParam(givenBindings.posOperands[posIdx++], expectedType);
   }
-
-  return success();
 }
 
 LogicalResult
@@ -922,8 +920,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
                                const CallOperands &callOperands,
                                const KeywordOperands &variadicKwOperands) {
   // First try to infer parameters from parameters.
-  if (failed(infer(signature.getParamTypes(), signature.getParamListAttrs())))
-    return failure();
+  infer(signature.getParamTypes(), signature.getParamListAttrs());
 
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
