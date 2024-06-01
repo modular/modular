@@ -15,8 +15,8 @@ kgen.func @async_coroutine(%arg0: i32) -> !co.routine {
   %curHdl = co.handle : i32
   // CHECK: %[[CALLEE_HDL:.*]] = kgen.call @slow_function
   %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !co.routine
-  // CHECK-NEXT: co.suspend -> %hdl {
-  co.suspend -> %hdl {
+  // CHECK-NEXT: co.suspend (%hdl) {
+  co.suspend (%hdl) {
     // CHECK-NEXT: co.resume %[[CALLEE_HDL]]
     co.resume %calleeHdl
     // CHECK-NEXT: co.suspend.end

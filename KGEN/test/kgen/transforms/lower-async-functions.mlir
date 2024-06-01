@@ -54,7 +54,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   }
   %true = index.bool.constant true
   %result = co.invoke[(i1) async -> index: @coroutine1](%true)
-  co.suspend -> %hdl {
+  co.suspend (%hdl) {
     co.suspend.end
   }
   %idx0 = index.constant 0
@@ -112,7 +112,7 @@ kgen.func @coroutine1(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) async
     // CHECK-NEXT:   hlcf.break "_loop_0"
     // CHECK-NEXT: }
     hlcf.if %arg0 {
-       co.suspend -> %hdl {
+       co.suspend (%hdl) {
          co.suspend.end
        }
        hlcf.yield
@@ -179,7 +179,7 @@ kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
        // CHECK-NEXT: [[V19:%.*]] = kgen.call @bar([[NOT_IN_FRAME]], [[V18]]) : (index, index) -> index
        // CHECK-NEXT: co.suspend
        %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
-       co.suspend -> %hdl {
+       co.suspend (%hdl) {
          co.suspend.end
        }
        hlcf.break "_loop_0"
@@ -246,11 +246,11 @@ kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
         hlcf.yield
      } else {
          %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
-         co.suspend -> %hdl {
+         co.suspend (%hdl) {
            co.suspend.end
          }
          %result6 = kgen.call @bar(%result4, %arg3): (index,index) -> index
-         co.suspend -> %hdl {
+         co.suspend (%hdl) {
            co.suspend.end
          }
         hlcf.break "_loop_0"
@@ -313,7 +313,7 @@ kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index) async -> inde
            hlcf.if %arg0 {
              hlcf.yield
            } else {
-             co.suspend -> %hdl {
+             co.suspend (%hdl) {
                co.suspend.end
              }
              %result6 = kgen.call @bar(%result, %arg3): (index,index) -> index
@@ -368,7 +368,7 @@ kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
   // CHECK-NEXT:  kgen.return
   %idx3 = index.constant 3
   %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
-  co.suspend -> %hdl {
+  co.suspend (%hdl) {
     %result2 = kgen.call @bar(%result, %arg3): (index,index) -> index
     co.suspend.end
   }
@@ -418,7 +418,7 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
     %idx0 = index.constant 0
     %1 = index.cmp slt(%arg1, %idx0)
     hlcf.if %1 {
-      co.suspend -> %hdl {
+      co.suspend (%hdl) {
         co.suspend.end
       }
       hlcf.yield
@@ -449,7 +449,7 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
   // CHECK: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
   // CHECK: [[V13:%.*]] = index.cmp slt([[V12]], %idx0)
   %0 = hlcf.loop (%arg5 = %arg0 : index) -> index {
-    co.suspend -> %hdl {
+    co.suspend (%hdl) {
       co.suspend.end
     }
     %idx0 = index.constant 0
@@ -492,7 +492,7 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
     }
     hlcf.continue %arg5 : index
   }
-  co.suspend -> %hdl {
+  co.suspend (%hdl) {
     co.suspend.end
   }
   %idx1 = index.constant 1
@@ -506,7 +506,7 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
 // CHECK-LABEL: kgen.func @unused_args_resume
 kgen.func @unused_args(%arg0: index, %arg1: index) async -> index {
   // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index)>>
-  co.suspend -> %hdl {
+  co.suspend (%hdl) {
     co.suspend.end
   }
   %result = kgen.call @foo(%arg0) : (index) -> index
@@ -546,7 +546,7 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
       // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
       // CHECK-NEXT: lit.try.raise [[V12]] : index
       %result2 = kgen.call @foo(%arg2) : (index) -> index
-      co.suspend -> %hdl {
+      co.suspend (%hdl) {
         co.suspend.end
       }
       lit.try.raise %result2 : index
@@ -568,7 +568,7 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
     // CHECK-NEXT: [[V15:%.*]] = pop.pointer.bitcast [[V14]]
     // CHECK-NEXT: pop.store [[V12]], [[V15]] : !kgen.pointer<index>
     // CHECK-NEXT: kgen.return
-    co.suspend -> %hdl {
+    co.suspend (%hdl) {
       co.suspend.end
     }
     kgen.return %e : index
@@ -633,7 +633,7 @@ kgen.func @throwing_coroutine(%__error__: !kgen.pointer<index> byref_error,
   } else {
     hlcf.yield
   }
-  co.suspend -> %hdl {
+  co.suspend (%hdl) {
     co.suspend.end
   }
   %1 = kgen.call @populate(%__result__) : (!kgen.pointer<index> byref_result) -> i1

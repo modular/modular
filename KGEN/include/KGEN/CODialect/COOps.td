@@ -58,7 +58,7 @@ def CO_SuspendOp : COOp<"suspend", [SingleBlock,
     Example:
 
     ```mlir
-    co.suspend -> %hdl {
+    co.suspend (%hdl) {
       co.resume %hdl
       co.suspend.end
     }
