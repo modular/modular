@@ -4407,11 +4407,18 @@ from quantization import (
     Q4sym,
     ggml_q4_0_matmul_impl,
     q4_k_dequantize_impl,
+    q6_k_dequantize_impl,
     block_Q4_K,
+    block_Q6_K,
     block_QK_K,
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
-from quantization.qmatmul_k import matmul_Q4_K, matmul_Q4_K_pack_b
+from quantization.qmatmul_k import (
+    matmul_Q4_K,
+    matmul_Q4_K_pack_b,
+    matmul_Q6_K,
+    matmul_Q6_K_pack_b,
+)
 
 
 # TODO: closures to make this simpler
@@ -4817,6 +4824,83 @@ fn ggml_q4_k_dequantize_shape_func[
     single_thread_blocking_override: Bool
 ](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
     alias block_nbytes = sizeof[block_Q4_K]()
+    alias elements_per_block = block_QK_K.quantized_k
+
+    var num_block_per_batch = (
+        input.size() // input.dynamic_shape[0]
+    ) // block_nbytes
+
+    return (input.dynamic_shape[0], elements_per_block * num_block_per_batch)
+
+
+######
+# Q6_K
+######
+
+
+@mogg_register_override("vroom_q6_k_matmul", 1)
+@always_inline
+@export
+fn vroom_q6_k_matmul(
+    a: NDBuffer[DType.float32, 2],
+    b: NDBuffer[DType.uint8, 2],
+    c: NDBuffer[DType.float32, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    with Trace[TraceLevel.OP]("mojo.vroom_q6_k_matmul"):
+        matmul_Q6_K(a, b, c)
+
+
+@mogg_register_shape_func("vroom_q6_k_matmul")
+@always_inline
+@export
+fn vroom_q6_k_matmul_shape_func[
+    single_thread_blocking_override: Bool
+](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
+    2
+]:
+    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+
+
+@mogg_register_override("vroom_q6_k_repack_weights", 1)
+@always_inline
+@export
+fn vroom_q6_k_repack_weights(
+    b: NDBuffer[DType.uint8, 2],
+    b_packed: NDBuffer[DType.uint8, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    matmul_Q6_K_pack_b(b, b_packed)
+
+
+@mogg_register_shape_func("vroom_q6_k_repack_weights")
+@always_inline
+@export
+fn vroom_q6_k_repack_weights_shape_func[
+    single_thread_blocking_override: Bool
+](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+    return b.get_shape()
+
+
+@mogg_register_override("ggml_q6_k_dequantize", 1)
+@always_inline
+@export
+fn ggml_q6_k_dequantize(
+    input: NDBuffer[DType.uint8, 2],
+    output: NDBuffer[DType.float32, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    with Trace[TraceLevel.OP]("mojo.ggml_q6_k_dequantize"):
+        q6_k_dequantize_impl(input, output, output.dynamic_shape)
+
+
+@mogg_register_shape_func("ggml_q6_k_dequantize")
+@always_inline
+@export
+fn ggml_q6_k_dequantize_shape_func[
+    single_thread_blocking_override: Bool
+](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+    alias block_nbytes = sizeof[block_Q6_K]()
     alias elements_per_block = block_QK_K.quantized_k
 
     var num_block_per_batch = (
