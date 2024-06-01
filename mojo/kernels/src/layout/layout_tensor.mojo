@@ -104,7 +104,7 @@ struct LayoutTensor[
     element_layout: Layout = Layout(1, 1),
     index_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
-](CollectionElement):
+](CollectionElement, CollectionElementNew):
     var ptr: DTypePointer[dtype, address_space]
     var owning: Bool
 
@@ -118,6 +118,10 @@ struct LayoutTensor[
 
     alias element_size = element_layout.size()
     alias element_type = SIMD[dtype, Self.element_size]
+
+    # ===------------------------------------------------------------------=== #
+    # Life cycle methods
+    # ===------------------------------------------------------------------=== #
 
     @always_inline
     fn __init__(
@@ -133,6 +137,14 @@ struct LayoutTensor[
         self.max_dim = StaticIntTuple[rank](Int.MAX)
         self.dim_offset = StaticIntTuple[rank](0)
         self.dim_stride = StaticIntTuple[rank](1)
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly copy the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self.__copyinit__(other)
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
