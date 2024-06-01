@@ -150,6 +150,12 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
       return src;
     return create<mlir::UnrealizedConversionCastOp>(type, src).getResult(0);
   }
+  /// Lower a value's type and cast it if necessary.
+  Value createConversion(Value src) {
+    if (Type type = convertType(src.getType()))
+      return createConversion(type, src);
+    return {};
+  }
 
   /// Get the pointer width in bytes.
   size_t getPointerByteWidth() {

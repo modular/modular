@@ -166,10 +166,10 @@ struct LowerKGENCoroutinesAsyncPass
 
 static Value getOffsetToResults(LLVMBuilder &b, TypeAttrCache &cache,
                                 Value hdl) {
-  // The context contains the resume function pointer, and then the callback
-  // closure. Skip over them (3 pointers) to reach the results.
+  // The context contains the resume function pointer, the callback closure, and
+  // the 2 result slots. Skip over them (5 pointers) to reach the results.
   return b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
-                         GEPArg(b.getPointerByteWidth() * 3),
+                         GEPArg(b.getPointerByteWidth() * 5),
                          /*inbounds=*/true);
 }
 
@@ -289,6 +289,23 @@ static LogicalResult lowerCoroutineGetResults(LLVMBuilder &b,
   op.replaceAllUsesWith(results);
   op.erase();
   return success();
+}
+
+static void lowerSetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
+                                 SetByRefErrorAndResultOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
+  Value err = b.createConversion(op.getError());
+  Value res = b.createConversion(op.getResult());
+
+  b.create<StoreOp>(err, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
+                                         GEPArg(b.getPointerByteWidth() * 3),
+                                         /*inbounds=*/true));
+  b.create<StoreOp>(res, b.create<GEPOp>(err.getType(), b.getI8Type(), hdl,
+                                         GEPArg(b.getPointerByteWidth() * 4),
+                                         /*inbounds=*/true));
 }
 
 static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
@@ -427,15 +444,17 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   b.clearInsertionPoint();
 
   // The coroutine context contains the next resume function pointer, a callback
-  // closure in the form of `{ void(i8*)*, i8* }`, the function results, and the
-  // function arguments, and then trailing coroutine frame:
+  // closure in the form of `{ void(i8*)*, i8* }`, 2 result slots for in-memory
+  // results, the function results, and the function arguments, and then
+  // trailing coroutine frame:
   //
-  //   { void(i8*)*, { void(i8*)*, i8* }, ResTs..., ArgTs..., FrameT }
+  //   { void*, { void*, void* }, void*, void*, ResTs..., ArgTs..., FrameT }
   //
   MLIRContext *ctx = b.getContext();
   SmallVector<Type, 16> contextTypes{
       cache.opaquePtr,
-      LLVMStructType::getLiteral(ctx, {cache.opaquePtr, cache.opaquePtr})};
+      LLVMStructType::getLiteral(ctx, {cache.opaquePtr, cache.opaquePtr}),
+      cache.opaquePtr, cache.opaquePtr};
   for (Type resultType : resultTypes) {
     resultType = b.convertType(resultType);
     if (!resultType)
@@ -550,7 +569,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 
   // Replace argument uses with values from the async context. Arguments are
   // located at the end.
-  constexpr int64_t resOffset = 2;
+  constexpr int64_t resOffset = 4; // 4 elements
   int64_t argOffset = resOffset + resultTypes.size();
   for (auto [idx, arg] :
        llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
@@ -788,6 +807,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     } else if (auto getResults = dyn_cast<GetResultsOp>(op)) {
       if (failed(lowerCoroutineGetResults(b, cache, getResults)))
         return WalkResult::interrupt();
+    } else if (auto setByRefResults = dyn_cast<SetByRefErrorAndResultOp>(op)) {
+      lowerSetByRefResults(b, cache, setByRefResults);
     } else if (auto resume = dyn_cast<CO::ResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
     } else if (auto destroy = dyn_cast<DestroyOp>(op)) {

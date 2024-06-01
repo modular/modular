@@ -24,7 +24,7 @@ llvm.func @coro_destroy() {
 // CHECK-LABEL: llvm.func @coro_get_results
 llvm.func @coro_get_results() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
-  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[40]
   // CHECK-NEXT: [[STRUCT:%.*]] = llvm.load [[PTR]] : !llvm.ptr -> !llvm.struct<(i32, i64)>
   // CHECK-NEXT: [[R0:%.*]] = llvm.extractvalue [[STRUCT]][0]
   // CHECK-NEXT: [[R1:%.*]] = llvm.extractvalue [[STRUCT]][1]
@@ -47,7 +47,7 @@ llvm.func @coro_get_results_none() {
 // CHECK-LABEL: llvm.func @coro_get_results_one
 llvm.func @coro_get_results_one() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
-  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[40]
   // CHECK-NEXT: [[R:%.*]] = llvm.load [[PTR]] : !llvm.ptr -> i64
   // CHECK-NEXT: unrealized_conversion_cast [[R]] : i64 to index
   %1 = co.get_results %0 : index
@@ -59,7 +59,7 @@ llvm.func @coro_get_results_one() {
 llvm.func @coro_set_results(%arg0: i32) {
   %0 = builtin.unrealized_conversion_cast to !co.routine
   %idx0 = index.constant 0
-  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[40]
   // CHECK-NEXT: [[V0:%.*]] = llvm.mlir.undef : !llvm.struct<(i64, i32)>
   // CHECK-NEXT: [[ELE:%.*]] = builtin.unrealized_conversion_cast %idx0 : index to i64
   // CHECK-NEXT: [[V1:%.*]] = llvm.insertvalue [[ELE]], [[V0]][0]
@@ -82,10 +82,22 @@ llvm.func @coro_set_results_none() {
 llvm.func @coro_set_results_one() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
   %idx0 = index.constant 0
-  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[40]
   // CHECK-NEXT: [[ELE:%.*]] = builtin.unrealized_conversion_cast %idx0 : index to i64
   // CHECK-NEXT: store [[ELE]], [[PTR]]
   co.set_results %0(%idx0) : index
+  llvm.return
+}
+
+// CHECK-LABEL: llvm.func @coro_set_byref_results
+llvm.func @coro_set_byref_results() {
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  %1 = kgen.param.constant: pointer<none> = <0>
+  // CHECK: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
+  // CHECK-NEXT: store {{.*}}, [[ERR]]
+  // CHECK: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
+  // CHECK-NEXT: store {{.*}}, [[ERR]]
+  co.set_byref_error_result %0(%1, %1) : <none>, <none>
   llvm.return
 }
 
@@ -119,24 +131,24 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
   // CHECK: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
   // CHECK: %[[AFP_CAST:.*]] = llvm.bitcast %[[AFP]]
-  // CHECK: %[[C32:.*]] = llvm.mlir.constant(40 : i32)
+  // CHECK: %[[C32:.*]] = llvm.mlir.constant(56 : i32)
   // CHECK: %[[C1:.*]] = llvm.mlir.constant(8 : i32)
   // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[TOK:.*]] = llvm.call_intrinsic "llvm.coro.id.async"(%[[C32]], %[[C1]], %[[C0]], %[[AFP_CAST]])
   // CHECK: %[[HDL:.*]] = llvm.intr.coro.begin %[[TOK]]
   %hdl = co.handle : i64
-  // CHECK: %[[BASE_CTXT_HDL:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
+  // CHECK: %[[BASE_CTXT_HDL:.*]] = llvm.getelementptr inbounds %[[HDL]][-56]
   // CHECK-NEXT: unrealized_conversion_cast %[[BASE_CTXT_HDL]]
   %0 = builtin.unrealized_conversion_cast %hdl : !co.routine to !llvm.ptr
-  // CHECK: %[[BASE_CTXT_ARG:.*]] = llvm.getelementptr inbounds %[[HDL]][-40] {{.*}} loc(#[[LOC_ARG:.*]])
-  // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_ARG]][0, 3] {{.*}} loc(#[[LOC_ARG]])
+  // CHECK: %[[BASE_CTXT_ARG:.*]] = llvm.getelementptr inbounds %[[HDL]][-56] {{.*}} loc(#[[LOC_ARG:.*]])
+  // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_ARG]][0, 5] {{.*}} loc(#[[LOC_ARG]])
   // CHECK: %[[ARG:.*]] = llvm.load %[[ARG_PTR]] {{.*}} loc(#[[LOC_ARG]])
   // CHECK: "use"(%[[ARG]])
   "use"(%arg0) : (i32) -> ()
   %idx1 = index.constant 1
   // CHECK: %[[CAPTURED:.*]] = builtin.unrealized_conversion_cast %idx1
   // CHECK: %[[RESUME_FN:.*]] = llvm.call_intrinsic "llvm.coro.async.resume"
-  // CHECK: %[[BASE_CTXT_RESUME:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
+  // CHECK: %[[BASE_CTXT_RESUME:.*]] = llvm.getelementptr inbounds %[[HDL]][-56]
   // CHECK: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_RESUME]][0, 0]
   // CHECK: llvm.store %[[RESUME_FN]], %[[RESUME_FN_PTR]]
   // CHECK: %[[PROJ_FN:.*]] = llvm.mlir.addressof @__kgen_coro_ctxt_proj_fn
@@ -149,7 +161,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
     "do_something"(%idx1) : (index) -> ()
     co.suspend.end
   } loc(callsite("foo.mlir":10:5 at "bar.mlir":12:7))
-  // CHECK: %[[BASE_CTXT:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
+  // CHECK: %[[BASE_CTXT:.*]] = llvm.getelementptr inbounds %[[HDL]][-56]
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
   // CHECK: %[[END_FN:.*]] = llvm.mlir.addressof @__kgen_coro_end_fn
   // CHECK: llvm.call_intrinsic "llvm.coro.end.async"(%[[HDL]], %[[FALSE]], %[[END_FN]], %[[BASE_CTXT]])
@@ -167,7 +179,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
 // CHECK-NEXT: %[[OFFSET_i32:.*]] = llvm.sub %[[AF_INT]], %[[AFP_INT]]  : i64
 // CHECK-NEXT: %[[OFFSET:.*]] = llvm.trunc %[[OFFSET_i32]] : i64 to i32
 // CHECK-NEXT: %[[V0:.*]] = llvm.insertvalue %[[OFFSET]], %[[UNDEF]][0] : !llvm.struct<(i32, i32)>
-// CHECK-NEXT: %[[CTXT_SZ:.*]] = llvm.mlir.constant(40 : i32) : i32
+// CHECK-NEXT: %[[CTXT_SZ:.*]] = llvm.mlir.constant(56 : i32) : i32
 // CHECK-NEXT: %[[RESULT:.*]] = llvm.insertvalue %[[CTXT_SZ]], %[[V0]][1] : !llvm.struct<(i32, i32)>
 // CHECK-NEXT: llvm.return %[[RESULT]] : !llvm.struct<(i32, i32)>
 
@@ -187,7 +199,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
 // CHECK-DAG: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af
 // CHECK-DAG: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[MEM]][0, 0]
 // CHECK-NEXT: llvm.store %[[AF]], %[[RESUME_FN_PTR]]
-// CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[MEM]][0, 3]
+// CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[MEM]][0, 5]
 // CHECK-NEXT: llvm.store %arg0, %[[ARG_PTR]]
 // CHECK-NEXT: llvm.return %[[MEM]] : !llvm.ptr
 
