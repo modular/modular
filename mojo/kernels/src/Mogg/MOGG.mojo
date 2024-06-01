@@ -455,7 +455,7 @@ fn to_buffer_list[
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
     for i in range(num_elements):
-        var abi_tensor_ptr = abi_tensors_ptr.offset(i)
+        var abi_tensor_ptr = abi_tensors_ptr + i
         var dims = abi_tensor_ptr[].dims
         var data = __mlir_op.`pop.pointer.bitcast`[
             _type = __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`]
