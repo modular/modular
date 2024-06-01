@@ -299,7 +299,7 @@ def CO_SetByRefErrorAndResultOp : COOp<"set_byref_error_result"> {
   }];
 
   let arguments = (ins Arg<CoroutineType, "", [MemWrite]>:$coroutine,
-                       AnyType:$error, AnyType:$result);
+                       PointerType:$error, PointerType:$result);
   let assemblyFormat = [{
     $coroutine `(` $error `,` $result `)`
     attr-dict `:` type($error) `,` type($result)

@@ -72,7 +72,7 @@ kgen.func @call_throwing_coro(%arg0: index) {
   %0 = co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine](%arg0)
   %1 = pop.aligned_alloc %align, %size : <index>
   %2 = pop.aligned_alloc %align, %size : <index>
-  // CHECK: co.set_byref_error_result %0(%1, %2) : !kgen.pointer<index>
-  co.set_byref_error_result %0(%1, %2) : !kgen.pointer<index>, !kgen.pointer<index>
+  // CHECK: co.set_byref_error_result %0(%1, %2) : <index>, <index>
+  co.set_byref_error_result %0(%1, %2) : <index>, <index>
   kgen.return
 }
