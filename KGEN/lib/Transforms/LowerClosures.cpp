@@ -263,6 +263,18 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 // lowerAsyncFunction
 //===----------------------------------------------------------------------===//
 
+/// Convert the signature of an async funciton by dropping the 'async' bit and
+/// any byref results.
+static std::pair<SignatureType, unsigned>
+convertAsyncSignature(SignatureType sig, CO::CoroutineType coroType) {
+  Builder b(sig.getContext());
+  unsigned numByRefArgs = sig.hasMemoryOnlyResult() + sig.isThrows();
+  auto newSig = SignatureType::get(
+      b.getFunctionType(sig.getArguments().drop_back(numByRefArgs), coroType),
+      sig.getArgConventions().drop_back(numByRefArgs));
+  return {newSig, numByRefArgs};
+}
+
 /// To lower an async function, we stick a `co.handle` operation in
 /// it, marshall results through a `co.promise`, and return the
 /// handle directly.
@@ -282,9 +294,26 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
 
     // Update the function result type.
     SignatureType origSig = func.getSignature();
-    func.setSignature(
-        SignatureType::get(b.getFunctionType(origSig.getArguments(), coroType),
-                           origSig.getArgConventions()));
+    auto [newSig, numByRefArgs] = convertAsyncSignature(origSig, coroType);
+    func.setSignature(newSig);
+    // Replace the `byref_result` and `byref_error` arguments.
+    if (origSig.hasMemoryOnlyResult() || origSig.isThrows()) {
+      b.setLoc(func.getLoc());
+      b.setInsertionPointAfter(coroHdl.getDefiningOp());
+      Type byrefResultType = origSig.getArguments().back();
+      Type byrefErrorType;
+      if (origSig.isThrows())
+        byrefErrorType = origSig.getArguments().end()[-2];
+      else
+        byrefErrorType = PointerType::get(KGEN::NoneType::get(b.getContext()));
+      auto results = b.create<CO::GetByRefErrorAndResultOp>(
+          TypeRange{byrefErrorType, byrefResultType}, coroHdl);
+      func.getArguments().back().replaceAllUsesWith(results.getResult());
+      if (origSig.isThrows())
+        func.getArguments().end()[-2].replaceAllUsesWith(results.getError());
+      func.getBody()->eraseArguments(origSig.getNumArguments() - numByRefArgs,
+                                     numByRefArgs);
+    }
   }
 
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
@@ -299,10 +328,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
                                "forget to run `elaborate-generators`?");
       }
 
-      SignatureType origSig = callee.getType();
-      auto asyncSig = SignatureType::get(
-          b.getFunctionType(origSig.getArguments(), coroType),
-          origSig.getArgConventions());
+      auto [asyncSig, _] = convertAsyncSignature(callee.getType(), coroType);
       auto newCall = b.create<CallOp>(
           call.getType(), SymbolConstantAttr::get(callee.getSymbol(), asyncSig),
           call.getOperands());

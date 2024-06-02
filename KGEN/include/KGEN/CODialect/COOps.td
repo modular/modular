@@ -281,7 +281,7 @@ def CO_DestroyOp : COOp<"destroy"> {
 }
 
 //===----------------------------------------------------------------------===//
-// SetByRefArgumentsOp
+// SetByRefErrorAndResultOp
 //===----------------------------------------------------------------------===//
 
 def CO_SetByRefErrorAndResultOp : COOp<"set_byref_error_result"> {
@@ -303,6 +303,20 @@ def CO_SetByRefErrorAndResultOp : COOp<"set_byref_error_result"> {
   let assemblyFormat = [{
     $coroutine `(` $error `,` $result `)`
     attr-dict `:` type($error) `,` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// GetByRefErrorAndResultOp
+//===----------------------------------------------------------------------===//
+
+// TODO: Delete this op. It's only needed for staging the old coroutine lowering
+// between LowerClosures and LowerKGENCoroutines.
+def CO_GetByRefErrorAndResultOp : COOp<"get_byref_error_result"> {
+  let arguments = (ins Arg<CoroutineType, "", [MemRead]>:$coroutine);
+  let results = (outs PointerType:$error, PointerType:$result);
+  let assemblyFormat = [{
+    $coroutine attr-dict `:` type($error) `,` type($result)
   }];
 }
 
