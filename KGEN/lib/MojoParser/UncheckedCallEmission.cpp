@@ -246,11 +246,17 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
   case ArgConvention::Ref: {
-    // If we're in a parameter context, dump this into memory with a
-    // lifetime matching the expectation (typically inferred immortal).
+    // If we're in a parameter context, just leave it alone - param call
+    // emission will handle it.
     if (emitter.getScopeInfo().isParamContext) {
       if (auto pv = operand.ir.getIfPValue())
-        return PValue(StoreToMemAttr::get(pv, expectedType));
+        return pv;
+    } else if (auto rv = operand.ir.getIfRValue()) {
+      // If this is an RValue (including PValue's), put it into a memory box so
+      // we can get its lifetime.
+      operand.ir = emitter.emitMRValue(operand, EC_CallArgValue);
+      if (!operand.ir)
+        return {};
     }
 
     // Emit the DefArgumentWrapperDLValue as the underlying MBValue that it may
@@ -300,6 +306,18 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
       refValue = emitter.builder->create<RebindOp>(
           operand.expr->getLocation(emitter),
           refValueType.getWithLifetime(expectedRefType.getLifetime()),
+          refValue);
+      refValueType = cast<RefType>(refValue.getType());
+    }
+    // The element types may disagree if we're dealing with ParamRef types
+    // downcast from a trait type to AnyType.
+    if (refValueType.getElementType() != expectedRefType.getElementType()) {
+      assert(isa<ParamRefType>(refValueType.getElementType()) &&
+             isa<ParamRefType>(expectedRefType.getElementType()) &&
+             "Unknown element type mismatch in ref binding");
+      refValue = emitter.builder->create<RebindOp>(
+          operand.expr->getLocation(emitter),
+          refValueType.getWithElement(expectedRefType.getElementType()),
           refValue);
       refValueType = cast<RefType>(refValue.getType());
     }
