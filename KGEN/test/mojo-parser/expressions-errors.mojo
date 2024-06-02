@@ -129,7 +129,7 @@ def testLValuesRvalues() -> None:
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
 
-  # expected-error @+1 {{method argument #0 must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{method argument #0 must be mutable in order to pass to a mutating argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
 
   # We can not implicitly declare things on the RHS

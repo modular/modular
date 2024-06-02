@@ -50,7 +50,7 @@ result_type: [REF '[' test [',' test ] ']'] test
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: OWNED | BORROWED | INOUT
+convention: OWNED | BORROWED | INOUT | (REF '[' test [',' test ] ']')
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
