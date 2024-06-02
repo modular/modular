@@ -27,6 +27,35 @@ kgen.func @call_coroutine() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @byref_result(%arg0: index) -> !co.routine
+kgen.func @byref_result(%arg0: index, %arg1: !kgen.pointer<index> byref_result) async {
+  // CHECK-NEXT: [[HDL:%.*]] = co.handle
+  // CHECK-NEXT: %error, %result = co.get_byref_error_result [[HDL]]
+  // CHECK-NEXT: store %arg0, %result
+  pop.store %arg0, %arg1 : !kgen.pointer<index>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @byref_error(%arg0: index) -> !co.routine
+kgen.func @byref_error(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) async|throws {
+  // CHECK-NEXT: [[HDL:%.*]] = co.handle
+  // CHECK-NEXT: %error, %result = co.get_byref_error_result [[HDL]]
+  // CHECK-NEXT: store %arg0, %error
+  // CHECK-NEXT: store %arg0, %result
+  pop.store %arg0, %arg1 : !kgen.pointer<index>
+  pop.store %arg0, %arg2 : !kgen.pointer<index>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @call_byref
+kgen.func @call_byref(%arg0: index) {
+  // CHECK-NEXT: call @byref_result(%arg0) : (index) -> !co.routine
+  co.invoke[(index, !kgen.pointer<index> byref_result) async -> (): @byref_result](%arg0)
+  // CHECK-NEXT: call @byref_error(%arg0) : (index) -> !co.routine
+  co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) async|throws -> (): @byref_error](%arg0)
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.func @async_execute_async_closure
 // CHECK-SAME: (%arg0: index) -> !co.routine
 // CHECK-NEXT: %0 = co.handle : index
