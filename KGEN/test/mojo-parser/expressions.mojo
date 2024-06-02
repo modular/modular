@@ -1417,7 +1417,7 @@ fn infer_address_space[
   # !lit.ref.
 
   # CHECK: lit.call {{.*}}@Reference::@"__init__{{.*}}:!AddressSpace {_value: !Int = {4}}>
-  var x = Reference(a)
+  var x = Reference(__get_litref_as_mvalue(a))
 
 
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
