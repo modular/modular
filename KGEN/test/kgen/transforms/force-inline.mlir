@@ -93,6 +93,33 @@ kgen.func @call_it() -> !co.routine {
   kgen.return %coroHdl : !co.routine
 }
 
+kgen.func @byref_result(%arg0: index, %arg1: !kgen.pointer<index> byref_result) async -> index always_inline {
+  pop.store %arg0, %arg1 : !kgen.pointer<index>
+  kgen.return %arg0: index
+}
+
+kgen.func @byref_error(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) async|throws -> index always_inline {
+  pop.store %arg0, %arg1 : !kgen.pointer<index>
+  pop.store %arg0, %arg2 : !kgen.pointer<index>
+  kgen.return %arg0 : index
+}
+
+// CHECK-LABEL: kgen.func @call_byref
+kgen.func @call_byref(%arg0: index) {
+  // CHECK-NEXT: co.execute : index (%arg1: !kgen.pointer<index> byref_result)
+  // CHECK-NEXT:   store %arg0, %arg1
+  // CHECK-NEXT:   return %arg0
+  // CHECK-NEXT: }
+  co.invoke[(index, !kgen.pointer<index> byref_result) async -> index: @byref_result](%arg0)
+  // CHECK-NEXT: co.execute : index (%arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result)
+  // CHECK-NEXT:   store %arg0, %arg1
+  // CHECK-NEXT:   store %arg0, %arg2
+  // CHECK-NEXT:   return %arg0
+  // CHECK-NEXT: }
+  co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) async|throws -> index: @byref_error](%arg0)
+  kgen.return
+}
+
 // -----
 
 kgen.func @loop() always_inline {

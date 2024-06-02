@@ -126,6 +126,43 @@ static void printAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
 // ExecuteOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseExecuteBody(OpAsmParser &p, Region &body) {
+  SmallVector<OpAsmParser::Argument, 2> args;
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseArgument(args.emplace_back(), /*allowType=*/true))
+      return failure();
+    if (succeeded(p.parseOptionalKeyword("byref_error"))) {
+      if (p.parseComma() ||
+          p.parseArgument(args.emplace_back(), /*allowType=*/true))
+        return failure();
+    }
+    if (p.parseKeyword("byref_result") || p.parseRParen())
+      return failure();
+  }
+  return p.parseRegion(body, args);
+}
+
+static void printExecuteBody(OpAsmPrinter &p, Operation *op, Region &body) {
+  if (body.getNumArguments()) {
+    p << '(';
+    p.printRegionArgument(body.getArgument(0));
+    // Include the "argument conventions" in the assembly syntax for
+    // familiarity. They're not strictly necessary.
+    if (body.getNumArguments() == 2) {
+      p << " byref_error, ";
+      p.printRegionArgument(body.getArgument(1));
+    }
+    p << " byref_result) ";
+  }
+  p.printRegion(body, /*printEntryBlockArgs*/ false);
+}
+
+LogicalResult ExecuteOp::verify() {
+  if (getBody()->getNumArguments() <= 2)
+    return success();
+  return emitOpError("body expected at most 2 arguments");
+}
+
 ArrayRef<Type> ExecuteOp::getResultTypes() { return getTypes(); }
 
 //===----------------------------------------------------------------------===//
