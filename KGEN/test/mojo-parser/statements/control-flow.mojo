@@ -115,8 +115,8 @@ struct RefIter[list_mutability: Bool, //,
 
 struct ListWithRefIter:
     fn __init__(inout self): pass
-    fn __iter__(self: Reference[Self, _]) -> RefIter[self.lifetime]:
-        return RefIter[self.lifetime]()
+    fn __iter__(ref [_] self: Self) -> RefIter[__lifetime_of(self)]:
+        return RefIter[__lifetime_of(self)]()
 
 # CHECK-LABEL: lit.func @"for_range_ref_loop
 fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
@@ -124,10 +124,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
 
     # CHECK: [[ITEM:%.*]] = lit.var.decl "item"
     # CHECK-NEXT: %$RANGE = lit.var.decl "$RANGE" synth
-    # CHECK-NEXT: %anonymous2A = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous2A, %mut_list_ref_iter)
-    # CHECK-NEXT: [[MUTREF:%.*]] = lit.ref.load %anonymous2A
-    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}([[MUTREF]], %$RANGE)
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$RANGE)
     for item in mut_list_ref_iter:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
