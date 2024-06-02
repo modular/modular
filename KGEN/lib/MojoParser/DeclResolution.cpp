@@ -381,31 +381,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
       if (selfType.isEqualCanon(selfArgType))
         return;
 
-      // It is ok if it is an explicit !lit.ref to the underlying type.
-      // TODO(references): Users should not be exposed to this!  This should go
-      // away when we have lifetimeof(self) and have a way to express parametric
-      // mutability.
-      auto selfArgRefType = dyn_cast<RefType>(selfArgType);
-      if (selfArgRefType &&
-          selfType.isEqualCanon(selfArgRefType.getElementType())) {
-        if (selfArg.convention != ParsedArgument::kConventionUnspec &&
-            selfArg.convention != ParsedArgument::kConventionBorrowed) {
-          emitErrorLoc(
-              selfArg.loc,
-              "!lit.ref 'self' must be passed with a borrowed convention");
-          selfArg.isErroneous = true;
-          return;
-        }
-        if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
-          emitErrorLoc(
-              selfArg.loc,
-              "!lit.ref 'self' doesn't work for @register_passable types");
-          selfArg.isErroneous = true;
-          return;
-        }
-        return; // ok!
-      }
-
       // For non-inout arguments, it is also ok if the argument is some type
       // like Reference[Self] that an instance of Self implicitly converts to.
       if (selfArg.convention != ParsedArgument::kConventionInOut) {
