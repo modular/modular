@@ -359,10 +359,10 @@ fn sync_parallelize[
     var count = 0
     for i in range(num_per_lq_tasks):
         for j in range(num_threads):
-            _ = tg.create_task(task_fn(count), j)
+            tg.create_task(task_fn(count), j)
             count += 1
     for k in range(num_global_queue_tasks):
-        _ = tg.create_task(task_fn(count))
+        tg.create_task(task_fn(count))
         count += 1
 
     # execute Nth task inline. When using local queues, we need to know
