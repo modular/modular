@@ -184,11 +184,11 @@ fn badCalls(arg: Int):
 
   var x: Int
   var y: FloatLiteral
-  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass to a mutating argument}}
   exampleByRefVariadic(1.0, x, arg)
   # expected-error-re @+1 {{invalid call to 'exampleByRefVariadic': l-value of type 'FloatLiteral' cannot be converted to reference of type 'Int'}}
   exampleByRefVariadic(1.0, x, y)
-  # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{argument #2 must be mutable in order to pass to a mutating argument}}
   exampleByRefVariadic(1.0, x, 1)
 
   # The user hasn't provided any arguments that could be used to infer `T`.
@@ -314,7 +314,7 @@ fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
-# expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
+# expected-note @below {{argument #1 must be mutable in order to pass to a mutating argument}}
 fn overloadIntFloat32(a: Int, inout b: FloatDyn): pass
 
 # expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}

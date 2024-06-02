@@ -256,7 +256,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
       printRValueTypeInfo(operand.ir, diag);
     } else {
       describeArgumentNo(diag, argIdx);
-      diag << " must be mutable in order to pass as a by-ref argument";
+      diag << " must be mutable in order to pass to a mutating argument";
     }
     diag << operand.expr->getRange();
     return diag;
@@ -428,15 +428,50 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (!argVal)
       return {kNotLValue, expectedType};
 
-    // By-ref argument types must exactly match, no conversions are allowed.
+    // ByRef argument types must exactly match, no conversions are allowed.
     ASTType elementType = expectedType.getReferenceElementType();
     if (!argVal.getRValueType().isEqualCanon(elementType))
       return {kWrongLVType, expectedType};
-    // If a register-passable type is being returned in-memory, remember this.
+    // Notice if a register-passable type is being passed in-memory. This allows
+    // 'inout' arguments overloads to be more expensive than borrowed.
     numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
     return {kValidType, expectedType};
   }
-  case ArgConvention::Ref:
+  case ArgConvention::Ref: {
+    // Element type and address have to match and the mutability has to be
+    // compatible.
+    RefType valueRefType;
+    if (operand.ir.isMValue())
+      valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
+    else if (auto pv = operand.ir.getIfPValue(); pv && scopeInfo.isParamContext)
+      valueRefType = RefType::getImmortal(pv.getType(), /*isMut=*/true);
+
+#if 0 // FIXME: Enable def arguments.
+
+    // As a special hack, look through DefArgumentWrapperDLValue to the
+    // underlying MBValue that it may contain.  This is for two reasons:
+    //  1) We don't want to infer mutability from the argument even though
+    //     it is a DLValue, because we'd force copy-out + writeback,
+    //     materializing the def argument box.
+    //  2) We have significant bugs around lifetime inference from SBValues
+    //     and DLValues because we're not materializing the box in time.  This
+    //     is tracked by MOCO-684.
+    // Solve this by hacking this important case specifically.
+    if (auto dlValue = argVal.getIfDLValue())
+      if (auto refType = dlValue->getMBValueTypeFromDefArgument())
+        valueRefType = refType;
+#endif
+
+    // The argument must be an MValue in the case of a dynamic call.
+    if (valueRefType &&
+        canConvertWithRebind(valueRefType, expectedType, shared))
+      return {kValidType, expectedType};
+
+    // Otherwise this is the wrong type for the argument.
+    return {kWrongType, expectedType};
+  }
+
+    [[fallthrough]];
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
     // Ignore the pointer type on memory conventions when matching types.

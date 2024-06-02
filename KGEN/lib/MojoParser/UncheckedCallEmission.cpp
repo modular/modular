@@ -228,17 +228,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     convention = calleeSig.getPackVarArgConvention(argIdx);
   }
 
-  // Depending on how mutable a ref argument is, we convert it to InOut or
-  // BorrowedInMem for sake of argument passing.
-  if (convention == ArgConvention::Ref) {
-    convention = cast<RefType>(expectedType).isMutableKnown(true)
-                     ? ArgConvention::InOut
-                     : ArgConvention::BorrowedInMem;
-  }
-
   switch (convention) {
-  case ArgConvention::Ref:
-    llvm_unreachable("handled above");
+  case ArgConvention::None:
+    llvm_unreachable("none convention not permitted in Mojo");
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
@@ -248,22 +240,83 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     return operand.ir;
   case ArgConvention::OwnedInReg:
   case ArgConvention::OwnedInMem:
+    // Owned conventions pass rvalues.
+    if (convention == ArgConvention::OwnedInMem)
+      expectedType = cast<RefType>(expectedType).getElementType();
+    return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
+
+  case ArgConvention::Ref: {
+    // If we're in a parameter context, dump this into memory with a
+    // lifetime matching the expectation (typically inferred immortal).
+    if (emitter.getScopeInfo().isParamContext) {
+      if (auto pv = operand.ir.getIfPValue())
+        return PValue(StoreToMemAttr::get(pv, expectedType));
+    }
+
+    // We don't support non-MValue's currently.  We could relax this to
+    // support things like Reference(42) - such a thing could dump the value
+    // into a memory temp - but we can do that later if there is demand.
+    // This is tricky due to parameter inference phase ordering.
+    if (!operand.ir.isMValue()) {
+      emitter.emitError(operand.expr->getLoc(),
+                        "cannot bind a non-memory value to a Reference");
+      return {};
+    }
+
+    Value refValue = operand.ir.getMValueReference();
+    auto refValueType = cast<RefType>(refValue.getType());
+    auto expectedRefType = cast<RefType>(expectedType);
+
+    // If the lifetime is an InvalidRefLifetimeAttr then this value is
+    // derived from an argument which might be bound (after elaboration)
+    // to a register value that has no lifetime.  Emit an error because
+    // you can't form a 'ref' to these things.
+    if (isa<InvalidRefLifetimeAttr>(refValueType.getLifetime())) {
+      emitter.emitError(operand.expr->getLoc(),
+                        "cannot form a reference to an argument that might "
+                        "instantiate to @register_passable type");
+      return {};
+    }
+
+    // Lifetimes must be convertible, this is checked by OverloadFitness.
+    // The destination may be less mutable because of canConvertWithRebind.
+    if (!refValueType.isMutableKnown(false) &&
+        expectedRefType.isMutableKnown(false)) {
+      refValue = emitter.builder->create<RefImmutOp>(
+          operand.expr->getLocation(emitter), refValue);
+      refValueType = cast<RefType>(refValue.getType());
+    }
+
+    // The lifetimes may disagree if we're converting a value to a
+    // superset lifetime, e.g. "immortal -> X" or "X -> X|y".
+    if (refValueType.getLifetime() != expectedRefType.getLifetime()) {
+      refValue = emitter.builder->create<RebindOp>(
+          operand.expr->getLocation(emitter),
+          refValueType.getWithLifetime(expectedRefType.getLifetime()),
+          refValue);
+      refValueType = cast<RefType>(refValue.getType());
+    }
+
+    assert(refValueType == expectedType && "Should have exact match now");
+    // TODO: Unify MLValue and MBValue.
+    if (expectedRefType.isMutableKnown(true))
+      return MLValue(refValue);
+    return MBValue(refValue);
+  }
+
   case ArgConvention::BorrowedInReg:
-  case ArgConvention::BorrowedInMem: {
-    // by-val arguments are converted to the expected r-value type.
-    if (convention == ArgConvention::OwnedInMem ||
-        convention == ArgConvention::BorrowedInMem)
+  case ArgConvention::BorrowedInMem:
+    // by-ref arguments are converted to the expected r-value type.
+    if (convention == ArgConvention::BorrowedInMem)
       expectedType = cast<RefType>(expectedType).getElementType();
 
-    if (convention == ArgConvention::OwnedInReg ||
-        convention == ArgConvention::OwnedInMem)
-      return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
-
-    // If this is a low-level !lit.ref argument, allow binding an MValue of the
-    // element type.
+    // If this is a low-level !lit.ref argument, allow binding an MValue of
+    // the element type.
     //
-    // This is magic used by Reference.__init__, allowing Reference(someMValue)
-    // to infer the lifetime and mutability of the MValue.
+    // This is magic used by Reference.__init__, allowing
+    // Reference(someMValue) to infer the lifetime and mutability of the
+    // MValue.
+    // FIXME: Remove !lit.ref special case.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       auto cValue = operand.ir.getIfCValue();
       if (cValue && convention == ArgConvention::BorrowedInReg &&
@@ -324,9 +377,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     }
 
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
-  }
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
   }
   llvm_unreachable("unknown argument convention");
 }
@@ -776,18 +826,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     Type declaredArgType) {
   assert(emitter.builder && "Should only be called in dynamic context");
 
-  // Depending on how mutable a ref argument is, we convert it to InOut or
-  // BorrowedInMem for sake of argument passing.
-  if (convention == ArgConvention::Ref) {
-    convention = cast<RefType>(declaredArgType).isMutableKnown(true)
-                     ? ArgConvention::InOut
-                     : ArgConvention::BorrowedInMem;
-  }
-
   Value arg;
   switch (convention) {
   case ArgConvention::Ref:
-    assert(0 && "handled above");
+    assert(argValAndExpr.ir.isMValue() && "pre-emission handles everything");
+    return argValAndExpr.ir.getMValueReference();
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("this is handled specially during call emission");
