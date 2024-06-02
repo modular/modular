@@ -80,8 +80,10 @@ void DiagEmitter::describeArgumentNo(InflightDiag &diag, size_t argIdx) const {
       callSyntax == CallSyntax::kMethodCallSynthetic) {
     // It is probably possible for this assert to fire, if it does we should
     // tailor the error message.
-    assert(argIdx != 0 && "TODO: unexpected self mismatch");
-    diag << "method argument #" << (argIdx - 1);
+    if (argIdx != 0)
+      diag << "method argument #" << (argIdx - 1);
+    else
+      diag << "self argument";
   } else if (callSyntax == CallSyntax::kOperator && argIdx == 1) {
     diag << "right side";
   } else if (callSyntax == CallSyntax::kReversedOperator && argIdx == 0) {
@@ -446,8 +448,6 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     else if (auto pv = operand.ir.getIfPValue(); pv && scopeInfo.isParamContext)
       valueRefType = RefType::getImmortal(pv.getType(), /*isMut=*/true);
 
-#if 0 // FIXME: Enable def arguments.
-
     // As a special hack, look through DefArgumentWrapperDLValue to the
     // underlying MBValue that it may contain.  This is for two reasons:
     //  1) We don't want to infer mutability from the argument even though
@@ -457,10 +457,9 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     //     and DLValues because we're not materializing the box in time.  This
     //     is tracked by MOCO-684.
     // Solve this by hacking this important case specifically.
-    if (auto dlValue = argVal.getIfDLValue())
+    if (auto dlValue = operand.ir.getIfDLValue())
       if (auto refType = dlValue->getMBValueTypeFromDefArgument())
         valueRefType = refType;
-#endif
 
     // The argument must be an MValue in the case of a dynamic call.
     if (valueRefType &&

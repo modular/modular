@@ -754,9 +754,9 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
       emitter.emitErrorForDynamicValueInParameter(expr);
       return {};
     }
-    auto fieldPtr =
+    auto fieldRef =
         emitter.builder->create<RefStructGEROp>(mlirLoc, baseLV, fieldOp);
-    return emitter.emitCResult(MLValue(fieldPtr), expr, dest);
+    return emitter.emitCResult(MLValue(fieldRef), expr, dest);
   }
 
   // We know the base.ir is a BValue or RValue, decay to BValue.

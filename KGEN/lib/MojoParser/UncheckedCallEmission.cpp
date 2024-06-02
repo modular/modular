@@ -253,6 +253,13 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         return PValue(StoreToMemAttr::get(pv, expectedType));
     }
 
+    // Emit the DefArgumentWrapperDLValue as the underlying MBValue that it may
+    // contain.
+    if (auto dlValue = operand.ir.getIfDLValue()) {
+      if (MBValue underlying = dlValue->emitMBValueFromDefArgument(emitter))
+        operand.ir = underlying;
+    }
+
     // We don't support non-MValue's currently.  We could relax this to
     // support things like Reference(42) - such a thing could dump the value
     // into a memory temp - but we can do that later if there is demand.
@@ -829,8 +836,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   Value arg;
   switch (convention) {
   case ArgConvention::Ref:
-    assert(argValAndExpr.ir.isMValue() && "pre-emission handles everything");
-    return argValAndExpr.ir.getMValueReference();
+    if (argValAndExpr.ir.isMValue())
+      return argValAndExpr.ir.getMValueReference();
+
+    // Promote PValue's if needed.
+    return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
+
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("this is handled specially during call emission");

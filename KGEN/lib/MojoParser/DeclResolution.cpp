@@ -1494,10 +1494,28 @@ DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
     : BaseDLValue(eltType), argDecl(argDecl), argRef(argRef),
       argIndex(argIndex) {}
 
+/// If this is a def argument shadow, resolve it to the incoming immutable
+/// borrowed value without forming a local copy.  Otherwise return null.
+MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
+    ExprEmitter &emitter) const {
+  return argRef.getIfMBValue();
+}
+
 RefType DefArgumentWrapperDLValue::getMBValueTypeFromDefArgument() const {
   if (auto mbVal = argRef.getIfMBValue())
     return cast<RefType>(mbVal.getType());
   return {};
+}
+
+MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
+    ExprEmitter &emitter) const {
+  auto baseRef = baseVal.ir->emitMBValueFromDefArgument(emitter);
+  if (!baseRef)
+    return {};
+
+  auto fieldRef = emitter.builder->create<RefStructGEROp>(
+      expr->getLocation(emitter), baseRef, cast<StructFieldOp>(fieldOp));
+  return MBValue(fieldRef);
 }
 
 void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
