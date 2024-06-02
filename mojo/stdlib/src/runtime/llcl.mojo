@@ -387,11 +387,9 @@ struct TaskGroupTask[type: AnyTrivialRegType, lifetime: MutableLifetime]:
     task once the taskgroup completes.
     """
 
-    var handle_ref: Reference[_TaskGroupBox, True, lifetime]
+    var handle_ref: Reference[_TaskGroupBox, lifetime]
 
-    fn __init__(
-        inout self, handle_ref: Reference[_TaskGroupBox, True, lifetime]
-    ):
+    fn __init__(inout self, handle_ref: Reference[_TaskGroupBox, lifetime]):
         self.handle_ref = handle_ref
 
     fn get(self) -> type:
