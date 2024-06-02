@@ -39,9 +39,17 @@ kgen.func @async_execute() -> !co.routine {
     // CHECK: kgen.return [[R0]], [[R1]] : i32, i64
     kgen.return %0, %1 : i32, i64
   }
-  // CHECK: co.execute
+  // CHECK: co.execute : i32 {
   co.execute : i32 {
     // CHECK-NEXT: kgen.unreachable
+    kgen.unreachable
+  }
+  // CHECK: co.execute : i32 (%arg0: !kgen.pointer<index> byref_result) {
+  co.execute : i32 (%arg0: !kgen.pointer<index> byref_result) {
+    kgen.unreachable
+  }
+  // CHECK: co.execute : i32, i64 (%arg0: !kgen.pointer<index> byref_error, %arg1: !kgen.pointer<index> byref_result) {
+  co.execute : i32, i64 (%arg0: !kgen.pointer<index> byref_error, %arg1: !kgen.pointer<index> byref_result) {
     kgen.unreachable
   }
   // CHECK: kgen.return %[[HDL]]

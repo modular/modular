@@ -131,7 +131,8 @@ def CO_ExecuteOp : COOp<"execute", [SingleBlock,
   let description = [{
     The `co.execute` operation declares an inline async region and returns a
     coroutine handle to the region. This operation can represent an inlined
-    post-elaboration async function.
+    post-elaboration async function. The region also carries the byref result
+    slots required by the callee.
 
     Example:
 
@@ -149,8 +150,10 @@ def CO_ExecuteOp : COOp<"execute", [SingleBlock,
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<CoroutineTypes>($types) $bodyRegion attr-dict
+    `` custom<CoroutineTypes>($types) custom<ExecuteBody>($bodyRegion) attr-dict
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

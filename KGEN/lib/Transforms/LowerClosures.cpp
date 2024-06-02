@@ -125,14 +125,29 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   Location unencodedLoc = op.getLocNoInlined();
   op.getOperation()->setLoc(unencodedLoc);
 
-  SmallVector<Value> captures;
+  // Before we do anything with the captures, insert the coroutine handle and
+  // replace the byref arguments.
   Region &body = op.getBodyRegion();
-  liftClosureRegion(body, captures, domInfo);
-
-  // Insert the coroutine handle.
   ImplicitLocOpBuilder b(op.getLocNoInlined(),
                          OpBuilder::atBlockBegin(&body.front()));
   Value coroHdl = b.create<CO::HandleOp>(op.getTypes());
+  if (body.getNumArguments()) {
+    Type byrefResultType = body.getArguments().back().getType();
+    Type byrefErrorType;
+    if (body.getNumArguments() == 2)
+      byrefErrorType = body.getArgumentTypes().front();
+    else
+      byrefErrorType = PointerType::get(KGEN::NoneType::get(b.getContext()));
+    auto results = b.create<CO::GetByRefErrorAndResultOp>(
+        TypeRange{byrefErrorType, byrefResultType}, coroHdl);
+    body.getArguments().back().replaceAllUsesWith(results.getResult());
+    if (body.getNumArguments() == 2)
+      body.getArguments().front().replaceAllUsesWith(results.getError());
+    body.front().eraseArguments(0, body.getNumArguments());
+  }
+
+  SmallVector<Value> captures;
+  liftClosureRegion(body, captures, domInfo);
 
   // Replace all returns.
   op.walk([&](ReturnOp ret) {
