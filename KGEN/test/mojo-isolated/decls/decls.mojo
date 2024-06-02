@@ -408,7 +408,7 @@ struct BorrowStruct:
 
 # CHECK-LABEL: callerFn
 # CHECK-SAME: (%arg0: !lit.ref<{{.*}}> borrow_in_mem)
-fn callerFn(borrowed arg0: BorrowStruct):
+fn callerFn(arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
 
