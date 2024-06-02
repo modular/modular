@@ -72,10 +72,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
     # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
-    # CHECK: [[REFTMPVAR:%.*]] = lit.var.decl "anonymous
-    # CHECK: lit.call {{.*}}Reference::@"__init__{{.*}}([[REFTMPVAR]], [[TMPVAR]]
-    # CHECK: [[REFVAL:%.*]] = lit.ref.load [[REFTMPVAR]]
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}([[REFVAL]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}([[TMPVAR]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
@@ -100,8 +97,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = (i2, i1)
 
-    # CHECK: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous{{.*}}, %iTup)
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__getitem__{{.*}}(
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%iTup)
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: lit.ref.store [[TMP]], [[ELT]]
     iTup[1] = i1
