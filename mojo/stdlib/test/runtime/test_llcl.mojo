@@ -9,7 +9,7 @@ from os.atomic import Atomic
 
 from memory import stack_allocation
 from memory.unsafe import Pointer
-from runtime.llcl import Runtime, TaskGroup, SpinWaiter
+from runtime.llcl import Runtime, SpinWaiter
 from testing import assert_true
 
 
@@ -93,19 +93,15 @@ fn test_runtime_taskgroup():
 
     @parameter
     async fn run_as_group(rt: Runtime) -> Int:
-        var tg = TaskGroup[__lifetime_of()](rt)
-        var t0 = tg.create_task(return_value[1]())
-        var t1 = tg.create_task(return_value[2]())
-        await tg
-        return t0.get() + t1.get()
+        var t0 = rt.create_task(return_value[1]())
+        var t1 = rt.create_task(return_value[2]())
+        return await t0 + await t1
 
     with Runtime(4) as rt:
-        var tg = TaskGroup[__lifetime_of()](rt)
-        var t0 = tg.create_task(run_as_group(rt))
-        var t1 = tg.create_task(run_as_group(rt))
-        tg.wait()
+        var t0 = rt.create_task(run_as_group(rt))
+        var t1 = rt.create_task(run_as_group(rt))
         # CHECK: 6
-        print(t0.get() + t1.get())
+        print(t0.wait() + t1.wait())
 
 
 # CHECK-LABEL: test_global_same_runtime

@@ -380,28 +380,6 @@ struct _TaskGroupBox(CollectionElement):
             pass
 
 
-@register_passable
-struct TaskGroupTask[type: AnyTrivialRegType, lifetime: MutableLifetime]:
-    """A task that belongs to a TaskGroup. This object retains ownership of the
-    underlying coroutine handle, which can be used to query the results of the
-    task once the taskgroup completes.
-    """
-
-    var handle_ref: Reference[_TaskGroupBox, lifetime]
-
-    fn __init__(inout self, handle_ref: Reference[_TaskGroupBox, lifetime]):
-        self.handle_ref = handle_ref
-
-    fn get(self) -> type:
-        """Get the task's result value. This should only be called once the
-        task result is available. I.e., when the taskgroup completes.
-
-        Returns:
-            The task's result value.
-        """
-        return self.handle_ref[].get[type]()
-
-
 struct TaskGroup[lifetimes: LifetimeSet]:
     var counter: Atomic[DType.index]
     var chain: Chain
@@ -436,9 +414,9 @@ struct TaskGroup[lifetimes: LifetimeSet]:
 
     fn create_task(
         inout self,
-        owned task: Coroutine[*_],
+        owned task: Coroutine[NoneType],
         desired_worker_id: Int = -1,
-    ) -> TaskGroupTask[task.type, __lifetime_of(self)]:
+    ):
         # TODO(MOCO-771): Enforce that `task.lifetimes` is a subset of
         # `Self.lifetimes`.
         self.counter += 1
@@ -452,7 +430,6 @@ struct TaskGroup[lifetimes: LifetimeSet]:
         )
         _async_execute[task.type](task._handle, self.rt, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
-        return self.tasks.__get_ref(-1)
 
     @staticmethod
     fn await_body_impl(hdl: AnyCoroutine, inout task_group: Self):

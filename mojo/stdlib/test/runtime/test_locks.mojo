@@ -25,11 +25,10 @@ fn test_basic_lock() raises:
     alias maxJ = 100
 
     @parameter
-    async fn inc() capturing -> Int:
+    async fn inc() capturing:
         with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
-            return 0
 
     # CHECK: PRE::Atomic counter is 0 , and raw counter, 0
     print(
