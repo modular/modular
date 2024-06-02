@@ -186,11 +186,11 @@ struct InferenceServer[
         var rt = Runtime()
         var tg = TaskGroup[__lifetime_of()](rt)
         for _ in range(self._num_listeners):
-            _ = tg.create_task(listen())
+            tg.create_task(listen())
 
         @parameter
         if HTTP_SERVER_ENABLED:
-            _ = tg.create_task(run_http_rt(self._impl._impl))
+            tg.create_task(run_http_rt(self._impl._impl))
 
         await tg
         self._impl.stop()
