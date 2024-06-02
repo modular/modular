@@ -28,15 +28,21 @@ using namespace LIT;
 /// Process the lifetime expression in a `ref [...] T` reference specifier.
 /// T is specified as 'type' and this returns the result !lit.ref type.
 static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
-                                        ASTType type,
-                                        const TypeCheckScopeInfo &scopeInfo) {
+                                        ASTType type, StringRef valueName,
+                                        TypeCheckedParamList &paramList) {
+  SharedState &shared = paramList.shared;
+
+  // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
+  // that all "ref" values have RefType, but their RValue type is an error.
+  auto hadError = [&]() -> ASTType {
+    return RefType::getImmortal(shared.getTypeCheckErrorType(), /*isMut*/ true);
+  };
+
   // Propagate already disgnosed errors.
   if (isa<TypeCheckErrorType>(type))
-    return type;
-  SharedState &shared = scopeInfo.shared;
+    return hadError();
 
-  auto hadError = [&]() -> ASTType { return shared.getTypeCheckErrorType(); };
-  ExprEmitter emitter(shared, scopeInfo.declScope, EC_Lifetime);
+  ExprEmitter emitter(shared, paramList.declScope, EC_Lifetime);
 
   // If the lifetime expression is syntactically a 2-element tuple, then
   // take it apart into a lifetime and address space.
@@ -59,9 +65,20 @@ static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   if (lifetimeExpr->kind != ExprNode::kDiscardLiteral) {
     lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
   } else {
-    emitter.emitError(lifetimeExpr->getLoc())
-        << "`_` not supported in ref argument yet" << lifetimeExpr->getRange();
-    return hadError();
+    // We need to add two parameters to this function, one for the mutability
+    // of type Bool and one for the lifetime.
+    auto addParam = [&](const Twine &name, Type type) -> TypedAttr {
+      auto paramDecl =
+          ParamDeclAttr::get(paramList.declScope.mangleParamName(name), type);
+      paramList.names.push_back(StringAttr::get(type.getContext()));
+      paramList.passingKinds.push_back(PassingKind::Implicit);
+      paramList.paramDeclAttrs.push_back(paramDecl);
+      return ParamDeclRefAttr::get(paramDecl);
+    };
+
+    auto isMut = addParam(valueName + "_is_mut",
+                          IntegerType::get(shared.getContext(), 1));
+    lifetime = addParam(valueName + "_is_lifetime", LifetimeType::get(isMut));
   }
   if (!lifetime)
     return hadError();
@@ -611,7 +628,7 @@ ParseResult ParsedParamList::parseOptionalParameters(ParserBase &p,
 
 /// Given a type that potentially has all of its parameters unbound, implicitly
 /// add the parameter declarations to the function parameters.
-static ASTType addImplicitTypeParams(ASTType type, const ParsedArgument &arg,
+static ASTType addImplicitTypeParams(ASTType type,
                                      TypeCheckedParamList &paramList) {
   // Check if the type has unbound parameters.
   auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
@@ -849,7 +866,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.isErroneous = true;
       arg.vararg = VarArgKind::None; // Don't break invariants on errors.
     }
-    type = addImplicitTypeParams(type, arg, tcSignature.paramList);
+    type = addImplicitTypeParams(type, tcSignature.paramList);
   } else if (idx == 0 && selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't
              // been applied yet.
@@ -936,9 +953,12 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
           arg.loc, "TODO: variadics not supported with 'ref' convention yet");
       arg.vararg = VarArgKind::None;
     }
-    type = processLifetimeSpecifier(arg.refLifetimeExpr, type,
+    type = processLifetimeSpecifier(arg.refLifetimeExpr, type, arg.name,
                                     tcSignature.paramList);
     arg.kgenConvention = ArgConvention::Ref;
+
+    if (isa<TypeCheckErrorType>(type.getReferenceElementType()))
+      arg.isErroneous = true;
     break;
   case ParsedArgument::kConventionBorrowed: {
     arg.kgenConvention = ArgConvention::BorrowedInMem;
@@ -1152,8 +1172,10 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
   // If a result lifetime is specified with `ref [life] Ty`, then form a ref
   // result.
   if (resultRefLifetimeExpr) {
-    resultType = processLifetimeSpecifier(resultRefLifetimeExpr, resultType,
-                                          tcSignature.paramList);
+    resultType = processLifetimeSpecifier(
+        resultRefLifetimeExpr, resultType,
+        // TODO: Use the name of the return slot if present.
+        "__result__", tcSignature.paramList);
     tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
   }
 
