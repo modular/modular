@@ -23,7 +23,7 @@ alias _SERIALIZATION_MINOR_FORMAT: UInt32 = 1
 @always_inline
 fn _write_int[
     type: Intable
-](object: Reference[type, _, _, AddressSpace.GENERIC], f: FileHandle) raises:
+](object: Reference[type, _, AddressSpace.GENERIC], f: FileHandle) raises:
     """Writes an int value to a file."""
     var ptr = UnsafePointer(object[]).bitcast[UInt8]()
     var size = sizeof[type]()

@@ -210,7 +210,7 @@ struct CallbackSet[*Ts: ServerCallbacks](ServerCallbacks):
     @always_inline("nodebug")
     fn __getitem__[
         idx: Int
-    ](self: Reference[Self, _, _]) -> ref [self.lifetime] Ts[idx.value]:
+    ](self: Reference[Self, _]) -> ref [self.lifetime] Ts[idx.value]:
         var storage_kgen_ptr = UnsafePointer.address_of(self[].storage).address
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx.value](
             storage_kgen_ptr
