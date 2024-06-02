@@ -23,7 +23,7 @@ fn owned_generic[T: AnyType](owned x: T):
     pass
 
 
-fn borrowed_generic[T: AnyType](borrowed x: T):
+fn borrowed_generic[T: AnyType](x: T):
     pass
 
 
@@ -66,7 +66,7 @@ fn test_owned(owned x: RegPassable, owned y: MemOnly):
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)> borrow,
 # CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem)
 @export
-fn test_borrowed(borrowed x: RegPassable, borrowed y: MemOnly):
+fn test_borrowed(x: RegPassable, y: MemOnly):
     # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg0)
     borrowed_generic(x)
 
