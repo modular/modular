@@ -1383,7 +1383,7 @@ fn thing_taking_ref[
 
 fn thing_taking_ref2[type: AnyType](ref [_] arg: type): pass
 
-fn thing_taking_reference2[type: AnyType](arg: Reference[type, _, _]): pass
+fn thing_taking_reference2[type: AnyType](arg: Reference[type, _]): pass
 
 # CHECK-LABEL: lit.func @"test_thing_taking_reference
 fn test_thing_taking_reference(inout x: String):
@@ -1393,12 +1393,12 @@ fn test_thing_taking_reference(inout x: String):
   thing_taking_ref2(x)
 # CHECK-NEXT: %anonymous2A = lit.var.decl
 # CHECK-NEXT: lit.call {{.*}}@Reference::@"__init__
-# CHECK-SAME: <:!AnyType #String1, :!Bool {:i1 1}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String1, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
   thing_taking_reference2(x)
 
 struct StructWithStaticMethods:
    @staticmethod
-   fn _init_op_state(state: Reference[Int, _, _], foo: Int): pass
+   fn _init_op_state(state: Reference[Int, _], foo: Int): pass
    fn thing(self):
      var x = 42
      Self._init_op_state(x, x)
@@ -1412,7 +1412,7 @@ fn infer_through_alias():
 fn infer_address_space[
     is_mutable: __mlir_type.i1,
     lifetime: AnyLifetime[is_mutable].type
-](a: Reference[Int,is_mutable, lifetime, AddressSpace(4)]._mlir_type):
+](a: Reference[Int, lifetime, AddressSpace(4)]._mlir_type):
   # Show that we can infer the address space parameter of Reference from a
   # !lit.ref.
 
@@ -1423,12 +1423,12 @@ fn infer_address_space[
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
 # [References] We cannot bind !lit.ref in parameter context
 struct ThingWithMethodReferenceSelf:
-    fn method(a: Reference[Self, _, _]):
+    fn method(a: Reference[Self, _]):
       pass
 
 # CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.signature<("a": !lit.declref<#Reference
-    # CHECK-SAME:       :!Bool {:i1 1}, :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
+    # CHECK-SAME:        :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
     alias sizzle = a.method()

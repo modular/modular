@@ -451,7 +451,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Reference(b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, b, 0]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[0, CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_warnings(borrowed_arg: CopyAndInitMemType):
@@ -523,9 +523,9 @@ fn invalid_call_variadic_int(a: Int):
     if variadic_int(a, a):
         pass
 
-fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[T, is_mutable, lifetime, 0]'}}
-  var x : Reference[T, a.is_mutable, a.lifetime] = a[]
+fn test_bad_ref_errors[T: AnyType](a: Reference[T, _], b: Reference[T, _]):
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[is_mutable, T, lifetime, 0]'}}
+  var x : Reference[T, b.lifetime] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[T, 1, #lit.lifetime, address_space]'}}
-  var y : Reference[T, True, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[1, T, #lit.lifetime, 0]'}}
+  var y : Reference[T,  __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]

@@ -351,8 +351,8 @@ struct AddressSpace:
 @value
 @register_passable("trivial")
 struct Reference[
+    is_mutable: __mlir_type.i1, //,
     type: AnyType,
-    is_mutable: __mlir_type.i1,
     lifetime: AnyLifetime[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
@@ -386,9 +386,7 @@ struct Tuple[*element_types: AnyType]:
 
     fn __getitem__[
         i: Int
-    ](self: Reference[Self, _, _]) -> ref [self.lifetime] element_types[
-        i.value
-    ]:
+    ](self: Reference[Self, _]) -> ref [self.lifetime] element_types[i.value]:
         while __mlir_attr.true:
             pass
 
@@ -400,7 +398,6 @@ struct UnsafePointer[
     alias _ref_lifetime = __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`
     alias _ref_type = Reference[
         T,
-        __mlir_attr.`1: i1`,
         __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`,
         address_space,
     ]
