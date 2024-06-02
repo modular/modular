@@ -169,25 +169,19 @@ struct TensorDict(Sized):
 
     fn items(
         self: Reference[Self, _, _]
-    ) -> _DictEntryIter[
-        String, _CheckpointTensor, self.is_mutable, self.lifetime
-    ]:
+    ) -> _DictEntryIter[String, _CheckpointTensor, self.lifetime]:
         """Gets an iterable view of all elements in the dictionary."""
         return _DictEntryIter(0, 0, self[]._items)
 
     fn keys(
         self: Reference[Self, _, _]
-    ) -> _DictKeyIter[
-        String, _CheckpointTensor, self.is_mutable, self.lifetime
-    ]:
+    ) -> _DictKeyIter[String, _CheckpointTensor, self.lifetime]:
         """Gets an iterable view of all keys in the dictionary."""
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     def __iter__(
         self: Reference[Self, _, _]
-    ) -> _DictKeyIter[
-        String, _CheckpointTensor, self.is_mutable, self.lifetime
-    ]:
+    ) -> _DictKeyIter[String, _CheckpointTensor, self.lifetime]:
         return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
 
     fn __copyinit__(inout self, existing: Self):

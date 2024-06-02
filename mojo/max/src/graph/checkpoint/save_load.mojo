@@ -7,7 +7,6 @@
 from tensor import Tensor, TensorShape, TensorSpec
 from max.engine import TensorMap
 from pathlib import Path
-from collections.dict import _DictKeyIter, _DictEntryIter
 
 from .tensor_dict import TensorDict, _CheckpointTensor
 
