@@ -115,7 +115,7 @@ struct RefIter[list_mutability: Bool, //,
 
 struct ListWithRefIter:
     fn __init__(inout self): pass
-    fn __iter__(self: Reference[Self, _, _]) -> RefIter[self.lifetime]:
+    fn __iter__(self: Reference[Self, _]) -> RefIter[self.lifetime]:
         return RefIter[self.lifetime]()
 
 # CHECK-LABEL: lit.func @"for_range_ref_loop

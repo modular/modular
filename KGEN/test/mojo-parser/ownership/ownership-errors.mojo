@@ -432,7 +432,7 @@ fn bad_addr_space[addr_space: AddressSpace](ptr: UnsafePointer[MemExample, addr_
 # https://github.com/modularml/modular/issues/38421
 # This is valid to declare...
 fn return_owned_arg_ref(owned x: String) -> Reference[
-  String, True.__mlir_i1__(), __lifetime_of(x)]:
+  String, __lifetime_of(x)]:
    return x
 
 fn test38421():

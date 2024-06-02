@@ -150,7 +150,7 @@ def defTests(a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped) -> No
   defTests = 4
 
 struct TypeWithParametricSelf:
-    fn method(self: Reference[Self, _, _]): pass
+    fn method(self: Reference[Self, _]): pass
 
 struct ValueWithTypeWithParametricSelf:
     var member: TypeWithParametricSelf

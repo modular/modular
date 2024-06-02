@@ -23,11 +23,11 @@ struct MemExample:
   fn mutate(inout self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt> borrow)
-fn borrow[lt: ImmutableLifetime](a: Reference[MemExample, False.__mlir_i1__(), lt]._mlir_type):
+fn borrow[lt: ImmutableLifetime](a: Reference[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt> borrow)
-fn mutate[lt: MutableLifetime](a: Reference[MemExample, True.__mlir_i1__(), lt]._mlir_type):
+fn mutate[lt: MutableLifetime](a: Reference[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_borrow
@@ -45,7 +45,7 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
-  var ref1 : Reference[MemExample, True.__mlir_i1__(), lt1, as1]._mlir_type
+  var ref1 : Reference[MemExample, lt1, as1]._mlir_type
 
   # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
   alias as2: AddressSpace = AddressSpace(42)
@@ -58,8 +58,8 @@ fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]()
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life> borrow)
 # CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
 fn parametricMut[isMut: Bool,
-                 life: AnyLifetime[isMut].type](a: Reference[MemExample, isMut, life]._mlir_type)
-   -> Reference[MemExample, isMut, life]._mlir_type:
+                 life: AnyLifetime[isMut].type](a: Reference[MemExample, life]._mlir_type)
+   -> Reference[MemExample, life]._mlir_type:
   return a
 
 # CHECK-LABEL: lit.func @"testParametricMut
@@ -216,8 +216,8 @@ struct SelfRefTest:
 
   # CHECK-LABEL: lit.func @"method
   # CHECK-SAME: (%self: !lit.declref<#Reference
-  fn method(self: Reference[Self, _, _]) -> Reference[
-    Self, self.is_mutable, self.lifetime]:
+  fn method(self: Reference[Self, _]) -> Reference[
+    Self, self.lifetime]:
       return self
 
 # CHECK-LABEL: lit.func @"testSelfRef
@@ -233,16 +233,14 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
-# CHECK-SAME: Reference <{{.*}}, :!Bool {:i1 0}, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
-fn testLifetimeOf1(a: MemExample) ->
-  Reference[MemExample, __mlir_attr.`0: i1`, __lifetime_of(a)]:
+# CHECK-SAME: Reference <{{.*}}, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
+fn testLifetimeOf1(a: MemExample) -> Reference[MemExample, __lifetime_of(a)]:
   return a
 
 # CHECK-LABEL: lit.func @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
-fn testLifetimeOf2(a: MemExample) -> Reference[
-        MemExample,  __mlir_attr.`0: i1`, __lifetime_of(a)]._mlir_type:
+fn testLifetimeOf2(a: MemExample) -> Reference[MemExample, __lifetime_of(a)]._mlir_type:
 
   # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return Reference(a).value
@@ -279,7 +277,7 @@ struct TwoLifetimes[a_lifetime: ImmutableLifetime,
 struct SomeStruct:
   # CHECK-LABEL: lit.func @"refBindingToImmortal
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
-      -> Reference[Int, __mlir_attr.`1: i1`, __lifetime_of(self)]:
+      -> Reference[Int, __lifetime_of(self)]:
     # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%ptr)
     # CHECK: [[REBIND:%.*]] = kgen.rebind [[REFVAL]]
     # CHECK-SAME : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut *"self`2x">
@@ -306,7 +304,6 @@ struct CutDownVariadicPack[
 
     fn get_element[index: Int](self) -> Reference[
         element_types[index.value],
-        __mlir_attr.`0: i1`,
         __lifetime_of(self),
     ]:
        while True: pass
@@ -314,8 +311,8 @@ struct CutDownVariadicPack[
 # Test that you can implicitly convert an immortal mutable reference (as is returned
 # by UnsafePointer for example) to mortal reference with specified lifetime.
 # CHECK: lit.func @"test_immortal_to_mortal
-fn test_immortal_to_mortal(arg: Reference[Int, _, _])
-    -> Reference[Int, arg.is_mutable, arg.lifetime]:
+fn test_immortal_to_mortal(arg: Reference[Int, _])
+    -> Reference[Int, arg.lifetime]:
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}(%arg)
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
@@ -360,7 +357,7 @@ fn test_heterogenous_list():
     var list3 = make_het_list(i, j, k)
 
 # Issue #37659: Parameter inference doesn't work with force-immut lifetimes
-fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Reference[T, False.__mlir_i1__(), value_lifetime]): pass
+fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Reference[T, value_lifetime]): pass
 fn test_passing_mutable_ref(inout i: String):
     thing_taking_immutable_ref(i)
 
@@ -372,8 +369,8 @@ struct ThingWithFields:
 fn parametric_mut_mbvalue[
     is_mutable: __mlir_type.i1,
     lifetime: AnyLifetime[is_mutable].type,
- ](a: Reference[ThingWithFields, is_mutable, lifetime])
-   -> Reference[Int, is_mutable, lifetime]:
+ ](a: Reference[ThingWithFields, lifetime])
+   -> Reference[Int, lifetime]:
   # CHECK: lit.ref.struct.ger
   return a[].field
 
@@ -381,7 +378,7 @@ fn parametric_mut_mbvalue[
 # Reference directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
     fn __init__(inout self): pass
-    fn hello(self: Reference[Self, _, _, _]):
+    fn hello(self: Reference[Self, _]):
         pass
 
 # CHECK-LABEL: lit.func @"testMethodRef
