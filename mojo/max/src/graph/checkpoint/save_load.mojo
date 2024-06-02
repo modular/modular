@@ -21,13 +21,10 @@ alias _SERIALIZATION_MINOR_FORMAT: UInt32 = 1
 
 
 @always_inline
-fn _write_int[
-    type: Intable
-](object: Reference[type, _, AddressSpace.GENERIC], f: FileHandle) raises:
+fn _write_int[type: Intable](ref [_]object: type, f: FileHandle) raises:
     """Writes an int value to a file."""
-    var ptr = UnsafePointer(object[]).bitcast[UInt8]()
-    var size = sizeof[type]()
-    f._write(ptr, size)
+    var ptr = UnsafePointer.address_of(object).bitcast[UInt8]()
+    f._write(ptr, sizeof[type]())
 
 
 def save(tensor_dict: TensorDict, path: Path):
