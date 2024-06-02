@@ -93,7 +93,7 @@ fn testUseConditional(cond: __mlir_type.i1):
   var cref = aref if cond else bref
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
-  Reference(cref)[].noop()
+  Reference(__get_litref_as_mvalue(cref))[].noop()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
@@ -120,7 +120,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
-  Reference(cref)[].mutate()
+  Reference(__get_litref_as_mvalue(cref))[].mutate()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
@@ -130,7 +130,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
-  Reference(cref)[] = MemExample()
+  Reference(__get_litref_as_mvalue(cref))[] = MemExample()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
@@ -141,7 +141,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # Overwriting is eligible for copy => move optimization as well.
   var shouldBeMovedFrom = MemExample()
-  Reference(cref)[] = shouldBeMovedFrom
+  Reference(__get_litref_as_mvalue(cref))[] = shouldBeMovedFrom
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl

@@ -409,7 +409,7 @@ fn testConditionalImmut(cond: __mlir_type.i1):
     var bref = Reference(b).value
     var cref = aref if cond else bref
 
-    Reference(cref)[].noop()
+    Reference(__get_litref_as_mvalue(cref))[].noop()
 
 
 fn testConditionalMut(cond: __mlir_type.i1):
@@ -419,7 +419,7 @@ fn testConditionalMut(cond: __mlir_type.i1):
     # expected-error @+1 {{use of uninitialized value 'b'}}
     var cref = Reference(a).value if cond else Reference(b).value
 
-    Reference(cref)[] = MemExample()
+    Reference(__get_litref_as_mvalue(cref))[] = MemExample()
 
 # CheckLifetimes cannot call MemExample.__del__ because 'self' is in the default
 # address space.
