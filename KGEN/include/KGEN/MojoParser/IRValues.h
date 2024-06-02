@@ -696,6 +696,12 @@ public:
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const = 0;
 
+  /// If this is a def argument shadow, resolve it to the incoming immutable
+  /// borrowed value without forming a local copy.  Otherwise return null.
+  virtual MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const {
+    return MBValue();
+  }
+
   /// If this is a def argument shadow whose argument is backed by an MBValue,
   /// return the effective type of the reference.
   virtual RefType getMBValueTypeFromDefArgument() const;
@@ -728,6 +734,7 @@ public:
 
   StructFieldOp getField() const;
   RefType getMBValueTypeFromDefArgument() const override;
+  MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const override;
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
@@ -796,7 +803,10 @@ public:
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
   void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 
+  /// If this is a def argument shadow, resolve it to the incoming immutable
+  /// borrowed value without forming a local copy.  Otherwise return null.
   RefType getMBValueTypeFromDefArgument() const override;
+  MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const override;
   bool isDefArgument() const override { return true; }
 
   /// This is the argument decl we're the representation of.
