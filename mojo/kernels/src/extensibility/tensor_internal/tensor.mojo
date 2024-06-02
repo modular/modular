@@ -1359,7 +1359,7 @@ alias _SERIALIZATION_HEADER = StaticTuple[UInt8, 6](
 
 fn _serialize_as_tensor[
     type: AnyType
-](object: Reference[type]) -> Tensor[DType.uint8]:
+](ref [_]object: type) -> Tensor[DType.uint8]:
     """Serialize the given object into a Tensor of bytes.
 
     Args:
@@ -1368,7 +1368,7 @@ fn _serialize_as_tensor[
     Returns:
       Tensor containing the bytes of object.
     """
-    var self_ptr = UnsafePointer.address_of(object[]).bitcast[UInt8]()
+    var self_ptr = UnsafePointer.address_of(object).bitcast[UInt8]()
     alias size = sizeof[type]()
     var bytes = Tensor[DType.uint8](size)
     memcpy(bytes.unsafe_ptr(), self_ptr, size)
