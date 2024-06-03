@@ -665,7 +665,7 @@ struct LayoutTensor[
             IntTuple(
                 _get_slice_size(sliced_layout, slice_0, 0),
             ),
-            sliced_layout.stride,
+            sliced_layout.stride[0],
         )
 
     @always_inline
@@ -734,6 +734,54 @@ struct LayoutTensor[
             alias stride_i = to_int(Self.layout.stride[i])
 
             alias offset_index = _not_in_tuple[i, 2, slice_indices]()
+
+            @parameter
+            if offset_index:
+                slice_offset += offsets[idx] * stride_i
+                idx += 1
+
+        return LayoutTensor[
+            dtype,
+            __slice_layout,
+            address_space=address_space,
+            element_layout=element_layout,
+        ](self.ptr.offset(slice_offset))
+
+    # FIXME: Can't overload slice, hitting compiler issue.
+    # https://linear.app/modularml/issue/MOCO-174
+    @always_inline
+    fn slice_1d[
+        d0_slice: Slice,
+        slice_indices: StaticIntTuple[1],
+        __offset_dims: Int = Self.rank - 1,
+        __slice_layout: Layout = Self.__compute_slice_layout(
+            d0_slice, slice_indices[0]
+        ),
+    ](
+        self,
+        offsets: StaticIntTuple[__offset_dims],
+    ) -> LayoutTensor[
+        dtype,
+        __slice_layout,
+        address_space=address_space,
+        element_layout=element_layout,
+    ]:
+        constrained[
+            d0_slice.step == 1,
+            "Slice should have no gaps",
+        ]()
+
+        alias stride_0 = to_int(__slice_layout.stride[0])
+
+        var slice_offset = d0_slice.start * stride_0
+
+        var idx = 0
+
+        @parameter
+        for i in range(Self.rank):
+            alias stride_i = to_int(Self.layout.stride[i])
+
+            alias offset_index = _not_in_tuple[i, 1, slice_indices]()
 
             @parameter
             if offset_index:

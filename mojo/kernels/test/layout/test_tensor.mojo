@@ -1388,6 +1388,25 @@ fn test_slice_with_offsets():
         offsets=(1)
     ).print()
 
+    # CHECK: slice-of-[:,0,0]
+    # CHECK: 0.0
+    # CHECK: 6.0
+    # CHECK: 12.0
+    # CHECK: 18.0
+    print("slice-of-[:,0,0]")
+    tensor_4x3x2_row_major.slice_1d[:, slice_indices= (0)](
+        offsets=(0, 0)
+    ).print()
+
+    # CHECK: slice-of-[2,:,1]
+    # CHECK: 13.0
+    # CHECK: 15.0
+    # CHECK: 17.0
+    print("slice-of-[2,:,1]")
+    tensor_4x3x2_row_major.slice_1d[:, slice_indices= (1)](
+        offsets=(2, 1)
+    ).print()
+
 
 fn main():
     test_basic_tensor_ops()
