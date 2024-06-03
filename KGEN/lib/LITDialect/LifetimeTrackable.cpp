@@ -318,7 +318,8 @@ getCallOpEffects(Operation &op,
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
     signature = directCall.getCalleeType();
-    conventions = signature.getArgConventions();
+    conventions = signature.getArgConventions().drop_back(
+        signature.getNumAsyncReturnSlots());
 
     // CreateClosureOp has a subset of the operands of a call.
     if (isa<CreateClosureOp>(op)) {
@@ -334,7 +335,7 @@ getCallOpEffects(Operation &op,
 
     // We use the callee value, and process the rest as operands.
     operands.push_back({op.getOperand(0), OperandEffect::regUse});
-    assert(signature.getArgConventions().size() == op.getNumOperands() - 1);
+    assert(conventions.size() == op.getNumOperands() - 1);
     callArguments = callArguments.drop_front();
     argIdxOffset = 1;
   }

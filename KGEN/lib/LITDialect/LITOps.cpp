@@ -219,7 +219,9 @@ parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
       return failure();
   }
 
-  llvm::append_range(operandTypes, values.getInputs());
+  // Async calls don't provide result slots.
+  llvm::append_range(operandTypes, values.getInputs().drop_back(
+                                       calleeType.getNumAsyncReturnSlots()));
   llvm::append_range(resultTypes, values.getResults());
   return success();
 }
@@ -329,7 +331,10 @@ static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
     return success();
   };
 
-  if (failed(verifyTypes("argument", operands, values.getInputs())) ||
+  // Async calls don't provide result slots.
+  if (failed(verifyTypes(
+          "argument", operands,
+          values.getInputs().drop_back(sig.getNumAsyncReturnSlots()))) ||
       (results && failed(verifyTypes("result", *results, values.getResults()))))
     return failure();
   return success();

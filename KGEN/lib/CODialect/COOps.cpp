@@ -100,8 +100,8 @@ static ParseResult parseAsyncParametricCallee(
   // Operands match signature arguments with the exception that byref error and
   // byref result are omitted.
   SignatureType signature = cast<SignatureType>(callee.getType());
-  ArrayRef<Type> argumentTypes = signature.getArguments().drop_back(
-      signature.hasMemoryOnlyResult() + signature.isThrows());
+  ArrayRef<Type> argumentTypes =
+      signature.getArguments().drop_back(signature.getNumAsyncReturnSlots());
   llvm::append_range(operandTypes, argumentTypes);
 
   // Parse the untyped operands.

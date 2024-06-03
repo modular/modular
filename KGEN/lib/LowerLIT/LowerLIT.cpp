@@ -124,12 +124,12 @@ static SmallVector<Value> castCallOperands(OperandRange operands,
                                            SignatureType calleeType,
                                            Location loc, OpBuilder &b) {
   SmallVector<Value> newOperands;
-  assert(operands.size() == calleeType.getValues().getInputs().size() &&
+  assert(operands.size() == calleeType.getNumArguments() -
+                                calleeType.getNumAsyncReturnSlots() &&
          "Argument count mismatch");
   for (auto [operand, expectedType] :
-       llvm::zip(operands, calleeType.getValues().getInputs())) {
+       llvm::zip(operands, calleeType.getArguments()))
     newOperands.push_back(castValue(operand, expectedType, loc, b));
-  }
   return newOperands;
 }
 

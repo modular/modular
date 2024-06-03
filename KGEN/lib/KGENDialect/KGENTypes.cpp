@@ -203,6 +203,11 @@ bool SignatureType::isResultSlot(ArgConvention conv) {
          conv == ArgConvention::ByRefError;
 }
 
+size_t SignatureType::getNumAsyncReturnSlots() {
+  // Async functions can never have `init_self` arguments.
+  return isAsync() * (hasMemoryOnlyResult() + isThrows());
+}
+
 /// Return a signature with the specified parameter bindings substituted
 /// into it as happens in a call.  The types specified in the parameter
 /// bindings affects the type signature of the arguments and results, and

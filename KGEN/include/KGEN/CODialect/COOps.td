@@ -114,7 +114,8 @@ def CO_InvokeOp : COOp<"invoke", [
   let results = (outs CoroutineType:$coroutine);
 
   let assemblyFormat = [{
-  `` custom<AsyncParametricCallee>($callee, $operands, type($operands)) attr-dict
+  `` custom<AsyncParametricCallee>($callee, $operands, type($operands))
+  attr-dict
   }];
 
   let hasVerifier = 1;

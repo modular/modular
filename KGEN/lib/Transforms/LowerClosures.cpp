@@ -283,7 +283,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 static std::pair<SignatureType, unsigned>
 convertAsyncSignature(SignatureType sig, CO::CoroutineType coroType) {
   Builder b(sig.getContext());
-  unsigned numByRefArgs = sig.hasMemoryOnlyResult() + sig.isThrows();
+  unsigned numByRefArgs = sig.getNumAsyncReturnSlots();
   auto newSig = SignatureType::get(
       b.getFunctionType(sig.getArguments().drop_back(numByRefArgs), coroType),
       sig.getArgConventions().drop_back(numByRefArgs));

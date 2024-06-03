@@ -373,10 +373,22 @@ lit.func @async_fn() async {
   lit.end_func
 }
 
+lit.func @async_fn_byref_result(%res: !lit.ref<index, mut #lit.lifetime> byref_result) async {
+  lit.end_func
+}
+
+lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.lifetime> byref_error, %res: !lit.ref<index, mut #lit.lifetime> byref_result) async|throws {
+  lit.end_func
+}
+
 // CHECK-LABEL: lit.func @call_async_fn
 lit.func @call_async_fn() {
-  // CHECK-NEXT: lit.async.call[() async -> (): @async_fn]()
-  %0 = lit.async.call[() async -> (): @async_fn]()
+  // CHECK-NEXT: lit.async.call[!lit.signature<() async -> ()>: @async_fn]()
+  lit.async.call[!lit.signature<() async -> ()>: @async_fn]()
+  // CHECK-NEXT: lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.lifetime> byref_result) async -> ()>: @async_fn_byref_result]()
+  lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.lifetime> byref_result) async -> ()>: @async_fn_byref_result]()
+  // CHECK-NEXT: lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.lifetime> byref_error, "res": !lit.ref<index, mut #lit.lifetime> byref_result) throws|async -> ()>: @async_fn_throws]()
+  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.lifetime> byref_error, "res": !lit.ref<index, mut #lit.lifetime> byref_result) async|throws -> ()>: @async_fn_throws]()
   lit.end_func
 }
 
