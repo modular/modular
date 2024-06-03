@@ -5,11 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
-#include "Support/ErrorOr.h"
-#include "Support/FileSystemExtras.h"
 #include "Support/Process.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 
@@ -19,64 +16,72 @@
 
 using namespace M;
 
+using llvm::sys::findProgramByName;
+
+// Works across ubuntu 20.04, 22.04, macos, pyenv, conda, venv, virtual
+const char *FIND_LIBPYTHON = R"PROG(
+import os
+import sys
+from pathlib import Path
+from sysconfig import get_config_var
+ext = "dll" if os.name == "nt" else "dylib" if sys.platform == "darwin" else "so"
+pyver = get_config_var("py_version_short")
+binary = f"libpython{pyver}.{ext}"
+for libpython in [Path(get_config_var(p)) / binary for p in ["LIBPL", "LIBDIR"]]:
+    if libpython.exists():
+        print(libpython.resolve())
+        exit(0)
+exit(1)
+)PROG";
+
 //===----------------------------------------------------------------------===//
 // KGEN_CompilerRT_Python_SetPythonPath
 //===----------------------------------------------------------------------===//
 
+// TODO: add a subprocess module to Mojo so this can all be done natively
+// Updates `libpython` with the path to an associated
+static bool findLibPython(const std::string &pythonBin,
+                          std::string &libpython) {
+  std::string cmd = pythonBin + " -c '" + FIND_LIBPYTHON + "'";
+  std::array<char, 128> buffer;
+  std::string result;
+  std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"),
+                                                pclose);
+  if (!pipe) {
+    return false;
+  }
+  while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+    result += buffer.data();
+  }
+  result.erase(std::remove_if(result.begin(), result.end(), ::isspace),
+               result.end());
+
+  libpython = result;
+  return true;
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
 KGEN_CompilerRT_Python_SetPythonPath() {
-  // `PYTHONPATH` isn't always set, but when it is, respect whatever it's been
-  // set to, rather than overwriting or appending to it.
-  if (llvm::sys::Process::GetEnv("PYTHONPATH"))
-    return "";
+  // Find the Python on top of `PATH` and put it in `PYTHONEXECUTABLE` to enable
+  // multiprocessing, and finding the correct virtual environment site-modules.
+  llvm::ErrorOr<std::string> pythonBin = findProgramByName("python3");
+  if (!pythonBin)
+    pythonBin = llvm::sys::findProgramByName("python");
+  if (!pythonBin)
+    return "could not find any 'python3' or 'python' executables on `PATH`";
+  if (failed(setProcessEnv("PYTHONEXECUTABLE", *pythonBin)))
+    return "cannot set `PYTHONEXECUTABLE` to";
 
-  // If `PYTHONPATH` hasn't been set, then try to grab the host `python3` (or,
-  // failing that, its `python`). If we can't find either, then we can't do
-  // anything, so bail.
-
-  llvm::ErrorOr<std::string> pyOrErr = llvm::sys::findProgramByName("python3");
-  if (!pyOrErr)
-    pyOrErr = llvm::sys::findProgramByName("python");
-  if (!pyOrErr)
-    return "could not find 'python3' or 'python' executables";
-  std::string python = *pyOrErr;
-
-  // Create a temporary file to capture the output of the `python` invocation.
-  std::error_code ec;
-  std::filesystem::path tmpDirPath = std::filesystem::temp_directory_path(ec);
-  if (ec)
-    return "could not find temporary directory for 'python' output";
-  ErrorOr<TempFile> outOrErr =
-      TempFile::create((tmpDirPath / "python-out-%%%%%%.txt").string());
-  if (failed(outOrErr))
-    return "could not create temporary file to capture 'python' output";
-  std::string out = outOrErr->getPath().string();
-
-  // Invoke `python`, directing its output to the file.
-  const std::optional<StringRef> redirects[] = {
-      /*stdin=*/"",
-      /*stdout=*/out,
-      /*stderr=*/"",
-  };
-  // The Python program prints the list of global site-package directories,
-  // joined by the platform-specific PATH separator.
-  const StringRef args[] = {
-      python, "-c",
-      "import os; import site; print(os.pathsep.join(site.getsitepackages()))"};
-  if (llvm::sys::ExecuteAndWait(python, args, /*Env=*/std::nullopt,
-                                redirects) != 0)
-    return "could not execute 'python' to determine site-package directory";
-
-  // Read the output from the Python program.
-  auto bufferOrErr = llvm::MemoryBuffer::getFile(out);
-  if (!bufferOrErr)
-    return "could not read temporary file with 'python' output";
-
-  // Set the `PYTHONPATH` environment variable to the site-package paths.
-  std::string pythonPath = bufferOrErr.get()->getBuffer().trim().str();
-  if (failed(setProcessEnv("PYTHONPATH", pythonPath)))
-    return "an error occurred when attempting to set 'PYTHONPATH'";
-
+  // If `MOJO_PYTHON_LIBRARY` is not set, run a Python script to find it.
+  auto libpythonOpt = llvm::sys::Process::GetEnv("MOJO_PYTHON_LIBRARY");
+  if (!libpythonOpt || libpythonOpt->empty()) {
+    auto libpython = std::string();
+    auto foundLibPython = findLibPython(*pythonBin, libpython);
+    if (!foundLibPython || libpython.empty())
+      return "no python installation found on system";
+    if (failed(setProcessEnv("MOJO_PYTHON_LIBRARY", libpython)))
+      return "cannot set `MOJO_PYTHON_LIBRARY`";
+  }
   return "";
 }
 
