@@ -5,15 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from math import (
-    ceil,
-    cos,
-    factorial,
-    floor,
-    isclose,
-    sin,
-    trunc,
-)
+from math import ceil, cos, factorial, floor, isclose, sin, trunc
 from utils.numerics import inf, neg_inf
 from sys.info import has_neon
 
@@ -29,6 +21,10 @@ fn test_sin() raises:
 
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
+
+    @parameter
+    if not has_neon():
+        assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
 
 fn test_factorial() raises:

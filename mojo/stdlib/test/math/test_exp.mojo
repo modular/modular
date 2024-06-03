@@ -12,6 +12,12 @@ from test_utils import libm_call
 from testing import assert_equal, assert_almost_equal
 
 
+def test_exp_bfloat16():
+    @parameter
+    if not has_neon():
+        assert_equal(exp(BFloat16(2.0)), 7.375)
+
+
 def test_exp_float16():
     assert_almost_equal(exp(Float16(-0.1)), 0.9047)
     assert_almost_equal(exp(Float16(0.1)), 1.105)
@@ -54,6 +60,7 @@ def test_exp_libm[type: DType]():
 
 
 def main():
+    test_exp_bfloat16()
     test_exp_float16()
     test_exp_float32()
     test_exp_float64()
