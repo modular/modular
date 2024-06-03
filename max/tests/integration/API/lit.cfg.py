@@ -26,8 +26,6 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "SDK", "integration-test", "EngineAPI"
 )
 
-config.substitutions.append(("%pyexe", sys.executable))
-
 tool_dirs = [
     config.modular_tools_dir,
     config.modular_utils_dir,

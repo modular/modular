@@ -4,19 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# Mojo requires that the "python3" executable on PATH be usable to determine
-# the location of site-packages.  We don't know that the user is using the
-# autovenv, so we can't just prepend the autovenv bin to the PATH, and we
-# wouldn't want all the executables in there anyway.  Symbolic link also fails
-# because Python can't find its pyvenv.cfg file.  So we need to create a stub
-# bin directory containing a shell script causing python3 to be re-exec'ed with
-# its original argv0, just so Mojo's Python can find the site-packages so that
-# the Engine's NumPy import works.
-# RUN: rm -rf %t/bin
-# RUN: mkdir -p %t/bin
-# RUN: printf '#!/bin/bash\nexec "%%s" "$@"\n' %pyexe > %t/bin/python3
-# RUN: chmod +x %t/bin/python3
-# RUN: env "PATH=%t/bin:$PATH" %mojo -debug-level full %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir
+# REQUIRES: numpy
+# RUN: %mojo -debug-level full %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir
 
 from sys import argv
 from testing import assert_equal
