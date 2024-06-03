@@ -634,6 +634,9 @@ struct _FlashAttention[
         var depth_dim = output.dim[rank - 1]()
         var kv_seq_len = v_shape[rank - 2]
 
+        var num_kv_heads = k_shape[1] if rank == 4 else 1
+        var kv_group_count = num_heads // num_kv_heads
+
         # Compute the maximum size in elements for the common packed buffer.
         var packed_qk_size = Self._config.qk_block_n * depth_dim
         var packed_o_size = Self._config.o_block_n * Self._config.qk_block_n
@@ -682,22 +685,20 @@ struct _FlashAttention[
                 var batch_head = j // num_blocks_m
                 var head = batch_head % num_heads
                 var batch = batch_head // num_heads
+                var kv_head = head // kv_group_count
 
                 @parameter
                 @always_inline
-                fn get_nd_index(x: Int, y: Int) -> StaticIntTuple[rank]:
-                    var idx: StaticIntTuple[rank]
-
+                fn get_nd_index[
+                    is_kv: Bool = False
+                ](x: Int, y: Int) -> StaticIntTuple[rank]:
                     @parameter
                     if rank == 4:
-                        idx = rebind[StaticIntTuple[rank]](
-                            Index(batch, head, x, y)
+                        return StaticIntTuple[rank](
+                            batch, kv_head if is_kv else head, x, y
                         )
                     else:
-                        idx = rebind[StaticIntTuple[rank]](
-                            Index(batch_head, x, y)
-                        )
-                    return idx
+                        return StaticIntTuple[rank](batch_head, x, y)
 
                 var count_m = min(Self._config.block_m, seq_len - m)
                 var count_n = min(Self._config.o_block_n, depth_dim - n)
@@ -724,7 +725,9 @@ struct _FlashAttention[
                         @parameter
                         if transpose_k:
                             swap(x, y)
-                        return input_k_fn[_simd_width, rank](get_nd_index(x, y))
+                        return input_k_fn[_simd_width, rank](
+                            get_nd_index[is_kv=True](x, y)
+                        )
 
                     Self._matmul._matmul[
                         input_k_2d_fn,
@@ -767,7 +770,7 @@ struct _FlashAttention[
                         _simd_width: Int
                     ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
                         return input_v_fn[_simd_width, rank](
-                            get_nd_index(_k + kv_seq_idx, n + _n)
+                            get_nd_index[is_kv=True](_k + kv_seq_idx, n + _n)
                         )
 
                     Self._matmul._matmul[input_v_2d_fn](
@@ -908,9 +911,7 @@ fn flash_attention_split_kv[
         rank: Int
     ](idx: StaticIntTuple[rank]) -> StaticIntTuple[kv_rank]:
         # Index into the previous kv_cache by unsqueezing dim 0.
-        return rebind[StaticIntTuple[kv_rank]](
-            Index(0, idx[0], idx[1], idx[2], idx[3])
-        )
+        return StaticIntTuple[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
 
     @always_inline
     @parameter
@@ -932,8 +933,8 @@ fn flash_attention_split_kv[
 
         if seq_idx >= prev_seq_len:
             return curr_fn[simd_width, rank](
-                rebind[StaticIntTuple[rank]](
-                    Index(idx[0], idx[1], seq_idx - prev_seq_len, idx[3])
+                StaticIntTuple[rank](
+                    idx[0], idx[1], seq_idx - prev_seq_len, idx[3]
                 )
             )
 

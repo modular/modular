@@ -11,7 +11,7 @@ from math import exp, isclose
 from nn.flash_attention import flash_attention, flash_attention_split_kv
 from random import rand, seed
 from testing import assert_equal
-from utils.index import Index, product
+from utils.index import Index
 
 
 def reference_attention[
@@ -24,90 +24,104 @@ def reference_attention[
     output_nd: NDBuffer[type, rank],
     scale: Float32,
 ):
-    fn flatten_to_3d(buf: NDBuffer[type, rank]) -> NDBuffer[type, 3]:
+    fn reshape_4d(buf: NDBuffer[type, rank]) -> NDBuffer[type, 4]:
         var shape = buf.get_shape()
-        var shape_3d = Index(
-            product(shape, 0, rank - 2), shape[rank - 2], shape[rank - 1]
+        var num_heads = shape[1] if rank == 4 else 1
+        var shape_4d = Index(
+            shape[0], num_heads, shape[rank - 2], shape[rank - 1]
         )
-        return NDBuffer[type, 3](buf.data, shape_3d)
+        return NDBuffer[type, 4](buf.data, shape_4d)
 
-    var q_3d = flatten_to_3d(q_nd)
-    var k_3d = flatten_to_3d(k_nd)
-    var v_3d = flatten_to_3d(v_nd)
-    var mask_3d = flatten_to_3d(mask_nd)
-    var output_3d = flatten_to_3d(output_nd)
+    var q_4d = reshape_4d(q_nd)
+    var k_4d = reshape_4d(k_nd)
+    var v_4d = reshape_4d(v_nd)
+    var mask_4d = reshape_4d(mask_nd)
+    var output_4d = reshape_4d(output_nd)
 
-    var batch_count = q_3d.dim(0)
-    var seq_len = q_3d.dim(1)
-    var depth_dim = q_3d.dim(2)
-    var kv_seq_len = v_3d.dim(1)
+    var batch_count = q_4d.dim(0)
+    var num_heads = q_4d.dim(1)
+    var seq_len = q_4d.dim(2)
+    var depth_dim = q_4d.dim(3)
+    var kv_num_heads = v_4d.dim(1)
+    var kv_seq_len = v_4d.dim(2)
 
-    assert_equal(batch_count, k_3d.dim(0))
+    assert_equal(num_heads % kv_num_heads, 0)
+
+    var kv_group_count = num_heads // kv_num_heads
+
+    assert_equal(batch_count, k_4d.dim(0))
+    assert_equal(kv_num_heads, k_4d.dim(1))
 
     @parameter
     if transpose_k:
-        assert_equal(kv_seq_len, k_3d.dim(1))
-        assert_equal(depth_dim, k_3d.dim(2))
+        assert_equal(kv_seq_len, k_4d.dim(2))
+        assert_equal(depth_dim, k_4d.dim(3))
     else:
-        assert_equal(depth_dim, k_3d.dim(1))
-        assert_equal(kv_seq_len, k_3d.dim(2))
+        assert_equal(depth_dim, k_4d.dim(2))
+        assert_equal(kv_seq_len, k_4d.dim(3))
 
-    assert_equal(batch_count, v_3d.dim(0))
-    assert_equal(depth_dim, v_3d.dim(2))
+    assert_equal(batch_count, v_4d.dim(0))
+    assert_equal(depth_dim, v_4d.dim(3))
 
-    assert_equal(batch_count, mask_3d.dim(0))
-    assert_equal(seq_len, mask_3d.dim(1))
-    assert_equal(kv_seq_len, mask_3d.dim(2))
+    assert_equal(batch_count, mask_4d.dim(0))
+    assert_equal(num_heads, mask_4d.dim(1))
+    assert_equal(seq_len, mask_4d.dim(2))
+    assert_equal(kv_seq_len, mask_4d.dim(3))
 
-    assert_equal(q_3d.get_shape(), output_3d.get_shape())
+    assert_equal(q_4d.get_shape(), output_4d.get_shape())
 
     var score_ptr = DTypePointer[type].alloc(seq_len * kv_seq_len)
     var score_2d = NDBuffer[type, 2](score_ptr, Index(seq_len, kv_seq_len))
 
     for b in range(batch_count):
-        # Compute: `score = Q @ K`
-        for m in range(seq_len):
-            for n in range(kv_seq_len):
-                var accum = Scalar[type](0)
-                for k in range(depth_dim):
-                    var k_3d_index = Index(b, n, k) if transpose_k else Index(
-                        b, k, n
+        for h in range(num_heads):
+            var kv_h = h // kv_group_count
+
+            # Compute: `score = Q @ K`
+            for m in range(seq_len):
+                for n in range(kv_seq_len):
+                    var accum = Scalar[type](0)
+                    for k in range(depth_dim):
+                        var k_4d_index = Index(
+                            b, kv_h, n, k
+                        ) if transpose_k else Index(b, kv_h, k, n)
+                        accum = q_4d[Index(b, h, m, k)].fma(
+                            k_4d[k_4d_index], accum
+                        )
+                    score_2d[Index(m, n)] = accum
+
+            # Apply scaling and masking to the score buffer
+            for m in range(seq_len):
+                for n in range(kv_seq_len):
+                    score_2d[Index(m, n)] = (
+                        score_2d[Index(m, n)] * scale.cast[type]()
+                        + mask_4d[Index(b, h, m, n)]
                     )
-                    accum = q_3d[Index(b, m, k)].fma(k_3d[k_3d_index], accum)
-                score_2d[Index(m, n)] = accum
 
-        # Apply scaling and masking to the score buffer
-        for m in range(seq_len):
-            for n in range(kv_seq_len):
-                score_2d[Index(m, n)] = (
-                    score_2d[Index(m, n)] * scale.cast[type]()
-                    + mask_3d[Index(b, m, n)]
-                )
+            # Compute: `score = softmax(score)`
+            for m in range(seq_len):
+                var max_val = Scalar[type].MIN
+                for n in range(kv_seq_len):
+                    max_val = max(max_val, score_2d[Index(m, n)])
 
-        # Compute: `score = softmax(score)`
-        for m in range(seq_len):
-            var max_val = Scalar[type].MIN
-            for n in range(kv_seq_len):
-                max_val = max(max_val, score_2d[Index(m, n)])
+                var sum_val = Scalar[type](0)
+                for n in range(kv_seq_len):
+                    var exp_val = exp(score_2d[Index(m, n)] - max_val)
+                    score_2d[Index(m, n)] = exp_val
+                    sum_val += exp_val
 
-            var sum_val = Scalar[type](0)
-            for n in range(kv_seq_len):
-                var exp_val = exp(score_2d[Index(m, n)] - max_val)
-                score_2d[Index(m, n)] = exp_val
-                sum_val += exp_val
+                for n in range(kv_seq_len):
+                    score_2d[Index(m, n)] = score_2d[Index(m, n)] / sum_val
 
-            for n in range(kv_seq_len):
-                score_2d[Index(m, n)] = score_2d[Index(m, n)] / sum_val
-
-        # Compute: `output = score @ V`
-        for m in range(seq_len):
-            for n in range(depth_dim):
-                var accum = Scalar[type](0)
-                for k in range(kv_seq_len):
-                    accum = score_2d[Index(m, k)].fma(
-                        v_3d[Index(b, k, n)], accum
-                    )
-                output_3d[Index(b, m, n)] = accum
+            # Compute: `output = score @ V`
+            for m in range(seq_len):
+                for n in range(depth_dim):
+                    var accum = Scalar[type](0)
+                    for k in range(kv_seq_len):
+                        accum = score_2d[Index(m, k)].fma(
+                            v_4d[Index(b, kv_h, k, n)], accum
+                        )
+                    output_4d[Index(b, h, m, n)] = accum
 
     score_ptr.free()
 
@@ -117,17 +131,51 @@ def reference_attention[
 struct TestCaseConfig[batch_rank: Int]:
     """Test case workload configuration hyperparameters."""
 
+    alias rank = batch_rank + 2
+    alias kv_cache_rank = Self.rank + 1
+
     var batch_dims: StaticIntTuple[batch_rank]
     var seq_len: Int
+    var kv_num_heads: Int
     var kv_seq_len: Int
     """Total KV sequence length including previous and current forwards."""
     var depth_dim: Int
     var scale: Float32
 
     @always_inline
-    def prev_seq_len(self) -> Int:
+    fn prev_seq_len(self) -> Int:
         """Returns the KV cache length from previous iterations."""
         return self.kv_seq_len - self.seq_len
+
+    @always_inline
+    fn build_shape[
+        *, shape_rank: Int = Self.rank, is_kv: Bool = False
+    ](self, x: Int, y: Int) -> StaticIntTuple[shape_rank]:
+        var shape = StaticIntTuple[shape_rank]()
+
+        @parameter
+        if shape_rank == self.kv_cache_rank:
+            # Unsqueeze the output shape with a 1-dim.
+            shape[0] = 1
+
+            @parameter
+            for i in range(batch_rank):
+                shape[i + 1] = self.batch_dims[i]
+        else:
+            # Copy the batch dims without unsqueezing.
+            @parameter
+            for i in range(batch_rank):
+                shape[i] = self.batch_dims[i]
+
+        # Replace the number of query heads with the number of KV heads.
+        @parameter
+        if is_kv and batch_rank == 2:
+            shape[shape_rank - 3] = self.kv_num_heads
+
+        shape[shape_rank - 2] = x
+        shape[shape_rank - 1] = y
+
+        return shape
 
 
 def verify_output[
@@ -149,6 +197,7 @@ def verify_output[
                     "Found mismatches for",
                     cfg.batch_dims,
                     cfg.seq_len,
+                    cfg.kv_num_heads,
                     cfg.kv_seq_len,
                     cfg.depth_dim,
                 )
@@ -183,43 +232,32 @@ def test_case[
     output_static_shape: DimList = DimList.create_unknown[batch_rank + 2](),
     transpose_k: Bool = False,
 ](cfg: TestCaseConfig[batch_rank]):
-    alias rank = batch_rank + 2
-
-    @parameter
-    @always_inline
-    fn build_shape(x: Int, y: Int) -> StaticIntTuple[rank]:
-        var shape = StaticIntTuple[rank]()
-
-        @parameter
-        for i in range(batch_rank):
-            shape[i] = cfg.batch_dims[i]
-
-        shape[rank - 2] = x
-        shape[rank - 1] = y
-
-        return shape
-
     seed(42)
 
-    var k_shape = build_shape(
+    var k_shape = cfg.build_shape[is_kv=True](
         cfg.kv_seq_len, cfg.depth_dim
-    ) if transpose_k else build_shape(cfg.depth_dim, cfg.kv_seq_len)
+    ) if transpose_k else cfg.build_shape[is_kv=True](
+        cfg.depth_dim, cfg.kv_seq_len
+    )
 
-    # Allocate the QKV tensors from the current sequence.
-    var q = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
+    # Allocate the QKV tensors.
+    var q = build_ndbuffer[type](cfg.build_shape(cfg.seq_len, cfg.depth_dim))
     var k = build_ndbuffer[type](k_shape)
-    var v = build_ndbuffer[type](build_shape(cfg.kv_seq_len, cfg.depth_dim))
+    var v = build_ndbuffer[type](
+        cfg.build_shape[is_kv=True](cfg.kv_seq_len, cfg.depth_dim)
+    )
 
     # Allocate the attention mask.
-    var mask = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.kv_seq_len))
+    var mask = build_ndbuffer[type](
+        cfg.build_shape(cfg.seq_len, cfg.kv_seq_len)
+    )
 
     # Allocate output and reference output buffers.
+    var output_shape = cfg.build_shape(cfg.seq_len, cfg.depth_dim)
     var output = build_ndbuffer[type, static_shape=output_static_shape](
-        build_shape(cfg.seq_len, cfg.depth_dim)
+        output_shape
     )
-    var ref_output = build_ndbuffer[type](
-        build_shape(cfg.seq_len, cfg.depth_dim)
-    )
+    var ref_output = build_ndbuffer[type](output_shape)
 
     reference_attention[transpose_k=transpose_k](
         q, k, v, mask, ref_output, cfg.scale
@@ -230,25 +268,27 @@ def test_case[
     fn input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return k.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return k.load[width=simd_width](rebind[StaticIntTuple[k.rank]](idx))
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return v.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return v.load[width=simd_width](rebind[StaticIntTuple[v.rank]](idx))
 
     @parameter
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return mask.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return mask.load[width=simd_width](
+            rebind[StaticIntTuple[mask.rank]](idx)
+        )
 
     flash_attention[
         type,
-        rank,
+        output.rank,
         input_k_fn,
         input_v_fn,
         mask_fn,
@@ -271,6 +311,7 @@ def test_flash_attention[type: DType, *, transpose_k: Bool]():
         TestCaseConfig(
             batch_dims=Index(1, 8),
             seq_len=1,
+            kv_num_heads=8,
             kv_seq_len=503,
             depth_dim=128,
             scale=0.125,
@@ -278,8 +319,19 @@ def test_flash_attention[type: DType, *, transpose_k: Bool]():
     )
     test_case[type, transpose_k=transpose_k](
         TestCaseConfig(
+            batch_dims=Index(4, 12),
+            seq_len=1,
+            kv_num_heads=4,
+            kv_seq_len=503,
+            depth_dim=64,
+            scale=0.125,
+        )
+    )
+    test_case[type, transpose_k=transpose_k](
+        TestCaseConfig(
             batch_dims=Index(2, 3),
             seq_len=128,
+            kv_num_heads=3,
             kv_seq_len=128,
             depth_dim=63,
             scale=0.25,
@@ -289,6 +341,7 @@ def test_flash_attention[type: DType, *, transpose_k: Bool]():
         TestCaseConfig(
             batch_dims=Index(8),
             seq_len=64,
+            kv_num_heads=1,
             kv_seq_len=64,
             depth_dim=384,
             scale=0.25,
@@ -302,6 +355,7 @@ def test_flash_attention[type: DType, *, transpose_k: Bool]():
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=55,
+            kv_num_heads=1,
             kv_seq_len=127,
             depth_dim=128,
             scale=0.2,
@@ -315,6 +369,7 @@ def test_flash_attention[type: DType, *, transpose_k: Bool]():
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=100,
+            kv_num_heads=1,
             kv_seq_len=300,
             depth_dim=160,
             scale=0.1,
@@ -328,6 +383,7 @@ def test_flash_attention[type: DType, *, transpose_k: Bool]():
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=100,
+            kv_num_heads=1,
             kv_seq_len=64,
             depth_dim=300,
             scale=0.1,
@@ -343,94 +399,28 @@ def test_case_split_kv[
     # For now only allow Q.shape = [B, H, S, D].
     constrained[batch_rank == 2]()
 
-    # Rank of Q.
-    alias rank = batch_rank + 2
-    # Rank of the KV cache.
-    alias kv_rank = rank + 1
-
-    # Reshaped k_cache, v_cache to simulate split KV setup.
-    @always_inline
-    @parameter
-    fn build_shape[
-        shape_rank: Int = rank
-    ](x: Int, y: Int) -> StaticIntTuple[shape_rank]:
-        var shape = StaticIntTuple[shape_rank]()
-
-        @parameter
-        if shape_rank == kv_rank:
-            # Unsqueeze the output shape with a 1-dim.
-            shape[0] = 1
-
-            @parameter
-            for i in range(batch_rank):
-                shape[i + 1] = cfg.batch_dims[i]
-        else:
-            # Copy the batch dims without unsqueezing.
-            @parameter
-            for i in range(batch_rank):
-                shape[i] = cfg.batch_dims[i]
-
-        # In either case set the last two dimensions to [x, y].
-        shape[shape_rank - 2] = x
-        shape[shape_rank - 1] = y
-
-        return shape
-
     seed(42)
 
-    # Allocate the KV cache for the previous sequence.
-    var k_cache = build_ndbuffer[type](
-        build_shape[kv_rank](cfg.prev_seq_len(), cfg.depth_dim)
-    )
-
-    var v_cache = build_ndbuffer[type](
-        build_shape[kv_rank](cfg.prev_seq_len(), cfg.depth_dim)
-    )
-
-    # Allocate the QKV tensors from the current sequence.
-    var q = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
-    var k = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
-    var v = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
+    # Allocate the QKV tensors.
+    var q = build_ndbuffer[type](cfg.build_shape(cfg.seq_len, cfg.depth_dim))
+    var kv_shape = cfg.build_shape[is_kv=True](cfg.kv_seq_len, cfg.depth_dim)
+    var k = build_ndbuffer[type](kv_shape)
+    var v = build_ndbuffer[type](kv_shape)
 
     # Allocate the attention mask.
-    var mask = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.kv_seq_len))
+    var mask = build_ndbuffer[type](
+        cfg.build_shape(cfg.seq_len, cfg.kv_seq_len)
+    )
 
     # Allocate output and reference output buffers.
+    var output_shape = cfg.build_shape(cfg.seq_len, cfg.depth_dim)
     var output = build_ndbuffer[type, static_shape=output_static_shape](
-        build_shape(cfg.seq_len, cfg.depth_dim)
+        output_shape
     )
-    var ref_output = build_ndbuffer[type](
-        build_shape(cfg.seq_len, cfg.depth_dim)
-    )
-
-    # Allocate reference KV cache.
-    var ref_k = build_ndbuffer[type](build_shape(cfg.depth_dim, cfg.kv_seq_len))
-    var ref_v = build_ndbuffer[type](build_shape(cfg.kv_seq_len, cfg.depth_dim))
-
-    # Copy previous KV cache and current KV tensors into a single buffer for
-    # computing reference attention.
-    for b in range(cfg.batch_dims[0]):
-        for h in range(cfg.batch_dims[1]):
-            for s in range(cfg.prev_seq_len()):
-                for d in range(cfg.depth_dim):
-                    ref_k[StaticIntTuple[rank](b, h, d, s)] = k_cache[
-                        StaticIntTuple[kv_rank](0, b, h, s, d)
-                    ]
-                    ref_v[StaticIntTuple[rank](b, h, s, d)] = v_cache[
-                        StaticIntTuple[kv_rank](0, b, h, s, d)
-                    ]
-
-            for s in range(cfg.prev_seq_len(), cfg.kv_seq_len):
-                for d in range(cfg.depth_dim):
-                    ref_k[StaticIntTuple[rank](b, h, d, s)] = k[
-                        StaticIntTuple[rank](b, h, s - cfg.prev_seq_len(), d)
-                    ]
-                    ref_v[StaticIntTuple[rank](b, h, s, d)] = v[
-                        StaticIntTuple[rank](b, h, s - cfg.prev_seq_len(), d)
-                    ]
+    var ref_output = build_ndbuffer[type](output_shape)
 
     # Compute reference outputs for comparison.
-    reference_attention(q, ref_k, ref_v, mask, ref_output, cfg.scale)
+    reference_attention[transpose_k=True](q, k, v, mask, ref_output, cfg.scale)
 
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
     @parameter
@@ -438,22 +428,30 @@ def test_case_split_kv[
     fn input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return k.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return k.load[width=simd_width](
+            StaticIntTuple[k.rank](
+                idx[0], idx[1], idx[2] + cfg.prev_seq_len(), idx[3]
+            )
+        )
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return v.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return v.load[width=simd_width](
+            StaticIntTuple[v.rank](
+                idx[0], idx[1], idx[2] + cfg.prev_seq_len(), idx[3]
+            )
+        )
 
     @parameter
     @always_inline
     fn input_k_cache_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return k_cache.load[width=simd_width](
-            rebind[StaticIntTuple[kv_rank]](idx)
+        return k.load[width=simd_width](
+            StaticIntTuple[k.rank](idx[1], idx[2], idx[3], idx[4])
         )
 
     @parameter
@@ -461,8 +459,8 @@ def test_case_split_kv[
     fn input_v_cache_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return v_cache.load[width=simd_width](
-            rebind[StaticIntTuple[kv_rank]](idx)
+        return v.load[width=simd_width](
+            StaticIntTuple[v.rank](idx[1], idx[2], idx[3], idx[4])
         )
 
     @parameter
@@ -470,11 +468,20 @@ def test_case_split_kv[
     fn mask_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return mask.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return mask.load[width=simd_width](
+            rebind[StaticIntTuple[mask.rank]](idx)
+        )
+
+    var kv_present_shape = cfg.build_shape[is_kv=True](
+        cfg.seq_len, cfg.depth_dim
+    )
+    var kv_past_shape = cfg.build_shape[
+        shape_rank = cfg.kv_cache_rank, is_kv=True
+    ](cfg.prev_seq_len(), cfg.depth_dim)
 
     flash_attention_split_kv[
         type,
-        rank,
+        cfg.rank,
         input_k_fn,
         input_v_fn,
         input_k_cache_fn,
@@ -483,26 +490,22 @@ def test_case_split_kv[
         output_static_shape,
     ](
         q,
-        k.get_shape(),
-        v.get_shape(),
-        rebind[StaticIntTuple[rank + 1]](k_cache.get_shape()),
-        rebind[StaticIntTuple[rank + 1]](v_cache.get_shape()),
+        kv_present_shape,
+        kv_present_shape,
+        rebind[StaticIntTuple[cfg.rank + 1]](kv_past_shape),
+        rebind[StaticIntTuple[cfg.rank + 1]](kv_past_shape),
         output,
         cfg.scale,
     )
 
     verify_output(output.make_dims_unknown(), ref_output, cfg)
 
-    k_cache.data.free()
-    v_cache.data.free()
     q.data.free()
     k.data.free()
     v.data.free()
     mask.data.free()
     output.data.free()
     ref_output.data.free()
-    ref_k.data.free()
-    ref_v.data.free()
 
 
 def test_flash_attention_split_kv[type: DType]():
@@ -511,6 +514,7 @@ def test_flash_attention_split_kv[type: DType]():
             TestCaseConfig(
                 batch_dims=Index(1, 1),
                 seq_len=1,
+                kv_num_heads=1,
                 kv_seq_len=kv_seq_len,
                 depth_dim=1,
                 scale=0.125,
@@ -520,7 +524,28 @@ def test_flash_attention_split_kv[type: DType]():
         TestCaseConfig(
             batch_dims=Index(1, 8),
             seq_len=1,
+            kv_num_heads=8,
             kv_seq_len=503,
+            depth_dim=128,
+            scale=0.125,
+        )
+    )
+    test_case_split_kv[type](
+        TestCaseConfig(
+            batch_dims=Index(1, 8),
+            seq_len=1,
+            kv_num_heads=2,
+            kv_seq_len=503,
+            depth_dim=128,
+            scale=0.125,
+        )
+    )
+    test_case_split_kv[type](
+        TestCaseConfig(
+            batch_dims=Index(5, 24),
+            seq_len=23,
+            kv_num_heads=8,
+            kv_seq_len=57,
             depth_dim=128,
             scale=0.125,
         )
@@ -529,6 +554,7 @@ def test_flash_attention_split_kv[type: DType]():
         TestCaseConfig(
             batch_dims=Index(2, 3),
             seq_len=128,
+            kv_num_heads=3,
             kv_seq_len=128,
             depth_dim=63,
             scale=0.25,
