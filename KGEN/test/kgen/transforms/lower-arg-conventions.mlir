@@ -321,3 +321,8 @@ kgen.func @initself_value(
   // CHECK-NEXT: return [[R]]#0, [[VAL_RES]]
   kgen.return %2 : i1
 }
+
+// CHECK-LABEL: @dont_alter_async_results(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async
+kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> borrow_in_mem, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async {
+  kgen.return
+}
