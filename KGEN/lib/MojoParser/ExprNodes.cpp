@@ -2989,6 +2989,24 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (kind == kLifetimeOf)
     return emitLifetimeOf(dest, emitter);
 
+  // __get_nearest_error_slot returns an MLValue.
+  if (kind == kGetNearestErrorSlot) {
+    if (!subExprs.empty()) {
+      emitter.emitError(getLoc())
+          << "unexpected argument in call to '__get_nearest_error_slot'"
+          << getRange();
+      return {};
+    }
+    MLValue err = emitter.findNearestErrorSlot();
+    if (!err) {
+      emitter.emitError(getLoc())
+          << "cannot use '__get_nearest_error_slot' in non-raising context"
+          << getRange();
+      return {};
+    }
+    return emitter.emitResult(err, this, dest);
+  }
+
   // All other magic function types take exactly one argument.
   if (subExprs.size() != 1) {
     emitter.emitError(getLoc(), "expected a single argument") << getRange();

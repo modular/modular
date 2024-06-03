@@ -301,3 +301,11 @@ struct ThrowingSelfInit:
         self.__init__()
         # CHECK:      lit.call {{.*}}__init__{{.*}}(%self, %__error__)
         self.__init__()
+
+
+# CHECK-LABEL: lit.func @"emplace_error
+fn emplace_error() raises:
+    # CHECK: lit.ref.store {{.*}}, %__error__
+    # CHECK: lit.error_return
+    __get_nearest_error_slot() = Error()
+    __mlir_op.`lit.raise`()
