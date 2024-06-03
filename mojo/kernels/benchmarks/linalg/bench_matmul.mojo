@@ -58,7 +58,8 @@ fn bench_matmul_spec(inout m: Bench, spec: MatmulSpec) raises:
     ](
         BenchId("matmul", str(spec)),
         spec,
-        throughput_elems=spec.flops(),
+        # TODO: Pick relevant benchmetric
+        ThroughputMeasure(BenchMetric.elements, spec.flops()),
     )
 
 

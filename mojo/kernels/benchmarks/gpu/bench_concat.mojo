@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from benchmark import Bench, Bencher, BenchId
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
 
 from random import randn
@@ -73,7 +73,11 @@ fn bench_concat[
     b.bench_with_input[StaticIntTuple[rank], bench_func](
         BenchId("concat", name),
         out_shape,
-        throughput_elems=out_shape.flattened_length() * sizeof[type]() * 2,
+        # TODO: Pick relevant benchmetric.
+        ThroughputMeasure(
+            BenchMetric.elements,
+            out_shape.flattened_length() * sizeof[type]() * 2,
+        ),
     )
 
     _copy_device_to_host(output_host.data, output.data, output.size())

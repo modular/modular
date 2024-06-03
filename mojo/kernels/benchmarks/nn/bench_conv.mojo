@@ -186,7 +186,8 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
         BenchId("Conv", str(spec)),
         spec,
-        throughput_elems=spec.flops(),
+        # TODO: Pick relevant benchmetric.
+        ThroughputMeasure(BenchMetric.elements, spec.flops()),
     )
 
     input_ptr.free()

@@ -54,11 +54,20 @@ fn bench_func[
         ThroughputMeasure(apple_metric, num_elements),
         ThroughputMeasure(orange_metric, num_elements * 2),
     )
-
     # NOTE: only one set of metrics can be used in one bench object (ie, one bench report).
-    m.bench_function[bench_iter](
-        BenchId(op_name), throughput_elems=num_elements, measures=measures
+    m.bench_function[bench_iter](BenchId(op_name), measures=measures)
+
+    """
+    Note: We can also use the following variadic signature:
+    m.bench_function[bench_iter](BenchId(op_name), 
+        ThroughputMeasure(BenchMetric.flops, num_elements * 2),  # FMA's
+        ThroughputMeasure("bytes", num_elements * 4),  # uint32 = 4 bytes
+        ThroughputMeasure(BenchMetric.elements, num_elements),
+        # custom metrics
+        ThroughputMeasure(apple_metric, num_elements),
+        ThroughputMeasure(orange_metric, num_elements * 2),
     )
+    """
 
 
 fn main() raises:

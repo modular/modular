@@ -17,7 +17,7 @@ from sys.arg import argv
 from math.polynomial import polynomial_evaluate
 from algorithm.functional import vectorize
 from benchmark import keep
-from benchmark import Bencher, BenchId, Bench
+from benchmark import Bencher, BenchId, Bench, BenchMetric, ThroughputMeasure
 from buffer import Buffer
 from compile import *
 
@@ -69,7 +69,8 @@ def bench_unary[
     m.bench_with_input[Int, bench](
         BenchId(op_name, str(size)),
         size,
-        throughput_elems=size * sizeof[type](),
+        # TODO: Pick relevant benchmetric.
+        ThroughputMeasure(BenchMetric.elements, size * sizeof[type]()),
     )
 
     input_ptr.free()

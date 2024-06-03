@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from benchmark import Bench, Bencher, BenchId
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
 from gpu.host import Context, Stream, CUDADeviceStream
 from gpu.host.memory import _malloc, _free
@@ -95,7 +95,11 @@ fn bench_matmul[
                 shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
-        throughput_elems=2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
+        # TODO: Pick relevant benchmetric
+        ThroughputMeasure(
+            BenchMetric.elements,
+            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
+        ),
     )
 
     _free(mat_c.data)
