@@ -34,7 +34,9 @@ struct BFloat16Encoding(QuantizationEncoding):
             tensor: Full-precision tensor to quantize to bfloat16.
 
         Returns:
-            Quantized bfloat16 tensor.
+            Quantized bfloat16 tensor. The tensor datatype is `uint8`
+            because this is simply a byte buffer. Each scalar is actually
+            encoded into two bytes (16-bits).
         """
         if not tensor.num_elements():
             return Tensor[DType.uint8]()
@@ -129,24 +131,27 @@ struct Q4_0Encoding(QuantizationEncoding):
     unsigned, fixed-point, 4-bit value. Multiple quantized elements are packed
     together in a block, all using the same float16 scale.
 
-    For example, suppose that we have a block of N = 8 numbers A, B, C, D, E,
-    F, G, and H, with associated bits aaaa, bbbb, and so on. Then, within that
-    32-bit block of 8 elements, the elements are packed as follows:
-
-    ```
-    eeeeaaaa|ffffbbbb|ggggcccc|hhhhdddd
-    ```
+    The packing scheme requires that the innermost dimension is a factor of 32.
+    When the tensor is quantized to Q4_0, each block of 32 scalar values is
+    packed into 18 bytes. The first two bytes specify the float16 quantization
+    scale, and the other 16 bytes hold the 32 values (one byte holds two 4-bit
+    values).
     """
 
     @staticmethod
     def quantize(tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
-        """Quantizes the full-precision tensor `tensor` to Q4_0.
+        """Quantizes the full-precision tensor to Q4_0.
 
         Args:
-            tensor: Full-precision tensor to quantize to Q4_0.
+            tensor: Full-precision tensor to quantize. The innermost dimension
+            of the tensor must be a factor of 32.
 
         Returns:
-            Quantized Q4_0 tensor.
+            Quantized Q4_0 tensor. The tensor datatype is `uint8` because this
+            is simply a bytes buffer. Each scalar is actually stored with 4 bits.
+
+        Raises:
+            If the last dimension size is not a factor of 32.
         """
         if not tensor.num_elements():
             return Tensor[DType.uint8]()

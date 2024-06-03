@@ -79,6 +79,8 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
     by `rhs` (which must be a 2D tensor). Any remaining dimensions in `lhs`
     are broadcast dimensions.
 
+    NOTE: Currently this supports Q4_0, Q4_K, and Q6_K encodings only.
+
     Parameters:
         encoding: The quantization encoding to use.
 
@@ -91,7 +93,6 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
     Returns:
         The dequantized result (a floating point tensor).
     """
-
     # Quantized matmul for supported quantized encoding types.
     # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
     rhs_dtype = rhs.type().tensor().dtype
