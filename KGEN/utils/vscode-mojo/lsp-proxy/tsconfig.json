@@ -6,6 +6,7 @@
     "sourceMap": true,
     "composite": true,
     "strict": true,
+    "noImplicitOverride": true,
     "target": "es6"
   },
   "include": [

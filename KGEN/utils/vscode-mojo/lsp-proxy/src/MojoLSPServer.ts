@@ -7,7 +7,7 @@
 import {ChildProcess, spawn} from 'child_process';
 import {firstValueFrom, Subject} from 'rxjs';
 
-import {DisposableContext} from './DisposableContext';
+import {DisposableCallback, DisposableContext} from './DisposableContext';
 import {JSONRPCStream, LineSeparatedStream, ProcessExitStream} from './streams';
 import {
   ExitStatus,
@@ -61,20 +61,14 @@ export class MojoLSPServer extends DisposableContext {
         (notification: JSONObject) =>
             onNotification(notification.method, notification.params)));
     this.pushSubscription(new ProcessExitStream(this.serverProcess, onExit));
-  }
-
-  /**
-   * Dispose the server. No listeners will be invoked upon this action, as its
-   * is equivalent to aborting the process. This action will also attempt to
-   * kill the underlying server process.
-   */
-  public dispose() {
-    super.dispose();
-    // We kill the server process after all listeners have been disposed.
-    try {
-      this.serverProcess.kill();
-    } catch {
-    }
+    this.pushSubscription(new DisposableCallback(() => {
+      // We kill the server process after all listeners have been disposed, to
+      // guarantee that no listener is invoked when the process dies.
+      try {
+        this.serverProcess.kill();
+      } catch {
+      }
+    }));
   }
 
   /**

@@ -21,7 +21,6 @@ import type {
 export interface Disposable {
   dispose(): void;
 }
-
 /**
  * Type alias for a URI.
  */

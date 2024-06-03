@@ -46,8 +46,13 @@ export class MojoLSPContext extends DisposableContext {
 
     const includeDirs = await config.get<string[]>(
         "lsp.includeDirs", /*workspaceFolder=*/ undefined, []);
-    this.lspClient = await this.activateLanguageClient(
+    const lspClient = await this.activateLanguageClient(
         launchServerWithDebuggerAttached, sdk, includeDirs);
+    this.lspClient = lspClient;
+    this.pushSubscription(new vscode.Disposable(() => {
+      lspClient.stop();
+      lspClient.dispose();
+    }))
   }
 
   /**
@@ -114,11 +119,5 @@ export class MojoLSPContext extends DisposableContext {
     // during a long initialization, which can happen when in debug mode.
     languageClient.start();
     return languageClient;
-  }
-
-  public dispose() {
-    super.dispose();
-    this.lspClient?.stop();
-    this.lspClient?.dispose();
   }
 }

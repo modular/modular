@@ -6,6 +6,14 @@
 
 import {Disposable} from "./types";
 
+export class DisposableCallback implements Disposable {
+  private callback: () => void;
+
+  constructor(callback: () => void) { this.callback = callback; }
+
+  dispose(): void { this.callback(); }
+}
+
 /**
  * This class provides a simple wrapper around `Disposable` that allows for
  * registering additional disposables.
