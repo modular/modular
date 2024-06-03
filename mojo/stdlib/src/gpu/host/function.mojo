@@ -174,7 +174,6 @@ struct _GlobalPayload:
 
 
 @value
-@register_passable
 struct Function[
     func_type: AnyTrivialRegType, //,
     func: func_type,
