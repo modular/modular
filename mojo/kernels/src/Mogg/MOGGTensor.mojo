@@ -303,7 +303,7 @@ struct Tensor[
     fn _simd_store_internal(inout self, index: IntList, val: SIMD):
         var flat_index = self._compute_flat_index(index)
         var value = rebind[SIMD[type, val.size]](val)
-        self.data.store[width = val.size](flat_index, value)
+        SIMD[size = val.size].store(self.data, flat_index, value)
 
     @always_inline
     fn get_nd_indices(self) -> IntList[Self.same_rank_param()]:
@@ -360,17 +360,17 @@ struct Tensor[
         ](stride: Int) -> SIMD[type, simd_width]:
             @parameter
             if stride_type == InnerStride.Broadcast:
-                return self.data.load(flat_index)
+                return Scalar.load(self.data, flat_index)
             elif stride_type == InnerStride.Contiguous:
 
                 @parameter
                 if type == DType.bool:
-                    var v = self.data.bitcast[DType.uint8]().load[
-                        width=simd_width
-                    ](flat_index)
+                    var v = SIMD[size=simd_width].load(
+                        self.data.bitcast[DType.uint8](), flat_index
+                    )
                     return v.cast[type]()
                 else:
-                    return self.data.load[width=simd_width](flat_index)
+                    return SIMD[size=simd_width].load(self.data, flat_index)
 
             else:
 

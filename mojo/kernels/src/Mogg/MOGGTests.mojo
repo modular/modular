@@ -371,4 +371,4 @@ fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Rank:", rank)
     print("Shape:", buffer.dynamic_shape)
     for i in range(buffer.num_elements()):
-        print(buffer.data.load(i))
+        print(Scalar.load(buffer.data, i))
