@@ -216,9 +216,11 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(d + depth * (h + s * num_heads))
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
+                var expect = Scalar.load(
+                    output_ptr, d + depth * (h + s * num_heads)
+                )
+                var actual = Scalar.load(
+                    flash_output_ptr, d + depth * (h + s * num_heads)
                 )
                 if abs(expect - actual) > 1e-4 * abs(expect):
                     print(d, expect, actual)

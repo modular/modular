@@ -402,10 +402,11 @@ fn _mm[
             # vector load
             @parameter
             for offset in range(0, TM, simd_size):
-                reg_m.store[width=simd_size](
+                SIMD[size=simd_size].store(
+                    reg_m,
                     offset,
-                    a.load[width=simd_size, alignment=alignment](
-                        k * M + row + offset
+                    SIMD[size=simd_size].load[alignment=alignment](
+                        a, k * M + row + offset
                     ),
                 )
         else:
@@ -416,10 +417,10 @@ fn _mm[
 
         @parameter
         for offset in range(0, TN, simd_size):
-            var vec = b.load[width=simd_size, alignment=alignment](
-                k * N + col + offset
+            var vec = SIMD[size=simd_size].load[alignment=alignment](
+                b, k * N + col + offset
             )
-            reg_n.store(offset, vec)
+            SIMD.store(reg_n, offset, vec)
 
         @parameter
         for i in range(TM):
@@ -438,7 +439,7 @@ fn _fill[
 
     @parameter
     for i in range(0, vector_end, simd_width):
-        ptr.store(i, SIMD[type, simd_width].splat(val))
+        SIMD.store(ptr, i, SIMD[type, simd_width].splat(val))
 
     @parameter
     for i in range(vector_end, len, 1):
@@ -653,12 +654,12 @@ fn flash_attention_kernel[
             @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = reg_result.load[width=simd_size](idx)
+                var vec = SIMD[size=simd_size].load(reg_result, idx)
                 var mask_idx = mask_offset + i * seq_len + j
-                var mask_vec = mask_ptr.load[
-                    width=simd_size, alignment=alignment
-                ](mask_idx)
-                reg_result.store(idx, vec * scale + mask_vec)
+                var mask_vec = SIMD[size=simd_size].load[alignment=alignment](
+                    mask_ptr, mask_idx
+                )
+                SIMD.store(reg_result, idx, vec * scale + mask_vec)
 
         # Online Softmax
         @parameter
@@ -723,9 +724,10 @@ fn flash_attention_kernel[
 
                     @parameter
                     for j in range(0, TN, simd_size):
-                        p_tile.store[width=simd_size, alignment=alignment](
+                        SIMD[size=simd_size].store[alignment=alignment](
+                            p_tile,
                             (mm_row + i) * BK + mm_col - storep_col_start + j,
-                            reg_result.load[width=simd_size](i * TN + j),
+                            SIMD[size=simd_size].load(reg_result, i * TN + j),
                         )
             storep_col_start += BK
 
@@ -774,12 +776,12 @@ fn flash_attention_kernel[
         @parameter
         for offset in range(0, TN, simd_size):
             # Apply the denominator of softmax.
-            var vec = o_thread_tile.load[width=simd_size](
-                i * TN + offset
-            ) / rowsum.load(i)
+            var vec = SIMD[size=simd_size].load(
+                o_thread_tile, i * TN + offset
+            ) / Scalar.load(rowsum, i)
 
-            output_ptr.store[width=simd_size, alignment=alignment](
-                o_global_row_offset + mm_col + offset, vec
+            SIMD[size=simd_size].store[alignment=alignment](
+                output_ptr, o_global_row_offset + mm_col + offset, vec
             )
         o_global_row_offset += row_stride
 
@@ -917,15 +919,16 @@ fn flash_attention_kernel_flexible_seqlen[
         # The a row from Q in global memory.
         if row_in_tile + global_q_start_row < seq_len:
             var global_q_idx = global_q_offset + row_in_tile * row_stride + loadq_col
-            var vec = q_ptr.load[width=simd_size, alignment=alignment](
-                global_q_idx,
+            var vec = SIMD[size=simd_size].load[alignment=alignment](
+                q_ptr, global_q_idx
             )
-            q_tile.store[width=simd_size, alignment=alignment](
-                row_in_tile * depth + loadq_col, vec
+            SIMD[size=simd_size].store[alignment=alignment](
+                q_tile, row_in_tile * depth + loadq_col, vec
             )
         # The Q tile exceeds global Q buffer, pad with zeros.
         else:
-            q_tile.store[width=simd_size, alignment=alignment](
+            SIMD[size=simd_size].store[alignment=alignment](
+                q_tile,
                 row_in_tile * depth + loadq_col,
                 SIMD[DType.float32, simd_size](0.0),
             )
@@ -966,8 +969,8 @@ fn flash_attention_kernel_flexible_seqlen[
                 var row_in_tile = loadk_row + i * loadk_num_rows_per_iter
                 if row_in_tile + kv_tile_start_row < num_keys:
                     var global_idx = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
-                    var vec = k_ptr.load[width=simd_size, alignment=alignment](
-                        global_idx
+                    var vec = SIMD[size=simd_size].load[alignment=alignment](
+                        k_ptr, global_idx
                     )
 
                     # Transpose k tile.
@@ -1074,9 +1077,10 @@ fn flash_attention_kernel_flexible_seqlen[
 
             @parameter
             for j in range(0, TN, simd_size):
-                p_tile.store[width=simd_size, alignment=alignment](
+                SIMD[size=simd_size].store[alignment=alignment](
+                    p_tile,
                     ((mm_row + i) * BN + mm_col + j),
-                    reg_result.load[width=simd_size]((i * TN + j)),
+                    SIMD[size=simd_size].load(reg_result, i * TN + j),
                 )
 
         # Clear thread register results for P * V.
@@ -1098,14 +1102,15 @@ fn flash_attention_kernel_flexible_seqlen[
                     var global_idx = global_kv_offset + (
                         subtile_start_row + row_in_tile
                     ) * row_stride + loadv_col
-                    var vec = v_ptr.load[width=simd_size, alignment=alignment](
-                        global_idx
+                    var vec = SIMD[size=simd_size].load[alignment=alignment](
+                        v_ptr, global_idx
                     )
-                    kv_tile.store[width=simd_size, alignment=alignment](
-                        row_in_tile * depth + loadv_col, vec
+                    SIMD[size=simd_size].store[alignment=alignment](
+                        kv_tile, row_in_tile * depth + loadv_col, vec
                     )
                 else:
-                    kv_tile.store[width=simd_size, alignment=alignment](
+                    SIMD[size=simd_size].store[alignment=alignment](
+                        kv_tile,
                         row_in_tile * depth + loadv_col,
                         SIMD[DType.float32, simd_size](0.0),
                     )
@@ -1153,12 +1158,12 @@ fn flash_attention_kernel_flexible_seqlen[
             @parameter
             for offset in range(0, TN, simd_size):
                 # Apply the denominator of softmax.
-                var vec = o_thread_tile.load[width=simd_size](
-                    i * TN + offset
-                ) / rowsum.load(i)
+                var vec = SIMD[size=simd_size].load(
+                    o_thread_tile, i * TN + offset
+                ) / Scalar.load(rowsum, i)
 
-                output_ptr.store[width=simd_size, alignment=alignment](
-                    o_global_row_offset + mm_col + offset, vec
+                SIMD[size=simd_size].store[alignment=alignment](
+                    output_ptr, o_global_row_offset + mm_col + offset, vec
                 )
         o_global_row_offset += row_stride
 

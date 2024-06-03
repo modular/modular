@@ -61,7 +61,7 @@ def test_accumulate[
 
         @parameter
         for j in range(num_cols):
-            (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
+            SIMD.store((b_ptr + j * simd_size), SIMD[type, simd_size](i))
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
@@ -147,7 +147,7 @@ def test_accumulate_with_offsets[
 
         @parameter
         for j in range(num_cols):
-            (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
+            SIMD.store((b_ptr + j * simd_size), SIMD[type, simd_size](i))
 
     var a_base_offsets = Buffer[DType.int32, num_rows].stack_allocation()
     a_base_offsets[0] = 0
@@ -241,12 +241,14 @@ def test_load_store[
 
         @parameter
         for j in range(num_cols):
-            a.store(
+            SIMD.store(
+                a,
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),
             )
 
-        a.store(
+        SIMD.store(
+            a,
             i * row_size + num_cols * simd_size,
             SIMD[type, residual](-1.0),
         )
@@ -306,8 +308,12 @@ def test_load_store[
     #            [ 4x1.0, 4x1.0, -2.0],]
     tile1.store[partial_store=True](a, row_size, residual)
 
-    assert_equal(a.load[width=residual](row_size - residual), residual_vec1)
-    assert_equal(a.load[width=residual](2 * row_size - residual), residual_vec1)
+    assert_equal(
+        SIMD[size=residual].load(a, row_size - residual), residual_vec1
+    )
+    assert_equal(
+        SIMD[size=residual].load(a, 2 * row_size - residual), residual_vec1
+    )
 
 
 def main():

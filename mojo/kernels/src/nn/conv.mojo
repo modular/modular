@@ -228,7 +228,9 @@ struct Naive2dConvolution[
                             )
 
         # Store the computed output at the given output position..
-        self.output.store(f + F * (wo + WO * (ho + HO * (do + DO * n))), value)
+        Scalar.store(
+            self.output, f + F * (wo + WO * (ho + HO * (do + DO * n))), value
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -283,15 +285,15 @@ fn _reduce_output[
         @always_inline
         fn sum[width: Int](offset: Int):
             var tid_output_offset = reduce_range[0] * F + offset
-            var vec = scratch.load[width=width](tid_output_offset)
+            var vec = SIMD[size=width].load(scratch, tid_output_offset)
             # The number of partitions here is typically small.
             # There may not be much benefit from unrolling the reduction axis.
             # Only unroll the last dimension.
             for i in range(1, num_partitions):
-                vec += scratch.load[width=width](
-                    tid_output_offset + i * buf_size
+                vec += SIMD[size=width].load(
+                    scratch, tid_output_offset + i * buf_size
                 )
-            output.store[width=width](tid_output_offset, vec)
+            SIMD[size=width].store(output, tid_output_offset, vec)
 
         vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
 
@@ -900,9 +902,9 @@ struct ConvDirectNHWC[
                 else:
                     output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
-                        output_ptr.offset(j * simd_size).load[
-                            width=simd_size
-                        ](),
+                        SIMD[size=simd_size].load(
+                            output_ptr.offset(j * simd_size)
+                        ),
                     )
 
             @parameter
@@ -959,8 +961,8 @@ struct ConvDirectNHWC[
                         output_vec,
                     )
                 else:
-                    output_ptr.offset(j * simd_size).store[width=simd_size](
-                        output_vec
+                    SIMD[size=simd_size].store(
+                        output_ptr.offset(j * simd_size), output_vec
                     )
 
             @parameter
@@ -2678,11 +2680,12 @@ fn pack_filter[
 
                 @parameter
                 for i in range(f_tile_size // simd_size):
-                    packed_filter_ptr.store(
+                    SIMD.store(
+                        packed_filter_ptr,
                         i * simd_size,
-                        filter_ptr.load[width=simd_size](i * simd_size).cast[
-                            packed_filter.type
-                        ](),
+                        SIMD[size=simd_size]
+                        .load(filter_ptr, i * simd_size)
+                        .cast[packed_filter.type](),
                     )
 
                 packed_filter_ptr += f_tile_size
@@ -2712,7 +2715,7 @@ fn pack_filter[
                 var filter_vec = partial_simd_load[simd_size](
                     filter_ptr, 0, residual, 0.0
                 ).cast[packed_filter.type]()
-                packed_filter_ptr.store(filter_vec)
+                SIMD.store(packed_filter_ptr, filter_vec)
 
                 # Hence, packed filter is incremented by simd_size
                 packed_filter_ptr = packed_filter_ptr + simd_size

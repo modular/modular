@@ -228,12 +228,13 @@ fn test_conv_transposed[
             @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
             fn body0[width: Int](offset: Int):
-                output_ref_ptr.store(
+                SIMD.store(
+                    output_ref_ptr,
                     offset,
                     10.0
                     * (
-                        output_ref_ptr.load[width=width](offset)
-                        + bias_ptr.load[width=width](offset)
+                        SIMD[size=width].load(output_ref_ptr, offset)
+                        + SIMD[size=width].load(bias_ptr, offset)
                     ),
                 )
 
@@ -258,7 +259,9 @@ fn test_conv_transposed[
             output.store(
                 curr_coords,
                 10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                * (
+                    vec + SIMD[size=width].load(bias_ptr, curr_coords[rank + 1])
+                ),
             )
 
         vectorize[body1, simd_size](f_size)
