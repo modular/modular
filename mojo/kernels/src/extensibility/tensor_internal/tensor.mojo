@@ -312,7 +312,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
 
                 @parameter
                 fn splat_val[simd_width: Int](idx: Int):
-                    ptr.store[width=simd_width](idx, data0)
+                    SIMD[size=simd_width].store(ptr, idx, data0)
 
                 vectorize[splat_val, simdwidthof[type](), unroll_factor=8](
                     num_elements
@@ -890,7 +890,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           The value at the specified indices.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        return self._ptr.load(index)
+        return Scalar.load(self._ptr, index)
 
     @always_inline
     fn __getitem__(self, *indices: Int) -> Scalar[type]:
@@ -947,7 +947,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           The SIMD value at the specified indices.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        return self._ptr.load[width=width](index)
+        return SIMD[size=width].load(self._ptr, index)
 
     @always_inline
     fn load[*, width: Int = 1](self, *indices: Int) -> SIMD[type, width]:
@@ -980,7 +980,9 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           The SIMD value at the specified indices.
         """
         debug_assert(len(indices) == self.rank(), "invalid rank value")
-        return self._ptr.load[width=width](self._compute_linear_offset(indices))
+        return SIMD[size=width].load(
+            self._ptr, self._compute_linear_offset(indices)
+        )
 
     @always_inline
     fn load[
@@ -999,7 +1001,9 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           The SIMD value at the specified indices.
         """
         debug_assert(len == self.rank(), "invalid length value")
-        return self._ptr.load[width=width](self._compute_linear_offset(indices))
+        return SIMD[size=width].load(
+            self._ptr, self._compute_linear_offset(indices)
+        )
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Scalar[type]):
@@ -1049,7 +1053,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           val: The SIMD value to store.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        self._ptr.store[width=width](index, val)
+        SIMD[size=width].store(self._ptr, index, val)
 
     @always_inline
     fn store[
@@ -1065,7 +1069,9 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           val: The SIMD value to store.
         """
         debug_assert(len(indices) == self.rank(), "invalid rank value")
-        self._ptr.store[width=width](self._compute_linear_offset(indices), val)
+        SIMD[size=width].store(
+            self._ptr, self._compute_linear_offset(indices), val
+        )
 
     @always_inline
     fn store[
@@ -1082,7 +1088,9 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
           val: The SIMD value to store.
         """
         debug_assert(len == self.rank(), "invalid length value")
-        self._ptr.store[width=width](self._compute_linear_offset(indices), val)
+        SIMD[size=width].store(
+            self._ptr, self._compute_linear_offset(indices), val
+        )
 
     @always_inline
     fn _compute_linear_offset[
