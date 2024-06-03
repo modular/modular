@@ -7,7 +7,6 @@
 import * as vscode from 'vscode';
 
 import {MojoContext} from '../mojoContext';
-import {MojoSDK} from '../mojoSDK';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
 import {getAllOpenMojoFiles, WorkspaceAwareFile} from '../utils/files';
