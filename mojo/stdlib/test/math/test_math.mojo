@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from math import ceil, cos, factorial, floor, isclose, sin, trunc
+from math import ceil, cos, factorial, floor, isclose, sin, trunc, exp2, iota
 from utils.numerics import inf, neg_inf
 from sys.info import has_neon
+from collections import List
 
-from complex import ComplexFloat32
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
-from utils.numerics import isfinite, isinf, isnan, nan
+from utils.numerics import nan
 
 
 fn test_sin() raises:
@@ -117,6 +117,40 @@ def test_trunc():
     assert_equal(trunc(Float64(-3.4)), -3.0)
 
 
+def test_exp2():
+    assert_equal(exp2(Float32(1)), 2.0)
+    assert_almost_equal(exp2(Float32(0.2)), 1.148696)
+    assert_equal(exp2(Float32(0)), 1.0)
+    assert_equal(exp2(Float32(-1)), 0.5)
+    assert_equal(exp2(Float32(2)), 4.0)
+
+
+def test_iota():
+    alias length = 103
+    var offset = 2
+
+    var vector = List[Int32]()
+    vector.resize(length, 0)
+
+    var buff = rebind[DTypePointer[DType.int32]](vector.data)
+    iota[DType.int32](buff, length, offset)
+
+    for i in range(length):
+        assert_equal(vector[i], offset + i)
+
+    iota[DType.int32](vector, offset)
+
+    for i in range(length):
+        assert_equal(vector[i], offset + i)
+
+    var vector2 = List[Int]()
+    vector2.resize(length, 0)
+    iota(vector2, offset)
+
+    for i in range(length):
+        assert_equal(vector2[i], offset + i)
+
+
 def main():
     test_sin()
     test_cos()
@@ -126,3 +160,5 @@ def main():
     test_ceil()
     test_floor()
     test_trunc()
+    test_exp2()
+    test_iota()
