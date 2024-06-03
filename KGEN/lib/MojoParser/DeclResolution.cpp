@@ -387,19 +387,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
               selfArgType.getWithoutParameters(shared)))
         return;
 
-      // For non-inout arguments, it is also ok if the argument is some type
-      // like Reference[Self] that an instance of Self implicitly converts to.
-      if (selfArg.convention != ParsedArgument::kConventionInOut) {
-        ExprEmitter tmpEmitter(shared, tcSignature.paramList.declScope,
-                               ExprContext::EC_CallArgValue);
-        auto tmpValue = PValue(UnboundAttr::get(selfType));
-        SyntheticNode exprNode(selfArg.loc);
-        if (tmpEmitter.canImplicitlyConvertToType(
-                {tmpValue, &exprNode},
-                selfArgType.getWithoutParameters(shared)))
-          return;
-      }
-
       // Otherwise, this is an unrecognized self type. If this is a trait, the
       // explicit self type is very hard to specify in mojo, so we suggest to
       // use 'Self' instead.

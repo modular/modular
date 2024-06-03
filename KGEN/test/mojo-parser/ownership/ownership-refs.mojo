@@ -215,19 +215,18 @@ struct SelfRefTest:
   fn __init__(inout self): pass
 
   # CHECK-LABEL: lit.func @"method
-  # CHECK-SAME: (%self: !lit.declref<#Reference
-  fn method(self: Reference[Self, _]) -> Reference[
-    Self, self.lifetime]:
+  # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
+  fn method(ref [_] self: Self) -> Reference[Self, __lifetime_of(self)]:
       return self
 
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :lifetime<0> *"a`">
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, :lifetime<0> *"a`"
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :lifetime<1> *"b`1">
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType #SelfRefTest1, :lifetime<1> *"b`1"
   _ = b.method()
 
 
@@ -378,13 +377,10 @@ fn parametric_mut_mbvalue[
 # Reference directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
     fn __init__(inout self): pass
-    fn hello(self: Reference[Self, _]):
+    fn hello(ref [_] self: Self):
         pass
 
 # CHECK-LABEL: lit.func @"testMethodRef
 fn testMethodRef(a: SomeStructWithReferenceSelfArgument):
-    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
-    # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous2A, %a)
-    # CHECK-NEXT: %1 = lit.ref.load %anonymous2A
-    # CHECK-NEXT: lit.call {{.*}}@"hello{{.*}}(%1)
+    # CHECK-NEXT: lit.call {{.*}}@"hello{{.*}}(%a)
     a.hello()
