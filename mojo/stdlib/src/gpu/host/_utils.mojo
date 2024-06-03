@@ -98,3 +98,4 @@ alias _EventHandle = CudaHandle
 alias _StreamHandle = CudaHandle
 alias _ModuleHandle = CudaHandle
 alias _FunctionHandle = CudaHandle
+alias _DeviceHandle = Int32

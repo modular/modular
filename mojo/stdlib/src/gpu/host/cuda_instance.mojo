@@ -22,9 +22,6 @@ from sys.ffi import C_char
 
 @register_passable("trivial")
 struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
-    fn __init__(inout self):
-        pass
-
     @staticmethod
     fn load() raises -> type:
         return _get_dylib_function[fn_name, type]()
