@@ -278,11 +278,11 @@ struct CompileConfig:
         for i in range(len(self.input_specs)):
             var spec_ptr = self.input_specs.get(i)
             inner_spec.append(spec_ptr[].ptr)
-        self.ptr[].set_torch_input_specs(self.torch_lib.value()[], inner_spec)
+        self.ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
 
     fn add_input_spec(inout self, spec: TensorSpec) raises:
         self.input_specs.emplace_back(
-            TorchInputSpec(spec, self.torch_lib.value()[])
+            TorchInputSpec(spec, self.torch_lib.value())
         )
 
     fn add_input_spec(
@@ -292,14 +292,14 @@ struct CompileConfig:
     ) raises:
         if not shape_or:
             self.input_specs.emplace_back(
-                TorchInputSpec(None, dtype, self.torch_lib.value()[], self.lib)
+                TorchInputSpec(None, dtype, self.torch_lib.value(), self.lib)
             )
             return
         self.input_specs.emplace_back(
             TorchInputSpec(
-                shape_or.value()[],
+                shape_or.value(),
                 dtype,
-                self.torch_lib.value()[],
+                self.torch_lib.value(),
                 self.lib,
             )
         )
@@ -314,7 +314,7 @@ struct CompileConfig:
 
     fn __del__(owned self):
         if self.torch_lib:
-            var torch = self.torch_lib.value()[]
+            var torch = self.torch_lib.value()
             torch.close()
 
         self.ptr[].free(self.lib)

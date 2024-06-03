@@ -66,7 +66,7 @@ struct _InferenceSessionImpl(Movable):
 
         var model_path = config._model_path
         if model_path:
-            var path = model_path.value()[]
+            var path = model_path.value()
             compile_config.set_model_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
@@ -82,13 +82,13 @@ struct _InferenceSessionImpl(Movable):
             raise "give either module source or path"
 
         if model_source:
-            compile_config.set_model_source(model_source.value()[])
+            compile_config.set_model_source(model_source.value())
 
         var spec_count = len(config._input_specs)
         for i in range(spec_count):
             var _spec = config._input_specs[i]
             if _spec._static:
-                compile_config.add_input_spec(_spec._static.value()[])
+                compile_config.add_input_spec(_spec._static.value())
             else:
                 var dtype = _spec._dtype
                 compile_config.add_input_spec(_spec._dynamic, dtype)
@@ -286,9 +286,9 @@ struct InputSpec(CollectionElement):
         self._static = None
         if spec:
             var dyn_spec = List[ShapeElement]()
-            for item in spec.value()[]:
+            for item in spec.value():
                 if item[]:
-                    dyn_spec.append(item[].value()[])
+                    dyn_spec.append(item[].value())
                 else:
                     dyn_spec.append(None)
             self._dynamic = dyn_spec^
@@ -472,7 +472,7 @@ struct InferenceSession:
         load_config.set_model_path(path)
         load_config.set_custom_ops_paths(custom_ops_paths)
         if input_specs:
-            load_config.set_input_specs(input_specs.value()[])
+            load_config.set_input_specs(input_specs.value())
         return self._ptr[].load(load_config^, self)
 
     fn load(
@@ -502,7 +502,7 @@ struct InferenceSession:
         load_config.set_model_source(graph)
         load_config.set_custom_ops_paths(custom_ops_paths)
         if input_specs:
-            load_config.set_input_specs(input_specs.value()[])
+            load_config.set_input_specs(input_specs.value())
         return self._ptr[].load(load_config^, self)
 
     fn get_as_engine_tensor_spec(

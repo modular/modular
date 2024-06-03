@@ -91,7 +91,7 @@ def slice(
 
     var out_shape: List[Dim]
     if static_shape:
-        out_shape = static_shape.value()[]
+        out_shape = static_shape.value()
     else:
         var dims = List[Dim]()
         for axis in range(input_type.rank()):
@@ -116,17 +116,17 @@ def slice(
 
         # TODO: Fix start/stop for negative step. Needs a select op.
         if start:
-            starts.append(start.value()[])
+            starts.append(start.value())
         else:
             starts.append(g.scalar(Int64(0)))
         if stop:
-            stops.append(stop.value()[])
+            stops.append(stop.value())
         else:
             # If we pass in the max int64 here, MO will automatically scale it to the input axis size.
             # This greatly reduces generated MO ir.
             stops.append(g.scalar(max_finite[DType.int64]()))
         if step:
-            steps.append(step.value()[])
+            steps.append(step.value())
         else:
             steps.append(g.scalar(Int64(1)))
 

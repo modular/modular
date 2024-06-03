@@ -23,7 +23,7 @@ fn _reduce[
 
     v_type.dims[axis] = 1
     if dtype:
-        v_type.dtype = dtype.value()[]
+        v_type.dtype = dtype.value()
 
     return g.op(op, List[Symbol](v, g.scalar[DType.int64](axis)), v_type)
 
