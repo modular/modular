@@ -437,11 +437,11 @@ struct Function[
                         payload.func_attribute.value,
                     )
                 )
-            initialize_pointee_move(
-                res, _CachedFunctionInfo(module._steal_handle(), func_handle)
+            res.init_pointee_move(
+                _CachedFunctionInfo(module._steal_handle(), func_handle)
             )
         except e:
-            initialize_pointee_move(res, _CachedFunctionInfo(e))
+            res.init_pointee_move(_CachedFunctionInfo(e))
         return res.bitcast[NoneType]().address
 
     @staticmethod
