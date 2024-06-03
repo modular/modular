@@ -105,7 +105,6 @@ struct DeviceContext:
         grid_dim: Dim,
         block_dim: Dim,
     ) raises:
-        pass
         f.cuda_function._call_pack(
             args,
             grid_dim=grid_dim,
