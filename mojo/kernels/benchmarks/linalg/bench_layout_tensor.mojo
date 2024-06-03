@@ -52,10 +52,10 @@ struct Matrix[rows: Int, cols: Int]:
         self.store[1](y, x, val)
 
     fn load[nelts: Int](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
-        return self.data.load[width=nelts](y * self.cols + x)
+        return SIMD[size=nelts].load(self.data, y * self.cols + x)
 
     fn store[nelts: Int](self, y: Int, x: Int, val: SIMD[dtype, nelts]):
-        return self.data.store[width=nelts](y * self.cols + x, val)
+        return SIMD[size=nelts].store(self.data, y * self.cols + x, val)
 
 
 fn matmul_naive(inout C: Matrix, A: Matrix, B: Matrix):

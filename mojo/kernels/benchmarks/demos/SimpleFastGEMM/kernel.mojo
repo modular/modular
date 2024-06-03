@@ -61,18 +61,18 @@ fn kernel6x4(
         var bv1 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 1)
         var bv2 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 2)
         var bv3 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 3)
-        b_ptr.offset(4 * simd_size * pr + simd_size * 16).prefetch[
+        SIMD.prefetch[
             PrefetchOptions().for_read().high_locality().to_data_cache()
-        ]()
-        b_ptr.offset(4 * simd_size * pr + simd_size * 17).prefetch[
+        ](b_ptr.offset(4 * simd_size * pr + simd_size * 16))
+        SIMD.prefetch[
             PrefetchOptions().for_read().high_locality().to_data_cache()
-        ]()
-        b_ptr.offset(4 * simd_size * pr + simd_size * 18).prefetch[
+        ](b_ptr.offset(4 * simd_size * pr + simd_size * 17))
+        SIMD.prefetch[
             PrefetchOptions().for_read().high_locality().to_data_cache()
-        ]()
-        b_ptr.offset(4 * simd_size * pr + simd_size * 19).prefetch[
+        ](b_ptr.offset(4 * simd_size * pr + simd_size * 18))
+        SIMD.prefetch[
             PrefetchOptions().for_read().high_locality().to_data_cache()
-        ]()
+        ](b_ptr.offset(4 * simd_size * pr + simd_size * 19))
 
         var av = a_ptr.offset(0 * k + pr).load[width=1]().cast[DType.float32]()
         cv0 += av * bv0

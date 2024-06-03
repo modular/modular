@@ -91,9 +91,9 @@ fn kernel(
         @parameter
         @always_inline
         fn prefetch[idx0: Int]():
-            b_ptr.offset(NR * pr + simd_size * (idx0 + 16)).prefetch[
+            SIMD.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ]()
+            ](b_ptr.offset(NR * pr + simd_size * (idx0 + 16)))
 
         unroll[prefetch, NR2]()
 
