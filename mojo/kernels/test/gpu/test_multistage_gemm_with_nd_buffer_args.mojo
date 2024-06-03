@@ -449,12 +449,14 @@ fn multistage_gemm[
                 thread_layout = Layout.row_major(8, 4)
             ](c_frag[0], int(lane_id))
             var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-            c_frag_local._offset((0, 0)).store[
-                width=2, alignment = alignof[SIMD[c_type, 2]]()
-            ](SIMD[c_type, 2](c_reg[0], c_reg[1]))
-            c_frag_local._offset((1, 0)).store[
-                width=2, alignment = alignof[SIMD[c_type, 2]]()
-            ](SIMD[c_type, 2](c_reg[2], c_reg[3]))
+            SIMD[size=2].store[alignment = alignof[SIMD[c_type, 2]]()](
+                c_frag_local._offset((0, 0)),
+                SIMD[c_type, 2](c_reg[0], c_reg[1]),
+            )
+            SIMD[size=2].store[alignment = alignof[SIMD[c_type, 2]]()](
+                c_frag_local._offset((1, 0)),
+                SIMD[c_type, 2](c_reg[2], c_reg[3]),
+            )
 
 
 fn test() raises:

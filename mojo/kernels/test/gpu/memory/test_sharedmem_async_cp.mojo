@@ -77,7 +77,7 @@ fn run_copy_via_shared() raises:
     # CHECK: 15.0
     # CHECK: 16.0
     for i in range(16):
-        print(out_data.load(i))
+        print(Scalar.load(out_data, i))
 
     pass
 

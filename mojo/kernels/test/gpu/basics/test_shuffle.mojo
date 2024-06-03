@@ -37,11 +37,13 @@ fn _kernel_launch_helper[
     @parameter
     @__copy_capture(device_ptr)
     fn kernel_wrapper():
-        var val = device_ptr.load[width=simd_width](ThreadIdx.x() * simd_width)
+        var val = SIMD[size=simd_width].load(
+            device_ptr, ThreadIdx.x() * simd_width
+        )
         var result = kernel_fn(val)
         barrier()
 
-        device_ptr.store(ThreadIdx.x() * simd_width, result)
+        SIMD.store(device_ptr, ThreadIdx.x() * simd_width, result)
 
     var gpu_func = Function[kernel_wrapper]()
 

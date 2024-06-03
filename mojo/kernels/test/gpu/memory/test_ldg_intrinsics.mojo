@@ -37,16 +37,16 @@ fn register_intrinsics(
     # Note we perform the store purely to avoid the compiler from optimizing
     # away the statements.
 
-    i8.store(ldg(i8))
-    ui8.store(ldg(ui8))
-    i16.store(ldg(i16))
-    ui16.store(ldg(ui16))
-    i32.store(ldg(i32))
-    ui32.store(ldg(ui32))
-    i64.store(ldg(i64))
-    ui64.store(ldg(ui64))
-    f32.store(ldg(f32))
-    f64.store(ldg(f64))
+    Scalar.store(i8, ldg(i8))
+    Scalar.store(ui8, ldg(ui8))
+    Scalar.store(i16, ldg(i16))
+    Scalar.store(ui16, ldg(ui16))
+    Scalar.store(i32, ldg(i32))
+    Scalar.store(ui32, ldg(ui32))
+    Scalar.store(i64, ldg(i64))
+    Scalar.store(ui64, ldg(ui64))
+    Scalar.store(f32, ldg(f32))
+    Scalar.store(f64, ldg(f64))
 
 
 @always_inline

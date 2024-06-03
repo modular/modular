@@ -268,8 +268,8 @@ fn sgemm_double_buffer[
     # Load A fragments to the first buffer.
     @parameter
     for i in range(num_mma_m):
-        var vec = loada_smem_ptr.load[width=4, alignment=align4](
-            i * MMA_M * MMA_K + lane_id * 4
+        var vec = SIMD[size=4].load[alignment=align4](
+            loada_smem_ptr, i * MMA_M * MMA_K + lane_id * 4
         )
         a_reg.store[width=4, alignment=align4](
             (0, i * 4), SIMD[a_type, 4](vec[0], vec[2], vec[1], vec[3])
@@ -278,8 +278,8 @@ fn sgemm_double_buffer[
     # Load B fragments to the first buffer.
     @parameter
     for i in range(num_mma_n):
-        var vec = loadb_smem_ptr.load[width=2, alignment=align2](
-            i * MMA_K * MMA_N + lane_id * 2
+        var vec = SIMD[size=2].load[alignment=align2](
+            loadb_smem_ptr, i * MMA_K * MMA_N + lane_id * 2
         )
         b_reg.store[width=2, alignment=align2]((0, i * 2), vec)
 
@@ -319,8 +319,9 @@ fn sgemm_double_buffer[
             # Fill the other A fragments buffer.
             @parameter
             for i in range(num_mma_m):
-                var vec = loada_smem_ptr.load[width=4, alignment=align4](
-                    next_k * BM + i * MMA_M * MMA_K + lane_id * 4
+                var vec = SIMD[size=4].load[alignment=align4](
+                    loada_smem_ptr,
+                    next_k * BM + i * MMA_M * MMA_K + lane_id * 4,
                 )
                 a_reg.store[width=4, alignment=align4](
                     (next_buffer_id, i * 4),
@@ -330,8 +331,9 @@ fn sgemm_double_buffer[
             # Fill the other B fragments buffer.
             @parameter
             for i in range(num_mma_n):
-                var vec = loadb_smem_ptr.load[width=2, alignment=align2](
-                    next_k * BN + i * MMA_K * MMA_N + lane_id * 2
+                var vec = SIMD[size=2].load[alignment=align2](
+                    loadb_smem_ptr,
+                    next_k * BN + i * MMA_K * MMA_N + lane_id * 2,
                 )
                 b_reg.store[width=2, alignment=align2](
                     (next_buffer_id, i * 2), vec
@@ -375,8 +377,9 @@ fn sgemm_double_buffer[
 
             @parameter
             for i in range(num_mma_m):
-                var vec = loada_smem_ptr.load[width=4, alignment=align4](
-                    next_k * BM + i * MMA_M * MMA_K + lane_id * 4
+                var vec = SIMD[size=4].load[alignment=align4](
+                    loada_smem_ptr,
+                    next_k * BM + i * MMA_M * MMA_K + lane_id * 4,
                 )
                 a_reg.store[width=4, alignment=align4](
                     (next_buffer_id, i * 4),
@@ -385,8 +388,9 @@ fn sgemm_double_buffer[
 
             @parameter
             for i in range(num_mma_n):
-                var vec = loadb_smem_ptr.load[width=2, alignment=align2](
-                    next_k * BN + i * MMA_K * MMA_N + lane_id * 2
+                var vec = SIMD[size=2].load[alignment=align2](
+                    loadb_smem_ptr,
+                    next_k * BN + i * MMA_K * MMA_N + lane_id * 2,
                 )
                 b_reg.store[width=2, alignment=align2](
                     (next_buffer_id, i * 2), vec
@@ -420,11 +424,13 @@ fn sgemm_double_buffer[
         @parameter
         for j in range(num_mma_n):
             var c_mma_tile = c_gmem_ptr + (i * MMA_M) * N + j * MMA_N
-            c_mma_tile.store[width=2, alignment=align2](
+            SIMD[size=2].store[alignment=align2](
+                c_mma_tile,
                 int((lane_id // 4) * N + lane_id % 4 * 2),
                 c_reg.load[width=2, alignment=align2]((i, j, 0)),
             )
-            c_mma_tile.store[width=2, alignment=align2](
+            SIMD[size=2].store[alignment=align2](
+                c_mma_tile,
                 int((lane_id // 4 + 8) * N + lane_id % 4 * 2),
                 c_reg.load[width=2, alignment=align2]((i, j, 2)),
             )

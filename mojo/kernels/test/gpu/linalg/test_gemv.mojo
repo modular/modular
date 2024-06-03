@@ -379,8 +379,8 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     var errorTolerance = 0.005
     var failed = False
     for i in range(M * N * c_stride):
-        var outVal = c_host.load(i)
-        var outRef = c_host_naive.load(i)
+        var outVal = Scalar.load(c_host, i)
+        var outRef = Scalar.load(c_host_naive, i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             print(i, relDiff, outVal, outRef)

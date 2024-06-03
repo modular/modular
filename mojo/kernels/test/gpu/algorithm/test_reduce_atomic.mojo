@@ -29,7 +29,7 @@ fn reduce(
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
 
     if tid < len:
-        _ = Atomic._fetch_add(res, vec.load(tid))
+        _ = Atomic._fetch_add(res, Scalar.load(vec, tid))
 
 
 # CHECK-LABEL: run_reduce

@@ -93,7 +93,7 @@ fn matmul(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
-            c[Index(row, col + out_idx)] = c_reg.load(out_idx)
+            c[Index(row, col + out_idx)] = Scalar.load(c_reg, out_idx)
 
 
 # CHECK-LABEL: run_matmul
