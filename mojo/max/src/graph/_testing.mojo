@@ -171,6 +171,34 @@ fn execute_n_args[
 
 @always_inline
 fn execute_n_args[
+    dt1: DType, dt2: DType, dt3: DType, dt4: DType
+](
+    g: Graph,
+    t1: Tensor[dt1],
+    t2: Tensor[dt2],
+    t3: Tensor[dt3],
+    t4: Tensor[dt4],
+    *,
+    custom_ops_paths: List[Path] = List[Path](),
+) raises -> TensorMap:
+    g.verify()
+
+    var session = InferenceSession()
+    var model = session.load(g, custom_ops_paths=custom_ops_paths)
+
+    var input_map = session.new_tensor_map()
+    input_map.borrow("input0", t1)
+    input_map.borrow("input1", t2)
+    input_map.borrow("input2", t3)
+    input_map.borrow("input3", t4)
+
+    var result_map = model.execute(input_map)
+
+    return result_map^
+
+
+@always_inline
+fn execute_n_args[
     dt1: DType, dt2: DType, dt3: DType, dt4: DType, dt5: DType
 ](
     g: Graph,
