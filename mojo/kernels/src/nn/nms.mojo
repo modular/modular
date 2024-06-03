@@ -185,7 +185,7 @@ fn non_max_suppression[
                 else:
                     per_class_scores[i] = Scalar[type].MIN
 
-            iota[DType.int64](box_idxs)
+            iota(box_idxs)
 
             @parameter
             @always_inline
