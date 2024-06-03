@@ -1,6 +1,7 @@
 // RUN: kgen-opt -lower-async-functions -split-input-file %s | FileCheck %s
 
 // COM: Verify Ramp + Resume + Async Calls are transformed correctly.
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 kgen.func @coroutine1(%arg0: i1) async -> index {
   %idx0 = index.constant 0
@@ -8,9 +9,9 @@ kgen.func @coroutine1(%arg0: i1) async -> index {
 }
 
 // CHECK:      kgen.func @coroutine_ramp(%arg0: i1) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, i1)>> {
-// CHECK-NEXT:   %index = kgen.param.constant = <get_sizeof(struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, i1)>, current_target())>
-// CHECK-NEXT:   %index_0 = kgen.param.constant = <get_alignof(struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, i1)>, current_target())>
-// CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %index_0, %index : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, i1)>>
+// CHECK-NEXT:   %idx64 = index.constant 64
+// CHECK-NEXT:   %idx8 = index.constant 8
+// CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %idx8, %idx64 : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep %0[1] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, i1)>>
 // CHECK-NEXT:   [[RESUME_FNC_PTR:%.*]] = kgen.create_closure[(!kgen.pointer<none>) -> (): @coroutine_resume]()
 // CHECK-NEXT:   pop.store [[RESUME_FNC_PTR]], [[RESUME_SLOT]] : !kgen.pointer<(!kgen.pointer<none>) -> ()>
@@ -70,10 +71,13 @@ kgen.func @call_coroutine() {
   // CHECK-NEXT: kgen.return
   kgen.return
 }
+}
 
 // -----
 
 // COM: Verify Loop With Await In Then Statement Is Correct
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @coroutine1_resume
 kgen.func @coroutine1(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) async -> index {
@@ -155,10 +159,13 @@ kgen.func @bar(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Verify Loop With Await In Else Statement Is Correct
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @coroutine2_resume
 kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
@@ -205,10 +212,13 @@ kgen.func @bar(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Verify Block With Multiple Awaits Is Correct
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @coroutine3_resume
 kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
@@ -269,10 +279,13 @@ kgen.func @bar(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Verify Nested Control Flow Is Correct
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @coroutine_nested_resume
 kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index) async -> index {
@@ -338,10 +351,13 @@ kgen.func @bar(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Verify that Await Code Loads/Stores From Frame.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @coroutine2_resume
 kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
@@ -384,13 +400,16 @@ kgen.func @bar(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Verify that Block Arguments Are Added To Frame.
 
-// CHECK-LABEL: kgen.func @coroutine_block_args_resume
-kgen.func @coroutine_block_args(%arg0: index) async -> index {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @coroutine_block_args3_resume
+kgen.func @coroutine_block_args3(%arg0: index) async -> index {
   // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index)>>
 
   // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME6:]]]
@@ -430,13 +449,16 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
   %idx1 = index.constant 1
   kgen.return %idx1 : index
 }
+}
 
 // -----
 
 // COM: Verify that Block Arguments Are Not Referenced Directly Across Suspension.
 
-// CHECK-LABEL: kgen.func @coroutine_block_args_resume
-kgen.func @coroutine_block_args(%arg0: index) async -> index {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @coroutine_block_args1_resume
+kgen.func @coroutine_block_args1(%arg0: index) async -> index {
   // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index)>>
   // CHECK: [[V6:%.*]] = hlcf.loop (%arg1 = %{{.*}} : index) -> index {
   // CHECK: [[V10:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME5:]]]
@@ -464,13 +486,16 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
   %idx1 = index.constant 1
   kgen.return %idx1 : index
 }
+}
 
 // -----
 
 // COM: Verify that Block Arguments Are Not Put In Frame If Not Needed.
 
-// CHECK-LABEL: kgen.func @coroutine_block_args_resume
-kgen.func @coroutine_block_args(%arg0: index) async -> index {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @coroutine_block_args2_resume
+kgen.func @coroutine_block_args2(%arg0: index) async -> index {
   // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index)>>
   // CHECK:      hlcf.loop (%arg1 = %{{.*}} : index) -> index {
   // CHECK-NEXT:   %idx0 = index.constant 0
@@ -498,10 +523,13 @@ kgen.func @coroutine_block_args(%arg0: index) async -> index {
   %idx1 = index.constant 1
   kgen.return %idx1 : index
 }
+}
 
 // -----
 
 // COM: Verify that Unused Arguments Are Not Put In Frame.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @unused_args_resume
 kgen.func @unused_args(%arg0: index, %arg1: index) async -> index {
@@ -517,10 +545,13 @@ kgen.func @bar(%arg0: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Test Try Raise
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @tryraise_resume
 kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
@@ -596,10 +627,13 @@ kgen.func @foo1(%arg0: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+}
 
 // -----
 
 // COM: Verify Set Error/Results Op is Lowered Correctly
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 kgen.func @populate(%__result__: !kgen.pointer<index> byref_result) -> i1 {
   %true = index.bool.constant true
@@ -680,4 +714,5 @@ kgen.func @opaque_coro(%coro: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !
   // CHECK-NEXT: pop.store %arg2, [[v6]] : !kgen.pointer<pointer<index>>
   co.set_byref_error_result %coro(%arg1, %arg2) : !kgen.pointer<index>, !kgen.pointer<index>
   kgen.return
+}
 }

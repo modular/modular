@@ -364,14 +364,15 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
   for (Type argument : rampFunction.getSignature().getArguments())
     rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
   // Allocate memory for continuation.
-  TypedAttr target = ParamOperatorAttr::get(POC::CurrentTarget, {},
-                                            builder.getType<TargetType>());
-  TypedAttr elementType = TypeConstantAttr::get(
-      continuationType, TypeType::get(continuationType.getContext()));
-  Value sizeOf = builder.create<ParamConstantOp>(
-      ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
-  Value alignOf = builder.create<ParamConstantOp>(
-      ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
+
+  TargetInfoAttr targetInfoAttr = lookupTargetInfo(funcOp);
+  std::optional<int64_t> size =
+      DataLayoutInterface::getTypeStoreSize(targetInfoAttr, continuationType);
+  std::optional<int64_t> align =
+      DataLayoutInterface::getTypeABIAlign(targetInfoAttr, continuationType);
+  Value sizeOf = builder.create<mlir::index::ConstantOp>(size.value());
+  Value alignOf = builder.create<mlir::index::ConstantOp>(align.value());
+
   Value continuation = builder.create<AlignedAllocOp>(
       PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
   // Store resume function.
