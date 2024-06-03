@@ -176,6 +176,7 @@ fn main() raises:
     test_log[DType.float16](f16_atol, f16_rtol)
     test_log2[DType.float16](f16_atol, f16_rtol)
 
+    # TODO(KERN-228): support BF16 on neon systems.
     @parameter
     if not has_neon():
         var bf16_atol = 1e-1

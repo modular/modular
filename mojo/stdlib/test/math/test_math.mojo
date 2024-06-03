@@ -22,6 +22,7 @@ fn test_sin() raises:
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
+    # TODO(KERN-228): support BF16 on neon systems.
     @parameter
     if not has_neon():
         assert_equal(cos(BFloat16(2.0)), -0.416015625)
