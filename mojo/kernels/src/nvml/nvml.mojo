@@ -334,7 +334,7 @@ struct Device:
             _check_error(result)
 
         var clocks = List[UInt32]()
-        clocks.resize(int(num_clocks))
+        clocks.resize(int(num_clocks), value=0)
 
         _check_error(
             _get_dylib_function[
@@ -345,7 +345,7 @@ struct Device:
             ]()(self.device, Pointer.address_of(num_clocks), clocks.data)
         )
 
-        var res = List[Int]()
+        var res = List[Int](capacity=len(clocks))
         for clock in clocks:
             res.append(int(clock[]))
 
@@ -369,7 +369,7 @@ struct Device:
             _check_error(result)
 
         var clocks = List[UInt32]()
-        clocks.resize(int(num_clocks))
+        clocks.resize(int(num_clocks), value=0)
 
         _check_error(
             _get_dylib_function[
@@ -385,7 +385,7 @@ struct Device:
             )
         )
 
-        var res = List[Int]()
+        var res = List[Int](capacity=len(clocks))
         for clock in clocks:
             res.append(int(clock[]))
 
