@@ -26,7 +26,10 @@ from buffer.buffer import (
     partial_simd_store,
 )
 from buffer.list import DimList
-
+from layout.layout import *
+from layout.layout_tensor import (
+    LayoutTensor,
+)
 from utils.index import Index, StaticIntTuple
 
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
@@ -741,3 +744,66 @@ fn select_inner_kernel[
         return InnerKernelID.DEFAULT
     else:
         return InnerKernelID.VNNI
+
+
+@always_inline
+fn apply_epilogue[
+    elementwise_lambda: elementwise_epilogue_type,
+    dst_layout: Layout,
+    dst_element_layout: Layout = Layout(1, 1),
+](src: LayoutTensor, offset: Int):  # register or shared memory
+    # Check if input is 2D simd tile. This is only for double buffer gemm
+    # TODO: extend it to 1D simd tile.
+    @parameter
+    if (
+        src.element_layout.rank() == 2
+        and dst_element_layout.shape == src.element_layout.shape
+        and dst_element_layout.stride[1] == 1
+        and src.element_layout.stride[1] == 1
+    ):
+        # update an element tensor.
+        alias num_copies = src.element_layout.shape[0].value()
+        alias vec_width = src.element_layout.shape[1].value()
+
+        @parameter
+        for i in range(dst_layout.size()):
+            # Offset to the current element.
+            alias src_offset = src.layout(i)
+            alias dst_offset = dst_layout(i)
+
+            @parameter
+            for j in range(num_copies):
+                alias src_idx = src_offset + src.element_layout(j)
+                alias dst_idx = dst_offset + dst_element_layout(j)
+                # C matrix dimension. For 2D simd tile, element_layout perserves
+                # the matrix dimension, layout doesn't.
+                alias N = dst_element_layout.stride[0].value()
+
+                var vec = SIMD[size=vec_width].load[
+                    alignment = alignof[SIMD[src.dtype, vec_width]]()
+                ](src.ptr, src_idx)
+
+                var m = (dst_idx + offset) // N
+                var n = (dst_idx + offset) % N
+
+                elementwise_lambda[src.dtype, vec_width]((m, n), vec)
+
+    # Scalar case
+    # TODO: 1D vector is included, should handle it in a separate branch.
+    else:
+        constrained[dst_element_layout.rank() == 1]()
+
+        @parameter
+        fn update_scalar[i: Int]():
+            alias src_idx = make_layout(src.element_layout, src.layout)(i)
+            alias dst_idx = make_layout(dst_element_layout, dst_layout)(i)
+            # C matrix dimension. For scalar or 1D vector element, the layout
+            # preserves the matrix dimension.
+            alias N = dst_layout.stride[0].value()
+
+            var m = (src_idx + offset) // N
+            var n = (src_idx + offset) % N
+
+            elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])
+
+        unroll[update_scalar, src.layout.size() * src.element_size]()

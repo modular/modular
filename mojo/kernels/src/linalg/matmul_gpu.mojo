@@ -10,15 +10,20 @@ from algorithm.functional import tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import Function, Stream, CUDADeviceStream
+from gpu.host import Function, Stream, CUDADeviceStream, FuncAttribute
 from gpu.host.memory import _memset_async
-from gpu.memory import AddressSpace, async_copy_wait_all
+from gpu.memory import (
+    AddressSpace,
+    async_copy_wait_all,
+    async_copy_commit_group,
+    dynamic_shared_memory,
+    async_copy_wait_group,
+)
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
-from .MatmulUtils import (
-    GemmShape,
-    elementwise_epilogue_type,
-)
+from ._multistage_gemm_gpu import multistage_gemm
+from .MatmulUtils import GemmShape, elementwise_epilogue_type, apply_epilogue
+from gpu.mma import mma, ld_matrix
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
@@ -30,12 +35,15 @@ from utils.numerics import get_accum_type
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
+from layout.swizzle import Swizzle
+from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.layout_tensor import (
     LayoutTensor,
     outer_product_acc,
     copy_dram_to_sram_async,
     copy_sram_to_local,
     copy_local_to_dram,
+    _swizzle_signature,
 )
 
 
@@ -614,70 +622,6 @@ fn matmul_kernel[
             c[Index(row, col)] = result.cast[c_type]()
 
 
-fn apply_epilogue[
-    elementwise_lambda: elementwise_epilogue_type,
-    dst_layout: Layout,
-    dst_element_layout: Layout = Layout(1, 1),
-](src: LayoutTensor, offset: Int):  # register or shared memory
-    # Check if input is 2D simd tile. This is only for double buffer gemm
-    # TODO: extend it to 1D simd tile.
-    @parameter
-    if (
-        src.element_layout.rank() == 2
-        and dst_element_layout.shape == src.element_layout.shape
-        and dst_element_layout.stride[1] == 1
-        and src.element_layout.stride[1] == 1
-    ):
-        # update an element tensor.
-        @parameter
-        fn update_element[i: Int]():
-            # Offset to the current element.
-            alias src_offset = src.layout(i)
-            alias dst_offset = dst_layout(i)
-            alias num_copies = src.element_layout.shape[0].value()
-            alias vec_width = src.element_layout.shape[1].value()
-
-            @parameter
-            fn update_vec[j: Int]():
-                alias src_idx = src_offset + src.element_layout(j)
-                alias dst_idx = dst_offset + dst_element_layout(j)
-                # C matrix dimension. For 2D simd tile, element_layout perserves
-                # the matrix dimension, layout doesn't.
-                alias N = dst_element_layout.stride[0].value()
-
-                var vec = SIMD[size=vec_width].load[
-                    alignment = alignof[SIMD[src.dtype, vec_width]]()
-                ](src.ptr, src_idx)
-                var m = (dst_idx + offset) // N
-                var n = (dst_idx + offset) % N
-
-                elementwise_lambda[src.dtype, vec_width]((m, n), vec)
-
-            unroll[update_vec, num_copies]()
-
-        unroll[update_element, dst_layout.size()]()
-
-    # Scalar case
-    # TODO: 1D vector is included, should handle it in a separate branch.
-    else:
-        constrained[dst_element_layout.rank() == 1]()
-
-        @parameter
-        fn update_scalar[i: Int]():
-            alias src_idx = make_layout(src.element_layout, src.layout)(i)
-            alias dst_idx = make_layout(dst_element_layout, dst_layout)(i)
-            # C matrix dimension. For scalar or 1D vector element, the layout
-            # preserves the matrix dimension.
-            alias N = dst_layout.stride[0].value()
-
-            var m = (src_idx + offset) // N
-            var n = (src_idx + offset) % N
-
-            elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])
-
-        unroll[update_scalar, src.layout.size() * src.element_size]()
-
-
 fn sgemm_double_buffer_kernel[
     c_type: DType,
     a_type: DType,
@@ -961,6 +905,8 @@ fn matmul_kernel_naive[
 
 @always_inline
 fn _matmul_gpu[
+    use_tensor_core: Bool = False,
+    transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     single_thread_blocking_override: Bool = False,
 ](
@@ -999,6 +945,8 @@ fn _matmul_gpu[
                 c.type,
                 c.shape,
                 indexing_integral_dtype = DType.uint32,
+                transpose_b=transpose_b,
+                use_tensor_core=use_tensor_core,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, dev)
         else:
@@ -1010,6 +958,8 @@ fn _matmul_gpu[
                 c.type,
                 c.shape,
                 indexing_integral_dtype = DType.uint64,
+                transpose_b=transpose_b,
+                use_tensor_core=use_tensor_core,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, dev)
 
@@ -1023,6 +973,8 @@ fn _matmul_gpu[
                 c.type,
                 c.shape,
                 indexing_integral_dtype = DType.uint32,
+                transpose_b=transpose_b,
+                use_tensor_core=use_tensor_core,
             ](c, a, b, dev)
         else:
             _matmul_gpu_dispatch[
@@ -1033,6 +985,8 @@ fn _matmul_gpu[
                 c.type,
                 c.shape,
                 indexing_integral_dtype = DType.uint64,
+                transpose_b=transpose_b,
+                use_tensor_core=use_tensor_core,
             ](c, a, b, dev)
 
 
@@ -1045,6 +999,8 @@ fn _matmul_gpu_dispatch[
     c_type: DType,
     c_shape: DimList,
     indexing_integral_dtype: DType,
+    transpose_b: Bool = False,
+    use_tensor_core: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, c_shape],
@@ -1074,6 +1030,61 @@ fn _matmul_gpu_dispatch[
         var double_buffer_supported_cond = (
             m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
         )
+
+        var multi_gemm_cond = (m % 128 == 0 and n % 128 == 0 and k % 16 == 0)
+
+        @parameter
+        if (
+            matmul_supported_format
+            and use_tensor_core
+            and b_shape.all_known[2]()
+        ):
+            if multi_gemm_cond:
+                alias num_pipeline_stages = 4
+                alias BM = 128
+                alias BN = 128
+                alias BK = 16
+                alias WM = 64
+                alias WN = 64
+                alias shared_mem_bytes = 80 * 1024
+                alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+
+                var stream = Stream()
+
+                alias mgemm = multistage_gemm[
+                    DType.float32,
+                    c_shape,
+                    DType.float32,
+                    a_shape,
+                    DType.float32,
+                    b_shape,
+                    transpose_b,
+                    BM,
+                    BN,
+                    BK,
+                    WM,
+                    WN,
+                    num_threads,
+                    num_pipeline_stages,
+                    elementwise_lambda_fn,
+                ]
+                # TODO: The cache config doesn't really help here, see #38391.
+                var multistage_func = Function[mgemm](
+                    threads_per_block=num_threads,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        shared_mem_bytes
+                    ),
+                )
+                multistage_func(
+                    c,
+                    a,
+                    b,
+                    grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
+                    stream=stream,
+                )
+                return
 
         # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.
         @parameter

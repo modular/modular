@@ -790,7 +790,12 @@ fn matmul[
         ](c, a, b, kernel_type_m, num_threads)
 
     else:
-        _matmul_gpu[elementwise_lambda_fn, single_thread_blocking_override,](
+        _matmul_gpu[
+            use_tensor_core=True,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](
             c,
             a,
             b,
