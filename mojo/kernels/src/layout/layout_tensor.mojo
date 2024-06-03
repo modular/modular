@@ -125,7 +125,6 @@ struct LayoutTensor[
     masked: Bool = False,
 ](CollectionElement, CollectionElementNew):
     var ptr: DTypePointer[dtype, address_space]
-    var owning: Bool
 
     # When LayoutTensor is masked, we need to store three quantities:
     # To specify the per dim original coordinates bounds.
@@ -146,12 +145,8 @@ struct LayoutTensor[
     fn __init__(
         inout self,
         ptr: DTypePointer[dtype, address_space],
-        /,
-        *,
-        owning: Bool = False,
     ):
         self.ptr = ptr
-        self.owning = owning
 
         self.max_dim = StaticIntTuple[rank](Int.MAX)
         self.dim_offset = StaticIntTuple[rank](0)
@@ -171,18 +166,6 @@ struct LayoutTensor[
         self.max_dim = existing.max_dim
         self.dim_offset = existing.dim_offset
         self.dim_stride = existing.dim_stride
-        self.owning = False
-
-    fn __del__(owned self):
-        @parameter
-        if triple_is_nvidia_cuda() and (
-            address_space == _GPUAddressSpace.GENERIC
-            or address_space == _GPUAddressSpace.GLOBAL
-        ):
-            # Owned tensors live in GENERIC address space only futheremore you
-            # can only allocate in GENERIC address space, so can skip the free.
-            if self.owning:
-                self.ptr.free()
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
