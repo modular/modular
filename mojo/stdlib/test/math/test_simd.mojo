@@ -183,7 +183,7 @@ def issue_1625():
     for i in range(size):
         ptr[i] = i
 
-    var x = ptr.load[width = 2 * simd_width](0)
+    var x = SIMD[size = 2 * simd_width].load(ptr, 0)
     var evens_and_odds = x.deinterleave()
 
     # FIXME (40568) should directly use the SIMD assert_equal
