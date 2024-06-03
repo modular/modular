@@ -236,28 +236,29 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // slot, if there is one, otherwise provide the expected rvalue type.
   ValueDest dest(EC_Trait);
   bool hasRegisterResult = false;
-  if (memSig.hasMemoryOnlyResult())
+  if (memSig.isAsync()) {
+    // An async call returns a coroutine we have to await.
+  } else if (memSig.hasMemoryOnlyResult()) {
     dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
-  else if (memSig.hasInitSelfArg()) {
+  } else if (memSig.hasInitSelfArg()) {
     if (hasLegacyInitSelfArg)
       dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
     // If both the caller and callee take initself, we initialize it directly
     // above and need to return none.
-  } else
+  } else {
     hasRegisterResult = true;
+  }
 
   CValue callResult = emitter.emitIndirectCall(
       PValue(callee), CallOperands(posOperands, &kwOperands), dest, node);
   if (!callResult)
     return;
 
-  // If the callee is async, then await the result.
+  // If the callee is async, we got a coroutine. Now await it into the result.
   if (memSig.isAsync()) {
-    ValueDest dest(EC_Trait);
-    callResult =
-        emitter.emitNamedMethodCall("__await__", FuncOperand{callResult, node},
-                                    dest, CallSyntax::kMethodCall, node);
-    if (!callResult)
+    ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
+    if (!emitter.emitNamedMethodCall("__await__", FuncOperand{callResult, node},
+                                     dest, CallSyntax::kMethodCall, node))
       return;
   }
 

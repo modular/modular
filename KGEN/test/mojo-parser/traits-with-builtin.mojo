@@ -31,31 +31,47 @@ struct RegTypeTrivial(TraitForReg):
 
 
 trait AsyncTrait:
-    async fn foobar(self):
-        pass
+    async fn foo(self) -> Int:
+        ...
+
+    async fn bar(self) raises -> Int:
+        ...
 
 
 struct AsyncStruct(AsyncTrait):
-    async fn foobar(self):
+    async fn foo(self) -> Int:
+        pass
+
+    async fn bar(self) raises -> Int:
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @AsyncStructReg
 @register_passable("trivial")
 struct AsyncStructReg(AsyncTrait):
-    # CHECK-LABEL: lit.func @"foobar{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}>
-    async fn foobar(self):
+    # CHECK-LABEL: lit.func @"foo{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<!Int,
+    async fn foo(self) -> Int:
         # CHECK: [[POP_CORO:%.*]] = lit.async.call
         # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
-        # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__await__{{.*}}([[CORO]])
-        # CHECK-NEXT: return [[RES]]
+        # CHECK-NEXT: lit.call {{.*}}@Coroutine::@"__await__{{.*}}([[CORO]], %__result__)
+        # CHECK-NEXT: %none =
+        # CHECK-NEXT: return %none
+        pass
+
+    # CHECK-LABEL: lit.func @"bar{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}> borrow_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int,
+    async fn bar(self) raises -> Int:
+        # CHECK: [[POP_CORO:%.*]] = lit.async.call
+        # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
+        # CHECK-NEXT: lit.call {{.*}}@RaisingCoroutine::@"__await__{{.*}}([[CORO]], %__error__, %__result__)
+        # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK-NEXT: return [[FALSE]]
         pass
 
 
 # CHECK-LABEL: lit.func @"async_trait
 fn async_trait[T: AsyncTrait](value: T):
-    # CHECK: lit.async.call[!lit.signature<[1]("self": {{.*}} borrow_in_mem) async -> !kgen.none>: get_type_method
-    _ = value.foobar()
+    # CHECK: lit.async.call[!lit.signature<[2]("self": {{.*}} borrow_in_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: get_type_method
+    _ = value.foo()
 
 
 fn take_intable[T: Intable](x: T):

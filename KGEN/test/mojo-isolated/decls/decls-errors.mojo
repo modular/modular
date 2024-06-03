@@ -74,16 +74,6 @@ fn issue1242():
 struct MemType:
     pass
 
-# FIXME(#26008): Raising async functions do not work.
-# expected-error @below {{async functions that raise are not supported yet}}
-async fn throwing_coroutine() raises:
-    raise Error {}
-
-# FIXME(#26008): Async functions with memory-only do not work.
-# expected-error @below {{async functions do not support memory-only results yet}}
-async fn async_mem_result() -> MemType:
-  pass
-
 # COM: Issue https://github.com/modularml/modular/issues/37758 where the
 # COM: key test is that the below is not crashing due to assertion violation.
 # expected-error @+1 {{expected ':' in function definition}}
