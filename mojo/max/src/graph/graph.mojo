@@ -626,7 +626,7 @@ struct Graph(CollectionElement, Stringable):
             The symbolic output of this node.
         """
         return self.op(
-            "rmo.mo.range",
+            "mo.range",
             List[Symbol](
                 self.scalar[dtype](start),
                 self.scalar[dtype](stop),
@@ -659,7 +659,7 @@ struct Graph(CollectionElement, Stringable):
             shape.append(dims[i])
             out_dims.append(Dim.dynamic())
         return self.op(
-            "rmo.mo.broadcast_to",
+            "mo.broadcast_to",
             List[Symbol](self.scalar(value), ops.stack(shape)),
             TensorType(dtype, out_dims),
         )

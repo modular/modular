@@ -42,7 +42,7 @@ def mean(v: Symbol, axis: Int = -1) -> Symbol:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the `axis` dimension which will have size 1.
     """
-    return _reduce["rmo.mo.mean"](v, axis)
+    return _reduce["mo.mean"](v, axis)
 
 
 def arg_max(v: Symbol, axis: Int = -1) -> Symbol:
@@ -59,4 +59,4 @@ def arg_max(v: Symbol, axis: Int = -1) -> Symbol:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the `axis` dimension which will have size 1.
     """
-    return _reduce["rmo.mo.arg_max"](v, axis, dtype=DType.int64)
+    return _reduce["mo.arg_max"](v, axis, dtype=DType.int64)
