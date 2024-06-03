@@ -8,7 +8,15 @@
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
 # RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Mode
+from benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    Mode,
+    BenchMetric,
+    ThroughputMeasure,
+)
 
 
 @parameter
@@ -31,7 +39,11 @@ fn bench2(inout b: Bencher, mystr: String):
 
 def main():
     var m = Bench(BenchConfig(max_iters=10_000))
-    m.bench_function[bench1](BenchId("bench1"))
+    m.bench_function[bench1](
+        BenchId("bench1"),
+        ThroughputMeasure(BenchMetric.elements, 0),
+        ThroughputMeasure(BenchMetric.flops, 0),
+    )
 
     var inputs = List[String]()
     inputs.append("input1")
@@ -40,7 +52,8 @@ def main():
         m.bench_with_input[String, bench2](
             BenchId("bench2", str(i)),
             inputs[i],
-            throughput_elems=len(inputs[i]),
+            ThroughputMeasure(BenchMetric.elements, len(inputs[i])),
+            ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
         )
 
     # CHECK: Benchmark results
