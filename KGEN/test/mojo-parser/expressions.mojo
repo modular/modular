@@ -1423,12 +1423,12 @@ fn infer_address_space[
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
 # [References] We cannot bind !lit.ref in parameter context
 struct ThingWithMethodReferenceSelf:
-    fn method(a: Reference[Self, _]):
+    fn method(ref [_] a: Self):
       pass
 
 # CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
-    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.declref<#Reference
-    # CHECK-SAME:        :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
+    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.ref<!ThingWithMethodReferenceSelf,
+    # CHECK-SAME:     <:i1 1, :lifetime<1> #lit.lifetime>, store_to_mem(a))>
     alias sizzle = a.method()
