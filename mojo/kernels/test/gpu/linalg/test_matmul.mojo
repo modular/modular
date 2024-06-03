@@ -10,7 +10,7 @@ from math import ceildiv
 from random import random_float64
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE
 from gpu.host import Context, Function, Stream, synchronize, CUDADeviceStream
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -21,7 +21,7 @@ from gpu.host.memory import (
 from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
 from memory import memset_zero, stack_allocation
 from math import isclose
-from testing import assert_true
+from testing import assert_true, assert_almost_equal
 
 from utils.index import Index
 
@@ -207,7 +207,7 @@ fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
     _copy_host_to_device(c_device, c_host.data, M * N)
     _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
-    _matmul_gpu[](
+    _matmul_gpu[use_tensor_core=False](
         c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
     )
     synchronize()
@@ -293,7 +293,7 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     _copy_host_to_device(c_device, c_host.data, M * N)
     _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
-    _matmul_gpu[](
+    _matmul_gpu[use_tensor_core=False](
         c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
     )
     synchronize()
@@ -402,9 +402,11 @@ fn run_matmul_from_mogg_interface_with_epilogue[
             idx, rebind[SIMD[type, width]](val + some_constant)
         )
 
-    _matmul_gpu[elementwise_lambda_fn=epilogue_fn,](
-        c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
-    )
+    _matmul_gpu[
+        use_tensor_core=False,
+        transpose_b=False,
+        elementwise_lambda_fn=epilogue_fn,
+    ](c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream))
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
 
@@ -452,6 +454,216 @@ fn run_matmul_from_mogg_interface_with_epilogue[
     _ = stream^
 
 
+fn run_low_precision_test[
+    M: Int,
+    N: Int,
+    K: Int,
+    type: DType,
+    accum_type: DType,
+    transpose_b: Bool = False,
+]() raises:
+    var stream = Stream()
+
+    var a_host = DTypePointer[type].alloc(M * K)
+    var b_host = DTypePointer[type].alloc(K * N)
+    var b_trans_host = DTypePointer[type].alloc(K * N)
+    var c_host = DTypePointer[accum_type].alloc(M * N)
+    var c_host_ref = DTypePointer[accum_type].alloc(M * N)
+
+    for m in range(M):
+        for k in range(K):
+            a_host[m * K + k] = m * K + k
+
+    for k in range(K):
+        for n in range(N):
+            b_host[k * N + n] = k * N + n
+
+            @parameter
+            if transpose_b:
+                b_trans_host[n * K + k] = k * N + n
+            else:
+                b_trans_host[k * N + n] = k * N + n
+
+    var a_device = _malloc[type](M * K)
+    var b_device = _malloc[type](K * N)
+    var c_device = _malloc[accum_type](M * N)
+    var c_device_ref = _malloc[accum_type](M * N)
+
+    _copy_host_to_device(a_device, a_host, M * K)
+    _copy_host_to_device(b_device, b_trans_host, K * N)
+
+    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device)
+    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device)
+    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device)
+
+    _matmul_gpu[
+        use_tensor_core=True,
+        transpose_b=False,
+    ](c_buffer, a_buffer, b_buffer, CUDADeviceStream(stream))
+
+    synchronize()
+
+    _copy_device_to_host(c_host, c_device, M * N)
+    _copy_host_to_device(b_device, b_host, K * N)
+
+    # Naive gemm.
+    alias BLOCK_DIM = 16
+    alias gemm_naive = matmul_kernel_naive[accum_type, type, type, BLOCK_DIM]
+    var func_naive = Function[gemm_naive](threads_per_block=256)
+    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref)
+    func_naive(
+        c_buffer_ref,
+        a_buffer,
+        b_buffer,
+        M,
+        N,
+        K,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+    )
+
+    synchronize()
+    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+
+    for i in range(M * N):
+        if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
+            print(i, c_host[i], c_host_ref[i])
+        assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
+
+    _free(c_device)
+    _free(c_device_ref)
+    _free(a_device)
+    _free(b_device)
+
+    c_host.free()
+    c_host_ref.free()
+    a_host.free()
+    b_host.free()
+    b_trans_host.free()
+
+    _ = func_naive^
+    _ = stream^
+
+
+fn run_low_precision_test_with_epilogue[
+    M: Int,
+    N: Int,
+    K: Int,
+    type: DType,
+    accum_type: DType,
+    transpose_b: Bool = False,
+]() raises:
+    var stream = Stream()
+
+    var a_host = DTypePointer[type].alloc(M * K)
+    var b_host = DTypePointer[type].alloc(K * N)
+    var b_trans_host = DTypePointer[type].alloc(K * N)
+    var c_host = DTypePointer[accum_type].alloc(M * N)
+    var c_host_ref = DTypePointer[accum_type].alloc(M * N)
+
+    for m in range(M):
+        for k in range(K):
+            a_host[m * K + k] = m * K + k
+
+    for k in range(K):
+        for n in range(N):
+            b_host[k * N + n] = k * N + n
+
+            @parameter
+            if transpose_b:
+                b_trans_host[n * K + k] = k * N + n
+            else:
+                b_trans_host[k * N + n] = k * N + n
+
+    var a_device = _malloc[type](M * K)
+    var b_device = _malloc[type](K * N)
+    var c_device = _malloc[accum_type](M * N)
+    var c_device_ref = _malloc[accum_type](M * N)
+
+    _copy_host_to_device(a_device, a_host, M * K)
+    _copy_host_to_device(b_device, b_trans_host, K * N)
+
+    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device)
+    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device)
+    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device)
+    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref)
+
+    alias some_constant = 20
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_buffer)
+    fn epilogue_fn[
+        _type: DType, width: Int
+    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
+        c_buffer.store(
+            idx, rebind[SIMD[accum_type, width]](val + some_constant)
+        )
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_buffer_ref)
+    fn naive_epilogue_fn[
+        _type: DType, width: Int
+    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
+        c_buffer_ref.store(
+            idx, rebind[SIMD[accum_type, width]](val + some_constant)
+        )
+
+    _matmul_gpu[
+        use_tensor_core=True,
+        transpose_b=False,
+        elementwise_lambda_fn=epilogue_fn,
+    ](c_buffer, a_buffer, b_buffer, CUDADeviceStream(stream))
+
+    synchronize()
+
+    _copy_device_to_host(c_host, c_device, M * N)
+    _copy_host_to_device(b_device, b_host, K * N)
+
+    # Naive gemm.
+    alias BLOCK_DIM = 16
+    alias gemm_naive = matmul_kernel_naive[
+        accum_type,
+        type,
+        type,
+        BLOCK_DIM,
+        elementwise_lambda_fn=naive_epilogue_fn,
+    ]
+    var func_naive = Function[gemm_naive](threads_per_block=256)
+    func_naive(
+        c_buffer_ref,
+        a_buffer,
+        b_buffer,
+        M,
+        N,
+        K,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+    )
+
+    synchronize()
+    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+
+    for i in range(M * N):
+        if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
+            print(i, c_host[i], c_host_ref[i])
+        assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
+
+    _free(c_device)
+    _free(c_device_ref)
+    _free(a_device)
+    _free(b_device)
+
+    c_host.free()
+    c_host_ref.free()
+    a_host.free()
+    b_host.free()
+    b_trans_host.free()
+
+    _ = func_naive^
+
+
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
@@ -466,6 +678,12 @@ def main():
             ]()
             run_matmul_from_mogg_interface_with_epilogue[
                 1024, 3072, 5120, DType.bfloat16
+            ]()
+            run_low_precision_test[
+                1024, 3072, 5120, DType.float32, DType.float32
+            ]()
+            run_low_precision_test_with_epilogue[
+                1024, 3072, 5120, DType.float32, DType.float32
             ]()
     except e:
         print("CUDA_ERROR:", e)
