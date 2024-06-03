@@ -11,6 +11,7 @@
 import * as net from 'net';
 import * as querystring from 'querystring';
 import stringArgv from 'string-argv';
+import * as vscode from 'vscode';
 import {
   debug,
   DebugConfiguration,
@@ -192,6 +193,8 @@ export class RpcLaunchServer extends DisposableContext {
         socket.end();
       });
     });
+
+    this.pushSubscription(new vscode.Disposable(() => { this.inner.close(); }))
   }
 
   /**
@@ -238,13 +241,5 @@ export class RpcLaunchServer extends DisposableContext {
         resolve =>
             this.inner.listen({port : this.port, host : "127.0.0.1"},
                               () => resolve(this.inner.address() || "")));
-  }
-
-  /**
-   * Closes and disposes the server.
-   */
-  public dispose() {
-    this.inner.close();
-    super.dispose();
   }
 }

@@ -5,6 +5,7 @@
 		"rootDir": "src",
 		"sourceMap": true,
 		"strict": true,
+		"noImplicitOverride": true,
 		"target": "es6"
 	},
 	"include": ["src"],

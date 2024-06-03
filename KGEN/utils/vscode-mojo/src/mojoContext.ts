@@ -72,10 +72,7 @@ export class MojoContext extends DisposableContext {
     this.pushSubscription(this.lspContext);
 
     this.loggingService.main.logInfo("MojoContext activated.");
-  }
-
-  dispose() {
-    this.loggingService.main.logInfo("Disposing MOJOContext.");
-    super.dispose();
+    this.pushSubscription(new vscode.Disposable(
+        () => { this.loggingService.main.logInfo("Disposing MOJOContext."); }))
   }
 }
