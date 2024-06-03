@@ -25,7 +25,7 @@ lit_tests(
     mojo_deps = [
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/runtime",
-        "//Kernels/mojo/stdlib",
+        "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     tools = [
         "//KGEN/tools/kgen:kgen.opt",
@@ -42,16 +42,16 @@ lit_tests(
     srcs = ["multiresult_asm_mma.mojo"],
     data = glob(["inputs/**/*.mojo"]) + [
         "//KGEN:CompilerRT",
-        "//Kernels/mojo/stdlib:stdlib_srcs",
+        "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/stdlib:stdlib_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
     },
     mojo_deps = [
-        "//Kernels/mojo/stdlib",
+        "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     tools = [
         "//KGEN/tools/kgen:kgen.opt",

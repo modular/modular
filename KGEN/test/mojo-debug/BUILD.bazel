@@ -35,7 +35,7 @@ lit_tests(
         "test.EstimatedComputeUnits": "10",
     },
     mojo_deps = [
-        "//Kernels/mojo/stdlib",
+        "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],  # __jit_debug_descriptor exists in liblldb and libMojoLLDB

@@ -17,7 +17,7 @@ lit_tests(
         "MODULAR_MOJO_REPL_ENTRY_POINT": "$(location //KGEN/tools/mojo-repl-entry-point)",
     },
     mojo_deps = [
-        "//Kernels/mojo/stdlib",
+        "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     tools = [
         "//KGEN/tools/mojo-test-executor",

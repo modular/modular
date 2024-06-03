@@ -37,7 +37,7 @@ lit_tests(
     },
     mojo_deps = [
         "//Kernels/mojo/layout",
-        "//Kernels/mojo/stdlib",
+        "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

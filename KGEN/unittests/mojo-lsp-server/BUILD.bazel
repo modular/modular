@@ -20,6 +20,7 @@ modular_cc_test(
             # TODO: Fix these
             "CodeBlockTest.cpp",
             "CompletionTest.cpp",
+            "DefinitionTest.cpp",
             "HoverTest.cpp",
         ],
     ),
@@ -28,12 +29,11 @@ modular_cc_test(
         exclude = ["inputs/__init__.mojo"],  # TODO: when this is included tests fail, but some of the excluded tests depend on it
     ) + [
         "//KGEN/tools/mojo-lsp-server:mojo-lsp-server.opt",
-        "//Kernels/mojo/stdlib",
-        "//Kernels/mojo/stdlib:stdlib_srcs",
+        "//open-source/mojo/stdlib/stdlib",
         "@crashpad//:modular-crashpad-handler",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_PATH": "Kernels/mojo/stdlib,Kernels/mojo",
+        "MODULAR_MOJO_IMPORT_PATH": "open-source/mojo/stdlib/stdlib,Kernels/mojo",
         "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN/tools/mojo-lsp-server:mojo-lsp-server.opt)",
         "MODULAR_PATH": ".",
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(location @crashpad//:modular-crashpad-handler)",

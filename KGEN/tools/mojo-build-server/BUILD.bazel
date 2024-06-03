@@ -8,7 +8,7 @@ kgen_kernel(
     src = "mojo_build_server.mojo",
     features = ["-asan"],  # TODO: Fails to link __asan_gen likely only with older clang versions
     deps = [
-        "//Kernels/mojo/stdlib",
+        "//open-source/mojo/stdlib/stdlib",
     ],
 )
 
