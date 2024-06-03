@@ -2,13 +2,13 @@
 	"compilerOptions": {
 		"module": "commonjs",
 		"outDir": "out",
-		"rootDir": "src",
+		"rootDir": "extension",
 		"sourceMap": true,
 		"strict": true,
 		"noImplicitOverride": true,
 		"target": "es6"
 	},
-	"include": ["src"],
+	"include": ["extension"],
 	"exclude": [
 		"node_modules",
 		".vscode-test"
