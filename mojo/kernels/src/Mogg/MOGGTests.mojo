@@ -372,3 +372,20 @@ fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Shape:", buffer.dynamic_shape)
     for i in range(buffer.num_elements()):
         print(Scalar.load(buffer.data, i))
+
+
+struct MyCustomInt(Movable):
+    var val: Int
+
+    fn __init__(inout self, val: Int):
+        self.val = val
+
+    fn __moveinit__(inout self, owned other: MyCustomInt):
+        self.val = other.val
+
+
+@mogg_register("test_make_custom_int")
+@export
+@no_inline
+fn test_make_custom_int() -> MyCustomInt:
+    return MyCustomInt(42)
