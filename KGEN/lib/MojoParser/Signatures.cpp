@@ -1172,11 +1172,20 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
   // If a result lifetime is specified with `ref [life] Ty`, then form a ref
   // result.
   if (resultRefLifetimeExpr) {
-    resultType = processLifetimeSpecifier(
-        resultRefLifetimeExpr, resultType,
-        // TODO: Use the name of the return slot if present.
-        "__result__", tcSignature.paramList);
-    tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
+    if (tcSignature.argList.effects.isAsync()) {
+      // TODO(MOCO-787): Async functions don't support ref results yet. We need
+      // to define a `CoroutineRef` or support perfect forwarding in generic
+      // results.
+      shared.emitError(resultRefLifetimeExpr->getLoc())
+          << "TODO: ref results aren't supported in async functions yet";
+      resultRefLifetimeExpr = nullptr;
+    } else {
+      resultType = processLifetimeSpecifier(
+          resultRefLifetimeExpr, resultType,
+          // TODO: Use the name of the return slot if present.
+          "__result__", tcSignature.paramList);
+      tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
+    }
   }
 
   // Remember the user-declared result type.
@@ -1346,6 +1355,14 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
   // __new__ and __init__ in register types are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
+
+  // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be
+  // emitted. Just forbid them for now.
+  if (fnInfo.isInitializer() && argList.effects.isAsync()) {
+    shared.emitError(fnDecl->getLoc())
+        << "TODO: async constructors are not yet supported";
+    argList.effects.setAsync(false);
+  }
 
   // True if this is a static method.
   // FIXME: This is completely wrong, @static_method decorator hasn't been
