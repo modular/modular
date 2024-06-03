@@ -138,7 +138,7 @@ TOK_KEYWORD(or)
 TOK_KEYWORD(owned) // NOTE: Could be turned into soft keyword
 TOK_KEYWORD(pass)
 TOK_KEYWORD(raise)
-TOK_KEYWORD(ref)   // Mojo extension.
+TOK_KEYWORD(ref) // Mojo extension.
 TOK_KEYWORD(return)
 TOK_KEYWORD(Self)   // Mojo extension.
 TOK_KEYWORD(struct) // Mojo extension.
@@ -154,6 +154,7 @@ TOK_KEYWORD(__get_address_as_uninit_lvalue)
 TOK_KEYWORD(__get_mvalue_as_litref)
 TOK_KEYWORD(__get_litref_as_mvalue)
 TOK_KEYWORD(__get_address_as_owned_value)
+TOK_KEYWORD(__get_nearest_error_slot)
 TOK_KEYWORD(__lifetime_of)
 TOK_KEYWORD(__type_of)
 
