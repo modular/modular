@@ -1223,23 +1223,13 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
       rp = TypeConvention::MemoryOnly;
   }
 
-  if (tcSignature.argList.effects.isAsync() &&
-      tcSignature.argList.effects.isThrows()) {
-    shared.emitError(resultLoc,
-                     "async functions that raise are not supported yet");
-    tcSignature.argList.effects.setAsync(false);
-  }
+  // Async functions always use in-memory results.
+  if (tcSignature.argList.effects.isAsync())
+    rp = TypeConvention::MemoryOnly;
 
   // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
   if (rp == TypeConvention::MemoryOnly) {
-    // FIXME(#26008): Async functions with memory-only do not work.
-    if (tcSignature.argList.effects.isAsync()) {
-      shared.emitError(
-          resultLoc, "async functions do not support memory-only results yet");
-      tcSignature.argList.effects.setAsync(false);
-    }
-
     // Synthesize a ByRefResult argument for the result.
     ParsedArgument resultArg;
     resultArg.loc = resultLoc;

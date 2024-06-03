@@ -1292,8 +1292,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // With that done, we can know what type the inout result slot should have.
   // We see if we can emit directly into the ValueDest slot, and if not, we
   // create a VarDecl temporary and allow emitResult to copy it over to the
-  // destination.
-  if (calleeSig.hasMemoryOnlyResult() || needInitSelfSlot) {
+  // destination. Calls to async functions, on the other hand, don't need a
+  // result slot provided.
+  if ((calleeSig.hasMemoryOnlyResult() || needInitSelfSlot) &&
+      !calleeSig.isAsync()) {
     Type refType = needInitSelfSlot ? expectedCalleeType.getInputs().front()
                                     : expectedCalleeType.getInputs().back();
     auto resultRValueType = cast<RefType>(refType).getElementType();
@@ -1333,9 +1335,9 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     }
   }
 
-  // If the callee throws, we can now also resolve the lifetime and value of the
-  // contextual error slot to provide the callee.
-  if (calleeSig.isThrows()) {
+  // If the callee throws and is not async, we can now also resolve the lifetime
+  // and value of the contextual error slot to provide the callee.
+  if (calleeSig.isThrows() && !calleeSig.isAsync()) {
     // The error slot is always the second last argument.
     MLValue errSlot = findNearestErrorSlot();
     if (!errSlot) {
@@ -1364,6 +1366,13 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       implicitLifetimes, [&]() -> InFlightDiagnostic {
         llvm_unreachable("substitution should always succeed");
       });
+
+  // If the function is async, we won't have provided any values for the return
+  // slots. Remove them from the call arguments.
+  if (calleeSig.isAsync()) {
+    callArgs.erase(callArgs.end() - calleeSig.getNumAsyncReturnSlots(),
+                   callArgs.end());
+  }
 
   // Now that all of the arguments have been emitted, coerce them to the
   // expected type if needed.  We do this after the first pass above, because
@@ -1427,7 +1436,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
 
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
-  if (calleeSig.hasMemoryOnlyResult()) {
+  if (calleeSig.hasMemoryOnlyResult() && !calleeSig.isAsync()) {
     callResult = MRValue(callArgs.back());
   } else if (calleeSig.hasInitSelfArg()) {
     // If this is a constructor call with an implicit `init_self` argument, we

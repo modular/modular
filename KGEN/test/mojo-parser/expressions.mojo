@@ -1091,7 +1091,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<[2]<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>(?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.declref<#VariadicPack <:i1 0, :lifetime<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>> borrow_in_mem|pack) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.declref<#VariadicPack <:i1 0, :lifetime<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>> borrow_in_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int
@@ -1112,7 +1112,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   float5: fn(Int) raises -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) async|capturing -> !kgen.none
+  # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   float6: async fn(Int) capturing -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow|var, ?, {{.*}}) throws -> i1
