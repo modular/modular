@@ -1422,6 +1422,13 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       callEmitter.emitDirectCallWarnings(call, callOperands);
     }
   } else {
+    // TODO(MOCO-788): We need a `lit.async.call_indirect` to model indirect
+    // async calls.
+    if (calleeSig.isAsync()) {
+      emitError(callExpr->getLoc())
+          << "TODO: indirect calls to async functions not yet supported";
+      return {};
+    }
     // If the callee isn't a PValue, it must be a dynamic callee.
     Value calleeVal = emitSRValue({callee, callExpr}, EC_CallCalleeValue);
     assert(calleeVal && "don't have a callee of expected type");
