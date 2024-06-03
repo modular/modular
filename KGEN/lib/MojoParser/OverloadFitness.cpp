@@ -550,40 +550,6 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       return {kValidType, expectedType};
     }
 
-    // If this is a low-level !lit.ref passed by value, we support binding an
-    // MValue of the element type.  Parameter inference will infer the lifetime
-    // and mutability of the reference in the common case that they are params.
-    //
-    // This is magic used by Reference.__init__, allowing Reference(someMValue)
-    // to infer the lifetime and mutability of the MValue.
-    if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
-      // Element type and address have to match and the mutability has to be
-      // compatible.
-      RefType valueRefType;
-      if (argVal.isMValue())
-        valueRefType = cast<RefType>(argVal.getMValueReference().getType());
-      else if (argVal.getIfPValue() && scopeInfo.isParamContext)
-        valueRefType = RefType::getImmortal(argVal.getType(), /*isMut=*/true);
-
-      // As a special hack, look through DefArgumentWrapperDLValue to the
-      // underlying MBValue that it may contain.  This is for two reasons:
-      //  1) We don't want to infer mutability from the argument even though
-      //     it is a DLValue, because we'd force copy-out + writeback,
-      //     materializing the def argument box.
-      //  2) We have significant bugs around lifetime inference from SBValues
-      //     and DLValues because we're not materializing the box in time.  This
-      //     is tracked by MOCO-684.
-      // Solve this by hacking this important case specifically.
-      if (auto dlValue = argVal.getIfDLValue())
-        if (auto refType = dlValue->getMBValueTypeFromDefArgument())
-          valueRefType = refType;
-
-      // The argument must be an MValue in the case of a dynamic call.
-      if (valueRefType &&
-          canConvertWithRebind(valueRefType, expectedRef, shared))
-        return {kValidType, expectedType};
-    }
-
     // Otherwise this is the wrong type for the argument.
     return {kWrongType, expectedType};
   }

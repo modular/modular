@@ -618,47 +618,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   diags.resetDiags(std::move(savedDiags));
   savedDiags = diags.saveDiags();
 
-  // If the argument is an explicit !lit.ref type and the argument value is an
-  // MValue, then we allow matching it to its underlying element type,
-  // addrspace, mutability, lifetime etc.
-  //
-  // This is magic used by Reference.__init__, allowing Reference(someMValue)
-  // to infer the lifetime and mutability of the MValue.
-  if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
-    if (expectedConvention == ArgConvention::BorrowedInReg &&
-        !isa<RefType>(argType)) {
-
-      RefType valueRefType;
-      if (value.isMValue())
-        valueRefType = cast<RefType>(value.getMValueReference().getType());
-      else if (value.getIfPValue() && isParamContext)
-        valueRefType = RefType::getImmortal(argType, /*isMut=*/true);
-
-      // As a special hack, look through DefArgumentWrapperDLValue to the
-      // underlying MBValue that it may contain.  This is for two reasons:
-      //  1) We don't want to infer mutability from the argument even though
-      //     it is a DLValue, because we'd force copy-out + writeback,
-      //     materializing the def argument box.
-      //  2) We have significant bugs around lifetime inference from SBValues
-      //     and DLValues because we're not materializing the box in time.  This
-      //     is tracked by MOCO-684.
-      // Solve this by hacking this important case specifically.
-      if (auto dlValue = value.getIfDLValue())
-        if (auto refType = dlValue->getMBValueTypeFromDefArgument())
-          valueRefType = refType;
-
-      if (valueRefType) {
-        if (succeeded(matchTypes(valueRefType, expectedRef)))
-          return success();
-
-        // If that didn't work out, keep going, but with the original
-        // diagnostics.
-        diags.resetDiags(std::move(savedDiags));
-        savedDiags = diags.saveDiags();
-      }
-    }
-  }
-
   // Handle values of nonmaterializable types.  These freely convert to their
   // nonmaterializableTarget type even when implicit conversions are disabled,
   // so we can accept this argument if that converted type is compatible with
