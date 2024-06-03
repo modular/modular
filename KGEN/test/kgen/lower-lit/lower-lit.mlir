@@ -19,10 +19,16 @@ lit.func @calls[imm a, mut b]<f: !lit.signature<[2]() -> ()>>(%arg0: !lit.signat
   kgen.return
 }
 
+lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.lifetime> byref_error, %res: !lit.ref<index, mut #lit.lifetime> byref_result) throws|async {
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @async_call
 lit.func @async_call[imm a, mut b]() async {
   // CHECK: co.invoke[() async -> (): @async_call]()
   lit.async.call[!lit.signature<[2]() async -> ()>: @async_call][imm a, mut b]()
+  // CHECK: co.invoke[(!lit.ref<index, mut #lit.lifetime> byref_error, !lit.ref<index, mut #lit.lifetime> byref_result) throws|async -> (): @async_fn_throws]()
+  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.lifetime> byref_error, "res": !lit.ref<index, mut #lit.lifetime> byref_result) throws|async -> ()>: @async_fn_throws]()
   kgen.return
 }
 

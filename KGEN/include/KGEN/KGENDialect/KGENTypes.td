@@ -256,6 +256,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Return the number of results.
     size_t getNumResults() { return getResults().size(); }
 
+    /// Calls to async functions don't provide values for the `byref_error` and
+    /// `byref_result` arguments. If this is an async function, return the
+    /// number of result slots it has. Otherwise, return 0.
+    size_t getNumAsyncReturnSlots();
+
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
     /// bindings affects the type signature of the argument and results, and
