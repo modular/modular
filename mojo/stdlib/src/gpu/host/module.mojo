@@ -404,14 +404,14 @@ struct Module:
             if max_registers:
                 opts[num_options] = JitOptions.MAX_REGISTERS
                 option_vals[num_options] = Pointer[NoneType](
-                    address=max_registers.value()[]
+                    address=max_registers.value()
                 )
                 num_options += 1
 
             if threads_per_block:
                 opts[num_options] = JitOptions.THREADS_PER_BLOCK
                 option_vals[num_options] = Pointer[NoneType](
-                    address=threads_per_block.value()[]
+                    address=threads_per_block.value()
                 )
                 num_options += 1
 

@@ -236,10 +236,10 @@ struct Function[
         var info = Self._get_global_cache_info[func_type, func](
             debug=debug,
             verbose=verbose,
-            max_registers=max_registers.value()[] if max_registers else -1,
-            threads_per_block=threads_per_block.value()[] if threads_per_block else -1,
-            cache_config=cache_config.value()[].code if cache_config else -1,
-            func_attribute=func_attribute.value()[] if func_attribute else FuncAttribute.NULL,
+            max_registers=max_registers.value() if max_registers else -1,
+            threads_per_block=threads_per_block.value() if threads_per_block else -1,
+            cache_config=cache_config.value().code if cache_config else -1,
+            func_attribute=func_attribute.value() if func_attribute else FuncAttribute.NULL,
         )
 
         if info.error:
@@ -379,7 +379,7 @@ struct Function[
         shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
-        var stream_value = stream.value()[].stream if stream else Stream()
+        var stream_value = stream.value().stream if stream else Stream()
         var cuLaunchKernel = self.cuda_dll[].cuLaunchKernel if self.cuda_dll else cuLaunchKernel.load()
         _check_error(
             cuLaunchKernel(
