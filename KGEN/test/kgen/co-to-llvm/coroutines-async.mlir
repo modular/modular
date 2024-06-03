@@ -89,15 +89,24 @@ llvm.func @coro_set_results_one() {
   llvm.return
 }
 
-// CHECK-LABEL: llvm.func @coro_set_byref_results
-llvm.func @coro_set_byref_results() {
+// CHECK-LABEL: llvm.func @coro_byref_results
+llvm.func @coro_byref_results() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
   %1 = kgen.param.constant: pointer<none> = <0>
   // CHECK: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
   // CHECK-NEXT: store {{.*}}, [[ERR]]
-  // CHECK: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
-  // CHECK-NEXT: store {{.*}}, [[ERR]]
+  // CHECK: [[RES:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
+  // CHECK-NEXT: store {{.*}}, [[RES]]
+  // CHECK-NOT: set_byref_error_result
   co.set_byref_error_result %0(%1, %1) : <none>, <none>
+
+  // CHECK: [[ERR_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
+  // CHECK-NEXT: [[ERR:%.*]] = llvm.load [[ERR_PTR]]
+  // CHECK: [[RES_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
+  // CHECK-NEXT: [[RES:%.*]] = llvm.load [[RES_PTR]]
+  // CHECK-NEXT: "use"([[ERR]], [[RES]]) : (!llvm.ptr, !llvm.ptr)
+  %error, %result = co.get_byref_error_result %0 : <none>, <none>
+  "use"(%error, %result) : (!kgen.pointer<none>, !kgen.pointer<none>) -> ()
   llvm.return
 }
 
