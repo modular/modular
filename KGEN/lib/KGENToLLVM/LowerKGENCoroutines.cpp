@@ -297,8 +297,8 @@ static void lowerSetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Value err = b.createConversion(op.getError());
-  Value res = b.createConversion(op.getResult());
+  Value err = b.createConversion(op.getOperand(1));
+  Value res = b.createConversion(op.getOperand(2));
 
   b.create<StoreOp>(err, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
                                          GEPArg(b.getPointerByteWidth() * 3),
@@ -306,6 +306,28 @@ static void lowerSetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
   b.create<StoreOp>(res, b.create<GEPOp>(err.getType(), b.getI8Type(), hdl,
                                          GEPArg(b.getPointerByteWidth() * 4),
                                          /*inbounds=*/true));
+  op.erase();
+}
+
+static void lowerGetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
+                                 GetByRefErrorAndResultOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
+  Type errType = b.convertType(op.getError().getType());
+  Type resType = b.convertType(op.getResult().getType());
+
+  Value err = b.create<LoadOp>(
+      errType,
+      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
+                      GEPArg(b.getPointerByteWidth() * 3), /*inbounds=*/true));
+  Value res = b.create<LoadOp>(
+      resType,
+      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
+                      GEPArg(b.getPointerByteWidth() * 4), /*inbounds=*/true));
+  op.replaceAllUsesWith(ValueRange{err, res});
+  op.erase();
 }
 
 static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
@@ -809,6 +831,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
         return WalkResult::interrupt();
     } else if (auto setByRefResults = dyn_cast<SetByRefErrorAndResultOp>(op)) {
       lowerSetByRefResults(b, cache, setByRefResults);
+    } else if (auto setByRefResults = dyn_cast<GetByRefErrorAndResultOp>(op)) {
+      lowerGetByRefResults(b, cache, setByRefResults);
     } else if (auto resume = dyn_cast<CO::ResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
     } else if (auto destroy = dyn_cast<DestroyOp>(op)) {
