@@ -208,7 +208,7 @@ struct Buffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.data.load[width=width, alignment=alignment](idx)
+        return SIMD[size=width].load[alignment=alignment](self.data, idx)
 
     @always_inline
     fn __setitem__(
@@ -248,7 +248,7 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.data.store[width=width, alignment=alignment](idx, val)
+        SIMD[size=width].store[alignment=alignment](self.data, idx, val)
 
     @always_inline
     fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[type, width]):
@@ -277,7 +277,7 @@ struct Buffer[
         Args:
             idx: The index of the prefetched location.
         """
-        self.data.offset(idx).prefetch[params]()
+        SIMD.prefetch[params](self.data.offset(idx))
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -1110,7 +1110,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        return self._offset(idx).load[width=width, alignment=alignment]()
+        return SIMD[size=width].load[alignment=alignment](self._offset(idx))
 
     @always_inline
     fn load[
@@ -1158,7 +1158,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        return self._offset(idx).load[width=width, alignment=alignment]()
+        return SIMD[size=width].load[alignment=alignment](self._offset(idx))
 
     @always_inline
     fn __setitem__(self, idx: StaticIntTuple[rank], val: Scalar[type]):
@@ -1210,7 +1210,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        self._offset(idx).store[width=width, alignment=alignment](val)
+        SIMD[size=width].store[alignment=alignment](self._offset(idx), val)
 
     @always_inline
     fn simd_nt_store[
@@ -1434,7 +1434,7 @@ struct NDBuffer[
         Args:
             idx: The N-D index of the prefetched location.
         """
-        self._offset(idx).prefetch[params]()
+        SIMD.prefetch[params](self._offset(idx))
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
@@ -1446,7 +1446,7 @@ struct NDBuffer[
         Args:
             indices: The N-D index of the prefetched location.
         """
-        self._offset(indices).prefetch[params]()
+        SIMD.prefetch[params](self._offset(indices))
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: Float32):
@@ -1470,8 +1470,10 @@ struct NDBuffer[
             @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = self.data.load[width=simd_size](i * TN + j)
-                self.data.store[width=simd_size](idx, vec * rhs.cast[type]())
+                var vec = SIMD[size=simd_size].load(self.data, i * TN + j)
+                SIMD[size=simd_size].store(
+                    self.data, idx, vec * rhs.cast[type]()
+                )
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: NDBuffer):
@@ -1495,11 +1497,11 @@ struct NDBuffer[
             @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = self.data.load[width=simd_size](idx)
+                var vec = SIMD[size=simd_size].load(self.data, idx)
                 var rhs_vec = SIMD[type, simd_size](
-                    rhs.data.load(i).cast[type]()
+                    Scalar.load(rhs.data, i).cast[type]()
                 )
-                self.data.store[width=simd_size](idx, vec * rhs_vec)
+                SIMD[size=simd_size].store(self.data, idx, vec * rhs_vec)
 
     @always_inline("nodebug")
     fn __itruediv__(inout self, rhs: NDBuffer):
@@ -1523,11 +1525,11 @@ struct NDBuffer[
             @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = self.data.load[width=simd_size](idx)
+                var vec = SIMD[size=simd_size].load(self.data, idx)
                 var rhs_vec = SIMD[type, simd_size](
-                    rhs.data.load(i).cast[type]()
+                    Scalar.load(rhs.data, i).cast[type]()
                 )
-                self.data.store[width=simd_size](idx, vec / rhs_vec)
+                SIMD[size=simd_size].store(self.data, idx, vec / rhs_vec)
 
     @always_inline("nodebug")
     fn __mul__(self, rhs: Self) -> Self:
@@ -1551,7 +1553,7 @@ struct NDBuffer[
 
         @parameter
         for i in range(m):
-            res[i] = self.data.load(i) * rhs.data.load(i)
+            res[i] = Scalar.load(self.data, i) * Scalar.load(rhs.data, i)
 
         return res
 
@@ -1603,8 +1605,10 @@ struct NDBuffer[
 
         @parameter
         for i in range(m):
-            res.data.store[width=simd_size](
-                i, self.data.load(i) - rhs.data.load(i)
+            SIMD[size=simd_size].store(
+                res.data,
+                i,
+                Scalar.load(self.data, i) - Scalar.load(rhs.data, i),
             )
 
         return res
@@ -1640,8 +1644,11 @@ struct NDBuffer[
             @parameter
             for j in range(0, n, simd_size):
                 var idx = i * n + j
-                res.data.store[width=simd_size](
-                    idx, self.data.load[width=simd_size](idx) - rhs.data.load(i)
+                SIMD[size=simd_size].store(
+                    res.data,
+                    idx,
+                    SIMD[size=simd_size].load(self.data, idx)
+                    - Scalar.load(rhs.data, i),
                 )
 
         return res
