@@ -9,7 +9,7 @@
 
 from math import ceildiv
 
-from benchmark import Bench, Bencher, BenchId
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -215,7 +215,8 @@ fn bench_matmuls(inout m: Bench) raises:
         b.iter_custom[time_async_cuda_kernel[run_func]]()
 
     m.bench_function[bench_matmul_10](
-        BenchId("matmul_sgemm_10"), throughput_elems=2 * M * N * K
+        BenchId("matmul_sgemm_10"),
+        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
 
     _copy_device_to_host(c_host, c_device, M * N)
@@ -248,7 +249,9 @@ fn bench_matmuls(inout m: Bench) raises:
         b.iter_custom[time_async_cuda_kernel[run_func_naive]]()
 
     m.bench_function[bench_naive](
-        BenchId("matmul_naive"), throughput_elems=2 * M * N * K
+        BenchId("matmul_naive"),
+        # TODO: Pick relevant benchmetric
+        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
 
     _copy_device_to_host(c_host_naive, c_device, M * N)
