@@ -554,7 +554,7 @@ struct Graph(CollectionElement, Stringable):
         if dtype == DType.int64:
             return self.scalar(Int64(value))
 
-        # TODO(#30525): Enable once LLVM bfloat16 emulation support matures.
+        # TODO(KERN-228): support BF16 on neon systems.
         @parameter
         if not has_neon():
             if dtype == DType.bfloat16:
@@ -588,7 +588,7 @@ struct Graph(CollectionElement, Stringable):
             If `value` cannot be instantiated as a tensor of element `dtype`.
         """
 
-        # TODO(#30525): Enable once LLVM bfloat16 emulation support matures.
+        # TODO(KERN-228): support BF16 on neon systems.
         @parameter
         if not has_neon():
             if dtype == DType.bfloat16:
