@@ -6,7 +6,7 @@
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from driver import Device, CPUDescriptor
+from driver import CPUDescriptor, cpu_device
 from driver import Tensor, TensorSlice
 from tensor import TensorSpec
 from utils import Index
@@ -14,7 +14,7 @@ from testing import assert_equal, assert_raises
 
 
 def test_tensor():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -34,7 +34,7 @@ def test_tensor():
 
 
 def test_tensor_slice():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt = dev.allocate(
         TensorSpec(DType.float32, 3, 3),
@@ -83,7 +83,7 @@ def test_tensor_slice():
 
 
 def test_slice_with_step():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt = dev.allocate(
         TensorSpec(DType.float32, 18),
@@ -103,7 +103,7 @@ def test_slice_with_step():
 
 
 def test_2dslice_with_step():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt = dev.allocate(
         TensorSpec(DType.float32, 10, 2),
@@ -123,7 +123,7 @@ def test_2dslice_with_step():
 
 
 def test_2dslice_with_step_row_column():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt = dev.allocate(
         TensorSpec(DType.float32, 10, 10),
@@ -162,7 +162,7 @@ def test_2dslice_with_step_row_column():
 
 
 def test_round_trip():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt = dev.allocate(TensorSpec(DType.float32, 10, 2), str("mytensor"))
     var tensor = dt^.get_tensor[DType.float32, 2]()
@@ -186,8 +186,8 @@ def test_round_trip():
 
 
 def test_copy():
-    var cpu1 = Device(CPUDescriptor(numa_id=0))
-    var cpu2 = Device(CPUDescriptor(numa_id=1))
+    var cpu1 = cpu_device(CPUDescriptor(numa_id=0))
+    var cpu2 = cpu_device(CPUDescriptor(numa_id=1))
 
     var src_dev_tensor = cpu1.allocate(
         TensorSpec(DType.float32, 10, 2),
@@ -221,7 +221,7 @@ def test_copy():
 
 
 def test_set_through_slice():
-    var dev = Device()
+    var dev = cpu_device()
 
     var dt = dev.allocate(
         TensorSpec(DType.float32, 10, 2),
@@ -246,7 +246,7 @@ def test_set_through_slice():
 
 
 def test_kv_cache():
-    var cpu = Device()
+    var cpu = cpu_device()
     alias type = DType.float32
     alias shape = (2,)
     var tensors = List[Tensor[type, len(shape)]]()
@@ -268,7 +268,7 @@ def test_kv_cache():
 
 
 def test_raw_data():
-    var dev = Device()
+    var dev = cpu_device()
 
     alias type = DType.float32
     alias shape = (1,)

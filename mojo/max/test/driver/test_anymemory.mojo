@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
-from driver import AnyMemory, Device, CPUDescriptor
+from driver import AnyMemory, cpu_device
 from testing import assert_equal
 from tensor import TensorSpec
 
 
 def test_from_device_memory():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -23,7 +23,7 @@ def test_from_device_memory():
 
 
 def test_from_tensor():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -47,7 +47,7 @@ def _function_that_takes_anymemory(owned t1: AnyMemory, owned t2: AnyMemory):
 
 
 def test_implicit_conversion():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
 
     var dt1 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),

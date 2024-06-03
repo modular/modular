@@ -6,13 +6,13 @@
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from driver import Device, DeviceMemory, CPUDescriptor, get_cuda_device, Tensor
+from driver import cpu_device, DeviceMemory, cuda_device, Tensor
 from testing import assert_equal
 from tensor import TensorSpec
 
 
 def test_device():
-    var dev = Device(CPUDescriptor())
+    var dev = cpu_device()
     assert_equal(str(dev), "Device(type=CPU)")
 
     var dev2 = dev
@@ -20,7 +20,7 @@ def test_device():
 
 
 def test_device_memory():
-    var dev = Device()
+    var dev = cpu_device()
 
     var dt1 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -52,7 +52,7 @@ def test_device_memory():
 
 
 def test_kv_cache():
-    var cpu = Device(CPUDescriptor())
+    var cpu = cpu_device()
     alias type = DType.float32
     alias shape = (2, 2)
     var allocs = List[DeviceMemory]()

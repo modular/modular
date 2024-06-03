@@ -7,20 +7,20 @@
 # REQUIRES: cuda
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from driver import Device, CPUDescriptor, get_cuda_device
+from driver import cpu_device, cuda_device
 from testing import assert_equal
 from tensor import TensorSpec
 from utils import Index
 
 
 def test_cuda_device():
-    var gpu = get_cuda_device(gpu_id=0)
+    var gpu = cuda_device(gpu_id=0)
     assert_equal(str(gpu), "Device(type=CUDA,gpu_id=0)")
 
 
 def test_copy_d2h():
-    var cpu = Device(CPUDescriptor())
-    var gpu = get_cuda_device()
+    var cpu = cpu_device()
+    var gpu = cuda_device()
 
     var input_cpu = cpu.allocate(
         TensorSpec(DType.float32, 10, 2),
@@ -47,8 +47,8 @@ def test_copy_d2h():
 
 
 def test_copy_d2d():
-    var cpu = Device(CPUDescriptor())
-    var gpu = get_cuda_device()
+    var cpu = cpu_device()
+    var gpu = cuda_device()
 
     var input_cpu = cpu.allocate(
         TensorSpec(DType.float32, 10, 2),
