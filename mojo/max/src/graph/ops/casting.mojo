@@ -344,12 +344,12 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     var ptr = DTypePointer[DType.int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.append(input_type.dims[i])
-        ptr.store(i, i)
+        Scalar.store(ptr, i, i)
 
     dims[x] = input_type.dims[y]
     dims[y] = input_type.dims[x]
-    ptr.store(x, y)
-    ptr.store(y, x)
+    Scalar.store(ptr, x, y)
+    Scalar.store(ptr, y, x)
 
     var transpose_indices = g.constant(
         Tensor[DType.int64](TensorShape(input_type.rank()), ptr)

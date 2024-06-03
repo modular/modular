@@ -48,7 +48,7 @@ def test_device_memory():
     var ptr = dt5.unsafe_ptr()
     var t5 = dt5^.get_tensor[DType.float32, 1]()
     t5[0] = 22
-    assert_equal(rebind[DTypePointer[DType.float32]](ptr).load(), t5[0])
+    assert_equal(Scalar.load(rebind[DTypePointer[DType.float32]](ptr)), t5[0])
 
 
 def test_kv_cache():
