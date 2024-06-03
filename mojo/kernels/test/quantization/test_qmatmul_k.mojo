@@ -47,13 +47,13 @@ fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
 fn quantize_a_Q8_K(
     a: DTypePointer[DType.float32], a_quant: DTypePointer[DType.int8]
 ) -> Float32:
-    var fp_data = a.load[width = _block_QK_K.quantized_k]()
+    var fp_data = SIMD[size = _block_QK_K.quantized_k].load(a)
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
     var scale = (max_value / 127.0).cast[DType.float32]()
     var quant_data = (fp_data * multiplier).roundeven().cast[DType.int8]()
 
-    a_quant.store(quant_data)
+    SIMD.store(a_quant, quant_data)
     return scale
 
 
@@ -165,9 +165,8 @@ struct qgemm_Q4_K(QuantizedGemm):
         ]()
         for i in range(_block_Q4_K.group_count):
             a_block_sums[i] = (
-                a_quant_data.load[width = _block_Q4_K.group_size](
-                    i * _block_Q4_K.group_size
-                )
+                SIMD[size = _block_Q4_K.group_size]
+                .load(a_quant_data, i * _block_Q4_K.group_size)
                 .cast[DType.int32]()
                 .reduce_add()
             )
@@ -194,12 +193,12 @@ struct qgemm_Q4_K(QuantizedGemm):
         # Decode the bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 32):
             var q_bits_ptr = _to_dtype_pointer(block_ptr[].q_bits)
-            var q_packed_bits = q_bits_ptr.load[width=32](i)
+            var q_packed_bits = SIMD[size=32].load(q_bits_ptr, i)
 
             for j in range(2):
                 var idx = i * 2 + j * 32
                 var q_bits = ((q_packed_bits >> (j * 4)) & 15)
-                b_quant_data.store(idx, q_bits)
+                SIMD.store(b_quant_data, idx, q_bits)
 
         var sum2: Int32 = 0
 
@@ -282,23 +281,23 @@ struct qgemm_Q6_K(QuantizedGemm):
         # Decode the bottom bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 64):
             var q_bits_lo_ptr = _to_dtype_pointer(block_ptr[].q_bits_lo)
-            var q_packed_bits = q_bits_lo_ptr.load[width=64](i)
+            var q_packed_bits = SIMD[size=64].load(q_bits_lo_ptr, i)
 
             for j in range(2):
                 var idx = i * 2 + j * 64
                 var q_bits = ((q_packed_bits >> (j * 4)) & 15)
-                b_quant_data.store(idx, q_bits)
+                SIMD.store(b_quant_data, idx, q_bits)
 
         # Decode the top bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 4, 32):
             var q_bits_hi_ptr = _to_dtype_pointer(block_ptr[].q_bits_hi)
-            var q_packed_bits = q_bits_hi_ptr.load[width=32](i)
+            var q_packed_bits = SIMD[size=32].load(q_bits_hi_ptr, i)
 
             for j in range(4):
                 var idx = i * 4 + j * 32
-                var q_bits_lo = b_quant_data.load[width=32](idx)
+                var q_bits_lo = SIMD[size=32].load(b_quant_data, idx)
                 var q_bits_hi = (((q_packed_bits >> (j * 2)) & 3) << 4)
-                b_quant_data.store(idx, q_bits_hi | q_bits_lo)
+                SIMD.store(b_quant_data, idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[
             group_size = _block_Q6_K.group_size, b_zero_point=32

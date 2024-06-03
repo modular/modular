@@ -449,8 +449,8 @@ struct Q4sym[
         for i in range(outer_stride):
             for j in range(output_inner_stride):
                 var flat_index_input = input_inner_stride * i + j * group_size
-                var loaded_group = input_tensor.data.load[width=group_size](
-                    flat_index_input
+                var loaded_group = SIMD[size=group_size].load(
+                    input_tensor.data, flat_index_input
                 )
 
                 var flat_index_output = output_inner_stride * i + j
@@ -516,8 +516,10 @@ struct Q4sym[
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size
-                output_tensor.data.store[width=group_size](
-                    flat_index_output, encoded.decode_fully()
+                SIMD[size=group_size].store(
+                    output_tensor.data,
+                    flat_index_output,
+                    encoded.decode_fully(),
                 )
 
 
@@ -541,7 +543,7 @@ fn _block_quantize_a[
     # quantization.
     for m in range(M):
         for k in range(0, K, group_size):
-            var fp_data = a_ptr.load[width=group_size]()
+            var fp_data = SIMD[size=group_size].load(a_ptr)
             var max_value = abs(fp_data).reduce_max()
             var scale = max_value / 127.0
             var multiplier = Scalar[type](
@@ -551,8 +553,8 @@ fn _block_quantize_a[
             var quant_data = (fp_data * multiplier).roundeven().cast[
                 DType.int8
             ]()
-            a_quant_ptr.store(quant_data)
-            a_scale_ptr.store(scale.cast[scale_type]())
+            SIMD.store(a_quant_ptr, quant_data)
+            Scalar.store(a_scale_ptr, scale.cast[scale_type]())
 
             a_ptr = a_ptr.offset(group_size)
             a_quant_ptr = a_quant_ptr.offset(group_size)
@@ -670,7 +672,7 @@ fn _process_rows[
     fn dequantize_simd_int4(
         b_ptr: DTypePointer[DType.uint8], b_scale: SIMD[type, 1]
     ) -> SIMD[DType.int8, group_size]:
-        var b_data_i4 = b_ptr.offset(2).load[width = group_size // 2]()
+        var b_data_i4 = SIMD[size = group_size // 2].load(b_ptr.offset(2))
         var b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
         var b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
 
@@ -690,7 +692,7 @@ fn _process_rows[
 
         # 4. Inner loop over `K // block_size_bytes`.
         for k in range(k_groups):
-            var a_data_i8 = a_quant_ptr.load[width=group_size]()
+            var a_data_i8 = SIMD[size=group_size].load(a_quant_ptr)
             var a_scale = a_scale_ptr[0].cast[type]()
 
             # 5. Process `row_batch_count` rows of `b` at a time.
@@ -699,7 +701,7 @@ fn _process_rows[
                 # Dequantize a group of Q4_0 nibbles to int8.
                 var b_row_ptr = b_ptr.offset(row * N_packed_bytes)
                 var b_scale = bitcast[DType.float16, 1](
-                    b_row_ptr.load[width=2]()
+                    SIMD[size=2].load(b_row_ptr)
                 ).cast[type]()
                 var b_data_i8 = dequantize_simd_int4(b_row_ptr, b_scale)
 
