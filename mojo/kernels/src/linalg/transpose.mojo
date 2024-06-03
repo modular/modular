@@ -385,8 +385,8 @@ fn _permute_data[
 
     @parameter
     for idx in range(size):
-        var perm_axis = perms.load(idx)[0]
-        var perm_data = input.load(perm_axis)
+        var perm_axis = Scalar.load(perms, idx)[0]
+        var perm_data = Scalar.load(input, perm_axis)
         output[idx] = perm_data
 
 
@@ -544,7 +544,7 @@ fn _convert_transpose_perms_to_static_int_tuple[
     var simplified_perms = StaticIntTuple[rank]()
     # TODO: unroll
     for j in range(rank):
-        simplified_perms[j] = perms.load(j)[0].value
+        simplified_perms[j] = Scalar.load(perms, j)[0].value
     return simplified_perms
 
 
@@ -572,8 +572,8 @@ fn _process_tile[
     @parameter
     @always_inline
     fn load_input_vals[count: Int]():
-        input_vals[count] = in_ptr.load[width=tile_size_m](
-            input_tile_offset + M * count
+        input_vals[count] = SIMD[size=tile_size_m].load(
+            in_ptr, input_tile_offset + M * count
         )
 
     unroll[load_input_vals, tile_size_n]()
@@ -589,8 +589,8 @@ fn _process_tile[
     @parameter
     @always_inline
     fn store_output_vals[count: Int]():
-        out_ptr.store[width=tile_size_n](
-            output_tile_offset + N * count, output_vals[count]
+        SIMD[size=tile_size_n].store(
+            out_ptr, output_tile_offset + N * count, output_vals[count]
         )
 
     unroll[store_output_vals, tile_size_m]()
@@ -988,8 +988,8 @@ fn _copy_with_strides[
         raise Error("out of range")
 
     var axis_dim = output.dim(axis)
-    var input_axis_stride: Int = input_strides.load(axis)[0].value
-    var output_axis_stride: Int = output_strides.load(axis)[0].value
+    var input_axis_stride: Int = Scalar.load(input_strides, axis)[0].value
+    var output_axis_stride: Int = Scalar.load(output_strides, axis)[0].value
 
     if axis + 1 == rank:
         var src_ptr = input.offset(input_offset)

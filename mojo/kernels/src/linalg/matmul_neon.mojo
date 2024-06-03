@@ -79,9 +79,9 @@ struct Inner_matmul_neon(InnerMatmulKernel):
 
             @parameter
             for col in range(kernel_cols // simd_size):
-                var b_val = b_ptr.offset(col * simd_size).load[
-                    width=simd_size
-                ]().cast[c_local.type]()
+                var b_val = SIMD[size=simd_size].load(
+                    b_ptr.offset(col * simd_size)
+                ).cast[c_local.type]()
 
                 @parameter
                 for row in range(kernel_rows):

@@ -121,7 +121,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn do_transfer(m: Int, n: Int, ptr: DTypePointer[type]):
-            self[m, n] = ptr.load[width=simd_width]()
+            self[m, n] = SIMD[size=simd_width].load(ptr)
 
         self._transfer[do_transfer](base_ptr, stride)
 
@@ -201,11 +201,11 @@ struct _Accumulator[
 
                 @parameter
                 if has_neon():
-                    var data = row_ptrs[row].load[width=column_step](col)
+                    var data = SIMD[size=column_step].load(row_ptrs[row], col)
                     self._partial_set(row * Self.tile_columns + col, data)
                 else:
-                    var data = row_ptrs[0].load[width=column_step](
-                        stride * row + col
+                    var data = SIMD[size=column_step].load(
+                        row_ptrs[0], stride * row + col
                     )
                     self._partial_set(row * Self.tile_columns + col, data)
             else:
@@ -215,10 +215,10 @@ struct _Accumulator[
 
                 @parameter
                 if has_neon():
-                    row_ptrs[row].store[width=column_step](col, data)
+                    SIMD[size=column_step].store(row_ptrs[row], col, data)
                 else:
-                    row_ptrs[0].store[width=column_step](
-                        stride * row + col, data
+                    SIMD[size=column_step].store(
+                        row_ptrs[0], stride * row + col, data
                     )
 
         @parameter
@@ -339,7 +339,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn do_transfer(m: Int, n: Int, ptr: DTypePointer[type]):
-            ptr.store(self[m, n])
+            SIMD.store(ptr, self[m, n])
 
         self._transfer[do_transfer](base_ptr, stride)
 
@@ -618,16 +618,16 @@ struct _Accumulator[
 
                 @parameter
                 for j in range(num_cols):
-                    (
-                        b_ptr
-                        + prefetch_offset.value() * kernel_width
-                        + j * simd_width
-                    ).prefetch[
+                    SIMD.prefetch[
                         PrefetchOptions()
                         .for_read()
                         .high_locality()
                         .to_data_cache()
-                    ]()
+                    ](
+                        b_ptr
+                        + prefetch_offset.value() * kernel_width
+                        + j * simd_width
+                    )
 
             @parameter
             for i in range(row_start, row_stop):
@@ -679,16 +679,16 @@ struct _Accumulator[
 
                 @parameter
                 for j in range(num_cols):
-                    (
-                        b_ptr
-                        + prefetch_offset.value() * kernel_width
-                        + j * simd_width
-                    ).prefetch[
+                    SIMD.prefetch[
                         PrefetchOptions()
                         .for_read()
                         .high_locality()
                         .to_data_cache()
-                    ]()
+                    ](
+                        b_ptr
+                        + prefetch_offset.value() * kernel_width
+                        + j * simd_width
+                    )
 
             @parameter
             for i in range(row_start, row_stop):
@@ -778,7 +778,7 @@ struct _Accumulator[
             # Load vectors of size num_lanes from input.
             @parameter
             for i in range(row_start, row_stop):
-                a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
+                a_vecs[i] = SIMD[size=num_lanes].load(a, offset + i * a_stride)
 
             var b_ptr = b + offset * b_stride
 
@@ -835,7 +835,7 @@ struct _Accumulator[
             @parameter
             for i in range(row_start, row_stop):
                 var a_idx = a_base_offsets[i].value + a_offset + offset
-                a_vecs[i] = a.load[width=num_lanes](a_idx)
+                a_vecs[i] = SIMD[size=num_lanes].load(a, a_idx)
 
             var b_ptr = b + offset * b_stride
 
@@ -887,7 +887,7 @@ fn _simd_load_maybe_partial[
             ptr + offset, 0, partial_load_size.value(), 0.0
         )
     else:
-        return ptr.load[width=simd_width](offset)
+        return SIMD[size=simd_width].load(ptr, offset)
 
 
 @always_inline
@@ -911,4 +911,4 @@ fn _simd_store_maybe_partial[
             ptr + offset, 0, partial_store_size.value(), vec
         )
     else:
-        return ptr.store[width=simd_width](offset, vec)
+        return SIMD[size=simd_width].store(ptr, offset, vec)

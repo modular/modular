@@ -311,9 +311,9 @@ fn sgemm_warp_tiling_kernel[
                         )
                     )
 
-                    var vec = alpha * result_vec + beta * C_interim.load[
-                        width=4, alignment=16
-                    ](int(c_idx))
+                    var vec = alpha * result_vec + beta * SIMD[size=4].load[
+                        alignment=16
+                    ](C_interim, int(c_idx))
 
                     @parameter
                     if elementwise_lambda_fn:
@@ -326,7 +326,9 @@ fn sgemm_warp_tiling_kernel[
                             vec,
                         )
                     else:
-                        C_interim.store[width=4, alignment=16](int(c_idx), vec)
+                        SIMD[size=4].store[alignment=16](
+                            C_interim, int(c_idx), vec
+                        )
 
 
 # Matrix-Column Vector Multiplication
@@ -355,8 +357,8 @@ fn gemv_kernel[
             var val = SIMD[s_type, 1]()
             if idx < k:
                 val = (
-                    a.load(warpId * k + idx).cast[s_type]()
-                    * b.load(idx).cast[s_type]()
+                    Scalar.load(a, warpId * k + idx).cast[s_type]()
+                    * Scalar.load(b, idx).cast[s_type]()
                 )
 
             @parameter
@@ -408,7 +410,10 @@ fn gemv_tc_kernel[
             var idx = i * WARP_SIZE + int(lane_id())
             var val = Scalar[a_type]()
             if idx < k:
-                val = a.load(warpId * k + idx) * b.load(idx).cast[a_type]()
+                val = (
+                    Scalar.load(a, warpId * k + idx)
+                    * Scalar.load(b, idx).cast[a_type]()
+                )
 
             var out_val = Scalar[s_type]()
             out_val = tc_reduce[s_type, a_type](val)
@@ -462,9 +467,11 @@ fn gevm_kernel[
         var val = SIMD[c_type, 1]()
         var row = i * warpsPerBlock + warpId
         if lane_id() == 0:
-            val = a.load(row).cast[c_type]()
+            val = Scalar.load(a, row).cast[c_type]()
         val = shuffle_idx(val, 0)
-        accum += val.cast[s_type]() * b.load(row * n + col).cast[s_type]()
+        accum += (
+            val.cast[s_type]() * Scalar.load(b, row * n + col).cast[s_type]()
+        )
 
     x_shared[int(lane_id()) * WARP_SIZE + warpId] = accum
     barrier()
@@ -477,7 +484,7 @@ fn gevm_kernel[
         return x + y
 
     var total = SIMD[s_type, 1]()
-    total = x_shared.load(ThreadIdx.x()).cast[s_type]()
+    total = Scalar.load(x_shared, ThreadIdx.x()).cast[s_type]()
     total = warp_reduce[shuffle_down, reduce_add](total)
 
     if lane_id() == 0:
@@ -638,11 +645,9 @@ fn apply_epilogue[
                 # the matrix dimension, layout doesn't.
                 alias N = dst_element_layout.stride[0].value()
 
-                var vec = src.ptr.load[
-                    width=vec_width,
-                    alignment = alignof[SIMD[src.dtype, vec_width]](),
-                ](src_idx)
-
+                var vec = SIMD[size=vec_width].load[
+                    alignment = alignof[SIMD[src.dtype, vec_width]]()
+                ](src.ptr, src_idx)
                 var m = (dst_idx + offset) // N
                 var n = (dst_idx + offset) % N
 
