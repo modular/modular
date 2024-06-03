@@ -1340,6 +1340,55 @@ fn test_copy_subtiles_scalars_back():
             tensor_13x7.print()
 
 
+# CHECK-LABEL: test_slice_with_offsets
+fn test_slice_with_offsets():
+    print("== test_slice_with_offsets")
+
+    var tensor_4x3x2_row_major = LayoutTensor[
+        DType.float32, Layout.row_major(4, 3, 2)
+    ].stack_allocation()
+
+    for i in range(4 * 3 * 2):
+        tensor_4x3x2_row_major.ptr[i] = i
+
+    # CHECK: slice-of[0:3,:2,0]
+    # CHECK: 0.0 2.0
+    # CHECK: 6.0 8.0
+    # CHECK: 12.0 14.0
+    print("slice-of[0:3,:2,0]")
+    tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        offsets=(0)
+    ).print()
+
+    # CHECK: slice-of-[0:3,:2,1]
+    # CHECK: 1.0 3.0
+    # CHECK: 7.0 9.0
+    # CHECK: 13.0 15.0
+    print("slice-of-[0:3,:2,1]")
+    tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        offsets=(1)
+    ).print()
+
+    # CHECK: slice-of-[2,:,:]
+    # CHECK: 12.0 13.0
+    # CHECK: 14.0 15.0
+    # CHECK: 16.0 17.0
+    print("slice-of-[2,:,:]")
+    tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](
+        offsets=(2)
+    ).print()
+
+    print("slice-of-[:,1,:]")
+    # CHECK: slice-of-[:,1,:]
+    # CHECK: 2.0 3.0
+    # CHECK: 8.0 9.0
+    # CHECK: 14.0 15.0
+    # CHECK: 20.0 21.0
+    tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](
+        offsets=(1)
+    ).print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -1359,3 +1408,4 @@ fn main():
     test_copy_distributed_subtiles_scalars()
     # TODO(#38547) re-enable the following test once the non-deterministic behavior is addressed.
     # test_copy_subtiles_scalars_back()
+    test_slice_with_offsets()

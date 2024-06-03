@@ -93,6 +93,25 @@ fn _need_mask[*tile_sizes: Int](shape: IntTuple) -> Bool:
     return not no_mask
 
 
+# Returns the size of the slice in layout dim.
+#
+fn _get_slice_size(layout: Layout, slice: Slice, dim: Int) -> Int:
+    var end = slice.end if slice._has_end() else to_int(layout.shape[dim])
+    return end - slice.start
+
+
+# Returns true if n isn't in `tuple`.
+#
+fn _not_in_tuple[n: Int, size: Int, tuple: StaticIntTuple[size]]() -> Bool:
+    @parameter
+    for i in range(size):
+
+        @parameter
+        if tuple[i] == n:
+            return False
+    return True
+
+
 @register_passable
 struct LayoutTensor[
     dtype: DType,
@@ -622,13 +641,6 @@ struct LayoutTensor[
         ](self.ptr)
 
     @staticmethod
-    fn __get_slice_size(slice: Slice, dim: Int) -> Int:
-        var end = slice.end if slice._has_end() else to_int(
-            Self.layout.shape[dim]
-        )
-        return end - slice.start
-
-    @staticmethod
     fn __compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
         constrained[
             layout.shape.__len__() == 2,
@@ -636,10 +648,41 @@ struct LayoutTensor[
         ]()
         return Layout(
             IntTuple(
-                Self.__get_slice_size(d0_slice, 0),
-                Self.__get_slice_size(d1_slice, 1),
+                _get_slice_size(Self.layout, d0_slice, 0),
+                _get_slice_size(Self.layout, d1_slice, 1),
             ),
             layout.stride,
+        )
+
+    @staticmethod
+    fn __compute_slice_layout(
+        slice_0: Slice, slice_1: Slice, slice_0_axis: Int, slice_1_axis: Int
+    ) -> Layout:
+        constrained[
+            layout.shape.__len__() > 2,
+            "Rank should be >= 2",
+        ]()
+        var sliced_layout = sublayout(Self.layout, slice_0_axis, slice_1_axis)
+        return Layout(
+            IntTuple(
+                _get_slice_size(sliced_layout, slice_0, 0),
+                _get_slice_size(sliced_layout, slice_1, 1),
+            ),
+            sliced_layout.stride,
+        )
+
+    @staticmethod
+    fn __compute_slice_layout(slice_0: Slice, slice_0_axis: Int) -> Layout:
+        constrained[
+            layout.shape.__len__() > 1,
+            "Rank should be >= 1",
+        ]()
+        var sliced_layout = sublayout(Self.layout, slice_0_axis)
+        return Layout(
+            IntTuple(
+                _get_slice_size(sliced_layout, slice_0, 0),
+            ),
+            sliced_layout.stride,
         )
 
     @always_inline
@@ -669,6 +712,57 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr.offset(offset))
+
+    @always_inline
+    fn slice[
+        d0_slice: Slice,
+        d1_slice: Slice,
+        slice_indices: StaticIntTuple[2],
+        __offset_dims: Int = Self.rank - 2,
+        __slice_layout: Layout = Self.__compute_slice_layout(
+            d0_slice, d1_slice, slice_indices[0], slice_indices[1]
+        ),
+    ](
+        self,
+        offsets: StaticIntTuple[__offset_dims],
+    ) -> LayoutTensor[
+        dtype,
+        __slice_layout,
+        address_space=address_space,
+        element_layout=element_layout,
+    ]:
+        constrained[
+            d0_slice.step == 1 and d1_slice.step == 1,
+            "Slice should have no gaps",
+        ]()
+        constrained[
+            slice_indices[0] < slice_indices[1],
+            "Slice indices should be ordered",
+        ]()
+        alias stride_0 = to_int(__slice_layout.stride[0])
+        alias stride_1 = to_int(__slice_layout.stride[1])
+
+        var slice_offset = d0_slice.start * stride_0 + d1_slice.start * stride_1
+
+        var idx = 0
+
+        @parameter
+        for i in range(Self.rank):
+            alias stride_i = to_int(Self.layout.stride[i])
+
+            alias offset_index = _not_in_tuple[i, 2, slice_indices]()
+
+            @parameter
+            if offset_index:
+                slice_offset += offsets[idx] * stride_i
+                idx += 1
+
+        return LayoutTensor[
+            dtype,
+            __slice_layout,
+            address_space=address_space,
+            element_layout=element_layout,
+        ](self.ptr.offset(slice_offset))
 
     @always_inline
     fn transpose[
