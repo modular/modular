@@ -134,12 +134,12 @@ def test_iota():
     vector.resize(length, 0)
 
     var buff = rebind[DTypePointer[DType.int32]](vector.data)
-    iota[DType.int32](buff, length, offset)
+    iota(buff, length, offset)
 
     for i in range(length):
         assert_equal(vector[i], offset + i)
 
-    iota[DType.int32](vector, offset)
+    iota(vector, offset)
 
     for i in range(length):
         assert_equal(vector[i], offset + i)
