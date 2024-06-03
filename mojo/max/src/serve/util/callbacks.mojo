@@ -181,6 +181,7 @@ struct CallbackSet[*Ts: ServerCallbacks](ServerCallbacks):
 
         @parameter
         fn initialize_elt[idx: Int]():
+            var existing_elt_ptr = UnsafePointer(existing[idx]).address
             UnsafePointer.address_of(existing[idx]).move_pointee_into(
                 UnsafePointer.address_of(self[idx])
             )
