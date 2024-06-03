@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import *
 from utils import StaticTuple, unroll
+
+from testing import assert_equal
 
 
 alias dtype = DType.float32

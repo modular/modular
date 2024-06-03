@@ -8,7 +8,7 @@
 from collections import List
 from math import iota
 
-from testing import *
+from testing import assert_equal
 
 
 def test_iota():

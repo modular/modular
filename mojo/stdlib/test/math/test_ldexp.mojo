@@ -8,7 +8,7 @@
 from math import frexp, ldexp
 
 from test_utils import libm_call
-from testing import *
+from testing import assert_equal, assert_almost_equal
 
 
 def test_ldexp():

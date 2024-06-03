@@ -8,7 +8,7 @@
 from math import iota
 from sys.info import has_neon, simdwidthof
 
-from testing import *
+from testing import assert_equal
 
 
 # CHECK-LABEL: test_simd

@@ -9,6 +9,7 @@
 from math import tanh
 from random import seed, randn
 from buffer import Buffer
+
 from test_utils import libm_call
 from closed_source_utils import compare
 

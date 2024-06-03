@@ -9,10 +9,10 @@
 
 from math import erf
 from random import seed, randn
-from test_utils import libm_call
 from utils import InlineArray
 
 from closed_source_utils import compare
+from test_utils import libm_call
 
 alias alignment = 64
 
