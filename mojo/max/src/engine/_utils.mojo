@@ -325,14 +325,14 @@ struct OwningVector[T: Movable](Sized):
 
     fn emplace_back(inout self, owned value: T):
         if self.size < self.capacity:
-            initialize_pointee_move(self.ptr + self.size, value^)
+            (self.ptr + self.size).init_pointee_move(value^)
             self.size += 1
             return
 
         self.capacity = self.capacity * 2
         var new_ptr = UnsafePointer[T].alloc(self.capacity)
         for i in range(self.size):
-            move_pointee(src=self.ptr + i, dst=new_ptr + i)
+            (self.ptr + i).move_pointee_into(dst=new_ptr + i)
         self.ptr.free()
         self.ptr = new_ptr
         self.emplace_back(value^)
@@ -349,7 +349,7 @@ struct OwningVector[T: Movable](Sized):
 
     fn __del__(owned self):
         for i in range(self.size):
-            destroy_pointee(self.ptr + i)
+            (self.ptr + i).destroy_pointee()
         self.ptr.free()
 
 

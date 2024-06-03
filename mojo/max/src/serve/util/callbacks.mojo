@@ -5,12 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides callback utilities."""
 
-from memory.unsafe_pointer import (
-    initialize_pointee_move,
-    initialize_pointee_copy,
-    move_pointee,
-)
-
 
 trait ServerCallbacks(Movable):
     """A trait for containers of server lifecycle callbacks."""
@@ -164,9 +158,8 @@ struct CallbackSet[*Ts: ServerCallbacks](ServerCallbacks):
 
         @parameter
         fn initialize_elt[idx: Int]():
-            move_pointee(
-                dst=UnsafePointer(self[idx]),
-                src=UnsafePointer(storage[idx]),
+            UnsafePointer.address_of(storage[idx]).move_pointee_into(
+                UnsafePointer.address_of(self[idx])
             )
 
         unroll[initialize_elt, Self.__len__()]()
@@ -175,7 +168,7 @@ struct CallbackSet[*Ts: ServerCallbacks](ServerCallbacks):
     fn __del__(owned self):
         @parameter
         fn destroy_elt[idx: Int]():
-            destroy_pointee(UnsafePointer(self[idx]))
+            UnsafePointer.address_of(self[idx]).destroy_pointee()
 
         unroll[destroy_elt, Self.__len__()]()
 
@@ -189,8 +182,8 @@ struct CallbackSet[*Ts: ServerCallbacks](ServerCallbacks):
         @parameter
         fn initialize_elt[idx: Int]():
             var existing_elt_ptr = UnsafePointer(existing[idx]).address
-            move_pointee(
-                src=UnsafePointer(existing[idx]), dst=UnsafePointer(self[idx])
+            UnsafePointer.address_of(existing[idx]).move_pointee_into(
+                UnsafePointer.address_of(self[idx])
             )
 
         unroll[initialize_elt, Self.__len__()]()

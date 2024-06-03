@@ -318,7 +318,7 @@ struct CompileConfig:
             torch.close()
 
         self.ptr[].free(self.lib)
-        destroy_pointee(self.ptr.address)
+        UnsafePointer(self.ptr.address).destroy_pointee()
         self.ptr.free()
 
 
