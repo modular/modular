@@ -6,7 +6,6 @@
 
 import * as vscode from 'vscode';
 
-import {MojoContext} from './mojoContext';
 import {DisposableContext} from './utils/disposableContext';
 
 /**

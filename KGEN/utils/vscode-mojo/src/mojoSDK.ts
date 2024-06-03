@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import * as child_process from 'child_process';
 import * as ini from 'ini';
 import * as path from 'path';
 import * as util from 'util';
