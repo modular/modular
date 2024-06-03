@@ -17,4 +17,4 @@ fn main():
         fn (flags: String, args: String) -> None
     ] = print_second_string
     # CHECK: Received second
-    optional_func.value()[]("first", "second")
+    optional_func.value()("first", "second")
