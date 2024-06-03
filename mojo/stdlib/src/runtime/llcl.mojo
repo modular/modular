@@ -121,7 +121,7 @@ fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
 
 
 fn _async_execute[
-    type: AnyTrivialRegType
+    type: AnyType
 ](handle: AnyCoroutine, rt: Runtime, desired_worker_id: Int,):
     external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
         _coro_resume_fn, handle, rt.ptr, desired_worker_id
@@ -264,24 +264,54 @@ struct Runtime:
             ](self.ptr)
         )
 
+    @__named_result(task)
     fn create_task(
         self,
         owned handle: Coroutine[*_],
         desired_worker_id: Int = -1,
     ) -> Task[handle.type, handle.lifetimes]:
         """Run the coroutine as a task on the LLCL Runtime."""
-        var ctx: UnsafePointer[AsyncContext] = handle._get_ctx[
-            AsyncContext
-        ]().address
+        var ctx = handle._get_ctx[AsyncContext]()
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
         ctx[].callback = AsyncContext.complete
-        _async_execute[handle.type](handle._handle, self, desired_worker_id)
-        return Task[handle.type, handle.lifetimes](handle^)
+        task.__init__(handle^)
+        _async_execute[handle.type](
+            task._handle._handle, self, desired_worker_id
+        )
 
+    @always_inline
+    @__named_result(out)
     fn run(self, owned handle: Coroutine[*_]) -> handle.type:
-        var t = self.create_task(handle^)
-        var result = t.wait()
-        return result
+        var ctx = handle._get_ctx[AsyncContext]()
+        _init_llcl_chain(self, AsyncContext.get_chain(ctx))
+        ctx[].callback = AsyncContext.complete
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
+        handle._set_result_slot(UnsafePointer.address_of(out))
+        _async_execute[handle.type](handle._handle, self, -1)
+        _async_wait(AsyncContext.get_chain(ctx))
+        _ = handle^
+
+    @always_inline
+    @__named_result(out)
+    fn run(self, owned handle: RaisingCoroutine[*_]) raises -> handle.type:
+        var ctx = handle._get_ctx[AsyncContext]()
+        _init_llcl_chain(self, AsyncContext.get_chain(ctx))
+        ctx[].callback = AsyncContext.complete
+        handle._set_result_slot(
+            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(out)),
+            __mlir_op.`lit.ref.to_pointer`(
+                __get_mvalue_as_litref(__get_nearest_error_slot())
+            ),
+        )
+        _async_execute[handle.type](handle._handle, self, -1)
+        _async_wait(AsyncContext.get_chain(ctx))
+        if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(__get_nearest_error_slot())
+            )
+            __mlir_op.`lit.raise`()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
+        _ = handle^
 
 
 # ===----------------------------------------------------------------------===#
@@ -289,29 +319,33 @@ struct Runtime:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyTrivialRegType, lifetimes: LifetimeSet]:
-    var handle: Coroutine[type, lifetimes]
+struct Task[type: AnyType, lifetimes: LifetimeSet]:
+    var _handle: Coroutine[type, lifetimes]
+    var _result: type
 
     fn __init__(inout self, owned handle: Coroutine[type, lifetimes]):
-        self.handle = handle^
+        self._handle = handle^
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(self._result)
+        )
+        self._handle._set_result_slot(UnsafePointer.address_of(self._result))
 
-    fn get(self) -> type:
-        """Get the task's result value."""
-        return self.handle.get()
+    fn get(self) -> ref [__lifetime_of(self)] type:
+        """Get the task's result value. Calling this on an incomplete task is
+        undefined behaviour."""
+        return self._result
 
     fn __del__(owned self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
-        var ctx: UnsafePointer[AsyncContext] = self.handle._get_ctx[
-            AsyncContext
-        ]().address
+        var ctx = self._handle._get_ctx[AsyncContext]()
         var chainPtr: UnsafePointer[Chain] = AsyncContext.get_chain(ctx)
         _del_llcl_chain(chainPtr)
-        _ = self.handle^
+        _ = self._handle^
 
     @always_inline
-    fn __await__(self) -> type:
+    fn __await__(self) -> ref [__lifetime_of(self)] type:
         """Suspend the current async function until the task completes and its
         result becomes available. This function must be force inlined into the
         calling async function.
@@ -322,18 +356,16 @@ struct Task[type: AnyTrivialRegType, lifetimes: LifetimeSet]:
         fn await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
                 cur_hdl,
-                AsyncContext.get_chain(
-                    self.handle._get_ctx[AsyncContext]().address
-                ),
+                AsyncContext.get_chain(self._handle._get_ctx[AsyncContext]()),
             )
 
         _suspend_async[await_body]()
         return self.get()
 
-    fn wait(self) -> type:
+    fn wait(self) -> ref [__lifetime_of(self)] type:
         """Block the current thread until the future value becomes available."""
         _async_wait(
-            AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]().address)
+            AsyncContext.get_chain(self._handle._get_ctx[AsyncContext]())
         )
         return self.get()
 
@@ -359,15 +391,10 @@ struct _TaskGroupBox(CollectionElement):
 
     var handle: AnyCoroutine
 
-    fn __init__[
-        type: AnyTrivialRegType
-    ](inout self, owned coro: Coroutine[type]):
+    fn __init__[type: AnyType](inout self, owned coro: Coroutine[type]):
         var handle = coro._handle
         __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(coro))
         self.handle = handle
-
-    fn get[type: AnyTrivialRegType](self) -> type:
-        return __mlir_op.`co.get_results`[_type=type](self.handle)
 
     fn __del__(owned self):
         __mlir_op.`co.destroy`(self.handle)
@@ -420,14 +447,12 @@ struct TaskGroup[lifetimes: LifetimeSet]:
         # TODO(MOCO-771): Enforce that `task.lifetimes` is a subset of
         # `Self.lifetimes`.
         self.counter += 1
-        LegacyPointer(
-            task._get_ctx[TaskGroupContext[lifetimes]]().address
-        ).store(
-            TaskGroupContext[lifetimes] {
-                callback: Self._task_complete_callback,
-                task_group: UnsafePointer[Self].address_of(self),
-            }
-        )
+        task._get_ctx[TaskGroupContext[lifetimes]]()[] = TaskGroupContext[
+            lifetimes
+        ] {
+            callback: Self._task_complete_callback,
+            task_group: UnsafePointer[Self].address_of(self),
+        }
         _async_execute[task.type](task._handle, self.rt, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
 
