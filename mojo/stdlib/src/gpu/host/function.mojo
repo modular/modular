@@ -287,7 +287,7 @@ struct Function[
         fn dump_q(val: Variant[Path, Bool]) -> Bool:
             if val.isa[Bool]():
                 return val[Bool]
-            return val[Path] != ""
+            return val[Path] != Path("")
 
         if dump_q(dump_ptx):
             alias ptx = Self._impl.asm
