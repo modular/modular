@@ -297,7 +297,6 @@ struct JitOptions:
 
 
 @value
-@register_passable
 struct Module:
     var module: _ModuleHandle
     var cuda_dll: UnsafePointer[CudaDLL]

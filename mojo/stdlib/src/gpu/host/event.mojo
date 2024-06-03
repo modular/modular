@@ -63,7 +63,6 @@ struct Flag:
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
 struct Event:
     var _event: _EventHandle
     var cuda_dll: UnsafePointer[CudaDLL]

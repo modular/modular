@@ -36,7 +36,9 @@ struct Context:
         self.owner = True
 
         var cuCtxCreate = self.cuda_dll[].cuCtxCreate if self.cuda_dll else cuCtxCreate.load()
-        _check_error(cuCtxCreate(Pointer.address_of(self.ctx), flags, device))
+        _check_error(
+            cuCtxCreate(Pointer.address_of(self.ctx), flags, device.id)
+        )
 
     fn __del__(owned self):
         try:

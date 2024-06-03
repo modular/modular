@@ -22,7 +22,7 @@ from sys.ffi import C_char
 
 @register_passable("trivial")
 struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
-    fn __init__(inout self) raises:
+    fn __init__(inout self):
         pass
 
     @staticmethod
@@ -30,27 +30,29 @@ struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
         return _get_dylib_function[fn_name, type]()
 
 
+alias _DeviceHandle = Int32
+
 alias cuDeviceGetCount = _dylib_function[
     "cuDeviceGetCount", fn (Pointer[Int32]) -> Result
 ]
 
 alias cuDeviceGetAttribute = _dylib_function[
     "cuDeviceGetAttribute",
-    fn (Pointer[Int32], DeviceAttribute, Device) -> Result,
+    fn (Pointer[Int32], DeviceAttribute, _DeviceHandle) -> Result,
 ]
 
 alias cuDeviceGetName = _dylib_function[
     "cuDeviceGetName",
-    fn (DTypePointer[DType.int8], Int32, Device) -> Result,
+    fn (DTypePointer[DType.int8], Int32, _DeviceHandle) -> Result,
 ]
 
 alias cuDeviceTotalMem = _dylib_function[
-    "cuDeviceTotalMem_v2", fn (Pointer[Int], Device) -> Result
+    "cuDeviceTotalMem_v2", fn (Pointer[Int], _DeviceHandle) -> Result
 ]
 
 alias cuCtxCreate = _dylib_function[
     "cuCtxCreate_v2",
-    fn (Pointer[_ContextHandle], Int32, Device) -> Result,
+    fn (Pointer[_ContextHandle], Int32, _DeviceHandle) -> Result,
 ]
 
 alias cuCtxDestroy = _dylib_function[

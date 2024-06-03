@@ -622,7 +622,6 @@ fn device_count() raises -> Int:
     return int(res)
 
 
-@register_passable("trivial")
 struct Device(StringableRaising):
     var id: Int32
     var cuda_dll: UnsafePointer[CudaDLL]
@@ -699,8 +698,9 @@ struct Device(StringableRaising):
         alias buffer_size = 256
         var buffer = stack_allocation[buffer_size, DType.int8]()
 
+        print(self.cuda_dll)
         var cuDeviceGetName = self.cuda_dll[].cuDeviceGetName if self.cuda_dll else cuDeviceGetName.load()
-        var ok = cuDeviceGetName(buffer, Int32(buffer_size), self)
+        _ = cuDeviceGetName(buffer, Int32(buffer_size), self.id)
 
         return StringRef(buffer.address)
 
@@ -709,7 +709,7 @@ struct Device(StringableRaising):
 
         var cuDeviceTotalMem = self.cuda_dll[].cuDeviceTotalMem if self.cuda_dll else cuDeviceTotalMem.load()
         var res: Int = 0
-        _check_error(cuDeviceTotalMem(Pointer.address_of(res), self))
+        _check_error(cuDeviceTotalMem(Pointer.address_of(res), self.id))
         return res
 
     fn _query(self, attr: DeviceAttribute) raises -> Int:
@@ -717,7 +717,9 @@ struct Device(StringableRaising):
 
         var cuDeviceGetAttribute = self.cuda_dll[].cuDeviceGetAttribute if self.cuda_dll else cuDeviceGetAttribute.load()
         var res: Int32 = 0
-        _check_error(cuDeviceGetAttribute(Pointer.address_of(res), attr, self))
+        _check_error(
+            cuDeviceGetAttribute(Pointer.address_of(res), attr, self.id)
+        )
         return int(res)
 
     fn multiprocessor_count(self) raises -> Int:

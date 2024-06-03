@@ -255,14 +255,8 @@ struct Function[
         inout self,
         module: Module,
         name: String,
-        debug: Bool = False,
-        verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
         cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
     ) raises:
         @parameter

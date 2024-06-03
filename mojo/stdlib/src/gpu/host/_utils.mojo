@@ -48,8 +48,7 @@ fn _human_memory(size: Int) -> String:
 
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(CUDA_DRIVER_PATH).exists():
-        print("the CUDA library was not found at", CUDA_DRIVER_PATH)
-        abort()
+        abort("the CUDA library was not found at " + CUDA_DRIVER_PATH)
 
     var ptr = UnsafePointer[DLHandle].alloc(1)
     var handle = DLHandle(CUDA_DRIVER_PATH)
