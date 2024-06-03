@@ -1702,14 +1702,14 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
             if axis_size < simd_width:
                 global_values = global_val
             else:
-                global_values = input_dim_ptr.load[width=simd_width]()
+                global_values = SIMD[size=simd_width].load(input_dim_ptr)
 
             # iterate over values evenly divisible by simd_width
             var indices = iota[output.type, simd_width]()
             var global_indices = indices
             var last_simd_index = align_down(axis_size, simd_width)
             for j in range(simd_width, last_simd_index, simd_width):
-                var curr_values = input_dim_ptr.load[width=simd_width](j)
+                var curr_values = SIMD[size=simd_width].load(input_dim_ptr, j)
                 indices += simd_width
 
                 var mask = cmpeq(curr_values, global_values)
@@ -1726,7 +1726,7 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
             var idx = Scalar[output.type](0)
             var found_min: Bool = False
             for j in range(last_simd_index, axis_size, 1):
-                var elem = input_dim_ptr.load(j)
+                var elem = Scalar.load(input_dim_ptr, j)
                 if cmp(global_val, elem):
                     global_val = elem
                     idx = j
@@ -1739,7 +1739,7 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
                     global_indices, Scalar[output.type].MAX
                 )
                 idx = min_indices.reduce_min()
-            output_dim_ptr.store(idx)
+            Scalar.store(output_dim_ptr, idx)
 
     sync_parallelize[task_func](parallel_size)
 
