@@ -381,6 +381,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
       if (selfType.isEqualCanon(selfArgType))
         return;
 
+      // It is ok if the self type has different parameters than the
+      // declaration, this is a form of conditional conformance.
+      if (selfType.getWithoutParameters(shared).isEqualCanon(
+              selfArgType.getWithoutParameters(shared)))
+        return;
+
       // For non-inout arguments, it is also ok if the argument is some type
       // like Reference[Self] that an instance of Self implicitly converts to.
       if (selfArg.convention != ParsedArgument::kConventionInOut) {
