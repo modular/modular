@@ -479,8 +479,9 @@ struct LayoutTensor[
 
         @parameter
         for i in range(count):
-            initialize_pointee_move(
-                UnsafePointer.address_of(tiles._get_reference_unsafe(i)[]),
+            UnsafePointer.address_of(
+                tiles._get_reference_unsafe(i)[]
+            ).init_pointee_move(
                 LayoutTensor[
                     dtype,
                     __tiled_layout[0],
