@@ -85,4 +85,5 @@ from .linalg import (
 from .lists import list
 from .quantized_ops import qmatmul
 from .reduction import mean, arg_max
+from .repeat_interleave import repeat_interleave
 from .slicing import gather, select, slice, split, concat, stack
