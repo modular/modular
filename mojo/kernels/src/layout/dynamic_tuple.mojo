@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
-from utils.variant import Variant
+
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 
 from utils._format import Formatter
+from utils.variant import Variant
 
 
 # FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance

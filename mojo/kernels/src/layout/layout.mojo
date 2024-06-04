@@ -6,6 +6,7 @@
 
 from builtin.io import _printf
 from builtin.string import _calc_initial_buffer_size_int32
+
 from utils._format import Formattable, Formatter, write_to
 
 from .dynamic_tuple import *
@@ -15,7 +16,6 @@ from .int_tuple import (
     crd2idx,
     flatten,
     inner_product,
-    to_int,
     is_int,
     is_tuple,
     mul,
@@ -24,10 +24,10 @@ from .int_tuple import (
     reverse,
     shape_div,
     sorted,
+    to_int,
     tuple_min,
     zip,
 )
-
 
 # ===-----------------------------------------------------------------------===#
 # Layout Trait                                                                 #

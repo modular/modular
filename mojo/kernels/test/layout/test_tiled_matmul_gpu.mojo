@@ -6,6 +6,8 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import AddressSpace
 from gpu.host import Context, Function, synchronize
 from gpu.host.memory import _malloc_managed
@@ -15,9 +17,6 @@ from gpu.sync import barrier
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import outer_product_acc
-from buffer import NDBuffer
-from buffer.list import DimList
-
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 
 from utils.index import Index

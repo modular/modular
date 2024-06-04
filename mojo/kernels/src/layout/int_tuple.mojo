@@ -8,8 +8,8 @@ import math
 
 from layout.dynamic_tuple import *
 
-from utils.variant import Variant
 from utils._format import Formatter, write_to
+from utils.variant import Variant
 
 # IntTuple definition
 

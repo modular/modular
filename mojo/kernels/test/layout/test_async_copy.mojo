@@ -6,8 +6,11 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from math import ceildiv
+from pathlib import Path
+
 from gpu import AddressSpace, barrier
-from gpu.host import Context, Function, synchronize, Stream
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -16,17 +19,15 @@ from gpu.host.memory import (
 )
 from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import (
-    async_copy_wait_all,
     async_copy_commit_group,
+    async_copy_wait_all,
     async_copy_wait_group,
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram_async
 from layout.swizzle import Swizzle
-from math import ceildiv
 from memory.unsafe import DTypePointer
-from pathlib import Path
 from testing import assert_almost_equal
 
 

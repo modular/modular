@@ -5,29 +5,30 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+import math
+
 from buffer import NDBuffer
 from buffer.list import DimList
-import math
-from utils import Index, StaticTuple
-
-from layout import LayoutTensor, Layout, IntTuple
+from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import LayoutList
 from layout.nd_buffer_stub import (
+    ElementLayout,
+    TileMask,
+    _copy_layout_tensor_to_nd_buffer,
+    _copy_nd_buffer_to_layout_tensor,
+    _copy_nd_buffer_to_layout_tensor_masked,
+    _distribute_mask,
+    _tile_mask,
+    _vectorize_mask,
     copy_from_nd_buffer,
     copy_from_nd_buffer_masked,
     copy_to_nd_buffer,
     copy_to_nd_buffer_masked,
     distribute,
     vectorize,
-    ElementLayout,
-    _copy_nd_buffer_to_layout_tensor,
-    _copy_nd_buffer_to_layout_tensor_masked,
-    _copy_layout_tensor_to_nd_buffer,
-    _tile_mask,
-    _vectorize_mask,
-    _distribute_mask,
-    TileMask,
 )
+
+from utils import Index, StaticTuple
 
 
 fn linspace_fill[

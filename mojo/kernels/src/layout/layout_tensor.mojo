@@ -7,19 +7,20 @@
 from collections.optional import Optional, OptionalReg
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
+
+from algorithm import vectorize
+from builtin.int import int as _int
+from gpu.id import ThreadIdx
+from gpu.memory import async_copy
+from memory import memcpy
+from memory.reference import AddressSpace, _GPUAddressSpace
+from memory.unsafe import DTypePointer
+
 from utils import InlineArray, StaticIntTuple
 from utils.numerics import max_finite
 
-from algorithm import vectorize
-from gpu.memory import async_copy
-from gpu.id import ThreadIdx
-from memory import memcpy
-from memory.unsafe import DTypePointer
-from memory.reference import AddressSpace, _GPUAddressSpace
-
-from .int_tuple import flatten, idx2crd, to_int, product, fill_like
+from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
-from builtin.int import int as _int
 
 
 # Distribute thread_layout into data_layout, if axis is provided

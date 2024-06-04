@@ -5,19 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 from collections.optional import OptionalReg
 
-from layout import LayoutTensor, Layout
-from layout.int_tuple import to_int, depth
-from layout.layout import make_layout
-
+from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from gpu.id import ThreadIdx
 from gpu.memory import async_copy
-
+from layout import Layout, LayoutTensor
+from layout.int_tuple import depth, to_int
+from layout.layout import make_layout
 from memory.reference import AddressSpace, _GPUAddressSpace
 
-from buffer import NDBuffer
-from buffer.list import DimList, Dim
-
-from utils import StaticTuple, StaticIntTuple
+from utils import StaticIntTuple, StaticTuple
 
 alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 

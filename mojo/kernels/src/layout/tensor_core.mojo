@@ -6,11 +6,11 @@
 """This module provides abstractions for using Tensor Cores do to arithmetic and matrix operations
 """
 
+from gpu import WARP_SIZE, lane_id
+from gpu.mma import mma
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
-from gpu.mma import mma
-from gpu import lane_id, WARP_SIZE
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:

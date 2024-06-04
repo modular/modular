@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 
-from layout import LayoutTensor
-from layout import Layout, IntTuple
+from layout import IntTuple, Layout, LayoutTensor
 
 
 fn outer_product[
