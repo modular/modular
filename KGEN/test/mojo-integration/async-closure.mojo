@@ -6,6 +6,8 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from runtime.llcl import Runtime
+
 
 @always_inline
 async fn just_call_it[func: async fn[a: Int] (Int) capturing -> Int]() -> Int:
@@ -21,7 +23,8 @@ fn foobar[pref: Int](a: Int):
 
     var coro = just_call_it[but_async]()
     print(pref)
-    print(coro._deprecated_direct_resume())
+    with Runtime() as rt:
+        print(rt.run(coro^))
 
 
 fn main():
