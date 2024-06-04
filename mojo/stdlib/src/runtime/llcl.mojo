@@ -289,6 +289,7 @@ struct Runtime:
         handle._set_result_slot(UnsafePointer.address_of(out))
         _async_execute[handle.type](handle._handle, self, -1)
         _async_wait(AsyncContext.get_chain(ctx))
+        _del_llcl_chain(AsyncContext.get_chain(ctx))
         _ = handle^
 
     @always_inline
@@ -305,6 +306,7 @@ struct Runtime:
         )
         _async_execute[handle.type](handle._handle, self, -1)
         _async_wait(AsyncContext.get_chain(ctx))
+        _del_llcl_chain(AsyncContext.get_chain(ctx))
         if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(__get_nearest_error_slot())
