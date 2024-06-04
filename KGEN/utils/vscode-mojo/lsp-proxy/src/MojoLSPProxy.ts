@@ -143,12 +143,14 @@ export class MojoLSPProxy {
     this.client.console.log(`The mojo-lsp-server binary exited with signal '${
         status.signal}' and exit code '${status.code}'.`);
 
-    const timeSinceInitInMins = Math.floor(Date.now() - this.initTime / 60000);
+    const timeSinceInitInMillis = Date.now() - this.initTime;
+    const timeSinceInitInMins = Math.floor(timeSinceInitInMillis / 60000);
     // We only allow one restart per minute to prevent VSCode from disabling the
     // LSP. VSCode allows 4 crashes every 3 minutes.
     if (timeSinceInitInMins >= 1) {
       this.client.console.log(
-          "The mojo-lsp-server binary has exited unsuccessfully. The proxy will terminate.");
+          `The mojo-lsp-server binary has exited unsuccessfully. The proxy will terminate. It ran ${
+              timeSinceInitInMins} ms.`);
       if (status.signal !== null)
         process.kill(process.pid, status.signal);
       process.exit(status.code!);
