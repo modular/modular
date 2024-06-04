@@ -262,6 +262,32 @@ def CO_ResumeOp : COOp<"resume"> {
 }
 
 //===----------------------------------------------------------------------===//
+// AwaitOp
+//===----------------------------------------------------------------------===//
+
+def CO_AwaitOp : COOp<"await"> {
+  let summary = "await the results of another coroutine";
+  let description = [{
+    The `co.await` operation starts and awaits the results of another coroutine.
+    It pushes a frame on the dynamic call stack formed between coroutines.
+
+    Example:
+
+    ```mlir
+    %0 = co.await %coro(%err, %res) : i1
+    ```
+  }];
+
+  let arguments = (ins CoroutineType:$coroutine, PointerType:$error,
+                       PointerType:$result);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = [{
+    $coroutine `(` $error `,` $result `)` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DestroyOp
 //===----------------------------------------------------------------------===//
 

@@ -28,6 +28,16 @@ kgen.func @async_coroutine(%arg0: i32) -> !co.routine {
   kgen.return %curHdl : !co.routine
 }
 
+// CHECK-LABEL: kgen.func @await
+kgen.func @await(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>, %arg2: !co.routine) -> i1 {
+  // CHECK-NEXT: %0:2 = co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> (i1, index)
+  %0:2 = co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> (i1, index)
+  // CHECK-NEXT: co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
+  co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
+  // CHECK-NEXT: return %0#0
+  kgen.return %0#0 : i1
+}
+
 // CHECK-LABEL: kgen.func @async_execute
 kgen.func @async_execute() -> !co.routine {
   // CHECK: [[R0:%.*]] = kgen.param.constant: i32
