@@ -698,7 +698,6 @@ struct Device(StringableRaising):
         alias buffer_size = 256
         var buffer = stack_allocation[buffer_size, DType.int8]()
 
-        print(self.cuda_dll)
         var cuDeviceGetName = self.cuda_dll[].cuDeviceGetName if self.cuda_dll else cuDeviceGetName.load()
         _ = cuDeviceGetName(buffer, Int32(buffer_size), self.id)
 

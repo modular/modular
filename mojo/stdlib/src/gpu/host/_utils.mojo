@@ -9,8 +9,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-
-from ._constants import CUDA_DRIVER_PATH
+from collections import List
 from .result import Result as DriverResult
 
 # ===----------------------------------------------------------------------===#
@@ -46,15 +45,42 @@ fn _human_memory(size: Int) -> String:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
-    if not Path(CUDA_DRIVER_PATH).exists():
-        abort("the CUDA library was not found at " + CUDA_DRIVER_PATH)
+fn _get_cuda_driver_path() raises -> Path:
+    alias _CUDA_DRIVER_LIB_NAME = "libcuda.so"
+    var _DEFAULT_CUDA_DRIVER_BASE_PATHS = List[Path](
+        Path("/usr/lib/x86_64-linux-gnu"),  # Ubuntu like
+        Path("/usr/lib64/nvidia"),  # Redhat like
+        Path("/usr/lib/wsl/lib"),  # WSL
+    )
 
-    var ptr = UnsafePointer[DLHandle].alloc(1)
-    var handle = DLHandle(CUDA_DRIVER_PATH)
-    _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
-    ptr[] = handle
-    return ptr.bitcast[NoneType]()
+    # Quick lookup for libcuda.so assuming it's symlinked.
+    for loc in _DEFAULT_CUDA_DRIVER_BASE_PATHS:
+        var lib_path = loc[] / _CUDA_DRIVER_LIB_NAME
+        if lib_path.exists():
+            return lib_path
+
+    # If we cannot find libcuda.so, then search harder.
+    for loc in _DEFAULT_CUDA_DRIVER_BASE_PATHS:
+        for file in loc[].listdir():
+            var lib_path = loc[] / file[]
+            if not lib_path.is_file():
+                continue
+            if _CUDA_DRIVER_LIB_NAME in str(file[]):
+                return lib_path
+
+    raise "the CUDA library was not found"
+
+
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+    try:
+        var driver_path = _get_cuda_driver_path()
+        var ptr = UnsafePointer[DLHandle].alloc(1)
+        var handle = DLHandle(str(driver_path))
+        _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
+        ptr[] = handle
+        return ptr.bitcast[NoneType]()
+    except e:
+        return abort[UnsafePointer[NoneType]](e)
 
 
 fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
