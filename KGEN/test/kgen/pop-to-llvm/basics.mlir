@@ -251,17 +251,6 @@ kgen.func @store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar
   kgen.return
 }
 
-// CHECK-LABEL: @nontemporal_store_with_alignment
-// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @nontemporal_store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
-  // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64, nontemporal}
-  pop.store %v, %p align<128> nontemporal: !kgen.pointer<scalar<si32>>
-  kgen.return
-}
-
 // CHECK-LABEL: @offset
 kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<scalar<f32>> {
   // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]

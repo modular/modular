@@ -208,10 +208,8 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 
 void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
                     std::optional<unsigned> alignment) {
-  TypedAttr alignmentAttr;
-  if (alignment)
-    alignmentAttr = b.getIndexAttr(*alignment);
-  build(b, state, arg, ptr, alignmentAttr, {});
+  build(b, state, arg, ptr,
+        alignment ? b.getIndexAttr(*alignment) : TypedAttr());
 }
 
 //===----------------------------------------------------------------------===//
