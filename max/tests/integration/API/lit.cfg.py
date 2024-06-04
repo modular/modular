@@ -56,16 +56,6 @@ config.substitutions.append(
     ("%api_executor_models_dir", str(api_executor_models_dir))
 )
 
-mojo_user_kernels = (
-    Path(config.modular_src_root)
-    / "Kernels"
-    / "mojo"
-    / "Mogg"
-    / "MOGGTests.mojo"
-)
-
-config.substitutions.append(("%mojo_user_kernels", mojo_user_kernels))
-
 generated_models_path = (
     Path(config.modular_derived_dir)
     / "build"
@@ -96,16 +86,6 @@ config.environment["MODULAR_AI_ENGINE_LIB_PATH"] = modular_framework_lib_path
 # Enable MEF caching in tests if not given a value via env vars.
 mef_cache_config = os.environ.get("MODULAR_MAX_ENABLE_MODEL_IR_CACHE", "true")
 config.environment["MODULAR_MAX_ENABLE_MODEL_IR_CACHE"] = mef_cache_config
-
-engine_pkg_dir = (
-    Path(config.modular_src_root) / "GenericML" / "lib" / "API" / "mojo"
-)
-
-config.substitutions.append(("%engine_pkg_dir", engine_pkg_dir))
-
-test_utils_dir = Path(config.modular_src_root) / "Kernels" / "test"
-config.substitutions.append(("%test_utils_pkg_dir", test_utils_dir))
-
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
