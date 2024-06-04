@@ -46,17 +46,10 @@ static SignatureType lowerResult(SignatureType signature) {
   // Micro-optimization: don't hash a new type if it won't change.
   if (!anyNone)
     return signature;
-  SmallVector<ArgConvention> maybeNewConventions;
-  ArrayRef<ArgConvention> conventions = signature.getArgConventions();
-  if (!conventions.empty() && conventions[0] == ArgConvention::ByRefResult) {
-    llvm::append_range(maybeNewConventions, conventions);
-    maybeNewConventions[0] = ArgConvention::None;
-    conventions = maybeNewConventions;
-  }
   return SignatureType::get(
       FunctionType::get(signature.getContext(), signature.getArguments(),
                         newResults),
-      conventions, signature.getFnEffects().setThrows(false));
+      signature.getArgConventions(), signature.getFnEffects().setThrows(false));
 }
 
 /// Remove none types from the results of debuginfo subroutine types as well.
