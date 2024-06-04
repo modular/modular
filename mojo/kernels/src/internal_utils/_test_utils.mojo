@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import alignof
-from utils import InlineArray
 from math import isclose
+from sys.info import alignof
+
 from buffer import DimList, NDBuffer
 from testing import assert_equal
+
+from utils import InlineArray
 
 
 fn get_minmax[
