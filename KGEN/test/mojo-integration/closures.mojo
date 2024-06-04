@@ -8,9 +8,13 @@
 from sys import argv
 
 
+from runtime.llcl import Runtime
+
+
 @no_inline
-fn takeClosure(formatter: Coroutine[Int]) -> Int:
-    return formatter._deprecated_direct_resume()
+fn takeClosure(owned formatter: Coroutine[Int]) -> Int:
+    with Runtime() as rt:
+        return rt.run(formatter^)
 
 
 @no_inline
@@ -31,7 +35,7 @@ fn main():
         var y = atol(String(argv()[2]))
 
         var formatter = makeClosure(x)
-        var w = takeClosure(formatter)
+        var w = takeClosure(formatter^)
         # CHECK: 4
         print(w)
     except e:

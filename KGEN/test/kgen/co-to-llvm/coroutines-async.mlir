@@ -5,11 +5,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: llvm.func @coro_resume
 llvm.func @coro_resume() {
   %0 = "make_handle"() : () -> !co.routine
-  // CECK: [[FUNC:%.*]] = llvm.load [[HND:%.*]] : !llvm.ptr -> !llvm.ptr
-  // CECK-NEXT: llvm.call [[FUNC]]([[HND]])
-  // CHECK: llvm.load
-  // CHECK-NEXT: llvm.call
-  co.resume %0
+  // CHECK: [[FUNC:%.*]] = llvm.load [[HND:%.*]] : !llvm.ptr -> !llvm.ptr
+  %1 = co.resume %0 : <(!co.routine) -> ()>
   llvm.return
 }
 

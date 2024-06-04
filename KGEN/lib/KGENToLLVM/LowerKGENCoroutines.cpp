@@ -335,10 +335,10 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
-  // The resume function is the second element of the context.
+  // The resume function is the first element of the context.
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  b.create<CallOp>(TypeRange(),
-                   ValueRange{b.create<LoadOp>(cache.opaquePtr, hdl), hdl});
+  Value resumeFn = b.create<LoadOp>(cache.opaquePtr, hdl);
+  op.replaceAllUsesWith(resumeFn);
   op.erase();
 }
 

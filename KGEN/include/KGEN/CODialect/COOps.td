@@ -242,21 +242,23 @@ def CO_GetCallbackPtrOp : COOp<"get_callback_ptr", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def CO_ResumeOp : COOp<"resume"> {
-  let summary = "Resume execution of a coroutine.";
+  let summary = "Get a coroutine's resume function.";
   let description = [{
-    The `co.resume` operation resumes execution of a suspended coroutine.
-    Resuming a coroutine that is not suspended or that is uninitialized is
-    undefined behaviour.
+    The `co.resume` operation returns a function that resumes execution of a
+    suspended coroutine.  Resuming a coroutine that is not suspended or that is
+    uninitialized is undefined behaviour.
 
     Example:
 
     ```mlir
-    co.resume %hdl
+    %fn = co.resume %hdl : <(!co.routine) -> ()>
+    kgen.call_indirect %fn(%hdl) : (!co.routine) -> ()
     ```
   }];
 
   let arguments = (ins CoroutineType:$coroutine);
-  let assemblyFormat = "$coroutine attr-dict";
+  let results = (outs KGEN_SignatureType:$result);
+  let assemblyFormat = "$coroutine attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//
