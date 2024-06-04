@@ -312,7 +312,8 @@ struct CutDownVariadicPack[
 # CHECK: lit.func @"test_immortal_to_mortal
 fn test_immortal_to_mortal(arg: Reference[Int, _])
     -> Reference[Int, arg.lifetime]:
-  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}(%arg)
+  # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Reference::@"__getitem__{{.*}}(%arg)
+  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
   # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
@@ -320,7 +321,7 @@ fn test_immortal_to_mortal(arg: Reference[Int, _])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
   # CHECK-NEXT: kgen.return [[RES]]
-  return UnsafePointer(arg)[]
+  return UnsafePointer.address_of(arg[])[]
 
 
 # CHECK-LABEL: lit.func @"ref_copyability
