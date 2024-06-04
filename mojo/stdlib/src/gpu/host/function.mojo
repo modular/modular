@@ -195,15 +195,15 @@ struct Function[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.__init__(
-            debug,
-            verbose,
-            dump_ptx,
-            dump_llvm,
-            max_registers,
-            threads_per_block,
-            cache_config,
-            func_attribute,
-            ctx.cuda_dll,
+            debug=debug,
+            verbose=verbose,
+            dump_ptx=dump_ptx,
+            dump_llvm=dump_llvm,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cache_config=cache_config,
+            func_attribute=func_attribute,
+            cuda_dll=ctx.cuda_dll,
         )
 
     @always_inline
@@ -225,7 +225,7 @@ struct Function[
 
         self.cuda_dll = cuda_dll
 
-        Self.dump_rep(dump_ptx, dump_llvm)
+        Self._dump_rep(dump_ptx, dump_llvm)
 
         var info = Self._get_global_cache_info[func_type, func](
             debug=debug,
@@ -259,7 +259,7 @@ struct Function[
 
         self.cuda_dll = cuda_dll
 
-        Self.dump_rep(dump_ptx, dump_llvm)
+        Self._dump_rep(dump_ptx, dump_llvm)
 
         var function_handle = module.load(name)
         if not function_handle:
@@ -268,7 +268,7 @@ struct Function[
         self.info = _CachedFunctionInfo(module.module, function_handle)
 
     @staticmethod
-    fn dump_rep(
+    fn _dump_rep(
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
     ) raises:
@@ -455,12 +455,12 @@ struct Function[
         alias fn_name = _get_nvptx_fn_name[func]()
 
         var payload = _GlobalPayload(
-            debug,
-            verbose,
-            max_registers,
-            threads_per_block,
-            cache_config,
-            func_attribute,
+            debug=debug,
+            verbose=verbose,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cache_config=cache_config,
+            func_attribute=func_attribute,
         )
 
         var info_ptr = _get_global[

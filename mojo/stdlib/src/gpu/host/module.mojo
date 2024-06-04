@@ -333,12 +333,12 @@ struct Module:
         threads_per_block: Optional[Int] = None,
     ) raises:
         self.__init__(
-            content,
-            debug,
-            verbose,
-            max_registers,
-            threads_per_block,
-            ctx.cuda_dll,
+            content=content,
+            debug=debug,
+            verbose=verbose,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cuda_dll=ctx.cuda_dll,
         )
 
     fn __init__(
