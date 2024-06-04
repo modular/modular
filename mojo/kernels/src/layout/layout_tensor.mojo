@@ -1448,3 +1448,89 @@ fn copy_local_to_dram[
 ):
     var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
     dst_framgents.copy_from(src)
+
+
+# ===-----------------------------------------------------------------------===#
+# LayoutTensorIter                                                             #
+# ===-----------------------------------------------------------------------===#
+
+
+@register_passable
+struct LayoutTensorIter[
+    type: DType,
+    layout: Layout,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    circular: Bool = False,
+]:
+    """Iterate through a memory buffer and construct layout tensor.
+
+    The returned layout tensor is NOT vectorized. User should explicitly vectorize.
+
+    TODO: support constructing iterator from layout tensor.
+    """
+
+    var ptr: DTypePointer[type, address_space]
+    var offset: Int
+    var stride: Int
+    var bound: Int
+
+    @always_inline
+    fn __init__(
+        inout self,
+        ptr: DTypePointer[type, address_space],
+        bound: Int,
+        stride: Int = layout.size(),
+        offset: Int = 0,
+    ):
+        self.ptr = ptr
+        self.offset = offset
+        self.stride = stride
+        self.bound = bound
+
+    @always_inline
+    fn __copyinit__(inout self: Self, existing: Self):
+        self.ptr = existing.ptr
+        self.offset = existing.offset
+        self.stride = existing.stride
+        self.bound = existing.bound
+
+    @always_inline
+    fn get(self) -> LayoutTensor[type, layout, address_space=address_space]:
+        """Return the layout tensor at current iterator."""
+        # TODO: Use deref `[]` to be consistent with mojo feature.
+
+        return LayoutTensor[type, layout, address_space=address_space](
+            self.ptr + self.offset
+        )
+
+    @always_inline
+    fn __iadd__[T: Intable](inout self, rhs: T):
+        """Increment the iterator.
+
+        This function is unsafe. It omits bound checking for performance reasons.
+        Caller must make sure index doesn't go out-of-bound.
+        """
+
+        self.offset += int(rhs) * self.stride
+
+        @parameter
+        if circular:
+            self.offset = self.offset % self.bound
+
+    @always_inline
+    fn next[T: Intable](self, rhs: T) -> Self:
+        """Return an iterator pointing to the next `rhs` layout tensor."""
+
+        var next_offset = self.offset + int(rhs) * self.stride
+
+        @parameter
+        if circular:
+            next_offset = next_offset % self.bound
+
+        return LayoutTensorIter[
+            type, layout, address_space=address_space, circular=circular
+        ](self.ptr, self.bound, stride=self.stride, offset=next_offset)
+
+    @always_inline
+    fn next(self) -> Self:
+        return self.next(1)
