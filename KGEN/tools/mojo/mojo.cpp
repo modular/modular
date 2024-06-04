@@ -76,13 +76,6 @@ int main(int argc, char **argv) {
   registerRunSubcommand(registry);
   registerTestSubcommand(registry);
 
-  // Configure the current python if it hasn't been set.
-  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
-  if (succeeded(config)) {
-    (void)setProcessEnv("MOJO_PYTHON_LIBRARY", config->getPythonLib(),
-                        /*overwrite=*/false);
-  }
-
   // If the user hasn't provided any arguments, treat this as the `repl`
   // subcommand.
   if (arguments.empty())

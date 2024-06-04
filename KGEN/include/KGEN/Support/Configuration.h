@@ -74,14 +74,6 @@ public:
   StringRef getOrcRTPath();
 
   //===--------------------------------------------------------------------===//
-  // Python Configurations
-  //===--------------------------------------------------------------------===//
-
-  /// Return the path to the default python shared library to load for Mojo
-  /// python interop.
-  StringRef getPythonLib();
-
-  //===--------------------------------------------------------------------===//
   // Driver Configurations
   //===--------------------------------------------------------------------===//
 
