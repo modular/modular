@@ -12,8 +12,11 @@ from math import (
     exp2,
     factorial,
     floor,
+    frexp,
     iota,
     isclose,
+    log,
+    log2,
     rsqrt,
     sin,
     sqrt,
@@ -23,7 +26,7 @@ from sys.info import has_neon
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
-from utils.numerics import inf, nan, neg_inf
+from utils.numerics import inf, isinf, nan, neg_inf
 
 
 fn test_sin() raises:
@@ -232,6 +235,132 @@ def test_rsqrt():
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
+def _test_frexp_impl[type: DType](*, atol: Float32, rtol: Float32):
+    var res0 = frexp(Scalar[type](123.45))
+    assert_true(
+        isclose(res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol)
+    )
+    assert_true(
+        isclose(res0[1].cast[DType.float32](), 7.0, atol=atol, rtol=rtol)
+    )
+
+    var res1 = frexp(Scalar[type](0.1))
+    assert_true(
+        isclose(res1[0].cast[DType.float32](), 0.8, atol=atol, rtol=rtol)
+    )
+    assert_true(
+        isclose(res1[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol)
+    )
+
+    var res2 = frexp(Scalar[type](-0.1))
+    assert_true(
+        isclose(res2[0].cast[DType.float32](), -0.8, atol=atol, rtol=rtol)
+    )
+    assert_true(
+        isclose(res2[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol)
+    )
+
+    var res3 = frexp(SIMD[type, 4](0, 2, 4, 5))
+    assert_true(
+        isclose(
+            res3[0].cast[DType.float32](),
+            SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
+            atol=atol,
+            rtol=rtol,
+        ).reduce_and()
+    )
+    assert_true(
+        isclose(
+            res3[1].cast[DType.float32](),
+            SIMD[DType.float32, 4](-0.0, 2.0, 3.0, 3.0),
+            atol=atol,
+            rtol=rtol,
+        ).reduce_and()
+    )
+
+
+def _test_log_impl[type: DType](*, atol: Float32, rtol: Float32):
+    var res0 = log(Scalar[type](123.45))
+    assert_true(
+        isclose(res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol)
+    )
+
+    var res1 = log(Scalar[type](0.1))
+    assert_true(
+        isclose(res1.cast[DType.float32](), -2.3025, atol=atol, rtol=rtol)
+    )
+
+    var res2 = log(SIMD[type, 4](1, 2, 4, 5))
+    assert_true(
+        isclose(
+            res2.cast[DType.float32](),
+            SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
+            atol=atol,
+            rtol=rtol,
+        ).reduce_and()
+    )
+
+    var res3 = log(Scalar[type](2.7182818284590452353602874713526624977572))
+    assert_true(isclose(res3.cast[DType.float32](), 1.0, atol=atol, rtol=rtol))
+
+    var res4 = isinf(log(SIMD[type, 4](0, 1, 0, 0)))
+    assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
+
+
+def _test_log2_impl[type: DType](*, atol: Float32, rtol: Float32):
+    var res0 = log2(Scalar[type](123.45))
+    assert_true(
+        isclose(
+            res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
+        ).reduce_and()
+    )
+
+    var res1 = log2(Scalar[type](0.1))
+    assert_true(
+        isclose(res1.cast[DType.float32](), -3.3219, atol=atol, rtol=rtol)
+    )
+
+    var res2 = log2(SIMD[type, 4](1, 2, 4, 5))
+    assert_true(
+        isclose(
+            res2.cast[DType.float32](),
+            SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
+            atol=atol,
+            rtol=rtol,
+        ).reduce_and()
+    )
+
+
+def test_frexp():
+    _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
+    _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
+
+    # TODO(KERN-228): support BF16 on neon systems.
+    @parameter
+    if not has_neon():
+        _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+
+
+def test_log():
+    _test_log_impl[DType.float32](atol=1e-4, rtol=1e-5)
+    _test_log_impl[DType.float16](atol=1e-2, rtol=1e-5)
+
+    # TODO(KERN-228): support BF16 on neon systems.
+    @parameter
+    if not has_neon():
+        _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+
+
+def test_log2():
+    _test_log2_impl[DType.float32](atol=1e-4, rtol=1e-5)
+    _test_log2_impl[DType.float16](atol=1e-2, rtol=1e-5)
+
+    # TODO(KERN-228): support BF16 on neon systems.
+    @parameter
+    if not has_neon():
+        _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+
+
 def main():
     test_sin()
     test_cos()
@@ -245,3 +374,6 @@ def main():
     test_iota()
     test_sqrt()
     test_rsqrt()
+    test_frexp()
+    test_log()
+    test_log2()
