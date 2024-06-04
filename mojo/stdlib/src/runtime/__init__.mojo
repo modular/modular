@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Implements the runtime package."""
-from .lock import BlockingSpinLock, BlockingScopedLock
+from .lock import BlockingScopedLock, BlockingSpinLock

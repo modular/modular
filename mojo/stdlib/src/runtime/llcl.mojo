@@ -11,9 +11,9 @@ from sys import external_call
 from sys.ffi import _get_global, _get_global_or_null
 from sys.info import num_physical_cores
 from sys.param_env import is_defined
-from gpu.host import Stream, CUDADeviceStream
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
+from gpu.host import CUDADeviceStream, Stream
 from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef

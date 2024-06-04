@@ -6,15 +6,12 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from runtime import BlockingScopedLock, BlockingSpinLock
-from time import sleep, time_function, now
-from runtime.llcl import (
-    Runtime,
-    TaskGroup,
-)
-from testing import assert_equal
-
 from os import Atomic
+from time import now, sleep, time_function
+
+from runtime import BlockingScopedLock, BlockingSpinLock
+from runtime.llcl import Runtime, TaskGroup
+from testing import assert_equal
 
 
 fn test_basic_lock() raises:

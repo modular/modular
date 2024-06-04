@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from os import Atomic
 from time import sleep
 
-from os import Atomic
 from runtime.llcl import SpinWaiter
 
 
