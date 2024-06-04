@@ -158,6 +158,7 @@ fn pool_shape_impl[
     output_shape[0] = batch_size
     output_shape[input_rank - 1] = input_channels
 
+    @parameter
     for i in range(0, input_rank - 2):
         var input_spatial_dim = int(input_buf.dim(i + 1))
         var filter = int(filter_buf[i])

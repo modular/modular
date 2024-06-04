@@ -1331,8 +1331,7 @@ fn _concat_gpu_elementwise[
         var in_index = out_index
         in_index[axis] = out_index[axis]
 
-        # FIXME: @parameter for doesn't support early returns yet.
-        # @parameter
+        @parameter
         for i in range(num_inputs):
             var input = inputs[i]
             var input_shape = input.get_shape()
