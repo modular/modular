@@ -4,18 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .result import Result
-from .dtype import DataType, Property
-from .cublas import ComputeType
-from gpu.host import Stream
 from collections import List
 from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+
+from gpu.host import Stream
+from memory.unsafe import Pointer
+
 from utils import StaticTuple
 
-from memory.unsafe import Pointer
+from .cublas import ComputeType
+from .dtype import DataType, Property
+from .result import Result
 
 alias Context = NoneType
 

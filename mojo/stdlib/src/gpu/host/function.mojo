@@ -11,23 +11,18 @@ from pathlib import Path
 from sys.ffi import _get_global
 from sys.intrinsics import _mlirtype_is_eq
 
+from gpu.host.device_context import DeviceBuffer
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 
 from utils.variant import Variant
 
-from .context import Context
 from ._compile import _compile_code, _get_nvptx_fn_name
-from ._utils import (
-    _check_error,
-    _StreamHandle,
-    _ModuleHandle,
-    _FunctionHandle,
-)
+from ._utils import _check_error, _FunctionHandle, _ModuleHandle, _StreamHandle
+from .context import Context
 from .dim import Dim
 from .module import Module
 from .stream import Stream
-from gpu.host.device_context import DeviceBuffer
 
 # ===----------------------------------------------------------------------===#
 # CacheConfig

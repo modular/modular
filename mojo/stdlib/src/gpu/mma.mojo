@@ -6,10 +6,12 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from sys import llvm_intrinsic, _RegisterPackType
-from utils import StaticTuple
-from memory.unsafe import Pointer, bitcast
+from sys import _RegisterPackType, llvm_intrinsic
+
 from gpu.memory import AddressSpace
+from memory.unsafe import Pointer, bitcast
+
+from utils import StaticTuple
 
 
 fn _split(

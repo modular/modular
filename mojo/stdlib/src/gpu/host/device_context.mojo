@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from gpu.host.context import Context
 from gpu.host.cuda_instance import CudaInstance
 from gpu.host.device import Device
-from gpu.host.context import Context
 from gpu.host.function import Function
 from gpu.host.stream import Stream
 

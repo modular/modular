@@ -9,13 +9,9 @@ from os import abort
 
 from memory.unsafe import DTypePointer, Pointer
 
-from ._utils import (
-    _check_error,
-    _ContextHandle,
-    _StreamHandle,
-)
-from .device import Device
+from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
+from .device import Device
 
 # ===----------------------------------------------------------------------===#
 # Context

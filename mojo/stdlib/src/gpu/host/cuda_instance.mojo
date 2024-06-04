@@ -4,20 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys.ffi import C_char
+
 from ._utils import (
     _check_error,
-    _get_dylib_function,
-    _human_memory,
     _ContextHandle,
     _EventHandle,
-    _StreamHandle,
+    _get_dylib_function,
+    _human_memory,
     _ModuleHandle,
+    _StreamHandle,
 )
-from .function import _FunctionHandle
 from .device import Device
 from .event import Flag
-
-from sys.ffi import C_char
+from .function import _FunctionHandle
 
 
 @register_passable("trivial")

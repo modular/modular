@@ -10,8 +10,8 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from gpu.host._utils import _check_error
 from gpu.host.result import Result
 from memory import stack_allocation as _generic_stack_allocation
-from memory.unsafe import DTypePointer, Pointer, bitcast
 from memory.reference import _GPUAddressSpace
+from memory.unsafe import DTypePointer, Pointer, bitcast
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace

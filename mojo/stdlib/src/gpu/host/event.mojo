@@ -10,13 +10,9 @@ from time import now
 
 from memory.unsafe import DTypePointer, Pointer
 
-from ._utils import (
-    _check_error,
-    _EventHandle,
-    _StreamHandle,
-)
-from .stream import Stream
+from ._utils import _check_error, _EventHandle, _StreamHandle
 from .context import Context
+from .stream import Stream
 
 # ===----------------------------------------------------------------------===#
 # Flag

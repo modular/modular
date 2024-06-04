@@ -12,8 +12,8 @@ from memory.unsafe import DTypePointer, Pointer
 from utils import StringRef
 
 from ._utils import _check_error, _human_memory
-from .dim import Dim
 from .cuda_instance import *
+from .dim import Dim
 
 # ===----------------------------------------------------------------------===#
 # Device Information

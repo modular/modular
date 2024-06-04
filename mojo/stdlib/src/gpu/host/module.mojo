@@ -14,11 +14,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
 
-from ._utils import (
-    _check_error,
-    _ModuleHandle,
-    _FunctionHandle,
-)
+from ._utils import _check_error, _FunctionHandle, _ModuleHandle
 
 # ===----------------------------------------------------------------------===#
 # JitOptions
