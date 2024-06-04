@@ -11,6 +11,7 @@
 #include "Config/Version.h"
 #include "Support/Base64.h"
 #include "Support/Entitlements/Entitlement.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Random.h"
 #include "Support/Settings/Settings.h"
@@ -262,6 +263,24 @@ TelemetryContext::TelemetryContext(
   // WARNING: Metering & billing depends on machineid. Do not remove!
   attrs.SetAttribute("machineid", local_ids.first);
   attrs.SetAttribute("sessionid", local_ids.second);
+
+  // Store an installation id by persisting the machine id to disk if absent.
+  // This id is used to validate the e2e telemetry pipeline and could later
+  // be added as an attribute if desired.
+  const std::string install_id_filename = "install_id";
+  std::error_code ec;
+  bool exists = std::filesystem::exists(install_id_filename, ec);
+  if (ec)
+    llvm::dbgs() << "Failed to check for install id file: " << ec.message();
+  else if (!exists) {
+    auto writeErr =
+        writeFileUnderLock(install_id_filename, [&](llvm::raw_ostream &os) {
+          os << local_ids.first;
+        });
+    if (writeErr.isError())
+      llvm::dbgs() << "Failed to write install id file: "
+                   << writeErr.getError();
+  }
 
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
