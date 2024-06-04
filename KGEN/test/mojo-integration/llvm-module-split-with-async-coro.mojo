@@ -22,13 +22,13 @@
 # CHECK: define weak void @KGEN_EE_JIT_GlobalDestructor()
 
 # CHECK: # [LLVM Module Split: submodule 4]
-# CHECK: define weak dso_local void @foo_closure_1(ptr %0, ptr %1)
+# CHECK: define weak dso_local void @foo_closure_1(ptr %0)
 
 # CHECK: # [LLVM Module Split: submodule 5]
 # CHECK: @foo_async_closure_0_afp
 # CHECK: define internal void @foo_async_closure_0_af(ptr %0)
 # CHECK: define internal ptr @foo_async_closure_0()
-# CHECK: declare dso_local void @foo_closure_1(ptr, ptr)
+# CHECK: declare dso_local void @foo_closure_1(ptr)
 # CHECK: define dso_local void @foo()
 # CHECK: define internal void @__kgen_coro_end_fn(ptr %0)
 

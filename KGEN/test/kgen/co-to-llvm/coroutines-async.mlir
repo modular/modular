@@ -218,7 +218,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
 // CHECK-NEXT: %[[FN:.*]] = llvm.load %[[FN_PTR]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[CLOSURE]][0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(ptr, ptr)>
 // CHECK-NEXT: %[[ARG:.*]] = llvm.load %[[ARG_PTR]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT: llvm.call %[[FN]](%arg0, %[[ARG]]) : !llvm.ptr, (!llvm.ptr, !llvm.ptr) -> ()
+// CHECK-NEXT: llvm.call %[[FN]](%[[ARG]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT: llvm.return
 
 // CHECK-LABEL: llvm.func internal @__kgen_coro_ctxt_proj_fn(%arg0: !llvm.ptr loc({{.*}})) -> !llvm.ptr
