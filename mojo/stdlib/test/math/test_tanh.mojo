@@ -7,12 +7,11 @@
 # RUN: %mojo  -I%S/../ %s | FileCheck %s
 
 from math import tanh
-from random import seed, randn
+from random import randn, seed
+
 from buffer import Buffer
-
-from test_utils import libm_call
 from closed_source_utils import compare
-
+from test_utils import libm_call
 from testing import assert_almost_equal
 
 alias alignment = 64

@@ -8,11 +8,12 @@
 
 
 from math import erf
-from random import seed, randn
-from utils import InlineArray
+from random import randn, seed
 
 from closed_source_utils import compare
 from test_utils import libm_call
+
+from utils import InlineArray
 
 alias alignment = 64
 

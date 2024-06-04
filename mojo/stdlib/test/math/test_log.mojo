@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from math import frexp, isclose, log, log2
 from sys import has_neon
-from math import frexp, log, log2, isclose
-from utils.numerics import isinf
 
-from testing import assert_true, assert_equal
+from testing import assert_equal, assert_true
+
+from utils.numerics import isinf
 
 
 fn test_frexp[type: DType](atol: Float32, rtol: Float32) raises:

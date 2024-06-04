@@ -5,14 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from math import ceil, cos, factorial, floor, isclose, sin, trunc, exp2, iota
-from utils.numerics import inf, neg_inf
-from sys.info import has_neon
 from collections import List
+from math import ceil, cos, exp2, factorial, floor, iota, isclose, sin, trunc
+from sys.info import has_neon
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
-from utils.numerics import nan
+from utils.numerics import inf, nan, neg_inf
 
 
 fn test_sin() raises:

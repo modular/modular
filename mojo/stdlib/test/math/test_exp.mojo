@@ -6,10 +6,10 @@
 # RUN: %mojo %s
 
 from math import exp
-from random import seed, randn_float64
+from random import randn_float64, seed
 
 from test_utils import libm_call
-from testing import assert_equal, assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 
 def test_exp_bfloat16():
