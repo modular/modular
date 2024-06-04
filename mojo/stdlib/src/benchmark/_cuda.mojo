@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements benchmark utilties."""
+"""Implements benchmark cuda utilties."""
 
 from gpu.host import synchronize
 from gpu.host.event import Event, time_function
