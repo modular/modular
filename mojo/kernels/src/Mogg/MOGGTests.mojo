@@ -10,6 +10,7 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from register import *
 from runtime.llcl import MojoCallContextPtr
+from extensibility import Tensor as ExtensibilityTensor, empty_tensor
 
 from utils.index import StaticIntTuple
 
@@ -389,3 +390,22 @@ struct MyCustomInt(Movable):
 @no_inline
 fn test_make_custom_int() -> MyCustomInt:
     return MyCustomInt(42)
+
+
+@mogg_register("basic_target")
+@export
+fn basic_target[
+    type: DType, rank: Int, target: StringLiteral = "cpu"
+](x: NDBuffer[type, rank], out: NDBuffer[type, rank]):
+    print("hello from kernel on", target)
+
+
+@mogg_register("basic_target_extensibility")
+@always_inline
+@export
+fn basic_target_extensibility[
+    rank: Int, type: DType, target: StringLiteral
+](tensor: ExtensibilityTensor[type, rank]) -> ExtensibilityTensor[type, rank]:
+    print("hello from extensibility kernel on", target)
+    var out = empty_tensor[type, rank](tensor.shape)
+    return out^
