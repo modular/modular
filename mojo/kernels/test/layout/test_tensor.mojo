@@ -1408,6 +1408,91 @@ fn test_slice_with_offsets():
     ).print()
 
 
+# CHECK-LABEL: test_layout_tensor_iterator
+fn test_layout_tensor_iterator():
+    print("== test_layout_tensor_iterator")
+
+    alias size = 64
+    alias type = DType.float32
+
+    var ptr = stack_allocation[size, type]()
+    for i in range(size):
+        ptr[i] = i
+
+    alias layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
+
+    # Non circular iterator.
+    # CHECK: 0.0 1.0
+    # CHECK: 8.0 9.0
+    # CHECK: 4.0 5.0
+    # CHECK: 12.0 13.0
+    var iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](ptr, size)
+    for _ in range(2):
+        iter2x2.get().print()
+        iter2x2 += 1
+
+    # Non circular iterator with stride
+    # CHECK: 0.0 1.0
+    # CHECK: 8.0 9.0
+    # CHECK: 16.0 17.0
+    # CHECK: 24.0 25.0
+    iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](ptr, size, stride=16)
+    for _ in range(2):
+        iter2x2.get().print()
+        iter2x2 += 1
+
+    # Non circular iterator with offset and stride
+    # CHECK: 4.0 5.0
+    # CHECK: 12.0 13.0
+    # CHECK: 20.0 21.0
+    # CHECK: 28.0 29.0
+    iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](
+        ptr, size, stride=16, offset=4
+    )
+    for _ in range(2):
+        iter2x2.get().print()
+        iter2x2 += 1
+
+    # Circular iterator with offset and stride
+    # CHECK: 32.0 33.0
+    # CHECK: 40.0 41.0
+    # CHECK: 48.0 49.0
+    # CHECK: 56.0 57.0
+    # CHECK: 0.0 1.0
+    # CHECK: 8.0 9.0
+    # CHECK: 16.0 17.0
+    # CHECK: 24.0 25.0
+    var iter2x2_circular = LayoutTensorIter[
+        type, layout_2x2_8x1, circular=True
+    ](ptr, size, stride=16, offset=32)
+    for _ in range(4):
+        iter2x2_circular.get().print()
+        iter2x2_circular += 1
+
+    # Tiled iterator.
+    var tensor = LayoutTensor[type, Layout.row_major(8, 8)](ptr)
+    # CHECK: 32.0 33.0
+    # CHECK: 40.0 41.0
+    # CHECK: 34.0 35.0
+    # CHECK: 42.0 43.0
+    # CHECK: 36.0 37.0
+    # CHECK: 44.0 45.0
+    # CHECK: 38.0 39.0
+    # CHECK: 46.0 47.0
+    var iter = tensor.tiled_iterator[2, 2, axis=1](2, 0)
+    for _ in range(4):
+        iter.get().print()
+        iter += 1
+    # CHECK: 38.0 39.0
+    # CHECK: 46.0 47.0
+    # CHECK: 54.0 55.0
+    # CHECK: 62.0 63.0
+    iter = tensor.tiled_iterator[2, 2, axis=0](2, 3)
+    for _ in range(2):
+        iter.get().print()
+        iter += 1
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -1428,3 +1513,4 @@ fn main():
     # TODO(#38547) re-enable the following test once the non-deterministic behavior is addressed.
     # test_copy_subtiles_scalars_back()
     test_slice_with_offsets()
+    test_layout_tensor_iterator()

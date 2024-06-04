@@ -449,6 +449,40 @@ struct LayoutTensor[
         return res
 
     @always_inline
+    fn tiled_iterator[
+        *tile_sizes: Int,
+        axis: Int = 0,
+        __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
+    ](self, *tile_coords: Int) -> LayoutTensorIter[
+        dtype, __tiled_layout[0], address_space, circular=False
+    ]:
+        alias num_tiles = __get_len[tile_sizes]()
+
+        constrained[
+            __tiled_layout[1].rank() == num_tiles,
+            "Number of tiles should match the rank",
+        ]()
+
+        var ptr_offset = 0
+
+        @parameter
+        for i in range(num_tiles):
+            alias stride = to_int(__tiled_layout[1].stride[i])
+            ptr_offset += tile_coords[i] * stride
+
+        constrained[
+            layout.shape[axis].is_value(),
+            "The layout in the input axis can't be a tuple",
+        ]()
+
+        alias bound = layout.shape[axis].value()
+        alias stride = __tiled_layout[1].stride[axis].value()
+
+        return LayoutTensorIter[
+            dtype, __tiled_layout[0], address_space, circular=False
+        ](self.ptr + ptr_offset, bound, stride=stride)
+
+    @always_inline
     fn split[
         count: Int,
         axis: Int = 0,
