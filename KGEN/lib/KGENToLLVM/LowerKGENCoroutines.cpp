@@ -364,7 +364,7 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
 ///   %clsArgPtr = llvm.getelementptr %ctxt[0, 2, 1]
 ///   %ctxtFn = llvm.load %ctxtFnPtr
 ///   %ctxtArg = llvm.load %ctxtArgPtr
-///   llvm.call %ctxtFn(%opaqueCtxt, %ctxtArg)
+///   llvm.call %ctxtFn(%ctxtArg)
 ///   llvm.return
 /// }
 /// ```
@@ -395,7 +395,7 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
       b.create<GEPOp>(cache.opaquePtr, closureType, closure,
                       ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true);
   Value closureArg = b.create<LoadOp>(cache.opaquePtr, ptrToClosureArg);
-  b.create<CallOp>(TypeRange(), ValueRange{closureFn, ctxt, closureArg});
+  b.create<CallOp>(TypeRange(), ValueRange{closureFn, closureArg});
   b.create<ReturnOp>(ValueRange());
   symtab.insert(endFn);
 
