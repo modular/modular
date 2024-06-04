@@ -9,6 +9,7 @@
 from algorithm.functional import stencil
 from buffer import NDBuffer
 from buffer.list import DimList
+
 from utils.numerics import min_or_neg_inf
 
 alias _map_fn_type = fn[rank: Int] (StaticIntTuple[rank]) capturing -> (

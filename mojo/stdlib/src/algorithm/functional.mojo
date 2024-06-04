@@ -13,18 +13,18 @@ from algorithm import map
 """
 
 from math import align_down, ceildiv
-from bit import is_power_of_two
 from os import abort
 from sys.info import num_physical_cores, triple_is_nvidia_cuda
 
+from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, Function, Stream
 from runtime import tracing
 from runtime.llcl import Runtime, TaskGroup
 from runtime.tracing import Trace, TraceLevel
 
-from utils.numerics import FlushDenormals
 from utils.index import Index, StaticIntTuple
+from utils.numerics import FlushDenormals
 
 # ===----------------------------------------------------------------------===#
 # Map

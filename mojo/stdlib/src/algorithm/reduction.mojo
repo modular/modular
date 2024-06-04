@@ -12,20 +12,16 @@ from algorithm import map_reduce
 ```
 """
 
-from builtin.math import min as _min
+from collections import Optional
 from math import align_down, ceildiv, iota
-from sys.info import (
-    simdwidthof,
-    sizeof,
-    triple_is_nvidia_cuda,
-)
+from sys.info import simdwidthof, sizeof, triple_is_nvidia_cuda
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import Dim, DimList
-from collections import Optional
+from builtin.math import min as _min
 from gpu.host import Stream
 from memory.unsafe import bitcast
 

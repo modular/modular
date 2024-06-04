@@ -4,9 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .reduction import (
-    block_reduce,
-    row_reduce,
-    reduce_kernel,
-    reduce_launch,
-)
+from .reduction import block_reduce, reduce_kernel, reduce_launch, row_reduce
