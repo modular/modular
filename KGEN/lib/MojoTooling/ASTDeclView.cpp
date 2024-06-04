@@ -462,10 +462,8 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   // convention.
   if (isInout())
     os << "inout ";
-  if (isOwned() && !parentIsDef)
+  if (isOwned())
     os << "owned ";
-  if (isBorrowed() && parentIsDef)
-    os << "borrowed ";
 
   dumpIdentifierWithType(os, getName(), type, variadicKind);
   if (defaultValue)
@@ -775,7 +773,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
         pogAttr.getName(),
         generateTypeString(type, variadicKind, selfType, convention),
         pogAttr.getPassingKind(), variadicKind, std::move(defaultValue),
-        /*parentIsDef=*/isDefFlag, declConvention));
+        declConvention));
   }
 
   // Grab the types of the parameters to the function.

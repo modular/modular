@@ -210,12 +210,11 @@ public:
   ArgumentDeclView(StringRef name, StringRef type,
                    KGEN::LIT::PassingKind passingKind,
                    VariadicKind variadicKind,
-                   std::optional<std::string> defaultValue, bool parentIsDef,
+                   std::optional<std::string> defaultValue,
                    Convention convention)
       : DeclView(DeclViewKind::DK_ArgumentDeclView, name), type(type),
         passingKind(passingKind), variadicKind(variadicKind),
-        defaultValue(std::move(defaultValue)), parentIsDef(parentIsDef),
-        convention(convention) {}
+        defaultValue(std::move(defaultValue)), convention(convention) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -265,7 +264,6 @@ private:
   KGEN::LIT::PassingKind passingKind;
   VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
-  bool parentIsDef;
   Convention convention;
 
   //===----------------------------------------------------------------------===//
