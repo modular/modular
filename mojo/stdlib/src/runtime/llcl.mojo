@@ -84,7 +84,7 @@ struct AsyncContext:
     to available.
     """
 
-    alias callback_fn_type = fn (UnsafePointer[NoneType], Chain) -> None
+    alias callback_fn_type = fn (Chain) -> None
 
     var callback: Self.callback_fn_type
     var chain: Chain
@@ -94,7 +94,7 @@ struct AsyncContext:
         return UnsafePointer.address_of(ctx[].chain)
 
     @staticmethod
-    fn complete(hdl: UnsafePointer[NoneType], ch: Chain):
+    fn complete(ch: Chain):
         var tmp = ch
         _async_complete(UnsafePointer[Chain].address_of(tmp))
 
@@ -377,9 +377,7 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
 
 @register_passable("trivial")
 struct TaskGroupContext[lifetimes: LifetimeSet]:
-    alias tg_callback_fn_type = fn (
-        Pointer[NoneType], inout TaskGroup[lifetimes]
-    ) -> None
+    alias tg_callback_fn_type = fn (inout TaskGroup[lifetimes]) -> None
 
     var callback: Self.tg_callback_fn_type
     var task_group: UnsafePointer[TaskGroup[lifetimes]]
@@ -430,9 +428,7 @@ struct TaskGroup[lifetimes: LifetimeSet]:
         return prev - 1
 
     @staticmethod
-    fn _task_complete_callback(
-        hdl: Pointer[NoneType], inout tg: TaskGroup[lifetimes]
-    ):
+    fn _task_complete_callback(inout tg: TaskGroup[lifetimes]):
         tg._task_complete()
 
     fn _task_complete(inout self):
