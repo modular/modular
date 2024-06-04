@@ -102,9 +102,9 @@ fn run_stencil1d[smem: Bool]() raises:
 
     alias func_select = stencil1d_smem if smem == True else stencil1d
 
-    var func = Function[func_select](debug=True)
+    var func = Function[func_select]()
 
-    for i in range(iterations):
+    for _ in range(iterations):
         func(
             a_device,
             b_device,
