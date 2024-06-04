@@ -1242,7 +1242,7 @@ def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
     Example:
 
     ```mlir
-    %0 = pop.extern_ptr_symbol aligment 4 : !kgen.pointer<scalar<f32>, 3>
+    %0 = pop.extern_ptr_symbol aligment <4> : !kgen.pointer<scalar<f32>, 3>
     ```
   }];
 
@@ -1250,7 +1250,7 @@ def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
   let results = (outs Res<PointerType, "", [MemAlloc]>:$res_symbol);
 
   let assemblyFormat = [{
-    `alignment` custom<IndexParamValue>($alignment)
+    `alignment` `<` custom<IndexParamValue>($alignment) `>`
     attr-dict `:` type($res_symbol)
   }];
 
