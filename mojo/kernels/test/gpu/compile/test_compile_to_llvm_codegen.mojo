@@ -30,7 +30,7 @@ fn test_dynamic_shared_mem():
     # CHECK: @extern_ptr_syml_0 = external dso_local addrspace(3) global float, align 4
     fn kernel() -> Float32:
         # CHECK: %1 = load float, ptr addrspacecast (ptr addrspace(3) @extern_ptr_syml to ptr), align 4
-        # CHECK: %2 = load float, ptr addrspacecast (ptr addrspace(3) getelementptr inbounds (float, ptr addrspace(3) @extern_ptr_syml_0, i32 1) to ptr), align 4
+        # CHECK: %2 = load float, ptr addrspacecast (ptr addrspace(3) getelementptr (float, ptr addrspace(3) @extern_ptr_syml_0, i32 1) to ptr), align 4
         # CHECK: fadd contract float %1, %2
         var dynamic_sram_ptr_1 = dynamic_shared_memory[Float32, alignment=4]()
         var dynamic_sram_ptr_2 = dynamic_shared_memory[Float32, alignment=4]()
