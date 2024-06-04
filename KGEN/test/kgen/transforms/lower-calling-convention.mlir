@@ -103,8 +103,8 @@ kgen.func @co_get_results(%arg0: !co.routine) {
 // CHECK-LABEL: kgen.func @co_await
 kgen.func @co_await(%arg0: !co.routine) -> !kgen.none {
   %pointer = kgen.param.constant: pointer<index> = <0>
-  // CHECK: co.await %arg0(%pointer, %pointer) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
-  %0 = co.await %arg0(%pointer, %pointer) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> !kgen.none
+  // CHECK: co.await %arg0, %pointer, %pointer : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
+  %0 = co.await %arg0, %pointer, %pointer : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> !kgen.none
   kgen.return %0 : !kgen.none
 }
 

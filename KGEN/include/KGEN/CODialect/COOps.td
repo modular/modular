@@ -270,20 +270,12 @@ def CO_AwaitOp : COOp<"await"> {
   let description = [{
     The `co.await` operation starts and awaits the results of another coroutine.
     It pushes a frame on the dynamic call stack formed between coroutines.
-
-    Example:
-
-    ```mlir
-    %0 = co.await %coro(%err, %res) : i1
-    ```
   }];
 
-  let arguments = (ins CoroutineType:$coroutine, PointerType:$error,
-                       PointerType:$result);
+  let arguments = (ins CoroutineType:$coroutine, Variadic<AnyType>:$slots);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    $coroutine `(` $error `,` $result `)` attr-dict `:`
-    functional-type(operands, results)
+    operands attr-dict `:` functional-type(operands, results)
   }];
 }
 
@@ -331,10 +323,9 @@ def CO_SetByRefErrorAndResultOp : COOp<"set_byref_error_result"> {
   }];
 
   let arguments = (ins Arg<CoroutineType, "", [MemWrite]>:$coroutine,
-                       PointerType:$error, PointerType:$result);
+                       PointerType:$result, Optional<PointerType>:$error);
   let assemblyFormat = [{
-    $coroutine `(` $error `,` $result `)`
-    attr-dict `:` type($error) `,` type($result)
+    $coroutine `(` $result (`,` $error^)? `)` attr-dict `:` type(operands)
   }];
 }
 
@@ -346,10 +337,8 @@ def CO_SetByRefErrorAndResultOp : COOp<"set_byref_error_result"> {
 // between LowerClosures and LowerKGENCoroutines.
 def CO_GetByRefErrorAndResultOp : COOp<"get_byref_error_result"> {
   let arguments = (ins Arg<CoroutineType, "", [MemRead]>:$coroutine);
-  let results = (outs PointerType:$error, PointerType:$result);
-  let assemblyFormat = [{
-    $coroutine attr-dict `:` type($error) `,` type($result)
-  }];
+  let results = (outs PointerType:$result, Optional<PointerType>:$error);
+  let assemblyFormat = "$coroutine attr-dict `:` type(results)";
 }
 
 #endif // COOPS_TD

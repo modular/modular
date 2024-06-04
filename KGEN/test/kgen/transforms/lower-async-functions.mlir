@@ -691,7 +691,7 @@ kgen.func @call_throwing_coro() {
   %coro = co.invoke[(!kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine]()
   %0 = pop.aligned_alloc %align, %size : <index>
   %1 = pop.aligned_alloc %align, %size : <index>
-  co.set_byref_error_result %coro(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+  co.set_byref_error_result %coro(%1, %0) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
   kgen.return
 }
 
@@ -712,7 +712,7 @@ kgen.func @opaque_coro(%coro: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !
   // CHECK-NEXT: [[v5:%.*]] = kgen.struct.gep %arg0[[[#RESULT]]] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>>
   // CHECK-NEXT: [[v6:%.*]] = pop.pointer.bitcast [[v5]] : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.store %arg2, [[v6]] : !kgen.pointer<pointer<index>>
-  co.set_byref_error_result %coro(%arg1, %arg2) : !kgen.pointer<index>, !kgen.pointer<index>
+  co.set_byref_error_result %coro(%arg2, %arg1) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
   kgen.return
 }
 }

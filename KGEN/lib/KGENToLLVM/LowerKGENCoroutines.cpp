@@ -297,15 +297,16 @@ static void lowerSetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Value err = b.createConversion(op.getOperand(1));
-  Value res = b.createConversion(op.getOperand(2));
-
-  b.create<StoreOp>(err, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
-                                         GEPArg(b.getPointerByteWidth() * 3),
-                                         /*inbounds=*/true));
-  b.create<StoreOp>(res, b.create<GEPOp>(err.getType(), b.getI8Type(), hdl,
+  Value res = b.createConversion(op.getOperand(1));
+  b.create<StoreOp>(res, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
                                          GEPArg(b.getPointerByteWidth() * 4),
                                          /*inbounds=*/true));
+  if (op.getNumOperands() == 3) {
+    Value err = b.createConversion(op.getOperand(2));
+    b.create<StoreOp>(err, b.create<GEPOp>(err.getType(), b.getI8Type(), hdl,
+                                           GEPArg(b.getPointerByteWidth() * 3),
+                                           /*inbounds=*/true));
+  }
   op.erase();
 }
 
@@ -315,18 +316,25 @@ static void lowerGetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Type errType = b.convertType(op.getError().getType());
-  Type resType = b.convertType(op.getResult().getType());
+  SmallVector<Value, 2> results;
 
-  Value err = b.create<LoadOp>(
-      errType,
-      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
-                      GEPArg(b.getPointerByteWidth() * 3), /*inbounds=*/true));
+  Type resType = b.convertType(op.getResult().getType());
   Value res = b.create<LoadOp>(
       resType,
       b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
                       GEPArg(b.getPointerByteWidth() * 4), /*inbounds=*/true));
-  op.replaceAllUsesWith(ValueRange{err, res});
+  results.push_back(res);
+
+  if (op.getError()) {
+    Type errType = b.convertType(op.getError().getType());
+    Value err = b.create<LoadOp>(
+        errType, b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
+                                 GEPArg(b.getPointerByteWidth() * 3),
+                                 /*inbounds=*/true));
+    results.push_back(err);
+  }
+
+  op.replaceAllUsesWith(results);
   op.erase();
 }
 
@@ -831,8 +839,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
         return WalkResult::interrupt();
     } else if (auto setByRefResults = dyn_cast<SetByRefErrorAndResultOp>(op)) {
       lowerSetByRefResults(b, cache, setByRefResults);
-    } else if (auto setByRefResults = dyn_cast<GetByRefErrorAndResultOp>(op)) {
-      lowerGetByRefResults(b, cache, setByRefResults);
+    } else if (auto getByRefResults = dyn_cast<GetByRefErrorAndResultOp>(op)) {
+      lowerGetByRefResults(b, cache, getByRefResults);
     } else if (auto resume = dyn_cast<CO::ResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
     } else if (auto destroy = dyn_cast<DestroyOp>(op)) {

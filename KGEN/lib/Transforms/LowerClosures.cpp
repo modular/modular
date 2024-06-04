@@ -132,14 +132,11 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
                          OpBuilder::atBlockBegin(&body.front()));
   Value coroHdl = b.create<CO::HandleOp>(op.getTypes());
   if (body.getNumArguments()) {
-    Type byrefResultType = body.getArguments().back().getType();
-    Type byrefErrorType;
+    SmallVector<Type, 2> types;
+    types.push_back(body.getArguments().back().getType());
     if (body.getNumArguments() == 2)
-      byrefErrorType = body.getArgumentTypes().front();
-    else
-      byrefErrorType = PointerType::get(KGEN::NoneType::get(b.getContext()));
-    auto results = b.create<CO::GetByRefErrorAndResultOp>(
-        TypeRange{byrefErrorType, byrefResultType}, coroHdl);
+      types.push_back(body.getArgumentTypes().front());
+    auto results = b.create<CO::GetByRefErrorAndResultOp>(types, coroHdl);
     body.getArguments().back().replaceAllUsesWith(results.getResult());
     if (body.getNumArguments() == 2)
       body.getArguments().front().replaceAllUsesWith(results.getError());
@@ -202,8 +199,8 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
 static void lowerAwait(CO::AwaitOp op) {
   MLIRContext *ctx = op.getContext();
   mlir::ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
-  b.create<CO::SetByRefErrorAndResultOp>(op.getCoroutine(), op.getError(),
-                                         op.getResult());
+  if (op.getNumOperands() > 1)
+    b.create<CO::SetByRefErrorAndResultOp>(TypeRange(), op->getOperands());
   auto suspend = b.create<CO::SuspendOp>();
   Block *body = b.createBlock(&suspend.getBody());
   Value parent = body->addArgument(op.getCoroutine().getType(), op.getLoc());
@@ -354,14 +351,11 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     if (origSig.hasMemoryOnlyResult() || origSig.isThrows()) {
       b.setLoc(func.getLoc());
       b.setInsertionPointAfter(coroHdl.getDefiningOp());
-      Type byrefResultType = origSig.getArguments().back();
-      Type byrefErrorType;
+      SmallVector<Type, 2> types;
+      types.push_back(origSig.getArguments().back());
       if (origSig.isThrows())
-        byrefErrorType = origSig.getArguments().end()[-2];
-      else
-        byrefErrorType = PointerType::get(KGEN::NoneType::get(b.getContext()));
-      auto results = b.create<CO::GetByRefErrorAndResultOp>(
-          TypeRange{byrefErrorType, byrefResultType}, coroHdl);
+        types.push_back(origSig.getArguments().end()[-2]);
+      auto results = b.create<CO::GetByRefErrorAndResultOp>(types, coroHdl);
       func.getArguments().back().replaceAllUsesWith(results.getResult());
       if (origSig.isThrows())
         func.getArguments().end()[-2].replaceAllUsesWith(results.getError());

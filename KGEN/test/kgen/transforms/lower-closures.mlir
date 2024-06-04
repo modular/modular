@@ -30,7 +30,7 @@ kgen.func @call_coroutine() {
 // CHECK-LABEL: kgen.func @byref_result(%arg0: index) -> !co.routine
 kgen.func @byref_result(%arg0: index, %arg1: !kgen.pointer<index> byref_result) async {
   // CHECK-NEXT: [[HDL:%.*]] = co.handle
-  // CHECK-NEXT: %error, %result = co.get_byref_error_result [[HDL]]
+  // CHECK-NEXT: %result = co.get_byref_error_result [[HDL]]
   // CHECK-NEXT: store %arg0, %result
   pop.store %arg0, %arg1 : !kgen.pointer<index>
   kgen.return
@@ -39,7 +39,7 @@ kgen.func @byref_result(%arg0: index, %arg1: !kgen.pointer<index> byref_result) 
 // CHECK-LABEL: kgen.func @byref_error(%arg0: index) -> !co.routine
 kgen.func @byref_error(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) async|throws {
   // CHECK-NEXT: [[HDL:%.*]] = co.handle
-  // CHECK-NEXT: %error, %result = co.get_byref_error_result [[HDL]]
+  // CHECK-NEXT: %result, %error = co.get_byref_error_result [[HDL]]
   // CHECK-NEXT: store %arg0, %error
   // CHECK-NEXT: store %arg0, %result
   pop.store %arg0, %arg1 : !kgen.pointer<index>
@@ -58,12 +58,12 @@ kgen.func @call_byref(%arg0: index) {
 
 // CHECK-LABEL: kgen.func @execute_byref_async_closure_0(%arg0: index) -> !co.routine
 // CHECK-NEXT:    [[HDL:%.*]] = co.handle
-// CHECK-NEXT:    %error, %result = co.get_byref_error_result [[HDL]]
+// CHECK-NEXT:    %result = co.get_byref_error_result [[HDL]]
 // CHECK-NEXT:    store %arg0, %result
 
 // CHECK-LABEL: kgen.func @execute_byref_async_closure_1(%arg0: index) -> !co.routine
 // CHECK-NEXT:    [[HDL:%.*]] = co.handle
-// CHECK-NEXT:    %error, %result = co.get_byref_error_result [[HDL]]
+// CHECK-NEXT:    %result, %error = co.get_byref_error_result [[HDL]]
 // CHECK-NEXT:    store %arg0, %error
 // CHECK-NEXT:    store %arg0, %result
 
@@ -138,7 +138,7 @@ kgen.func @co_await(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
   // CHECK-NEXT:   co.suspend.end
   // CHECK-NEXT: }
   // CHECK-NEXT: return
-  co.await %arg0(%arg1, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
+  co.await %arg0, %arg1, %arg1 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
   kgen.return
 }
 
@@ -147,7 +147,7 @@ kgen.func @co_raises(%arg0: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !kg
   // CHECK-NEXT: set_byref_error_result %arg0(%arg1, %arg2)
   // CHECK: [[RES:%.*]] = co.get_results %arg0
   // CHECK-NEXT: return [[RES]]
-  %0 = co.await %arg0(%arg1, %arg2) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> i1
+  %0 = co.await %arg0, %arg1, %arg2 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> i1
   kgen.return %0 : i1
 }
 
