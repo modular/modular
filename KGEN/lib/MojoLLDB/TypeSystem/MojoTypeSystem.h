@@ -553,7 +553,7 @@ public:
     return {};
   }
 
-  lldb_private::CompilerType GetChildCompilerTypeAtIndex(
+  llvm::Expected<lldb_private::CompilerType> GetChildCompilerTypeAtIndex(
       lldb::opaque_compiler_type_t type, lldb_private::ExecutionContext *exeCtx,
       size_t idx, bool transparentPointers, bool omitEmptyBaseClasses,
       bool ignoreArrayBounds, std::string &childName, uint32_t &childByteSize,

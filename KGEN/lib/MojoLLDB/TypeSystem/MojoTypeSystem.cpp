@@ -657,7 +657,8 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   return 0;
 }
 
-lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
+llvm::Expected<lldb_private::CompilerType>
+MojoTypeSystem::GetChildCompilerTypeAtIndex(
     lldb::opaque_compiler_type_t type, lldb_private::ExecutionContext *exeCtx,
     size_t idx, bool transparentPointers, bool omitEmptyBaseClasses,
     bool ignoreArrayBounds, std::string &childName, uint32_t &childByteSize,
@@ -672,7 +673,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   if (!ignoreArrayBounds &&
       idx >= getExpectedValueOr(
                  GetNumChildren(type, omitEmptyBaseClasses, exeCtx), 0u))
-    return {};
+    return lldb_private::CompilerType();
 
   // Pointer only has one child, so just return the unwrapped pointer type
   if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType())) {
@@ -704,7 +705,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
       }
       return createCompilerType(eltType);
     }
-    return {};
+    return lldb_private::CompilerType();
   }
 
   if (auto simdType = dyn_cast<POP::SIMDType>(astType)) {
@@ -713,7 +714,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
         std::optional<mlir::Type> eltMlirType = getMLIRTypeForDType(
             getMLIRContext(), *kgenDTypeOpt, 8 * GetPointerByteSize());
         if (!eltMlirType)
-          return {};
+          return lldb_private::CompilerType();
         MojoASTTypeRef eltType(*eltMlirType);
 
         if (const std::optional<MojoTypeDataLayout> &layout =
@@ -723,7 +724,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
           childByteOffset = (int32_t)idx * (int32_t)childByteSize;
           return createCompilerType(eltType);
         } else {
-          return {};
+          return lldb_private::CompilerType();
         }
       }
     }
@@ -738,7 +739,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
       childByteOffset = (int32_t)idx * (int32_t)childByteSize;
       return createCompilerType(eltType);
     }
-    return {};
+    return lldb_private::CompilerType();
   }
 
   if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType)) {
@@ -751,7 +752,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
       childByteSize = field.getByteSize();
       return createCompilerType(field.getConcreteType());
     }
-    return {};
+    return lldb_private::CompilerType();
   }
 
   if (isa<PackType, StructType>(astType)) {
@@ -763,7 +764,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
       childByteSize = field.getByteSize();
       return createCompilerType(field.getConcreteType());
     }
-    return {};
+    return lldb_private::CompilerType();
   }
 
   if (auto variantType = dyn_cast<VariantType>(astType)) {
@@ -778,9 +779,9 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
       childByteSize = field.getByteSize();
       return createCompilerType(field.getConcreteType());
     }
-    return {};
+    return lldb_private::CompilerType();
   }
-  return {};
+  return lldb_private::CompilerType();
 }
 
 uint32_t
