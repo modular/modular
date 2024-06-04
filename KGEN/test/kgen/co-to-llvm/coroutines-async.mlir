@@ -90,20 +90,32 @@ llvm.func @coro_set_results_one() {
 llvm.func @coro_byref_results() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
   %1 = kgen.param.constant: pointer<none> = <0>
+  // CHECK: [[RES:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
+  // CHECK-NEXT: store {{.*}}, [[RES]]
   // CHECK: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
   // CHECK-NEXT: store {{.*}}, [[ERR]]
+  // CHECK-NOT: set_byref_error_result
+  co.set_byref_error_result %0(%1, %1) : !co.routine, !kgen.pointer<none>, !kgen.pointer<none>
+
+  // CHECK-NOT: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
   // CHECK: [[RES:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
   // CHECK-NEXT: store {{.*}}, [[RES]]
   // CHECK-NOT: set_byref_error_result
-  co.set_byref_error_result %0(%1, %1) : <none>, <none>
+  co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<none>
 
-  // CHECK: [[ERR_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
-  // CHECK-NEXT: [[ERR:%.*]] = llvm.load [[ERR_PTR]]
   // CHECK: [[RES_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
   // CHECK-NEXT: [[RES:%.*]] = llvm.load [[RES_PTR]]
-  // CHECK-NEXT: "use"([[ERR]], [[RES]]) : (!llvm.ptr, !llvm.ptr)
-  %error, %result = co.get_byref_error_result %0 : <none>, <none>
-  "use"(%error, %result) : (!kgen.pointer<none>, !kgen.pointer<none>) -> ()
+  // CHECK: [[ERR_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
+  // CHECK-NEXT: [[ERR:%.*]] = llvm.load [[ERR_PTR]]
+  // CHECK-NEXT: "use"([[RES]], [[ERR]]) : (!llvm.ptr, !llvm.ptr)
+  %result, %error = co.get_byref_error_result %0 : !kgen.pointer<none>, !kgen.pointer<none>
+  "use"(%result, %error) : (!kgen.pointer<none>, !kgen.pointer<none>) -> ()
+
+  // CHECK: [[RES_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
+  // CHECK-NEXT: [[RES:%.*]] = llvm.load [[RES_PTR]]
+  %result0 = co.get_byref_error_result %0 : !kgen.pointer<none>
+  // CHECK-NEXT: "use"([[RES]]) : (!llvm.ptr)
+  "use"(%result0) : (!kgen.pointer<none>) -> ()
   llvm.return
 }
 

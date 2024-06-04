@@ -30,10 +30,10 @@ kgen.func @async_coroutine(%arg0: i32) -> !co.routine {
 
 // CHECK-LABEL: kgen.func @await
 kgen.func @await(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>, %arg2: !co.routine) -> i1 {
-  // CHECK-NEXT: %0:2 = co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> (i1, index)
-  %0:2 = co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> (i1, index)
-  // CHECK-NEXT: co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
-  co.await %arg2(%arg0, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
+  // CHECK-NEXT: %0:2 = co.await %arg2, %arg0, %arg1 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> (i1, index)
+  %0:2 = co.await %arg2, %arg0, %arg1 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> (i1, index)
+  // CHECK-NEXT: co.await %arg2, %arg0 : (!co.routine, !kgen.pointer<index>) -> ()
+  co.await %arg2, %arg0 : (!co.routine, !kgen.pointer<index>) -> ()
   // CHECK-NEXT: return %0#0
   kgen.return %0#0 : i1
 }
@@ -90,7 +90,9 @@ kgen.func @call_throwing_coro(%arg0: index) {
   %0 = co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine](%arg0)
   %1 = pop.aligned_alloc %align, %size : <index>
   %2 = pop.aligned_alloc %align, %size : <index>
-  // CHECK: co.set_byref_error_result %0(%1, %2) : <index>, <index>
-  co.set_byref_error_result %0(%1, %2) : <index>, <index>
+  // CHECK: co.set_byref_error_result %0(%1, %2) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
+  co.set_byref_error_result %0(%1, %2) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
+  // CHECK: co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<index>
+  co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<index>
   kgen.return
 }
