@@ -18,23 +18,39 @@ from memory.unsafe import Pointer
 # Constants
 # ===----------------------------------------------------------------------===#
 
-alias CUDA_NVML_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so"
-
+alias CUDA_NVML_LIBRARY_DIR = Path("/usr/lib/x86_64-linux-gnu")
+alias CUDA_NVML_LIBRARY_BASE_NAME = "libnvidia-ml"
+alias CUDA_NVML_LIBRARY_EXT = ".so"
 
 # ===----------------------------------------------------------------------===#
 # Library Load
 # ===----------------------------------------------------------------------===#
 
 
+fn _get_nvml_library_path() raises -> Path:
+    var common_path = CUDA_NVML_LIBRARY_DIR / (
+        CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
+    )
+    if common_path.exists():
+        return common_path
+    for fd in CUDA_NVML_LIBRARY_DIR.listdir():
+        if not (CUDA_NVML_LIBRARY_DIR / fd[]).is_file():
+            continue
+        if CUDA_NVML_LIBRARY_BASE_NAME in str(fd[]):
+            return fd[]
+    raise "the CUDA NVML library was not found in " + str(CUDA_NVML_LIBRARY_DIR)
+
+
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
-    if not Path(CUDA_NVML_LIBRARY_PATH).exists():
-        print("the CUDA NVML library was not found at", CUDA_NVML_LIBRARY_PATH)
-        abort()
-    var ptr = Pointer[DLHandle].alloc(1)
-    var handle = DLHandle(CUDA_NVML_LIBRARY_PATH)
-    _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
-    ptr[] = handle
-    return ptr.bitcast[NoneType]().address
+    try:
+        var lib_path = _get_nvml_library_path()
+        var ptr = Pointer[DLHandle].alloc(1)
+        var handle = DLHandle(str(lib_path))
+        _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        ptr[] = handle
+        return ptr.bitcast[NoneType]().address
+    except e:
+        return abort[UnsafePointer[NoneType]](e)
 
 
 fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
