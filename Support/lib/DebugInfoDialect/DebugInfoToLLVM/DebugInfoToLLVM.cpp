@@ -261,7 +261,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       StringAttr::get(type.getContext()), nullptr, /*line=*/0,
       /*scope=*/nullptr, convertType(type.getElementType()),
       LLVM::DIFlags::Zero, type.getSizeInBits(),
-      /*alignInBits=*/0, element);
+      /*alignInBits=*/0, element, /*dataLocation=*/{}, /*rank=*/{},
+      /*allocated=*/{}, /*associated=*/{});
 }
 
 static StringAttr convertDebugTypeNameForNVPTX(StringAttr name) {
@@ -340,7 +341,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
   return LLVM::DICompositeTypeAttr::get(
       type.getContext(), llvm::dwarf::DW_TAG_structure_type, {}, type.getName(),
       /*file=*/nullptr, /*line=*/0, /*scope=*/nullptr, /*baseType=*/nullptr,
-      LLVM::DIFlags::Zero, structSize, structAlign, elementTypes);
+      LLVM::DIFlags::Zero, structSize, structAlign, elementTypes,
+      /*dataLocation=*/{}, /*rank=*/{},
+      /*allocated=*/{}, /*associated=*/{});
 }
 
 LLVM::DISubroutineTypeAttr
@@ -394,7 +397,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
   return LLVM::DICompositeTypeAttr::get(
       context, llvm::dwarf::DW_TAG_variant_part, {}, StringAttr::get(context),
       nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, type.getSizeInBits(),
-      type.getAlignInBits(), variantTypes);
+      type.getAlignInBits(), variantTypes, /*dataLocation=*/{}, /*rank=*/{},
+      /*allocated=*/{}, /*associated=*/{});
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
@@ -406,7 +410,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
       type.getContext(), llvm::dwarf::DW_TAG_array_type, {}, type.getName(),
       nullptr, /*line=*/0, /*scope=*/nullptr,
       convertType(type.getElementType()), LLVM::DIFlags::Vector,
-      type.getSizeInBits(), /*alignInBits=*/0, element);
+      type.getSizeInBits(), /*alignInBits=*/0, element, /*dataLocation=*/{},
+      /*rank=*/{},
+      /*allocated=*/{}, /*associated=*/{});
 }
 
 //===----------------------------------------------------------------------===//

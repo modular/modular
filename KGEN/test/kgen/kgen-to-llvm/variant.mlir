@@ -5,15 +5,15 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: @variant_create_0
 kgen.func @variant_create_0(%arg0: i32) -> !kgen.variant<i32> {
   // CHECK-DAG: %[[DISCR:.*]] = llvm.mlir.constant(false) : i1
+  // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef : !llvm.array<1 x i64>
+  // CHECK-DAG: %[[S2:.*]] = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i1)>
   // CHECK-DAG: %[[I32_0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK-DAG: %[[I64_0:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK: %[[P0:.*]] = llvm.lshr %arg0, %[[I32_0]]
   // CHECK: %[[P1:.*]] = llvm.zext %[[P0]] : i32 to i64
   // CHECK: %[[P2:.*]] = llvm.shl %[[P1]], %[[I64_0]]
   // CHECK: %[[P3:.*]] = llvm.or %[[I64_0]], %[[P2]]
-  // CHECK: %[[S0:.*]] = llvm.mlir.undef
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[P3]], %[[S0]][0]
-  // CHECK: %[[S2:.*]] = llvm.mlir.undef
   // CHECK: %[[S3:.*]] = llvm.insertvalue %[[S1]], %[[S2]][0]
   // CHECK: %[[S4:.*]] = llvm.insertvalue %[[DISCR]], %[[S3]][1]
   %0 = kgen.variant.create %arg0, 0 : <i32>
@@ -65,6 +65,7 @@ kgen.func @variant_create_4(%arg0: !kgen.struct<(i32, i64, i32)>) -> !kgen.varia
   // CHECK-DAG: %[[I64_32:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK-DAG: %[[I32_0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK-DAG: %[[I64_0:.*]] = llvm.mlir.constant(0 : i64)
+  // CHECK-DAG: %[[P24:.*]] = llvm.mlir.undef : !llvm.array<4 x i64>
   // CHECK: %[[P5:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(i32, i64, i32)>
   // CHECK: %[[P6:.*]] = llvm.lshr %[[P5]], %[[I32_0]] : i32
   // CHECK: %[[P7:.*]] = llvm.zext %[[P6]] : i32 to i64
@@ -84,7 +85,6 @@ kgen.func @variant_create_4(%arg0: !kgen.struct<(i32, i64, i32)>) -> !kgen.varia
   // CHECK: %[[P21:.*]] = llvm.zext %[[P20]] : i32 to i64
   // CHECK: %[[P22:.*]] = llvm.shl %[[P21]], %[[I64_32]] : i64
   // CHECK: %[[P23:.*]] = llvm.or %[[P18]], %[[P22]] : i64
-  // CHECK: %[[P24:.*]] = llvm.mlir.undef : !llvm.array<4 x i64>
   // CHECK: %[[P25:.*]] = llvm.insertvalue %[[P14]], %[[P24]][0] : !llvm.array<4 x i64>
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P23]], %[[P25]][1] : !llvm.array<4 x i64>
   // CHECK: %[[P27:.*]] = llvm.insertvalue %[[I64_0]], %[[P26]][2] : !llvm.array<4 x i64>
@@ -180,8 +180,8 @@ kgen.func @variant_get_2(%arg0: !kgen.variant<struct<(i32, i32)>>) -> !kgen.stru
   // CHECK-DAG: %[[C32_i64:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK-DAG: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK-DAG: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
+  // CHECK-DAG: %[[P6:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32)>
   // CHECK: %[[P5:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.array<1 x i64>
-  // CHECK: %[[P6:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32)>
   // CHECK: %[[P7:.*]] = llvm.lshr %[[P5]], %[[C0_i64]] : i64
   // CHECK: %[[P8:.*]] = llvm.shl %[[P7]], %[[C0_i64]] : i64
   // CHECK: %[[P9:.*]] = llvm.trunc %[[P8]] : i64 to i32
@@ -201,10 +201,10 @@ kgen.func @variant_get_3(%arg0: !kgen.variant<struct<(i32, i64, i32)>, array<4, 
   // CHECK: %[[C32_i64:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
+  // CHECK: %[[P7:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i64, i32)>
   // CHECK: %[[P4:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<4 x i64>, i1)>
   // CHECK: %[[P5:.*]] = llvm.extractvalue %[[P4]][0] : !llvm.array<4 x i64>
   // CHECK: %[[P6:.*]] = llvm.extractvalue %[[P4]][1] : !llvm.array<4 x i64>
-  // CHECK: %[[P7:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i64, i32)>
   // CHECK: %[[P8:.*]] = llvm.lshr %[[P5]], %[[C0_i64]] : i64
   // CHECK: %[[P9:.*]] = llvm.shl %[[P8]], %[[C0_i64]] : i64
   // CHECK: %[[P10:.*]] = llvm.trunc %[[P9]] : i64 to i32
@@ -237,12 +237,15 @@ kgen.func @variant_get_4(%arg0: !kgen.variant<struct<(array<2, i16>, struct<(str
   // CHECK-DAG: %[[C16_i64:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-DAG: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64) : i64
   // CHECK-DAG: %[[C0_i16:.*]] = llvm.mlir.constant(0 : i16) : i16
+  // CHECK-DAG: %[[P15:.*]] = llvm.mlir.undef : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
+  // CHECK-DAG: %[[P16:.*]] = llvm.mlir.undef : !llvm.array<2 x i16>
+  // CHECK-DAG: %[[P28:.*]] = llvm.mlir.undef : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
+  // CHECK-DAG: %[[P29:.*]] = llvm.mlir.undef : !llvm.struct<(i8, i32)>
+  // CHECK-DAG: %[[P45:.*]] = llvm.mlir.undef : vector<2xf32>
   // CHECK: %[[P11:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<3 x i64>, i1)>
   // CHECK: %[[P12:.*]] = llvm.extractvalue %[[P11]][0] : !llvm.array<3 x i64>
   // CHECK: %[[P13:.*]] = llvm.extractvalue %[[P11]][1] : !llvm.array<3 x i64>
   // CHECK: %[[P14:.*]] = llvm.extractvalue %[[P11]][2] : !llvm.array<3 x i64>
-  // CHECK: %[[P15:.*]] = llvm.mlir.undef : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  // CHECK: %[[P16:.*]] = llvm.mlir.undef : !llvm.array<2 x i16>
   // CHECK: %[[P17:.*]] = llvm.lshr %[[P12]], %[[C0_i64]] : i64
   // CHECK: %[[P18:.*]] = llvm.shl %[[P17]], %[[C0_i64]] : i64
   // CHECK: %[[P19:.*]] = llvm.trunc %[[P18]] : i64 to i16
@@ -254,8 +257,6 @@ kgen.func @variant_get_4(%arg0: !kgen.variant<struct<(array<2, i16>, struct<(str
   // CHECK: %[[P25:.*]] = llvm.or %[[C0_i16]], %[[P24]] : i16
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P25]], %[[P21]][1] : !llvm.array<2 x i16>
   // CHECK: %[[P27:.*]] = llvm.insertvalue %[[P26]], %[[P15]][0] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  // CHECK: %[[P28:.*]] = llvm.mlir.undef : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
-  // CHECK: %[[P29:.*]] = llvm.mlir.undef : !llvm.struct<(i8, i32)>
   // CHECK: %[[P30:.*]] = llvm.lshr %[[P13]], %[[C0_i64]] : i64
   // CHECK: %[[P31:.*]] = llvm.shl %[[P30]], %[[C0_i64]] : i64
   // CHECK: %[[P32:.*]] = llvm.trunc %[[P31]] : i64 to i8
@@ -267,7 +268,6 @@ kgen.func @variant_get_4(%arg0: !kgen.variant<struct<(array<2, i16>, struct<(str
   // CHECK: %[[P38:.*]] = llvm.or %[[C0_i32]], %[[P37]] : i32
   // CHECK: %[[P43:.*]] = llvm.insertvalue %[[P38]], %[[P34]][1] : !llvm.struct<(i8, i32)>
   // CHECK: %[[P44:.*]] = llvm.insertvalue %[[P43]], %[[P28]][0] : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
-  // CHECK: %[[P45:.*]] = llvm.mlir.undef : vector<2xf32>
   // CHECK: %[[P46:.*]] = llvm.lshr %[[P14]], %[[C0_i64]] : i64
   // CHECK: %[[P47:.*]] = llvm.shl %[[P46]], %[[C0_i64]] : i64
   // CHECK: %[[P48:.*]] = llvm.trunc %[[P47]] : i64 to i32

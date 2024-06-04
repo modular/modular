@@ -50,6 +50,11 @@ public:
     return {};
   }
 
+  lldb_private::Type *FindDefinitionTypeForDIE(
+      const lldb_private::plugin::dwarf::DWARFDIE &die) override {
+    return nullptr;
+  }
+
   /// Create a function from the given DW_AT_subprogram die.
   lldb_private::Function *
   ParseFunctionFromDWARF(lldb_private::CompileUnit &comp_unit,
