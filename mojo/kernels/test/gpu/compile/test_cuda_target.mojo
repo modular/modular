@@ -7,9 +7,9 @@
 
 from math import erf
 from sys.info import simdwidthof, triple_is_nvidia_cuda
-from builtin.io import _printf
 
 from algorithm import elementwise
+from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
     BlockDim,

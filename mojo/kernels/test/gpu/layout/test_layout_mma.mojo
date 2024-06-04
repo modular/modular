@@ -22,8 +22,8 @@ from gpu.host import Context, Dim, Function, Stream, synchronize
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import outer_product_acc
-from testing import *
 from layout.tensor_core import *
+from testing import *
 
 
 fn mma_layout_tc[

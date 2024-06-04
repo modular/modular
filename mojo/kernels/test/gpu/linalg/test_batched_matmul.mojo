@@ -7,9 +7,9 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 
-from LinAlg.BatchedMatmul import batched_matmul
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from gpu.host import Context, CudaInstance, Device
+from LinAlg.BatchedMatmul import batched_matmul
 
 from utils.index import Index, StaticIntTuple
 

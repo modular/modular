@@ -7,15 +7,16 @@
 # COM: We only care if this file compiles or not
 # RUN: %mojo-no-debug %s
 
-from gpu.host import Context, Function, synchronize, Stream
+from math import *
+from pathlib import Path
+
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from math import *
-from pathlib import Path
 from testing import assert_true
 
 

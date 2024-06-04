@@ -10,7 +10,7 @@
 from pathlib import Path
 from sys.param_env import env_get_string
 
-from gpu.host import Context, Function, Module, Stream, CudaInstance, Device
+from gpu.host import Context, CudaInstance, Device, Function, Module, Stream
 from memory.unsafe import Pointer
 
 alias CURRENT_DIR = env_get_string["CURRENT_DIR"]()

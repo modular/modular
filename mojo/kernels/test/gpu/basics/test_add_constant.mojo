@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, CudaInstance, Device
+from gpu.host import Context, CudaInstance, Device, Dim, Function, Stream
 from testing import *
 
 

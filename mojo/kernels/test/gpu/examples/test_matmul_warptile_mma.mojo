@@ -6,6 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import OptionalReg
 from math import ceildiv
 
 from buffer import NDBuffer
@@ -26,8 +27,7 @@ from LinAlg.MatmulUtils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
-from collections import OptionalReg
-from utils import StaticTuple, unroll, Index
+from utils import Index, StaticTuple, unroll
 from utils.numerics import isnan
 
 

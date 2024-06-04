@@ -7,8 +7,12 @@
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo %s
 
-from buffer import NDBuffer, DimList
+from math import ceildiv, isclose
+from random import random_float64
+
+from buffer import DimList, NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
+from gpu.cublas.cublas import *
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -16,14 +20,12 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.cublas.cublas import *
-from math import ceildiv, isclose
-from memory.unsafe import DTypePointer
-from random import random_float64
-from testing import assert_almost_equal
-from utils.index import Index
-from LinAlg.MatmulGPU import matmul_kernel_naive
 from LinAlg.MatmulCublas import cublas_matmul
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from memory.unsafe import DTypePointer
+from testing import assert_almost_equal
+
+from utils.index import Index
 
 
 fn test_cublas() raises:

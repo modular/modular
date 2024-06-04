@@ -6,8 +6,8 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host.device_context import DeviceContext, DeviceBuffer, DeviceFunction
 from gpu import *
+from gpu.host.device_context import DeviceBuffer, DeviceContext, DeviceFunction
 
 
 # A Simple Kernel performing the sum of two arrays

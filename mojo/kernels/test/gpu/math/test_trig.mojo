@@ -6,15 +6,16 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import Context, Function, synchronize, Stream
+from math import cos, sin
+from pathlib import Path
+
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from math import cos, sin
-from pathlib import Path
 from testing import assert_true
 
 

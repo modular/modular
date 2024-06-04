@@ -7,22 +7,23 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv, isclose
-from LinAlg.BatchedMatmul import batched_matmul
+from random import random_float64
+
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host import Context, Function, Stream, synchronize, CUDADeviceStream
+from gpu.host import Context, CUDADeviceStream, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
+from LinAlg.BatchedMatmul import batched_matmul
+from LinAlg.MatmulGPU import _matmul_gpu, matmul_kernel_naive
 from memory.unsafe import DTypePointer
+from testing import assert_true
 
 from utils.index import Index
-from random import random_float64
-from testing import assert_true
 
 
 fn run_matmul_naive(M: Int, N: Int, K: Int) raises:

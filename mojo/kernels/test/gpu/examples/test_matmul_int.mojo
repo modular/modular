@@ -8,7 +8,7 @@
 
 from math import ceildiv
 
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (

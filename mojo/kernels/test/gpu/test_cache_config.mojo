@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from gpu.host import CacheConfig, Context, Function, Device, CudaInstance
+from gpu.host import CacheConfig, Context, CudaInstance, Device, Function
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from testing import *
 

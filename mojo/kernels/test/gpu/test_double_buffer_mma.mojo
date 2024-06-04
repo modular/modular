@@ -12,21 +12,14 @@ from sys import argv
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import (
-    WARP_SIZE,
-    AddressSpace,
-    BlockIdx,
-    ThreadIdx,
-    barrier,
-    lane_id,
-)
+from gpu import WARP_SIZE, AddressSpace, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
+    CacheConfig,
     Context,
+    CudaInstance,
+    Device,
     Function,
     Stream,
-    Device,
-    CudaInstance,
-    CacheConfig,
 )
 from gpu.host.event import time_function
 from gpu.memory import async_copy, async_copy_wait_all

@@ -7,32 +7,28 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose
+from sys import argv
+
 from buffer import NDBuffer
 from buffer.list import DimList
-from memory.unsafe import DTypePointer
-from memory.reference import _GPUAddressSpace as AddressSpace
-from LinAlg.MatmulGPU import matmul_kernel_naive
-from gpu import (
-    WARP_SIZE,
-    BlockIdx,
-    ThreadIdx,
-    barrier,
-    lane_id,
-)
-from gpu.host import Context, Function, Stream, Device, CudaInstance
+from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu.host import Context, CudaInstance, Device, Function, Stream
 from gpu.host.event import time_function
 from gpu.memory import async_copy_wait_all
-from testing import assert_almost_equal
-from sys import argv
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
-    outer_product_acc,
     copy_dram_to_sram_async,
-    copy_sram_to_local,
     copy_local_to_dram,
+    copy_sram_to_local,
+    outer_product_acc,
 )
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from memory.reference import _GPUAddressSpace as AddressSpace
+from memory.unsafe import DTypePointer
+from testing import assert_almost_equal
+
 from utils import InlineArray, unroll
 
 

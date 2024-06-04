@@ -6,10 +6,9 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu.host import Context, Function, FuncAttribute, Device, CudaInstance
-
-from gpu.memory import dynamic_shared_memory
+from gpu.host import Context, CudaInstance, Device, FuncAttribute, Function
 from gpu.id import ThreadIdx
+from gpu.memory import dynamic_shared_memory
 from gpu.sync import barrier
 
 

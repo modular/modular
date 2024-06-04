@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import Function, Context
+from gpu.host import Context, Function
 from gpu.host.memory import _malloc_managed
 
 

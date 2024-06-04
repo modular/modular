@@ -8,7 +8,6 @@
 
 from math import ceildiv
 from random import random_si64
-from utils.numerics import isnan
 
 from gpu import WARP_SIZE, BlockIdx
 from gpu.host import Context, Function, Stream
@@ -23,6 +22,8 @@ from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from LinAlg.MatmulGPU import matmul_kernel_naive
 from memory.unsafe import DTypePointer
+
+from utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8

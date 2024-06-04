@@ -6,36 +6,29 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from layout import LayoutTensor, Layout
-from layout.layout_tensor import copy_sram_to_local, outer_product_acc
-from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
+from math import ceildiv, isclose
+from sys import argv
 
-
-from buffer import NDBuffer, DimList
-
+from buffer import DimList, NDBuffer
+from gpu import WARP_SIZE
+from gpu.host import Context, Function, Stream, synchronize
+from gpu.host.event import time_function
+from gpu.host.memory import (
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
+)
 from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier
-from gpu import WARP_SIZE
-from gpu.host.event import time_function
-
-from math import ceildiv, isclose
+from layout import Layout, LayoutTensor
+from layout.layout_tensor import copy_sram_to_local, outer_product_acc
+from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
+from LinAlg.MatmulGPU import matmul_kernel_naive
 from testing import assert_almost_equal
 
-
-from LinAlg.MatmulGPU import matmul_kernel_naive
-
-from gpu.host import Function, Context, Stream, synchronize
-from gpu.host.memory import (
-    _malloc,
-    _free,
-    _copy_host_to_device,
-    _copy_device_to_host,
-)
-
 from utils import Index
-
-from sys import argv
 
 
 fn is_benchmark() -> Bool:

@@ -10,7 +10,7 @@ from math import exp
 from sys.info import has_neon
 
 from algorithm.functional import _elementwise_impl
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import Context
 from gpu.host._compile import _get_nvptx_target

@@ -7,22 +7,21 @@
 # RUN: %mojo-no-debug %s
 # CHECK-NOT: Failed
 
+from math import isclose
+
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
-from gpu.host import Context, Stream, synchronize, CUDADeviceStream
+from buffer import Dim, DimList, NDBuffer
+from gpu.host import Context, CUDADeviceStream, Stream, synchronize
 from gpu.host.memory import (
-    _malloc,
-    _free,
-    _copy_host_to_device,
     _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
 )
-
 from LinAlg.Matmul import matmul
 from LinAlg.MatmulGPU import _matmul_gpu
-from buffer import NDBuffer, DimList, Dim
 from runtime.llcl import MojoCallContextPtr
-
-from math import isclose
 from testing import assert_almost_equal
 
 

@@ -11,9 +11,9 @@ from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl
 from benchmark._cuda import run
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, Device, CudaInstance
+from gpu.host import Context, CudaInstance, Device, Dim, Function, Stream
 from gpu.host._compile import _get_nvptx_target
 from testing import assert_equal
 

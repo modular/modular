@@ -11,9 +11,9 @@ from sys.info import triple_is_nvidia_cuda
 
 from gpu import *
 from gpu.host import (
+    Context,
     CudaInstance,
     Device,
-    Context,
     Dim,
     Function,
     Stream,

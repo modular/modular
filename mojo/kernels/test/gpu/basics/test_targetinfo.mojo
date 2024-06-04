@@ -5,10 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from sys.info import (
-    simdbitwidth,
-    simdwidthof,
-)
+from sys.info import simdbitwidth, simdwidthof
 
 from gpu.host._compile import _get_nvptx_target
 from testing import assert_equal

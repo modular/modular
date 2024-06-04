@@ -11,7 +11,7 @@ from math import ceildiv, iota
 from sys.info import simdwidthof
 
 from algorithm import vectorize
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from complex import ComplexSIMD
 from gpu import *
 from gpu.host import Context, Function, Stream

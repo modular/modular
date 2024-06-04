@@ -7,13 +7,13 @@
 
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import Context, Function, Stream, CudaInstance, Device
 from gpu import ThreadIdx
+from gpu.host import Context, CudaInstance, Device, Function, Stream
 from gpu.memory import (
     AddressSpace,
     async_copy,
-    async_copy_wait_all,
     async_copy_commit_group,
+    async_copy_wait_all,
     async_copy_wait_group,
 )
 from memory import stack_allocation

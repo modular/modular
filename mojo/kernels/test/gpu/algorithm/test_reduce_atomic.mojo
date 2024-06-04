@@ -8,8 +8,8 @@
 
 from math import ceildiv
 from os.atomic import Atomic
-from buffer import NDBuffer, DimList
 
+from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import Context, Function, Stream
 from gpu.host.memory import (

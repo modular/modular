@@ -10,7 +10,7 @@ from pathlib import Path
 
 from benchmark._cuda import run as benchmark_run
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, CudaInstance, Device
+from gpu.host import Context, CudaInstance, Device, Dim, Function, Stream
 
 
 fn vec_func(

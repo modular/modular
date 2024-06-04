@@ -6,22 +6,22 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import ceildiv
+from math import ceildiv, isclose
 from random import random_float64
+
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE
-from gpu.host import Context, Function, Stream, synchronize, CUDADeviceStream
+from gpu import WARP_SIZE, AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu.host import Context, CUDADeviceStream, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
+from LinAlg.MatmulGPU import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
-from math import isclose
-from testing import assert_true, assert_almost_equal
+from testing import assert_almost_equal, assert_true
 
 from utils.index import Index
 

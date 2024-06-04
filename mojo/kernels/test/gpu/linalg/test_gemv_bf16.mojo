@@ -7,7 +7,6 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
-from utils.numerics import isnan
 
 from gpu import WARP_SIZE
 from gpu.host import Context, Function, Stream
@@ -19,8 +18,9 @@ from gpu.host.memory import (
     _malloc,
 )
 from LinAlg.MatmulGPU import gemv_tc_kernel, matmul_kernel_naive
-
 from memory.unsafe import DTypePointer
+
+from utils.numerics import isnan
 
 
 fn run_matvec(M: Int, N: Int, K: Int) raises:
