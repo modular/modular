@@ -15,7 +15,7 @@ from buffer.list import Dim
 
 from collections import OptionalReg
 
-from utils import StaticTuple, StaticIntTuple, unroll
+from utils import StaticIntTuple, StaticTuple, unroll
 
 # ===----------------------------------------------------------------------===#
 # Dim

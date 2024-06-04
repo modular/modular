@@ -5,12 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the buffer package."""
 
-from .buffer import (
+from .buffer import (  # Explicitly don't import these; partial_simd_store,; prod_dims,
     Buffer,
-    NDBuffer,
-    # Explicitly don't import these
-    # partial_simd_store,
-    # prod_dims,
     DynamicRankBuffer,
+    NDBuffer,
 )
 from .list import Dim, DimList

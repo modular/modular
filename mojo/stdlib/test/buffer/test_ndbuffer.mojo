@@ -13,10 +13,9 @@ from sys.param_env import env_get_string
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.list import DimList
 from memory import memcmp, memset_zero
+from testing import assert_equal
 
 from utils.index import Index, StaticIntTuple
-
-from testing import assert_equal
 
 alias TEMP_FILE_DIR = env_get_string["TEMP_FILE_DIR"]()
 
