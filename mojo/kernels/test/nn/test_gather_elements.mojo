@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -I %S/../ %s | FileCheck %s
 
-from nn.gather_scatter import gather_elements
-from closed_source_utils._test_utils import array_equal, TestTensor
 from buffer import NDBuffer
 from buffer.list import DimList
+from closed_source_utils._test_utils import TestTensor, array_equal
+from nn.gather_scatter import gather_elements
 
 
 fn test_case[

@@ -7,8 +7,8 @@
 
 from collections import List
 
-from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from buffer import NDBuffer
+from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
 from utils.index import Index
 

@@ -6,15 +6,15 @@
 # UNSUPPORTED: asan
 # RUN: %mojo  -I %S/.. %s | FileCheck %s
 
+from buffer import DimList
+from closed_source_utils._test_utils import TestTensor
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
     resize_linear,
     resize_nearest_neighbor,
 )
-from closed_source_utils._test_utils import TestTensor
 from testing import assert_almost_equal
-from buffer import DimList
 
 
 fn test_case_nearest[

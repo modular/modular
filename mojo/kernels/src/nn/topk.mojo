@@ -10,8 +10,8 @@ from math import iota
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from builtin.sort import _quicksort
 from buffer import NDBuffer
+from builtin.sort import _quicksort
 from register import mogg_register
 
 

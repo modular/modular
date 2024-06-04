@@ -7,9 +7,10 @@
 # RUN: %mojo  -I%S/.. %s | FileCheck %s
 
 from math import iota
-from random import seed, randn
-from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
+from random import randn, seed
+
 from closed_source_utils import compare
+from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
 from test_utils import libm_call
 
 

@@ -6,10 +6,8 @@
 
 
 from math import align_down, ceildiv, exp, iota
-from utils.numerics import neg_inf
 
 from algorithm import elementwise
-from LinAlg.BatchedMatmul import batched_matmul
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from gpu import (
@@ -23,24 +21,21 @@ from gpu import (
 )
 from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
-from LinAlg.Matmul import matmul
-from memory import stack_allocation
-from memory.reference import AddressSpace as _AddressSpace
-from memory.unsafe import DTypePointer, bitcast
-from LinAlg.transpose import transpose
-
-from utils.index import Index, StaticIntTuple
-from utils.static_tuple import StaticTuple
-
-from .softmax import softmax
-
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram
+from LinAlg.BatchedMatmul import batched_matmul
+from LinAlg.Matmul import matmul
+from LinAlg.transpose import transpose
+from memory import stack_allocation
+from memory.reference import AddressSpace as _AddressSpace
+from memory.unsafe import DTypePointer, bitcast
 
-from layout.int_tuple import IntTuple
-from layout.layout import *
-from layout.layout_tensor import LayoutTensor
+from utils.index import Index, StaticIntTuple
+from utils.numerics import neg_inf
+from utils.static_tuple import StaticTuple
+
+from .softmax import softmax
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

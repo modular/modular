@@ -6,9 +6,9 @@
 
 from algorithm import elementwise
 from buffer import NDBuffer
+from register import mogg_register
 
 from utils.index import StaticIntTuple
-from register import mogg_register
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view

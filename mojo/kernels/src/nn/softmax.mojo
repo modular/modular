@@ -22,10 +22,10 @@ from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
-from utils.static_tuple import StaticTuple
 from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.static_tuple import StaticTuple
 
-from .math import mul, sub, identity, reciprocal
+from .math import identity, mul, reciprocal, sub
 
 # ===----------------------------------------------------------------------===#
 # Utilities

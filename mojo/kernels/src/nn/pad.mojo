@@ -13,12 +13,12 @@ from collections.vector import InlinedFixedVector
 
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from memory import memcpy
-from memory.unsafe import DTypePointer
-from register import mogg_register
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from LinAlg.transpose import _fill_strides
+from memory import memcpy
+from memory.unsafe import DTypePointer
+from register import mogg_register
 
 from utils import StaticIntTuple, StaticTuple, unroll
 

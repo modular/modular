@@ -5,12 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from math import exp, isclose
+from random import rand, seed
+
 from buffer import NDBuffer
 from buffer.list import Dim, DimList
-from math import exp, isclose
 from nn.flash_attention import flash_attention, flash_attention_split_kv
-from random import rand, seed
 from testing import assert_equal
+
 from utils.index import Index
 
 

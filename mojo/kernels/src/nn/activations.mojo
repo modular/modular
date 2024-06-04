@@ -7,6 +7,7 @@
 """The module contains implementations of activation functions."""
 
 import math
+
 from register import mogg_register
 
 

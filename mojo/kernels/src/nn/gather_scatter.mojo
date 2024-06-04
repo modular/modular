@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, ceildiv
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
-from algorithm import elementwise, sync_parallelize, parallel_memcpy
+from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import _elementwise_impl, tile
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -19,7 +20,6 @@ from register import mogg_register
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
-from collections import OptionalReg
 from utils import StaticIntTuple, StaticTuple, unroll
 
 from .reshape import reshape

@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+
+from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.list import DimList
 from nn.gather_scatter import normalize_neg_index
-from math import ceildiv
-from algorithm import sync_parallelize
 from runtime.llcl import Runtime
 
 

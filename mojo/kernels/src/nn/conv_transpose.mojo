@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, ceildiv
 from sys.info import simdwidthof
 
@@ -15,13 +16,12 @@ from algorithm import (
 )
 from buffer.buffer import NDBuffer
 from buffer.list import Dim, DimList
-from LinAlg.MatmulUtils import partition_work
 from LinAlg.accumulate import _Accumulator
+from LinAlg.MatmulUtils import partition_work
 from memory.unsafe import DTypePointer
 from register import mogg_register
 from runtime.llcl import Runtime
 
-from collections import OptionalReg
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 

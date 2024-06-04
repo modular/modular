@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, ceildiv
 from sys.info import alignof, simdwidthof
 
@@ -22,15 +23,13 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.list import Dim, DimList
-
-from LinAlg.MatmulUtils import partition_work
 from LinAlg.accumulate import _Accumulator
+from LinAlg.MatmulUtils import partition_work
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from register import mogg_register
 from runtime.llcl import Runtime
 
-from collections import OptionalReg
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
@@ -48,8 +47,8 @@ from .conv_utils import (
     get_partition,
     reorder_padding,
 )
-from .shapes import get_sliding_window_out_dim
 from .math import align_down_residual
+from .shapes import get_sliding_window_out_dim
 
 
 @value

@@ -7,8 +7,8 @@
 from collections import List
 from math import iota
 
-from builtin.sort import _quicksort
 from buffer import NDBuffer
+from builtin.sort import _quicksort
 
 from utils.index import Index
 

@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils.numerics import min_or_neg_inf
 from sys.info import simdwidthof
 
 from algorithm import stencil
@@ -12,6 +11,7 @@ from buffer import NDBuffer
 from register import mogg_register
 
 from utils.index import StaticIntTuple
+from utils.numerics import min_or_neg_inf
 
 from .shapes import get_sliding_window_out_dim
 
