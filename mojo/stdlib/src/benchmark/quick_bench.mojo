@@ -4,12 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .bencher import (
-    BenchId,
-    Bench,
-    Bencher,
-    ThroughputMeasure,
-)
+from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 
 
 struct QuickBench:

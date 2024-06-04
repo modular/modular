@@ -138,8 +138,9 @@ Note that the min total time will take precedence over max iterations
 """
 
 from collections import List
-from utils.numerics import max_finite, min_finite
 from time import time_function
+
+from utils.numerics import max_finite, min_finite
 
 
 # ===----------------------------------------------------------------------===#

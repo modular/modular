@@ -5,16 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
 # RUN: mojo %s --tabular --no-progress| FileCheck %s
-from benchmark import (
-    QuickBench,
-    BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-)
-
-from time import sleep
 from math import exp, tanh
 from random import randint
+from time import sleep
+
+from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
 
 
 fn vec_reduce[N: Int, type: DType](x: DTypePointer[type]) -> Scalar[type]:

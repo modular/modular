@@ -138,23 +138,16 @@ Note that the min total time will take precedence over max iterations
 """
 
 from .bencher import (
+    Bench,
     BenchConfig,
+    Bencher,
     BenchId,
     BenchmarkInfo,
-    Mode,
-    Bench,
-    Bencher,
     BenchMetric,
+    Mode,
     ThroughputMeasure,
 )
-from .benchmark import (
-    Batch,
-    Unit,
-    Report,
-    run,
-)
-
-from .quick_bench import QuickBench
-
+from .benchmark import Batch, Report, Unit, run
 from .compiler import keep
 from .memory import clobber_memory
+from .quick_bench import QuickBench

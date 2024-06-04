@@ -13,8 +13,8 @@ from benchmark import (
     BenchConfig,
     Bencher,
     BenchId,
-    Mode,
     BenchMetric,
+    Mode,
     ThroughputMeasure,
 )
 
