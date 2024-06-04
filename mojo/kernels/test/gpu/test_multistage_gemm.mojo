@@ -236,6 +236,14 @@ fn multistage_gemm[
         b_type, b_smem_layout, AddressSpace.SHARED, circular=True
     ](b_smem, b_smem_size)
 
+    # global memory iterator
+    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], 0)
+    var b_tile_coords = args_to_tuple[transpose_b](0, block_idx[0])
+    alias b_tile_axis = 1 if transpose_b else 0
+    var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
+        b_tile_coords[0], b_tile_coords[1]
+    )
+
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
@@ -255,19 +263,18 @@ fn multistage_gemm[
             swizzle=xor_2bits_per8T,
         ](
             a_smem_tile.vectorize[1, simd_size](),
-            a.tile[BM, BK](block_idx[1], stage).vectorize[1, simd_size](),
+            a_gmem_iter.get().vectorize[1, simd_size](),
         )
-
-        var b_tile_coords = args_to_tuple[transpose_b](stage, block_idx[0])
 
         copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
             b_smem_tile.vectorize[1, simd_size](),
-            b.tile[BD_0, BD_1](b_tile_coords[0], b_tile_coords[1]).vectorize[
-                1, simd_size
-            ](),
+            b_gmem_iter.get().vectorize[1, simd_size](),
         )
 
         async_copy_commit_group()
+
+        a_gmem_iter += 1
+        b_gmem_iter += 1
 
     # Guard stage 0.
     async_copy_wait_group(num_pipeline_stages - 2)
@@ -524,21 +531,16 @@ fn multistage_gemm[
                         swizzle=xor_2bits_per8T,
                     ](
                         a_smem_prefetch_tile.vectorize[1, simd_size](),
-                        a.tile[BM, BK](
-                            block_idx[1], prefetch_tile_id
-                        ).vectorize[1, simd_size](),
-                    )
-
-                    var b_tile_coords = args_to_tuple[transpose_b](
-                        prefetch_tile_id, block_idx[0]
+                        a_gmem_iter.get().vectorize[1, simd_size](),
                     )
 
                     copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
                         b_smem_prefetch_tile.vectorize[1, simd_size](),
-                        b.tile[BD_0, BD_1](
-                            b_tile_coords[0], b_tile_coords[1]
-                        ).vectorize[1, simd_size](),
+                        b_gmem_iter.get().vectorize[1, simd_size](),
                     )
+
+                    a_gmem_iter += 1
+                    b_gmem_iter += 1
 
                 async_copy_commit_group()
 
