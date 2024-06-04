@@ -4,16 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo -D CURRENT_DIR=%S -debug-level full %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from pathlib import Path
-from sys.param_env import env_get_string
+from pathlib import Path, _dir_of_current_file
 
 from gpu.host import Context, CudaInstance, Device, Function, Module, Stream
 from memory.unsafe import Pointer
-
-alias CURRENT_DIR = env_get_string["CURRENT_DIR"]()
 
 
 # CHECK-LABEL: run_cuda_mem_ops
@@ -45,7 +42,7 @@ fn vec_func(
 fn run_vec_add(ctx: Context) raises:
     print("== run_vec_add")
 
-    var module = Module(ctx, (Path(CURRENT_DIR) / "vec_add.ptx"))
+    var module = Module(ctx, (_dir_of_current_file() / "vec_add.ptx"))
 
     var func = Function[vec_func](module, "vec_add")
 
