@@ -747,16 +747,16 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
       auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
           op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
           adaptor.getPtr());
-      auto newOp = rewriter.create<LLVM::StoreOp>(
-          op.getLoc(), adaptor.getArg(), castOp, alignment,
-          /*isVolatile=*/false, adaptor.getNonTemporal());
+      auto newOp = rewriter.create<LLVM::StoreOp>(op.getLoc(), adaptor.getArg(),
+                                                  castOp, alignment,
+                                                  /*isVolatile=*/false);
       rewriter.replaceOp(op, newOp);
       return success();
     }
 
-    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
-        op, adaptor.getArg(), adaptor.getPtr(), alignment,
-        /*isVolatile=*/false, adaptor.getNonTemporal());
+    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getArg(),
+                                               adaptor.getPtr(), alignment,
+                                               /*isVolatile=*/false);
     return success();
   }
 };

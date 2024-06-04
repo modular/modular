@@ -761,17 +761,15 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     pop.store %0, %ptr0 : !kgen.pointer<scalar<f32>>
     pop.store %1, %ptr1 : !kgen.pointer<simd<4, type>>
     pop.store %1, %ptr1 align 8 : !kgen.pointer<simd<4, type>>
-    pop.store %1, %ptr1 align 8 nontemporal: !kgen.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins AnyType:$arg,
                        Arg<PointerType, "", [MemWrite]>:$ptr,
-                       OptionalAttr<AttrOfType<Index>>:$alignment,
-                       UnitAttr:$nonTemporal);
+                       OptionalAttr<AttrOfType<Index>>:$alignment);
   let assemblyFormat = [{
     $arg `,` $ptr (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
-    (`nontemporal` $nonTemporal^)? attr-dict `:` qualified(type($ptr))
+    attr-dict `:` qualified(type($ptr))
   }];
 
   let builders = [
