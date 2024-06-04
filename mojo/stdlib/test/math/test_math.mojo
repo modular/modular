@@ -6,7 +6,19 @@
 # RUN: %mojo %s
 
 from collections import List
-from math import ceil, cos, exp2, factorial, floor, iota, isclose, sin, trunc
+from math import (
+    ceil,
+    cos,
+    exp2,
+    factorial,
+    floor,
+    iota,
+    isclose,
+    rsqrt,
+    sin,
+    sqrt,
+    trunc,
+)
 from sys.info import has_neon
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
@@ -151,6 +163,75 @@ def test_iota():
         assert_equal(vector2[i], offset + i)
 
 
+alias F32x4 = SIMD[DType.float32, 4]
+alias F64x4 = SIMD[DType.float64, 4]
+
+
+def test_sqrt():
+    var i = SIMD[DType.index, 4](0, 1, 2, 3)
+    assert_equal(sqrt(i**2), i)
+    assert_equal(sqrt(64), 8)
+    assert_equal(sqrt(63), 7)
+
+    var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
+
+    var s1_f32 = sqrt(f32x4)
+    assert_equal(s1_f32[0], 0.0)
+    assert_almost_equal(s1_f32[1], 0.70710)
+    assert_equal(s1_f32[2], 1.0)
+    assert_almost_equal(s1_f32[3], 1.22474)
+
+    var s2_f32 = sqrt(0.5 * f32x4)
+    assert_equal(s2_f32[0], 0.0)
+    assert_equal(s2_f32[1], 0.5)
+    assert_almost_equal(s2_f32[2], 0.70710)
+    assert_almost_equal(s2_f32[3], 0.86602)
+
+    var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0)
+
+    var s1_f64 = sqrt(f64x4)
+    assert_equal(s1_f64[0], 0.0)
+    assert_almost_equal(s1_f64[1], 0.70710)
+    assert_equal(s1_f64[2], 1.0)
+    assert_almost_equal(s1_f64[3], 1.22474)
+
+    var s2_f64 = sqrt(0.5 * f64x4)
+    assert_equal(s2_f64[0], 0.0)
+    assert_equal(s2_f64[1], 0.5)
+    assert_almost_equal(s2_f64[2], 0.70710)
+    assert_almost_equal(s2_f64[3], 0.86602)
+
+
+def test_rsqrt():
+    var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0) + 1
+
+    var s1_f32 = rsqrt(f32x4)
+    assert_equal(s1_f32[0], 1.0)
+    assert_almost_equal(s1_f32[1], 0.81649)
+    assert_almost_equal(s1_f32[2], 0.70710)
+    assert_almost_equal(s1_f32[3], 0.63245)
+
+    var s2_f32 = rsqrt(0.5 * f32x4)
+    assert_almost_equal(s2_f32[0], 1.41421)
+    assert_almost_equal(s2_f32[1], 1.15470)
+    assert_equal(s2_f32[2], 1.0)
+    assert_almost_equal(s2_f32[3], 0.89442)
+
+    var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0) + 1
+
+    var s1_f64 = rsqrt(f64x4)
+    assert_equal(s1_f64[0], 1.0)
+    assert_almost_equal(s1_f64[1], 0.81649)
+    assert_almost_equal(s1_f64[2], 0.70710)
+    assert_almost_equal(s1_f64[3], 0.63245)
+
+    var s2_f64 = rsqrt(0.5 * f64x4)
+    assert_almost_equal(s2_f64[0], 1.41421)
+    assert_almost_equal(s2_f64[1], 1.15470)
+    assert_equal(s2_f64[2], 1.0)
+    assert_almost_equal(s2_f64[3], 0.89442)
+
+
 def main():
     test_sin()
     test_cos()
@@ -162,3 +243,5 @@ def main():
     test_trunc()
     test_exp2()
     test_iota()
+    test_sqrt()
+    test_rsqrt()
