@@ -4,18 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import align_down, ceil, ceildiv
-from bit import is_power_of_two
 from sys.info import has_avx2, has_neon_int8_dotprod, sizeof
 
 from algorithm import sync_parallelize
+from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import DimList
-from memory.unsafe import bitcast
 from LinAlg.neon_intrinsics import _neon_dotprod
 from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
+from memory.unsafe import bitcast
 
-from utils import StaticIntTuple, StaticTuple, unroll, Index
+from utils import Index, StaticIntTuple, StaticTuple, unroll
 
 
 @always_inline

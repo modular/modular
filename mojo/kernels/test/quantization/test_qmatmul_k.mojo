@@ -5,22 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from math import ceildiv, isclose
+from random import rand, random_float64
+
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.list import DimList
-from math import ceildiv, isclose
-from random import rand, random_float64
-from utils.index import Index
-
 from quantization.qmatmul_k import (
-    _block_QK_K,
     _block_Q4_K,
     _block_Q6_K,
+    _block_QK_K,
     matmul_Q4_K,
     matmul_Q4_K_pack_b,
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+
+from utils.index import Index
 
 
 @always_inline

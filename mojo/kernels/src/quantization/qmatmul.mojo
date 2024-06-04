@@ -3,25 +3,26 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from algorithm import sync_parallelize, tile
-from buffer import NDBuffer
-from buffer.list import DimList
-from LinAlg.accumulate import _Accumulator
-from LinAlg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
-from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
 from math import ceildiv
-from memory.unsafe import DTypePointer
 from sys.info import (
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_apple_silicon,
     is_x86,
 )
+
+from algorithm import sync_parallelize, tile
+from buffer import NDBuffer
+from buffer.list import DimList
+from LinAlg.accumulate import _Accumulator
+from LinAlg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
+from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
+from memory.unsafe import DTypePointer
+
 from utils import InlineArray
 from utils.index import Index
 
 from ._utils import roundeven_to_int32
-
 
 alias K_BATCH_SIZE = 512
 """Defines the batch size of K used to pack A and unpack B weights."""
