@@ -4,22 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.vector import InlinedFixedVector
 from math import ceildiv
 
-from collections.vector import InlinedFixedVector
-from builtin.dtype import _get_runtime_dtype_size
-from register import *
 from buffer import NDBuffer
 from buffer.list import Dim, DimList
-from MOGGIntList import IntList
+from builtin.dtype import _get_runtime_dtype_size
 from extensibility import Tensor as ExtensibilityTensor
+from gpu.host.memory import _free, _malloc
 from memory.memory import _malloc as _malloc_cpu
-
-from gpu.host.memory import (
-    _free,
-    _malloc,
-)
-
+from MOGGIntList import IntList
+from register import *
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures

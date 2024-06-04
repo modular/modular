@@ -5,16 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from math import (
-    erf,
-    exp,
-    iota,
-    log,
-    log1p,
-    rsqrt,
-    sqrt,
-)
-from utils.numerics import isinf, isnan
+from math import erf, exp, iota, log, log1p, rsqrt, sqrt
 
 from algorithm.reduction import _reduce_generator
 from buffer.list import DimList
@@ -24,6 +15,8 @@ from nn.activations import relu
 from nn.math import add, ceil, floor, mul, tanh
 from register import *
 from runtime.tracing import Trace, TraceLevel
+
+from utils.numerics import isinf, isnan
 
 alias MAX_BENEFIT = 1000
 

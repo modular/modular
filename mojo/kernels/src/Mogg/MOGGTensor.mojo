@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # A temporary home for the experimental tensor type.
 
+from collections import OptionalReg
 from math import fma
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
@@ -12,13 +13,11 @@ from sys.intrinsics import strided_load
 from algorithm.functional import elementwise, vectorize
 from buffer import NDBuffer
 from buffer.list import DimList
-from memory.unsafe import bitcast
+from extensibility.tensor_helpers import InnerStride, UnsafeRefCounter
 from memory import UnsafePointer
+from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from register import *
-from extensibility.tensor_helpers import UnsafeRefCounter, InnerStride
-
-from collections import OptionalReg
 
 
 @always_inline

@@ -4,27 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from collections.vector import InlinedFixedVector
-from math import (
-    cos,
-    ceildiv,
-    erf,
-    exp,
-    fma,
-    log,
-    log1p,
-    rsqrt,
-    sin,
-    sqrt,
-)
-from builtin.simd import UInt8, UInt64, Int64, _pow
+from math import ceildiv, cos, erf, exp, fma, log, log1p, rsqrt, sin, sqrt
 from random import randn, seed
 from sys import external_call
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
-from utils import StaticTuple
-from utils.numerics import isinf, isnan
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
@@ -36,14 +23,16 @@ from algorithm.reduction import (
     _reduce_generator_cpu,
 )
 from algorithm.reduction import mean as _mean
+from buffer import NDBuffer
+from buffer.list import Dim, DimList
+from builtin.simd import Int64, UInt8, UInt64, _pow
+from extensibility import Tensor as ExtensibilityTensor
+from gpu.host._compile import _get_nvptx_target
 from LinAlg.BatchedMatmul import batched_matmul as _batched_matmul
 from LinAlg.BatchedMatmul import batched_matmul_shape
 from LinAlg.BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
-from buffer import NDBuffer
-from buffer.list import Dim, DimList
-from gpu.host._compile import _get_nvptx_target
 from LinAlg.Matmul import matmul as _matmul
 from LinAlg.MatmulPack import (
     pack_b_ndbuffer,
@@ -74,8 +63,8 @@ from nn.conv_transpose import (
     pack_filter_shape as _pack_conv_transpose_filter_shape,
 )
 from nn.cumsum import cumsum as _cumsum
+from nn.flash_attention import flash_attention as cpu_flash_attention
 from nn.flash_attention import (
-    flash_attention as cpu_flash_attention,
     flash_attention_split_kv as cpu_flash_attention_split_kv,
 )
 from nn.gather_scatter import Axis
@@ -96,7 +85,8 @@ from nn.math import add, ceil, div, floor, mod, mul, sub, tanh
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import layer_norm as _layer_norm, layer_norm_shape
+from nn.normalization import layer_norm as _layer_norm
+from nn.normalization import layer_norm_shape
 from nn.pad import pad_constant as _pad_constant
 from nn.pad import pad_reflect as _pad_reflect
 from nn.pad import pad_repeat as _pad_repeat
@@ -117,17 +107,13 @@ from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_shape
 from register import *
-from runtime.llcl import (
-    MojoCallContextPtr,
-    Runtime,
-)
+from runtime.llcl import MojoCallContextPtr, Runtime
 from runtime.tracing import Trace, TraceLevel
 
-from collections import OptionalReg
+from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
 from utils.loop import unroll
-
-from extensibility import Tensor as ExtensibilityTensor
+from utils.numerics import isinf, isnan
 
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
@@ -4407,12 +4393,12 @@ fn with_mask_flash_attention_cpu[
 
 from quantization import (
     Q4sym,
-    ggml_q4_0_matmul_impl,
-    q4_k_dequantize_impl,
-    q6_k_dequantize_impl,
     block_Q4_K,
     block_Q6_K,
     block_QK_K,
+    ggml_q4_0_matmul_impl,
+    q4_k_dequantize_impl,
+    q6_k_dequantize_impl,
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (

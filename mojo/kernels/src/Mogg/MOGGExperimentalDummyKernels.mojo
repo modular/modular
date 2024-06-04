@@ -8,8 +8,8 @@ from buffer.list import DimList
 from MOGGExperimental import empty_tensor
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
-from register import *
 from nn.activations import relu
+from register import *
 
 # Dummy kernels to test fundamental mechanisms without overwriting the normal
 # kernels. We duplicate some of the kernels here, allowing FileCheck tests to
