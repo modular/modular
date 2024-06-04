@@ -339,6 +339,14 @@ fn create_known_dim[known_val: Int]() -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("extensibility_tensor_to_ndbuffer")
+@always_inline
+fn extensibility_tensor_to_ndbuffer[
+    type: DType, rank: Int
+](tensor: ExtensibilityTensor[type, rank]) -> NDBuffer[type, rank]:
+    return NDBuffer[type, rank](tensor.data, tensor.shape, tensor.strides)
+
+
 @mogg_register("to_buffer")
 @always_inline
 fn to_buffer[
@@ -420,6 +428,19 @@ fn shape_to_ndbuffer[
     @parameter
     for i in range(shape_rank):
         buf[i] = shape[i]
+
+
+@mogg_register("shape_to_extensibility_tensor")
+@always_inline
+fn shape_to_extensibility_tensor[
+    shape_rank: Int, buf_rank: Int, type: DType
+](
+    shape: StaticIntTuple[shape_rank],
+    inout tensor: ExtensibilityTensor[type, buf_rank],
+):
+    @parameter
+    for i in range(shape_rank):
+        tensor.store[1](i, shape[i])
 
 
 @mogg_register("to_buffer_list")
