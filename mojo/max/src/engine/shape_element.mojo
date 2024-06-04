@@ -80,6 +80,28 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = 0
         self._name = name^
 
+    fn __init__(inout self, name: StringRef):
+        """Create a dynamic shape element with the given name.
+
+        Args:
+            name:
+                The name of the dimension, which must be non-empty, consist
+                only of alphanumeric characters and underscores, and must not
+                begin with a digit.
+        """
+        self.__init__(String(name))
+
+    fn __init__(inout self, name: StringLiteral):
+        """Create a dynamic shape element with the given name.
+
+        Args:
+            name:
+                The name of the dimension, which must be non-empty, consist
+                only of alphanumeric characters and underscores, and must not
+                begin with a digit.
+        """
+        self.__init__(String(name))
+
     fn __moveinit__(inout self, owned other: Self):
         """Initialize from another owned ShapeElement.
 

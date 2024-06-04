@@ -158,8 +158,8 @@ struct Dim(CollectionElement):
         """
         self.value = StaticDim(dim)
 
-    fn __init__(inout self, name: String):
-        """String symbolic dimension conversion constructor.
+    fn __init__(inout self, name: StringLiteral):
+        """StringLiteral symbolic dimension conversion constructor.
 
         Args:
             name: The name of the symbolic dimension.
