@@ -123,6 +123,34 @@ kgen.func @async_execute(%arg0: index) {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @co_await
+kgen.func @co_await(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
+  // CHECK-NEXT: set_byref_error_result %arg0(%arg1, %arg1)
+  // CHECK-NEXT: co.suspend (%hdl)
+  // CHECK-NEXT:   [[CALLBACK:%.*]] = co.get_callback_ptr %arg0
+  // CHECK-NEXT:   [[FN_PTR:%.*]] = kgen.struct.gep [[CALLBACK]][0]
+  // CHECK-NEXT:   [[HDL_PTR:%.*]] = kgen.struct.gep [[CALLBACK]][1]
+  // CHECK-NEXT:   [[FN:%.*]] = co.resume %hdl
+  // CHECK-NEXT:   store [[FN]], [[FN_PTR]]
+  // CHECK-NEXT:   store %hdl, [[HDL_PTR]]
+  // CHECK-NEXT:   [[RESUME:%.*]] = co.resume %arg0
+  // CHECK-NEXT:   call_indirect [[RESUME]](%arg0)
+  // CHECK-NEXT:   co.suspend.end
+  // CHECK-NEXT: }
+  // CHECK-NEXT: return
+  co.await %arg0(%arg1, %arg1) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @co_raises
+kgen.func @co_raises(%arg0: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !kgen.pointer<index>) -> i1 {
+  // CHECK-NEXT: set_byref_error_result %arg0(%arg1, %arg2)
+  // CHECK: [[RES:%.*]] = co.get_results %arg0
+  // CHECK-NEXT: return [[RES]]
+  %0 = co.await %arg0(%arg1, %arg2) : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> i1
+  kgen.return %0 : i1
+}
+
 // CHECK: kgen.func @some_closure(%arg0: index) capturing -> index
 
 // CHECK-LABEL: kgen.func @main_closure_arg

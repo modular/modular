@@ -195,6 +195,45 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
 }
 
 //===----------------------------------------------------------------------===//
+// lowerAwait
+//===----------------------------------------------------------------------===//
+
+/// Codegen `co.await` into its `co` dialect constituents:
+static void lowerAwait(CO::AwaitOp op) {
+  MLIRContext *ctx = op.getContext();
+  mlir::ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
+  b.create<CO::SetByRefErrorAndResultOp>(op.getCoroutine(), op.getError(),
+                                         op.getResult());
+  auto suspend = b.create<CO::SuspendOp>();
+  Block *body = b.createBlock(&suspend.getBody());
+  Value parent = body->addArgument(op.getCoroutine().getType(), op.getLoc());
+
+  auto coroutineType = CO::CoroutineType::get(ctx);
+  auto signatureType =
+      SignatureType::get(b.getFunctionType({coroutineType}, {}));
+  auto callbackType =
+      PointerType::get(StructType::get({signatureType, coroutineType}));
+  Value callback =
+      b.create<CO::GetCallbackPtrOp>(callbackType, op.getCoroutine());
+  Value resumeFnPtr = b.create<StructGEPOp>(callback, 0);
+  Value parentPtr = b.create<StructGEPOp>(callback, 1);
+  Value resumeFn = b.create<CO::ResumeOp>(signatureType, parent);
+  b.create<POP::StoreOp>(resumeFn, resumeFnPtr);
+  b.create<POP::StoreOp>(parent, parentPtr);
+  Value curResume = b.create<CO::ResumeOp>(signatureType, op.getCoroutine());
+  b.create<CallIndirectOp>(TypeRange(), curResume, op.getCoroutine());
+  b.create<CO::SuspendEndOp>();
+
+  b.setInsertionPointAfter(suspend);
+  if (op.getNumResults()) {
+    auto results =
+        b.create<CO::GetResultsOp>(op.getResultTypes(), op.getCoroutine());
+    op.replaceAllUsesWith(results);
+  }
+  op.erase();
+}
+
+//===----------------------------------------------------------------------===//
 // lowerStageClosure
 //===----------------------------------------------------------------------===//
 
@@ -352,6 +391,8 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
 
     } else if (auto exec = dyn_cast<CO::ExecuteOp>(op)) {
       lowerAsyncExecute(func, exec, sharedTable, closureNameCounter, domInfo);
+    } else if (auto await = dyn_cast<CO::AwaitOp>(op)) {
+      lowerAwait(await);
     } else if (auto closure = dyn_cast<StageClosureOp>(op)) {
       lowerStageClosure(func, closure, sharedTable, closureNameCounter,
                         domInfo);
