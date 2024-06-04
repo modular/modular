@@ -180,7 +180,7 @@ struct Function[
     _is_failable: Bool = False,
 ](Boolable):
     var info: _CachedFunctionInfo
-    var cuda_dll: UnsafePointer[CudaDLL]
+    var cuda_dll: Optional[CudaDLL]
 
     alias _impl = _compile_code[
         func, is_failable=_is_failable, emission_kind="asm"
@@ -222,7 +222,7 @@ struct Function[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        cuda_dll: Optional[CudaDLL] = None,
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -256,7 +256,7 @@ struct Function[
         name: String,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        cuda_dll: Optional[CudaDLL] = None,
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -373,7 +373,7 @@ struct Function[
         stream: Optional[Stream] = None,
     ) raises:
         var stream_value = stream.value().stream if stream else Stream()
-        var cuLaunchKernel = self.cuda_dll[].cuLaunchKernel if self.cuda_dll else cuLaunchKernel.load()
+        var cuLaunchKernel = self.cuda_dll.value().cuLaunchKernel if self.cuda_dll else cuLaunchKernel.load()
         _check_error(
             cuLaunchKernel(
                 self.info.func_handle,

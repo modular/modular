@@ -222,6 +222,7 @@ alias cuModuleGetFunction = _dylib_function[
 ]
 
 
+@value
 struct CudaDLL:
     # cuDevice
     var cuDeviceGetCount: cuDeviceGetCount.type
@@ -321,32 +322,24 @@ struct CudaDLL:
 
 
 struct CudaInstance:
-    var cuda_dll: UnsafePointer[CudaDLL]
-    var owner: Bool
+    var cuda_dll: Optional[CudaDLL]
 
     fn __init__(inout self) raises:
-        self.cuda_dll = UnsafePointer[CudaDLL].alloc(1)
-        self.cuda_dll[].__init__()
-        self.owner = True
+        self.cuda_dll = CudaDLL()
 
     fn __enter__(owned self) -> Self:
         return self^
 
     fn __moveinit__(inout self, owned existing: Self):
         self.cuda_dll = existing.cuda_dll
-        self.owner = True
-        existing.cuda_dll = UnsafePointer[CudaDLL]()
-        existing.owner = False
+        existing.cuda_dll = None
 
     fn __copyinit__(inout self, existing: Self):
         self.cuda_dll = existing.cuda_dll
-        self.owner = False
-
-    fn __del__(owned self):
-        if self.cuda_dll and self.owner:
-            self.cuda_dll.free()
 
     fn num_devices(self) raises -> Int:
         var res: Int32 = 0
-        _check_error(self.cuda_dll[].cuDeviceGetCount(Pointer.address_of(res)))
+        _check_error(
+            self.cuda_dll.value().cuDeviceGetCount(Pointer.address_of(res))
+        )
         return int(res)

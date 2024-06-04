@@ -299,14 +299,12 @@ struct JitOptions:
 @value
 struct Module:
     var module: _ModuleHandle
-    var cuda_dll: UnsafePointer[CudaDLL]
+    var cuda_dll: Optional[CudaDLL]
 
     fn __init__(inout self, ctx: Context):
         self.__init__(ctx.cuda_dll)
 
-    fn __init__(
-        inout self, cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL]()
-    ):
+    fn __init__(inout self, cuda_dll: Optional[CudaDLL] = None):
         self.module = _ModuleHandle()
         self.cuda_dll = cuda_dll
 
@@ -314,9 +312,7 @@ struct Module:
         self.__init__(path, ctx.cuda_dll)
 
     fn __init__(
-        inout self,
-        path: Path,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        inout self, path: Path, cuda_dll: Optional[CudaDLL] = None
     ) raises:
         self.cuda_dll = cuda_dll
         var module = _ModuleHandle()
@@ -356,13 +352,13 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        cuda_dll: Optional[CudaDLL] = None,
     ) raises:
         """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
         """
 
         self.cuda_dll = cuda_dll
-        var module = _ModuleHandle()
+        self.module = _ModuleHandle()
         if debug or verbose:
             alias buffer_size = 4096
             alias max_num_options = 10
@@ -416,9 +412,9 @@ struct Module:
 
             # Note that content has already gone through _cleanup_asm and
             # is null terminated.
-            var cuModuleLoadDataEx = self.cuda_dll[].cuModuleLoadDataEx if self.cuda_dll else cuModuleLoadDataEx.load()
+            var cuModuleLoadDataEx = self.cuda_dll.value().cuModuleLoadDataEx if self.cuda_dll else cuModuleLoadDataEx.load()
             var result = cuModuleLoadDataEx(
-                Pointer.address_of(module),
+                Pointer.address_of(self.module),
                 content.unsafe_ptr(),
                 UInt32(num_options),
                 opts,
@@ -436,20 +432,18 @@ struct Module:
 
             _check_error(result)
         else:
-            var cuModuleLoadData = self.cuda_dll[].cuModuleLoadData if self.cuda_dll else cuModuleLoadData.load()
+            var cuModuleLoadData = self.cuda_dll.value().cuModuleLoadData if self.cuda_dll else cuModuleLoadData.load()
             _check_error(
                 cuModuleLoadData(
-                    Pointer.address_of(module), content.unsafe_ptr()
+                    Pointer.address_of(self.module), content.unsafe_ptr()
                 )
             )
-
-        self.module = module
 
     fn __del__(owned self):
         """Unloads a module ffrom the current CUDA context."""
 
         try:
-            var cuModuleUnload = self.cuda_dll[].cuModuleUnload if self.cuda_dll else cuModuleUnload.load()
+            var cuModuleUnload = self.cuda_dll.value().cuModuleUnload if self.cuda_dll else cuModuleUnload.load()
             if self.module:
                 _check_error(cuModuleUnload(self.module))
                 self.module = _ModuleHandle()
@@ -471,7 +465,7 @@ struct Module:
         var func = _FunctionHandle()
         var name_cstr = name
 
-        var cuModuleGetFunction = self.cuda_dll[].cuModuleGetFunction if self.cuda_dll else cuModuleGetFunction.load()
+        var cuModuleGetFunction = self.cuda_dll.value().cuModuleGetFunction if self.cuda_dll else cuModuleGetFunction.load()
         _check_error(
             cuModuleGetFunction(
                 Pointer.address_of(func),

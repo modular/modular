@@ -27,16 +27,14 @@ fn _get_current_stream() -> DTypePointer[DType.invalid]:
 struct Stream(CollectionElement):
     var stream: _StreamHandle
     var owning: Bool
-    var cuda_dll: UnsafePointer[CudaDLL]
+    var cuda_dll: Optional[CudaDLL]
 
     @staticmethod
     fn get_current_stream() -> Stream:
         return Stream(_StreamHandle(_get_current_stream()))
 
     fn __init__(
-        inout self,
-        stream: _StreamHandle,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        inout self, stream: _StreamHandle, cuda_dll: Optional[CudaDLL] = None
     ):
         self.stream = stream
         self.owning = False
@@ -46,25 +44,23 @@ struct Stream(CollectionElement):
         self.__init__(stream, ctx.cuda_dll)
 
     fn __init__(
-        inout self,
-        flags: Int = 0,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        inout self, flags: Int = 0, cuda_dll: Optional[CudaDLL] = None
     ) raises:
-        var stream = _StreamHandle()
+        self.stream = _StreamHandle()
         self.cuda_dll = cuda_dll
-
-        var cuStreamCreate = self.cuda_dll[].cuStreamCreate if self.cuda_dll else cuStreamCreate.load()
-        _check_error(cuStreamCreate(Pointer.address_of(stream), Int32(0)))
-
-        self.stream = stream
         self.owning = True
+
+        var cuStreamCreate = self.cuda_dll.value().cuStreamCreate if self.cuda_dll else cuStreamCreate.load()
+        _check_error(
+            cuStreamCreate(Pointer.address_of(self.stream), Int32(flags))
+        )
 
     fn __init__(inout self, ctx: Context, flags: Int = 0) raises:
         self.__init__(flags, ctx.cuda_dll)
 
     fn __del__(owned self):
         try:
-            var cuStreamDestroy = self.cuda_dll[].cuStreamDestroy if self.cuda_dll else cuStreamDestroy.load()
+            var cuStreamDestroy = self.cuda_dll.value().cuStreamDestroy if self.cuda_dll else cuStreamDestroy.load()
             if self.owning and self.stream:
                 _check_error(cuStreamDestroy(self.stream))
         except e:
@@ -81,10 +77,10 @@ struct Stream(CollectionElement):
         self.cuda_dll = existing.cuda_dll
         existing.stream = _StreamHandle()
         existing.owning = False
-        existing.cuda_dll = UnsafePointer[CudaDLL]()
+        existing.cuda_dll = None
 
     fn synchronize(self) raises:
         """Wait until a CUDA stream's tasks are completed."""
         if self.stream:
-            var cuStreamSynchronize = self.cuda_dll[].cuStreamSynchronize if self.cuda_dll else cuStreamSynchronize.load()
+            var cuStreamSynchronize = self.cuda_dll.value().cuStreamSynchronize if self.cuda_dll else cuStreamSynchronize.load()
             _check_error(cuStreamSynchronize(self.stream))

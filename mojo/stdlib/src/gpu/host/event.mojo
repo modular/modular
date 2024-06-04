@@ -65,7 +65,7 @@ struct Flag:
 
 struct Event:
     var _event: _EventHandle
-    var cuda_dll: UnsafePointer[CudaDLL]
+    var cuda_dll: Optional[CudaDLL]
 
     @always_inline
     fn __init__(inout self, ctx: Context, flags: Flag = Flag.DEFAULT) raises:
@@ -77,16 +77,15 @@ struct Event:
     fn __init__(
         inout self,
         flags: Flag = Flag.DEFAULT,
-        cuda_dll: UnsafePointer[CudaDLL] = UnsafePointer[CudaDLL](),
+        cuda_dll: Optional[CudaDLL] = None,
     ) raises:
         """Creates an event for the current CUDA context."""
 
         self.cuda_dll = cuda_dll
-        var event = _EventHandle()
+        self._event = _EventHandle()
 
-        var cuEventCreate = self.cuda_dll[].cuEventCreate if self.cuda_dll else cuEventCreate.load()
-        _check_error(cuEventCreate(Pointer.address_of(event), flags))
-        self._event = event
+        var cuEventCreate = self.cuda_dll.value().cuEventCreate if self.cuda_dll else cuEventCreate.load()
+        _check_error(cuEventCreate(Pointer.address_of(self._event), flags))
 
     @always_inline
     fn __del__(owned self):
@@ -96,7 +95,7 @@ struct Event:
             if not self._event:
                 return
 
-            var cuEventCreate = self.cuda_dll[].cuEventDestroy if self.cuda_dll else cuEventDestroy.load()
+            var cuEventCreate = self.cuda_dll.value().cuEventDestroy if self.cuda_dll else cuEventDestroy.load()
             _check_error(cuEventCreate(self._event))
             self._event = _EventHandle()
         except e:
@@ -107,7 +106,7 @@ struct Event:
         """Waits until the completion of all work currently capturend in a particular event.
         """
 
-        var cuEventSynchronize = self.cuda_dll[].cuEventSynchronize if self.cuda_dll else cuEventSynchronize.load()
+        var cuEventSynchronize = self.cuda_dll.value().cuEventSynchronize if self.cuda_dll else cuEventSynchronize.load()
         _check_error(cuEventSynchronize(self._event))
 
     @always_inline
@@ -115,7 +114,7 @@ struct Event:
         """Captures the contents of a stream in the events object at the time of this call.
         """
 
-        var cuEventRecord = self.cuda_dll[].cuEventRecord if self.cuda_dll else cuEventRecord.load()
+        var cuEventRecord = self.cuda_dll.value().cuEventRecord if self.cuda_dll else cuEventRecord.load()
         _check_error(cuEventRecord(self._event, stream.stream))
 
     @always_inline
@@ -123,7 +122,7 @@ struct Event:
         """Computes the elapsed time between two events (in milliseconds with a resolution of around 0.5 microseconds).
         """
 
-        var cuEventElapsedTime = self.cuda_dll[].cuEventElapsedTime if self.cuda_dll else cuEventElapsedTime.load()
+        var cuEventElapsedTime = self.cuda_dll.value().cuEventElapsedTime if self.cuda_dll else cuEventElapsedTime.load()
         var ms = Float32(0)
         _check_error(
             cuEventElapsedTime(
