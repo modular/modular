@@ -13,8 +13,10 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import Pointer, bitcast
 from register import *
-from .tensor_helpers import InnerStride
+
 from utils._serialize import _serialize
+
+from .tensor_helpers import InnerStride
 
 
 @always_inline
