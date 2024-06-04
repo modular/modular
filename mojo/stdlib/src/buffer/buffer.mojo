@@ -251,23 +251,6 @@ struct Buffer[
         SIMD[size=width].store[alignment=alignment](self.data, idx, val)
 
     @always_inline
-    fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[type, width]):
-        """Stores a simd value using non-temporal store.
-
-        Constraints:
-            The address must be properly aligned, 64B for avx512, 32B for avx2,
-              and 16B for avx.
-
-        Parameters:
-            width: The width of the simd vector.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.data.simd_nt_store[width](idx, val)
-
-    @always_inline
     fn prefetch[params: PrefetchOptions](self, idx: Int):
         """Prefetches the data at the given index.
 
@@ -1211,47 +1194,6 @@ struct NDBuffer[
             "Function requires contiguous buffer.",
         )
         SIMD[size=width].store[alignment=alignment](self._offset(idx), val)
-
-    @always_inline
-    fn simd_nt_store[
-        width: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
-        """Stores a simd value using non-temporal store.
-
-        Constraints:
-            The buffer must be contiguous.
-            The address must be properly aligned, 64B for avx512, 32B for avx2,
-              and 16B for avx.
-
-        Parameters:
-            width: The width of the simd vector.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.simd_nt_store[width](idx.as_tuple(), val)
-
-    @always_inline
-    fn simd_nt_store[
-        width: Int
-    ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
-        """Stores a simd value using non-temporal store.
-
-        Constraints:
-            The buffer must be contiguous.
-            The address must be properly aligned, 64B for avx512, 32B for avx2,
-              and 16B for avx.
-
-        Parameters:
-            width: The width of the simd vector.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        self._offset(idx).simd_nt_store[width](val)
 
     @always_inline
     fn dim[index: Int](self) -> Int:
