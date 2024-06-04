@@ -9,12 +9,7 @@ from math import ceildiv
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load, strided_store
 
-from algorithm import (
-    sync_parallelize,
-    tile,
-    vectorize,
-    parallel_memcpy,
-)
+from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from memory import memcpy

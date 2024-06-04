@@ -4,12 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import (
-    alignof,
-    has_avx512f,
-    has_neon,
-    has_neon_int8_dotprod,
-)
+from math import align_down
+from sys.info import alignof, has_avx512f, has_neon, has_neon_int8_dotprod
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import (
@@ -19,20 +15,17 @@ from buffer.buffer import (
     partial_simd_store,
 )
 from buffer.list import DimList
-from .MatmulUtils import (
-    GemmShape,
-    get_matmul_prefetch_b_distance_k,
-)
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, bitcast
-from math import align_down
-from .neon_intrinsics import _neon_dotprod
-from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
-from .Matmul import InnerMatmulKernel
-from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
+
+from .accumulate import _Accumulator
+from .Matmul import InnerMatmulKernel
+from .MatmulUtils import GemmShape, get_matmul_prefetch_b_distance_k
+from .neon_intrinsics import _neon_dotprod
+from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that

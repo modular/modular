@@ -15,15 +15,12 @@ from sys.info import has_avx2, has_neon_int8_matmul
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul import (
-    matmul,
-    _matmul_cpu,
-)
+from LinAlg.Matmul import _matmul_cpu, matmul
 from LinAlg.MatmulPack import (
-    pack_b_ndbuffer,
     _pack_b_ndbuffer_impl,
-    pack_matmul_b_shape_func,
     _pack_matmul_b_shape_func_impl,
+    pack_b_ndbuffer,
+    pack_matmul_b_shape_func,
 )
 from testing import assert_almost_equal
 

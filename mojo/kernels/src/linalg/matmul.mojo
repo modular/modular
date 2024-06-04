@@ -3,43 +3,41 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections import OptionalReg
 from math import align_up, ceildiv
 from sys.info import alignof, has_neon, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
+from gpu.host import CUDADeviceStream
+from memory import memset_zero
+from memory.unsafe import DTypePointer
+from runtime.llcl import MojoCallContextPtr, Runtime
+
+from utils.index import Index, StaticIntTuple
+
+from .apple_accelerate import apple_gemv, apple_matmul, use_apple_accelerate_lib
 from .Gemv import gemv
+from .matmul_default import Inner_matmul_default
+from .matmul_i8mm import Inner_matmul_i8mm
+from .matmul_neon import Inner_matmul_neon
+from .matmul_vnni import Inner_matmul_vnni
+from .MatmulGPU import _matmul_gpu
+from .MatmulPack import BTileGenerator
 from .MatmulUtils import (
     GemmShape,
+    InnerKernelID,
     KernelConfig,
     calculate_tile_n_k,
     dispatch_get_kernel_type,
     elementwise_epilogue_type,
+    get_kernel_config,
     get_min_task_size,
     get_partitioned_matmul,
     packA_i8mm,
-    get_kernel_config,
-    InnerKernelID,
     select_inner_kernel,
 )
-from memory import memset_zero
-from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime, MojoCallContextPtr
-from gpu.host import CUDADeviceStream
-
-from .matmul_vnni import Inner_matmul_vnni
-from .matmul_i8mm import Inner_matmul_i8mm
-from .matmul_neon import Inner_matmul_neon
-from .matmul_default import Inner_matmul_default
-
-from collections import OptionalReg
-from utils.index import Index, StaticIntTuple
-
-from .MatmulGPU import _matmul_gpu
-from .MatmulPack import BTileGenerator
-
-from .apple_accelerate import apple_matmul, apple_gemv, use_apple_accelerate_lib
 
 # Define a trait that defines the common functions across all existing
 # microkernels:

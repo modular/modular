@@ -6,27 +6,15 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
-from math import ceildiv, isclose
-from buffer import NDBuffer
-from utils.index import Index
-from buffer.list import DimList
 from collections.optional import OptionalReg
-from .MatmulUtils import elementwise_epilogue_type, apply_epilogue
-from memory.unsafe import DTypePointer
-from memory.reference import _GPUAddressSpace as AddressSpace
+from math import ceildiv, isclose
 from pathlib import Path
+from sys import argv
 
-from LinAlg.MatmulGPU import matmul_kernel_naive
-from gpu import (
-    WARP_SIZE,
-    BlockIdx,
-    ThreadIdx,
-    barrier,
-    lane_id,
-)
-
-
-from gpu.host import Context, Function, synchronize, Stream, FuncAttribute
+from buffer import NDBuffer
+from buffer.list import DimList
+from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -34,30 +22,35 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.mma import mma, ld_matrix
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
     dynamic_shared_memory,
 )
-from testing import assert_almost_equal
-from sys import argv
+from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
-    copy_dram_to_sram_async,
     _swizzle_signature,
+    copy_dram_to_sram_async,
 )
-
 from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
     copy_to_nd_buffer,
-    vectorize,
     distribute,
+    vectorize,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import get_accum_type, get_mma_shape, get_fragment_size
+from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from memory.reference import _GPUAddressSpace as AddressSpace
+from memory.unsafe import DTypePointer
+from testing import assert_almost_equal
+
+from utils.index import Index
+
+from .MatmulUtils import apply_epilogue, elementwise_epilogue_type
 
 
 # Mask ^ tid's 2 least significant and every 8 threads share one mask.

@@ -9,9 +9,10 @@ from sys.info import os_is_macos
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.apple_accelerate import apple_matmul, apple_batched_matmul
-from utils.index import Index, StaticIntTuple
+from LinAlg.apple_accelerate import apple_batched_matmul, apple_matmul
 from testing import *
+
+from utils.index import Index, StaticIntTuple
 
 alias alignment = 64
 

@@ -5,34 +5,31 @@
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up, ceildiv
 from sys.info import has_neon
-
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
-
 from buffer.buffer import Buffer, NDBuffer, partial_simd_load
 from buffer.list import DimList
+from register import mogg_register
 
+from utils.index import Index, StaticIntTuple
+from utils.loop import unroll
+
+from .apple_accelerate import use_apple_accelerate_lib
 from .Gemv import gemv
 from .MatmulUtils import (
     GemmShape,
     KernelConfig,
     _get_tile_n_k,
     dispatch_get_kernel_type,
-    get_matmul_arch_factor,
-    get_packB_unroll_factor,
     get_kernel_config,
+    get_matmul_arch_factor,
+    get_pack_data_size,
+    get_packB_unroll_factor,
     use_i8mm_fn,
     use_vnni_fn,
-    get_pack_data_size,
 )
-
 from .transpose import transpose, transpose_inplace
-from utils.index import Index, StaticIntTuple
-from utils.loop import unroll
-from register import mogg_register
-
-from .apple_accelerate import use_apple_accelerate_lib
 
 
 @value

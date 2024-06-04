@@ -12,18 +12,17 @@ from sys.info import has_neon, has_vnni
 from buffer import NDBuffer
 from buffer.list import DimList
 from LinAlg.Matmul import GemmShape, KernelConfig
-
-from LinAlg.matmul_vnni import Inner_matmul_vnni
+from LinAlg.matmul_default import Inner_matmul_default
 from LinAlg.matmul_i8mm import Inner_matmul_i8mm
 from LinAlg.matmul_neon import Inner_matmul_neon
-from LinAlg.matmul_default import Inner_matmul_default
+from LinAlg.matmul_vnni import Inner_matmul_vnni
 from LinAlg.MatmulUtils import (
-    get_matmul_arch_factor,
-    get_kernel_config,
     InnerKernelID,
+    get_kernel_config,
+    get_matmul_arch_factor,
     select_inner_kernel,
-    use_vnni_fn,
     use_i8mm_fn,
+    use_vnni_fn,
 )
 
 from utils.index import Index

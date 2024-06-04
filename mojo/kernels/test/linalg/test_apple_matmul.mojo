@@ -9,26 +9,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from testing import assert_almost_equal, assert_true
+from collections import OptionalReg
+from sys.info import os_is_macos
+
 import benchmark
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul import (
-    matmul,
-    _matmul_cpu,
-)
+from LinAlg.BatchedMatmul import batched_matmul
+from LinAlg.Matmul import _matmul_cpu, matmul
 from LinAlg.MatmulPack import (
-    pack_b_ndbuffer,
-    pack_transposed_b_ndbuffer,
     _pack_b_ndbuffer_impl,
-    pack_matmul_b_shape_func,
     _pack_matmul_b_shape_func_impl,
+    pack_b_ndbuffer,
+    pack_matmul_b_shape_func,
+    pack_transposed_b_ndbuffer,
 )
 from LinAlg.MatmulUtils import elementwise_epilogue_type
-from collections import OptionalReg
+from testing import assert_almost_equal, assert_true
+
 from utils.index import Index, StaticIntTuple
-from sys.info import os_is_macos
-from LinAlg.BatchedMatmul import batched_matmul
 
 alias alignment = 64
 alias some_constant = 20

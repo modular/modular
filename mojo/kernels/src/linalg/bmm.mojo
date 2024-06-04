@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from sys.info import simdwidthof
 
@@ -14,11 +15,20 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
+from memory import memset_zero
+from register import mogg_register
+from runtime.llcl import Runtime
+
+from utils.index import StaticIntTuple
+from utils.numerics import get_accum_type
+
+from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
 from .Matmul import _submatmul_sequential_sync
 from .MatmulUtils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 from .MatmulUtils import (
+    get_kernel_config,
     get_kernel_type,
     get_matmul_num_tasks,
     get_min_task_size,
@@ -26,18 +36,7 @@ from .MatmulUtils import (
     packA_i8mm,
     partition_work,
     use_i8mm_fn,
-    get_kernel_config,
 )
-from memory import memset_zero
-from register import mogg_register
-from runtime.llcl import Runtime
-
-from collections import OptionalReg
-from utils.index import StaticIntTuple
-from utils.numerics import get_accum_type
-
-from .apple_accelerate import use_apple_accelerate_lib, apple_batched_matmul
-
 
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
     StaticIntTuple[rank], SIMD[c_type, width]

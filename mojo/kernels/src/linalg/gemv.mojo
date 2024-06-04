@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg as Optional
+
 from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from .MatmulUtils import elementwise_epilogue_type
 
-from collections import OptionalReg as Optional
 from utils.index import Index
 
+from .MatmulUtils import elementwise_epilogue_type
 
 # Parallelized version of Gemv
 

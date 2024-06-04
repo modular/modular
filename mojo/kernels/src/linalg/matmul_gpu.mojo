@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections import OptionalReg
 from math import align_down, ceildiv
 from sys.info import alignof
 
@@ -10,41 +11,40 @@ from algorithm.functional import tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import Function, Stream, CUDADeviceStream, FuncAttribute
+from gpu.host import CUDADeviceStream, FuncAttribute, Function, Stream
 from gpu.host.memory import _memset_async
 from gpu.memory import (
     AddressSpace,
-    async_copy_wait_all,
     async_copy_commit_group,
-    dynamic_shared_memory,
+    async_copy_wait_all,
     async_copy_wait_group,
+    dynamic_shared_memory,
 )
+from gpu.mma import ld_matrix, mma
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
-from ._multistage_gemm_gpu import multistage_gemm
-from .MatmulUtils import GemmShape, elementwise_epilogue_type, apply_epilogue
-from gpu.mma import mma, ld_matrix
-from memory import stack_allocation
-from memory.unsafe import DTypePointer, bitcast
-
-from collections import OptionalReg
-from utils.index import Index
-from utils.static_tuple import StaticTuple, InlineArray
-from utils.numerics import get_accum_type
-
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.swizzle import Swizzle
-from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.layout_tensor import (
     LayoutTensor,
-    outer_product_acc,
-    copy_dram_to_sram_async,
-    copy_sram_to_local,
-    copy_local_to_dram,
     _swizzle_signature,
+    copy_dram_to_sram_async,
+    copy_local_to_dram,
+    copy_sram_to_local,
+    outer_product_acc,
 )
+from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
+from layout.swizzle import Swizzle
+from memory import stack_allocation
+from memory.unsafe import DTypePointer, bitcast
+
+from utils.index import Index
+from utils.numerics import get_accum_type
+from utils.static_tuple import InlineArray, StaticTuple
+
+from ._multistage_gemm_gpu import multistage_gemm
+from .MatmulUtils import GemmShape, apply_epilogue, elementwise_epilogue_type
 
 
 @always_inline

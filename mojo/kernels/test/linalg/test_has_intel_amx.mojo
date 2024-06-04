@@ -8,9 +8,9 @@
 # RUN: %mojo %s
 
 from sys import has_intel_amx, os_is_linux
-from testing import assert_false, assert_true
 
 from LinAlg.intel_amx_intrinsics import init_intel_amx
+from testing import assert_false, assert_true
 
 
 fn test_has_intel_amx() raises:

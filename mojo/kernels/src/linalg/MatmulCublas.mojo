@@ -3,17 +3,17 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from gpu.cublas.cublas import (
+    ComputeType,
     _convert_to_cublas_datatype,
     _convert_to_cublas_transpose,
     cublasContext,
-    cublasGemmEx,
-    ComputeType,
     cublasGemmAlgo_t,
+    cublasGemmEx,
 )
-from gpu.cublas.result import Result
 from gpu.cublas.dtype import DataType
+from gpu.cublas.result import Result
 
 
 fn cublas_matmul(

@@ -9,17 +9,15 @@ from sys.info import alignof
 
 from buffer.buffer import NDBuffer
 from buffer.list import DimList
-from .MatmulUtils import (
-    GemmShape,
-)
-
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
-from .Matmul import InnerMatmulKernel
-from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
+
+from .accumulate import _Accumulator
+from .Matmul import InnerMatmulKernel
+from .MatmulUtils import GemmShape
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that

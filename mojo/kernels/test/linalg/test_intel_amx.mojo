@@ -29,9 +29,9 @@ from LinAlg.intel_amx_intrinsics import (
     tileconfig,
 )
 from LinAlg.Matmul import Matrix, naive_matmul
+from LinAlg.transpose import transpose, transpose_inplace
 from memory import memcmp, memset_zero
 from memory.unsafe import DTypePointer, Pointer
-from LinAlg.transpose import transpose, transpose_inplace
 
 from utils.loop import unroll
 

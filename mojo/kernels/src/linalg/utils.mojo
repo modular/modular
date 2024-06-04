@@ -27,9 +27,8 @@ from buffer.buffer import (
 )
 from buffer.list import DimList
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensor,
-)
+from layout.layout_tensor import LayoutTensor
+
 from utils.index import Index, StaticIntTuple
 
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (

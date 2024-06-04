@@ -12,9 +12,9 @@
 
 from sys.info import is_apple_silicon, sizeof
 
-from LinAlg.apple_amx_intrinsics import *
 from buffer import NDBuffer
 from buffer.list import DimList
+from LinAlg.apple_amx_intrinsics import *
 from testing import *
 
 from utils.index import StaticIntTuple

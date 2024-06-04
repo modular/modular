@@ -13,15 +13,15 @@
 from sys.info import has_avx512f
 
 from buffer import Buffer
-from memory import memcmp
 from LinAlg.vnni_intrinsics import (
-    dot_i16_to_i32_AVX2,
-    dot_i16_to_i32_x86,
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
     dot_i8_to_i32_saturated_x86,
     dot_i8_to_i32_x86,
+    dot_i16_to_i32_AVX2,
+    dot_i16_to_i32_x86,
 )
+from memory import memcmp
 from testing import assert_equal
 
 

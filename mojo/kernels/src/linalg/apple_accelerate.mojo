@@ -4,27 +4,32 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+from math import fma
 from os import abort
-from sys.info import os_is_macos
+from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from collections import OptionalReg
-from buffer.buffer import NDBuffer
-from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
-from utils.index import Index
+from sys.info import os_is_macos
+
 from algorithm import elementwise, vectorize
-from algorithm.functional import parallelize_over_rows
+from algorithm.functional import (
+    _get_start_indices_of_nth_subvolume,
+    parallelize_over_rows,
+)
+from buffer.buffer import NDBuffer
 from buffer.list import DimList
-from math import fma
+
+from utils.index import Index
+
+from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
+from .BatchedMatmul import (
+    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
+)
 from .MatmulPack import pack_b_ndbuffer
 from .MatmulUtils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from .BatchedMatmul import (
-    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
-)
-from algorithm.functional import _get_start_indices_of_nth_subvolume
-from pathlib import Path
 
 alias cblas_gemm_type = fn (
     _CBLASOrder,
