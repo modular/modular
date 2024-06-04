@@ -236,7 +236,7 @@ static LogicalResult lowerCoroutineCallback(LLVMBuilder &b,
       b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
                       GEPArg(b.getPointerByteWidth()), /*inbounds=*/true);
 
-  op.replaceAllUsesWith(callback);
+  op.replaceAllUsesWith(b.createConversion(op.getType(), callback));
   op.erase();
   return success();
 }
@@ -297,12 +297,12 @@ static void lowerSetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Value res = b.createConversion(op.getOperand(1));
+  Value res = b.createConversion(op.getResult());
   b.create<StoreOp>(res, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
                                          GEPArg(b.getPointerByteWidth() * 4),
                                          /*inbounds=*/true));
-  if (op.getNumOperands() == 3) {
-    Value err = b.createConversion(op.getOperand(2));
+  if (Value err = op.getError()) {
+    err = b.createConversion(err);
     b.create<StoreOp>(err, b.create<GEPOp>(err.getType(), b.getI8Type(), hdl,
                                            GEPArg(b.getPointerByteWidth() * 3),
                                            /*inbounds=*/true));
@@ -323,7 +323,7 @@ static void lowerGetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
       resType,
       b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
                       GEPArg(b.getPointerByteWidth() * 4), /*inbounds=*/true));
-  results.push_back(res);
+  results.push_back(b.createConversion(op.getResult().getType(), res));
 
   if (op.getError()) {
     Type errType = b.convertType(op.getError().getType());
@@ -331,7 +331,7 @@ static void lowerGetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
         errType, b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
                                  GEPArg(b.getPointerByteWidth() * 3),
                                  /*inbounds=*/true));
-    results.push_back(err);
+    results.push_back(b.createConversion(op.getError().getType(), err));
   }
 
   op.replaceAllUsesWith(results);
@@ -346,7 +346,7 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
   // The resume function is the first element of the context.
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
   Value resumeFn = b.create<LoadOp>(cache.opaquePtr, hdl);
-  op.replaceAllUsesWith(resumeFn);
+  op.replaceAllUsesWith(b.createConversion(op.getType(), resumeFn));
   op.erase();
 }
 
