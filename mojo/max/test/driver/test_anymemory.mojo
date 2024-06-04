@@ -31,7 +31,7 @@ def test_from_tensor():
 
     var tensor = dm^.get_tensor[DType.float32, 2]()
 
-    tensor[(0, 0)] = 1
+    tensor[0, 0] = 1
 
     var anymemory = AnyMemory(tensor^)
 

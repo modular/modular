@@ -24,10 +24,10 @@ def test_tensor():
     assert_equal(tensor.get_rank(), 2)
     assert_equal(tensor.get_dtype(), DType.float32)
 
-    tensor[Index(0, 0)] = 0
-    tensor[Index(0, 1)] = 1
-    tensor[Index(1, 0)] = 2
-    tensor[Index(1, 1)] = 3
+    tensor[0, 0] = 0
+    tensor[0, 1] = 1
+    tensor[1, 0] = 2
+    tensor[1, 1] = 3
 
     assert_equal(tensor[0, 0], 0)
     assert_equal(tensor[1, 1], 3)
@@ -46,7 +46,7 @@ def test_tensor_slice():
 
     for i in range(3):
         for j in range(3):
-            tensor[Index(i, j)] = i + j
+            tensor[i, j] = i + j
 
     # tensor
     # 0 1 2
@@ -113,7 +113,7 @@ def test_2dslice_with_step():
     var val = 1
     for i in range(10):
         for j in range(2):
-            tensor[Index(i, j)] = val
+            tensor[i, j] = val
             val += 1
 
     assert_equal(tensor[1, 0], 3)
@@ -133,7 +133,7 @@ def test_2dslice_with_step_row_column():
     var val = 1
     for i in range(10):
         for j in range(10):
-            tensor[Index(i, j)] = val
+            tensor[i, j] = val
             val += 1
 
     assert_equal(tensor[1, 0], 11)
@@ -170,7 +170,7 @@ def test_round_trip():
     var val = 1
     for i in range(10):
         for j in range(2):
-            tensor[Index(i, j)] = val
+            tensor[i, j] = val
             val += 1
 
     assert_equal(tensor[1, 0], 3)
@@ -200,7 +200,7 @@ def test_copy():
     var val = 1
     for i in range(10):
         for j in range(2):
-            src[Index(i, j)] = val
+            src[i, j] = val
             val += 1
 
     src_dev_tensor = src^.get_device_memory()
@@ -231,7 +231,7 @@ def test_set_through_slice():
     var val = 1
     for i in range(10):
         for j in range(2):
-            tensor[Index(i, j)] = val
+            tensor[i, j] = val
             val += 1
 
     assert_equal(tensor[1, 0], 3)
@@ -239,7 +239,7 @@ def test_set_through_slice():
     var slice = tensor[1:, :]
     assert_equal(slice[0, 0], 3)
 
-    slice[(0, 0)] = 4
+    slice[0, 0] = 4
 
     assert_equal(slice[0, 0], 4)
     assert_equal(tensor[1, 0], 4)
@@ -258,11 +258,11 @@ def test_kv_cache():
 
     for t in tensors:
         assert_equal(
-            t[]._ptr[0],
+            t[][0],
             1,
         )
         assert_equal(
-            t[]._ptr[1],
+            t[][1],
             2,
         )
 
