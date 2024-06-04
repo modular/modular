@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
 # RUN: mojo %s --tabular --no-progress| FileCheck %s
-from math import exp, tanh
+
+import math
 from random import randint
 from time import sleep
 
@@ -244,18 +245,30 @@ fn test_overloaded() raises:
     qb.dump_report()
 
 
+@always_inline
+fn exp(x: SIMD[DType.float32, 4]) -> __type_of(x):
+    return math.exp(x)
+
+
+@always_inline
+fn tanh(x: SIMD[DType.float32, 4]) -> __type_of(x):
+    return math.tanh(x)
+
+
 fn test_mojo_math() raises:
     var qb = QuickBench()
+
     qb.run(
-        exp[DType.float32, 4],
+        exp,
         1.0,
         bench_id=BenchId("exp"),
         measures=List[ThroughputMeasure](
             ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
         ),
     )
+
     qb.run(
-        tanh[DType.float32, 4],
+        tanh,
         1.0,
         bench_id=BenchId("tanh"),
         measures=List[ThroughputMeasure](
