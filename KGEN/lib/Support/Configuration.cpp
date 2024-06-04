@@ -82,13 +82,6 @@ StringRef MojoConfig::getOrcRTPath() {
 }
 
 //===----------------------------------------------------------------------===//
-// Python Configurations
-
-StringRef MojoConfig::getPythonLib() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".python_lib"));
-}
-
-//===----------------------------------------------------------------------===//
 // Driver Configurations
 
 StringRef MojoConfig::getDriverPath() {

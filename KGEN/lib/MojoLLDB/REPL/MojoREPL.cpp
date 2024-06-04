@@ -285,20 +285,6 @@ llvm::Error MojoREPL::launchEntryPointProcess(
   launchInfo.GetEnvironment()["LD_LIBRARY_PATH"] +=
       (":" + exeModule->GetFileSpec().GetDirectory().GetStringRef()).str();
 
-  // Pass in the python library into the target launch environment.
-  std::optional<std::string> pythonLib =
-      llvm::sys::Process::GetEnv("MOJO_PYTHON_LIBRARY");
-  if (!pythonLib) {
-    ErrorOr<MojoConfig> config = MojoConfig::open();
-    if (succeeded(config)) {
-      StringRef pythonLibConfig = config->getPythonLib();
-      if (!pythonLibConfig.empty())
-        pythonLib = pythonLibConfig.str();
-    }
-  }
-  if (pythonLib)
-    launchInfo.GetEnvironment()["MOJO_PYTHON_LIBRARY"] = *pythonLib;
-
   // Launch the process synchronously, waiting for it to stop at the REPL
   // breakpoint.
   debugger.SetAsyncExecution(false);

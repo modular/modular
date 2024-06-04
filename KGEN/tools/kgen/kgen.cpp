@@ -551,13 +551,6 @@ int main(int argc, char **argv) {
   registerPassManagerCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  // Configure the current python if it hasn't been set.
-  ErrorOr<MojoConfig> config = MojoConfig::open();
-  if (succeeded(config)) {
-    (void)setProcessEnv("MOJO_PYTHON_LIBRARY", config->getPythonLib(),
-                        /*overwrite=*/false);
-  }
-
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;
   sourceManager.setIncludeDirs(clOptions.getIncludePaths());
