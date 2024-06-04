@@ -8,11 +8,6 @@
 from os import getenv
 from builtin.range import _StridedRange
 
-alias HIDE_CURSOR = "\x1b[?25l"
-alias SHOW_CURSOR = "\x1b[?25h"
-alias PHASES = (" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█")
-alias WIDTH = 80
-
 
 fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
     """Gets the size of the terminal.
@@ -32,8 +27,45 @@ fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
         return (80, 24)
 
 
+fn _hide_cursor():
+    print("\x1b[?25l", end="")
+
+
+fn _show_cursor():
+    print("\x1b[?25h", end="")
+
+
+fn _clear_line():
+    print("\033[A\33[2K")
+
+
+fn _del():
+    print("\r\33[2K", end="")
+
+
+fn _end():
+    print("\033[0m\r", end="")
+
+
 struct Progress:
+    """
+    Implements a basic progress bar with the following usage.
+
+    ```mojo
+    import time
+
+
+    fn main():
+        with Progress(10) as p:
+            for i in range(10):
+                p.advance()
+                time.sleep(0.1)
+
+    ```
+    """
+
     var _range: _StridedRange
+    var _percentage: Float64
     var _term_dims: Tuple[Int, Int]
 
     @always_inline("nodebug")
@@ -43,26 +75,39 @@ struct Progress:
     @always_inline("nodebug")
     fn __init__(inout self, start: Int, end: Int, step: Int = 1):
         self._range = _StridedRange(start, end, step)
+        self._percentage = Float64(1) / len(self._range)
         self._term_dims = _get_terminal_size()
+        print("")
 
     fn __copyinit__(inout self, other: Self):
         self._range = other._range
+        self._percentage = other._percentage
         self._term_dims = (other._term_dims[0], other._term_dims[1])
 
-    fn advance(inout self):
-        if len(self._range) <= 0:
+    fn advance(inout self, steps: Int = 1):
+        alias BLOCK = str("▇")
+        alias PLACE_HOLDER = str(" ")
+
+        if len(self._range) <= 0 or steps <= 0:
             return
 
-        var i = self._range.__next__()
-        var adj = int(self._term_dims[0] * (i / self._range.end))
-        print("\0337\0338", end="")
-        print(String(".") * adj)
-        print("\033[1A", end="")
+        var i = self._range.start
+        for _ in range(steps):
+            i = self._range.__next__()
+
+        var width = self._term_dims[0]
+        var blocks_to_print = int(i * width * self._percentage) + 1
+        var placeholders_to_print = max(width - blocks_to_print, 0)
+
+        _del()
+        print(BLOCK * blocks_to_print, end="")
+        print(PLACE_HOLDER * placeholders_to_print, end="")
+        _end()
 
     fn __enter__(self) -> Self:
         return self
 
     fn __exit__(self):
         print("")
-        print(HIDE_CURSOR, end="")
-        print(SHOW_CURSOR, end="")
+        _hide_cursor()
+        _show_cursor()
