@@ -12,7 +12,6 @@
 
 
 from complex import ComplexFloat32, ComplexSIMD
-
 from testing import assert_equal
 
 

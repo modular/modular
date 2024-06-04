@@ -7,8 +7,7 @@
 
 
 from complex import ComplexFloat32, abs
-
-from testing import assert_equal, assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 
 def test_abs():

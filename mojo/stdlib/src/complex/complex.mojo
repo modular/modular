@@ -12,7 +12,7 @@ from complex import ComplexSIMD
 ```
 """
 
-from builtin.io import _snprintf_scalar, _snprintf
+from builtin.io import _snprintf, _snprintf_scalar
 from builtin.string import _calc_initial_buffer_size
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]

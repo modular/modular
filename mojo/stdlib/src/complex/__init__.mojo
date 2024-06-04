@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .complex import ComplexSIMD, ComplexFloat32, ComplexFloat64, abs
+from .complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
