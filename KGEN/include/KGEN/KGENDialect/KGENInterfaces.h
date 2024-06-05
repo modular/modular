@@ -26,6 +26,8 @@ class FunctionLike;
 class GeneratorUserOpInterface;
 class KGENCallOpInterface;
 
+using InlineResult = std::pair<Operation *, std::function<void(Operation *)>>;
+
 /// This class describes how a parameter value can be defined. A parameter
 /// definition can depend on a number of parameter expressions and regions.
 ///

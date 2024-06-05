@@ -9,6 +9,7 @@
 #include "KGEN/CODialect/COUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -82,15 +83,6 @@ LogicalResult SuspendOp::verify() {
 // InvokeOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult InvokeOp::verify() {
-  auto signature = cast<SignatureType>(getCallee().getType());
-  if (!signature.isAsync())
-    return emitOpError("callable must be 'async'");
-  if (signature.hasInitSelfArg())
-    return emitOpError("callable cannot have an 'init_self' argument");
-  return success();
-}
-
 static ParseResult parseAsyncParametricCallee(
     OpAsmParser &p, TypedAttr &callee,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
@@ -120,6 +112,20 @@ static void printAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
   p << "(";
   p.printOperands(operands);
   p << ")";
+}
+
+LogicalResult InvokeOp::verify() {
+  auto signature = cast<SignatureType>(getCallee().getType());
+  if (!signature.isAsync())
+    return emitOpError("callable must be 'async'");
+  if (signature.hasInitSelfArg())
+    return emitOpError("callable cannot have an 'init_self' argument");
+  return success();
+}
+
+FailureOr<InlineResult> InvokeOp::prepInline(mlir::IRRewriter &b) {
+  auto op = b.create<ExecuteOp>(getLoc(), getCalleeType().getResults());
+  return {{op, [](Operation *) {}}};
 }
 
 //===----------------------------------------------------------------------===//

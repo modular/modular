@@ -538,6 +538,15 @@ void CallOp::setCalleeAttr(TypedAttr callee) {
   setCalleeAttr(cast<SymbolConstantAttr>(callee));
 }
 
+FailureOr<InlineResult> CallOp::prepInline(mlir::IRRewriter &b) {
+  StringAttr label = b.getStringAttr("inlined_cf_scope");
+  auto op =
+      b.create<HLCF::LoopOp>(getLoc(), getResultTypes(), ValueRange(), label);
+  return {{op, [label, &b](Operation *op) {
+             b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+           }}};
+}
+
 //===----------------------------------------------------------------------===//
 // CallParamOp
 //===----------------------------------------------------------------------===//
@@ -545,6 +554,11 @@ void CallOp::setCalleeAttr(TypedAttr callee) {
 void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
                                    SymbolConstantAttr callee) {
   b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee, getOperands());
+}
+
+FailureOr<InlineResult> CallParamOp::prepInline(mlir::IRRewriter &b) {
+  // Inlining not supported for this op
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -886,6 +900,11 @@ LogicalResult CreateClosureOp::verify() {
   if (!getCaptures().empty() && !getType().isCapturing())
     return emitOpError("has captures, so result signature must be 'capturing'");
   return success();
+}
+
+FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::IRRewriter &b) {
+  auto op = b.create<StageClosureOp>(getLoc(), getType());
+  return {{op, [](Operation *) {}}};
 }
 
 //===----------------------------------------------------------------------===//

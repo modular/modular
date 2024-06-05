@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/TransformUtils/InliningUtils.h"
-#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -27,29 +26,18 @@ using namespace KGEN;
 std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
                                                 KGENCallOpInterface call,
                                                 Region &region, bool takeBody) {
-  StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
-
   mlir::IRRewriter b{OpBuilder(call)};
-  Operation *scope;
-  if (isa<CallOp>(&*call)) {
-    scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                   ValueRange(), label);
-  } else if (auto asyncCall = dyn_cast<CO::InvokeOp>(&*call)) {
-    // Nested function-like op should retain scoped location of the callee.
-    auto inlinedSubScoped = b.create<CO::ExecuteOp>(
-        region.getParentOp()->getLoc(), asyncCall.getCalleeType().getResults());
-    inlinedSubScoped.setCallLocAttr(call.getLoc());
-    scope = inlinedSubScoped;
-  } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
-    // Nested function-like op should retain scoped location of the callee.
-    auto inlinedSubScoped = b.create<StageClosureOp>(
-        region.getParentOp()->getLoc(), createClosure.getType());
-    inlinedSubScoped.setCallLocAttr(call.getLoc());
-    scope = inlinedSubScoped;
-  } else {
-    llvm::report_fatal_error("unknown call operation '" +
+  FailureOr<InlineResult> result = call.prepInline(b);
+  if (failed(result)) {
+    llvm::report_fatal_error("unexpected failure in inlining of call '" +
                              call->getName().getStringRef() +
-                             "' in inlining pass -- please file a bug!");
+                             "' -- please file a bug!");
+  }
+  auto [scope, handleReturn] = std::move(*result);
+  if (auto inlinedSubScoped =
+          dyn_cast<DebugInfo::InlinedSubprogramScoped>(scope)) {
+    inlinedSubScoped->setLoc(region.getParentOp()->getLoc());
+    inlinedSubScoped.setCallLocAttr(call.getLoc());
   }
 
   Region &scopeBody = scope->getRegion(0);
@@ -74,30 +62,22 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
   }
 
   unsigned numReturns = 0;
-  scopeBody.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (isa<ReturnOp>(op)) {
-      b.setInsertionPoint(op);
-      if (isa<CallOp>(&*call)) {
-        b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
-      } else if (isa<CreateClosureOp, CO::InvokeOp>(*&call)) {
-        // Just `return` is ok.
-      } else {
-        llvm::report_fatal_error("unknown call operation '" +
-                                 call->getName().getStringRef() +
-                                 "' in inlining pass -- please file a bug!");
-      }
+  scopeBody.walk<mlir::WalkOrder::PreOrder>(
+      [&, handleReturn = std::move(handleReturn)](Operation *op) {
+        if (isa<ReturnOp>(op)) {
+          b.setInsertionPoint(op);
+          handleReturn(op);
+          ++numReturns;
+          return WalkResult::skip();
+        }
+        if (isa<FunctionLike>(op))
+          return WalkResult::skip();
 
-      ++numReturns;
-      return WalkResult::skip();
-    }
-    if (isa<CO::ExecuteOp, StageClosureOp>(op))
-      return WalkResult::skip();
+        if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
+          processSourceLocOp(sourceLocOp, call.getLoc(), b);
 
-    if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
-      processSourceLocOp(sourceLocOp, call.getLoc(), b);
-
-    return WalkResult::advance();
-  });
+        return WalkResult::advance();
+      });
   b.replaceOp(call, scope->getResults());
   return std::make_pair(scope, numReturns == 1 && returnAtEnd);
 }
@@ -207,7 +187,7 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
   CompilerTimeTraceScope updateScopeDebugInfo(
       "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
   func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (!isa<HLCF::LoopOp, CO::ExecuteOp, StageClosureOp>(op))
+    if (!isa<HLCF::LoopOp, FunctionLike>(op))
       return WalkResult::advance();
     auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
     if (!tag)
