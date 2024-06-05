@@ -17,6 +17,7 @@
 using namespace M;
 
 using llvm::sys::findProgramByName;
+using llvm::sys::fs::is_regular_file;
 
 // Works across ubuntu 20.04, 22.04, macos, pyenv, conda, venv, virtual
 const char *FIND_LIBPYTHON = R"PROG(
@@ -39,49 +40,56 @@ exit(1)
 //===----------------------------------------------------------------------===//
 
 // TODO: add a subprocess module to Mojo so this can all be done natively
-// Updates `libpython` with the path to an associated
-static bool findLibPython(const std::string &pythonBin,
-                          std::string &libpython) {
+// Returns path to a libpython of the same version as `pythonBin`
+static std::optional<std::string> findLibPython(const std::string &pythonBin) {
   std::string cmd = pythonBin + " -c '" + FIND_LIBPYTHON + "'";
   std::array<char, 128> buffer;
   std::string result;
   std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"),
                                                 pclose);
   if (!pipe) {
-    return false;
+    return std::nullopt;
   }
   while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
     result += buffer.data();
   }
   result.erase(std::remove_if(result.begin(), result.end(), ::isspace),
                result.end());
-
-  libpython = result;
-  return true;
+  return result;
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
 KGEN_CompilerRT_Python_SetPythonPath() {
-  // Find the Python on top of `PATH` and put it in `PYTHONEXECUTABLE` to enable
-  // multiprocessing, and finding the correct virtual environment site-modules.
-  llvm::ErrorOr<std::string> pythonBin = findProgramByName("python3");
-  if (!pythonBin)
-    pythonBin = llvm::sys::findProgramByName("python");
-  if (!pythonBin)
-    return "could not find any 'python3' or 'python' executables on `PATH`";
-  if (failed(setProcessEnv("PYTHONEXECUTABLE", *pythonBin)))
-    return "cannot set `PYTHONEXECUTABLE` to";
+  auto pythonBin = llvm::sys::Process::GetEnv("MOJO_PYTHON").value_or("");
+  if (!pythonBin.empty() && !is_regular_file(pythonBin))
+    return "`MOJO_PYTHON` is not set to a file path.";
+
+  // If `MOJO_PYTHON` is not found, use python3 or python from  on top of `PATH`
+  if (pythonBin.empty()) {
+    auto pythonBinErr = findProgramByName("python3");
+    if (!pythonBinErr)
+      pythonBinErr = findProgramByName("python");
+    if (pythonBinErr)
+      pythonBin = *pythonBinErr;
+  }
+
+  // `PYTHONEXECUTABLE` enables multiprocessing, and adding virtual environment
+  // site-modules. Not strictly required in an environment with no executable.
+  if (!pythonBin.empty())
+    if (failed(setProcessEnv("PYTHONEXECUTABLE", pythonBin)))
+      return "cannot set `PYTHONEXECUTABLE` to";
 
   // If `MOJO_PYTHON_LIBRARY` is not set, run a Python script to find it.
-  auto libpythonOpt = llvm::sys::Process::GetEnv("MOJO_PYTHON_LIBRARY");
-  if (!libpythonOpt || libpythonOpt->empty()) {
-    auto libpython = std::string();
-    auto foundLibPython = findLibPython(*pythonBin, libpython);
-    if (!foundLibPython || libpython.empty())
-      return "no python installation found on system";
-    if (failed(setProcessEnv("MOJO_PYTHON_LIBRARY", libpython)))
-      return "cannot set `MOJO_PYTHON_LIBRARY`";
-  }
+  auto libpython = llvm::sys::Process::GetEnv("MOJO_PYTHON_LIBRARY");
+  if (!libpython && !pythonBin.empty())
+    libpython = findLibPython(pythonBin);
+
+  if (!libpython || !is_regular_file(*libpython))
+    return "found no suitable Python library to link to";
+
+  if (failed(setProcessEnv("MOJO_PYTHON_LIBRARY", *libpython)))
+    return "cannot set `MOJO_PYTHON_LIBRARY`";
+
   return "";
 }
 
