@@ -23,9 +23,17 @@ using namespace KGEN;
 // inlineRegion
 //===----------------------------------------------------------------------===//
 
+std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
+                                                KGENCallOpInterface call,
+                                                Region &region, bool takeBody) {
+  mlir::IRRewriter b{OpBuilder(call)};
+  return inlineRegion(b, map, call, call->getOperands(), region, takeBody);
+}
+
 std::pair<Operation *, bool> KGEN::inlineRegion(mlir::RewriterBase &b,
                                                 IRMapping &map, Operation *call,
-                                                Region &region, bool takeBody) {
+                                                ValueRange args, Region &region,
+                                                bool takeBody) {
   // NOTE: All IR mutation must pass through the `RewriterBase`.
   // In-place mutation to `scope` is okay because it's a new operation.
   Operation *scope;
@@ -61,17 +69,14 @@ std::pair<Operation *, bool> KGEN::inlineRegion(mlir::RewriterBase &b,
   bool returnAtEnd = isa<ReturnOp>(region.front().getTerminator());
   if (takeBody) {
     b.inlineRegionBefore(region, scopeBody, scopeBody.end());
-    for (auto [value, arg] :
-         llvm::zip(call->getOperands(), scopeBody.getArguments()))
+    for (auto [value, arg] : llvm::zip(args, scopeBody.getArguments()))
       b.replaceAllUsesWith(arg, value);
-    scopeBody.front().eraseArguments(0, call->getNumOperands());
+    scopeBody.front().eraseArguments(0, args.size());
   } else {
     Block *block = b.createBlock(&scopeBody);
-    for (auto [value, arg] :
-         llvm::zip(call->getOperands(), region.getArguments()))
+    for (auto [value, arg] : llvm::zip(args, region.getArguments()))
       map.map(arg, value);
-    for (BlockArgument trailing :
-         region.getArguments().drop_front(call->getNumOperands()))
+    for (BlockArgument trailing : region.getArguments().drop_front(args.size()))
       map.map(trailing,
               block->addArgument(trailing.getType(), trailing.getLoc()));
     for (Operation &op : region.getOps())
@@ -136,14 +141,10 @@ void KGEN::processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
 // foldTrivialLoop
 //===----------------------------------------------------------------------===//
 
-void KGEN::foldTrivialLoop(Operation *op) {
-  CompilerTimeTraceScope traceScope("foldTrivialLoop");
-
+void KGEN::foldTrivialLoop(mlir::RewriterBase &b, Operation *op) {
   auto loop = dyn_cast<HLCF::LoopOp>(op);
   if (!loop)
     return;
-
-  mlir::IRRewriter b{OpBuilder(op)};
 
   Block &body = loop.getBody().front();
   Operation *term = body.getTerminator();
@@ -196,8 +197,10 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   });
 
   // If this scope is a trivial control-flow scope, fold it away.
-  if (singleExit)
-    foldTrivialLoop(scope);
+  if (singleExit) {
+    mlir::IRRewriter b{OpBuilder(scope)};
+    foldTrivialLoop(b, scope);
+  }
 }
 
 void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
@@ -232,7 +235,8 @@ void KGEN::maybeUpdateDebugInfo(Operation *scope,
       updateScopeDebugInfoFrom(scope, tag, nullptr);
     }
   } else if (singleExit) {
-    foldTrivialLoop(scope);
+    mlir::IRRewriter b{OpBuilder(scope)};
+    foldTrivialLoop(b, scope);
   }
 }
 

@@ -16,4 +16,5 @@ add_modular_dialect_library(CODialect
 
   LINK_LIBS PUBLIC
   KGENDialect
+  KGENTransformUtils
 )
