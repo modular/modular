@@ -9,7 +9,7 @@ from gpu.cublas.cublas import (
     _convert_to_cublas_datatype,
     _convert_to_cublas_transpose,
     cublasContext,
-    cublasGemmAlgo_t,
+    Algorithm,
     cublasGemmEx,
 )
 from gpu.cublas.dtype import DataType
@@ -73,7 +73,7 @@ fn cublas_matmul(
             _convert_to_cublas_datatype[c.type](),
             N,
             ComputeType.COMPUTE_32F,
-            cublasGemmAlgo_t.CUBLAS_GEMM_DEFAULT,
+            Algorithm.DEFAULT,
         )
     # Default column-major.
     else:
@@ -96,5 +96,5 @@ fn cublas_matmul(
             _convert_to_cublas_datatype[c.type](),
             M,
             ComputeType.COMPUTE_32F,
-            cublasGemmAlgo_t.CUBLAS_GEMM_DEFAULT,
+            Algorithm.DEFAULT,
         )
