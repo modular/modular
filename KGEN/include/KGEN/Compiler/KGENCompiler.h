@@ -65,23 +65,10 @@ public:
       std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
       std::function<void(Operation *)> moreOnHit = [](Operation *) {});
 
-  /// Run the post-elaboration optimization and simplification passes pipeline.
-  /// These passes are intended to run immediately after the elaborator.
-  LogicalResult runPostElaborationOnlyPipeline(ModuleOp module);
-
 private:
   CompilationOptions options;
   mlir::PassManager pm;
 };
-
-//===----------------------------------------------------------------------===//
-// PostElaborationPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the post-elaboration optimization and simplification passes.
-/// These passes are intended to run immediately after the elaborator.
-void buildPostElaborationPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
 // Default JIT Configuration

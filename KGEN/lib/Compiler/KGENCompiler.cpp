@@ -18,6 +18,7 @@
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
@@ -665,11 +666,6 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
   return Cache::cachedTransform(
       module, RCRef<Cache::TransformCache>::create(std::move(*cacheBackend)),
       std::move(*chain), pm, std::move(moreOnMiss), std::move(moreOnHit));
-}
-
-LogicalResult KGENCompiler::runPostElaborationOnlyPipeline(ModuleOp module) {
-  buildPostElaborationPipeline(pm, options);
-  return pm.run(module);
 }
 
 void KGENCompiler::configurePassManager(

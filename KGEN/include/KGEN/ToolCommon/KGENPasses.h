@@ -220,15 +220,6 @@ using PackageGenLibraryFn = std::function<ErrorOr<BufferRef>(PackageLinkOp)>;
 std::unique_ptr<mlir::Pass>
 createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn);
 
-//===----------------------------------------------------------------------===//
-// CHECKLITPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the post-parser pipeline that checks and lowers source-level
-/// LIT constructs.
-void buildCheckLITPipeline(mlir::PassManager &pm,
-                           const CompilationOptions &options);
-
 } // namespace KGEN
 } // namespace M
 

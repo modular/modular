@@ -9,6 +9,7 @@
 #include "MojoDocument.h"
 
 #include "../common/lsp-protocol/SemanticTokens.h"
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -863,10 +864,12 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
       sourceMgr, tempModuleOp->getContext());
 
   // Run the high level verification pipeline.
-  mlir::PassManager pm(tempModuleOp->getContext());
-  configurePassManager(pm);
-  buildCheckLITPipeline(pm, getCompilationOptions());
-  if (failed(pm.run(*tempModuleOp))) {
+  KGEN::KGENCompiler kgenCompiler(*tempModuleOp->getContext(),
+                                  getCompilationOptions());
+  kgenCompiler.configurePassManager(
+      [](mlir::PassManager &pm) { return configurePassManager(pm); });
+
+  if (failed(kgenCompiler.runCheckLITPipeline(*tempModuleOp))) {
     lsp::Logger::debug("The 'check' pipeline failed to run on the module {0}",
                        decl.getName().value_or("<unnamed>"));
   }

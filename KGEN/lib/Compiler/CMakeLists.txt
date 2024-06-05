@@ -16,6 +16,7 @@ add_modular_library(KGENCompiler
 
   KGENElaborator
   KGENObjectCompiler
+  KGENPipeline
   KGENTransforms
   LowerLIT
   MSupport
