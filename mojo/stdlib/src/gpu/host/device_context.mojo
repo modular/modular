@@ -24,6 +24,19 @@ struct DeviceBuffer[type: AnyTrivialRegType](Sized):
         self.size = size
         self.owning = True
 
+    fn __init__(
+        inout self,
+        ctx: DeviceContext,
+        ptr: Pointer[type],
+        size: Int,
+        *,
+        owning: Bool,
+    ):
+        self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
+        self.ptr = ptr
+        self.size = size
+        self.owning = owning
+
     fn __init__(inout self):
         self.ctx_ptr = UnsafePointer[DeviceContext]()
         self.ptr = Pointer[type]()
@@ -59,6 +72,11 @@ struct DeviceBuffer[type: AnyTrivialRegType](Sized):
         sub_buffer.size = size
         sub_buffer.owning = False
         return sub_buffer
+
+    fn take_ptr(owned self) -> Pointer[type]:
+        var tmp = self.ptr
+        self.ptr = Pointer[type]()
+        return tmp
 
 
 struct DeviceFunction[func_type: AnyTrivialRegType, //, func: func_type]:
@@ -101,6 +119,11 @@ struct DeviceContext:
         self.cuda_context = existing.cuda_context
         self.cuda_stream = existing.cuda_stream
 
+    fn __moveinit__(inout self, owned existing: Self):
+        self.cuda_instance = existing.cuda_instance^
+        self.cuda_context = existing.cuda_context^
+        self.cuda_stream = existing.cuda_stream^
+
     fn create_buffer[
         type: AnyTrivialRegType
     ](self, size: Int) raises -> DeviceBuffer[type]:
@@ -141,6 +164,13 @@ struct DeviceContext:
             ptr, buf.ptr, len(buf), self.cuda_stream
         )
 
+    fn enqueue_copy_device_to_device[
+        type: AnyTrivialRegType
+    ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
+        self.cuda_context.copy_device_to_device_async(
+            dst.ptr, src.ptr, len(dst), self.cuda_stream
+        )
+
     fn copy_to_device_sync[
         type: AnyTrivialRegType
     ](self, buf: DeviceBuffer[type], ptr: Pointer[type]) raises:
@@ -150,6 +180,14 @@ struct DeviceContext:
         type: AnyTrivialRegType
     ](self, ptr: Pointer[type], buf: DeviceBuffer[type]) raises:
         self.cuda_context.copy_device_to_host(ptr, buf.ptr, len(buf))
+
+    fn copy_device_to_device_sync[
+        type: AnyTrivialRegType
+    ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
+        self.cuda_context.copy_device_to_device_async(
+            dst.ptr, src.ptr, len(dst), self.cuda_stream
+        )
+        self.synchronize()
 
     fn synchronize(self) raises:
         self.cuda_stream.synchronize()
