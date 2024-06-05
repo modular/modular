@@ -10,7 +10,6 @@ from sys.info import alignof, has_neon, simdwidthof
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from gpu.host import CUDADeviceStream
 from memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import MojoCallContextPtr, Runtime
@@ -797,7 +796,7 @@ fn matmul[
             c,
             a,
             b,
-            ctx.get_cuda_device(),
+            ctx.get_cuda_device().cuda_stream,
             num_threads,
         )
 

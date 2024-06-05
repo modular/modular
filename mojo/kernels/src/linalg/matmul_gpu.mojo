@@ -11,7 +11,7 @@ from algorithm.functional import tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import CUDADeviceStream, FuncAttribute, Function, Stream
+from gpu.host import FuncAttribute, Function, Stream
 from gpu.host.memory import _memset_async
 from gpu.memory import (
     AddressSpace,
@@ -913,7 +913,7 @@ fn _matmul_gpu[
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
-    dev: CUDADeviceStream,
+    stream: Stream,
     num_threads: Int = -1,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -948,7 +948,7 @@ fn _matmul_gpu[
                 transpose_b=transpose_b,
                 use_tensor_core=use_tensor_core,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, dev)
+            ](c, a, b, stream)
         else:
             _matmul_gpu_dispatch[
                 a.type,
@@ -961,7 +961,7 @@ fn _matmul_gpu[
                 transpose_b=transpose_b,
                 use_tensor_core=use_tensor_core,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, dev)
+            ](c, a, b, stream)
 
     else:
         if use_32bit_indexing:
@@ -975,7 +975,7 @@ fn _matmul_gpu[
                 indexing_integral_dtype = DType.uint32,
                 transpose_b=transpose_b,
                 use_tensor_core=use_tensor_core,
-            ](c, a, b, dev)
+            ](c, a, b, stream)
         else:
             _matmul_gpu_dispatch[
                 a.type,
@@ -987,7 +987,7 @@ fn _matmul_gpu[
                 indexing_integral_dtype = DType.uint64,
                 transpose_b=transpose_b,
                 use_tensor_core=use_tensor_core,
-            ](c, a, b, dev)
+            ](c, a, b, stream)
 
 
 @always_inline
@@ -1006,7 +1006,7 @@ fn _matmul_gpu_dispatch[
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
-    dev: CUDADeviceStream,
+    stream: Stream,
 ):
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -1130,7 +1130,7 @@ fn _matmul_gpu_dispatch[
                     b_tsr,
                     grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
                     block_dim=(NUM_THREADS, 1, 1),
-                    stream=dev.stream,
+                    stream=stream,
                 )
                 return
 
@@ -1176,7 +1176,7 @@ fn _matmul_gpu_dispatch[
                 Scalar[c_type](0),
                 grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
                 block_dim=(NUM_THREADS),
-                stream=dev.stream,
+                stream=stream,
             )
         elif n == 1:
             alias WARPS_PER_BLOCK = 32
@@ -1197,7 +1197,7 @@ fn _matmul_gpu_dispatch[
                 k,
                 grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                stream=dev.stream,
+                stream=stream,
             )
         elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
             # k should be a multiple of warps per block
@@ -1220,7 +1220,7 @@ fn _matmul_gpu_dispatch[
                 k,
                 grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                stream=dev.stream,
+                stream=stream,
             )
         else:
             # Tile size for tiling in shared memory.
@@ -1246,7 +1246,7 @@ fn _matmul_gpu_dispatch[
                     k,
                     grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
                     block_dim=(tile_size, tile_size),
-                    stream=dev.stream,
+                    stream=stream,
                 )
             else:
                 alias BLOCK_DIM = 16
@@ -1268,7 +1268,7 @@ fn _matmul_gpu_dispatch[
                     k,
                     grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
-                    stream=dev.stream,
+                    stream=stream,
                 )
     except e:
         abort(e)
