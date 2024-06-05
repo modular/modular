@@ -406,7 +406,7 @@ static ErrorOr<BufferRef> specializePackageLinkForPreElaborationLinking(
         return setError("unable to load parsed module bytecode");
 
       KGENCompiler compiler(*(packageModuleOr->getContext()), compileOptions);
-      if (auto err = compiler.runLibraryGenerationPipeline(*packageModuleOr))
+      if (auto err = compiler.runGenerateLibraryPipeline(*packageModuleOr))
         return setError(err.takeError());
 
       // Write the bytecode back out to the buffer.
@@ -580,8 +580,8 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule, bool isJIT,
 }
 
 ErrorOrSuccess
-KGENCompiler::runLibraryGenerationPipeline(ModuleOp module,
-                                           bool materializeDependencies) {
+KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
+                                         bool materializeDependencies) {
   auto cacheBackend = getMojoCacheBackend();
   if (cacheBackend.isError())
     return cacheBackend.takeError();
@@ -590,7 +590,8 @@ KGENCompiler::runLibraryGenerationPipeline(ModuleOp module,
 
   // Generate a library from the module, processing the pipeline up to the
   // elaboration phase.
-  configurePassManager(pm);
+  configurePassManager(
+      [](mlir::PassManager &pm) { M::configurePassManager(pm); });
   buildGenerateLibraryPipeline(pm, options);
   if (materializeDependencies)
     pm.addPass(createMaterializePackagesWithDefaultGen(options));
@@ -601,10 +602,10 @@ KGENCompiler::runLibraryGenerationPipeline(ModuleOp module,
       module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
       pm,
       Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-          "KGEN::runLibraryGenerationPipeline", "mojo.compiler.cache.miss.time",
+          "KGEN::runGenerateLibraryPipeline", "mojo.compiler.cache.miss.time",
           {{"pipeline", "KGEN"}}),
       Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-          "KGEN::runLibraryGenerationPipeline"));
+          "KGEN::runGenerateLibraryPipeline"));
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
@@ -622,7 +623,52 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
   return pm.run(module);
 }
 
-LogicalResult KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
-  buildGenerateLibraryPipeline(pm, options);
+/// Run the compilation pipeline till the end of elaboration
+/// to produce a fully concrete KGEN module. This allows the transform to be
+/// cached and returns an AnyAsyncValueRef.
+AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
+    ModuleOp module, TargetInfoAttr target, LLCL::Runtime &runtime,
+    std::optional<AnyAsyncValueRef> chain,
+    std::function<void(Operation *)> moreOnMiss,
+    std::function<void(Operation *)> moreOnHit)
+
+{
+  populateElaborateModulePasses(pm, target, options);
+  auto cacheBackend = KGEN::getMojoCacheBackend();
+
+  if (cacheBackend.isError() || !chain) {
+    auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
+    if (failed(pm.run(module))) {
+      std::move(output).setToError(LLCL::getMLIRDiagnostic(
+          "KGENCompiler::runElaborationPipeline failed", module->getLoc()));
+    } else {
+      std::move(output).emplace(
+          "KGENCompiler::runElaborationPipeline success without caching.");
+    }
+    return output;
+  }
+
+  return Cache::cachedTransform(
+      module, RCRef<Cache::TransformCache>::create(std::move(*cacheBackend)),
+      std::move(*chain), pm, std::move(moreOnMiss), std::move(moreOnHit));
+}
+
+LogicalResult KGENCompiler::runPostElaborationOnlyPipeline(ModuleOp module) {
+  buildPostElaborationPipeline(pm, options);
   return pm.run(module);
+}
+
+/// Build the pipeline to convert post-elaboration KGEN IR to LLVM IR.
+/// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
+/// of LLVM lowerings, and the canonicalizer again.
+LogicalResult
+KGENCompiler::runLowerToLLVMPipeline(ModuleOp module,
+                                     const LowerToLLVMOptions &llvmOptions) {
+  buildLowerToLLVMPipeline(pm, llvmOptions);
+  return pm.run(module);
+}
+
+void KGENCompiler::configurePassManager(
+    std::function<void(mlir::PassManager &pm)> config) {
+  config(pm);
 }
