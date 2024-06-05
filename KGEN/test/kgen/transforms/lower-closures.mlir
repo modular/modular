@@ -137,6 +137,7 @@ kgen.func @co_await(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
   // CHECK-NEXT:   call_indirect [[RESUME]](%arg0)
   // CHECK-NEXT:   co.suspend.end
   // CHECK-NEXT: }
+  // CHECK-NEXT: co.destroy %arg0
   // CHECK-NEXT: return
   co.await %arg0, %arg1, %arg1 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> ()
   kgen.return
@@ -146,6 +147,7 @@ kgen.func @co_await(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
 kgen.func @co_raises(%arg0: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !kgen.pointer<index>) -> i1 {
   // CHECK-NEXT: set_byref_error_result %arg0(%arg1, %arg2)
   // CHECK: [[RES:%.*]] = co.get_results %arg0
+  // CHECK-NEXT: co.destroy %arg0
   // CHECK-NEXT: return [[RES]]
   %0 = co.await %arg0, %arg1, %arg2 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<index>) -> i1
   kgen.return %0 : i1
