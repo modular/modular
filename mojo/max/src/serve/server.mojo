@@ -12,6 +12,8 @@ from runtime.llcl import (
     TaskGroup,
     Atomic,
 )
+from python.python import _get_global_python_itf, Python, CPython
+
 from tensor import TensorSpec
 from time import now
 from utils.variant import Variant
@@ -74,6 +76,8 @@ struct InferenceServer[
         Callbacks,
     ]
 
+    var _tstate: Int64
+
     @staticmethod
     fn create[
         HTTP_SERVER_ENABLED: Bool = False
@@ -113,6 +117,8 @@ struct InferenceServer[
         )
         self._callbacks.on_server_start()
 
+        self._tstate = 0
+
     fn __del__(owned self):
         self._callbacks.on_server_stop()
 
@@ -131,7 +137,7 @@ struct InferenceServer[
 
     fn serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         var rt = Runtime()
-        rt.run(self.async_serve[handle_fn]())
+        _ = rt.run(self.async_serve[handle_fn]())
 
     async fn async_serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         @always_inline
@@ -186,13 +192,18 @@ struct InferenceServer[
         var rt = Runtime()
         var tg = TaskGroup[__lifetime_of()](rt)
         for _ in range(self._num_listeners):
-            tg.create_task(listen())
+            _ = tg.create_task(listen())
+
+        var server_thread = PythonObject()
 
         @parameter
         if HTTP_SERVER_ENABLED:
-            tg.create_task(run_http_rt(self._impl._impl))
+            server_thread = run_http_rt(self._impl._impl)
+            var cpython = _get_global_python_itf().cpython()
+            self._tstate = cpython.PyEval_SaveThread()
 
         await tg
+        _ = server_thread^
         self._impl.stop()
 
     fn signal_stop(inout self):
@@ -263,7 +274,7 @@ struct MuxInferenceService(InferenceService):
     ](inout self, request: req_type, inout response: resp_type) raises -> None:
         var respOr = Variant[resp_type, Error](response^)
         var rt = Runtime()
-        rt.run(self.async_infer(request, respOr))
+        _ = rt.run(self.async_infer(request, respOr))
         if respOr.isa[Error]():
             raise respOr.unsafe_take[Error]()
         else:

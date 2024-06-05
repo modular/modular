@@ -56,7 +56,7 @@ struct GRPCInferenceClient:
     ) raises -> InferenceResponseImpl:
         var rt = Runtime()
         var result = Variant[InferenceResponseImpl, Error](Error())
-        rt.run(self.async_infer(name, version, inputs, outputs, result))
+        _ = rt.run(self.async_infer(name, version, inputs, outputs, result))
         if result.isa[Error]():
             raise result.unsafe_take[Error]()
         else:
