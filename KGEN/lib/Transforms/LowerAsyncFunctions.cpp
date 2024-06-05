@@ -830,8 +830,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       };
       if (Value error = setErrorResultOp.getError())
         setByRefArgument(error, AsyncContinuationField::ErrorSlot);
-      Value result = setErrorResultOp.getResult();
-      setByRefArgument(result, AsyncContinuationField::ResultSlot);
+      if (!isa<KGEN::NoneType>(
+              setErrorResultOp.getResult().getType().getElementType())) {
+        Value result = setErrorResultOp.getResult();
+        setByRefArgument(result, AsyncContinuationField::ResultSlot);
+      }
       op->erase();
     }
   });

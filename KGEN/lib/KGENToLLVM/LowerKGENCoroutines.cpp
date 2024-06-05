@@ -297,10 +297,12 @@ static void lowerSetByRefResults(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Value res = b.createConversion(op.getResult());
-  b.create<StoreOp>(res, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
-                                         GEPArg(b.getPointerByteWidth() * 4),
-                                         /*inbounds=*/true));
+  if (!isa<KGEN::NoneType>(op.getResult().getType().getElementType())) {
+    Value res = b.createConversion(op.getResult());
+    b.create<StoreOp>(res, b.create<GEPOp>(res.getType(), b.getI8Type(), hdl,
+                                           GEPArg(b.getPointerByteWidth() * 4),
+                                           /*inbounds=*/true));
+  }
   if (Value err = op.getError()) {
     err = b.createConversion(err);
     b.create<StoreOp>(err, b.create<GEPOp>(err.getType(), b.getI8Type(), hdl,

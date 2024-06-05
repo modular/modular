@@ -89,29 +89,39 @@ llvm.func @coro_set_results_one() {
 // CHECK-LABEL: llvm.func @coro_byref_results
 llvm.func @coro_byref_results() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
-  %1 = kgen.param.constant: pointer<none> = <0>
+  %1 = kgen.param.constant: pointer<index> = <0>
   // CHECK: [[RES:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
   // CHECK-NEXT: store {{.*}}, [[RES]]
   // CHECK: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
   // CHECK-NEXT: store {{.*}}, [[ERR]]
   // CHECK-NOT: set_byref_error_result
-  co.set_byref_error_result %0(%1, %1) : !co.routine, !kgen.pointer<none>, !kgen.pointer<none>
+  co.set_byref_error_result %0(%1, %1) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
 
   // CHECK-NOT: [[ERR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
   // CHECK: [[RES:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
   // CHECK-NEXT: store {{.*}}, [[RES]]
   // CHECK-NOT: set_byref_error_result
-  co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<none>
+  co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<index>
 
   // CHECK: [[RES_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
   // CHECK-NEXT: [[RES:%.*]] = llvm.load [[RES_PTR]]
   // CHECK: [[ERR_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][24]
   // CHECK-NEXT: [[ERR:%.*]] = llvm.load [[ERR_PTR]]
-  %result, %error = co.get_byref_error_result %0 : !kgen.pointer<none>, !kgen.pointer<none>
+  %result, %error = co.get_byref_error_result %0 : !kgen.pointer<index>, !kgen.pointer<index>
 
   // CHECK: [[RES_PTR:%.*]] = llvm.getelementptr inbounds [[CORO:%.*]][32]
   // CHECK-NEXT: [[RES:%.*]] = llvm.load [[RES_PTR]]
-  %result0 = co.get_byref_error_result %0 : !kgen.pointer<none>
+  %result0 = co.get_byref_error_result %0 : !kgen.pointer<index>
+  llvm.return
+}
+
+// CHECK-LABEL: llvm.func @set_byref_none
+llvm.func @set_byref_none() {
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  %1 = kgen.param.constant: pointer<none> = <0>
+  // CHECK-NOT: llvm.getelementptr inbounds [[CORO:%.*]][32]
+  co.set_byref_error_result %0(%1, %1) : !co.routine, !kgen.pointer<none>, !kgen.pointer<none>
+  co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<none>
   llvm.return
 }
 
