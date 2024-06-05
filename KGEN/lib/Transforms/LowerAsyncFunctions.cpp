@@ -149,9 +149,10 @@ struct LowerAsyncBuildContext {
       Shared<SymbolTable &> &sharedTable,
       DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
           &asyncFuncToRampFunctions,
-      ImplicitLocOpBuilder &builder)
+      ImplicitLocOpBuilder &builder, TargetInfoAttr targetInfoAttr)
       : sharedTable(sharedTable),
-        asyncFuncToRampFunctions(asyncFuncToRampFunctions), builder(builder) {}
+        asyncFuncToRampFunctions(asyncFuncToRampFunctions), builder(builder),
+        targetInfoAttr(targetInfoAttr) {}
 
   /// Given an async function and its frame types, create a ramp function and a
   /// resume function.
@@ -174,6 +175,7 @@ private:
   DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
       &asyncFuncToRampFunctions;
   ImplicitLocOpBuilder &builder;
+  TargetInfoAttr targetInfoAttr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -364,8 +366,6 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
   for (Type argument : rampFunction.getSignature().getArguments())
     rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
   // Allocate memory for continuation.
-
-  TargetInfoAttr targetInfoAttr = lookupTargetInfo(funcOp);
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeStoreSize(targetInfoAttr, continuationType);
   std::optional<int64_t> align =
@@ -756,6 +756,7 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
 
 void LowerAsyncFunctionsPass::runOnOperation() {
   ModuleOp module = getOperation();
+  TargetInfoAttr targetInfoAttr = lookupTargetInfo(module);
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   Shared<SymbolTable &> sharedTable(symtab);
@@ -765,7 +766,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   // Convert async functions.
   ImplicitLocOpBuilder b(module->getLoc(), module);
   Operation *op = &*module.getOps().begin();
-  LowerAsyncBuildContext buildContext(sharedTable, asyncFuncToRampFunctions, b);
+  LowerAsyncBuildContext buildContext(sharedTable, asyncFuncToRampFunctions, b,
+                                      targetInfoAttr);
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
   while (op) {
     Operation *next = op->getNextNode();
