@@ -92,6 +92,9 @@ llvm_config.add_tool_substitutions(tools, tool_dirs)
 if "numpy" in sys.modules:
     config.available_features.add("numpy")
 
+if "requests" in sys.modules:
+    config.available_features.add("requests")
+
 config.excludes.update(["test_user_op"])
 
 output = subprocess.run("is-cuda-available")
