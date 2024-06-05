@@ -31,7 +31,7 @@ def test_copy_d2h():
     var val = 1
     for i in range(10):
         for j in range(2):
-            input[Index(i, j)] = val
+            input[i, j] = val
             val += 1
 
     input_cpu = input^.get_device_memory()
@@ -59,7 +59,7 @@ def test_copy_d2d():
     var val = 1
     for i in range(10):
         for j in range(2):
-            input[Index(i, j)] = val
+            input[i, j] = val
             val += 1
 
     input_cpu = input^.get_device_memory()
