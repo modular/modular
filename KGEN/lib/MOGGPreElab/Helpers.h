@@ -61,6 +61,10 @@ isExtensibilityTensor(KGEN::LIT::DeclRefType maybeTensor) {
   return isXType(maybeTensor, "extensibility", "Tensor");
 }
 
+[[maybe_unused]] bool isCustomType(KGEN::LIT::DeclRefType maybeCustom) {
+  return !isMOGGTensor(maybeCustom) && !isExtensibilityTensor(maybeCustom);
+}
+
 // Returns true if there is at least one recognizable tensor on the signature.
 [[maybe_unused]] bool hasAtLeastOneTensor(GeneratorOp generator) {
   ArrayAttr names =
