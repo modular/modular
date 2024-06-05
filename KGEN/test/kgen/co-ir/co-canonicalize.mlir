@@ -1,4 +1,4 @@
-// RUN: kgen-opt -canonicalize -allow-unregistered-dialect -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -canonicalize -mlir-print-debuginfo %s | FileCheck %s
 
 // COM: Check that constant are only hoisted from subprogram regions if there is
 // COM: no debuginfo scope given.
@@ -53,44 +53,4 @@ kgen.func @no_cse_async_execute() -> (!co.routine, !co.routine) {
     kgen.return
   }
   kgen.return %0, %1 : !co.routine, !co.routine
-}
-
-// CHECK-LABEL: kgen.func @await_execute
-// CHECK-DAG:     %idx0 =
-// CHECK-DAG:     %idx1 =
-// CHECK-DAG:     %idx3 =
-// CHECK-DAG:     %true =
-// CHECK-NEXT:    "op"
-// CHECK-NEXT:    store %idx3, %arg1
-// CHECK-NEXT:    store %idx0, %arg1
-// CHECK-NEXT:    return %true, %idx1, %idx0
-kgen.func @await_execute(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.pointer<index> byref_result) throws|async -> (i1, index, index) {
-  %0 = co.execute {
-    "op"() : () -> ()
-    kgen.return
-  }
-  co.await %0 : (!co.routine) -> ()
-
-  %1 = co.execute : i1 (%arg2: !kgen.pointer<i1> byref_error, %arg3: !kgen.pointer<index> byref_result) {
-    %idx3 = index.constant 3
-    pop.store %idx3, %arg3 : !kgen.pointer<index>
-    %true = index.bool.constant true
-    kgen.return %true : i1
-  }
-  %2 = co.await %1, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> i1
-
-  %3 = co.execute : index, index (%arg2: !kgen.pointer<index> byref_result) {
-    %idx0 = index.constant 0
-    %idx1 = index.constant 1
-    pop.store %idx0, %arg2 : !kgen.pointer<index>
-    hlcf.if %2 {
-      kgen.return %idx1, %idx0 : index, index
-    } else {
-      hlcf.yield
-    }
-    kgen.return %idx0, %idx1 : index, index
-  }
-  %4:2 = co.await %3, %arg1 : (!co.routine, !kgen.pointer<index>) -> (index, index)
-
-  kgen.return %2, %4#0, %4#1 : i1, index, index
 }

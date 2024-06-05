@@ -9,8 +9,6 @@
 #include "KGEN/CODialect/COUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "KGEN/TransformUtils/InliningUtils.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace M;
@@ -172,42 +170,6 @@ LogicalResult ExecuteOp::verify() {
 }
 
 ArrayRef<Type> ExecuteOp::getResultTypes() { return getTypes(); }
-
-//===----------------------------------------------------------------------===//
-// AwaitOp
-//===----------------------------------------------------------------------===//
-
-static bool compareAwaitArgTypes(TypeRange args, TypeRange slots) {
-  if (args.size() != slots.size())
-    return false;
-  for (auto [lhs, rhs] : llvm::zip(llvm::reverse(args), slots))
-    if (lhs != rhs)
-      return false;
-  return true;
-}
-
-LogicalResult AwaitOp::canonicalize(AwaitOp op, PatternRewriter &b) {
-  // `co.await(co.execute) -> inlined region`.
-  if (auto execute = op.getCoroutine().getDefiningOp<ExecuteOp>()) {
-    // If the block argument types don't match the provided result slots, then
-    // this operation is UB.
-    if (!compareAwaitArgTypes(execute.getBody()->getArgumentTypes(),
-                              op.getSlots().getType()))
-      return b.notifyMatchFailure(op.getLoc(), "result slot types don't match");
-    // This should be the only user of the coroutine.
-    if (!op.getCoroutine().hasOneUse())
-      return b.notifyMatchFailure(op.getLoc(), "coroutine has other uses");
-    IRMapping map;
-    SmallVector<Value, 2> args(llvm::reverse(op.getSlots()));
-    auto [scope, singleExit] = KGEN::inlineRegion(
-        b, map, op, args, execute.getBodyRegion(), /*takeBody=*/true);
-    if (singleExit)
-      foldTrivialLoop(b, scope);
-    b.eraseOp(execute);
-    return success();
-  }
-  return failure();
-}
 
 //===----------------------------------------------------------------------===//
 // CODialect

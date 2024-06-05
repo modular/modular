@@ -277,8 +277,6 @@ def CO_AwaitOp : COOp<"await"> {
   let assemblyFormat = [{
     operands attr-dict `:` functional-type(operands, results)
   }];
-
-  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
