@@ -50,25 +50,43 @@ using namespace KGEN;
 // ObjectCompiler
 //===----------------------------------------------------------------------===//
 
-ErrorOr<ObjectCompiler> ObjectCompiler::create(mlir::PassManager &mgr,
-                                               StringRef basePath,
-                                               CompilationOptions options,
-                                               bool isJIT, bool isSearch) {
+ErrorOr<std::unique_ptr<ObjectCompiler>>
+ObjectCompiler::create(StringRef basePath, CompilationOptions options,
+                       bool isJIT, MLIRContext &context,
+                       const std::function<void(mlir::PassManager &)> &configPM,
+                       std::optional<StringRef> operationName, bool isSearch) {
   auto transformCache = Cache::getLocalDefaultBackendChain(
       std::filesystem::path(basePath.str()) / "transform", KGEN_VERSION_STRING);
   if (failed(transformCache))
     return transformCache.takeError();
-  return ObjectCompiler(mgr, std::move(*transformCache), std::move(options),
-                        isJIT, isSearch);
+  if (operationName) {
+    return std::unique_ptr<ObjectCompiler>(
+        new ObjectCompiler(std::move(*transformCache), std::move(options),
+                           isJIT, isSearch, context, *operationName, configPM));
+  } else {
+    return std::unique_ptr<ObjectCompiler>(
+        new ObjectCompiler(std::move(*transformCache), std::move(options),
+                           isJIT, isSearch, context, configPM));
+  }
 }
 
-ObjectCompiler::ObjectCompiler(mlir::PassManager &mgr,
-                               RCRef<Cache::BlobCacheBackend> transformCache,
-                               CompilationOptions options, bool isJIT,
-                               bool isSearch)
+ObjectCompiler::ObjectCompiler(
+    RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
+    bool isJIT, bool isSearch, MLIRContext &context,
+    const std::function<void(mlir::PassManager &)> &configPM)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      mgr(&mgr), options(std::move(options)), isJIT(isJIT), isSearch(isSearch) {
+      options(std::move(options)), isJIT(isJIT), isSearch(isSearch),
+      configPM(configPM), context(context) {}
+
+ObjectCompiler::ObjectCompiler(
+    RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
+    bool isJIT, bool isSearch, MLIRContext &context, StringRef operationName,
+    const std::function<void(mlir::PassManager &)> &configPM)
+    : transformCache(
+          decltype(this->transformCache)::create(std::move(transformCache))),
+      options(std::move(options)), isJIT(isJIT), isSearch(isSearch),
+      configPM(configPM), context(context), operationName(operationName.str()) {
 }
 
 //===----------------------------------------------------------------------===//

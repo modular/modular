@@ -225,13 +225,14 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   options.relocModel = target.getRelocationModel();
 
   // Initialize the object compiler.
-  mlir::PassManager compilerPm(target.getContext());
-  configurePassManager(compilerPm);
-  ErrorOr<ObjectCompiler> compilerOr = ObjectCompiler::create(
-      compilerPm, ".mojo_cache", options, /*isJIT=*/false);
+  ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr = ObjectCompiler::create(
+      ".mojo_cache", options, /*isJIT=*/false, *target.getContext(),
+      [](mlir::PassManager &pm) { configurePassManager(pm); });
+
   if (compilerOr.isError())
     return compilerOr.takeError();
-  ObjectCompiler compiler = compilerOr.takeValue();
+
+  std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
 
   // Initialize the target machine.
   auto tmOr = createTargetMachine(options, /*isJIT=*/false);
@@ -255,7 +256,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
   IRMapping mapping;
   OwningOpRef<ModuleOp> module =
-      compiler.produceStandaloneModule(symtab, exportedSymbols, mapping);
+      compiler->produceStandaloneModule(symtab, exportedSymbols, mapping);
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -294,7 +295,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       return Error("failed to generate capture stub");
     llvm::LLVMContext llvmCtx;
     std::unique_ptr<llvm::Module> llvmModule =
-        compiler.lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
+        compiler->lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
     if (!llvmModule)
       return Error("failed to lower to LLVM");
 
@@ -363,7 +364,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   LLCL::Runtime &runtime =
       *loadContext(target.getContext())->get<LLCL::Runtime>();
   AnyAsyncValueRef result = Cache::cachedTransform(
-      *module, compiler.getTransformCache(),
+      *module, compiler->getTransformCache(),
       AsyncValueRef<Chain>::createReady(runtime), std::move(key),
       std::move(runTransformation), onCacheHit);
   await(result);
@@ -508,9 +509,9 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
-    mlir::PassManager &pm, const CompilationOptions &compilationOptions,
+    mlir::MLIRContext &context, const CompilationOptions &compilationOptions,
     ExecutionEngineOptions executionEngineOptions, bool isJIT,
-    TargetInfoAttr target, bool isSearch) {
+    std::function<void(mlir::PassManager &)> configPM, bool isSearch) {
 
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
@@ -524,8 +525,9 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // Add the object compiler layer.
-  auto compiler = ObjectCompiler::create(pm, ".mojo_cache", compilationOptions,
-                                         isJIT, isSearch);
+  auto compiler =
+      ObjectCompiler::create(".mojo_cache", compilationOptions, isJIT, context,
+                             std::move(configPM), std::nullopt, isSearch);
   if (failed(compiler))
     return compiler.takeError();
 
@@ -566,11 +568,18 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
         Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
             "KGENCompiler::runKGENPipeline"));
 
-    LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();
   }
   return {};
+}
+
+static mlir::PassManager
+createPassManager(const std::optional<std::string> &operationName,
+                  mlir::MLIRContext *context) {
+  if (operationName)
+    return {context, *operationName};
+  return {context};
 }
 
 AnyAsyncValueRef
@@ -582,6 +591,8 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
 
   // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
+  mlir::PassManager pm = createPassManager(operationName, &context);
+  configPM(pm);
 
   // Populate the passes.
   buildGenerateLibraryPipeline(pm, options);
@@ -593,6 +604,8 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
       Cache::cachedTransform(theModule, transformCache.copy(), std::move(chain),
                              pm, std::move(moreOnMiss), std::move(moreOnHit));
 
+  // This await here is important since pm is local in this function.
+  LLCL::await(ready);
   return ready;
 }
 
@@ -605,10 +618,9 @@ KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
   auto transformCache =
       RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-  // Generate a library from the module, processing the pipeline up to the
-  // elaboration phase.
-  configurePassManager(
-      [](mlir::PassManager &pm) { M::configurePassManager(pm); });
+  mlir::PassManager pm = createPassManager(operationName, &context);
+  configPM(pm);
+
   buildGenerateLibraryPipeline(pm, options);
   if (materializeDependencies)
     pm.addPass(createMaterializePackagesWithDefaultGen(options));
@@ -623,6 +635,8 @@ KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
           {{"pipeline", "KGEN"}}),
       Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
           "KGEN::runGenerateLibraryPipeline"));
+
+  // This await here is important since pm is local in this function.
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
@@ -636,18 +650,27 @@ KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
 }
 
 LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
+  mlir::PassManager pm = createPassManager(operationName, &context);
+  configPM(pm);
+
   buildCheckLITPipeline(pm, options);
   return pm.run(module);
 }
 
-/// Run the compilation pipeline till the end of elaboration
-/// to produce a fully concrete KGEN module. This allows the transform to be
-/// cached and returns an AnyAsyncValueRef.
+/// Run the compilation pipeline till the end of elaboration to produce a fully
+/// concrete KGEN module. This allows the transform to be cached.
+/// Note that this function also awaits the AsyncValue because it uses
+/// a local PassManager.
+/// Returns the same AnyAsyncValueRef for error handling in the caller
+/// if needed.
 AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
     ModuleOp module, TargetInfoAttr target, LLCL::Runtime &runtime,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {
+  mlir::PassManager pm = createPassManager(operationName, &context);
+  configPM(pm);
+
   populateElaborateModulePasses(pm, target, options);
   auto cacheBackend = getMojoCacheBackend();
 
@@ -663,12 +686,12 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
     return std::move(output);
   }
 
-  return Cache::cachedTransform(
+  AnyAsyncValueRef ready = Cache::cachedTransform(
       module, RCRef<Cache::TransformCache>::create(std::move(*cacheBackend)),
       std::move(*chain), pm, std::move(moreOnMiss), std::move(moreOnHit));
-}
 
-void KGENCompiler::configurePassManager(
-    std::function<void(mlir::PassManager &pm)> config) {
-  config(pm);
+  // This await here is important since pm is local in this function.
+  LLCL::await(ready);
+
+  return ready;
 }

@@ -91,11 +91,10 @@ public:
 // ObjectCompilerLayer
 //===----------------------------------------------------------------------===//
 
-ObjectCompilerLayer::ObjectCompilerLayer(ObjectCompiler &&objCompiler,
-                                         llvm::orc::ObjectLayer &base,
-                                         llvm::orc::ExecutionSession &sess,
-                                         const llvm::DataLayout &dl,
-                                         AddToSearchOrderFn add)
+ObjectCompilerLayer::ObjectCompilerLayer(
+    std::unique_ptr<ObjectCompiler> objCompiler, llvm::orc::ObjectLayer &base,
+    llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
+    AddToSearchOrderFn add)
     : MaterializationLayer(LayerKind::kObjectCompilerLayer, sess, dl,
                            std::move(add)),
       objectCompiler(std::move(objCompiler)), baseLayer(base) {}
@@ -148,10 +147,10 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
 
   ErrorOr<BufferRef> bufOr = Error(" ");
   if (exports.empty()) {
-    bufOr = objectCompiler.produceStandaloneArchive(symtab,
-                                                    getAllSymbols(theModule));
+    bufOr = objectCompiler->produceStandaloneArchive(symtab,
+                                                     getAllSymbols(theModule));
   } else {
-    bufOr = objectCompiler.produceStandaloneArchive(symtab, exports);
+    bufOr = objectCompiler->produceStandaloneArchive(symtab, exports);
   }
 
   // No buffer - materialization fails.
@@ -350,7 +349,7 @@ ObjectCompilerLayer::getInterface(const SymbolTable &symtab,
   else
     addSymbols(getAllSymbols(cast<ModuleOp>(symtab.getOp())));
 
-  if (objectCompiler.isJIT) {
+  if (objectCompiler->isJIT) {
     symbols[mangler(ExecutionEngine::getGlobalCtorFnName())] =
         getGlobalFnSymbolFlags();
     symbols[mangler(ExecutionEngine::getGlobalDtorFnName())] =
