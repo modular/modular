@@ -83,6 +83,7 @@ struct COTypes {
     case Frame:
       return StructType::get(cxt, frameData.frameTypes);
     }
+    llvm_unreachable("invalid AsyncContinuationField value");
   }
   COTypes(MLIRContext *cxt, FrameData &frameData);
   COTypes(const COTypes &) = delete;
