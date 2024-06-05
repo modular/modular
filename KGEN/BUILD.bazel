@@ -60,6 +60,8 @@ modular_cc_library(
         ":CODialectBytecodeIncGen",
         ":CODialectIncGen",
         ":KGENDialect",
+        ":TransformUtils",
+        "//Support:Base",
         "//Support:Compiler",
         "@llvm-project//mlir:IR",
     ],
@@ -482,6 +484,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/MOGGPreElab/*.h"]),
     deps = [
         ":KGENDialect",
+        ":LITDialect",
         ":MOGGreElabIncGen",
         ":POPAttrsIncGen",
         ":TransformUtils",
@@ -865,11 +868,7 @@ modular_cc_library(
 
 modular_cc_library(
     name = "ToolCommon.headers",
-    hdrs = [
-        "include/KGEN/ToolCommon/CLOptions.h",
-        "include/KGEN/ToolCommon/CompilationOptions.h",
-        "include/KGEN/ToolCommon/KGENPasses.h",
-    ],
+    hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
@@ -895,6 +894,7 @@ modular_cc_library(
         ":KGENDialect",
         ":KGENDialectIncGen",
         ":KGENInterfacesIncGen",
+        ":ObjectCompiler.headers",
         ":Pipeline",
         ":ToolCommon.headers",
         ":VersionHeader",
@@ -1048,8 +1048,11 @@ modular_cc_library(
     name = "Transforms",
     srcs = glob(["lib/Transforms/*.cpp"]),
     deps = [
+        ":CODialect",
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
+        ":LITDialect",
+        ":POPDialect",
         ":ToolCommon.headers",
         ":TransformUtils",
         "//LLCL:Runtime",
@@ -1098,11 +1101,16 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/TransformUtils/*.h"]),
     deps = [
         ":HLCFDialect",
-        ":LITDialect",
         ":Support",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
     ],
+)
+
+modular_cc_library(
+    name = "ObjectCompiler.headers",
+    srcs = glob(["lib/Compiler/ObjectCompiler/*.h"]),
+    visibility = ["//visibility:private"],
 )
 
 modular_cc_library(
