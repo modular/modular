@@ -429,7 +429,7 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
       will contained the inlined region of the callee. It should also return a
       callback used to process each `ReturnOp` of the callee.
     }], "FailureOr<InlineResult>", "prepInline",
-    (ins "mlir::IRRewriter &":$b)>,
+    (ins "mlir::RewriterBase &":$b)>,
   ];
 
   let extraSharedClassDeclaration = [{

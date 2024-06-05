@@ -12,7 +12,7 @@
 #include "llvm/Support/ThreadPool.h"
 
 namespace mlir {
-class IRRewriter;
+class RewriterBase;
 } // namespace mlir
 
 namespace M::KGEN {
@@ -28,15 +28,14 @@ class SourceLocOp;
 /// The region is inserted into its own scope - either a loop or async execute
 /// op (depending on the type of the call). This scope is returned from the
 /// function.
-std::pair<Operation *, bool> inlineRegion(IRMapping &map,
-                                          KGENCallOpInterface call,
-                                          Region &region,
+std::pair<Operation *, bool> inlineRegion(mlir::RewriterBase &b, IRMapping &map,
+                                          Operation *call, Region &region,
                                           bool takeBody = false);
 
 /// Decrement the counter of a SourceLocOp and lower it to file, line, and
 /// column constants (extracted from the given call location) if needed.
 void processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
-                        mlir::IRRewriter &b);
+                        mlir::RewriterBase &b);
 
 /// Inlining might create trivial loops with a single break at the end. This
 /// function cleans it up.

@@ -965,6 +965,8 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
   IRMapping map;
   for (auto [call, callee] : caller->callsites) {
     map.clear();
+    mlir::IRRewriter b{OpBuilder(call)};
+
     Operation *scope;
     bool singleExit;
     // Check if this is the last use of the function.
@@ -978,14 +980,14 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       callee->mutex.unlock_shared();
       llvm::sys::SmartScopedWriter<true> lock(callee->mutex);
       std::tie(scope, singleExit) =
-          inlineRegion(map, call, callee->func.getBodyRegion(),
+          inlineRegion(b, map, call, callee->func.getBodyRegion(),
                        /*takeBody=*/true);
       // Erase the empty function.
       callee->func->erase();
       callee->func = nullptr;
     } else {
       std::tie(scope, singleExit) =
-          inlineRegion(map, call, callee->func.getBodyRegion());
+          inlineRegion(b, map, call, callee->func.getBodyRegion());
       callee->mutex.unlock_shared();
     }
 
