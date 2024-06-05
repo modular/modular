@@ -30,7 +30,7 @@ static bool isExtensibilityKernel(LIT::FuncOp func) {
         dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
     if (!asDeclRef)
       return false;
-    if (!isExtensibilityTensor(asDeclRef))
+    if (!isExtensibilityTensor(asDeclRef) && !isCustomType(asDeclRef))
       return false;
   }
   return true;
