@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLCOMMON_PASSMANAGERCONFIGOPTIONS_H
 #define KGEN_TOOLCOMMON_PASSMANAGERCONFIGOPTIONS_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/Pass/PassManager.h"
@@ -38,7 +39,7 @@ struct PassManagerConfigOptions {
   bool applyPassManagerCLOptions = false;
   std::optional<std::string> operationName;
 
-  LogicalResult configurePassManager(mlir::PassManager &pm) const;
+  ErrorOrSuccess configurePassManager(mlir::PassManager &pm) const;
 };
 
 } // namespace M::KGEN

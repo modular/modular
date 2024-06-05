@@ -11,13 +11,13 @@
 using namespace M;
 using namespace KGEN;
 
-LogicalResult
+ErrorOrSuccess
 PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
   M::configurePassManager(pm);
 
   if (applyPassManagerCLOptions) {
     if (failed(mlir::applyPassManagerCLOptions(pm)))
-      return failure();
+      return Error("applyPassManagerCLOptions failed during configuring");
   }
 
   if (enableTiming) {
@@ -47,5 +47,5 @@ PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
         irPrintingOptions.opPrintingFlags);
   }
 
-  return success();
+  return {};
 }

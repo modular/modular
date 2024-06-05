@@ -46,14 +46,14 @@ public:
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
-  std::unique_ptr<llvm::Module>
+  ErrorOr<std::unique_ptr<llvm::Module>>
   lowerAllFuncsToLLVM(const SymbolTable &symtab,
                       const ExportMap &exportedSymbols, llvm::LLVMContext &ctx);
 
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
   /// nullptr on failure.
-  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx,
-                                                    ModuleOp module);
+  ErrorOr<std::unique_ptr<llvm::Module>>
+  lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
   /// provided exported ops. An `IRMapping` can be provided to be able to map

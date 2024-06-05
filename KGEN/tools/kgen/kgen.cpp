@@ -374,14 +374,19 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Handle LLVM output.
   if (clOptions.cmd == Command::kEmitLLVM) {
     llvm::LLVMContext llvmCtx;
-    auto llvmModule = objectCompilerLayer.getRawCompiler().lowerAllFuncsToLLVM(
-        symtab, exportedSymbols, llvmCtx);
-    if (!llvmModule)
-      return failure(clOptions.reportError("could not lower funcs to LLVM"));
+    ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
+        objectCompilerLayer.getRawCompiler().lowerAllFuncsToLLVM(
+            symtab, exportedSymbols, llvmCtx);
+
+    if (llvmModuleOr)
+      return failure(clOptions.reportError(
+          Twine("could not lower funcs to LLVM, ") + llvmModuleOr.getError()));
+
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
     if (!outFile)
       return failure(clOptions.reportError("could not open .ll output file"));
 
+    std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
     llvmModule->print(outFile->os(), nullptr);
     outFile->keep();
     return mlir::success();
