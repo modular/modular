@@ -2041,4 +2041,52 @@ def POP_DTypeSizeOf : POPOp<"dtype.sizeof", [
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// StackAllocLifetimeEndOp
+//===----------------------------------------------------------------------===//
+
+def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end"> {
+  let summary = "Marks the end of stack allocated values lifetimes";
+  let description = [{
+    The `pop.stack_alloc.lifetime.end` operation marks the end of the
+    lifetime of a stack allocated value.
+
+    Example:
+
+    ```mlir
+    %2 = pop.stack_allocation 1 x index
+    pop.stack_alloc.lifetime.end(%2) : <index>
+    ```
+  }];
+
+  let arguments = (ins Variadic<PointerType>:$values);
+  let assemblyFormat = [{
+    attr-dict (`(` $values^ `)` `:` type($values))?
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StackAllocLifetimeStartOp
+//===----------------------------------------------------------------------===//
+
+def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start"> {
+  let summary = "Marks the start of stack allocated values lifetimes";
+  let description = [{
+    The `pop.stack_alloc.lifetime.start` operation marks the beginning of
+    the lifetime of a stack allocated value.
+
+    Example:
+
+    ```mlir
+    %2 = pop.stack_allocation 1 x index
+    pop.stack_alloc.lifetime.start(%2) : <index>
+    ```
+  }];
+
+  let arguments = (ins Variadic<PointerType>:$values);
+  let assemblyFormat = [{
+    attr-dict (`(` $values^ `)` `:` type($values))?
+  }];
+}
+
 #endif // KGEN_POPDIALECT_POPOPS_TD
