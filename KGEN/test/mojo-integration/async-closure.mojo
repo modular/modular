@@ -12,7 +12,7 @@ from runtime.llcl import Runtime
 @always_inline
 async fn just_call_it[func: async fn[a: Int] (Int) capturing -> Int]() -> Int:
     var coro = func[3](2)
-    var result = await coro
+    var result = await coro^
     return result
 
 
