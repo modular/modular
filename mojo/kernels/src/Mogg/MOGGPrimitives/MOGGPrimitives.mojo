@@ -15,6 +15,7 @@ from gpu.host.memory import _free, _malloc
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
+from gpu.host import CudaInstance, Device, Context as CudaContext
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
@@ -588,3 +589,32 @@ fn mgp_buffer_set_with_index(
         fillBuffer[DType.int64](buffer, vals)
     else:
         debug_assert(False, "unsupported element size")
+
+
+@mogg_register("mgp.device.context.create")
+@always_inline
+@export
+fn mgp_device_context_create[
+    aDeviceRuntimeSlot: UInt64, bDevice: StringLiteral
+](ctx: Context):
+    @parameter
+    if bDevice == "cuda":
+        var dev_ctx = UnsafePointer[Tuple[CudaContext, CudaInstance]].alloc(1)
+        try:
+            var instance = CudaInstance()
+            var context = CudaContext(Device(instance))
+            dev_ctx.init_pointee_move((context, instance))
+        except e:
+            abort(e)
+        return external_call["KGEN_CompilerRT_CudaContextSetDevice", NoneType,](
+            dev_ctx,
+            mgp_device_context_destroy,
+            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
+        )
+
+
+@export
+fn mgp_device_context_destroy(
+    dev_ctx: UnsafePointer[Tuple[Context, CudaInstance]]
+):
+    dev_ctx.destroy_pointee()
