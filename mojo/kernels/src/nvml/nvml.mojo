@@ -76,96 +76,96 @@ fn _get_dylib_function[
 struct Result(Stringable, EqualityComparable):
     var code: Int32
 
-    alias SUCCESS = Result(0)
+    alias SUCCESS = Self(0)
     """The operation was successful"""
 
-    alias UNINITIALIZED = Result(1)
+    alias UNINITIALIZED = Self(1)
     """NVML was not first initialized with nvmlInit()"""
 
-    alias INVALID_ARGUMENT = Result(2)
+    alias INVALID_ARGUMENT = Self(2)
     """A supplied argument is invalid"""
 
-    alias NOT_SUPPORTED = Result(3)
+    alias NOT_SUPPORTED = Self(3)
     """The requested operation is not available on target device"""
 
-    alias NO_PERMISSION = Result(4)
+    alias NO_PERMISSION = Self(4)
     """The current user does not have permission for operation"""
 
-    alias ALREADY_INITIALIZED = Result(5)
+    alias ALREADY_INITIALIZED = Self(5)
     """Deprecated: Multiple initializations are now allowed through ref
     counting"""
 
-    alias NOT_FOUND = Result(6)
+    alias NOT_FOUND = Self(6)
     """A query to find an object was unsuccessful"""
 
-    alias INSUFFICIENT_SIZE = Result(7)
+    alias INSUFFICIENT_SIZE = Self(7)
     """An input argument is not large enough"""
 
-    alias INSUFFICIENT_POWER = Result(8)
+    alias INSUFFICIENT_POWER = Self(8)
     """A device's external power cables are not properly attached"""
 
-    alias DRIVER_NOT_LOADED = Result(9)
+    alias DRIVER_NOT_LOADED = Self(9)
     """NVIDIA driver is not loaded"""
 
-    alias TIMEOUT = Result(10)
+    alias TIMEOUT = Self(10)
     """User provided timeout passed"""
 
-    alias IRQ_ISSUE = Result(11)
+    alias IRQ_ISSUE = Self(11)
     """NVIDIA Kernel detected an interrupt issue with a GPU"""
 
-    alias LIBRARY_NOT_FOUND = Result(12)
+    alias LIBRARY_NOT_FOUND = Self(12)
     """NVML Shared Library couldn't be found or loaded"""
 
-    alias FUNCTION_NOT_FOUND = Result(13)
+    alias FUNCTION_NOT_FOUND = Self(13)
     """Local version of NVML doesn't implement this function"""
 
-    alias CORRUPTED_INFOROM = Result(14)
+    alias CORRUPTED_INFOROM = Self(14)
     """infoROM is corrupted"""
 
-    alias GPU_IS_LOST = Result(15)
+    alias GPU_IS_LOST = Self(15)
     """The GPU has fallen off the bus or has otherwise become inaccessible"""
 
-    alias RESET_REQUIRED = Result(16)
+    alias RESET_REQUIRED = Self(16)
     """The GPU requires a reset before it can be used again"""
 
-    alias OPERATING_SYSTEM = Result(17)
+    alias OPERATING_SYSTEM = Self(17)
     """The GPU control device has been blocked by the operating system/cgroups"""
 
-    alias LIB_RM_VERSION_MISMATCH = Result(18)
+    alias LIB_RM_VERSION_MISMATCH = Self(18)
     """RM detects a driver/library version mismatch"""
 
-    alias IN_USE = Result(19)
+    alias IN_USE = Self(19)
     """An operation cannot be performed because the GPU is currently in use"""
 
-    alias MEMORY = Result(20)
+    alias MEMORY = Self(20)
     """Insufficient memory"""
 
-    alias NO_DATA = Result(21)
+    alias NO_DATA = Self(21)
     """No data"""
 
-    alias VGPU_ECC_NOT_SUPPORTED = Result(22)
+    alias VGPU_ECC_NOT_SUPPORTED = Self(22)
     """The requested vgpu operation is not available on target device, becasue
     ECC is enabled"""
 
-    alias INSUFFICIENT_RESOURCES = Result(23)
+    alias INSUFFICIENT_RESOURCES = Self(23)
     """Ran out of critical resources, other than memory"""
 
-    alias FREQ_NOT_SUPPORTED = Result(24)
+    alias FREQ_NOT_SUPPORTED = Self(24)
     """Ran out of critical resources, other than memory"""
 
-    alias ARGUMENT_VERSION_MISMATCH = Result(25)
+    alias ARGUMENT_VERSION_MISMATCH = Self(25)
     """The provided version is invalid/unsupported"""
 
-    alias DEPRECATED = Result(26)
+    alias DEPRECATED = Self(26)
     """The requested functionality has been deprecated"""
 
-    alias NOT_READY = Result(27)
+    alias NOT_READY = Self(27)
     """The system is not ready for the request"""
 
-    alias GPU_NOT_FOUND = Result(28)
+    alias GPU_NOT_FOUND = Self(28)
     """No GPUs were found"""
 
-    alias UNKNOWN = Result(999)
+    alias UNKNOWN = Self(999)
     """An internal driver error occurred"""
 
     @always_inline("nodebug")
@@ -283,11 +283,42 @@ fn _check_error(err: Result) raises:
 struct EnableState(EqualityComparable):
     var code: Int32
 
-    alias DISABLED = Result(0)
+    alias DISABLED = Self(0)
     """Feature disabled"""
 
-    alias ENABLED = Result(1)
+    alias ENABLED = Self(1)
     """Feature enabled"""
+
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return self.code == other.code
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+# ===----------------------------------------------------------------------===#
+# ClockType
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct ClockType(EqualityComparable):
+    var code: Int32
+
+    alias GRAPHICS = Self(0)
+    """Graphics clock domain"""
+
+    alias SM = Self(1)
+    """SM clock domain"""
+
+    alias MEM = Self(2)
+    """Memory clock domain"""
+
+    alias VIDEO = Self(2)
+    """Video clock domain"""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -336,6 +367,22 @@ struct Device:
         self.idx = existing.idx
         self.device = existing.device
 
+    fn _max_clock(self, clock_type: ClockType) raises -> Int:
+        var clock = UInt32()
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceGetMaxClockInfo",
+                fn (_DeviceImpl, ClockType, Pointer[UInt32]) -> Result,
+            ]()(self.device, clock_type, Pointer.address_of(clock))
+        )
+        return int(clock)
+
+    fn max_mem_clock(self) raises -> Int:
+        return self._max_clock(ClockType.MEM)
+
+    fn max_graphics_clock(self) raises -> Int:
+        return self._max_clock(ClockType.GRAPHICS)
+
     fn mem_clocks(self) raises -> List[Int]:
         var num_clocks = UInt32()
 
@@ -380,6 +427,10 @@ struct Device:
             Pointer.address_of(num_clocks),
             UnsafePointer[UInt32](),
         )
+
+        if result == Result.SUCCESS:
+            return List[Int]()
+
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
