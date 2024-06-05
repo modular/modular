@@ -96,15 +96,25 @@ ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
   return lowerAllFuncsToLLVM(ctx, *module);
 }
 
+static mlir::PassManager
+createPassManager(const std::optional<std::string> &operationName,
+                  mlir::MLIRContext *context) {
+  if (operationName)
+    return {context, *operationName};
+  return {context};
+}
+
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   CompilerTimeTraceScope traceScope("lower-to-llvm");
-  mgr->clear();
+
+  mlir::PassManager mgr = createPassManager(operationName, &context);
+  configPM(mgr);
 
   // We only need to run the post-elaboration passes if we are searching. In
   // non-search mode, we know the passes have already been run.
   if (isSearch)
-    buildPostElaborationPipeline(*mgr, options);
+    buildPostElaborationPipeline(mgr, options);
 
   adaptDebugEmissionKind(module, options.targetTriple,
                          options.getDIEmissionKind());
@@ -118,9 +128,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   llvmOptions.alignedAllocFnName = "KGEN_CompilerRT_AlignedAlloc";
   llvmOptions.alignedFreeFnName = "KGEN_CompilerRT_AlignedFree";
 
-  buildLowerToLLVMPipeline(*mgr, llvmOptions);
+  buildLowerToLLVMPipeline(mgr, llvmOptions);
 
-  if (failed(mgr->run(module)))
+  if (failed(mgr.run(module)))
     return nullptr;
 
   // Use the input filename for the module name if possible.

@@ -21,7 +21,7 @@ namespace M::KGEN {
 /// MaterializationUnit and uses that to emit symbols on-demand.
 class ObjectCompilerLayer : public MaterializationLayer {
 public:
-  ObjectCompilerLayer(ObjectCompiler &&objCompiler,
+  ObjectCompilerLayer(std::unique_ptr<ObjectCompiler> objCompiler,
                       llvm::orc::ObjectLayer &base,
                       llvm::orc::ExecutionSession &sess,
                       const llvm::DataLayout &dl, AddToSearchOrderFn add);
@@ -35,7 +35,7 @@ public:
 
   /// Provide access to the underlying ObjectCompiler so that users can call its
   /// methods directly if desired (for example, to emit asm or LLVM).
-  ObjectCompiler &getRawCompiler() { return objectCompiler; }
+  ObjectCompiler &getRawCompiler() { return *objectCompiler; }
 
   static bool classof(const MaterializationLayer *layer) {
     return layer->getKind() == LayerKind::kObjectCompilerLayer;
@@ -58,7 +58,7 @@ private:
   class ObjectCompilerMaterializationUnit;
 
 private:
-  ObjectCompiler objectCompiler;
+  std::unique_ptr<ObjectCompiler> objectCompiler;
   llvm::orc::ObjectLayer &baseLayer;
 };
 } // namespace M::KGEN

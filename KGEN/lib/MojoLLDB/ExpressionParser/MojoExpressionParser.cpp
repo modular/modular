@@ -64,9 +64,6 @@ struct MojoExpressionParser::Impl {
   /// The ObjectCompiler instance to use when parsing.
   std::unique_ptr<KGEN::ObjectCompiler> objCompiler;
 
-  /// The KGENCompiler instance to use when parsing.
-  std::unique_ptr<KGEN::KGENCompiler> kgenCompiler;
-
   /// The parsed Mojo module.
   OwningOpRef<ModuleOp> mlirModule;
 
@@ -130,13 +127,13 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 
   // Create the compiler instance.
   auto compilerOr = ObjectCompiler::create(
-      *compilationPM, ".mojo_cache", hackCompilationOptions, /*isJIT=*/true);
+      ".mojo_cache", hackCompilationOptions, /*isJIT=*/true, *ctx,
+      [](mlir::PassManager &) {}, ModuleOp::getOperationName());
+
   if (failed(compilerOr))
     return;
 
-  objCompiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));
-  kgenCompiler = std::make_unique<KGEN::KGENCompiler>(
-      *ctx, ModuleOp::getOperationName(), *compilationOptions);
+  objCompiler = std::move(*compilerOr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -444,18 +441,22 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   std::string preElaborationModuleLog;
   llvm::raw_string_ostream preElaborationLogStream(preElaborationModuleLog);
-  if (isVerboseLoggingEnabled) {
-    impl->kgenCompiler->configurePassManager([&preElaborationLogStream](
-                                                 mlir::PassManager &pm) {
-      pm.enableIRPrinting(
-          [](Pass *pass, Operation *) {
-            return pass->getName() == "ElaborateGenerators";
-          },
-          [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
-          /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
-          /*out=*/preElaborationLogStream);
-    });
-  }
+
+  KGEN::KGENCompiler kgenCompiler(
+      *impl->typeSystem->getMLIRContext(), ModuleOp::getOperationName(),
+      *impl->compilationOptions, [&](mlir::PassManager &pm) {
+        if (isVerboseLoggingEnabled) {
+          pm.enableIRPrinting(
+              [](Pass *pass, Operation *) {
+                return pass->getName() == "ElaborateGenerators";
+              },
+              [](Pass *, Operation *) { return false; },
+              /*printModuleScope=*/false,
+              /*printAfterOnlyOnChange=*/false,
+              /*printAfterOnlyOnFailure=*/false,
+              /*out=*/preElaborationLogStream);
+        }
+      });
 
   //// Get the target info to use for compilation.
   TargetInfoAttr targetInfo = impl->typeSystem->GetTargetInfo();
@@ -463,7 +464,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     return failure();
 
   // Run the elaboration pipeline.
-  LLCL::AnyAsyncValueRef ready = impl->kgenCompiler->runKGENPipeline(
+  LLCL::AnyAsyncValueRef ready = kgenCompiler.runKGENPipeline(
       *module, targetInfo, impl->objCompiler->getTransformCache().copy(),
       AsyncValueRef<Chain>::createReady(impl->typeSystem->getRuntime()));
 

@@ -222,19 +222,31 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
   TimingScope timing = timingManager->getRootScope();
 
-  KGENCompiler compiler(*ctx, options);
-  mlir::PassManager &pm = compiler.getPassManager();
-
-  if (failed(applyPassManagerCLOptions(pm)))
-    return failure();
-  pm.enableTiming(timing);
   if (clOptions.enableMLIRCrashReproducer) {
     // If the reproducer is enable, turn off all threading.
     ctx->disableMultithreading();
     clOptions.useSingleThreadedWorkqueue();
-    pm.enableCrashReproducerGeneration(clOptions.inputFilename + ".repro.mlir",
-                                       clOptions.enableLocalMLIRReproducer);
   }
+
+  bool configPMSuccess = true;
+  auto configPM = [&](mlir::PassManager &pm) {
+    if (failed(applyPassManagerCLOptions(pm))) {
+      configPMSuccess = false;
+      return;
+    }
+    pm.enableTiming(timing);
+    if (clOptions.enableMLIRCrashReproducer) {
+      pm.enableCrashReproducerGeneration(clOptions.inputFilename +
+                                             ".repro.mlir",
+                                         clOptions.enableLocalMLIRReproducer);
+    }
+    M::configurePassManager(pm);
+  };
+
+  KGENCompiler compiler(*ctx, options, configPM);
+
+  if (!configPMSuccess)
+    return failure();
 
   // The set of files included during processing, used to generate the
   // dependency file.
@@ -344,12 +356,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // the host CPU.
   eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
 
+  configPMSuccess = true;
   auto engineOr = initializeExecutionEngine(
-      pm, options, std::move(eeOptions),
-      /*isJIT=*/clOptions.cmd == Command::kExecute, target);
+      *ctx, options, std::move(eeOptions),
+      /*isJIT=*/clOptions.cmd == Command::kExecute, configPM);
 
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
+  if (!configPMSuccess)
+    return failure();
+
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
   auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
 

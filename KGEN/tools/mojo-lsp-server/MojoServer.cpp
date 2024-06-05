@@ -864,9 +864,8 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
       sourceMgr, tempModuleOp->getContext());
 
   // Run the high level verification pipeline.
-  KGEN::KGENCompiler kgenCompiler(*tempModuleOp->getContext(),
-                                  getCompilationOptions());
-  kgenCompiler.configurePassManager(
+  KGEN::KGENCompiler kgenCompiler(
+      *tempModuleOp->getContext(), getCompilationOptions(),
       [](mlir::PassManager &pm) { return configurePassManager(pm); });
 
   if (failed(kgenCompiler.runCheckLITPipeline(*tempModuleOp))) {

@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
 #include <filesystem>
 #include <string>
 
@@ -36,10 +37,13 @@ namespace M::KGEN {
 class ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
-  static ErrorOr<ObjectCompiler> create(mlir::PassManager &mgr,
-                                        StringRef basePath,
-                                        CompilationOptions options, bool isJIT,
-                                        bool isSearch = false);
+  static ErrorOr<std::unique_ptr<ObjectCompiler>> create(
+      StringRef basePath, CompilationOptions options, bool isJIT,
+      MLIRContext &context,
+      const std::function<void(mlir::PassManager &)> &configPM =
+          [](mlir::PassManager &) {},
+      std::optional<StringRef> operationName = std::nullopt,
+      bool isSearch = false);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
@@ -98,9 +102,17 @@ public:
 
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
-  ObjectCompiler(mlir::PassManager &mgr,
-                 RCRef<Cache::BlobCacheBackend> transformCache,
-                 CompilationOptions options, bool isJIT, bool isSearch);
+  ObjectCompiler(
+      RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
+      bool isJIT, bool isSearch, MLIRContext &context,
+      const std::function<void(mlir::PassManager &)> &configPM =
+          [](mlir::PassManager &) {});
+
+  ObjectCompiler(
+      RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
+      bool isJIT, bool isSearch, MLIRContext &context, StringRef operationName,
+      const std::function<void(mlir::PassManager &)> &configPM =
+          [](mlir::PassManager &) {});
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
@@ -123,9 +135,6 @@ private:
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
 
-  /// The configured MLIR pass manager to use.
-  mlir::PassManager *mgr;
-
   /// The compilation options to use.
   CompilationOptions options;
 
@@ -137,6 +146,14 @@ private:
   /// When the elaborator performs search, the IR coming reaching the
   /// ObjectCompilerLayer is post-elaboration IR.
   bool isSearch;
+
+  /// PassManager Configuration.
+  std::function<void(mlir::PassManager &)> configPM;
+
+  mlir::MLIRContext &context;
+
+  /// Optional name for the PassManager.
+  std::optional<std::string> operationName;
 
   friend class ObjectCompilerLayer;
 };

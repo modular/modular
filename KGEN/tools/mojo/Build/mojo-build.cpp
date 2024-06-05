@@ -138,16 +138,21 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
                        ModuleOp moduleOp, TargetInfoAttr target,
                        BufferRef &archive) {
   KGENCompiler compiler(context, options);
-  mlir::PassManager &pm = compiler.getPassManager();
-  configurePassManager(pm);
 
   // Compile the moduleOp down to the post-elaboration phase, because before
   // that phase we don't have flat symbols.
-  auto objectCompiler =
-      ObjectCompiler::create(pm, ".mojo_cache", options, false);
+  ErrorOr<std::unique_ptr<ObjectCompiler>> objectCompilerOr =
+      ObjectCompiler::create(
+          ".mojo_cache", options, false, context,
+          [](mlir::PassManager &pm) { configurePassManager(pm); });
+
+  if (objectCompilerOr.isError())
+    return state.reportError(objectCompilerOr.getError());
 
   if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, target))
     return state.reportError(err.getError());
+
+  std::unique_ptr<ObjectCompiler> objectCompiler = objectCompilerOr.takeValue();
 
   // Generate a symbol table and an export map for the module post-compile.
   SymbolTable symtab(moduleOp);

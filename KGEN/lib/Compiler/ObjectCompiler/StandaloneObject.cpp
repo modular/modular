@@ -162,8 +162,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 
   // Perform a cache aware transformation to translate the module to an archive
   // file.
-  LLCL::Runtime &runtime =
-      *loadContext(mgr->getContext())->get<LLCL::Runtime>();
+  LLCL::Runtime &runtime = *loadContext(&context)->get<LLCL::Runtime>();
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
@@ -409,8 +408,7 @@ SmallVector<LLCL::AnyAsyncValueRef>
 ObjectCompiler::lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
                                          MLIRContext *mlirContext, bool parLLC,
                                          std::optional<size_t> moduleIdx) {
-  LLCL::Runtime &runtime =
-      *loadContext(mgr->getContext())->get<LLCL::Runtime>();
+  LLCL::Runtime &runtime = *loadContext(&context)->get<LLCL::Runtime>();
   SmallVector<LLCL::AnyAsyncValueRef> results;
 
   // Create the target machine.
@@ -515,8 +513,7 @@ ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
   llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
   // Emit the assembly.
-  LLCL::Runtime &runtime =
-      *loadContext(mgr->getContext())->get<LLCL::Runtime>();
+  LLCL::Runtime &runtime = *loadContext(&context)->get<LLCL::Runtime>();
   if (failed(KGEN::compileLLVMToObject(*llvmModule, **machineOr, os, options,
                                        runtime, /*emitAssembly=*/true)))
     return Error("failed to lower LLVM IR to assembly");
