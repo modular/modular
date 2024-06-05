@@ -260,9 +260,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       type.getContext(), llvm::dwarf::DW_TAG_array_type, {},
       StringAttr::get(type.getContext()), nullptr, /*line=*/0,
       /*scope=*/nullptr, convertType(type.getElementType()),
-      LLVM::DIFlags::Zero, type.getSizeInBits(),
-      /*alignInBits=*/0, element, /*dataLocation=*/{}, /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{});
+      LLVM::DIFlags::Zero, type.getSizeInBits(), /*alignInBits=*/0, element,
+      /*dataLocation=*/{}, /*rank=*/{}, /*allocated=*/{}, /*associated=*/{});
 }
 
 static StringAttr convertDebugTypeNameForNVPTX(StringAttr name) {
