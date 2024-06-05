@@ -146,7 +146,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   auto objectCompiler =
       ObjectCompiler::create(pm, ".mojo_cache", options, false);
 
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, false, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, target))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.

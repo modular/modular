@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENObjectCompiler
+  KGENToLLVMPipeline.cpp
   LowerToLLVM.cpp
   LowerToObject.cpp
   LLVMIRUtils.cpp

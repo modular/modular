@@ -295,7 +295,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 
   // Compile the moduleOp down to the post-elaboration phase,
   // because before that phase we don't have flat symbols.
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, true, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, target))
     return state.reportError(err.getError());
 
   if (ErrorOrSuccess err = objectCompilerLayer.add("exec", moduleOp))

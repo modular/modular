@@ -37,8 +37,13 @@ public:
   /// Run KGEN compilation pipeline, including pre-elaboration passes,
   /// elaboration, and post-elaboration pass. Get the theModule ready before
   /// llvm lowering.
-  ErrorOrSuccess runKGENPipeline(ModuleOp theModule, bool isJIT,
-                                 TargetInfoAttr target, bool isSearch = false);
+  AnyAsyncValueRef runKGENPipeline(
+      ModuleOp theModule, TargetInfoAttr target,
+      RCRef<Cache::TransformCache> transformCache, AnyAsyncValueRef chain,
+      std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
+      std::function<void(Operation *)> moreOnHit = [](Operation *) {});
+
+  ErrorOrSuccess runKGENPipeline(ModuleOp theModule, TargetInfoAttr target);
 
   /// Run the library generation pipeline on the given module. If
   /// `materializeDependencies` is true, the pipeline will ensure all
@@ -64,26 +69,10 @@ public:
   /// These passes are intended to run immediately after the elaborator.
   LogicalResult runPostElaborationOnlyPipeline(ModuleOp module);
 
-  /// Build the pipeline to convert post-elaboration KGEN IR to LLVM IR.
-  /// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
-  /// of LLVM lowerings, and the canonicalizer again.
-  LogicalResult runLowerToLLVMPipeline(ModuleOp module,
-                                       const LowerToLLVMOptions &option);
-
 private:
   CompilationOptions options;
   mlir::PassManager pm;
 };
-
-//===----------------------------------------------------------------------===//
-// populateElaborateModulePasses
-//===----------------------------------------------------------------------===//
-
-/// This populates the passes to produce a fully concrete KGEN module. It's the
-/// equivalent of the `buildElaborateModulePipeline` function, but with common
-/// defaults for elaboration handlers.
-void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
-                                   const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
 // PostElaborationPipeline
@@ -93,14 +82,6 @@ void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
 /// These passes are intended to run immediately after the elaborator.
 void buildPostElaborationPipeline(mlir::PassManager &pm,
                                   const CompilationOptions &options);
-
-//===----------------------------------------------------------------------===//
-// Caching
-//===----------------------------------------------------------------------===//
-
-/// Returns Mojo transform backend, or an error if the backend could not be
-/// created.
-ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend();
 
 //===----------------------------------------------------------------------===//
 // Default JIT Configuration

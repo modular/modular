@@ -355,8 +355,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Compiles the module through KGEN compiler pipeline.
   // We don't need to try to look anything up.
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(
-          *theModule, clOptions.cmd == Command::kExecute, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(*theModule, target))
     return failure(clOptions.reportError(err.getError()));
 
   // If all we're doing is generating a library file or elaborating, we're done

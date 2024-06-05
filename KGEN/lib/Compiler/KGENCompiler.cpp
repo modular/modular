@@ -373,6 +373,17 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   return readCaptureArgs(func.getContext(), buf.copy());
 }
 
+//===----------------------------------------------------------------------===//
+// Caching
+//===----------------------------------------------------------------------===//
+
+/// Returns Mojo transform backend, or an error if the backend could not be
+/// created.
+static ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend() {
+  return Cache::getLocalDefaultBackendChain(
+      std::filesystem::path(".mojo_cache") / "transform", KGEN_VERSION_STRING);
+}
+
 static ErrorOr<BufferRef> specializePackageLinkForPreElaborationLinking(
     PackageLinkOp packageLink, const KGEN::CompilationOptions &compileOptions) {
   auto cacheBackend = getMojoCacheBackend();
@@ -492,15 +503,6 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
 }
 
 //===----------------------------------------------------------------------===//
-// Caching
-//===----------------------------------------------------------------------===//
-
-ErrorOr<RCRef<Cache::BlobCacheBackend>> KGEN::getMojoCacheBackend() {
-  return Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(".mojo_cache") / "transform", KGEN_VERSION_STRING);
-}
-
-//===----------------------------------------------------------------------===//
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
 
@@ -532,17 +534,8 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   return std::move(engine);
 }
 
-ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule, bool isJIT,
-                                             TargetInfoAttr target,
-                                             bool isSearch) {
-
-  // Set the target now, so it's included in the cache key.
-  setTargetInfo(theModule, target);
-
-  // Populate the passes.
-  buildGenerateLibraryPipeline(pm, options);
-  populateElaborateModulePasses(pm, target, options);
-
+ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
+                                             TargetInfoAttr target) {
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
   auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
   if (fileLine)
@@ -563,20 +556,43 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule, bool isJIT,
     auto transformCache =
         RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-        theModule, transformCache.copy(),
-        ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm,
+    LLCL::AnyAsyncValueRef ready = runKGENPipeline(
+        theModule, target, transformCache,
+        ctx->get<LLCL::Runtime>()->getReadyChain().copy(),
         Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
             "KGENCompiler::runKGENPipeline", "mojo.compiler.cache.miss.time",
             {{"pipeline", "KGEN"}}),
         Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
             "KGENCompiler::runKGENPipeline"));
+
     LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();
   }
+  return {};
+}
 
-  return ErrorOrSuccess();
+AnyAsyncValueRef
+KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
+                              RCRef<Cache::TransformCache> transformCache,
+                              AnyAsyncValueRef chain,
+                              std::function<void(Operation *)> moreOnMiss,
+                              std::function<void(Operation *)> moreOnHit) {
+
+  // Set the target now, so it's included in the cache key.
+  setTargetInfo(theModule, target);
+
+  // Populate the passes.
+  buildGenerateLibraryPipeline(pm, options);
+  populateElaborateModulePasses(pm, target, options);
+
+  // Run the passes as a cached transform.
+
+  LLCL::AnyAsyncValueRef ready =
+      Cache::cachedTransform(theModule, transformCache.copy(), std::move(chain),
+                             pm, std::move(moreOnMiss), std::move(moreOnHit));
+
+  return ready;
 }
 
 ErrorOrSuccess
@@ -630,11 +646,9 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
     ModuleOp module, TargetInfoAttr target, LLCL::Runtime &runtime,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
-    std::function<void(Operation *)> moreOnHit)
-
-{
+    std::function<void(Operation *)> moreOnHit) {
   populateElaborateModulePasses(pm, target, options);
-  auto cacheBackend = KGEN::getMojoCacheBackend();
+  auto cacheBackend = getMojoCacheBackend();
 
   if (cacheBackend.isError() || !chain) {
     auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
@@ -655,16 +669,6 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
 
 LogicalResult KGENCompiler::runPostElaborationOnlyPipeline(ModuleOp module) {
   buildPostElaborationPipeline(pm, options);
-  return pm.run(module);
-}
-
-/// Build the pipeline to convert post-elaboration KGEN IR to LLVM IR.
-/// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
-/// of LLVM lowerings, and the canonicalizer again.
-LogicalResult
-KGENCompiler::runLowerToLLVMPipeline(ModuleOp module,
-                                     const LowerToLLVMOptions &llvmOptions) {
-  buildLowerToLLVMPipeline(pm, llvmOptions);
   return pm.run(module);
 }
 
