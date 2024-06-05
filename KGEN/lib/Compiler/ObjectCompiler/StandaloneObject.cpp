@@ -187,13 +187,19 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       SmallVector<BufferRef> archiveBuffers;
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
-      auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
-      if (!llvmModule) {
+      ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
+          lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
+
+      if (llvmModuleOr) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-            "failed to lower module to LLVM IR for archive compilation",
+            Twine(
+                "failed to lower module to LLVM IR for archive compilation, ") +
+                llvmModuleOr.getError(),
             op->getLoc()));
       }
       CompilerTimeTraceScope traceScope("split-input-module");
+
+      std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
       StringRef moduleName = llvmModule->getName();
 
       // HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -501,13 +507,17 @@ ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
   OwningOpRef<ModuleOp> slicedModule =
       produceStandaloneModule(symtab, exportedSymbols);
   llvm::LLVMContext ctx;
-  auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule);
-  if (!llvmModule)
-    return Error("failed to lower module to LLVM IR");
+  ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
+      lowerAllFuncsToLLVM(ctx, *slicedModule);
+
+  if (llvmModuleOr)
+    return Error(llvmModuleOr.getError());
 
   auto machineOr = createTargetMachine(options, /*isJIT=*/false);
   if (failed(machineOr))
     return machineOr.takeError();
+
+  std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
 
   // Set the data layout on the module.
   llvmModule->setDataLayout((*machineOr)->createDataLayout());

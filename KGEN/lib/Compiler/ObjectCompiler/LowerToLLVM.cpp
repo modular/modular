@@ -87,7 +87,7 @@ static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
   }
 }
 
-std::unique_ptr<llvm::Module>
+ErrorOr<std::unique_ptr<llvm::Module>>
 ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
                                     const ExportMap &exportedSymbols,
                                     llvm::LLVMContext &ctx) {
@@ -104,13 +104,15 @@ createPassManager(const std::optional<std::string> &operationName,
   return {context};
 }
 
-std::unique_ptr<llvm::Module>
+ErrorOr<std::unique_ptr<llvm::Module>>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   CompilerTimeTraceScope traceScope("lower-to-llvm");
 
   mlir::PassManager mgr = createPassManager(pmOptions.operationName, &context);
-  if (failed(pmOptions.configurePassManager(mgr)))
-    return nullptr;
+
+  ErrorOrSuccess configPM = pmOptions.configurePassManager(mgr);
+  if (configPM)
+    return configPM.takeError();
 
   // We only need to run the post-elaboration passes if we are searching. In
   // non-search mode, we know the passes have already been run.
@@ -132,7 +134,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   buildLowerToLLVMPipeline(mgr, llvmOptions);
 
   if (failed(mgr.run(module)))
-    return nullptr;
+    return Error("run LowerToLLVMPipeline failed");
 
   // Use the input filename for the module name if possible.
   StringRef moduleName = "LLVMDialectModule";
@@ -143,7 +145,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   std::unique_ptr<llvm::Module> llvmModule =
       mlir::translateModuleToLLVMIR(module, ctx, moduleName);
   if (!llvmModule)
-    return nullptr;
+    return Error("translate module to LLVMIR failed");
 
   // Attach any necessary instrumentation to the module.
   attachInstrumentationAttributes(*llvmModule, options);

@@ -273,6 +273,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   mlir::PassManager pm(target.getContext());
   configurePassManager(pm);
+
   pm.addPass(createElaborateGenerators(
       target, elaboratorOptions,
       [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
@@ -293,11 +294,13 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
     if (failed(writeCaptureArgs(cast<ModuleOp>(op), name, buffer.copy())))
       return Error("failed to generate capture stub");
     llvm::LLVMContext llvmCtx;
-    std::unique_ptr<llvm::Module> llvmModule =
+    ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
         compiler->lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
-    if (!llvmModule)
-      return Error("failed to lower to LLVM");
 
+    if (llvmModuleOr)
+      return Error(Twine("failed to lower to LLVM ") + llvmModuleOr.getError());
+
+    std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
     if (emissionKind == EmissionKind::LLVM) {
       llvmModule->print(*buffer, nullptr);
       return success();
@@ -602,11 +605,14 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
-  if (failed(pmConfigOptions.configurePassManager(pm))) {
+  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
+  if (configPM) {
     LLCL::Runtime &runtime = *loadContext(&context)->get<LLCL::Runtime>();
     auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
     std::move(output).setToError(LLCL::getMLIRDiagnostic(
-        "configure PassManager in KGENCompiler::runKGENPipeline failed",
+        Error(std::string("configure PassManager in "
+                          "KGENCompiler::runKGENPipeline failed, ") +
+              configPM.getError()),
         theModule->getLoc()));
     return output;
   }
@@ -638,9 +644,12 @@ KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
-  if (failed(pmConfigOptions.configurePassManager(pm))) {
-    return Error("configure PassManager in "
-                 "KGENCompiler::runGenerateLibraryPipeline failed");
+  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
+  if (configPM) {
+    return Error(
+        std::string("configure PassManager in "
+                    "KGENCompiler::runGenerateLibraryPipeline failed, ") +
+        configPM.getError());
   }
 
   buildGenerateLibraryPipeline(pm, options);
@@ -675,9 +684,11 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
-  if (failed(pmConfigOptions.configurePassManager(pm))) {
-    return Error(
-        "configure PassManager in KGENCompiler::runCheckLITPipeline failed");
+  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
+  if (configPM) {
+    return Error(std::string("configure PassManager in "
+                             "KGENCompiler::runCheckLITPipeline failed, ") +
+                 configPM.getError());
   }
 
   buildCheckLITPipeline(pm, options);
@@ -698,10 +709,13 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
-  if (failed(pmConfigOptions.configurePassManager(pm))) {
+  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
+  if (configPM) {
     auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
     std::move(output).setToError(LLCL::getMLIRDiagnostic(
-        "configure PassManager in KGENCompiler::runKGENPipeline failed",
+        Error(std::string("configure PassManager in "
+                          "KGENCompiler::runKGENPipeline failed, ") +
+              configPM.getError()),
         module->getLoc()));
     return output;
   }
