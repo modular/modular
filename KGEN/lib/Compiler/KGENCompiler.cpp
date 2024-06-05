@@ -614,7 +614,7 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
                           "KGENCompiler::runKGENPipeline failed, ") +
               configPM.getError()),
         theModule->getLoc()));
-    return output;
+    return std::move(output);
   }
 
   // Populate the passes.
@@ -717,7 +717,7 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
                           "KGENCompiler::runKGENPipeline failed, ") +
               configPM.getError()),
         module->getLoc()));
-    return output;
+    return std::move(output);
   }
 
   populateElaborateModulePasses(pm, target, options);
