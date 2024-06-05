@@ -21,19 +21,6 @@ from .dim import Dim
 
 
 @value
-struct CUDADeviceStream:
-    """Information and methods needed to call and get information regarding a
-    single cuda device on a specific stream. This is what is passed to all
-    kernels.
-    """
-
-    var stream: Stream
-
-    fn __init__(inout self, s: Stream):
-        self.stream = s
-
-
-@value
 @register_passable("trivial")
 struct DeviceAttribute:
     var _value: Int32

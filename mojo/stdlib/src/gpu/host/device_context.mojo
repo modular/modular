@@ -81,6 +81,21 @@ struct DeviceContext:
         self.cuda_context = Context(Device(self.cuda_instance))
         self.cuda_stream = Stream(self.cuda_context)
 
+    fn __init__(
+        inout self,
+        cuda_instance: CudaInstance,
+        cuda_context: Context,
+        cuda_stream: Stream,
+    ):
+        self.cuda_instance = cuda_instance
+        self.cuda_context = cuda_context
+        self.cuda_stream = cuda_stream
+
+    fn __init__(inout self, cuda_stream: Stream) raises:
+        self.cuda_instance = CudaInstance()
+        self.cuda_context = Context(Device(self.cuda_instance))
+        self.cuda_stream = cuda_stream
+
     fn __copyinit__(inout self, existing: Self):
         self.cuda_instance = existing.cuda_instance
         self.cuda_context = existing.cuda_context
