@@ -660,7 +660,7 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
       std::move(output).emplace(
           "KGENCompiler::runElaborationPipeline success without caching.");
     }
-    return output;
+    return std::move(output);
   }
 
   return Cache::cachedTransform(
