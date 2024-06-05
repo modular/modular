@@ -144,7 +144,7 @@ struct Q4_0Encoding(QuantizationEncoding):
 
         Args:
             tensor: Full-precision tensor to quantize. The innermost dimension
-            of the tensor must be a factor of 32.
+                of the tensor must be a factor of 32.
 
         Returns:
             Quantized Q4_0 tensor. The tensor datatype is `uint8` because this
