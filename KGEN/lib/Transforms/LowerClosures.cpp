@@ -227,6 +227,7 @@ static void lowerAwait(CO::AwaitOp op) {
         b.create<CO::GetResultsOp>(op.getResultTypes(), op.getCoroutine());
     op.replaceAllUsesWith(results);
   }
+  b.create<CO::DestroyOp>(op.getCoroutine());
   op.erase();
 }
 
