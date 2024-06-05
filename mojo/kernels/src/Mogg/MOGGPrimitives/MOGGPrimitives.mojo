@@ -133,8 +133,8 @@ fn byte_buffer_alloc[
 @export
 fn create_index_async(
     value: Int,
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
 ):
     external_call["KGEN_CompilerRT_CreateAsync_ssizet", NoneType](
         value, async_ptr, runtime
@@ -146,8 +146,8 @@ fn create_index_async(
 @export
 fn create_i1_async(
     value: Bool,
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
 ):
     external_call["KGEN_CompilerRT_CreateAsync_bool", NoneType](
         value, async_ptr, runtime
@@ -159,8 +159,8 @@ fn create_i1_async(
 @export
 fn create_buffer_ref_async(
     buffer: NDBuffer[DType.int8, 1],
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
         buffer.data, len(buffer), async_ptr, runtime
@@ -174,8 +174,8 @@ fn create_tensor_spec_async[
     rank: Int
 ](
     spec: StaticTensorSpec[rank],
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
 ):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
@@ -218,11 +218,11 @@ fn create_mojo_value_async(
 @always_inline
 @export
 fn unpack_async(
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-) -> __mlir_type.`!kgen.pointer<none>`:
+    async_ptr: UnsafePointer[NoneType],
+) -> UnsafePointer[NoneType]:
     return external_call[
         "KGEN_CompilerRT_GetValueFromAsync",
-        __mlir_type.`!kgen.pointer<none>`,
+        UnsafePointer[NoneType],
     ](async_ptr)
 
 
@@ -230,16 +230,16 @@ fn unpack_async(
 @always_inline
 @export
 fn unpack_buffer(
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    async_ptr: UnsafePointer[NoneType],
 ) -> NDBuffer[DType.uint8, 1]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
-        __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+        UnsafePointer[NoneType],
     ](async_ptr, Pointer.address_of(size))
 
     var shape = StaticIntTuple[1](int(size))
-    return NDBuffer[DType.uint8, 1](Pointer(data_ptr).bitcast[UInt8](), shape)
+    return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
 
 @mogg_register("builtin.unpack_tensor_spec")
@@ -247,11 +247,7 @@ fn unpack_buffer(
 @export
 fn unpack_tensor_spec[
     rank: Int
-](
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-) -> StaticTensorSpec[
-    rank
-]:
+](async_ptr: UnsafePointer[NoneType]) -> StaticTensorSpec[rank]:
     var shape_ptr = DTypePointer[DType.index].alloc(rank)
     var raw_dtype = external_call[
         "KGEN_CompilerRT_GetTensorSpecFromAsync",
@@ -268,7 +264,7 @@ fn unpack_tensor_spec[
 @always_inline
 @export
 fn unpack_context(
-    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    async_ptr: UnsafePointer[NoneType],
 ) -> Context:
     # We want to construct this because we want all payloads to be implemented
     var numSlots: UInt64 = 0

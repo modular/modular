@@ -192,14 +192,14 @@ fn _guard_against_gpu_target[
 
 # NOTE the layout must match `CompiledKernelABI::Tensor`
 struct ABI_Tensor:
-    var dims: __mlir_type.`!kgen.pointer<index>`
-    var data: __mlir_type[`!kgen.pointer<scalar<invalid>>`]
+    var dims: Pointer[Int]
+    var data: UnsafePointer[NoneType]
 
 
 # NOTE the layout must match `CompiledKernelABI::List`
 struct ABI_List:
     var num_elems: Int
-    var elements: __mlir_type[`!kgen.pointer<scalar<invalid>>`]
+    var elements: UnsafePointer[NoneType]
 
 
 # ===----------------------------------------------------------------------===#
@@ -351,11 +351,8 @@ fn extensibility_tensor_to_ndbuffer[
 @always_inline
 fn to_buffer[
     type: DType, rank: Int
-](
-    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
-    shape: __mlir_type.`!kgen.pointer<index>`,
-) -> NDBuffer[type, rank]:
-    var shape_ptr = Pointer(shape)
+](data: DTypePointer[type], shape: Pointer[Int],) -> NDBuffer[type, rank]:
+    var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
 
     var stride_tuple = StaticIntTuple[rank]()
@@ -373,17 +370,13 @@ fn to_buffer[
 
     unroll[body, rank]()
 
-    return NDBuffer[type, rank](
-        DTypePointer[type](data), shape_tuple, stride_tuple
-    )
+    return NDBuffer[type, rank](data, shape_tuple, stride_tuple)
 
 
 @mogg_register("to_shape")
 @always_inline
-fn to_shape[
-    rank: Int
-](shape: __mlir_type.`!kgen.pointer<index>`) -> StaticIntTuple[rank]:
-    var shape_ptr = Pointer(shape)
+fn to_shape[rank: Int](shape: Pointer[Int]) -> StaticIntTuple[rank]:
+    var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
 
     @always_inline
@@ -448,11 +441,13 @@ fn shape_to_extensibility_tensor[
 fn to_buffer_list[
     type: DType, rank: Int
 ](
-    raw_list_ptr: __mlir_type[`!kgen.pointer<scalar<invalid>>`],
-) -> InlinedFixedVector[NDBuffer[type, rank]]:
+    raw_list_ptr: UnsafePointer[NoneType],
+) -> InlinedFixedVector[
+    NDBuffer[type, rank]
+]:
     # Cast input list pointer
-    var abi_list_ptr = UnsafePointer(raw_list_ptr).bitcast[ABI_List]()
-    var elems_ptr = UnsafePointer(abi_list_ptr[].elements)
+    var abi_list_ptr = raw_list_ptr.bitcast[ABI_List]()
+    var elems_ptr = abi_list_ptr[].elements
     var abi_tensors_ptr = elems_ptr.bitcast[ABI_Tensor]()
 
     # Create output list
@@ -464,9 +459,7 @@ fn to_buffer_list[
     for i in range(num_elements):
         var abi_tensor_ptr = abi_tensors_ptr + i
         var dims = abi_tensor_ptr[].dims
-        var data = __mlir_op.`pop.pointer.bitcast`[
-            _type = __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`]
-        ](abi_tensor_ptr[].data)
+        var data = abi_tensor_ptr[].data.bitcast[Scalar[type]]()
         var buffer = to_buffer[type, rank](data, dims)
         out_list.append(buffer)
 
@@ -543,11 +536,11 @@ fn to_tensor[
     static_shape: DimList = DimList(),
     static_strides: DimList = DimList(),
 ](
-    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
-    raw_shape_ptr: __mlir_type.`!kgen.pointer<index>`,
+    data: DTypePointer[type],
+    raw_shape_ptr: Pointer[Int],
     length: Int,
 ) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
-    var shape_ptr = Pointer(raw_shape_ptr)
+    var shape_ptr = raw_shape_ptr
 
     var shape = IntList[static_shape].empty(length)
     var strides = IntList[static_strides].empty(length)
@@ -577,7 +570,7 @@ fn to_tensor[
             stride *= shape[i]
 
     return Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False](
-        DTypePointer[type](data),
+        data,
         shape,
         strides,
         UnsafePointer[Scalar[DType.index]](),
@@ -590,10 +583,12 @@ fn to_tensor[
 fn to_extensibility_tensor[
     type: DType, rank: Int
 ](
-    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
-    shape: __mlir_type.`!kgen.pointer<index>`,
-) -> ExtensibilityTensor[type, rank]:
-    var shape_ptr = Pointer(shape)
+    data: DTypePointer[type],
+    shape: Pointer[Int],
+) -> ExtensibilityTensor[
+    type, rank
+]:
+    var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
     var stride_tuple = StaticIntTuple[rank]()
     var stride: Int = 1
@@ -611,7 +606,7 @@ fn to_extensibility_tensor[
     unroll[body, rank]()
 
     return ExtensibilityTensor[type, rank](
-        DTypePointer[type](data),
+        data,
         shape_tuple,
         stride_tuple,
     )
