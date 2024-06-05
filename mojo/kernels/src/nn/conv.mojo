@@ -2808,8 +2808,8 @@ fn conv_shape[
     output_shape[0] = batch_size
     output_shape[input_rank - 1] = output_channels
 
-    for _i in range(input_rank - 2):
-        var i = _i + 1
+    @parameter
+    for i in range(1, input_rank - 1):
         var input_spatial_dim = input_buf.dim(i)
         var filter_spatial_dim = filter_buf.dim(i - 1)
 

@@ -821,6 +821,7 @@ fn scatter_nd_shape[
             " input_rank - num_sliced_dims)"
         )
 
+    @parameter
     for i in range(indices_rank - 1):
         if indices.dim(i) != updates.dim(i):
             raise Error(
@@ -903,6 +904,7 @@ fn gather_shape[
     # NOTE it's written this way instead of 3 separate for-loops because
     # currently KGEN unrolling only works for strictly static bounds, but `axis`
     # only becomes static after inlining `axis_buf`.
+    @parameter
     for out_dim in range(output_rank):
         if out_dim < axis:
             output_shape[out_dim] = input_shape[out_dim]
@@ -1030,6 +1032,7 @@ fn scatter_elements_shape[
         )
 
     # Check individual dimensions
+    @parameter
     for axis in range(rank):
         var input_dim = input.dim(axis)
         var indices_dim = indices.dim(axis)
@@ -1159,10 +1162,12 @@ fn gather_nd_shape[
 
     var input_shape = input_buf.get_shape()
 
+    @parameter
     for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
+    @parameter
     for i in range(batch_dims, indices_rank - 1):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
