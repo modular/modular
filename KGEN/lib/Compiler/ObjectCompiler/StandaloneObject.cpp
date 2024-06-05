@@ -233,7 +233,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
         cacheResults.clear();
       };
 
-      bool parLLC = !generatingPtx && options.enableParallelLLC;
+      bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
+                    !generatingPtx && options.enableParallelLLC;
       if (noSplitting) {
         SmallVector<AnyAsyncValueRef> results = lowerLLVMModuleToObjects(
             *llvmModule, op->getLoc(), op->getContext(), parLLC);
