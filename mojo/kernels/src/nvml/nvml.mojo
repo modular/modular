@@ -521,7 +521,35 @@ struct Device:
             )
         )
 
+    fn set_max_gpu_clocks(device: Device) raises:
+        var max_mem_clock = device.mem_clocks()
+        sort(max_mem_clock)
+
+        var max_graphics_clock = device.graphics_clocks(max_mem_clock[-1])
+        sort(max_graphics_clock)
+
+        for i in reversed(range(len(max_graphics_clock))):
+            try:
+                device.set_clock(max_mem_clock[-1], max_graphics_clock[i])
+                print(
+                    "the device clocks for device=",
+                    device,
+                    " were set to mem=",
+                    max_mem_clock[-1],
+                    " and graphics=",
+                    max_graphics_clock[i],
+                    sep="",
+                )
+                return
+            except:
+                pass
+
+        raise "unable to set max gpu clock for " + str(device)
+
     fn __str__(self) -> String:
+        return self.__repr__()
+
+    fn __repr__(self) -> String:
         return "Device(" + str(self.idx) + ")"
 
 
