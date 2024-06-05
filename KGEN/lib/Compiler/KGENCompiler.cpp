@@ -226,8 +226,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
   // Initialize the object compiler.
   ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr = ObjectCompiler::create(
-      ".mojo_cache", options, /*isJIT=*/false, *target.getContext(),
-      [](mlir::PassManager &pm) { configurePassManager(pm); });
+      ".mojo_cache", options, /*isJIT=*/false, *target.getContext());
 
   if (compilerOr.isError())
     return compilerOr.takeError();
@@ -511,7 +510,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
 ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
     mlir::MLIRContext &context, const CompilationOptions &compilationOptions,
     ExecutionEngineOptions executionEngineOptions, bool isJIT,
-    std::function<void(mlir::PassManager &)> configPM, bool isSearch) {
+    PassManagerConfigOptions pmOptions, bool isSearch) {
 
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
@@ -527,7 +526,7 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   // Add the object compiler layer.
   auto compiler =
       ObjectCompiler::create(".mojo_cache", compilationOptions, isJIT, context,
-                             std::move(configPM), std::nullopt, isSearch);
+                             std::move(pmOptions), isSearch);
   if (failed(compiler))
     return compiler.takeError();
 
@@ -536,6 +535,15 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
 
   return std::move(engine);
 }
+
+//===----------------------------------------------------------------------===//
+// KGENCompiler
+//===----------------------------------------------------------------------===//
+
+KGENCompiler::KGENCompiler(MLIRContext &context, CompilationOptions options,
+                           PassManagerConfigOptions pmConfigOptions)
+    : options(std::move(options)), pmConfigOptions(std::move(pmConfigOptions)),
+      context(context) {}
 
 ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
                                              TargetInfoAttr target) {
@@ -591,8 +599,17 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
 
   // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
-  mlir::PassManager pm = createPassManager(operationName, &context);
-  configPM(pm);
+  mlir::PassManager pm =
+      createPassManager(pmConfigOptions.operationName, &context);
+
+  if (failed(pmConfigOptions.configurePassManager(pm))) {
+    LLCL::Runtime &runtime = *loadContext(&context)->get<LLCL::Runtime>();
+    auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
+    std::move(output).setToError(LLCL::getMLIRDiagnostic(
+        "configure PassManager in KGENCompiler::runKGENPipeline failed",
+        theModule->getLoc()));
+    return output;
+  }
 
   // Populate the passes.
   buildGenerateLibraryPipeline(pm, options);
@@ -618,8 +635,13 @@ KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
   auto transformCache =
       RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-  mlir::PassManager pm = createPassManager(operationName, &context);
-  configPM(pm);
+  mlir::PassManager pm =
+      createPassManager(pmConfigOptions.operationName, &context);
+
+  if (failed(pmConfigOptions.configurePassManager(pm))) {
+    return Error("configure PassManager in "
+                 "KGENCompiler::runGenerateLibraryPipeline failed");
+  }
 
   buildGenerateLibraryPipeline(pm, options);
   if (materializeDependencies)
@@ -650,8 +672,13 @@ KGENCompiler::runGenerateLibraryPipeline(ModuleOp module,
 }
 
 LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
-  mlir::PassManager pm = createPassManager(operationName, &context);
-  configPM(pm);
+  mlir::PassManager pm =
+      createPassManager(pmConfigOptions.operationName, &context);
+
+  if (failed(pmConfigOptions.configurePassManager(pm))) {
+    return Error(
+        "configure PassManager in KGENCompiler::runCheckLITPipeline failed");
+  }
 
   buildCheckLITPipeline(pm, options);
   return pm.run(module);
@@ -668,8 +695,16 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {
-  mlir::PassManager pm = createPassManager(operationName, &context);
-  configPM(pm);
+  mlir::PassManager pm =
+      createPassManager(pmConfigOptions.operationName, &context);
+
+  if (failed(pmConfigOptions.configurePassManager(pm))) {
+    auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
+    std::move(output).setToError(LLCL::getMLIRDiagnostic(
+        "configure PassManager in KGENCompiler::runKGENPipeline failed",
+        module->getLoc()));
+    return output;
+  }
 
   populateElaborateModulePasses(pm, target, options);
   auto cacheBackend = getMojoCacheBackend();

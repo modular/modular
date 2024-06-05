@@ -142,9 +142,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   // Compile the moduleOp down to the post-elaboration phase, because before
   // that phase we don't have flat symbols.
   ErrorOr<std::unique_ptr<ObjectCompiler>> objectCompilerOr =
-      ObjectCompiler::create(
-          ".mojo_cache", options, false, context,
-          [](mlir::PassManager &pm) { configurePassManager(pm); });
+      ObjectCompiler::create(".mojo_cache", options, false, context);
 
   if (objectCompilerOr.isError())
     return state.reportError(objectCompilerOr.getError());

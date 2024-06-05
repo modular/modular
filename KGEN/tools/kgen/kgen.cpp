@@ -228,25 +228,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     clOptions.useSingleThreadedWorkqueue();
   }
 
-  bool configPMSuccess = true;
-  auto configPM = [&](mlir::PassManager &pm) {
-    if (failed(applyPassManagerCLOptions(pm))) {
-      configPMSuccess = false;
-      return;
-    }
-    pm.enableTiming(timing);
-    if (clOptions.enableMLIRCrashReproducer) {
-      pm.enableCrashReproducerGeneration(clOptions.inputFilename +
-                                             ".repro.mlir",
-                                         clOptions.enableLocalMLIRReproducer);
-    }
-    M::configurePassManager(pm);
-  };
+  PassManagerConfigOptions pmOptions;
+  pmOptions.applyPassManagerCLOptions = true;
+  pmOptions.enableTiming = true;
+  pmOptions.timingScope = &timing;
+  pmOptions.crashReproducerOptions.enable = clOptions.enableMLIRCrashReproducer;
+  pmOptions.crashReproducerOptions.inputFileName = clOptions.inputFilename;
+  pmOptions.crashReproducerOptions.enableLocalMLIRReproducer =
+      clOptions.enableLocalMLIRReproducer;
 
-  KGENCompiler compiler(*ctx, options, configPM);
-
-  if (!configPMSuccess)
-    return failure();
+  KGENCompiler compiler(*ctx, options, std::move(pmOptions));
 
   // The set of files included during processing, used to generate the
   // dependency file.
@@ -356,15 +347,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // the host CPU.
   eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
 
-  configPMSuccess = true;
   auto engineOr = initializeExecutionEngine(
       *ctx, options, std::move(eeOptions),
-      /*isJIT=*/clOptions.cmd == Command::kExecute, configPM);
+      /*isJIT=*/clOptions.cmd == Command::kExecute, pmOptions);
 
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
-  if (!configPMSuccess)
-    return failure();
 
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
   auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();

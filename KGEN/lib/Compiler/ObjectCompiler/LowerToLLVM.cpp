@@ -108,8 +108,9 @@ std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   CompilerTimeTraceScope traceScope("lower-to-llvm");
 
-  mlir::PassManager mgr = createPassManager(operationName, &context);
-  configPM(mgr);
+  mlir::PassManager mgr = createPassManager(pmOptions.operationName, &context);
+  if (failed(pmOptions.configurePassManager(mgr)))
+    return nullptr;
 
   // We only need to run the post-elaboration passes if we are searching. In
   // non-search mode, we know the passes have already been run.
