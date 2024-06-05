@@ -8,6 +8,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGENToLLVMPipeline.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -116,7 +117,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   // Use KGENCompilerRT allocators.
   llvmOptions.alignedAllocFnName = "KGEN_CompilerRT_AlignedAlloc";
   llvmOptions.alignedFreeFnName = "KGEN_CompilerRT_AlignedFree";
+
   buildLowerToLLVMPipeline(*mgr, llvmOptions);
+
   if (failed(mgr->run(module)))
     return nullptr;
 

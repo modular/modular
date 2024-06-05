@@ -61,11 +61,11 @@ struct MojoExpressionParser::Impl {
   /// The compilation options to use when compiling.
   const KGEN::CompilationOptions *compilationOptions = nullptr;
 
-  /// The pass manager to use when compiling.
-  std::unique_ptr<mlir::PassManager> compilationPM;
+  /// The ObjectCompiler instance to use when parsing.
+  std::unique_ptr<KGEN::ObjectCompiler> objCompiler;
 
-  /// The compiler instance to use when parsing.
-  std::unique_ptr<KGEN::ObjectCompiler> compiler;
+  /// The KGENCompiler instance to use when parsing.
+  std::unique_ptr<KGEN::KGENCompiler> kgenCompiler;
 
   /// The parsed Mojo module.
   OwningOpRef<ModuleOp> mlirModule;
@@ -85,6 +85,10 @@ struct MojoExpressionParser::Impl {
 
   /// The expression logger for the current target.
   MojoExpressionLogger *expressionLogger;
+
+private:
+  /// The pass manager to use when compiling.
+  std::unique_ptr<mlir::PassManager> compilationPM;
 };
 
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
@@ -109,15 +113,9 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   compilationOptions = &typeSystem->getParserContext().getCompilationOptions();
   MLIRContext *ctx = typeSystem->getMLIRContext();
 
-  // Get the target info to use for compilation.
-  TargetInfoAttr targetInfo = typeSystem->GetTargetInfo();
-  if (!targetInfo)
-    return;
-
   // Build the compilation pipeline.
   compilationPM =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-  buildGenerateLibraryPipeline(*compilationPM, *compilationOptions);
 
   // TODO(#33931) HACK, HACK, HACK!!!
   // To make CompilationOptions being properly passed to KGEN compiler
@@ -126,19 +124,19 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   // for ORC JIT but not always for MCJIT.
   // Disable splitting and parallelize LLC pipeline
   // (which is based on splitting) for REPL.
-  KGEN::CompilationOptions hackCompilationOptions;
+  KGEN::CompilationOptions hackCompilationOptions = *compilationOptions;
   hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
   hackCompilationOptions.enableParallelLLC = false;
 
-  populateElaborateModulePasses(*compilationPM, targetInfo,
-                                hackCompilationOptions);
-
   // Create the compiler instance.
-  auto compilerOr = ObjectCompiler::create(*compilationPM, ".mojo_cache",
-                                           *compilationOptions, /*isJIT=*/true);
+  auto compilerOr = ObjectCompiler::create(
+      *compilationPM, ".mojo_cache", hackCompilationOptions, /*isJIT=*/true);
   if (failed(compilerOr))
     return;
-  compiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));
+
+  objCompiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));
+  kgenCompiler = std::make_unique<KGEN::KGENCompiler>(
+      *ctx, ModuleOp::getOperationName(), *compilationOptions);
 }
 
 //===----------------------------------------------------------------------===//
@@ -328,8 +326,8 @@ MojoExpressionParser::~MojoExpressionParser() = default;
 M::LogicalResult
 MojoExpressionParser::parse(MojoPersistentExpressionState &state,
                             DiagnosticManager &diagnosticManager) {
-  if (!impl->compiler) {
-    impl->expressionLogger->errorLog("No compiler");
+  if (!impl->objCompiler) {
+    impl->expressionLogger->errorLog("No ObjectCompiler");
     return failure();
   }
 
@@ -432,7 +430,6 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   if (failed(mlir::verify(*module)))
     return returnErrorCleanup();
 #endif // MODULAR_PRODUCTION
-  setTargetInfo(*module, impl->typeSystem->GetTargetInfo());
 
   // Set the environment (defines) for the module.
   extendWithModularEnvAttr(*module);
@@ -448,20 +445,28 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   std::string preElaborationModuleLog;
   llvm::raw_string_ostream preElaborationLogStream(preElaborationModuleLog);
   if (isVerboseLoggingEnabled) {
-    impl->compilationPM->enableIRPrinting(
-        [](Pass *pass, Operation *) {
-          return pass->getName() == "ElaborateGenerators";
-        },
-        [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
-        /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
-        /*out=*/preElaborationLogStream);
+    impl->kgenCompiler->configurePassManager([&preElaborationLogStream](
+                                                 mlir::PassManager &pm) {
+      pm.enableIRPrinting(
+          [](Pass *pass, Operation *) {
+            return pass->getName() == "ElaborateGenerators";
+          },
+          [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
+          /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
+          /*out=*/preElaborationLogStream);
+    });
   }
 
+  //// Get the target info to use for compilation.
+  TargetInfoAttr targetInfo = impl->typeSystem->GetTargetInfo();
+  if (!targetInfo)
+    return failure();
+
   // Run the elaboration pipeline.
-  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      *module, impl->compiler->getTransformCache().copy(),
-      AsyncValueRef<Chain>::createReady(impl->typeSystem->getRuntime()),
-      *impl->compilationPM);
+  LLCL::AnyAsyncValueRef ready = impl->kgenCompiler->runKGENPipeline(
+      *module, targetInfo, impl->objCompiler->getTransformCache().copy(),
+      AsyncValueRef<Chain>::createReady(impl->typeSystem->getRuntime()));
+
   LLCL::await(ready);
   if (ready.isError())
     return returnErrorCleanup();
@@ -478,7 +483,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   exportedSymbols.insert({StringAttr::get(module->getContext(), exprFnName),
                           ExportedSymbol(ExportKind::Exported)});
   auto bufferOr =
-      impl->compiler->produceStandaloneArchive(symbolTable, exportedSymbols);
+      impl->objCompiler->produceStandaloneArchive(symbolTable, exportedSymbols);
   if (bufferOr.isError()) {
     impl->expressionLogger->errorLog(
         "Failed to produce standalone archive: {0}", bufferOr.getError());

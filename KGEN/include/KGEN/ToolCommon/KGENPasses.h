@@ -139,7 +139,6 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
 //===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
-
 /// Options for the KGEN to LLVM pipeline.
 struct LowerToLLVMOptions
     : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
@@ -202,12 +201,6 @@ struct LowerToLLVMOptions
       llvm::cl::init("kgenGlobalDtor")};
 };
 
-/// Build the pass pipeline to convert post-elaboration KGEN IR to LLVM IR.
-/// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
-/// of LLVM lowerings, and the canonicalizer again.
-void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
-                              const LowerToLLVMOptions &options);
-
 /// Register the lower to LLVM pipeline.
 void registerLowerToLLVMPipeline();
 
@@ -235,27 +228,6 @@ createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn);
 /// LIT constructs.
 void buildCheckLITPipeline(mlir::PassManager &pm,
                            const CompilationOptions &options);
-
-//===----------------------------------------------------------------------===//
-// GenerateLibraryPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the pre-elaboration phase passes of the KGEN compiler. The
-/// distribution format of a KGEN library is essentially what comes just before
-/// elaboration because the parameter system allows significant extension.
-void buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
-
-//===----------------------------------------------------------------------===//
-// ElaborateModulePipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the passes to produce a fully concrete KGEN module. That
-/// means it runs the elaborator and any dependent passes.
-void buildElaborateModulePipeline(mlir::PassManager &pm, TargetInfoAttr target,
-                                  const CompilationOptions &options,
-                                  ElaboratorCompileAsmFn compileAsmFn,
-                                  PackageGenLibraryFn packageGenLibraryFn);
 
 } // namespace KGEN
 } // namespace M

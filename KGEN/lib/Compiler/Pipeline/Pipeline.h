@@ -42,6 +42,25 @@ void buildElaborateModulePipeline(mlir::PassManager &pm, TargetInfoAttr target,
                                   ElaboratorCompileAsmFn compileAsmFn,
                                   PackageGenLibraryFn packageGenLibraryFn);
 
+//===----------------------------------------------------------------------===//
+// populateElaborateModulePasses
+//===----------------------------------------------------------------------===//
+
+/// This populates the passes to produce a fully concrete KGEN module. It's the
+/// equivalent of the `buildElaborateModulePipeline` function, but with common
+/// defaults for elaboration handlers.
+void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
+                                   const CompilationOptions &options);
+
+//===----------------------------------------------------------------------===//
+// buildLowerToLLVMPipeline
+//===----------------------------------------------------------------------===//
+/// Build the pass pipeline to convert post-elaboration KGEN IR to LLVM IR.
+/// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
+/// of LLVM lowerings, and the canonicalizer again.
+void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
+                              const LowerToLLVMOptions &options);
+
 } // namespace KGEN
 } // namespace M
 
