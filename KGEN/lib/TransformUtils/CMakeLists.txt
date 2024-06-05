@@ -15,5 +15,4 @@ add_modular_library(KGENTransformUtils
   MCompilerSupport
   HLCFDialect
   KGENDialect
-  LITDialect
 )

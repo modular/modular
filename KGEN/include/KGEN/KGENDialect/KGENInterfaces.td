@@ -423,6 +423,13 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }], "ValueRange", "getArguments", (ins), [{}], [{
       return $_op.getOperands();
     }]>,
+    InterfaceMethod<[{
+      This interface method is used to inline the call operation. It should use
+      the provided builder to create a "scope" operation. The scope operation
+      will contained the inlined region of the callee. It should also return a
+      callback used to process each `ReturnOp` of the callee.
+    }], "FailureOr<InlineResult>", "prepInline",
+    (ins "mlir::IRRewriter &":$b)>,
   ];
 
   let extraSharedClassDeclaration = [{

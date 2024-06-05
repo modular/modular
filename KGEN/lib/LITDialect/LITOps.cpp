@@ -373,6 +373,11 @@ ErrorTreeOrSuccess LIT::CallOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+FailureOr<InlineResult> LIT::CallOp::prepInline(mlir::IRRewriter &b) {
+  // Inlining not supported for this op
+  return failure();
+}
+
 //===----------------------------------------------------------------------===//
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
@@ -1839,6 +1844,11 @@ LogicalResult AsyncCallOp::verify() {
       return failure();
   }
   return success();
+}
+
+FailureOr<InlineResult> LIT::AsyncCallOp::prepInline(mlir::IRRewriter &b) {
+  // Inlining not supported for this op
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
