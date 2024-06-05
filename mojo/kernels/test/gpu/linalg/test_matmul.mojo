@@ -12,7 +12,7 @@ from random import random_float64
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, CUDADeviceStream, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -208,7 +208,7 @@ fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
     _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
     _matmul_gpu[use_tensor_core=False](
-        c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
+        c_device_nd, a_device_nd, b_device_nd, stream
     )
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
@@ -294,7 +294,7 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
     _matmul_gpu[use_tensor_core=False](
-        c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
+        c_device_nd, a_device_nd, b_device_nd, stream
     )
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
@@ -406,7 +406,7 @@ fn run_matmul_from_mogg_interface_with_epilogue[
         use_tensor_core=False,
         transpose_b=False,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream))
+    ](c_device_nd, a_device_nd, b_device_nd, stream)
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
 
@@ -499,7 +499,7 @@ fn run_low_precision_test[
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=False,
-    ](c_buffer, a_buffer, b_buffer, CUDADeviceStream(stream))
+    ](c_buffer, a_buffer, b_buffer, stream)
 
     synchronize()
 
@@ -614,7 +614,7 @@ fn run_low_precision_test_with_epilogue[
         use_tensor_core=True,
         transpose_b=False,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_buffer, a_buffer, b_buffer, CUDADeviceStream(stream))
+    ](c_buffer, a_buffer, b_buffer, stream)
 
     synchronize()
 

@@ -12,7 +12,7 @@ from math import isclose
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import Context, CUDADeviceStream, Stream, synchronize
+from gpu.host import Context, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -142,7 +142,7 @@ fn matmul_test_case[
     _copy_host_buffer_to_device(mat_a_dev, mat_a_host)
     _copy_host_buffer_to_device(mat_b_dev, mat_b_host)
 
-    _matmul_gpu(mat_c_dev, mat_a_dev, mat_b_dev, CUDADeviceStream(stream))
+    _matmul_gpu(mat_c_dev, mat_a_dev, mat_b_dev, stream)
     synchronize()
 
     _copy_device_buffer_to_host(mat_c_host, mat_c_dev)

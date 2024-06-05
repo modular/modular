@@ -11,7 +11,7 @@ from random import random_float64
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host import Context, CUDADeviceStream, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -209,7 +209,7 @@ fn run_matmul[
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    _matmul_gpu[](c_buf, a_buf, b_buf, CUDADeviceStream(stream))
+    _matmul_gpu[](c_buf, a_buf, b_buf, stream)
     synchronize()
     _copy_device_to_host(c_host, c_device, M * N)
 
