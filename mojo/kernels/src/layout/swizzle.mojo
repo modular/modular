@@ -267,7 +267,7 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
 
     @staticmethod
     @always_inline
-    fn has_shape(self) -> Bool:
+    fn has_shape() -> Bool:
         return False
 
     fn format_to(self, inout writer: Formatter):

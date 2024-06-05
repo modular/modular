@@ -60,7 +60,7 @@ trait LayoutTrait:
         ...
 
     @staticmethod
-    fn has_shape(self) -> Bool:
+    fn has_shape() -> Bool:
         """Return whether the object has valid shape.
 
         Layout and ComposedLayout with at least one Layout have valid shapes.
@@ -209,7 +209,7 @@ struct Layout(
 
     @staticmethod
     @always_inline
-    fn has_shape(self) -> Bool:
+    fn has_shape() -> Bool:
         return True
 
     @always_inline
