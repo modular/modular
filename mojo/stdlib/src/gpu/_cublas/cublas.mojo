@@ -152,7 +152,7 @@ fn cublasDgemv(
 
 fn cublasStpsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -164,7 +164,7 @@ fn cublasStpsv(
         "cublasStpsv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -278,7 +278,7 @@ fn cublasDgemmStridedBatched(
 
 fn cublasDsyrkx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -295,7 +295,7 @@ fn cublasDsyrkx(
         "cublasDsyrkx_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -384,7 +384,7 @@ fn cublasGetProperty(type: Property, value: Pointer[Int16]) -> Result:
 
 fn cublasSsyr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -396,7 +396,7 @@ fn cublasSsyr(
         "cublasSsyr_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -510,7 +510,7 @@ fn cublasSgemvStridedBatched(
 fn cublasStrsm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int16,
@@ -526,7 +526,7 @@ fn cublasStrsm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -657,7 +657,7 @@ fn cublasSgeam(
 
 fn cublasStrttp(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     _a: DTypePointer[DType.float32],
     lda: Int16,
@@ -667,7 +667,7 @@ fn cublasStrttp(
         "cublasStrttp",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             Int16,
@@ -724,7 +724,7 @@ fn cublasRotmgEx(
 
 fn cublasStrmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -737,7 +737,7 @@ fn cublasStrmv(
         "cublasStrmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -1011,7 +1011,7 @@ fn cublasGetVector(
 
 fn cublasStrsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -1024,7 +1024,7 @@ fn cublasStrsv(
         "cublasStrsv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -1102,7 +1102,7 @@ fn cublasGetMatrixAsync(
 
 fn cublasStbsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -1116,7 +1116,7 @@ fn cublasStbsv(
         "cublasStbsv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -1149,7 +1149,7 @@ fn cublasSetMathMode(
 
 fn cublasDsbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     k: Int64,
     alpha: DTypePointer[DType.float64],
@@ -1165,7 +1165,7 @@ fn cublasDsbmv(
         "cublasDsbmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             Int64,
             DTypePointer[DType.float64],
@@ -1205,7 +1205,7 @@ fn cublasSdot(
 
 fn cublasSsbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     k: Int64,
     alpha: DTypePointer[DType.float32],
@@ -1221,7 +1221,7 @@ fn cublasSsbmv(
         "cublasSsbmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             Int64,
             DTypePointer[DType.float32],
@@ -1400,7 +1400,7 @@ fn cublasRotEx(
 
 fn cublasSsymv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float32],
     _a: DTypePointer[DType.float32],
@@ -1415,7 +1415,7 @@ fn cublasSsymv(
         "cublasSsymv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -1431,7 +1431,7 @@ fn cublasSsymv(
 
 fn cublasSsyr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -1445,7 +1445,7 @@ fn cublasSsyr2(
         "cublasSsyr2_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -1488,7 +1488,7 @@ fn cublasIsamin(
 
 fn cublasStbsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -1502,7 +1502,7 @@ fn cublasStbsv(
         "cublasStbsv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -1648,7 +1648,7 @@ fn cublasIdamax(
 
 fn cublasSsyr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -1662,7 +1662,7 @@ fn cublasSsyr2(
         "cublasSsyr2_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -1700,7 +1700,7 @@ fn cublasDaxpy(
 
 fn cublasDsyr2k(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -1717,7 +1717,7 @@ fn cublasDsyr2k(
         "cublasDsyr2k_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -1779,7 +1779,7 @@ fn cublasSgeam(
 
 fn cublasDtpttr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     _ap: DTypePointer[DType.float64],
     _a: DTypePointer[DType.float64],
@@ -1789,7 +1789,7 @@ fn cublasDtpttr(
         "cublasDtpttr",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -1821,7 +1821,7 @@ fn cublasIamaxEx(
 
 fn cublasSspmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float32],
     _ap: DTypePointer[DType.float32],
@@ -1835,7 +1835,7 @@ fn cublasSspmv(
         "cublasSspmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -1850,7 +1850,7 @@ fn cublasSspmv(
 
 fn cublasSsymv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float32],
     _a: DTypePointer[DType.float32],
@@ -1865,7 +1865,7 @@ fn cublasSsymv(
         "cublasSsymv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -1902,7 +1902,7 @@ fn cublasGemmStridedBatchedEx(
     stride_c: Int64,
     batch_count: Int64,
     compute_type: ComputeType,
-    algo: cublasGemmAlgo_t,
+    algo: Algorithm,
 ) -> Result:
     return _get_dylib_function[
         "cublasGemmStridedBatchedEx_64",
@@ -1929,7 +1929,7 @@ fn cublasGemmStridedBatchedEx(
             Int64,
             Int64,
             ComputeType,
-            cublasGemmAlgo_t,
+            Algorithm,
         ) -> Result,
     ]()(
         handle,
@@ -2017,55 +2017,55 @@ fn cublasSrotm(
 
 @value
 @register_passable("trivial")
-struct cublasGemmAlgo_t:
+struct Algorithm:
     var _value: Int32
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
-    # only useful algorithm options are cublas_gemm_default and algo0 - algo23.
+    # only useful algorithm options are default and algo0 - algo23.
     # We never specify 0-23 in pratice.
 
-    alias CUBLAS_GEMM_DEFAULT = cublasGemmAlgo_t(-1)
-    alias CUBLAS_GEMM_ALGO0 = cublasGemmAlgo_t(0)
-    alias CUBLAS_GEMM_ALGO1 = cublasGemmAlgo_t(1)
-    alias CUBLAS_GEMM_ALGO2 = cublasGemmAlgo_t(2)
-    alias CUBLAS_GEMM_ALGO3 = cublasGemmAlgo_t(3)
-    alias CUBLAS_GEMM_ALGO4 = cublasGemmAlgo_t(4)
-    alias CUBLAS_GEMM_ALGO5 = cublasGemmAlgo_t(5)
-    alias CUBLAS_GEMM_ALGO6 = cublasGemmAlgo_t(6)
-    alias CUBLAS_GEMM_ALGO7 = cublasGemmAlgo_t(7)
-    alias CUBLAS_GEMM_ALGO8 = cublasGemmAlgo_t(8)
-    alias CUBLAS_GEMM_ALGO9 = cublasGemmAlgo_t(9)
-    alias CUBLAS_GEMM_ALGO10 = cublasGemmAlgo_t(10)
-    alias CUBLAS_GEMM_ALGO11 = cublasGemmAlgo_t(11)
-    alias CUBLAS_GEMM_ALGO12 = cublasGemmAlgo_t(12)
-    alias CUBLAS_GEMM_ALGO13 = cublasGemmAlgo_t(13)
-    alias CUBLAS_GEMM_ALGO14 = cublasGemmAlgo_t(14)
-    alias CUBLAS_GEMM_ALGO15 = cublasGemmAlgo_t(15)
-    alias CUBLAS_GEMM_ALGO16 = cublasGemmAlgo_t(16)
-    alias CUBLAS_GEMM_ALGO17 = cublasGemmAlgo_t(17)
-    alias CUBLAS_GEMM_ALGO18 = cublasGemmAlgo_t(18)
-    alias CUBLAS_GEMM_ALGO19 = cublasGemmAlgo_t(19)
-    alias CUBLAS_GEMM_ALGO20 = cublasGemmAlgo_t(20)
-    alias CUBLAS_GEMM_ALGO21 = cublasGemmAlgo_t(21)
-    alias CUBLAS_GEMM_ALGO22 = cublasGemmAlgo_t(22)
-    alias CUBLAS_GEMM_ALGO23 = cublasGemmAlgo_t(23)
-    alias CUBLAS_GEMM_DEFAULT_TENSOR_OP = cublasGemmAlgo_t(99)
-    alias CUBLAS_GEMM_ALGO0_TENSOR_OP = cublasGemmAlgo_t(100)
-    alias CUBLAS_GEMM_ALGO1_TENSOR_OP = cublasGemmAlgo_t(101)
-    alias CUBLAS_GEMM_ALGO2_TENSOR_OP = cublasGemmAlgo_t(102)
-    alias CUBLAS_GEMM_ALGO3_TENSOR_OP = cublasGemmAlgo_t(103)
-    alias CUBLAS_GEMM_ALGO4_TENSOR_OP = cublasGemmAlgo_t(104)
-    alias CUBLAS_GEMM_ALGO5_TENSOR_OP = cublasGemmAlgo_t(105)
-    alias CUBLAS_GEMM_ALGO6_TENSOR_OP = cublasGemmAlgo_t(106)
-    alias CUBLAS_GEMM_ALGO7_TENSOR_OP = cublasGemmAlgo_t(107)
-    alias CUBLAS_GEMM_ALGO8_TENSOR_OP = cublasGemmAlgo_t(108)
-    alias CUBLAS_GEMM_ALGO9_TENSOR_OP = cublasGemmAlgo_t(109)
-    alias CUBLAS_GEMM_ALGO10_TENSOR_OP = cublasGemmAlgo_t(110)
-    alias CUBLAS_GEMM_ALGO11_TENSOR_OP = cublasGemmAlgo_t(111)
-    alias CUBLAS_GEMM_ALGO12_TENSOR_OP = cublasGemmAlgo_t(112)
-    alias CUBLAS_GEMM_ALGO13_TENSOR_OP = cublasGemmAlgo_t(113)
-    alias CUBLAS_GEMM_ALGO14_TENSOR_OP = cublasGemmAlgo_t(114)
-    alias CUBLAS_GEMM_ALGO15_TENSOR_OP = cublasGemmAlgo_t(115)
+    alias DEFAULT = Self(-1)
+    alias ALGO0 = Self(0)
+    alias ALGO1 = Self(1)
+    alias ALGO2 = Self(2)
+    alias ALGO3 = Self(3)
+    alias ALGO4 = Self(4)
+    alias ALGO5 = Self(5)
+    alias ALGO6 = Self(6)
+    alias ALGO7 = Self(7)
+    alias ALGO8 = Self(8)
+    alias ALGO9 = Self(9)
+    alias ALGO10 = Self(10)
+    alias ALGO11 = Self(11)
+    alias ALGO12 = Self(12)
+    alias ALGO13 = Self(13)
+    alias ALGO14 = Self(14)
+    alias ALGO15 = Self(15)
+    alias ALGO16 = Self(16)
+    alias ALGO17 = Self(17)
+    alias ALGO18 = Self(18)
+    alias ALGO19 = Self(19)
+    alias ALGO20 = Self(20)
+    alias ALGO21 = Self(21)
+    alias ALGO22 = Self(22)
+    alias ALGO23 = Self(23)
+    alias DEFAULT_TENSOR_OP = Self(99)
+    alias ALGO0_TENSOR_OP = Self(100)
+    alias ALGO1_TENSOR_OP = Self(101)
+    alias ALGO2_TENSOR_OP = Self(102)
+    alias ALGO3_TENSOR_OP = Self(103)
+    alias ALGO4_TENSOR_OP = Self(104)
+    alias ALGO5_TENSOR_OP = Self(105)
+    alias ALGO6_TENSOR_OP = Self(106)
+    alias ALGO7_TENSOR_OP = Self(107)
+    alias ALGO8_TENSOR_OP = Self(108)
+    alias ALGO9_TENSOR_OP = Self(109)
+    alias ALGO10_TENSOR_OP = Self(110)
+    alias ALGO11_TENSOR_OP = Self(111)
+    alias ALGO12_TENSOR_OP = Self(112)
+    alias ALGO13_TENSOR_OP = Self(113)
+    alias ALGO14_TENSOR_OP = Self(114)
+    alias ALGO15_TENSOR_OP = Self(115)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2077,95 +2077,91 @@ struct cublasGemmAlgo_t:
         return not (self == other)
 
     fn __str__(self) -> String:
-        if self == Self.CUBLAS_GEMM_DEFAULT:
-            return "CUBLAS_GEMM_DEFAULT"
-        # if self == Self.CUBLAS_GEMM_DFALT:
-        # return "CUBLAS_GEMM_DFALT"
-        # if self == Self.CUBLAS_GEMM_ALGO0:
-        #     return "CUBLAS_GEMM_ALGO0"
-        # if self == Self.CUBLAS_GEMM_ALGO1:
-        #     return "CUBLAS_GEMM_ALGO1"
-        # if self == Self.CUBLAS_GEMM_ALGO2:
-        #     return "CUBLAS_GEMM_ALGO2"
-        # if self == Self.CUBLAS_GEMM_ALGO3:
-        #     return "CUBLAS_GEMM_ALGO3"
-        # if self == Self.CUBLAS_GEMM_ALGO4:
-        #     return "CUBLAS_GEMM_ALGO4"
-        # if self == Self.CUBLAS_GEMM_ALGO5:
-        #     return "CUBLAS_GEMM_ALGO5"
-        # if self == Self.CUBLAS_GEMM_ALGO6:
-        #     return "CUBLAS_GEMM_ALGO6"
-        # if self == Self.CUBLAS_GEMM_ALGO7:
-        #     return "CUBLAS_GEMM_ALGO7"
-        # if self == Self.CUBLAS_GEMM_ALGO8:
-        #     return "CUBLAS_GEMM_ALGO8"
-        # if self == Self.CUBLAS_GEMM_ALGO9:
-        #     return "CUBLAS_GEMM_ALGO9"
-        # if self == Self.CUBLAS_GEMM_ALGO10:
-        #     return "CUBLAS_GEMM_ALGO10"
-        # if self == Self.CUBLAS_GEMM_ALGO11:
-        #     return "CUBLAS_GEMM_ALGO11"
-        # if self == Self.CUBLAS_GEMM_ALGO12:
-        #     return "CUBLAS_GEMM_ALGO12"
-        # if self == Self.CUBLAS_GEMM_ALGO13:
-        #     return "CUBLAS_GEMM_ALGO13"
-        # if self == Self.CUBLAS_GEMM_ALGO14:
-        #     return "CUBLAS_GEMM_ALGO14"
-        # if self == Self.CUBLAS_GEMM_ALGO15:
-        #     return "CUBLAS_GEMM_ALGO15"
-        # if self == Self.CUBLAS_GEMM_ALGO16:
-        #     return "CUBLAS_GEMM_ALGO16"
-        # if self == Self.CUBLAS_GEMM_ALGO17:
-        #     return "CUBLAS_GEMM_ALGO17"
-        # if self == Self.CUBLAS_GEMM_ALGO18:
-        #     return "CUBLAS_GEMM_ALGO18"
-        # if self == Self.CUBLAS_GEMM_ALGO19:
-        #     return "CUBLAS_GEMM_ALGO19"
-        # if self == Self.CUBLAS_GEMM_ALGO20:
-        #     return "CUBLAS_GEMM_ALGO20"
-        # if self == Self.CUBLAS_GEMM_ALGO21:
-        #     return "CUBLAS_GEMM_ALGO21"
-        # if self == Self.CUBLAS_GEMM_ALGO22:
-        #     return "CUBLAS_GEMM_ALGO22"
-        # if self == Self.CUBLAS_GEMM_ALGO23:
-        #     return "CUBLAS_GEMM_ALGO23"
-        # if self == Self.CUBLAS_GEMM_DEFAULT_TENSOR_OP:
-        #     return "CUBLAS_GEMM_DEFAULT_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_DFALT_TENSOR_OP:
-        #     return "CUBLAS_GEMM_DFALT_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO0_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO0_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO1_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO1_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO2_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO2_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO3_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO3_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO4_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO4_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO5_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO5_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO6_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO6_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO7_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO7_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO8_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO8_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO9_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO9_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO10_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO10_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO11_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO11_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO12_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO12_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO13_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO13_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO14_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO14_TENSOR_OP"
-        # if self == Self.CUBLAS_GEMM_ALGO15_TENSOR_OP:
-        #     return "CUBLAS_GEMM_ALGO15_TENSOR_OP"
-        return abort[String]("invalid cublasGemmAlgo_t entry")
+        if self == Self.DEFAULT:
+            return "DEFAULT"
+        if self == Self.ALGO0:
+            return "ALGO0"
+        if self == Self.ALGO1:
+            return "ALGO1"
+        if self == Self.ALGO2:
+            return "ALGO2"
+        if self == Self.ALGO3:
+            return "ALGO3"
+        if self == Self.ALGO4:
+            return "ALGO4"
+        if self == Self.ALGO5:
+            return "ALGO5"
+        if self == Self.ALGO6:
+            return "ALGO6"
+        if self == Self.ALGO7:
+            return "ALGO7"
+        if self == Self.ALGO8:
+            return "ALGO8"
+        if self == Self.ALGO9:
+            return "ALGO9"
+        if self == Self.ALGO10:
+            return "ALGO10"
+        if self == Self.ALGO11:
+            return "ALGO11"
+        if self == Self.ALGO12:
+            return "ALGO12"
+        if self == Self.ALGO13:
+            return "ALGO13"
+        if self == Self.ALGO14:
+            return "ALGO14"
+        if self == Self.ALGO15:
+            return "ALGO15"
+        if self == Self.ALGO16:
+            return "ALGO16"
+        if self == Self.ALGO17:
+            return "ALGO17"
+        if self == Self.ALGO18:
+            return "ALGO18"
+        if self == Self.ALGO19:
+            return "ALGO19"
+        if self == Self.ALGO20:
+            return "ALGO20"
+        if self == Self.ALGO21:
+            return "ALGO21"
+        if self == Self.ALGO22:
+            return "ALGO22"
+        if self == Self.ALGO23:
+            return "ALGO23"
+        if self == Self.DEFAULT_TENSOR_OP:
+            return "DEFAULT_TENSOR_OP"
+        if self == Self.ALGO0_TENSOR_OP:
+            return "ALGO0_TENSOR_OP"
+        if self == Self.ALGO1_TENSOR_OP:
+            return "ALGO1_TENSOR_OP"
+        if self == Self.ALGO2_TENSOR_OP:
+            return "ALGO2_TENSOR_OP"
+        if self == Self.ALGO3_TENSOR_OP:
+            return "ALGO3_TENSOR_OP"
+        if self == Self.ALGO4_TENSOR_OP:
+            return "ALGO4_TENSOR_OP"
+        if self == Self.ALGO5_TENSOR_OP:
+            return "ALGO5_TENSOR_OP"
+        if self == Self.ALGO6_TENSOR_OP:
+            return "ALGO6_TENSOR_OP"
+        if self == Self.ALGO7_TENSOR_OP:
+            return "ALGO7_TENSOR_OP"
+        if self == Self.ALGO8_TENSOR_OP:
+            return "ALGO8_TENSOR_OP"
+        if self == Self.ALGO9_TENSOR_OP:
+            return "ALGO9_TENSOR_OP"
+        if self == Self.ALGO10_TENSOR_OP:
+            return "ALGO10_TENSOR_OP"
+        if self == Self.ALGO11_TENSOR_OP:
+            return "ALGO11_TENSOR_OP"
+        if self == Self.ALGO12_TENSOR_OP:
+            return "ALGO12_TENSOR_OP"
+        if self == Self.ALGO13_TENSOR_OP:
+            return "ALGO13_TENSOR_OP"
+        if self == Self.ALGO14_TENSOR_OP:
+            return "ALGO14_TENSOR_OP"
+        if self == Self.ALGO15_TENSOR_OP:
+            return "ALGO15_TENSOR_OP"
+        return abort[String]("invalid Algorithm entry")
 
     fn __int__(self) -> Int:
         return int(self._value)
@@ -2173,7 +2169,7 @@ struct cublasGemmAlgo_t:
 
 fn cublasSsyrk(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -2188,7 +2184,7 @@ fn cublasSsyrk(
         "cublasSsyrk_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -2204,7 +2200,7 @@ fn cublasSsyrk(
 
 fn cublasDsyr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -2216,7 +2212,7 @@ fn cublasDsyr(
         "cublasDsyr_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -2229,7 +2225,7 @@ fn cublasDsyr(
 
 fn cublasStrmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -2242,7 +2238,7 @@ fn cublasStrmv(
         "cublasStrmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -2278,7 +2274,7 @@ fn cublasDcopy(
 fn cublasDtrmm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int64,
@@ -2296,7 +2292,7 @@ fn cublasDtrmm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -2449,7 +2445,7 @@ fn cublasDdgmm(
 
 fn cublasStpttr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     _ap: DTypePointer[DType.float32],
     _a: DTypePointer[DType.float32],
@@ -2459,7 +2455,7 @@ fn cublasStpttr(
         "cublasStpttr",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -2470,7 +2466,7 @@ fn cublasStpttr(
 
 fn cublasDsyr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -2482,7 +2478,7 @@ fn cublasDsyr(
         "cublasDsyr_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -2615,17 +2611,17 @@ struct cublasDiagType_t:
 @register_passable("trivial")
 struct ComputeType:
     var _value: Int32
-    alias COMPUTE_16F = ComputeType(64)
-    alias COMPUTE_16F_PEDANTIC = ComputeType(65)
-    alias COMPUTE_32F = ComputeType(68)
-    alias COMPUTE_32F_PEDANTIC = ComputeType(69)
-    alias COMPUTE_32F_FAST_16F = ComputeType(74)
-    alias COMPUTE_32F_FAST_16BF = ComputeType(75)
-    alias COMPUTE_32F_FAST_TF32 = ComputeType(77)
-    alias COMPUTE_64F = ComputeType(70)
-    alias COMPUTE_64F_PEDANTIC = ComputeType(71)
-    alias COMPUTE_32I = ComputeType(72)
-    alias COMPUTE_32I_PEDANTIC = ComputeType(73)
+    alias COMPUTE_16F = Self(64)
+    alias COMPUTE_16F_PEDANTIC = Self(65)
+    alias COMPUTE_32F = Self(68)
+    alias COMPUTE_32F_PEDANTIC = Self(69)
+    alias COMPUTE_32F_FAST_16F = Self(74)
+    alias COMPUTE_32F_FAST_16BF = Self(75)
+    alias COMPUTE_32F_FAST_TF32 = Self(77)
+    alias COMPUTE_64F = Self(70)
+    alias COMPUTE_64F_PEDANTIC = Self(71)
+    alias COMPUTE_32I = Self(72)
+    alias COMPUTE_32I_PEDANTIC = Self(73)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2668,7 +2664,7 @@ struct ComputeType:
 fn cublasDsymm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     m: Int64,
     n: Int64,
     alpha: DTypePointer[DType.float64],
@@ -2685,7 +2681,7 @@ fn cublasDsymm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             Int64,
             Int64,
             DTypePointer[DType.float64],
@@ -2702,7 +2698,7 @@ fn cublasDsymm(
 
 fn cublasSspr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -2713,7 +2709,7 @@ fn cublasSspr(
         "cublasSspr_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -2813,7 +2809,7 @@ fn cublasDaxpy(
 
 fn cublasDsyr2k(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -2830,7 +2826,7 @@ fn cublasDsyr2k(
         "cublasDsyr2k_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -2906,7 +2902,7 @@ fn cublasSdgmm(
 
 fn cublasDtbsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -2920,7 +2916,7 @@ fn cublasDtbsv(
         "cublasDtbsv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -2936,7 +2932,7 @@ fn cublasDtbsv(
 fn cublasDtrsm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int16,
@@ -2952,7 +2948,7 @@ fn cublasDtrsm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -2968,7 +2964,7 @@ fn cublasDtrsm(
 
 fn cublasStbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -2982,7 +2978,7 @@ fn cublasStbmv(
         "cublasStbmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -2997,7 +2993,7 @@ fn cublasStbmv(
 
 fn cublasDspmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float64],
     _ap: DTypePointer[DType.float64],
@@ -3011,7 +3007,7 @@ fn cublasDspmv(
         "cublasDspmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -3047,7 +3043,7 @@ fn cublasSswap(
 
 fn cublasDspmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float64],
     _ap: DTypePointer[DType.float64],
@@ -3061,7 +3057,7 @@ fn cublasDspmv(
         "cublasDspmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -3097,7 +3093,7 @@ fn cublasSrotmg(
 
 fn cublasDtpmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -3109,7 +3105,7 @@ fn cublasDtpmv(
         "cublasDtpmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -3291,7 +3287,7 @@ fn cublasSgemm(
 fn cublasSsymm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     m: Int64,
     n: Int64,
     alpha: DTypePointer[DType.float32],
@@ -3308,7 +3304,7 @@ fn cublasSsymm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             Int64,
             Int64,
             DTypePointer[DType.float32],
@@ -3416,7 +3412,7 @@ fn cublasGetVector(
 
 fn cublasDtrsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -3429,7 +3425,7 @@ fn cublasDtrsv(
         "cublasDtrsv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -3444,7 +3440,7 @@ fn cublasDtrsv(
 fn cublasSsymm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     m: Int16,
     n: Int16,
     alpha: DTypePointer[DType.float32],
@@ -3461,7 +3457,7 @@ fn cublasSsymm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             Int16,
             Int16,
             DTypePointer[DType.float32],
@@ -3479,7 +3475,7 @@ fn cublasSsymm(
 fn cublasDtrmm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int16,
@@ -3497,7 +3493,7 @@ fn cublasDtrmm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -3515,7 +3511,7 @@ fn cublasDtrmm(
 
 fn cublasCherk3mEx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -3532,7 +3528,7 @@ fn cublasCherk3mEx(
         "cublasCherk3mEx_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -3555,7 +3551,7 @@ alias cublasLogCallback = fn (Pointer[Int8]) -> NoneType
 
 fn cublasDtrmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -3568,7 +3564,7 @@ fn cublasDtrmv(
         "cublasDtrmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -3611,7 +3607,7 @@ fn cublasDdgmm(
 
 fn cublasDtbsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -3625,7 +3621,7 @@ fn cublasDtbsv(
         "cublasDtbsv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -3640,7 +3636,7 @@ fn cublasDtbsv(
 
 fn cublasSsyr2k(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -3657,7 +3653,7 @@ fn cublasSsyr2k(
         "cublasSsyr2k_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -3746,7 +3742,7 @@ fn cublasDrot(
 
 fn cublasSspr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -3757,7 +3753,7 @@ fn cublasSspr(
         "cublasSspr_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -3786,7 +3782,7 @@ fn cublasGemmEx64(
     _ctype: DataType,
     ldc: Int64,
     compute_type: ComputeType,
-    algo: cublasGemmAlgo_t,
+    algo: Algorithm,
 ) -> Result:
     return _get_dylib_function[
         "cublasGemmEx_64",
@@ -3809,7 +3805,7 @@ fn cublasGemmEx64(
             DataType,
             Int64,
             ComputeType,
-            cublasGemmAlgo_t,
+            Algorithm,
         ) -> Result,
     ]()(
         handle,
@@ -4021,7 +4017,7 @@ fn cublasDgemm(
 
 fn cublasSsyrk(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -4036,7 +4032,7 @@ fn cublasSsyrk(
         "cublasSsyrk_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -4090,7 +4086,7 @@ fn cublasDasum(
 
 fn cublasDsyrkx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -4107,7 +4103,7 @@ fn cublasDsyrkx(
         "cublasDsyrkx",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -4168,7 +4164,7 @@ fn cublasRotmEx(
 
 fn cublasDtpsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -4180,7 +4176,7 @@ fn cublasDtpsv(
         "cublasDtpsv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -4193,7 +4189,7 @@ fn cublasDtpsv(
 
 fn cublasSspr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -4206,7 +4202,7 @@ fn cublasSspr2(
         "cublasSspr2_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -4271,7 +4267,7 @@ fn cublasGetAtomicsMode(
 
 fn cublasStbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -4285,7 +4281,7 @@ fn cublasStbmv(
         "cublasStbmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -4364,7 +4360,7 @@ fn cublasIaminEx(
 
 fn cublasDspr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -4377,7 +4373,7 @@ fn cublasDspr2(
         "cublasDspr2_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -4455,7 +4451,7 @@ fn cublasScopy(
 
 fn cublasDsyrk(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -4470,7 +4466,7 @@ fn cublasDsyrk(
         "cublasDsyrk_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -4536,7 +4532,7 @@ fn cublasIamaxEx(
 
 fn cublasSsyrkx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -4553,7 +4549,7 @@ fn cublasSsyrkx(
         "cublasSsyrkx_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -4617,11 +4613,11 @@ fn cublasAsumEx(
 
 @value
 @register_passable("trivial")
-struct cublasFillMode_t:
+struct FillMode:
     var _value: Int32
-    alias CUBLAS_FILL_MODE_LOWER = cublasFillMode_t(0)
-    alias CUBLAS_FILL_MODE_UPPER = cublasFillMode_t(1)
-    alias CUBLAS_FILL_MODE_FULL = cublasFillMode_t(2)
+    alias LOWER = Self(0)
+    alias UPPER = Self(1)
+    alias FULL = Self(2)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -4633,13 +4629,13 @@ struct cublasFillMode_t:
         return not (self == other)
 
     fn __str__(self) -> String:
-        if self == Self.CUBLAS_FILL_MODE_LOWER:
-            return "CUBLAS_FILL_MODE_LOWER"
-        if self == Self.CUBLAS_FILL_MODE_UPPER:
-            return "CUBLAS_FILL_MODE_UPPER"
-        if self == Self.CUBLAS_FILL_MODE_FULL:
-            return "CUBLAS_FILL_MODE_FULL"
-        return abort[String]("invalid cublasFillMode_t entry")
+        if self == Self.LOWER:
+            return "LOWER"
+        if self == Self.UPPER:
+            return "UPPER"
+        if self == Self.FULL:
+            return "FULL"
+        return abort[String]("invalid FillMode entry")
 
     fn __int__(self) -> Int:
         return int(self._value)
@@ -4647,7 +4643,7 @@ struct cublasFillMode_t:
 
 fn cublasSspr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -4660,7 +4656,7 @@ fn cublasSspr2(
         "cublasSspr2_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -4874,7 +4870,7 @@ fn cublasDgbmv(
 
 fn cublasDsyr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -4888,7 +4884,7 @@ fn cublasDsyr2(
         "cublasDsyr2_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -4903,7 +4899,7 @@ fn cublasDsyr2(
 
 fn cublasDtpsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -4915,7 +4911,7 @@ fn cublasDtpsv(
         "cublasDtpsv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5002,7 +4998,7 @@ fn cublasDgemvStridedBatched(
 
 fn cublasSsyrkx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -5019,7 +5015,7 @@ fn cublasSsyrkx(
         "cublasSsyrkx",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -5043,7 +5039,7 @@ fn cublasGetStatusName(status: Result) -> Pointer[Int8]:
 
 fn cublasDtbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -5057,7 +5053,7 @@ fn cublasDtbmv(
         "cublasDtbmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5091,7 +5087,7 @@ fn cublasSrotg(
 
 fn cublasCherkEx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -5108,7 +5104,7 @@ fn cublasCherkEx(
         "cublasCherkEx",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -5208,7 +5204,7 @@ fn cublasSetWorkspace(
 
 fn cublasStpsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -5220,7 +5216,7 @@ fn cublasStpsv(
         "cublasStpsv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5233,7 +5229,7 @@ fn cublasStpsv(
 
 fn cublasDspr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -5244,7 +5240,7 @@ fn cublasDspr(
         "cublasDspr_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -5273,7 +5269,7 @@ fn cublasGemmEx(
     _ctype: DataType,
     ldc: Int32,
     compute_type: ComputeType,
-    algo: cublasGemmAlgo_t,
+    algo: Algorithm,
 ) -> Result:
     return _get_dylib_function[
         "cublasGemmEx",
@@ -5296,7 +5292,7 @@ fn cublasGemmEx(
             DataType,
             Int32,
             ComputeType,
-            cublasGemmAlgo_t,
+            Algorithm,
         ) -> Result,
     ]()(
         handle,
@@ -5323,7 +5319,7 @@ fn cublasGemmEx(
 
 fn cublasSsbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     k: Int16,
     alpha: DTypePointer[DType.float32],
@@ -5339,7 +5335,7 @@ fn cublasSsbmv(
         "cublasSsbmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             Int16,
             DTypePointer[DType.float32],
@@ -5414,7 +5410,7 @@ fn cublasDgemvStridedBatched(
 
 fn cublasDsymv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float64],
     _a: DTypePointer[DType.float64],
@@ -5429,7 +5425,7 @@ fn cublasDsymv(
         "cublasDsymv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -5457,7 +5453,7 @@ fn cublasLoggerConfigure(
 
 fn cublasStpmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -5469,7 +5465,7 @@ fn cublasStpmv(
         "cublasStpmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5643,7 +5639,7 @@ fn cublasGetVectorAsync(
 fn cublasStrsm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int64,
@@ -5659,7 +5655,7 @@ fn cublasStrsm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5736,7 +5732,7 @@ fn cublasSgemmEx(
 
 fn cublasStpmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -5748,7 +5744,7 @@ fn cublasStpmv(
         "cublasStpmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -5761,7 +5757,7 @@ fn cublasStpmv(
 
 fn cublasDtrmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -5774,7 +5770,7 @@ fn cublasDtrmv(
         "cublasDtrmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5788,7 +5784,7 @@ fn cublasDtrmv(
 
 fn cublasDtrsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -5801,7 +5797,7 @@ fn cublasDtrsv(
         "cublasDtrsv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5815,7 +5811,7 @@ fn cublasDtrsv(
 
 fn cublasDsyr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -5829,7 +5825,7 @@ fn cublasDsyr2(
         "cublasDsyr2_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -5925,7 +5921,7 @@ fn cublasDswap(
 
 fn cublasStrsv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -5938,7 +5934,7 @@ fn cublasStrsv(
         "cublasStrsv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -5952,7 +5948,7 @@ fn cublasStrsv(
 
 fn cublasDspr2(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -5965,7 +5961,7 @@ fn cublasDspr2(
         "cublasDspr2_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -5979,7 +5975,7 @@ fn cublasDspr2(
 
 fn cublasSsyr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float32],
     x: DTypePointer[DType.float32],
@@ -5991,7 +5987,7 @@ fn cublasSsyr(
         "cublasSsyr_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
@@ -6029,7 +6025,7 @@ fn cublasNrm2Ex(
 
 fn cublasDtbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int16,
@@ -6043,7 +6039,7 @@ fn cublasDtbmv(
         "cublasDtbmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -6085,7 +6081,7 @@ struct cublasAtomicsMode_t:
 
 fn cublasSsyr2k(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -6102,7 +6098,7 @@ fn cublasSsyr2k(
         "cublasSsyr2k_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -6120,7 +6116,7 @@ fn cublasSsyr2k(
 
 fn cublasCherk3mEx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int16,
     k: Int16,
@@ -6137,7 +6133,7 @@ fn cublasCherk3mEx(
         "cublasCherk3mEx",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int16,
             Int16,
@@ -6226,7 +6222,7 @@ fn cublasDotcEx(
 fn cublasDsymm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     m: Int16,
     n: Int16,
     alpha: DTypePointer[DType.float64],
@@ -6243,7 +6239,7 @@ fn cublasDsymm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             Int16,
             Int16,
             DTypePointer[DType.float64],
@@ -6321,7 +6317,7 @@ fn cublasSnrm2(
 
 fn cublasCherkEx(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -6338,7 +6334,7 @@ fn cublasCherkEx(
         "cublasCherkEx_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -6409,7 +6405,7 @@ fn cublasSetMatrix(
 fn cublasDtrsm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int64,
@@ -6425,7 +6421,7 @@ fn cublasDtrsm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -6485,7 +6481,7 @@ fn cublasSetVectorAsync(
 
 fn cublasDspr(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float64],
     x: DTypePointer[DType.float64],
@@ -6496,7 +6492,7 @@ fn cublasDspr(
         "cublasDspr_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -6541,7 +6537,7 @@ fn cublasSgemv(
 
 fn cublasDtrttp(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     _a: DTypePointer[DType.float64],
     lda: Int16,
@@ -6551,7 +6547,7 @@ fn cublasDtrttp(
         "cublasDtrttp",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float64],
             Int16,
@@ -6606,7 +6602,7 @@ fn cublasGemmStridedBatchedEx(
     stride_c: Int64,
     batch_count: Int16,
     compute_type: ComputeType,
-    algo: cublasGemmAlgo_t,
+    algo: Algorithm,
 ) -> Result:
     return _get_dylib_function[
         "cublasGemmStridedBatchedEx",
@@ -6633,7 +6629,7 @@ fn cublasGemmStridedBatchedEx(
             Int64,
             Int16,
             ComputeType,
-            cublasGemmAlgo_t,
+            Algorithm,
         ) -> Result,
     ]()(
         handle,
@@ -6665,7 +6661,7 @@ fn cublasGemmStridedBatchedEx(
 fn cublasStrmm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int64,
@@ -6683,7 +6679,7 @@ fn cublasStrmm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -6701,7 +6697,7 @@ fn cublasStrmm(
 
 fn cublasDsyrk(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     n: Int64,
     k: Int64,
@@ -6716,7 +6712,7 @@ fn cublasDsyrk(
         "cublasDsyrk_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             Int64,
             Int64,
@@ -6751,7 +6747,7 @@ fn cublasDscal(
 
 fn cublasDtpmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     n: Int64,
@@ -6763,7 +6759,7 @@ fn cublasDtpmv(
         "cublasDtpmv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int64,
@@ -6845,7 +6841,7 @@ fn cublasSetAtomicsMode(
 
 fn cublasDsbmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     k: Int16,
     alpha: DTypePointer[DType.float64],
@@ -6861,7 +6857,7 @@ fn cublasDsbmv(
         "cublasDsbmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             Int16,
             DTypePointer[DType.float64],
@@ -6907,7 +6903,7 @@ fn cublasSger(
 
 fn cublasDsymv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int64,
     alpha: DTypePointer[DType.float64],
     _a: DTypePointer[DType.float64],
@@ -6922,7 +6918,7 @@ fn cublasDsymv(
         "cublasDsymv_v2_64",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int64,
             DTypePointer[DType.float64],
             DTypePointer[DType.float64],
@@ -6948,7 +6944,7 @@ fn cublasSetStream(
 fn cublasStrmm(
     handle: Pointer[cublasContext],
     side: cublasSideMode_t,
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     trans: cublasOperation_t,
     diag: cublasDiagType_t,
     m: Int16,
@@ -6966,7 +6962,7 @@ fn cublasStrmm(
         fn (
             Pointer[cublasContext],
             cublasSideMode_t,
-            cublasFillMode_t,
+            FillMode,
             cublasOperation_t,
             cublasDiagType_t,
             Int16,
@@ -7039,7 +7035,7 @@ fn cublasIdamin(
 
 fn cublasSspmv(
     handle: Pointer[cublasContext],
-    uplo: cublasFillMode_t,
+    uplo: FillMode,
     n: Int16,
     alpha: DTypePointer[DType.float32],
     _ap: DTypePointer[DType.float32],
@@ -7053,7 +7049,7 @@ fn cublasSspmv(
         "cublasSspmv_v2",
         fn (
             Pointer[cublasContext],
-            cublasFillMode_t,
+            FillMode,
             Int16,
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],

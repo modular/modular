@@ -9,16 +9,16 @@
 @register_passable("trivial")
 struct Result:
     var _value: Int32
-    alias SUCCESS = Result(0)
-    alias NOT_INITIALIZED = Result(1)
-    alias ALLOC_FAILED = Result(3)
-    alias INVALID_VALUE = Result(7)
-    alias ARCH_MISMATCH = Result(8)
-    alias MAPPING_ERROR = Result(11)
-    alias EXECUTION_FAILED = Result(13)
-    alias INTERNAL_ERROR = Result(14)
-    alias NOT_SUPPORTED = Result(15)
-    alias LICENSE_ERROR = Result(16)
+    alias SUCCESS = Self(0)
+    alias NOT_INITIALIZED = Self(1)
+    alias ALLOC_FAILED = Self(3)
+    alias INVALID_VALUE = Self(7)
+    alias ARCH_MISMATCH = Self(8)
+    alias MAPPING_ERROR = Self(11)
+    alias EXECUTION_FAILED = Self(13)
+    alias INTERNAL_ERROR = Self(14)
+    alias NOT_SUPPORTED = Self(15)
+    alias LICENSE_ERROR = Self(16)
 
     fn __init__(inout self, value: Int):
         self._value = value

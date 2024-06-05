@@ -124,30 +124,30 @@ struct Order:
     """Enum for data ordering ."""
 
     var _value: Int32
-    alias COL = Order(0)
+    alias COL = Self(0)
     """Column-major
 
     Leading dimension is the stride (in elements) to the beginning of next column in memory.
     """
-    alias ROW = Order(1)
+    alias ROW = Self(1)
     """Row major
 
     Leading dimension is the stride (in elements) to the beginning of next row in memory.
     """
-    alias COL32 = Order(2)
+    alias COL32 = Self(2)
     """Column-major ordered tiles of 32 columns.
 
     Leading dimension is the stride (in elements) to the beginning of next group of 32-columns. E.g. if matrix has 33
     columns and 2 rows, ld must be at least (32) * 2 = 64.
     """
-    alias COL4_4R2_8C = Order(3)
+    alias COL4_4R2_8C = Self(3)
     """Column-major ordered tiles of composite tiles with total 32 columns and 8 rows, tile composed of interleaved
     inner tiles of 4 columns within 4 even or odd rows in an alternating pattern.
 
     Leading dimension is the stride (in elements) to the beginning of the first 32 column x 8 row tile for the next
     32-wide group of columns. E.g. if matrix has 33 columns and 1 row, ld must be at least (32 * 8) * 1 = 256.
     """
-    alias COL32_2R_4R4 = Order(4)
+    alias COL32_2R_4R4 = Self(4)
     """Column-major ordered tiles of composite tiles with total 32 columns ands 32 rows.
     Element offset within the tile is calculated as (((row%8)/2*4+row/8)*2+row%2)*32+col.
 
@@ -218,160 +218,160 @@ struct ClusterShape:
     ."""
 
     var _value: Int32
-    alias SHAPE_AUTO = ClusterShape(0)
+    alias SHAPE_AUTO = Self(0)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x1x1 = ClusterShape(1)
+    alias SHAPE_1x1x1 = Self(1)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x1x1 = ClusterShape(2)
+    alias SHAPE_2x1x1 = Self(2)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x1x1 = ClusterShape(3)
+    alias SHAPE_4x1x1 = Self(3)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x2x1 = ClusterShape(4)
+    alias SHAPE_1x2x1 = Self(4)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x2x1 = ClusterShape(5)
+    alias SHAPE_2x2x1 = Self(5)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x2x1 = ClusterShape(6)
+    alias SHAPE_4x2x1 = Self(6)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x4x1 = ClusterShape(7)
+    alias SHAPE_1x4x1 = Self(7)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x4x1 = ClusterShape(8)
+    alias SHAPE_2x4x1 = Self(8)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x4x1 = ClusterShape(9)
+    alias SHAPE_4x4x1 = Self(9)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_8x1x1 = ClusterShape(10)
+    alias SHAPE_8x1x1 = Self(10)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x8x1 = ClusterShape(11)
+    alias SHAPE_1x8x1 = Self(11)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_8x2x1 = ClusterShape(12)
+    alias SHAPE_8x2x1 = Self(12)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x8x1 = ClusterShape(13)
+    alias SHAPE_2x8x1 = Self(13)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_16x1x1 = ClusterShape(14)
+    alias SHAPE_16x1x1 = Self(14)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x16x1 = ClusterShape(15)
+    alias SHAPE_1x16x1 = Self(15)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x1x1 = ClusterShape(16)
+    alias SHAPE_3x1x1 = Self(16)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_5x1x1 = ClusterShape(17)
+    alias SHAPE_5x1x1 = Self(17)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_6x1x1 = ClusterShape(18)
+    alias SHAPE_6x1x1 = Self(18)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_7x1x1 = ClusterShape(19)
+    alias SHAPE_7x1x1 = Self(19)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_9x1x1 = ClusterShape(20)
+    alias SHAPE_9x1x1 = Self(20)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_10x1x1 = ClusterShape(21)
+    alias SHAPE_10x1x1 = Self(21)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_11x1x1 = ClusterShape(22)
+    alias SHAPE_11x1x1 = Self(22)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_12x1x1 = ClusterShape(23)
+    alias SHAPE_12x1x1 = Self(23)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_13x1x1 = ClusterShape(24)
+    alias SHAPE_13x1x1 = Self(24)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_14x1x1 = ClusterShape(25)
+    alias SHAPE_14x1x1 = Self(25)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_15x1x1 = ClusterShape(26)
+    alias SHAPE_15x1x1 = Self(26)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x2x1 = ClusterShape(27)
+    alias SHAPE_3x2x1 = Self(27)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_5x2x1 = ClusterShape(28)
+    alias SHAPE_5x2x1 = Self(28)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_6x2x1 = ClusterShape(29)
+    alias SHAPE_6x2x1 = Self(29)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_7x2x1 = ClusterShape(30)
+    alias SHAPE_7x2x1 = Self(30)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x3x1 = ClusterShape(31)
+    alias SHAPE_1x3x1 = Self(31)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x3x1 = ClusterShape(32)
+    alias SHAPE_2x3x1 = Self(32)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x3x1 = ClusterShape(33)
+    alias SHAPE_3x3x1 = Self(33)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x3x1 = ClusterShape(34)
+    alias SHAPE_4x3x1 = Self(34)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_5x3x1 = ClusterShape(35)
+    alias SHAPE_5x3x1 = Self(35)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x4x1 = ClusterShape(36)
+    alias SHAPE_3x4x1 = Self(36)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x5x1 = ClusterShape(37)
+    alias SHAPE_1x5x1 = Self(37)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x5x1 = ClusterShape(38)
+    alias SHAPE_2x5x1 = Self(38)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x5x1 = ClusterShape(39)
+    alias SHAPE_3x5x1 = Self(39)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x6x1 = ClusterShape(40)
+    alias SHAPE_1x6x1 = Self(40)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x6x1 = ClusterShape(41)
+    alias SHAPE_2x6x1 = Self(41)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x7x1 = ClusterShape(42)
+    alias SHAPE_1x7x1 = Self(42)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x7x1 = ClusterShape(43)
+    alias SHAPE_2x7x1 = Self(43)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x9x1 = ClusterShape(44)
+    alias SHAPE_1x9x1 = Self(44)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x10x1 = ClusterShape(45)
+    alias SHAPE_1x10x1 = Self(45)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x11x1 = ClusterShape(46)
+    alias SHAPE_1x11x1 = Self(46)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x12x1 = ClusterShape(47)
+    alias SHAPE_1x12x1 = Self(47)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x13x1 = ClusterShape(48)
+    alias SHAPE_1x13x1 = Self(48)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x14x1 = ClusterShape(49)
+    alias SHAPE_1x14x1 = Self(49)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x15x1 = ClusterShape(50)
+    alias SHAPE_1x15x1 = Self(50)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_END = ClusterShape(51)
+    alias SHAPE_END = Self(51)
     """Let library pick cluster shape automatically.
     """
 
@@ -508,12 +508,12 @@ struct MatmulAlgorithmCapability:
     ."""
 
     var _value: Int32
-    alias SPLITK_SUPPORT = MatmulAlgorithmCapability(0)
+    alias SPLITK_SUPPORT = Self(0)
     """support for split K, see SPLITK_NUM
 
     int32_t, 0 means no support, supported otherwise.
     """
-    alias REDUCTION_SCHEME_MASK = MatmulAlgorithmCapability(1)
+    alias REDUCTION_SCHEME_MASK = Self(1)
     """reduction scheme mask, see ReductionScheme; shows supported reduction schemes, if reduction scheme is
     not masked out it is supported.
 
@@ -522,27 +522,27 @@ struct MatmulAlgorithmCapability:
 
     uint32_t.
     """
-    alias CTA_SWIZZLING_SUPPORT = MatmulAlgorithmCapability(2)
+    alias CTA_SWIZZLING_SUPPORT = Self(2)
     """support for cta swizzling, see CTA_SWIZZLING
 
     uint32_t, 0 means no support, 1 means supported value of 1, other values are reserved.
     """
-    alias STRIDED_BATCH_SUPPORT = MatmulAlgorithmCapability(3)
+    alias STRIDED_BATCH_SUPPORT = Self(3)
     """support strided batch
 
     int32_t, 0 means no support, supported otherwise.
     """
-    alias OUT_OF_PLACE_RESULT_SUPPORT = MatmulAlgorithmCapability(4)
+    alias OUT_OF_PLACE_RESULT_SUPPORT = Self(4)
     """support results out of place (D != C in D = alpha.A.B + beta.C)
 
     int32_t, 0 means no support, supported otherwise.
     """
-    alias UPLO_SUPPORT = MatmulAlgorithmCapability(5)
+    alias UPLO_SUPPORT = Self(5)
     """syrk/herk support (on top of regular gemm)
 
     int32_t, 0 means no support, supported otherwise.
     """
-    alias TILE_IDS = MatmulAlgorithmCapability(6)
+    alias TILE_IDS = Self(6)
     """tile ids possible to use, see Tile; if no tile ids are supported use
     TILE_UNDEFINED
 
@@ -550,29 +550,29 @@ struct MatmulAlgorithmCapability:
 
     array of uint32_t.
     """
-    alias CUSTOM_OPTION_MAX = MatmulAlgorithmCapability(7)
+    alias CUSTOM_OPTION_MAX = Self(7)
     """custom option range is from 0 to CUSTOM_OPTION_MAX (inclusive), see
     CUSTOM_OPTION
 
     int32_t.
     """
-    alias CUSTOM_MEMORY_ORDER = MatmulAlgorithmCapability(8)
+    alias CUSTOM_MEMORY_ORDER = Self(8)
     """whether algorithm supports custom (not COL or ROW memory order), see Order
 
     int32_t 0 means only COL and ROW memory order is allowed, non-zero means that algo might have different
     requirements;.
     """
-    alias POINTER_MODE_MASK = MatmulAlgorithmCapability(9)
+    alias POINTER_MODE_MASK = Self(9)
     """bitmask enumerating pointer modes algorithm supports
 
     uint32_t, see PointerModeMask.
     """
-    alias EPILOGUE_MASK = MatmulAlgorithmCapability(10)
+    alias EPILOGUE_MASK = Self(10)
     """bitmask enumerating kinds of postprocessing algorithm supports in the epilogue
 
     uint32_t, see Epilogue.
     """
-    alias STAGES_IDS = MatmulAlgorithmCapability(11)
+    alias STAGES_IDS = Self(11)
     """stages ids possible to use, see Stages; if no stages ids are supported use
     STAGES_UNDEFINED
 
@@ -580,41 +580,41 @@ struct MatmulAlgorithmCapability:
 
     array of uint32_t.
     """
-    alias LD_NEGATIVE = MatmulAlgorithmCapability(12)
+    alias LD_NEGATIVE = Self(12)
     """support for nagative ld for all of the matrices
 
     int32_t 0 means no support, supported otherwise.
     """
-    alias NUMERICAL_IMPL_FLAGS = MatmulAlgorithmCapability(13)
+    alias NUMERICAL_IMPL_FLAGS = Self(13)
     """details about algorithm's implementation that affect it's numerical behavior
 
     uint64_t, see cublasLtNumericalImplFlags_t.
     """
-    alias MIN_ALIGNMENT_A_BYTES = MatmulAlgorithmCapability(14)
+    alias MIN_ALIGNMENT_A_BYTES = Self(14)
     """minimum alignment required for A matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias MIN_ALIGNMENT_B_BYTES = MatmulAlgorithmCapability(15)
+    alias MIN_ALIGNMENT_B_BYTES = Self(15)
     """minimum alignment required for B matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias MIN_ALIGNMENT_C_BYTES = MatmulAlgorithmCapability(16)
+    alias MIN_ALIGNMENT_C_BYTES = Self(16)
     """minimum alignment required for C matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias MIN_ALIGNMENT_D_BYTES = MatmulAlgorithmCapability(17)
+    alias MIN_ALIGNMENT_D_BYTES = Self(17)
     """minimum alignment required for D matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias ATOMIC_SYNC = MatmulAlgorithmCapability(18)
+    alias ATOMIC_SYNC = Self(18)
     """EXPERIMENTAL: support for synchronization via atomic counters
 
     int32_t.
@@ -829,22 +829,22 @@ struct Search:
     ."""
 
     var _value: Int32
-    alias BEST_FIT = Search(0)
+    alias BEST_FIT = Self(0)
     """ask heuristics for best algo for given usecase.
     """
-    alias LIMITED_BY_ALGO_ID = Search(1)
+    alias LIMITED_BY_ALGO_ID = Self(1)
     """only try to find best config for preconfigured algo id.
     """
-    alias RESERVED_02 = Search(2)
+    alias RESERVED_02 = Self(2)
     """reserved for future use.
     """
-    alias RESERVED_03 = Search(3)
+    alias RESERVED_03 = Self(3)
     """reserved for future use.
     """
-    alias RESERVED_04 = Search(4)
+    alias RESERVED_04 = Self(4)
     """reserved for future use.
     """
-    alias RESERVED_05 = Search(5)
+    alias RESERVED_05 = Self(5)
     """reserved for future use.
     """
 
@@ -989,7 +989,7 @@ fn cublasLtMatrixLayoutGetAttribute(
 
 @register_passable("trivial")
 struct PreferenceOpaque:
-    """Semi-opaque descriptor for cublasLtMatmulPreference() operation details
+    """Semi-opaque descriptor for cublasLtMatmulSelf() operation details
     ."""
 
     var data: StaticTuple[UInt64, 8]  # uint64_t data[8]
@@ -1001,53 +1001,53 @@ struct cublasLtMatmulDescAttributes_t:
     """Matmul descriptor attributes to define details of the operation. ."""
 
     var _value: Int32
-    alias CUBLASLT_MATMUL_DESC_COMPUTE_TYPE = cublasLtMatmulDescAttributes_t(0)
+    alias CUBLASLT_MATMUL_DESC_COMPUTE_TYPE = Self(0)
     """Compute type, see cudaDataType. Defines data type used for multiply and accumulate operations and the
     accumulator during matrix multiplication.
 
     int32_t.
     """
-    alias CUBLASLT_MATMUL_DESC_SCALE_TYPE = cublasLtMatmulDescAttributes_t(1)
+    alias CUBLASLT_MATMUL_DESC_SCALE_TYPE = Self(1)
     """Scale type, see cudaDataType. Defines data type of alpha and beta. Accumulator and value from matrix C are
     typically converted to scale type before final scaling. Value is then converted from scale type to type of matrix
     D before being stored in memory.
 
     int32_t, default: same as CUBLASLT_MATMUL_DESC_COMPUTE_TYPE.
     """
-    alias CUBLASLT_MATMUL_DESC_POINTER_MODE = cublasLtMatmulDescAttributes_t(2)
+    alias CUBLASLT_MATMUL_DESC_POINTER_MODE = Self(2)
     """Pointer mode of alpha and beta, see PointerMode. When DEVICE_VECTOR is in use,
     alpha/beta vector lenghts must match number of output matrix rows.
 
     int32_t, default: HOST.
     """
-    alias CUBLASLT_MATMUL_DESC_TRANSA = cublasLtMatmulDescAttributes_t(3)
+    alias CUBLASLT_MATMUL_DESC_TRANSA = Self(3)
     """Transform of matrix A, see cublasOperation_t.
 
     int32_t, default: CUBLAS_OP_N.
     """
-    alias CUBLASLT_MATMUL_DESC_TRANSB = cublasLtMatmulDescAttributes_t(4)
+    alias CUBLASLT_MATMUL_DESC_TRANSB = Self(4)
     """Transform of matrix B, see cublasOperation_t.
 
     int32_t, default: CUBLAS_OP_N.
     """
-    alias CUBLASLT_MATMUL_DESC_TRANSC = cublasLtMatmulDescAttributes_t(5)
+    alias CUBLASLT_MATMUL_DESC_TRANSC = Self(5)
     """Transform of matrix C, see cublasOperation_t.
 
     Currently only CUBLAS_OP_N is supported.
 
     int32_t, default: CUBLAS_OP_N.
     """
-    alias CUBLASLT_MATMUL_DESC_FILL_MODE = cublasLtMatmulDescAttributes_t(6)
+    alias CUBLASLT_MATMUL_DESC_FILL_MODE = Self(6)
     """Matrix fill mode, see cublasFillMode_t.
 
     int32_t, default: CUBLAS_FILL_MODE_FULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE = cublasLtMatmulDescAttributes_t(7)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE = Self(7)
     """Epilogue function, see Epilogue.
 
     uint32_t, default: DEFAULT.
     """
-    alias CUBLASLT_MATMUL_DESC_BIAS_POINTER = cublasLtMatmulDescAttributes_t(8)
+    alias CUBLASLT_MATMUL_DESC_BIAS_POINTER = Self(8)
     """Bias or bias gradient vector pointer in the device memory.
 
     Bias case. See BIAS.
@@ -1065,18 +1065,14 @@ struct cublasLtMatmulDescAttributes_t:
     Bias case: const void *, default: NULL
     Bias gradient case: void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE = cublasLtMatmulDescAttributes_t(
-        9
-    )
+    alias CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE = Self(9)
     """Batch stride for bias or bias gradient vector.
 
     Used together with CUBLASLT_MATMUL_DESC_BIAS_POINTER when matrix D's BATCH_COUNT > 1.
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER = cublasLtMatmulDescAttributes_t(
-        10
-    )
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER = Self(10)
     """Pointer for epilogue auxiliary buffer.
 
     - Output vector for ReLu bit-mask in forward pass when RELU_AUX
@@ -1099,9 +1095,7 @@ struct cublasLtMatmulDescAttributes_t:
     Forward pass: void *, default: NULL
     Backward pass: const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD = cublasLtMatmulDescAttributes_t(
-        11
-    )
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD = Self(11)
     """Leading dimension for epilogue auxiliary buffer.
 
     - ReLu bit-mask matrix leading dimension in elements (i.e. bits)
@@ -1114,9 +1108,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE = cublasLtMatmulDescAttributes_t(
-        12
-    )
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE = Self(12)
     """Batch stride for epilogue auxiliary buffer.
 
     - ReLu bit-mask matrix batch stride in elements (i.e. bits)
@@ -1129,9 +1121,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE = cublasLtMatmulDescAttributes_t(
-        13
-    )
+    alias CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE = Self(13)
     """Batch stride for alpha vector.
 
     Used together with ALPHA_DEVICE_VECTOR_BETA_HOST when matrix D's
@@ -1140,17 +1130,13 @@ struct cublasLtMatmulDescAttributes_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET = cublasLtMatmulDescAttributes_t(
-        14
-    )
+    alias CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET = Self(14)
     """Number of SMs to target for parallel execution. Optimizes heuristics for execution on a different number of SMs
     when user expects a concurrent stream to be using some of the device resources.
 
     int32_t, default: 0 - use the number reported by the device.
     """
-    alias CUBLASLT_MATMUL_DESC_A_SCALE_POINTER = cublasLtMatmulDescAttributes_t(
-        15
-    )
+    alias CUBLASLT_MATMUL_DESC_A_SCALE_POINTER = Self(15)
     """Device pointer to the scale factor value that converts data in matrix A to the compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1162,9 +1148,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_B_SCALE_POINTER = cublasLtMatmulDescAttributes_t(
-        16
-    )
+    alias CUBLASLT_MATMUL_DESC_B_SCALE_POINTER = Self(16)
     """Device pointer to the scale factor value to convert data in matrix B to compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1176,9 +1160,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_C_SCALE_POINTER = cublasLtMatmulDescAttributes_t(
-        17
-    )
+    alias CUBLASLT_MATMUL_DESC_C_SCALE_POINTER = Self(17)
     """Device pointer to the scale factor value to convert data in matrix C to compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1190,9 +1172,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_D_SCALE_POINTER = cublasLtMatmulDescAttributes_t(
-        18
-    )
+    alias CUBLASLT_MATMUL_DESC_D_SCALE_POINTER = Self(18)
     """Device pointer to the scale factor value to convert data in matrix D to compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1204,9 +1184,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_AMAX_D_POINTER = cublasLtMatmulDescAttributes_t(
-        19
-    )
+    alias CUBLASLT_MATMUL_DESC_AMAX_D_POINTER = Self(19)
     """Device pointer to the memory location that on completion will be set to the maximum of absolute values in the
     output matrix.
 
@@ -1217,9 +1195,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE = cublasLtMatmulDescAttributes_t(
-        20
-    )
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE = Self(20)
     """Type of the data to be stored to the memory pointed to by CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
 
     If unset, the data type defaults to the type of elements of the output matrix with some exceptions, see details
@@ -1238,9 +1214,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     int32_t based on cudaDataType, default: -1.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER = cublasLtMatmulDescAttributes_t(
-        21
-    )
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER = Self(21)
     """Device pointer to the scaling factor value to convert results from compute type data range to storage
     data range in the auxiliary matrix that is set via CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
 
@@ -1251,9 +1225,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER = cublasLtMatmulDescAttributes_t(
-        22
-    )
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER = Self(22)
     """Device pointer to the memory location that on completion will be set to the maximum of absolute values in the
     buffer that is set via CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
 
@@ -1264,16 +1236,14 @@ struct cublasLtMatmulDescAttributes_t:
 
     void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_FAST_ACCUM = cublasLtMatmulDescAttributes_t(23)
+    alias CUBLASLT_MATMUL_DESC_FAST_ACCUM = Self(23)
     """Flag for managing fp8 fast accumulation mode.
     When enabled, problem execution might be faster but at the cost of lower accuracy because intermediate results
     will not periodically be promoted to a higher precision.
 
     int8_t, default: 0 - fast accumulation mode is disabled.
     """
-    alias CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE = cublasLtMatmulDescAttributes_t(
-        24
-    )
+    alias CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE = Self(24)
     """Type of bias or bias gradient vector in the device memory.
 
     Bias case: see BIAS.
@@ -1286,30 +1256,22 @@ struct cublasLtMatmulDescAttributes_t:
 
     int32_t based on cudaDataType, default: -1.
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS = cublasLtMatmulDescAttributes_t(
-        25
-    )
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS = Self(25)
     """EXPERIMENTAL: Number of atomic synchronization chunks in the row dimension of the output matrix D.
 
     int32_t, default 0 (atomic synchronization disabled).
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS = cublasLtMatmulDescAttributes_t(
-        26
-    )
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS = Self(26)
     """EXPERIMENTAL: Number of atomic synchronization chunks in the column dimension of the output matrix D.
 
     int32_t, default 0 (atomic synchronization disabled).
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER = cublasLtMatmulDescAttributes_t(
-        27
-    )
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER = Self(27)
     """EXPERIMENTAL: Pointer to a device array of input atomic counters consumed by a matmul.
 
     int32_t *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER = cublasLtMatmulDescAttributes_t(
-        28
-    )
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER = Self(28)
     """EXPERIMENTAL: Pointer to a device array of output atomic counters produced by a matmul.
 
     int32_t *, default: NULL.
@@ -1639,17 +1601,17 @@ struct Preference:
     """Algo search preference to fine tune the heuristic function. ."""
 
     var _value: Int32
-    alias SEARCH_MODE = Preference(0)
+    alias SEARCH_MODE = Self(0)
     """Search mode, see Search.
 
     uint32_t, default: BEST_FIT.
     """
-    alias MAX_WORKSPACE_BYTES = Preference(1)
+    alias MAX_WORKSPACE_BYTES = Self(1)
     """Maximum allowed workspace size in bytes.
 
     uint64_t, default: 0 - no workspace allowed.
     """
-    alias REDUCTION_SCHEME_MASK = Preference(2)
+    alias REDUCTION_SCHEME_MASK = Self(2)
     """Reduction scheme mask, see ReductionScheme. Filters heuristic result to only include algo configs that
     use one of the required modes.
 
@@ -1657,7 +1619,7 @@ struct Preference:
 
     uint32_t, default: MASK (allows all reduction schemes).
     """
-    alias MIN_ALIGNMENT_A_BYTES = Preference(3)
+    alias MIN_ALIGNMENT_A_BYTES = Self(3)
     """Minimum buffer alignment for matrix A (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix A that is not as strictly aligned
@@ -1665,7 +1627,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MIN_ALIGNMENT_B_BYTES = Preference(4)
+    alias MIN_ALIGNMENT_B_BYTES = Self(4)
     """Minimum buffer alignment for matrix B (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix B that is not as strictly aligned
@@ -1673,7 +1635,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MIN_ALIGNMENT_C_BYTES = Preference(5)
+    alias MIN_ALIGNMENT_C_BYTES = Self(5)
     """Minimum buffer alignment for matrix C (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix C that is not as strictly aligned
@@ -1681,7 +1643,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MIN_ALIGNMENT_D_BYTES = Preference(6)
+    alias MIN_ALIGNMENT_D_BYTES = Self(6)
     """Minimum buffer alignment for matrix D (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix D that is not as strictly aligned
@@ -1689,7 +1651,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MAX_WAVES_COUNT = Preference(7)
+    alias MAX_WAVES_COUNT = Self(7)
     """Maximum wave count.
 
     See cublasLtMatmulHeuristicResult_t::wavesCount.
@@ -1698,7 +1660,7 @@ struct Preference:
 
     float, default: 0.0f.
     """
-    alias IMPL_MASK = Preference(8)
+    alias IMPL_MASK = Self(8)
     """Numerical implementation details mask, see cublasLtNumericalImplFlags_t. Filters heuristic result to only include
     algorithms that use the allowed implementations.
 
@@ -1760,53 +1722,53 @@ struct AlgorithmConfig:
     ."""
 
     var _value: Int32
-    alias ID = AlgorithmConfig(0)
+    alias ID = Self(0)
     """algorithm index, see cublasLtMatmulAlgoGetIds()
 
     readonly, set by cublasLtMatmulAlgoInit()
     int32_t.
     """
-    alias TILE_ID = AlgorithmConfig(1)
+    alias TILE_ID = Self(1)
     """tile id, see Tile
 
     uint32_t, default: TILE_UNDEFINED.
     """
-    alias SPLITK_NUM = AlgorithmConfig(2)
+    alias SPLITK_NUM = Self(2)
     """Number of K splits. If the number of K splits is greater than one, SPLITK_NUM parts
     of matrix multiplication will be computed in parallel. The results will be accumulated
     according to REDUCTION_SCHEME
 
     int32_t, default: 1.
     """
-    alias REDUCTION_SCHEME = AlgorithmConfig(3)
+    alias REDUCTION_SCHEME = Self(3)
     """reduction scheme, see ReductionScheme
 
     uint32_t, default: NONE.
     """
-    alias CTA_SWIZZLING = AlgorithmConfig(4)
+    alias CTA_SWIZZLING = Self(4)
     """cta swizzling, change mapping from CUDA grid coordinates to parts of the matrices
 
     possible values: 0, 1, other values reserved
 
     uint32_t, default: 0.
     """
-    alias CUSTOM_OPTION = AlgorithmConfig(5)
+    alias CUSTOM_OPTION = Self(5)
     """custom option, each algorithm can support some custom options that don't fit description of the other config
     attributes, see CUSTOM_OPTION_MAX to get accepted range for any specific case
 
     uint32_t, default: 0.
     """
-    alias STAGES_ID = AlgorithmConfig(6)
+    alias STAGES_ID = Self(6)
     """stages id, see Stages
 
     uint32_t, default: STAGES_UNDEFINED.
     """
-    alias INNER_SHAPE_ID = AlgorithmConfig(7)
+    alias INNER_SHAPE_ID = Self(7)
     """inner shape id, see InnerShape
 
     uint16_t, default: 0 (UNDEFINED).
     """
-    alias CLUSTER_SHAPE_ID = AlgorithmConfig(8)
+    alias CLUSTER_SHAPE_ID = Self(8)
     """Thread Block Cluster shape id, see ClusterShape. Defines cluster size to use.
 
     uint16_t, default: 0 (SHAPE_AUTO).
@@ -1932,12 +1894,12 @@ struct InnerShape:
     """
 
     var _value: Int32
-    alias UNDEFINED = InnerShape(0)
-    alias MMA884 = InnerShape(1)
-    alias MMA1684 = InnerShape(2)
-    alias MMA1688 = InnerShape(3)
-    alias MMA16816 = InnerShape(4)
-    alias END = InnerShape(5)
+    alias UNDEFINED = Self(0)
+    alias MMA884 = Self(1)
+    alias MMA1684 = Self(2)
+    alias MMA1688 = Self(3)
+    alias MMA16816 = Self(4)
+    alias END = Self(5)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -1973,31 +1935,31 @@ struct LayoutAttribute:
     """Attributes of memory layout ."""
 
     var _value: Int32
-    alias TYPE = LayoutAttribute(0)
+    alias TYPE = Self(0)
     """Data type, see cudaDataType.
 
     uint32_t.
     """
-    alias ORDER = LayoutAttribute(1)
+    alias ORDER = Self(1)
     """Memory order of the data, see Order.
 
     int32_t, default: COL.
     """
-    alias ROWS = LayoutAttribute(2)
+    alias ROWS = Self(2)
     """Number of rows.
 
     Usually only values that can be expressed as int32_t are supported.
 
     uint64_t.
     """
-    alias COLS = LayoutAttribute(3)
+    alias COLS = Self(3)
     """Number of columns.
 
     Usually only values that can be expressed as int32_t are supported.
 
     uint64_t.
     """
-    alias LD = LayoutAttribute(4)
+    alias LD = Self(4)
     """Matrix leading dimension.
 
     For COL this is stride (in elements) of matrix column, for more details and documentation for
@@ -2008,14 +1970,14 @@ struct LayoutAttribute:
 
     int64_t;.
     """
-    alias BATCH_COUNT = LayoutAttribute(5)
+    alias BATCH_COUNT = Self(5)
     """Number of matmul operations to perform in the batch.
 
     See also STRIDED_BATCH_SUPPORT
 
     int32_t, default: 1.
     """
-    alias STRIDED_BATCH_OFFSET = LayoutAttribute(6)
+    alias STRIDED_BATCH_OFFSET = Self(6)
     """Stride (in elements) to the next matrix for strided batch operation.
 
     When matrix type is planar-complex (PLANE_OFFSET != 0), batch stride
@@ -2030,7 +1992,7 @@ struct LayoutAttribute:
 
     int64_t, default: 0.
     """
-    alias PLANE_OFFSET = LayoutAttribute(7)
+    alias PLANE_OFFSET = Self(7)
     """Stride (in bytes) to the imaginary plane for planar complex layout.
 
     int64_t, default: 0 - 0 means that layout is regular (real and imaginary parts of complex numbers are interleaved
@@ -2176,42 +2138,42 @@ struct Stages:
     ."""
 
     var _value: Int32
-    alias STAGES_UNDEFINED = Stages(0)
-    alias STAGES_16x1 = Stages(1)
-    alias STAGES_16x2 = Stages(2)
-    alias STAGES_16x3 = Stages(3)
-    alias STAGES_16x4 = Stages(4)
-    alias STAGES_16x5 = Stages(5)
-    alias STAGES_16x6 = Stages(6)
-    alias STAGES_32x1 = Stages(7)
-    alias STAGES_32x2 = Stages(8)
-    alias STAGES_32x3 = Stages(9)
-    alias STAGES_32x4 = Stages(10)
-    alias STAGES_32x5 = Stages(11)
-    alias STAGES_32x6 = Stages(12)
-    alias STAGES_64x1 = Stages(13)
-    alias STAGES_64x2 = Stages(14)
-    alias STAGES_64x3 = Stages(15)
-    alias STAGES_64x4 = Stages(16)
-    alias STAGES_64x5 = Stages(17)
-    alias STAGES_64x6 = Stages(18)
-    alias STAGES_128x1 = Stages(19)
-    alias STAGES_128x2 = Stages(20)
-    alias STAGES_128x3 = Stages(21)
-    alias STAGES_128x4 = Stages(22)
-    alias STAGES_128x5 = Stages(23)
-    alias STAGES_128x6 = Stages(24)
-    alias STAGES_32x10 = Stages(25)
-    alias STAGES_8x4 = Stages(26)
-    alias STAGES_16x10 = Stages(27)
-    alias STAGES_8x5 = Stages(28)
-    alias STAGES_8x3 = Stages(29)
-    alias STAGES_8xAUTO = Stages(30)
-    alias STAGES_16xAUTO = Stages(31)
-    alias STAGES_32xAUTO = Stages(32)
-    alias STAGES_64xAUTO = Stages(33)
-    alias STAGES_128xAUTO = Stages(34)
-    alias STAGES_END = Stages(35)
+    alias STAGES_UNDEFINED = Self(0)
+    alias STAGES_16x1 = Self(1)
+    alias STAGES_16x2 = Self(2)
+    alias STAGES_16x3 = Self(3)
+    alias STAGES_16x4 = Self(4)
+    alias STAGES_16x5 = Self(5)
+    alias STAGES_16x6 = Self(6)
+    alias STAGES_32x1 = Self(7)
+    alias STAGES_32x2 = Self(8)
+    alias STAGES_32x3 = Self(9)
+    alias STAGES_32x4 = Self(10)
+    alias STAGES_32x5 = Self(11)
+    alias STAGES_32x6 = Self(12)
+    alias STAGES_64x1 = Self(13)
+    alias STAGES_64x2 = Self(14)
+    alias STAGES_64x3 = Self(15)
+    alias STAGES_64x4 = Self(16)
+    alias STAGES_64x5 = Self(17)
+    alias STAGES_64x6 = Self(18)
+    alias STAGES_128x1 = Self(19)
+    alias STAGES_128x2 = Self(20)
+    alias STAGES_128x3 = Self(21)
+    alias STAGES_128x4 = Self(22)
+    alias STAGES_128x5 = Self(23)
+    alias STAGES_128x6 = Self(24)
+    alias STAGES_32x10 = Self(25)
+    alias STAGES_8x4 = Self(26)
+    alias STAGES_16x10 = Self(27)
+    alias STAGES_8x5 = Self(28)
+    alias STAGES_8x3 = Self(29)
+    alias STAGES_8xAUTO = Self(30)
+    alias STAGES_16xAUTO = Self(31)
+    alias STAGES_32xAUTO = Self(32)
+    alias STAGES_64xAUTO = Self(33)
+    alias STAGES_128xAUTO = Self(34)
+    alias STAGES_END = Self(35)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2425,75 +2387,75 @@ struct Epilogue:
     ."""
 
     var _value: Int32
-    alias DEFAULT = Epilogue(0)
+    alias DEFAULT = Self(0)
     """No special postprocessing, just scale and quantize results if necessary.
     """
-    alias RELU = Epilogue(1)
+    alias RELU = Self(1)
     """ReLu, apply ReLu point-wise transform to the results (x:=max(x, 0)).
     """
-    alias RELU_AUX = Epilogue(2)
+    alias RELU_AUX = Self(2)
     """ReLu, apply ReLu point-wise transform to the results (x:=max(x, 0)).
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias BIAS = Epilogue(3)
+    alias BIAS = Self(3)
     """Bias, apply (broadcasted) Bias from bias vector. Bias vector length must match matrix D rows, it must be packed
     (stride between vector elements is 1). Bias vector is broadcasted to all columns and added before applying final
     postprocessing.
     """
-    alias RELU_BIAS = Epilogue(4)
+    alias RELU_BIAS = Self(4)
     """ReLu and Bias, apply Bias and then ReLu transform.
     """
-    alias RELU_AUX_BIAS = Epilogue(5)
+    alias RELU_AUX_BIAS = Self(5)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DRELU = Epilogue(6)
+    alias DRELU = Self(6)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DRELU_BGRAD = Epilogue(7)
+    alias DRELU_BGRAD = Self(7)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias GELU = Epilogue(8)
+    alias GELU = Self(8)
     """GELU, apply GELU point-wise transform to the results (x:=GELU(x)).
     """
-    alias GELU_AUX = Epilogue(9)
+    alias GELU_AUX = Self(9)
     """GELU, apply GELU point-wise transform to the results (x:=GELU(x)).
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias GELU_BIAS = Epilogue(10)
+    alias GELU_BIAS = Self(10)
     """GELU and Bias, apply Bias and then GELU transform.
     """
-    alias GELU_AUX_BIAS = Epilogue(11)
+    alias GELU_AUX_BIAS = Self(11)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DGELU = Epilogue(12)
+    alias DGELU = Self(12)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DGELU_BGRAD = Epilogue(13)
+    alias DGELU_BGRAD = Self(13)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias BGRADA = Epilogue(14)
+    alias BGRADA = Self(14)
     """Bias gradient based on the input matrix A.
 
     The bias size corresponds to the number of rows of the matrix D.
@@ -2502,7 +2464,7 @@ struct Epilogue:
     Stores Bias gradient in the auxiliary output
     (see CUBLASLT_MATMUL_DESC_BIAS_POINTER).
     """
-    alias BGRADB = Epilogue(15)
+    alias BGRADB = Self(15)
     """Bias gradient based on the input matrix B.
 
     The bias size corresponds to the number of columns of the matrix D.
@@ -2598,15 +2560,15 @@ struct PointerModeMask:
     """Mask to define pointer mode capability ."""
 
     var _value: Int32
-    alias HOST = PointerModeMask(0)
+    alias HOST = Self(0)
     """see HOST."""
-    alias DEVICE = PointerModeMask(1)
+    alias DEVICE = Self(1)
     """see DEVICE."""
-    alias DEVICE_VECTOR = PointerModeMask(2)
+    alias DEVICE_VECTOR = Self(2)
     """see DEVICE_VECTOR."""
-    alias ALPHA_DEVICE_VECTOR_BETA_ZERO = PointerModeMask(3)
+    alias ALPHA_DEVICE_VECTOR_BETA_ZERO = Self(3)
     """see ALPHA_DEVICE_VECTOR_BETA_ZERO."""
-    alias ALPHA_DEVICE_VECTOR_BETA_HOST = PointerModeMask(4)
+    alias ALPHA_DEVICE_VECTOR_BETA_HOST = Self(4)
     """see ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
     fn __init__(inout self, value: Int):
@@ -2672,43 +2634,43 @@ struct Tile:
     ."""
 
     var _value: Int32
-    alias TILE_UNDEFINED = Tile(0)
-    alias TILE_8x8 = Tile(1)
-    alias TILE_8x16 = Tile(2)
-    alias TILE_16x8 = Tile(3)
-    alias TILE_8x32 = Tile(4)
-    alias TILE_16x16 = Tile(5)
-    alias TILE_32x8 = Tile(6)
-    alias TILE_8x64 = Tile(7)
-    alias TILE_16x32 = Tile(8)
-    alias TILE_32x16 = Tile(9)
-    alias TILE_64x8 = Tile(10)
-    alias TILE_32x32 = Tile(11)
-    alias TILE_32x64 = Tile(12)
-    alias TILE_64x32 = Tile(13)
-    alias TILE_32x128 = Tile(14)
-    alias TILE_64x64 = Tile(15)
-    alias TILE_128x32 = Tile(16)
-    alias TILE_64x128 = Tile(17)
-    alias TILE_128x64 = Tile(18)
-    alias TILE_64x256 = Tile(19)
-    alias TILE_128x128 = Tile(20)
-    alias TILE_256x64 = Tile(21)
-    alias TILE_64x512 = Tile(22)
-    alias TILE_128x256 = Tile(23)
-    alias TILE_256x128 = Tile(24)
-    alias TILE_512x64 = Tile(25)
-    alias TILE_64x96 = Tile(26)
-    alias TILE_96x64 = Tile(27)
-    alias TILE_96x128 = Tile(28)
-    alias TILE_128x160 = Tile(29)
-    alias TILE_160x128 = Tile(30)
-    alias TILE_192x128 = Tile(31)
-    alias TILE_128x192 = Tile(32)
-    alias TILE_128x96 = Tile(33)
-    alias TILE_32x256 = Tile(34)
-    alias TILE_256x32 = Tile(35)
-    alias TILE_END = Tile(36)
+    alias TILE_UNDEFINED = Self(0)
+    alias TILE_8x8 = Self(1)
+    alias TILE_8x16 = Self(2)
+    alias TILE_16x8 = Self(3)
+    alias TILE_8x32 = Self(4)
+    alias TILE_16x16 = Self(5)
+    alias TILE_32x8 = Self(6)
+    alias TILE_8x64 = Self(7)
+    alias TILE_16x32 = Self(8)
+    alias TILE_32x16 = Self(9)
+    alias TILE_64x8 = Self(10)
+    alias TILE_32x32 = Self(11)
+    alias TILE_32x64 = Self(12)
+    alias TILE_64x32 = Self(13)
+    alias TILE_32x128 = Self(14)
+    alias TILE_64x64 = Self(15)
+    alias TILE_128x32 = Self(16)
+    alias TILE_64x128 = Self(17)
+    alias TILE_128x64 = Self(18)
+    alias TILE_64x256 = Self(19)
+    alias TILE_128x128 = Self(20)
+    alias TILE_256x64 = Self(21)
+    alias TILE_64x512 = Self(22)
+    alias TILE_128x256 = Self(23)
+    alias TILE_256x128 = Self(24)
+    alias TILE_512x64 = Self(25)
+    alias TILE_64x96 = Self(26)
+    alias TILE_96x64 = Self(27)
+    alias TILE_96x128 = Self(28)
+    alias TILE_128x160 = Self(29)
+    alias TILE_160x128 = Self(30)
+    alias TILE_192x128 = Self(31)
+    alias TILE_128x192 = Self(32)
+    alias TILE_128x96 = Self(33)
+    alias TILE_32x256 = Self(34)
+    alias TILE_256x32 = Self(35)
+    alias TILE_END = Self(36)
 
     fn __init__(inout self, value: Int):
         self._value = value
