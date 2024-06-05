@@ -725,4 +725,12 @@ kgen.func @no_error_slot(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
   kgen.return
 }
 
+// CEHCK-LABEL: kgen.func @set_byref_none
+kgen.func @set_byref_none(%arg0: !co.routine, %arg1: !kgen.pointer<none>) {
+  // CHECK-NOT: kgen.struct.gep %arg0[[[#RESULT]]]
+  co.set_byref_error_result %arg0(%arg1) : !co.routine, !kgen.pointer<none>
+  co.set_byref_error_result %arg0(%arg1, %arg1) : !co.routine, !kgen.pointer<none>, !kgen.pointer<none>
+  kgen.return
+}
+
 }
