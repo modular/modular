@@ -23,30 +23,47 @@ using namespace KGEN;
 // inlineRegion
 //===----------------------------------------------------------------------===//
 
-std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
-                                                KGENCallOpInterface call,
+std::pair<Operation *, bool> KGEN::inlineRegion(mlir::RewriterBase &b,
+                                                IRMapping &map, Operation *call,
                                                 Region &region, bool takeBody) {
-  mlir::IRRewriter b{OpBuilder(call)};
-  FailureOr<InlineResult> result = call.prepInline(b);
-  if (failed(result)) {
-    llvm::report_fatal_error("unexpected failure in inlining of call '" +
-                             call->getName().getStringRef() +
-                             "' -- please file a bug!");
+  // NOTE: All IR mutation must pass through the `RewriterBase`.
+  // In-place mutation to `scope` is okay because it's a new operation.
+  Operation *scope;
+  std::function<void(Operation *)> handleReturn;
+
+  // If the operation defines a call interface, use it to prepare inlining.
+  if (auto itf = dyn_cast<KGENCallOpInterface>(call)) {
+    FailureOr<InlineResult> result = itf.prepInline(b);
+    if (failed(result)) {
+      llvm::report_fatal_error("unexpected failure in inlining of call '" +
+                               call->getName().getStringRef() +
+                               "' -- please file a bug!");
+    }
+    std::tie(scope, handleReturn) = std::move(*result);
+  } else {
+    // Otherwise, assume this is inlining a direct call.
+    StringAttr label = b.getStringAttr("inlined_cf_scope");
+    scope = b.create<HLCF::LoopOp>(call->getLoc(), call->getResultTypes(),
+                                   ValueRange(), label);
+    handleReturn = [label, &b](Operation *op) {
+      b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+    };
   }
-  auto [scope, handleReturn] = std::move(*result);
+
+  // Update the location if the scope defines a subprogram.
   if (auto inlinedSubScoped =
           dyn_cast<DebugInfo::InlinedSubprogramScoped>(scope)) {
     inlinedSubScoped->setLoc(region.getParentOp()->getLoc());
-    inlinedSubScoped.setCallLocAttr(call.getLoc());
+    inlinedSubScoped.setCallLocAttr(call->getLoc());
   }
 
   Region &scopeBody = scope->getRegion(0);
   bool returnAtEnd = isa<ReturnOp>(region.front().getTerminator());
   if (takeBody) {
-    scopeBody.takeBody(region);
+    b.inlineRegionBefore(region, scopeBody, scopeBody.end());
     for (auto [value, arg] :
          llvm::zip(call->getOperands(), scopeBody.getArguments()))
-      arg.replaceAllUsesWith(value);
+      b.replaceAllUsesWith(arg, value);
     scopeBody.front().eraseArguments(0, call->getNumOperands());
   } else {
     Block *block = b.createBlock(&scopeBody);
@@ -62,22 +79,21 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
   }
 
   unsigned numReturns = 0;
-  scopeBody.walk<mlir::WalkOrder::PreOrder>(
-      [&, handleReturn = std::move(handleReturn)](Operation *op) {
-        if (isa<ReturnOp>(op)) {
-          b.setInsertionPoint(op);
-          handleReturn(op);
-          ++numReturns;
-          return WalkResult::skip();
-        }
-        if (isa<FunctionLike>(op))
-          return WalkResult::skip();
+  scopeBody.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (isa<ReturnOp>(op)) {
+      b.setInsertionPoint(op);
+      handleReturn(op);
+      ++numReturns;
+      return WalkResult::skip();
+    }
+    if (isa<FunctionLike>(op))
+      return WalkResult::skip();
 
-        if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
-          processSourceLocOp(sourceLocOp, call.getLoc(), b);
+    if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
+      processSourceLocOp(sourceLocOp, call->getLoc(), b);
 
-        return WalkResult::advance();
-      });
+    return WalkResult::advance();
+  });
   b.replaceOp(call, scope->getResults());
   return std::make_pair(scope, numReturns == 1 && returnAtEnd);
 }
@@ -87,12 +103,13 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
 //===----------------------------------------------------------------------===//
 
 void KGEN::processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
-                              mlir::IRRewriter &b) {
+                              mlir::RewriterBase &b) {
   // The inline count is decremented until it reaches 0. When that happens, we
   // capture the caller's location, and replace the op.
   if (auto &props = sourceLocOp.getProperties();
       int64_t inlineCount = props.getInlineCount()) {
-    props.setInlineCount(inlineCount - 1);
+    b.modifyOpInPlace(sourceLocOp,
+                      [&] { props.setInlineCount(inlineCount - 1); });
     return;
   }
 

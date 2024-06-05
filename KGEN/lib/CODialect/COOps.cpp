@@ -123,7 +123,7 @@ LogicalResult InvokeOp::verify() {
   return success();
 }
 
-FailureOr<InlineResult> InvokeOp::prepInline(mlir::IRRewriter &b) {
+FailureOr<InlineResult> InvokeOp::prepInline(mlir::RewriterBase &b) {
   auto op = b.create<ExecuteOp>(getLoc(), getCalleeType().getResults());
   return {{op, [](Operation *) {}}};
 }

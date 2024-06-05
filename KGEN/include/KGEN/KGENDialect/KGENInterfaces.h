@@ -18,6 +18,7 @@
 
 namespace mlir {
 class IRRewriter;
+class RewriterBase;
 } // namespace mlir
 
 namespace M::KGEN {
