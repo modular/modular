@@ -12,6 +12,7 @@
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/PassManagerConfigOptions.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include <filesystem>
@@ -37,13 +38,11 @@ namespace M::KGEN {
 class ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
-  static ErrorOr<std::unique_ptr<ObjectCompiler>> create(
-      StringRef basePath, CompilationOptions options, bool isJIT,
-      MLIRContext &context,
-      const std::function<void(mlir::PassManager &)> &configPM =
-          [](mlir::PassManager &) {},
-      std::optional<StringRef> operationName = std::nullopt,
-      bool isSearch = false);
+  static ErrorOr<std::unique_ptr<ObjectCompiler>>
+  create(StringRef basePath, CompilationOptions options, bool isJIT,
+         MLIRContext &context,
+         PassManagerConfigOptions pmOptions = PassManagerConfigOptions(),
+         bool isSearch = false);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
@@ -105,14 +104,7 @@ private:
   ObjectCompiler(
       RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
       bool isJIT, bool isSearch, MLIRContext &context,
-      const std::function<void(mlir::PassManager &)> &configPM =
-          [](mlir::PassManager &) {});
-
-  ObjectCompiler(
-      RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
-      bool isJIT, bool isSearch, MLIRContext &context, StringRef operationName,
-      const std::function<void(mlir::PassManager &)> &configPM =
-          [](mlir::PassManager &) {});
+      PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
@@ -147,13 +139,10 @@ private:
   /// ObjectCompilerLayer is post-elaboration IR.
   bool isSearch;
 
-  /// PassManager Configuration.
-  std::function<void(mlir::PassManager &)> configPM;
+  /// PassManager configuration options.
+  PassManagerConfigOptions pmOptions;
 
   mlir::MLIRContext &context;
-
-  /// Optional name for the PassManager.
-  std::optional<std::string> operationName;
 
   friend class ObjectCompilerLayer;
 };

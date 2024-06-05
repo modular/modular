@@ -11,6 +11,7 @@ add_subdirectory(CompilationOptions)
 add_modular_library(KGENToolCommon
   CLOptions.cpp
   PassRegistry.cpp
+  PassManagerConfigOptions.cpp
 
   LINK_LIBS PUBLIC
   KGENInitAllDialects

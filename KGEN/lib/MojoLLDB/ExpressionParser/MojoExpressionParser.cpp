@@ -82,10 +82,6 @@ struct MojoExpressionParser::Impl {
 
   /// The expression logger for the current target.
   MojoExpressionLogger *expressionLogger;
-
-private:
-  /// The pass manager to use when compiling.
-  std::unique_ptr<mlir::PassManager> compilationPM;
 };
 
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
@@ -110,10 +106,6 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   compilationOptions = &typeSystem->getParserContext().getCompilationOptions();
   MLIRContext *ctx = typeSystem->getMLIRContext();
 
-  // Build the compilation pipeline.
-  compilationPM =
-      std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-
   // TODO(#33931) HACK, HACK, HACK!!!
   // To make CompilationOptions being properly passed to KGEN compiler
   // without breaking existing tests.
@@ -125,10 +117,12 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
   hackCompilationOptions.enableParallelLLC = false;
 
+  PassManagerConfigOptions pmOptions;
+  pmOptions.operationName = ModuleOp::getOperationName();
+
   // Create the compiler instance.
   auto compilerOr = ObjectCompiler::create(
-      ".mojo_cache", hackCompilationOptions, /*isJIT=*/true, *ctx,
-      [](mlir::PassManager &) {}, ModuleOp::getOperationName());
+      ".mojo_cache", hackCompilationOptions, /*isJIT=*/true, *ctx, pmOptions);
 
   if (failed(compilerOr))
     return;
@@ -442,21 +436,16 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   std::string preElaborationModuleLog;
   llvm::raw_string_ostream preElaborationLogStream(preElaborationModuleLog);
 
-  KGEN::KGENCompiler kgenCompiler(
-      *impl->typeSystem->getMLIRContext(), ModuleOp::getOperationName(),
-      *impl->compilationOptions, [&](mlir::PassManager &pm) {
-        if (isVerboseLoggingEnabled) {
-          pm.enableIRPrinting(
-              [](Pass *pass, Operation *) {
-                return pass->getName() == "ElaborateGenerators";
-              },
-              [](Pass *, Operation *) { return false; },
-              /*printModuleScope=*/false,
-              /*printAfterOnlyOnChange=*/false,
-              /*printAfterOnlyOnFailure=*/false,
-              /*out=*/preElaborationLogStream);
-        }
-      });
+  PassManagerConfigOptions pmOptions;
+  if (isVerboseLoggingEnabled) {
+    pmOptions.irPrintingOptions.enable = true;
+    pmOptions.irPrintingOptions.passName = "ElaborateGenerators";
+    pmOptions.irPrintingOptions.out = &preElaborationLogStream;
+  }
+  pmOptions.operationName = ModuleOp::getOperationName();
+
+  KGEN::KGENCompiler kgenCompiler(*impl->typeSystem->getMLIRContext(),
+                                  *impl->compilationOptions, pmOptions);
 
   //// Get the target info to use for compilation.
   TargetInfoAttr targetInfo = impl->typeSystem->GetTargetInfo();

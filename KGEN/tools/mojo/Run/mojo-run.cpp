@@ -272,8 +272,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          TargetInfoAttr target,
                          ArrayRef<const char *> arguments,
                          M::Context &maxContext) {
-  auto configPM = [](mlir::PassManager &pm) { configurePassManager(pm); };
-  KGENCompiler compiler(context, options, configPM);
+  KGENCompiler compiler(context, options);
 
   ExecutionEngineOptions eeOptions;
   if (options.debugLevel != CompilationOptions::kNoDebug)
@@ -281,7 +280,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
       initializeExecutionEngine(context, options, std::move(eeOptions),
-                                /*isJIT=*/true, configPM);
+                                /*isJIT=*/true, PassManagerConfigOptions());
 
   if (failed(execEngineOr))
     return state.reportError(execEngineOr.getError());

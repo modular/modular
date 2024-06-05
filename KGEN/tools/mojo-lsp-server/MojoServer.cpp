@@ -864,9 +864,8 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
       sourceMgr, tempModuleOp->getContext());
 
   // Run the high level verification pipeline.
-  KGEN::KGENCompiler kgenCompiler(
-      *tempModuleOp->getContext(), getCompilationOptions(),
-      [](mlir::PassManager &pm) { return configurePassManager(pm); });
+  KGEN::KGENCompiler kgenCompiler(*tempModuleOp->getContext(),
+                                  getCompilationOptions());
 
   if (failed(kgenCompiler.runCheckLITPipeline(*tempModuleOp))) {
     lsp::Logger::debug("The 'check' pipeline failed to run on the module {0}",

@@ -356,9 +356,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
 
   // Run various check passes now to propagate warnings and errors up to the
   // user.
-  KGENCompiler compiler(
-      *theModule.getContext(), packageArgs.compileOptions,
-      [](mlir::PassManager &pm) { configurePassManager(pm); });
+  KGENCompiler compiler(*theModule.getContext(), packageArgs.compileOptions);
   if (failed(compiler.runCheckLITPipeline(theModule)))
     return Error("errors occurred during compilation");
 

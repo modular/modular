@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/ToolCommon/PassManagerConfigOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -23,19 +24,8 @@ class PackageLinkOp;
 class KGENCompiler {
 public:
   KGENCompiler(
-      MLIRContext &context, const CompilationOptions &options,
-      const std::function<void(mlir::PassManager &)> &configPM =
-          [](mlir::PassManager &) {})
-      : options(options), configPM(configPM), operationName(std::nullopt),
-        context(context) {}
-
-  KGENCompiler(
-      MLIRContext &context, StringRef operationName,
-      const CompilationOptions &options,
-      const std::function<void(mlir::PassManager &)> &configPM =
-          [](mlir::PassManager &) {})
-      : options(options), configPM(configPM),
-        operationName(operationName.str()), context(context) {}
+      MLIRContext &context, CompilationOptions options,
+      PassManagerConfigOptions pmConfigOptions = PassManagerConfigOptions());
 
   /// Run KGEN compilation pipeline, including pre-elaboration passes,
   /// elaboration, and post-elaboration pass. Get the theModule ready before
@@ -72,11 +62,8 @@ private:
   /// Compilation options.
   CompilationOptions options;
 
-  /// PassManager Configuration.
-  std::function<void(mlir::PassManager &)> configPM;
-
-  /// Optional name for the PassManager.
-  std::optional<std::string> operationName;
+  /// PassManager configuration options.
+  PassManagerConfigOptions pmConfigOptions;
 
   mlir::MLIRContext &context;
 };
@@ -88,13 +75,12 @@ private:
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles
 /// initializing the target machine, the cache backends, and the execution
 /// engine itself. On success, the execution engine is returned.
-ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>> initializeExecutionEngine(
-    mlir::MLIRContext &context,
-    const KGEN::CompilationOptions &compilationOptions,
-    KGEN::ExecutionEngineOptions executionEngineOptions, bool isJIT,
-    std::function<void(mlir::PassManager &)> configPM =
-        [](mlir::PassManager &) {},
-    bool isSearch = false);
+ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
+initializeExecutionEngine(mlir::MLIRContext &context,
+                          const KGEN::CompilationOptions &compilationOptions,
+                          KGEN::ExecutionEngineOptions executionEngineOptions,
+                          bool isJIT, PassManagerConfigOptions pmOptions,
+                          bool isSearch = false);
 
 /// This creates the materialize packages pass with the default library
 /// generation pipeline, i.e. `runGenerateLibraryPipeline`.
