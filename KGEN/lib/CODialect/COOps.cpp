@@ -198,7 +198,9 @@ LogicalResult AwaitOp::canonicalize(AwaitOp op, PatternRewriter &b) {
     if (!op.getCoroutine().hasOneUse())
       return b.notifyMatchFailure(op.getLoc(), "coroutine has other uses");
     IRMapping map;
-    SmallVector<Value, 2> args(llvm::reverse(op.getSlots()));
+    SmallVector<Value, 2> args;
+    for (Value slot : llvm::reverse(op.getSlots()))
+      args.push_back(slot);
     auto [scope, singleExit] = KGEN::inlineRegion(
         b, map, op, args, execute.getBodyRegion(), /*takeBody=*/true);
     if (singleExit)
