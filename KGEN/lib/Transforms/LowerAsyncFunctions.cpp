@@ -830,8 +830,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       };
       if (Value error = setErrorResultOp.getError())
         setByRefArgument(error, AsyncContinuationField::ErrorSlot);
-      if (Value result = setErrorResultOp.getResult())
-        setByRefArgument(result, AsyncContinuationField::ResultSlot);
+      Value result = setErrorResultOp.getResult();
+      setByRefArgument(result, AsyncContinuationField::ResultSlot);
       op->erase();
     }
   });

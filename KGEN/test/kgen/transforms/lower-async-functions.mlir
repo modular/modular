@@ -715,4 +715,14 @@ kgen.func @opaque_coro(%coro: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !
   co.set_byref_error_result %coro(%arg2, %arg1) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @no_error_slot
+kgen.func @no_error_slot(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
+  // CHECK-NEXT: [[v5:%.*]] = kgen.struct.gep %arg0[[[#RESULT]]] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>>
+  // CHECK-NEXT: [[v6:%.*]] = pop.pointer.bitcast [[v5]] : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: pop.store %arg1, [[v6]] : !kgen.pointer<pointer<index>>
+  co.set_byref_error_result %arg0(%arg1) : !co.routine, !kgen.pointer<index>
+  kgen.return
+}
+
 }
