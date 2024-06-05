@@ -6,6 +6,7 @@
 
 #include "ArraySupport/StateContext.h"
 #include "ArraySupport/TensorBufferRef.h"
+#include "CUDASupport/CUDARuntime.h"
 #include "CUDASupport/Globals/Globals.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -237,6 +238,13 @@ KGEN_CompilerRT_LLCL_GetCurrentStream() {
   return CUDA::Globals::getCurrentStreamInTLS();
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CudaContextSetDevice(void *devCtx,
+                                     MojoValue::DestructorFn destructor,
+                                     LLCLWrapper<CUDA::CUDARuntime> runtime) {
+  unwrap(runtime).deviceContext = MojoValue(devCtx, destructor);
+}
+
 //===----------------------------------------------------------------------===//
 // MojoCallContext
 //===----------------------------------------------------------------------===//
@@ -262,6 +270,17 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream(
     LLCLMojoCallContextRef callContext) {
   return unwrap(callContext).cuStream;
+}
+
+/// Get cuda device from cuda runtime.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_LLCL_MojoCallContext_GetCudaDevice(
+    LLCLMojoCallContextRef callContext) {
+  auto runtime = unwrap(callContext).deviceRuntime;
+  auto &deviceContext =
+      reinterpret_cast<CUDA::CUDARuntime *>(runtime)->deviceContext;
+  assert(deviceContext.has_value());
+  return deviceContext.value().getData();
 }
 
 //===----------------------------------------------------------------------===//
@@ -339,7 +358,8 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<TensorSpec>(TensorSpec(dims, DType(rawDType)));
   } else {
-    assert(!value.isReady());
+    assert(!value.isReady() &&
+           "Value needs to not be ready so we can construct it.");
     value = AnyAsyncValueRef::createReady<TensorSpec>(
         runtime, TensorSpec(dims, DType(rawDType)));
   }
@@ -476,6 +496,8 @@ void M::KGEN::registerLLCL(
 
   funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentStream",
                    (void *)&KGEN_CompilerRT_LLCL_GetCurrentStream});
+  funcs.push_back({"KGEN_CompilerRT_CudaContextSetDevice",
+                   (void *)&KGEN_CompilerRT_CudaContextSetDevice});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
                    (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_bool",
