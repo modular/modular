@@ -11,9 +11,10 @@ from sys import external_call
 from sys.ffi import _get_global, _get_global_or_null
 from sys.info import num_physical_cores
 from sys.param_env import is_defined
+from gpu.host import Stream, DeviceContext, CudaInstance, Context as CudaContext
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
-from gpu.host import CUDADeviceStream, Stream
+from gpu.host import DeviceContext, Stream
 from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
@@ -519,10 +520,16 @@ struct MojoCallContextPtr:
         return Stream(stream)
 
     @always_inline
-    fn get_cuda_device(self) -> CUDADeviceStream:
+    fn get_cuda_device(self) -> DeviceContext:
         """Get the device context passed in."""
         var stream = self.get_stream()
-        return CUDADeviceStream(stream)
+        var ptr = external_call[
+            "KGEN_CompilerRT_LLCL_MojoCallContext_GetCudaDevice",
+            UnsafePointer[Tuple[CudaContext, CudaInstance]],
+        ](
+            self.ptr,
+        )
+        return DeviceContext(ptr[][1], ptr[][0], stream)
 
     @always_inline
     fn set_to_error(self, err: Error):
