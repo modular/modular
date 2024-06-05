@@ -14,6 +14,8 @@ from extensibility import Tensor as ExtensibilityTensor, empty_tensor
 
 from utils.index import StaticIntTuple
 
+from extensibility import Tensor as ExtensibilityTensor
+
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests
 # ===----------------------------------------------------------------------===#
@@ -409,3 +411,26 @@ fn basic_target_extensibility[
     print("hello from extensibility kernel on", target)
     var out = empty_tensor[type, rank](tensor.shape)
     return out^
+
+
+struct MyCustomSIMD[type: DType, len: Int](Movable):
+    var val: SIMD[type, len]
+
+    fn __init__(inout self, val: Int):
+        self.val = val
+
+    fn __moveinit__(inout self, owned other: Self):
+        self.val = other.val
+
+
+@mogg_register("test_make_custom_simd")
+@export
+@no_inline
+fn test_make_custom_simd[
+    type1: DType, type2: DType, rank1: Int, rank2: Int
+](
+    t1: ExtensibilityTensor[type1, rank1],
+    t2: ExtensibilityTensor[type2, rank2],
+    s_in: MyCustomSIMD[type1, rank2],
+) -> MyCustomSIMD[type2, rank1]:
+    return MyCustomSIMD[type2, rank1](0)
