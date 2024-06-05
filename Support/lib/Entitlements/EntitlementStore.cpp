@@ -232,13 +232,13 @@ Detail::CertificateChain::fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx,
   // Set up the PEM context.
   mbedtls_pem_context pemCtx;
   mbedtls_pem_init(&pemCtx);
-  auto freePEM = llvm::make_scope_exit([&] { mbedtls_pem_free(&pemCtx); });
 
   // Parse the chain of certificates. These will be concatenated as PEM
   // buffers one after the other, so we simply parse until we run out of data.
   size_t bytesConsumed = 0;
   for (; bytesConsumed < out->pem->getBufferSize();) {
     // Parse a single certificate first from PEM, then from DER.
+    // Note this method frees ctx on error before returning.
     size_t bytes = 0;
     int rc = mbedtls_pem_read_buffer(
         &pemCtx, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----",
@@ -259,6 +259,11 @@ Detail::CertificateChain::fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx,
     rc = mbedtls_x509_crt_parse_der_with_ext_cb(&out->parsed, derBuf, buflen,
                                                 /*make_copy=*/1,
                                                 /*cb=*/cb, /*p_ctx=*/ctx);
+
+    // Free the pem memory as we will either alloc a new chunk in the next
+    // iteration or return out.  Otherwise we will leak it.
+    mbedtls_pem_free(&pemCtx);
+
     if (rc != 0)
       return Error(mbedTLSErrorToString(rc));
   }
