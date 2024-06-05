@@ -28,12 +28,12 @@ add_subdirectory(lib/Support)
 add_subdirectory(lib/Interpreter)
 add_subdirectory(lib/HLCFDialect)
 add_subdirectory(lib/KGENDialect)
-add_subdirectory(lib/TransformUtils)
 add_subdirectory(lib/CODialect)
 add_subdirectory(lib/POPDialect)
 add_subdirectory(lib/LITDialect)
 
 # KGEN MLIR passes.
+add_subdirectory(lib/TransformUtils)
 add_subdirectory(lib/LowerLIT)
 add_subdirectory(lib/KGENToLLVM)
 add_subdirectory(lib/Transforms)

@@ -282,8 +282,9 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         OpBuilder(call).create<DebugInfo::LineTableLocOp>(call->getLoc());
       // Inline the callee.
       IRMapping map;
+      mlir::IRRewriter b{OpBuilder(call)};
       auto [scope, singleExit] =
-          inlineRegion(map, call, callee->func.getBodyRegion());
+          inlineRegion(b, map, call, callee->func.getBodyRegion());
 
       maybeUpdateDebugInfo(scope, updateAttrName, singleExit);
       callee->numTimesInlined++;
