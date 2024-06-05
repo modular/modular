@@ -218,22 +218,26 @@ public:
   /// Debug info for variables that can be processed by
   /// convertDbgValueToDeclare.
   struct ProcessableVariable {
-    ProcessableVariable(LLVM::DbgValueOp op, bool undefs)
-        : primaryValueOp(op), hasAdditionalUndefs(undefs) {}
+    ProcessableVariable(LLVM::DbgValueOp op, bool isUndef) {
+      if (isUndef)
+        this->primaryUndef = op;
+      else
+        this->valueOps.push_back(op);
+    }
 
-    /// If all definitions of this variable is undef, this is the first debug
-    /// value op for this variable. Otherwise, this debug value tracks the
-    /// first non-undef definition of this variable.
-    LLVM::DbgValueOp primaryValueOp;
-    /// Whether there exists additional undef values for this variable.
-    /// This affects whether the definition can be easily allocated to stack.
-    bool hasAdditionalUndefs;
-    /// This stores later (non-undef) definitions of the variable.  This happens
-    /// when a variable is mutated.
-    SmallVector<LLVM::DbgValueOp> mutantDebugValues;
+    /// The list of dbg.value ops for the variable.
+    SmallVector<LLVM::DbgValueOp> valueOps;
+    /// In the case of an undef before the first non-undef, that means that the
+    /// value starts undefined, and should be treated differently than later
+    /// undefs.
+    std::optional<LLVM::DbgValueOp> primaryUndef;
+    /// Additional undefs indicate that the lifetime of the variable does not
+    /// last the entire scope.
+    SmallVector<LLVM::DbgValueOp> additionalUndefs;
   };
 
-  llvm::MapVector<LLVM::DILocalVariableAttr, ProcessableVariable> trackers;
+  llvm::MapVector<LLVM::DILocalVariableAttr, ProcessableVariable>
+      processableVariableMap;
 };
 } // namespace
 
@@ -255,37 +259,24 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
 
     if (value.getDefiningOp<LLVM::UndefOp>()) {
       auto [iter, inserted] =
-          debugValuesToProcess.try_emplace(op.getVarInfo(), op, false);
+          debugValuesToProcess.try_emplace(op.getVarInfo(), op, true);
       if (!inserted)
-        iter->second.hasAdditionalUndefs = true;
+        iter->second.additionalUndefs.push_back(op);
       return;
     }
 
     // Not undef.
     auto [iter, inserted] =
         debugValuesToProcess.try_emplace(op.getVarInfo(), op, false);
-    // If this variable was seen before, either override initial undef, or
-    // invalidate this variable altogether.
-    if (!inserted && iter->second.primaryValueOp) {
-      if (iter->second.primaryValueOp.getValue()
-              .getDefiningOp<LLVM::UndefOp>()) {
-        iter->second.primaryValueOp = op;
-        iter->second.hasAdditionalUndefs = true;
-      } else {
-        iter->second.mutantDebugValues.push_back(op);
-      }
-    }
+    if (!inserted)
+      iter->second.valueOps.push_back(op);
   });
 
   DebugVariableSummary summary;
   // Re-categorize debug values by operand Value, skipping those that have
   // been invalidated due to having more than one non-undef definition.
-  for (auto &[_, dbgValueInfo] : debugValuesToProcess) {
-    if (!dbgValueInfo.primaryValueOp)
-      continue;
-
-    summary.trackers.insert(
-        {dbgValueInfo.primaryValueOp.getVarInfo(), dbgValueInfo});
+  for (auto &[var, processable] : debugValuesToProcess) {
+    summary.processableVariableMap.insert({var, processable});
   }
 
   return summary;
@@ -299,18 +290,22 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
     DebugVariableSummary debugVariableSummary =
         filterAndSummarizeDebugVariables(func);
 
-    for (auto &[varInfo, tracker] : debugVariableSummary.trackers) {
-      Value primaryValue = tracker.primaryValueOp.getValue();
+    for (auto &[varInfo, processable] :
+         debugVariableSummary.processableVariableMap) {
+      LLVM::DbgValueOp primaryOp = processable.valueOps.empty()
+                                       ? processable.primaryUndef.value()
+                                       : processable.valueOps[0];
+      Value primaryValue = primaryOp.getValue();
       // Don't build debug information for simple constants.
       if (primaryValue.getDefiningOp<LLVM::ConstantOp>() &&
           isa<IntegerType, FloatType>(primaryValue.getType()))
         continue;
 
-      bool anyMutable = !tracker.mutantDebugValues.empty();
+      bool anyMutable = processable.valueOps.size() > 1;
 
       // The converted alloca op that will hold the value if it is converted to
-      // a stack allocation.  In the mutable case each tracker needs its own,
-      // and map each tracker's alloca to its primaryValue.
+      // a stack allocation.  In the mutable case each processable needs its
+      // own, and map each processable's alloca to its primaryValue.
       LLVM::AllocaOp allocaOp;
       llvm::MapVector<LLVM::DbgValueOp, LLVM::AllocaOp> allocaMap;
 
@@ -318,17 +313,16 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       // create one and save it for the next invocation.
       auto getAllocaOp =
           [&, targetValue = primaryValue](
-              DebugVariableSummary::ProcessableVariable tracker) {
+              DebugVariableSummary::ProcessableVariable processable) {
             if (allocaOp)
               return allocaOp;
-            if (auto found = allocaMap.find(tracker.primaryValueOp);
+            if (auto found = allocaMap.find(primaryOp);
                 found != allocaMap.end())
               return found->second;
 
             // Build a new allocation to store the intermediate value.
             OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
-            Location erasedLoc =
-                UnknownLoc::get(tracker.primaryValueOp->getContext());
+            Location erasedLoc = UnknownLoc::get(primaryOp->getContext());
             auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
                 erasedLoc, allocBuilder.getI32Type(), 1);
 
@@ -336,13 +330,14 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                 erasedLoc, LLVM::LLVMPointerType::get(targetValue.getContext()),
                 targetValue.getType(), allocSize, 0);
             if (anyMutable)
-              allocaMap.insert({tracker.primaryValueOp, newAllocaOp});
+              allocaMap.insert({primaryOp, newAllocaOp});
             else
               allocaOp = newAllocaOp;
             return newAllocaOp;
           };
 
       llvm::SetVector<Operation *> opsToErase;
+      llvm::MapVector<LLVM::DbgValueOp, Value> oldValueMap;
 
       // Converter for a single DbgValueOp.
       // `hasLimitedScope` controls whether the DbgValueOp is converted into a
@@ -351,8 +346,7 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       auto convertDbgValue =
           [&, targetValue = primaryValue](
               LLVM::DbgValueOp op, bool hasLimitedScope,
-              ArrayRef<LLVM::DbgValueOp> mutants,
-              DebugVariableSummary::ProcessableVariable &tracker) {
+              DebugVariableSummary::ProcessableVariable &processable) {
             if (hasLimitedScope) {
               ArrayRef<LLVM::DIExpressionElemAttr> location =
                   op.getLocationExpr().getOperations();
@@ -360,7 +354,8 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                   LLVM::DIExpressionElemAttr::get(
                       op.getContext(), llvm::dwarf::DW_OP_deref, {})};
               newLocations.append(location.begin(), location.end());
-              op.setOperand(getAllocaOp(tracker));
+              oldValueMap.insert({op, op.getValue()});
+              op.setOperand(getAllocaOp(processable));
               op.setLocationExprAttr(
                   LLVM::DIExpressionAttr::get(op->getContext(), newLocations));
             } else {
@@ -383,18 +378,20 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                 // For all other cases, create alloca and use dbg declare with
                 // it.
                 OpBuilder(op).create<LLVM::DbgDeclareOp>(
-                    op.getLoc(), getAllocaOp(tracker), op.getVarInfo(),
+                    op.getLoc(), getAllocaOp(processable), op.getVarInfo(),
                     op.getLocationExpr());
               }
-              opsToErase.insert(op);
-              for (LLVM::DbgValueOp mutant : mutants)
-                opsToErase.insert(mutant);
+              for (LLVM::DbgValueOp valueOp : processable.valueOps)
+                opsToErase.insert(valueOp);
+              for (LLVM::DbgValueOp valueOp : processable.additionalUndefs)
+                opsToErase.insert(valueOp);
+              if (processable.primaryUndef.has_value())
+                opsToErase.insert(processable.primaryUndef.value());
             }
           };
 
       // Run converter on all single-def variables.
-      LLVM::DbgValueOp op = tracker.primaryValueOp;
-      bool hasUndefs = tracker.hasAdditionalUndefs;
+      bool hasUndefs = !processable.additionalUndefs.empty();
 
       // If additional undef dbg.values exist for this variable, cannot create
       // a dbg.declare for it as they don't allow undef dbg.values to limit
@@ -402,66 +399,71 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       // allocation instead.
       // Otherwise, if it only has one dbg.value, replace the old dbg.value
       // with a dbg.declare.
-      convertDbgValue(op, hasUndefs, tracker.mutantDebugValues, tracker);
+      convertDbgValue(primaryOp, hasUndefs, processable);
 
       // If no alloca was created for this value, nothing else is needed.
       // Otherwise, all users of the original value need to go thru the alloca.
       if (!allocaOp && allocaMap.size() == 0)
         continue;
 
-      auto updateUses = [&](Value oldValue,
-                            DebugVariableSummary::ProcessableVariable tracker) {
-        // Update all of the old value uses to route through the alloca instead
-        // of using the value directly.
-        for (auto it = oldValue.user_begin(), e = oldValue.user_end();
-             it != e;) {
-          // Grab the next unique user.
-          Operation *user = *it;
-          while (++it != e && *it == user)
-            continue;
+      auto updateUses =
+          [&](LLVM::DbgValueOp valueOp,
+              DebugVariableSummary::ProcessableVariable processable) {
+            // Update all of the old value uses to route through the alloca
+            // instead of using the value directly.
 
-          if (opsToErase.contains(user))
-            continue;
+            Value oldValue = valueOp.getValue();
+            if (oldValueMap.contains(valueOp))
+              oldValue = oldValueMap.lookup(valueOp);
 
-          // If the user is another dbg.value, it must be for a variable that
-          // has multiple non-undef definitions. Cannot convert to dbg.declare
-          // as it has a limited scope.
-          if (auto dbgUser = dyn_cast<LLVM::DbgValueOp>(user)) {
-            if (dbgUser.getValue().getDefiningOp<LLVM::UndefOp>()) {
-              SmallVector<LLVM::DbgValueOp> mutants;
-              convertDbgValue(dbgUser, true, mutants, tracker);
+            for (auto it = oldValue.user_begin(), e = oldValue.user_end();
+                 it != e;) {
+              // Grab the next unique user.
+              Operation *user = *it;
+              while (++it != e && *it == user)
+                continue;
+
+              if (opsToErase.contains(user))
+                continue;
+
+              // If the user is another dbg.value, it must be for a variable
+              // that has multiple non-undef definitions. Cannot convert to
+              // dbg.declare as it has a limited scope.
+              if (auto dbgUser = dyn_cast<LLVM::DbgValueOp>(user)) {
+                if (dbgUser.getValue().getDefiningOp<LLVM::UndefOp>()) {
+                  convertDbgValue(dbgUser, true, processable);
+                }
+                continue;
+              }
             }
-            continue;
-          }
-        }
 
-        // Store into the alloca at the place where the value was defined.
-        if (auto *valueOp = oldValue.getDefiningOp()) {
-          OpBuilder storeBuilder(valueOp->getNextNode());
-          storeBuilder.create<LLVM::StoreOp>(oldValue.getLoc(), oldValue,
-                                             getAllocaOp(tracker));
-        } else {
-          // If the value is a block argument, we need to search for an
-          // insertion point after the start of the block.
-          auto insertPt = oldValue.getParentBlock()->begin();
-          while (isa<LLVM::DbgValueOp, LLVM::DbgDeclareOp, LLVM::AllocaOp,
-                     LLVM::ConstantOp>(*insertPt))
-            ++insertPt;
+            // Store into the alloca at the place where the value was defined.
+            if (auto *valueOp = oldValue.getDefiningOp()) {
+              OpBuilder storeBuilder(valueOp->getNextNode());
+              storeBuilder.create<LLVM::StoreOp>(oldValue.getLoc(), oldValue,
+                                                 getAllocaOp(processable));
+            } else {
+              // If the value is a block argument, we need to search for an
+              // insertion point after the start of the block.
+              auto insertPt = oldValue.getParentBlock()->begin();
+              while (isa<LLVM::DbgValueOp, LLVM::DbgDeclareOp, LLVM::AllocaOp,
+                         LLVM::ConstantOp>(*insertPt))
+                ++insertPt;
 
-          // Block arguments might not contain debuginfo scope (which can trip
-          // up verifiers later), so to keep it simple, we also use erasedLoc.
-          OpBuilder storeBuilder(&*insertPt);
-          Location erasedLoc = UnknownLoc::get(oldValue.getContext());
-          storeBuilder.create<LLVM::StoreOp>(erasedLoc, oldValue,
-                                             getAllocaOp(tracker));
-        }
-      };
+              // Block arguments might not contain debuginfo scope (which can
+              // trip up verifiers later), so to keep it simple, we also use
+              // erasedLoc.
+              OpBuilder storeBuilder(&*insertPt);
+              Location erasedLoc = UnknownLoc::get(oldValue.getContext());
+              storeBuilder.create<LLVM::StoreOp>(erasedLoc, oldValue,
+                                                 getAllocaOp(processable));
+            }
+          };
 
-      // The primary (non-mutants) of each tracker had the same original
-      // value.  But if there are mutants, each tracker has its own alloca.
-      updateUses(primaryValue, tracker);
-      for (LLVM::DbgValueOp mutant : tracker.mutantDebugValues)
-        updateUses(mutant.getValue(), tracker);
+      if (processable.valueOps.empty())
+        updateUses(processable.primaryUndef.value(), processable);
+      for (LLVM::DbgValueOp valueOp : processable.valueOps)
+        updateUses(valueOp, processable);
 
       for (Operation *op : opsToErase) {
         op->erase();
