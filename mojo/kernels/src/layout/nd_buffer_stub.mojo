@@ -963,13 +963,11 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 #
 @always_inline("nodebug")
 fn copy_from_nd_buffer[
-    dst_rank: Int,
-    src_rank: Int,
     dtype: DType,
+    dst_rank: Int,
     dst_address_space: AddressSpace,
     dst_data_layout: Layout,
-    src_buff_shape: DimList,
-    dst_element_layout: Layout,
+    dst_element_layout: Layout, //,
     thread_layout: Layout,
     is_async: Bool = False,
     swizzle: OptionalReg[_swizzle_signature] = None,
@@ -981,13 +979,12 @@ fn copy_from_nd_buffer[
         address_space=dst_address_space,
         element_layout=dst_element_layout,
     ],
-    src: NDBuffer[dtype, src_rank, src_buff_shape],
+    src: NDBuffer[dtype, *_],
     thread_id: Int,
 ):
     # FIXME: Relax this to support any ranked data and thread layouts.
-    constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
-
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    constrained[src.rank == dst_rank, "src and dst should have same rank"]()
+    constrained[dst_rank == 2, "Only rank-2 layouts is supported for now."]()
 
     constrained[
         dst_thread_local.element_layout.rank() == 1
