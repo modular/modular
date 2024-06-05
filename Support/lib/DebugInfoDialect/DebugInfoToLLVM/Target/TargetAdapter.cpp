@@ -233,8 +233,7 @@ public:
     SmallVector<LLVM::DbgValueOp> mutantDebugValues;
   };
 
-  llvm::MapVector<LLVM::DILocalVariableAttr, SmallVector<ProcessableVariable>>
-      trackers;
+  llvm::MapVector<LLVM::DILocalVariableAttr, ProcessableVariable> trackers;
 };
 } // namespace
 
@@ -285,8 +284,8 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
     if (!dbgValueInfo.primaryValueOp)
       continue;
 
-    summary.trackers[dbgValueInfo.primaryValueOp.getVarInfo()].push_back(
-        dbgValueInfo);
+    summary.trackers.insert(
+        {dbgValueInfo.primaryValueOp.getVarInfo(), dbgValueInfo});
   }
 
   return summary;
@@ -300,24 +299,14 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
     DebugVariableSummary debugVariableSummary =
         filterAndSummarizeDebugVariables(func);
 
-    for (auto &[varInfo, trackers] : debugVariableSummary.trackers) {
-      Value primaryValue = trackers[0].primaryValueOp.getValue();
+    for (auto &[varInfo, tracker] : debugVariableSummary.trackers) {
+      Value primaryValue = tracker.primaryValueOp.getValue();
       // Don't build debug information for simple constants.
       if (primaryValue.getDefiningOp<LLVM::ConstantOp>() &&
           isa<IntegerType, FloatType>(primaryValue.getType()))
         continue;
 
-      // There are multiple trackers if multiple source variables point to the
-      // same SSA value. If there are any mutants, then each tracker needs its
-      // own alloca, or storing mutants to the alloca will incorrectly alter the
-      // value of the other variables.
-      bool anyMutable = false;
-      for (auto tracker : trackers) {
-        if (!tracker.mutantDebugValues.empty()) {
-          anyMutable = true;
-          break;
-        }
-      }
+      bool anyMutable = !tracker.mutantDebugValues.empty();
 
       // The converted alloca op that will hold the value if it is converted to
       // a stack allocation.  In the mutable case each tracker needs its own,
@@ -404,18 +393,16 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           };
 
       // Run converter on all single-def variables.
-      for (DebugVariableSummary::ProcessableVariable &tracker : trackers) {
-        LLVM::DbgValueOp op = tracker.primaryValueOp;
-        bool hasUndefs = tracker.hasAdditionalUndefs;
+      LLVM::DbgValueOp op = tracker.primaryValueOp;
+      bool hasUndefs = tracker.hasAdditionalUndefs;
 
-        // If additional undef dbg.values exist for this variable, cannot create
-        // a dbg.declare for it as they don't allow undef dbg.values to limit
-        // their live ranges. Keep the dbg.value ops but reference the stack
-        // allocation instead.
-        // Otherwise, if it only has one dbg.value, replace the old dbg.value
-        // with a dbg.declare.
-        convertDbgValue(op, hasUndefs, tracker.mutantDebugValues, tracker);
-      }
+      // If additional undef dbg.values exist for this variable, cannot create
+      // a dbg.declare for it as they don't allow undef dbg.values to limit
+      // their live ranges. Keep the dbg.value ops but reference the stack
+      // allocation instead.
+      // Otherwise, if it only has one dbg.value, replace the old dbg.value
+      // with a dbg.declare.
+      convertDbgValue(op, hasUndefs, tracker.mutantDebugValues, tracker);
 
       // If no alloca was created for this value, nothing else is needed.
       // Otherwise, all users of the original value need to go thru the alloca.
@@ -470,13 +457,11 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
         }
       };
 
-      for (DebugVariableSummary::ProcessableVariable &tracker : trackers) {
-        // The primary (non-mutants) of each tracker had the same original
-        // value.  But if there are mutants, each tracker has its own alloca.
-        updateUses(primaryValue, tracker);
-        for (LLVM::DbgValueOp mutant : tracker.mutantDebugValues)
-          updateUses(mutant.getValue(), tracker);
-      }
+      // The primary (non-mutants) of each tracker had the same original
+      // value.  But if there are mutants, each tracker has its own alloca.
+      updateUses(primaryValue, tracker);
+      for (LLVM::DbgValueOp mutant : tracker.mutantDebugValues)
+        updateUses(mutant.getValue(), tracker);
 
       for (Operation *op : opsToErase) {
         op->erase();
