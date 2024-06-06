@@ -5,7 +5,3 @@ lit_config.load_config(
 )
 
 lit_config.load_config(config, "@MODULAR_SOURCE_DIR@/KGEN/test/mojo-integration/lit.cfg.py")
-
-# TODO(#17787): Remove this when `mojo build` properly handles the default
-# python library path.
-config.environment['MOJO_PYTHON_LIBRARY'] = "@Python3_LIBRARIES@"
