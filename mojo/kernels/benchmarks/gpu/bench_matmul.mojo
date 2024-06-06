@@ -8,10 +8,9 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
+from gpu.host.device_context import DeviceContext, DeviceBuffer
+
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from benchmark._cuda import time_async_cuda_kernel
-from gpu.host import Context, Stream
-from gpu.host.memory import _malloc, _free
 
 from LinAlg.MatmulGPU import _matmul_gpu
 
@@ -29,10 +28,13 @@ fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
 
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: StaticIntTuple[rank]) raises -> NDBuffer[dtype, rank, shape]:
-    var storage_ptr = _malloc[dtype](_size(dynamic_shape))
-    return NDBuffer[dtype, rank, shape](
-        storage_ptr, dynamic_shape=dynamic_shape
+](ctx: DeviceContext, dynamic_shape: StaticIntTuple[rank]) raises -> Tuple[
+    DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
+]:
+    var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
+    return (
+        storage,
+        NDBuffer[dtype, rank, shape](storage.ptr, dynamic_shape=dynamic_shape),
     )
 
 
@@ -70,24 +72,32 @@ fn bench_matmul[
     shape_a: DimList,
     shape_b: DimList,
 ](
+    ctx: DeviceContext,
     inout b: Bench,
     shape_c_dim: StaticIntTuple[2],
     shape_a_dim: StaticIntTuple[2],
     shape_b_dim: StaticIntTuple[2],
 ) raises:
-    var mat_c = _create_device_buffer[dtype, 2, shape_c](shape_c_dim)
-    var mat_a = _create_device_buffer[dtype, 2, shape_a](shape_a_dim)
-    var mat_b = _create_device_buffer[dtype, 2, shape_b](shape_b_dim)
+    var mat_c = _create_device_buffer[dtype, 2, shape_c](ctx, shape_c_dim)
+    var mat_a = _create_device_buffer[dtype, 2, shape_a](ctx, shape_a_dim)
+    var mat_b = _create_device_buffer[dtype, 2, shape_b](ctx, shape_b_dim)
+
+    @parameter
+    @always_inline
+    fn ctx_time_async_cuda_kernel[
+        func: fn (DeviceContext) raises capturing -> None
+    ](num_iters: Int) raises -> Int:
+        return ctx.execution_time[func](num_iters)
 
     @parameter
     @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(stream: Stream) raises:
-            _matmul_gpu(mat_c, mat_a, mat_b, stream)
+        fn kernel_launch(ctx: DeviceContext) raises:
+            _matmul_gpu(mat_c[1], mat_a[1], mat_b[1], ctx)
 
-        b.iter_custom[time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
 
     b.bench_function[bench_func](
         BenchId(
@@ -102,9 +112,10 @@ fn bench_matmul[
         ),
     )
 
-    _free(mat_c.data)
-    _free(mat_a.data)
-    _free(mat_b.data)
+    # Retain our buffers till the end.
+    _ = mat_c^
+    _ = mat_a^
+    _ = mat_b^
 
 
 struct ValOrDim[dim: Dim = Dim()]:
@@ -131,49 +142,55 @@ fn dynamic(d: Int) -> ValOrDim:
 
 fn create_matmul_bench[
     dtype: DType
-](inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+](
+    ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+) raises:
     bench_matmul[
         dtype,
         DimList(m.dim, n.dim),
         DimList(m.dim, k.dim),
         DimList(k.dim, n.dim),
-    ](b, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+    ](ctx, b, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
 
 fn main() raises:
+    var ctx = DeviceContext()
+
     var b = Bench()
-    with Context() as ctx:
-        # Lama2 shapes CE.
-        create_matmul_bench[DType.float32](
-            b, dynamic(256), static[22016](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(256), static[12288](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(256), static[4096](), static[11008]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(256), static[12288](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(1), static[32000](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(256), static[4096](), static[4096]()
-        )
-        # Lama2 shapes LPTG.
-        create_matmul_bench[DType.float32](
-            b, dynamic(1), static[12288](), static[3072]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(1), static[3072](), static[12288]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(1), static[5120](), static[3072]()
-        )
-        create_matmul_bench[DType.float32](
-            b, dynamic(1), static[3072](), static[3072]()
-        )
+
+    # Lama2 shapes CE.
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(256), static[22016](), static[4096]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(256), static[12288](), static[4096]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(256), static[4096](), static[11008]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(256), static[12288](), static[4096]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(1), static[32000](), static[4096]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(256), static[4096](), static[4096]()
+    )
+    # Lama2 shapes LPTG.
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(1), static[12288](), static[3072]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(1), static[3072](), static[12288]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(1), static[5120](), static[3072]()
+    )
+    create_matmul_bench[DType.float32](
+        ctx, b, dynamic(1), static[3072](), static[3072]()
+    )
 
     b.dump_report()
+
+    _ = ctx
