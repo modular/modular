@@ -844,3 +844,19 @@ struct UninitField:
       # CHECK-NEXT: lit.ownership.mark_initialized %0
       # CHECK-NEXT: %none = kgen.param.constant
       # CHECK-NEXT: kgen.return %none
+
+fn maybeMemExample() raises -> MemExample:
+   return MemExample()
+
+# FIXME: https://linear.app/modularml/issue/MOCO-807/fix-conditionally-initialized-values
+struct HasMemExample:
+  var fh: MemExample
+  # CHECK: lit.func @"destroyPotentiallyOverwrittenValueRegardlessOfOutcome
+  fn destroyPotentiallyOverwrittenValueRegardlessOfOutcome(inout self):
+    # CHECK: lit.ref.struct.ger %self[fh]
+    # CHECK-NEXT: lit.call @{{.*}}::@MemExample::@"__del__
+    # CHECK: lit.try {
+    try:
+      self.fh = maybeMemExample()
+    except:
+      pass
