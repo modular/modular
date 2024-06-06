@@ -14,10 +14,10 @@
 
 #include "LLCL/ForwardDecls.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
-#include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/Resource.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/Threading/Atomics.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/StringRef.h"
 

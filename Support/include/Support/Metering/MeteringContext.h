@@ -13,11 +13,11 @@
 
 #include "llvm/ADT/StringRef.h"
 
-#include "LLCL/Support/Atomics.h"
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
+#include "Support/Threading/Atomics.h"
 
 namespace M::Metering {
 
@@ -104,7 +104,7 @@ public:
   TimePoint getLastMeterTime() const { return lastMeterTime.load(); }
 
 private:
-  LLCL::AlignedAtomic<TimePoint> lastMeterTime{ClockType::now()};
+  AlignedAtomic<TimePoint> lastMeterTime{ClockType::now()};
   const DurationType interval;
 
   const Options options;
