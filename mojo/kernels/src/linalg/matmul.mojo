@@ -796,7 +796,7 @@ fn matmul[
             c,
             a,
             b,
-            ctx.get_cuda_device().cuda_stream,
+            ctx.get_cuda_device(),
             num_threads,
         )
 
