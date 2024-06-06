@@ -639,6 +639,22 @@ struct Type(CollectionElement):
             raise "Not a tensor type!"
         return self.type[TensorType]
 
+    fn dims(self) -> List[Dim]:
+        """Returns a list of all dims referenced by the type.
+
+        This doesn't have any impact at graph execution time, it just retrieves
+        the list of referenced dimensions.
+
+        This will only return a result if the underlying type is a TensorType.
+
+        Returns:
+            The dims referenced.
+        """
+        if not self.type.isa[TensorType]():
+            return List[Dim]()
+
+        return self.type[TensorType].dims
+
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
 

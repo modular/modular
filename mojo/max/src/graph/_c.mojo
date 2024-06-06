@@ -158,6 +158,41 @@ fn attr_new_tensor_from_file(
     )
 
 
+fn attr_new_dim_param_decl(
+    ctx: _mlir.Context,
+    name: String,
+) -> _mlir.Attribute:
+    var result = cfunc[
+        "MAXG_attrNewDimParamDecl",
+        fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
+    ]()(
+        ctx.c,
+        name._strref_dangerous(),
+    )
+    return result
+
+
+fn attr_new_param_decl_array(
+    ctx: _mlir.Context,
+    params: List[_mlir.Attribute],
+) -> _mlir.Attribute:
+    var result = cfunc[
+        "MAXG_attrNewParamDeclArray",
+        fn (
+            _mlir.Context.cType,
+            Pointer[_mlir.Attribute.cType],
+            Int32,
+        ) -> _mlir.Attribute.cType,
+    ]()(
+        ctx.c,
+        Pointer[_mlir.Attribute](params.data.address).bitcast[
+            _mlir.Attribute.cType
+        ](),
+        len(params),
+    )
+    return result
+
+
 # ===----------------------------------------------------------------------===#
 # Type helpers
 # ===----------------------------------------------------------------------===#

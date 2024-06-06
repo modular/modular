@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
+from collections import Set
 from sys.info import has_neon
 
 import _mlir
@@ -14,7 +15,7 @@ from _mlir.builtin_types import FunctionType
 from ._attributes import _tensor_attr, _vector_attr
 from .error import error
 from .symbol import Symbol
-from .type import ListType, TensorType, Type
+from .type import Dim, ListType, TensorType, Type
 
 from max.graph.quantization import QuantizationEncoding
 from tensor import Tensor, TensorShape
@@ -27,15 +28,24 @@ struct _OwnedGraph(Movable):
     var ctx: _mlir.Context
     var op: _mlir.Operation
     var layers: List[String]
+    var parameters: Set[String]
 
     fn __init__(
         inout self,
         owned ctx: _mlir.Context,
         owned op: _mlir.Operation,
+        in_types: List[Type],
     ):
         self.ctx = ctx
         self.op = op
         self.layers = List[String]()
+        self.parameters = Set[String]()
+        for type in in_types:
+            for dim in type[].dims():
+                if not dim[].is_symbolic():
+                    continue
+                var name = str(dim[])
+                self.parameters.add(name)
 
     fn current_layer(self) -> String:
         var layer: String = ""
@@ -55,6 +65,7 @@ struct _OwnedGraph(Movable):
         self.ctx = existing.ctx
         self.op = existing.op
         self.layers = existing.layers^
+        self.parameters = existing.parameters^
 
     fn __del__(owned self):
         self.module().as_op().destroy()
@@ -203,7 +214,7 @@ struct Graph(CollectionElement, Stringable):
             ),
         )
 
-        self._graph = Arc(_OwnedGraph(ctx, op))
+        self._graph = Arc(_OwnedGraph(ctx, op, in_types))
 
     fn __str__(self) -> String:
         """Returns a `String` representation of this `Graph`.
@@ -278,6 +289,22 @@ struct Graph(CollectionElement, Stringable):
     fn _context(self) raises -> _mlir.Context:
         """Returns the `Graph`'s MLIR context."""
         return self._module().context()
+
+    def _new_parameters(self, dims: List[Dim]) -> Optional[_mlir.Attribute]:
+        """Create an `outputParamDecls` for all newly introduced parameters."""
+        ctx = self._context()
+        new_params = List[_mlir.Attribute]()
+        for dim in dims:
+            if dim[].is_symbolic():
+                name = str(dim[])
+                if name not in self._graph[].parameters:
+                    self._graph[].parameters.add(name)
+                    new_params.append(_c.attr_new_dim_param_decl(ctx, name))
+
+        if new_params:
+            return _c.attr_new_param_decl_array(ctx, new_params)
+
+        return None
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the n'th argument of this `Graph`.
@@ -365,6 +392,14 @@ struct Graph(CollectionElement, Stringable):
             attributes=attrs,
             enable_result_type_inference=enable_result_type_inference,
         )
+
+        var all_dims = List[Dim]()
+        for out_type in out_types:
+            all_dims += out_type[].dims()
+
+        var out_param_attr = self._new_parameters(all_dims)
+        if out_param_attr:
+            op.set_inherent_attr("outputParamDecls", out_param_attr.take())
 
         var layer = self._graph[].current_layer()
         if layer:
