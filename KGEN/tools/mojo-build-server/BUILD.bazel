@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_binary")
-load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
+load("//bazel:api.bzl", "kgen_kernel", "modular_cc_binary")
 
 package(default_visibility = ["//visibility:public"])
 

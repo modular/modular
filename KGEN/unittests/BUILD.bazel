@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
-load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
+load("//bazel:api.bzl", "kgen_kernel", "modular_cc_library", "modular_cc_test")
 
 kgen_kernel(
     name = "test_kernels",
