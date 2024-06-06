@@ -12,6 +12,7 @@ from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
 from gpu.memory import async_copy
+from gpu.intrinsics import convert
 from memory import memcpy
 from memory.reference import AddressSpace, _GPUAddressSpace
 from memory.unsafe import DTypePointer
@@ -167,6 +168,14 @@ struct LayoutTensor[
         self.max_dim = existing.max_dim
         self.dim_offset = existing.dim_offset
         self.dim_stride = existing.dim_stride
+
+    @always_inline
+    fn bitcast[
+        new_type: DType, /, address_space: AddressSpace = Self.address_space
+    ](self) -> LayoutTensor[new_type, layout, address_space=address_space]:
+        return LayoutTensor[new_type, layout, address_space=address_space](
+            self.ptr.bitcast[new_type, address_space=address_space]()
+        )
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -1413,6 +1422,74 @@ fn copy_dram_to_sram_async[
     ](dst, src)
 
 
+@always_inline
+fn copy_sram_to_dram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    src_type: DType,
+    dst_type: DType,
+    thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    src_mask: Bool,
+    dst_mask: Bool,
+    swizzle: OptionalReg[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dst_type,
+        dst_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=dst_element_layout,
+        masked=dst_mask,
+    ],
+    src: LayoutTensor[
+        src_type,
+        src_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=src_element_layout,
+        masked=src_mask,
+    ],
+):
+    var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[thread_layout, swizzle=swizzle](
+        ThreadIdx.x()
+    )
+
+    @parameter
+    if src_type == dst_type:
+        dst_fragments.copy_from(src_fragments.bitcast[dst_type]())
+    else:
+        constrained[
+            src_type == DType.float32 and dst_type.is_half_float(),
+            "Only support FP32 -> half precision downcast during copy.",
+        ]()
+
+        alias simd_size = simdwidthof[dst_type]()
+        # TODO: generalize the copy to non-scalar case if possible.
+        constrained[
+            src_element_layout.size() == simd_size
+            and dst_element_layout.size() == simd_size,
+            "Only FP32 -> half precision downcast for vectorized copy.",
+        ]()
+
+        alias num_stores_per_thread = dst_fragments.layout.size()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            var src_vec = src_fragments.aligned_load[simd_size](i, 0)
+            var dst_vec: SIMD[dst_type, simd_size] = 0
+
+            @parameter
+            for j in range(0, simd_size, 2):
+                var vec_converted = convert[src_type, dst_type, 2](
+                    SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
+                )
+                dst_vec[j] = vec_converted[0]
+                dst_vec[j + 1] = vec_converted[1]
+
+            dst_fragments.aligned_store[simd_size](i, 0, dst_vec)
+
+
 # Copy from SRAM to local memory.
 #
 @always_inline
@@ -1482,6 +1559,36 @@ fn copy_local_to_dram[
     ],
 ):
     var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    dst_framgents.copy_from(src)
+
+
+@always_inline
+fn copy_local_to_sram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    src_mask: Bool,
+    dst_mask: Bool,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+        masked=dst_mask,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+        masked=src_mask,
+    ],
+):
+    var dst_framgents = dst.distribute[thread_layout](ThreadIdx.x())
     dst_framgents.copy_from(src)
 
 
