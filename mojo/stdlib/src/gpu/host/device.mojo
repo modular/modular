@@ -683,12 +683,14 @@ struct Device(StringableRaising):
         """Get an identifier string for the device."""
 
         alias buffer_size = 256
-        var buffer = stack_allocation[buffer_size, DType.int8]()
+        var buffer = UnsafePointer[C_char]._from_dtype_ptr(
+            stack_allocation[buffer_size, C_char.type]()
+        )
 
         var cuDeviceGetName = self.cuda_dll.value().cuDeviceGetName if self.cuda_dll else cuDeviceGetName.load()
         _ = cuDeviceGetName(buffer, Int32(buffer_size), self.id)
 
-        return StringRef(buffer.address)
+        return StringRef(buffer)
 
     fn _total_memory(self) raises -> Int:
         """Returns the total amount of memory on the device."""
