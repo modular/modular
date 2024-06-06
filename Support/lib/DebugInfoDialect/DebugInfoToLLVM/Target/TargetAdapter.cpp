@@ -234,6 +234,16 @@ public:
     /// Additional undefs indicate that the lifetime of the variable does not
     /// last the entire scope.
     SmallVector<LLVM::DbgValueOp> additionalUndefs;
+    /// Whether any dbg.value ops include DW_OP_LLVM_fragment paths.
+    bool anyFragments = false;
+    /// Whether any dbg.value ops include DW_OP_deref paths.
+    bool anyPointers = false;
+    /// Whether the deref paths are the same length (IE same number of pointer
+    /// dereferences to get to the variable).
+    bool allPointersMatchedLength = true;
+    /// Whether to skip processing, IE it is not actually processable due to
+    /// having an exprLocation that we can't handle.
+    bool skip = false;
   };
 
   llvm::MapVector<LLVM::DILocalVariableAttr, ProcessableVariable>
@@ -272,13 +282,48 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
       iter->second.valueOps.push_back(op);
   });
 
-  DebugVariableSummary summary;
-  // Re-categorize debug values by operand Value, skipping those that have
-  // been invalidated due to having more than one non-undef definition.
   for (auto &[var, processable] : debugValuesToProcess) {
-    summary.processableVariableMap.insert({var, processable});
+    // Check that the locationExpr is well formed.  We can handle locationExprs
+    // that are 0 or more DW_OP_deref followed by zero or more
+    // DW_OP_LLVM_fragment, but no fragments before deref, and no other
+    // operations.
+    bool onFirstPass = true;
+    uint64_t firstNumPointers = 0;
+    for (auto valueOp : processable.valueOps) {
+      if (processable.skip)
+        break;
+      bool foundFragment = false;
+      uint64_t numPointers = 0;
+      for (auto exprOp : valueOp.getLocationExpr().getOperations()) {
+        if (exprOp.getOpcode() == llvm::dwarf::DW_OP_deref) {
+          processable.anyPointers = true;
+          ++numPointers;
+          if (foundFragment) {
+            processable.skip = true;
+            break;
+          }
+        } else if (exprOp.getOpcode() == llvm::dwarf::DW_OP_LLVM_fragment) {
+          foundFragment = true;
+          processable.anyFragments = true;
+        } else {
+          processable.skip = true;
+          break;
+        }
+      }
+      if (onFirstPass)
+        firstNumPointers = numPointers;
+      else if (firstNumPointers != numPointers)
+        processable.allPointersMatchedLength = false;
+      onFirstPass = false;
+    }
   }
 
+  DebugVariableSummary summary;
+  for (auto &[var, processable] : debugValuesToProcess) {
+    if (processable.skip)
+      continue;
+    summary.processableVariableMap.insert({var, processable});
+  }
   return summary;
 }
 
