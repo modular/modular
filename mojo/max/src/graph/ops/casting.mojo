@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that modify the shape or data type of a symbolic tensor."""
 
+from _mlir.ir import NamedAttribute, Identifier
+from _mlir.builtin_attributes import StringAttr
+
 from ..error import error
 from ..type import Dim
 
@@ -57,7 +60,7 @@ def cast(v: Symbol, dtype: DType) -> Symbol:
 # ===----------------------------------------------------------------------=== #
 
 
-fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
+fn rebind(v: Symbol, out_dims: List[Dim], message: String) raises -> Symbol:
     """Rebinds a symbolic tensor to a specified set of dimensions.
 
     This does not mutate the symbolic tensor passed in, but instead adds a
@@ -70,6 +73,7 @@ fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
         v: The input symbolic tensor to rebind.
         out_dims: The symbolic shape to assert for `v`, as a list of
                   [`Dim`](/max/reference/mojo/graph/type/Dim) values.
+        message: The message printed if the rebind fails at runtime.
 
     Returns:
         A symbolic tensor with the same elements and shape as the given
@@ -82,10 +86,17 @@ fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
             g, "rebind out_dims length must match the rank of the input shape"
         )
 
+    var ctx = g._context()
     return g.op(
         "rmo.rebind_tensor_shape",
         (v),
         TensorType(v.tensor_type().dtype, out_dims),
+        attrs=List[NamedAttribute](
+            NamedAttribute(
+                name=Identifier(ctx, "message"),
+                attr=StringAttr(ctx, message),
+            )
+        ),
     )
 
 

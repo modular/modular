@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Symbolic value primitives."""
 
+from builtin._location import __call_location
 from collections.optional import Optional
 from utils.variant import Variant
 
@@ -105,11 +106,23 @@ struct Symbol(CollectionElement, Stringable):
     # Casting and reshaping operators.
     # ===------------------------------------------------------------------=== #
 
+    @always_inline
     fn rebind(self, *dims: Dim) raises -> Symbol:
         var out_dims = List[Dim]()
         for dim in dims:
             out_dims.append(dim[])
-        return ops.rebind(self, out_dims)
+
+        var message = str(
+            __call_location()
+        ) + ": Failed to rebind runtime shape"
+        return ops.rebind(self, out_dims, message)
+
+    @always_inline
+    fn rebind(self, dims: List[Dim]) raises -> Symbol:
+        var message = str(
+            __call_location()
+        ) + ": Failed to rebind runtime shape"
+        return ops.rebind(self, dims, message)
 
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
