@@ -50,20 +50,15 @@ void sinkDebugKills(mlir::Operation *op);
 /// environment, and more closely matches what a traditional frontend would
 /// provide in O0 modes.
 ///
-/// The current conversion policy considers two separate axes:
-/// - The number of dbg.values for a variable (regardless of whether the value
-/// is undef or not) determines whether dbg.value or dbg.declare is used.
-/// - The number of non-undef dbg.values for a variable determines whether we
-/// allocate to stack or not.
+/// The current conversion policy considers:
+/// - Whether undef dbg.values appear after non-undef ones, implying a limited
+/// scope incompatible with dbg.declare.
+/// - Whether the exprLocation paths make it possible for the entire variable to
+/// be placed in a single allocation without performing loads.
 ///
-/// Or, listing out the possible combinations:
-/// - =1 dbg.value: use dbg.declare, allocate to stack (i.e. var is alive for
-/// its entire scope)
-/// - >1 dbg.value, =1 non-undef: use dbg.value, allocate to stack (i.e. var is
-/// stationary for its entire lifetime)
-/// - >1 dbg.value, >1 non-undef: use dbg.declare, do allocate to stack but only
-/// for debuginfo, don't replace original SSA variable reads with stack reads
-/// (in case of re-ordering) (i.e. var moves around, or exists as fragments).
+/// Additionally, regardless of whether dbg.value ops are switched to
+/// dbg.declare, we put all variables in stack allocations for visibility in GPU
+/// debugging.
 ///
 /// TODO: As we grow support we may want to consider making this optional
 /// depending on the debug mode.

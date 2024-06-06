@@ -182,11 +182,8 @@ func.func @value_with_two_kills() -> i32 {
 
 // CHECK-LABEL: func @undef_value_and_kill
 func.func @undef_value_and_kill() -> i32 {
-  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
-  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // CHECK: %[[UNDEF1:.*]] = llvm.mlir.undef : i32
-  // CHECK: llvm.store %[[UNDEF1]], %[[ALLOC]] : i32, !llvm.ptr
-  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF1]]
   // CHECK: %[[UNDEF2:.*]] = llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF2]]
   // CHECK: return %[[UNDEF1]] : i32
@@ -223,8 +220,8 @@ func.func @one_value_one_value_and_kill() -> !llvm.ptr {
   // CHECK: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // CHECK: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // CHECK: llvm.store %[[VALUE]], %[[ALLOC0]] : !llvm.ptr, !llvm.ptr
-  // CHECK: llvm.store %[[VALUE]], %[[ALLOC1]] : !llvm.ptr, !llvm.ptr
+  // CHECK-DAG: llvm.store %[[VALUE]], %[[ALLOC0]] : !llvm.ptr, !llvm.ptr
+  // CHECK-DAG: llvm.store %[[VALUE]], %[[ALLOC1]] : !llvm.ptr, !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #[[LOCAL_VAR2]] = %[[ALLOC1]] : !llvm.ptr
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC0]] : !llvm.ptr
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
