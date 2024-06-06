@@ -55,6 +55,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in alias initializer";
   case EC_CallArgValue:
     return " in call argument";
+  case EC_CallRefArgValue:
+    return " in 'ref' call argument";
   case EC_CallCalleeValue:
     return " in callee";
   case EC_TypeParamValue:
@@ -864,6 +866,38 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   if (value.ir)
     emitErrorForDynamicValueInParameter(value.expr);
   return {};
+}
+
+/// This helper emits the specified expression as a 'ref' expression value,
+/// and returns the value of RefType for the result.
+/// This emits an error and returns null if emission fails.
+Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
+                                ExprContext context) {
+  // If this is an RValue (including PValue's), put it into a memory box so
+  // we can get its lifetime.
+  if (auto rv = value.ir.getIfRValue()) {
+    value.ir = emitMRValue(value, context);
+    if (!value.ir)
+      return {};
+  }
+
+  // Emit the DefArgumentWrapperDLValue as the underlying MBValue that it may
+  // contain.
+  if (auto dlValue = value.ir.getIfDLValue()) {
+    if (MBValue underlying = dlValue->emitMBValueFromDefArgument(*this))
+      value.ir = underlying;
+  }
+
+  // Otherwise we can't support other non-MValue's like borrowed registers or
+  // other computed LValues.
+  if (!value.ir.isMValue()) {
+    emitError(value.expr->getLoc())
+        << "cannot bind a non-memory value to a Reference"
+        << getContextMessage(context);
+    return {};
+  }
+
+  return value.ir.getMValueReference();
 }
 
 //===----------------------------------------------------------------------===//

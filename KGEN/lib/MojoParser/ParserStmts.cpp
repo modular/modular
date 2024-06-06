@@ -731,33 +731,31 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       return {};
     }
   } else {
-    // Returning a reference, emit it as an MValue then coerce.
-    auto resultMValue = emitter.emitExprCValue(
+    // When returning a reference, emit it as an MValue then coerce.
+    auto resultCValue = emitter.emitExprCValue(
         operandExpr, EC_ReturnValue, userResultType.getReferenceElementType());
-    if (!resultMValue) {
+    if (!resultCValue) {
       resultDest.resetForError();
       return {};
     }
 
-    if (!resultMValue.isMValue()) {
-      emitter.emitError(operandExpr->getLoc())
-          << "cannot return reference to non-memory value of type "
-          << resultMValue.getType();
+    Value refValue =
+        emitter.emitRefValue({resultCValue, operandExpr}, EC_ReturnValue);
+    if (!refValue) {
       resultDest.resetForError();
       return {};
     }
-
-    RefType argType = resultMValue.getMValueType();
+    RefType argType = cast<RefType>(refValue.getType());
 
     // If the lifetime is an InvalidRefLifetimeAttr then this value is
     // derived from an argument which might be bound (after elaboration)
     // to a register value that has no lifetime.  Emit an error because
     // you can't return a reference to it.
     if (isa<InvalidRefLifetimeAttr>(argType.getLifetime())) {
-      emitter.emitError(operandExpr->getLoc())
+      emitError(operandExpr->getLoc())
           << "cannot return a reference to an argument that "
              "might instantiate to @register_passable type "
-          << resultMValue.getRValueType();
+          << ASTType(argType.getElementType()) << operandExpr->getRange();
       resultDest.resetForError();
       return {};
     }
@@ -785,16 +783,13 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       }
       // Rebind to make the reference compatible, e.g. converting to a more
       // general lifetime union.
-      resultMValue =
-          emitter.rebindValue({resultMValue, operandExpr}, userResultType)
-              .getIfCValue();
+      refValue =
+          emitter.rebindValue({SRValue(refValue), operandExpr}, userResultType)
+              .getIfSRValue();
     }
 
-    assert(!isa<InvalidRefLifetimeAttr>(argType.getLifetime()) &&
-           "cannot declare result type of this attribute");
-
     // We're returning the reference itself, so switch to SRValue.
-    resultValue = SRValue(resultMValue.getMValueReference());
+    resultValue = SRValue(refValue);
     // ... and emit to the ValueDest
     resultValue = emitter.emitRValue({resultValue, operandExpr}, resultDest);
     if (!resultValue) {

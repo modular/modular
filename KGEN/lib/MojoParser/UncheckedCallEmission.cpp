@@ -251,32 +251,13 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     if (emitter.getScopeInfo().isParamContext) {
       if (auto pv = operand.ir.getIfPValue())
         return pv;
-    } else if (auto rv = operand.ir.getIfRValue()) {
-      // If this is an RValue (including PValue's), put it into a memory box so
-      // we can get its lifetime.
-      operand.ir = emitter.emitMRValue(operand, EC_CallArgValue);
-      if (!operand.ir)
-        return {};
     }
 
-    // Emit the DefArgumentWrapperDLValue as the underlying MBValue that it may
-    // contain.
-    if (auto dlValue = operand.ir.getIfDLValue()) {
-      if (MBValue underlying = dlValue->emitMBValueFromDefArgument(emitter))
-        operand.ir = underlying;
-    }
-
-    // We don't support non-MValue's currently.  We could relax this to
-    // support things like Reference(42) - such a thing could dump the value
-    // into a memory temp - but we can do that later if there is demand.
-    // This is tricky due to parameter inference phase ordering.
-    if (!operand.ir.isMValue()) {
-      emitter.emitError(operand.expr->getLoc(),
-                        "cannot bind a non-memory value to a Reference");
+    // Emit the operand as a 'ref'.
+    Value refValue = emitter.emitRefValue(operand, EC_CallRefArgValue);
+    if (!refValue)
       return {};
-    }
 
-    Value refValue = operand.ir.getMValueReference();
     auto refValueType = cast<RefType>(refValue.getType());
     auto expectedRefType = cast<RefType>(expectedType);
 
