@@ -55,7 +55,9 @@ TEST(InliningTest, testLiftedInlinedInoutArgModification) {
 
   SBValue number = ctx.frame.FindVariable("m");
   // Pre-req: Make sure the value was actually lifted by mem2reg.
-  EXPECT_STREQ(number.GetLocation(), "scalar");
+  // Due to convertDbgValueToDeclare, the value is actually stored back to stack
+  // memory for debug builds.
+  EXPECT_STRNE(number.GetLocation(), "scalar");
   // Check the value is the updated value from the inlined callee.
   EXPECT_EQ((int)number.GetValueAsSigned(), 42);
 }

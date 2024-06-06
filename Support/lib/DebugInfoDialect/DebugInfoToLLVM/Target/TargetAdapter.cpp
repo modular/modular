@@ -328,190 +328,191 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
 }
 
 void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
-  // A lot more logic is required to make this reverse-mem2reg work when
-  // multiple DbgValueOps for one variable exists. Going with the simplest
-  // solution for now until we decide to retire this altogether.
   for (auto func : module.getOps<mlir::FunctionOpInterface>()) {
     DebugVariableSummary debugVariableSummary =
         filterAndSummarizeDebugVariables(func);
 
-    for (auto &[varInfo, processable] :
-         debugVariableSummary.processableVariableMap) {
-      LLVM::DbgValueOp primaryOp = processable.valueOps.empty()
-                                       ? processable.primaryUndef.value()
-                                       : processable.valueOps[0];
-      Value primaryValue = primaryOp.getValue();
+    for (auto &mapElem : debugVariableSummary.processableVariableMap) {
+      LLVM::DILocalVariableAttr &varInfo = mapElem.first;
+      DebugVariableSummary::ProcessableVariable &processable = mapElem.second;
+
       // Don't build debug information for simple constants.
-      if (primaryValue.getDefiningOp<LLVM::ConstantOp>() &&
-          isa<IntegerType, FloatType>(primaryValue.getType()))
+      if (processable.valueOps.size() == 1 &&
+          processable.valueOps[0]
+              .getValue()
+              .getDefiningOp<LLVM::ConstantOp>() &&
+          isa<IntegerType, FloatType>(
+              processable.valueOps[0].getValue().getType()))
         continue;
 
-      bool anyMutable = processable.valueOps.size() > 1;
+      // For the usePointerMode case, we switch from dbg.value to dbg.declare,
+      // but we only allocate if the SSA value for the dbg.value is a block
+      // argument.
+      bool usePointerMode =
+          processable.anyPointers && processable.allPointersMatchedLength &&
+          !processable.anyFragments && processable.additionalUndefs.empty();
+      // For the declareDirectMode case, we switch from dbg.value to
+      // dbg.declare.  But it requires that we have SSA values with no pointers
+      // in the exprLocation.
+      bool declareDirectMode = !processable.anyPointers &&
+                               processable.additionalUndefs.empty() &&
+                               !processable.anyFragments;
+      // For everything else, there's dbg.value.  If there are fragments behind
+      // pointers, we would have to load them to assemble them in one place to
+      // use dbg.declare, which is unsafe since some of the pointers may be null
+      // or otherwise invalid.  If there are inconsistent levels of indirection,
+      // we would have to do a load on the longer path to arrive at the same
+      // pointer path length, which is unsafe.  Finally if there are undef
+      // values (after the first non-undef value), it means that the variable
+      // does not exist for the full scope of the function, and dbg.declare
+      // implies a lifetime for the whole scope.  Note that where values are in
+      // SSA values, we still make stack allocations for this case to ensure
+      // that variables are in memory for GPU debugging.
+      bool useDbgValueMode = !(usePointerMode || declareDirectMode);
 
-      // The converted alloca op that will hold the value if it is converted to
-      // a stack allocation.  In the mutable case each processable needs its
-      // own, and map each processable's alloca to its primaryValue.
+      auto valueOpHasPointer = [](LLVM::DbgValueOp valueOp) -> bool {
+        if (valueOp.getLocationExpr().getOperations().empty())
+          return false;
+        return valueOp.getLocationExpr().getOperations()[0].getOpcode() ==
+               llvm::dwarf::DW_OP_deref;
+      };
+
+      // The converted alloca op that will hold the value if it is converted
+      // to a stack allocation.  In the useDbgValue case, we need a separate
+      // alloca for each value that is not already in memory.
       LLVM::AllocaOp allocaOp;
       llvm::MapVector<LLVM::DbgValueOp, LLVM::AllocaOp> allocaMap;
 
       // Get the allocaOp for this value. If one has not already been created,
       // create one and save it for the next invocation.
-      auto getAllocaOp =
-          [&, targetValue = primaryValue](
-              DebugVariableSummary::ProcessableVariable processable) {
-            if (allocaOp)
-              return allocaOp;
-            if (auto found = allocaMap.find(primaryOp);
-                found != allocaMap.end())
-              return found->second;
+      auto getAllocaOp = [&](LLVM::DbgValueOp valueOp,
+                             bool create = true) -> LLVM::AllocaOp {
+        if (!useDbgValueMode && allocaOp)
+          return allocaOp;
+        if (allocaMap.contains(valueOp))
+          return allocaMap.lookup(valueOp);
+        if (!create)
+          return {};
 
-            // Build a new allocation to store the intermediate value.
-            OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
-            Location erasedLoc = UnknownLoc::get(primaryOp->getContext());
-            auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
-                erasedLoc, allocBuilder.getI32Type(), 1);
+        // Build a new allocation to store the intermediate value.
+        OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
+        Location erasedLoc = UnknownLoc::get(varInfo.getContext());
 
-            LLVM::AllocaOp newAllocaOp = allocBuilder.create<LLVM::AllocaOp>(
-                erasedLoc, LLVM::LLVMPointerType::get(targetValue.getContext()),
-                targetValue.getType(), allocSize, 0);
-            if (anyMutable)
-              allocaMap.insert({primaryOp, newAllocaOp});
-            else
-              allocaOp = newAllocaOp;
-            return newAllocaOp;
-          };
+        int allocElems = 1;
+        Type allocType = valueOp.getValue().getType();
 
-      llvm::SetVector<Operation *> opsToErase;
+        auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
+            erasedLoc, allocBuilder.getI32Type(), allocElems);
+
+        // TODO - this just uses the default (0) address space, even if the
+        // variables we are debugging actually live in a different address
+        // space.
+        Type pointerType = LLVM::LLVMPointerType::get(varInfo.getContext());
+
+        LLVM::AllocaOp newAlloc = allocBuilder.create<LLVM::AllocaOp>(
+            erasedLoc, pointerType, allocType, allocSize, 0);
+        if (!useDbgValueMode)
+          allocaOp = newAlloc;
+        else
+          allocaMap.insert({valueOp, newAlloc});
+        return newAlloc;
+      };
+
+      bool eraseValueOps = false;
       llvm::MapVector<LLVM::DbgValueOp, Value> oldValueMap;
 
-      // Converter for a single DbgValueOp.
-      // `hasLimitedScope` controls whether the DbgValueOp is converted into a
-      // DbgDeclareOp or is kept, because the scope of a DbgDeclareOp cannot be
-      // limited to a subset of the parent scope.
-      auto convertDbgValue =
-          [&, targetValue = primaryValue](
-              LLVM::DbgValueOp op, bool hasLimitedScope,
-              DebugVariableSummary::ProcessableVariable &processable) {
-            if (hasLimitedScope) {
-              ArrayRef<LLVM::DIExpressionElemAttr> location =
-                  op.getLocationExpr().getOperations();
-              SmallVector<LLVM::DIExpressionElemAttr> newLocations = {
-                  LLVM::DIExpressionElemAttr::get(
-                      op.getContext(), llvm::dwarf::DW_OP_deref, {})};
-              newLocations.append(location.begin(), location.end());
-              oldValueMap.insert({op, op.getValue()});
-              op.setOperand(getAllocaOp(processable));
-              op.setLocationExprAttr(
-                  LLVM::DIExpressionAttr::get(op->getContext(), newLocations));
+      // Convert all processable variables.
+      for (LLVM::DbgValueOp valueOp : processable.valueOps) {
+        if (useDbgValueMode) {
+          // If we are keeping dbg.value ops and it is already a pointer, there
+          // is nothing to do.
+          if (valueOpHasPointer(valueOp))
+            continue;
+          ArrayRef<LLVM::DIExpressionElemAttr> location =
+              valueOp.getLocationExpr().getOperations();
+          SmallVector<LLVM::DIExpressionElemAttr> newLocations = {
+              LLVM::DIExpressionElemAttr::get(valueOp.getContext(),
+                                              llvm::dwarf::DW_OP_deref, {})};
+          newLocations.append(location.begin(), location.end());
+          oldValueMap.insert({valueOp, valueOp.getValue()});
+          valueOp.setOperand(getAllocaOp(valueOp));
+          valueOp.setLocationExprAttr(
+              LLVM::DIExpressionAttr::get(valueOp->getContext(), newLocations));
+        } else {
+          // Use dbg.declare.
+          ArrayRef<LLVM::DIExpressionElemAttr> locationOps =
+              valueOp.getLocationExpr().getOperations();
+          Value declareOpArg = valueOp.getValue();
+          if (usePointerMode) {
+            if (isa<BlockArgument>(valueOp.getValue())) {
+              // Block args are not compatible directly with DbgDeclare.  So we
+              // allocate to add indirection to make it compatible.
+              declareOpArg = getAllocaOp(valueOp);
             } else {
-              ArrayRef<LLVM::DIExpressionElemAttr> location =
-                  op.getLocationExpr().getOperations();
-              if (!isa<BlockArgument>(op.getValue()) && !anyMutable &&
-                  !location.empty() &&
-                  location.front().getOpcode() == llvm::dwarf::DW_OP_deref &&
-                  isa<LLVM::LLVMPointerType>(targetValue.getType())) {
-                // For cases where the locationExpr begins with a deref, just
-                // pop off the initial deref and convert directly into a
-                // DbgDeclareOp. In this case no alloca needs to be created.
-                // Block args however are not compatible directly with
-                // DbgDeclare.
-                auto refLocation = LLVM::DIExpressionAttr::get(
-                    op->getContext(), location.drop_front());
-                OpBuilder(op).create<LLVM::DbgDeclareOp>(
-                    op.getLoc(), targetValue, op.getVarInfo(), refLocation);
-              } else {
-                // For all other cases, create alloca and use dbg declare with
-                // it.
-                OpBuilder(op).create<LLVM::DbgDeclareOp>(
-                    op.getLoc(), getAllocaOp(processable), op.getVarInfo(),
-                    op.getLocationExpr());
-              }
-              for (LLVM::DbgValueOp valueOp : processable.valueOps)
-                opsToErase.insert(valueOp);
-              for (LLVM::DbgValueOp valueOp : processable.additionalUndefs)
-                opsToErase.insert(valueOp);
-              if (processable.primaryUndef.has_value())
-                opsToErase.insert(processable.primaryUndef.value());
+              // We need one less deref when switching to dbg.declare if we
+              // aren't allocating and adding indirection.
+              locationOps = locationOps.drop_front();
             }
-          };
+          } else {
+            declareOpArg = getAllocaOp(valueOp);
+          }
+          if (declareDirectMode) {
+            // The declareDirectMode case has an empty expression path, it is
+            // simply the whole variable.
+            locationOps = SmallVector<LLVM::DIExpressionElemAttr>();
+          }
+          OpBuilder(valueOp).create<LLVM::DbgDeclareOp>(
+              valueOp.getLoc(), declareOpArg, valueOp.getVarInfo(),
+              LLVM::DIExpressionAttr::get(valueOp->getContext(), locationOps));
+          eraseValueOps = true;
+        }
+      }
 
-      // Run converter on all single-def variables.
-      bool hasUndefs = !processable.additionalUndefs.empty();
+      // Store values to the allocations
+      for (LLVM::DbgValueOp valueOp : processable.valueOps) {
+        if (!getAllocaOp(valueOp, /*create=*/false))
+          continue;
 
-      // If additional undef dbg.values exist for this variable, cannot create
-      // a dbg.declare for it as they don't allow undef dbg.values to limit
-      // their live ranges. Keep the dbg.value ops but reference the stack
-      // allocation instead.
-      // Otherwise, if it only has one dbg.value, replace the old dbg.value
-      // with a dbg.declare.
-      convertDbgValue(primaryOp, hasUndefs, processable);
+        Value oldValue = valueOp.getValue();
+        if (useDbgValueMode)
+          oldValue = oldValueMap.lookup(valueOp);
+        Location erasedLoc = UnknownLoc::get(oldValue.getContext());
 
-      // If no alloca was created for this value, nothing else is needed.
-      // Otherwise, all users of the original value need to go thru the alloca.
-      if (!allocaOp && allocaMap.size() == 0)
-        continue;
+        auto makeStore = [&](OpBuilder storeBuilder, Location storeLoc) {
+          Value storeToPointer = getAllocaOp(valueOp);
+          storeBuilder.create<LLVM::StoreOp>(storeLoc, oldValue,
+                                             storeToPointer);
+        };
 
-      auto updateUses =
-          [&](LLVM::DbgValueOp valueOp,
-              DebugVariableSummary::ProcessableVariable processable) {
-            // Update all of the old value uses to route through the alloca
-            // instead of using the value directly.
+        // Store into the alloca at the place where the value was defined.
+        if (auto *definingOp = oldValue.getDefiningOp()) {
+          makeStore(OpBuilder(definingOp->getNextNode()), oldValue.getLoc());
+        } else {
+          // If the value is a block argument, we need to search for an
+          // insertion point after the start of the block.
+          auto insertPt = oldValue.getParentBlock()->begin();
+          while (isa<LLVM::DbgValueOp, LLVM::DbgDeclareOp, LLVM::AllocaOp,
+                     LLVM::ConstantOp>(*insertPt)) {
+            ++insertPt;
+          }
 
-            Value oldValue = valueOp.getValue();
-            if (oldValueMap.contains(valueOp))
-              oldValue = oldValueMap.lookup(valueOp);
+          // Block arguments might not contain debuginfo scope (which can
+          // trip up verifiers later), so to keep it simple, we also use
+          // erasedLoc.
+          OpBuilder storeBuilder(&*insertPt);
+          makeStore(storeBuilder, erasedLoc);
+        }
+      }
 
-            for (auto it = oldValue.user_begin(), e = oldValue.user_end();
-                 it != e;) {
-              // Grab the next unique user.
-              Operation *user = *it;
-              while (++it != e && *it == user)
-                continue;
-
-              if (opsToErase.contains(user))
-                continue;
-
-              // If the user is another dbg.value, it must be for a variable
-              // that has multiple non-undef definitions. Cannot convert to
-              // dbg.declare as it has a limited scope.
-              if (auto dbgUser = dyn_cast<LLVM::DbgValueOp>(user)) {
-                if (dbgUser.getValue().getDefiningOp<LLVM::UndefOp>()) {
-                  convertDbgValue(dbgUser, true, processable);
-                }
-                continue;
-              }
-            }
-
-            // Store into the alloca at the place where the value was defined.
-            if (auto *valueOp = oldValue.getDefiningOp()) {
-              OpBuilder storeBuilder(valueOp->getNextNode());
-              storeBuilder.create<LLVM::StoreOp>(oldValue.getLoc(), oldValue,
-                                                 getAllocaOp(processable));
-            } else {
-              // If the value is a block argument, we need to search for an
-              // insertion point after the start of the block.
-              auto insertPt = oldValue.getParentBlock()->begin();
-              while (isa<LLVM::DbgValueOp, LLVM::DbgDeclareOp, LLVM::AllocaOp,
-                         LLVM::ConstantOp>(*insertPt))
-                ++insertPt;
-
-              // Block arguments might not contain debuginfo scope (which can
-              // trip up verifiers later), so to keep it simple, we also use
-              // erasedLoc.
-              OpBuilder storeBuilder(&*insertPt);
-              Location erasedLoc = UnknownLoc::get(oldValue.getContext());
-              storeBuilder.create<LLVM::StoreOp>(erasedLoc, oldValue,
-                                                 getAllocaOp(processable));
-            }
-          };
-
-      if (processable.valueOps.empty())
-        updateUses(processable.primaryUndef.value(), processable);
-      for (LLVM::DbgValueOp valueOp : processable.valueOps)
-        updateUses(valueOp, processable);
-
-      for (Operation *op : opsToErase) {
-        op->erase();
+      // If we switched away from dbg.value to dbg.declare, we need to erase the
+      // old ops.
+      if (eraseValueOps) {
+        if (processable.primaryUndef.has_value())
+          processable.primaryUndef.value()->erase();
+        for (Operation *op : processable.additionalUndefs)
+          op->erase();
+        for (Operation *op : processable.valueOps)
+          op->erase();
       }
     }
   }
