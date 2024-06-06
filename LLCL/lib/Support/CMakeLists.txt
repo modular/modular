@@ -29,7 +29,6 @@ add_modular_library(LLCLSupport
   Location.cpp
   Resource.cpp
   Semaphore.cpp
-  SpinWaiter.cpp
   ThreadAffinity.cpp
   TimerHeap.cpp
   UnknownLocationDecoder.cpp
