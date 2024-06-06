@@ -12,13 +12,7 @@ from math import isclose
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import Context, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host.device_context import DeviceContext, DeviceBuffer
 from LinAlg.Matmul import matmul
 from LinAlg.MatmulGPU import _matmul_gpu
 from runtime.llcl import MojoCallContextPtr
@@ -36,10 +30,13 @@ fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
 
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: StaticIntTuple[rank]) raises -> NDBuffer[dtype, rank, shape]:
-    var storage_ptr = _malloc[dtype](_size(dynamic_shape))
-    return NDBuffer[dtype, rank, shape](
-        storage_ptr, dynamic_shape=dynamic_shape
+](ctx: DeviceContext, dynamic_shape: StaticIntTuple[rank]) raises -> Tuple[
+    DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
+]:
+    var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
+    return (
+        storage,
+        NDBuffer[dtype, rank, shape](storage.ptr, dynamic_shape=dynamic_shape),
     )
 
 
@@ -63,22 +60,6 @@ fn _create_host_buffer_like[
     dtype: DType, rank: Int, shape: DimList
 ](buff: NDBuffer[dtype, rank, shape]) raises -> NDBuffer[dtype, rank, shape]:
     return _create_host_buffer[dtype, rank, shape](buff.dynamic_shape)
-
-
-fn _copy_host_buffer_to_device[
-    dtype: DType,
-    rank: Int,
-    shape: DimList,
-](dst: NDBuffer[dtype, rank, shape], src: NDBuffer[dtype, rank, shape]) raises:
-    _copy_host_to_device(dst.data, src.data, src.size())
-
-
-fn _copy_device_buffer_to_host[
-    dtype: DType,
-    rank: Int,
-    shape: DimList,
-](dst: NDBuffer[dtype, rank, shape], src: NDBuffer[dtype, rank, shape]) raises:
-    _copy_device_to_host(dst.data, src.data, src.size())
 
 
 fn _get_test_name[
@@ -118,6 +99,7 @@ fn matmul_test_case[
     shape_c_dim: StaticIntTuple[2],
     shape_a_dim: StaticIntTuple[2],
     shape_b_dim: StaticIntTuple[2],
+    ctx: DeviceContext,
 ) raises:
     print(
         _get_test_name[dtype, shape_c, shape_a, shape_b](
@@ -126,26 +108,24 @@ fn matmul_test_case[
         end=" ",
     )
 
-    var mat_a_dev = _create_device_buffer[dtype, 2, shape_a](shape_a_dim)
-    var mat_b_dev = _create_device_buffer[dtype, 2, shape_b](shape_b_dim)
-    var mat_a_host = _create_host_buffer_like(mat_a_dev)
-    var mat_b_host = _create_host_buffer_like(mat_b_dev)
-    var mat_c_dev = _create_device_buffer[dtype, 2, shape_c](shape_c_dim)
-    var mat_c_host = _create_host_buffer_like(mat_c_dev)
+    var mat_a_dev = _create_device_buffer[dtype, 2, shape_a](ctx, shape_a_dim)
+    var mat_b_dev = _create_device_buffer[dtype, 2, shape_b](ctx, shape_b_dim)
+    var mat_a_host = _create_host_buffer_like(mat_a_dev[1])
+    var mat_b_host = _create_host_buffer_like(mat_b_dev[1])
+    var mat_c_dev = _create_device_buffer[dtype, 2, shape_c](ctx, shape_c_dim)
+    var mat_c_host = _create_host_buffer_like(mat_c_dev[1])
     var mat_c_ref_host = _create_host_buffer_like(mat_c_host)
 
     _linspace_fill(mat_a_host)
     _linspace_fill(mat_b_host)
 
-    var stream = Stream()
+    ctx.enqueue_copy_from_device(mat_a_host.data, mat_a_dev[0])
+    ctx.enqueue_copy_from_device(mat_b_host.data, mat_b_dev[0])
 
-    _copy_host_buffer_to_device(mat_a_dev, mat_a_host)
-    _copy_host_buffer_to_device(mat_b_dev, mat_b_host)
+    _matmul_gpu(mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx)
 
-    _matmul_gpu(mat_c_dev, mat_a_dev, mat_b_dev, stream)
-    synchronize()
-
-    _copy_device_buffer_to_host(mat_c_host, mat_c_dev)
+    ctx.enqueue_copy_from_device(mat_c_host.data, mat_c_dev[0])
+    ctx.synchronize()
 
     # FIXME: We should run a reference gpu matmul, the reference should also
     # support applying the epilogue on the final result.
@@ -174,10 +154,9 @@ fn matmul_test_case[
 
     mat_a_host.data.free()
     mat_b_host.data.free()
-    _free(mat_a_dev.data)
-    _free(mat_b_dev.data)
-
-    _ = stream^
+    _ = mat_a_dev^
+    _ = mat_b_dev^
+    _ = mat_c_dev^
 
 
 struct ValOrDim[dim: Dim = Dim()]:
@@ -204,23 +183,26 @@ fn dynamic(d: Int) -> ValOrDim:
 
 fn create_matmul_test_case[
     dtype: DType
-](m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     matmul_test_case[
         DType.float32,
         DimList(m.dim, n.dim),
         DimList(m.dim, k.dim),
         DimList(k.dim, n.dim),
-    ]((m.value, n.value), (m.value, k.value), (k.value, n.value))
+    ]((m.value, n.value), (m.value, k.value), (k.value, n.value), ctx)
 
 
 fn main():
     try:
-        with Context() as ctx:
-            create_matmul_test_case[DType.float32](
-                dynamic(8), static[8](), static[4]()
-            )
-            create_matmul_test_case[DType.float32](
-                dynamic(16), static[16](), static[8]()
-            )
+        var ctx = DeviceContext()
+
+        create_matmul_test_case[DType.float32](
+            ctx, dynamic(8), static[8](), static[4]()
+        )
+        create_matmul_test_case[DType.float32](
+            ctx, dynamic(16), static[16](), static[8]()
+        )
+
+        _ = ctx
     except e:
         print("CUDA err:", e)

@@ -28,9 +28,9 @@ fn test(ctx: DeviceContext) raises:
     alias length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = Pointer[Float32].alloc(length)
-    var in1_host = Pointer[Float32].alloc(length)
-    var out_host = Pointer[Float32].alloc(length)
+    var in0_host = DTypePointer[DType.float32].alloc(length)
+    var in1_host = DTypePointer[DType.float32].alloc(length)
+    var out_host = DTypePointer[DType.float32].alloc(length)
 
     # Initialize inputs
     for i in range(length):
@@ -38,9 +38,9 @@ fn test(ctx: DeviceContext) raises:
         in1_host[i] = 2
 
     # Device memory buffers for the kernel input and output
-    var in0_device = ctx.create_buffer[Float32](length)
-    var in1_device = ctx.create_buffer[Float32](length)
-    var out_device = ctx.create_buffer[Float32](length)
+    var in0_device = ctx.create_buffer[DType.float32](length)
+    var in1_device = ctx.create_buffer[DType.float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
     # Copy the input data from the Host to the Device memory
     ctx.enqueue_copy_to_device(in0_device, in0_host)
@@ -82,7 +82,7 @@ fn test(ctx: DeviceContext) raises:
     # CHECK: at index 8 the value is 15.0
     # CHECK: at index 9 the value is 16.0
     for i in range(10):
-        print("at index", i, "the value is", out_host.load(i))
+        print("at index", i, "the value is", out_host[i])
 
     # Release the Host buffers
     in0_host.free()

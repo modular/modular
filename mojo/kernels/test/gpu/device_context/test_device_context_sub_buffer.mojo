@@ -27,18 +27,18 @@ fn test(ctx: DeviceContext) raises:
     alias length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one
-    var in_host = Pointer[Float32].alloc(2 * length)
-    var out_host = Pointer[Float32].alloc(length)
+    var in_host = DTypePointer[DType.float32].alloc(2 * length)
+    var out_host = DTypePointer[DType.float32].alloc(length)
 
     for i in range(length):
         in_host[i] = i
         in_host[i + length] = 2
 
-    var in_device = ctx.create_buffer[Float32](2 * length)
-    var in0_device = in_device.create_sub_buffer[Float32](0, length)
-    var in1_device = in_device.create_sub_buffer[Float32](length, length)
+    var in_device = ctx.create_buffer[DType.float32](2 * length)
+    var in0_device = in_device.create_sub_buffer[DType.float32](0, length)
+    var in1_device = in_device.create_sub_buffer[DType.float32](length, length)
 
-    var out_device = ctx.create_buffer[Float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
     ctx.enqueue_copy_to_device(in_device, in_host)
 
@@ -76,7 +76,7 @@ fn test(ctx: DeviceContext) raises:
     # CHECK: at index 8 the value is 15.0
     # CHECK: at index 9 the value is 16.0
     for i in range(10):
-        print("at index", i, "the value is", out_host.load(i))
+        print("at index", i, "the value is", out_host[i])
 
     in_host.free()
     out_host.free()

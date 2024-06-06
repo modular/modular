@@ -11,15 +11,11 @@ from random import random_float64
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import WARP_SIZE, AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-from LinAlg.MatmulGPU import _matmul_gpu, matmul_kernel_naive
+from memory.reference import _GPUAddressSpace as AddressSpace
+from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE
+from gpu.host.device_context import DeviceContext, DeviceBuffer
+
+from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
 from memory import memset_zero, stack_allocation
 from testing import assert_almost_equal, assert_true
 
@@ -105,14 +101,12 @@ fn matmul(
 
 
 # CHECK-LABEL: run_matmul
-fn run_matmul() raises:
+fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
     alias m = 512
     alias n = 512
     alias k = 512
-
-    var stream = Stream()
 
     var a_host_mem = DTypePointer[DType.float32].alloc(m * k)
     var b_host_mem = DTypePointer[DType.float32].alloc(k * m)
@@ -134,16 +128,17 @@ fn run_matmul() raises:
         for j in range(n):
             c_host[Index(i, j)] = 0
 
-    var a_device = _malloc[Float32](m * k)
-    var b_device = _malloc[Float32](k * n)
-    var c_device = _malloc[Float32](m * n)
+    var a_device = ctx.create_buffer[DType.float32](m * k)
+    var b_device = ctx.create_buffer[DType.float32](k * n)
+    var c_device = ctx.create_buffer[DType.float32](m * n)
 
-    _copy_host_to_device(a_device, a_host.data, m * k)
-    _copy_host_to_device(b_device, b_host.data, k * n)
+    ctx.enqueue_copy_to_device(a_device, a_host.data)
+    ctx.enqueue_copy_to_device(b_device, b_host.data)
 
-    var func = Function[matmul]()
+    var func = ctx.compile_function[matmul]()
 
-    func(
+    ctx.enqueue_function(
+        func,
         a_device,
         b_device,
         c_device,
@@ -152,31 +147,27 @@ fn run_matmul() raises:
         k,
         grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
-        stream=stream,
     )
-    synchronize()
+    ctx.enqueue_copy_from_device(c_host.data, c_device)
 
-    _copy_device_to_host(c_host.data, c_device, m * n)
+    ctx.synchronize()
 
     for i in range(10):
         for j in range(10):
             print("at index = [", i, ",", j, "] the value is", c_host[i, j])
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    _ = a_device
+    _ = b_device
+    _ = c_device
 
     _ = a_host
     _ = b_host
     _ = c_host
 
-    _ = func^
-    _ = stream^
 
-
-fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
-    var stream = Stream()
-
+fn test_gemm_transpose_b[
+    type: DType, M: Int, N: Int, K: Int
+](ctx: DeviceContext) raises:
     var a_host_mem = DTypePointer[type].alloc(M * K)
     var b_host_mem = DTypePointer[type].alloc(K * N)
     var c_host_mem = DTypePointer[type].alloc(M * N)
@@ -191,34 +182,34 @@ fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
     b_host.fill(1)
     c_host.fill(0)
 
-    var a_device = _malloc[Scalar[type]](M * K)
-    var b_device = _malloc[Scalar[type]](N * K)
-    var c_device = _malloc[Scalar[type]](M * N)
-    var c_device_ref = _malloc[Scalar[type]](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](N * K)
+    var c_device = ctx.create_buffer[type](M * N)
+    var c_device_ref = ctx.create_buffer[type](M * N)
 
     alias a_shape = DimList(M, K)
-    var a_device_nd = NDBuffer[type, 2, a_shape](a_device, Index(M, K))
+    var a_device_nd = NDBuffer[type, 2, a_shape](a_device.ptr, Index(M, K))
     alias b_shape = DimList(K, N)
-    var b_device_nd = NDBuffer[type, 2, b_shape](b_device, Index(N, K))
+    var b_device_nd = NDBuffer[type, 2, b_shape](b_device.ptr, Index(N, K))
     alias c_shape = DimList(M, N)
-    var c_device_nd = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
-    _copy_host_to_device(a_device, a_host.data, M * K)
-    _copy_host_to_device(b_device, b_host.data, K * N)
-    _copy_host_to_device(c_device, c_host.data, M * N)
-    _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
+    var c_device_nd = NDBuffer[type, 2, c_shape](c_device.ptr, Index(M, N))
+    ctx.enqueue_copy_to_device(a_device, a_host.data)
+    ctx.enqueue_copy_to_device(b_device, b_host.data)
+    ctx.enqueue_copy_to_device(c_device, c_host.data)
+    ctx.enqueue_copy_to_device(c_device_ref, c_host_ref.data)
 
     _matmul_gpu[use_tensor_core=False](
-        c_device_nd, a_device_nd, b_device_nd, stream
+        c_device_nd, a_device_nd, b_device_nd, ctx
     )
-    synchronize()
-    _copy_device_to_host(c_host.data, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host.data, c_device)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[type, type, type, BLOCK_DIM, True]
     ]()
 
-    func_naive(
+    ctx.enqueue_function(
+        func_naive,
         c_device_ref,
         a_device,
         b_device,
@@ -227,33 +218,29 @@ fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
         K,
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
-        stream=stream,
     )
 
-    synchronize()
-    _copy_device_to_host(c_host_ref.data, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref.data, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M):
         for j in range(N):
             assert_true(isclose(c_host_ref[i, j], c_host[i, j]))
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = c_device_ref
 
     a_host_mem.free()
     b_host_mem.free()
     c_host_mem.free()
     c_host_ref_mem.free()
 
-    _ = func_naive^
-    _ = stream^
 
-
-fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
-    var stream = Stream()
-
+fn run_matmul_from_mogg_interface[
+    M: Int, K: Int, N: Int, type: DType
+](ctx: DeviceContext) raises:
     var a_host_mem = DTypePointer[type].alloc(M * K)
     var b_host_mem = DTypePointer[type].alloc(K * N)
     var c_host_mem = DTypePointer[type].alloc(M * N)
@@ -277,34 +264,34 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
             c_host[Index(i, j)] = 0
             c_host_ref[Index(i, j)] = 0
 
-    var a_device = _malloc[Scalar[type]](M * K)
-    var b_device = _malloc[Scalar[type]](K * N)
-    var c_device = _malloc[Scalar[type]](M * N)
-    var c_device_ref = _malloc[Scalar[type]](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[type](M * N)
+    var c_device_ref = ctx.create_buffer[type](M * N)
 
     alias a_shape = DimList(M, K)
-    var a_device_nd = NDBuffer[type, 2, a_shape](a_device, Index(M, K))
+    var a_device_nd = NDBuffer[type, 2, a_shape](a_device.ptr, Index(M, K))
     alias b_shape = DimList(K, N)
-    var b_device_nd = NDBuffer[type, 2, b_shape](b_device, Index(K, N))
+    var b_device_nd = NDBuffer[type, 2, b_shape](b_device.ptr, Index(K, N))
     alias c_shape = DimList(M, N)
-    var c_device_nd = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
-    _copy_host_to_device(a_device, a_host.data, M * K)
-    _copy_host_to_device(b_device, b_host.data, K * N)
-    _copy_host_to_device(c_device, c_host.data, M * N)
-    _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
+    var c_device_nd = NDBuffer[type, 2, c_shape](c_device.ptr, Index(M, N))
+    ctx.enqueue_copy_to_device(a_device, a_host.data)
+    ctx.enqueue_copy_to_device(b_device, b_host.data)
+    ctx.enqueue_copy_to_device(c_device, c_host.data)
+    ctx.enqueue_copy_to_device(c_device_ref, c_host_ref.data)
 
     _matmul_gpu[use_tensor_core=False](
-        c_device_nd, a_device_nd, b_device_nd, stream
+        c_device_nd, a_device_nd, b_device_nd, ctx
     )
-    synchronize()
-    _copy_device_to_host(c_host.data, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host.data, c_device)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[type, type, type, BLOCK_DIM]
     ]()
 
-    func_naive(
+    ctx.enqueue_function(
+        func_naive,
         c_device_ref,
         a_device,
         b_device,
@@ -313,20 +300,19 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
         K,
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
-        stream=stream,
     )
 
-    synchronize()
-    _copy_device_to_host(c_host_ref.data, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref.data, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M):
         for j in range(N):
             assert_true(isclose(c_host_ref[i, j], c_host[i, j]))
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = c_device_ref
 
     a_host_mem.free()
     b_host_mem.free()
@@ -334,14 +320,11 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     c_host_ref_mem.free()
 
     _ = func_naive^
-    _ = stream^
 
 
 fn run_matmul_from_mogg_interface_with_epilogue[
     M: Int, K: Int, N: Int, type: DType
-]() raises:
-    var stream = Stream()
-
+](ctx: DeviceContext) raises:
     var a_host_mem = DTypePointer[type].alloc(M * K)
     var b_host_mem = DTypePointer[type].alloc(K * N)
     var c_host_mem = DTypePointer[type].alloc(M * N)
@@ -365,22 +348,24 @@ fn run_matmul_from_mogg_interface_with_epilogue[
             c_host[Index(i, j)] = 0
             c_host_ref[Index(i, j)] = 0
 
-    var a_device = _malloc[Scalar[type]](M * K)
-    var b_device = _malloc[Scalar[type]](K * N)
-    var c_device = _malloc[Scalar[type]](M * N)
-    var c_device_ref = _malloc[Scalar[type]](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[type](M * N)
+    var c_device_ref = ctx.create_buffer[type](M * N)
 
     alias a_shape = DimList(M, K)
-    var a_device_nd = NDBuffer[type, 2, a_shape](a_device, Index(M, K))
+    var a_device_nd = NDBuffer[type, 2, a_shape](a_device.ptr, Index(M, K))
     alias b_shape = DimList(K, N)
-    var b_device_nd = NDBuffer[type, 2, b_shape](b_device, Index(K, N))
+    var b_device_nd = NDBuffer[type, 2, b_shape](b_device.ptr, Index(K, N))
     alias c_shape = DimList(M, N)
-    var c_device_nd = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
-    var c_device_ref_nd = NDBuffer[type, 2, c_shape](c_device_ref, Index(M, N))
-    _copy_host_to_device(a_device, a_host.data, M * K)
-    _copy_host_to_device(b_device, b_host.data, K * N)
-    _copy_host_to_device(c_device, c_host.data, M * N)
-    _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
+    var c_device_nd = NDBuffer[type, 2, c_shape](c_device.ptr, Index(M, N))
+    var c_device_ref_nd = NDBuffer[type, 2, c_shape](
+        c_device_ref.ptr, Index(M, N)
+    )
+    ctx.enqueue_copy_to_device(a_device, a_host.data)
+    ctx.enqueue_copy_to_device(b_device, b_host.data)
+    ctx.enqueue_copy_to_device(c_device, c_host.data)
+    ctx.enqueue_copy_to_device(c_device_ref, c_host_ref.data)
 
     alias some_constant = 20
 
@@ -406,12 +391,11 @@ fn run_matmul_from_mogg_interface_with_epilogue[
         use_tensor_core=False,
         transpose_b=False,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_device_nd, a_device_nd, b_device_nd, stream)
-    synchronize()
-    _copy_device_to_host(c_host.data, c_device, M * N)
+    ](c_device_nd, a_device_nd, b_device_nd, ctx)
+    ctx.enqueue_copy_from_device(c_host.data, c_device)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             type,
             type,
@@ -421,7 +405,8 @@ fn run_matmul_from_mogg_interface_with_epilogue[
         ]
     ]()
 
-    func_naive(
+    ctx.enqueue_function(
+        func_naive,
         c_device_ref,
         a_device,
         b_device,
@@ -430,20 +415,19 @@ fn run_matmul_from_mogg_interface_with_epilogue[
         K,
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
-        stream=stream,
     )
 
-    synchronize()
-    _copy_device_to_host(c_host_ref.data, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref.data, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M):
         for j in range(N):
             assert_true(isclose(c_host_ref[i, j], c_host[i, j]))
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = c_device_ref
 
     a_host_mem.free()
     b_host_mem.free()
@@ -451,7 +435,6 @@ fn run_matmul_from_mogg_interface_with_epilogue[
     c_host_ref_mem.free()
 
     _ = func_naive^
-    _ = stream^
 
 
 fn run_low_precision_test[
@@ -461,9 +444,7 @@ fn run_low_precision_test[
     type: DType,
     accum_type: DType,
     transpose_b: Bool = False,
-]() raises:
-    var stream = Stream()
-
+](ctx: DeviceContext) raises:
     var a_host = DTypePointer[type].alloc(M * K)
     var b_host = DTypePointer[type].alloc(K * N)
     var b_trans_host = DTypePointer[type].alloc(K * N)
@@ -484,34 +465,33 @@ fn run_low_precision_test[
             else:
                 b_trans_host[k * N + n] = k * N + n
 
-    var a_device = _malloc[type](M * K)
-    var b_device = _malloc[type](K * N)
-    var c_device = _malloc[accum_type](M * N)
-    var c_device_ref = _malloc[accum_type](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[accum_type](M * N)
+    var c_device_ref = ctx.create_buffer[accum_type](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_trans_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_trans_host)
 
-    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device)
-    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device)
+    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
+    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
+    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device.ptr)
 
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=False,
-    ](c_buffer, a_buffer, b_buffer, stream)
+    ](c_buffer, a_buffer, b_buffer, ctx)
 
-    synchronize()
-
-    _copy_device_to_host(c_host, c_device, M * N)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[accum_type, type, type, BLOCK_DIM]
-    var func_naive = Function[gemm_naive](threads_per_block=256)
-    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref)
-    func_naive(
+    var func_naive = ctx.compile_function[gemm_naive](threads_per_block=256)
+    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref.ptr)
+    ctx.enqueue_function(
+        func_naive,
         c_buffer_ref,
         a_buffer,
         b_buffer,
@@ -522,18 +502,18 @@ fn run_low_precision_test[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    synchronize()
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
             print(i, c_host[i], c_host_ref[i])
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
 
-    _free(c_device)
-    _free(c_device_ref)
-    _free(a_device)
-    _free(b_device)
+    _ = c_device
+    _ = c_device_ref
+    _ = a_device
+    _ = b_device
 
     c_host.free()
     c_host_ref.free()
@@ -542,7 +522,6 @@ fn run_low_precision_test[
     b_trans_host.free()
 
     _ = func_naive^
-    _ = stream^
 
 
 fn run_low_precision_test_with_epilogue[
@@ -552,9 +531,7 @@ fn run_low_precision_test_with_epilogue[
     type: DType,
     accum_type: DType,
     transpose_b: Bool = False,
-]() raises:
-    var stream = Stream()
-
+](ctx: DeviceContext) raises:
     var a_host = DTypePointer[type].alloc(M * K)
     var b_host = DTypePointer[type].alloc(K * N)
     var b_trans_host = DTypePointer[type].alloc(K * N)
@@ -575,18 +552,18 @@ fn run_low_precision_test_with_epilogue[
             else:
                 b_trans_host[k * N + n] = k * N + n
 
-    var a_device = _malloc[type](M * K)
-    var b_device = _malloc[type](K * N)
-    var c_device = _malloc[accum_type](M * N)
-    var c_device_ref = _malloc[accum_type](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[accum_type](M * N)
+    var c_device_ref = ctx.create_buffer[accum_type](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_trans_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_trans_host)
 
-    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device)
-    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device)
-    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref)
+    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
+    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
+    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device.ptr)
+    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref.ptr)
 
     alias some_constant = 20
 
@@ -614,12 +591,10 @@ fn run_low_precision_test_with_epilogue[
         use_tensor_core=True,
         transpose_b=False,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_buffer, a_buffer, b_buffer, stream)
+    ](c_buffer, a_buffer, b_buffer, ctx)
 
-    synchronize()
-
-    _copy_device_to_host(c_host, c_device, M * N)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
@@ -630,8 +605,9 @@ fn run_low_precision_test_with_epilogue[
         BLOCK_DIM,
         elementwise_lambda_fn=naive_epilogue_fn,
     ]
-    var func_naive = Function[gemm_naive](threads_per_block=256)
-    func_naive(
+    var func_naive = ctx.compile_function[gemm_naive](threads_per_block=256)
+    ctx.enqueue_function(
+        func_naive,
         c_buffer_ref,
         a_buffer,
         b_buffer,
@@ -642,18 +618,18 @@ fn run_low_precision_test_with_epilogue[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    synchronize()
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
             print(i, c_host[i], c_host_ref[i])
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
 
-    _free(c_device)
-    _free(c_device_ref)
-    _free(a_device)
-    _free(b_device)
+    _ = c_device
+    _ = c_device_ref
+    _ = a_device
+    _ = b_device
 
     c_host.free()
     c_host_ref.free()
@@ -667,23 +643,26 @@ fn run_low_precision_test_with_epilogue[
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_matmul()
-            test_gemm_transpose_b[DType.float32, 512, 512, 512]()
-            test_gemm_transpose_b[DType.float32, 512, 1024, 3072]()
-            run_matmul_from_mogg_interface[1024, 3072, 5120, DType.float32]()
-            run_matmul_from_mogg_interface[1024, 12288, 3072, DType.float32]()
-            run_matmul_from_mogg_interface_with_epilogue[
-                1024, 3072, 5120, DType.float32
-            ]()
-            run_matmul_from_mogg_interface_with_epilogue[
-                1024, 3072, 5120, DType.bfloat16
-            ]()
-            run_low_precision_test[
-                1024, 3072, 5120, DType.float32, DType.float32
-            ]()
-            run_low_precision_test_with_epilogue[
-                1024, 3072, 5120, DType.float32, DType.float32
-            ]()
+        var ctx = DeviceContext()
+
+        run_matmul(ctx)
+        test_gemm_transpose_b[DType.float32, 512, 512, 512](ctx)
+        test_gemm_transpose_b[DType.float32, 512, 1024, 3072](ctx)
+        run_matmul_from_mogg_interface[1024, 3072, 5120, DType.float32](ctx)
+        run_matmul_from_mogg_interface[1024, 12288, 3072, DType.float32](ctx)
+        run_matmul_from_mogg_interface_with_epilogue[
+            1024, 3072, 5120, DType.float32
+        ](ctx)
+        run_matmul_from_mogg_interface_with_epilogue[
+            1024, 3072, 5120, DType.bfloat16
+        ](ctx)
+        run_low_precision_test[1024, 3072, 5120, DType.float32, DType.float32](
+            ctx
+        )
+        run_low_precision_test_with_epilogue[
+            1024, 3072, 5120, DType.float32, DType.float32
+        ](ctx)
+
+        _ = ctx
     except e:
         print("CUDA_ERROR:", e)
