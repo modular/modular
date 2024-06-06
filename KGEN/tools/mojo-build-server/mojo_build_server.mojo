@@ -8,27 +8,29 @@ from sys import argv, exit
 
 
 fn print_help():
-    print("NAME")
-    print("        mojo-build-server — A build server for Mojo projects.")
-    print("")
-    print("SYNOPSIS")
-    print("        mojo-build-server [options]")
-    print("")
-    print("DESCRIPTION")
-    print("        A server that communicates via JSON-RPC in order to build")
-    print("        Mojo projects.")
-    print("")
-    print("OPTIONS")
-    print("    Debugging options")
-    print("        --debug")
-    print("            Use delimited text for JSON input to the server, and ")
-    print("            print pretty JSON output from the server, for")
-    print("            debugging and testing purposes.")
-    print("")
-    print("    Common options")
-    print("        --help, -h")
-    print("            Displays help information.")
-    print("")
+    print(
+        """NAME
+        mojo-build-server — A build server for Mojo projects.
+
+SYNOPSIS
+        mojo-build-server [options]
+
+DESCRIPTION
+        A server that communicates via JSON-RPC in order to build
+        Mojo projects.
+
+OPTIONS
+    Debugging options
+        --debug
+            Use delimited text for JSON input to the server, and
+            print pretty JSON output from the server, for
+            debugging and testing purposes.
+
+    Common options
+        --help, -h
+            Displays help information.
+"""
+    )
 
 
 fn main():
