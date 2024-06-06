@@ -1,9 +1,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
-load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
-load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library")
+load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library", "td_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
-load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
 package(default_visibility = ["//visibility:public"])
 

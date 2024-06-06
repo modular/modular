@@ -1,7 +1,11 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@llvm-project//mlir:tblgen.bzl", "td_library")
-load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library")
-load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
+load(
+    "//bazel:api.bzl",
+    "driver_option_tablegen",
+    "modular_cc_binary",
+    "modular_cc_library",
+    "td_library",
+)
 
 package(default_visibility = ["//visibility:public"])
 

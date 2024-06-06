@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_binary")
-load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
+load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary")
 
 driver_option_tablegen(
     name = "Hi",

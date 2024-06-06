@@ -1,4 +1,4 @@
-load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
     name = "kgen",

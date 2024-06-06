@@ -1,6 +1,6 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
-load("//utils/bazel/build/rules:pytest_test.bzl", "pytest_test")
+load("//bazel:api.bzl", "pytest_test")
 
 py_library(
     name = "support",
