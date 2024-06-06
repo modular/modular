@@ -10,11 +10,11 @@ high-performance inference graphs written in Mojo. It's an API for
 graph-building only, and it does not implement support for training.
 
 To get started, you need to instantiate a
-[`Graph`](/max/reference/mojo/graph/graph/Graph) and specify its input
+[`Graph`](/max/api/mojo/graph/graph/Graph) and specify its input
 and output shapes. Then build a sequence of ops, using ops provided in the
-[`graph.ops`](/max/reference/mojo/graph/ops/) package or using your own
+[`graph.ops`](/max/api/mojo/graph/ops/) package or using your own
 custom ops, and add them to the graph by setting the output op(s) with
-[`Graph.output()`](/max/reference/mojo/graph/graph/Graph#output).
+[`Graph.output()`](/max/api/mojo/graph/graph/Graph#output).
 
 For example:
 
@@ -40,7 +40,7 @@ def build_model() -> Graph:
 ```
 
 You can then load the `Graph` into MAX Engine with
-[`InferenceSession.load()`](/max/reference/mojo/engine/session/InferenceSession#load).
+[`InferenceSession.load()`](/max/api/mojo/engine/session/InferenceSession#load).
 
 For more detail, see the tutorial about how to [build a graph with MAX
 Graph](/max/graph/get-started).

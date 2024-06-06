@@ -26,7 +26,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
     be used to supply and receive data to MAX Engine model.
 
     This is the data type returned by
-    [`Model.execute()`](/max/reference/mojo/engine/model/Model#execute), and
+    [`Model.execute()`](/max/api/mojo/engine/model/Model#execute), and
     you can also use this type for the inputs you pass in (although `execute()`
     also supports other formats for the input).
     """
@@ -269,7 +269,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             key: Name in TensorMap.
 
         Returns:
-            [`Value`](/max/reference/mojo/engine/value/Value) pointed by
+            [`Value`](/max/api/mojo/engine/value/Value) pointed by
             the key.
         """
         var value_ptr = self._ptr.get_value_by_name(

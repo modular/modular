@@ -15,10 +15,10 @@ fn op(name: StringLiteral, priority: Int = 0):
 
     A function with this decorator must have a signature as follows:
 
-    - All arguments are [`Tensor`](/max/reference/mojo/extensibility/Tensor)
+    - All arguments are [`Tensor`](/max/api/mojo/extensibility/Tensor)
       types.
     - The return type is a single
-      [`Tensor`](/max/reference/mojo/extensibility/Tensor).
+      [`Tensor`](/max/api/mojo/extensibility/Tensor).
     - It does not raise any exceptions.
 
     For example, this registers `my_op` as an override implementation of

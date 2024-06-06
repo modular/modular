@@ -92,11 +92,11 @@ def add(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -126,11 +126,11 @@ def div(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -160,11 +160,11 @@ def max(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -194,11 +194,11 @@ def min(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -228,11 +228,11 @@ def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -262,11 +262,11 @@ def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -296,11 +296,11 @@ def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:
@@ -330,11 +330,11 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
         to the [dtype promotion
-        rules](/max/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
         before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
         same shape according to [broadcasting
-        rules](/max/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
         before the operation.
 
     Args:

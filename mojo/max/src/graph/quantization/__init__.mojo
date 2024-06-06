@@ -33,12 +33,12 @@ var quantized: Tensor[DType.uint8] = Q4_0Encoding.quantize(tensor)
 ```
 
 Specific ops in the MAX Graph API that use quantization can be found in the
-[`ops.quantized_ops`](/max/reference/mojo/graph/ops/quantized_ops) module. You
+[`ops.quantized_ops`](/max/api/mojo/graph/ops/quantized_ops) module. You
 can also add a quantized node in your graph with
-[`Graph.quantize()`](/max/reference/mojo/graph/graph/Graph#quantize).
+[`Graph.quantize()`](/max/api/mojo/graph/graph/Graph#quantize).
 
 To save the quantized tensors to disk, use
-[`graph.checkpoint.save()`](/max/reference/mojo/graph/checkpoint/save_load/save).
+[`graph.checkpoint.save()`](/max/api/mojo/graph/checkpoint/save_load/save).
 """
 
 from .quantization_encoding import QuantizationEncoding

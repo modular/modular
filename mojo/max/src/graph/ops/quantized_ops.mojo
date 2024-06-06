@@ -88,7 +88,7 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
         lhs: The non-quantized, left-hand-side of the matmul.
         rhs: The quantized, right-hand-side of the matmul.
              Must be rank 2 (a 2D tensor/matrix) and in a supported
-             [quantization encoding](/max/reference/mojo/graph/quantization/).
+             [quantization encoding](/max/api/mojo/graph/quantization/).
 
     Returns:
         The dequantized result (a floating point tensor).

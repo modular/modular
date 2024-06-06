@@ -7,17 +7,17 @@
 
 Although the following modules provide a lot of the ops you want when building
 a graph, you can also use functions in
-[`Graph`](/max/reference/mojo/graph/graph/Graph) to add constant values,
-such as [`constant()`](/max/reference/mojo/graph/graph/Graph#constant),
-[`vector()`](/max/reference/mojo/graph/graph/Graph#vector), and
-[`scalar()`](/max/reference/mojo/graph/graph/Graph#scalar).
+[`Graph`](/max/api/mojo/graph/graph/Graph) to add constant values,
+such as [`constant()`](/max/api/mojo/graph/graph/Graph#constant),
+[`vector()`](/max/api/mojo/graph/graph/Graph#vector), and
+[`scalar()`](/max/api/mojo/graph/graph/Graph#scalar).
 
-The [`Symbol`](/max/reference/mojo/graph/symbol/Symbol) type (returned by
+The [`Symbol`](/max/api/mojo/graph/symbol/Symbol) type (returned by
 all ops) also implements various dunder methods to support operations between
 symbols, such as `+` add, `*` multiply, and `@` matmul, plus convenience
 methods such as
-[`reshape()`](/max/reference/mojo/graph/symbol/Symbol#reshape) and
-[`swapaxes()`](/max/reference/mojo/graph/symbol/Symbol#swapaxes). """
+[`reshape()`](/max/api/mojo/graph/symbol/Symbol#reshape) and
+[`swapaxes()`](/max/api/mojo/graph/symbol/Symbol#swapaxes). """
 
 from .casting import (
     shape_of,

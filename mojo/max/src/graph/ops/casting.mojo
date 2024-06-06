@@ -72,7 +72,7 @@ fn rebind(v: Symbol, out_dims: List[Dim], message: String) raises -> Symbol:
     Args:
         v: The input symbolic tensor to rebind.
         out_dims: The symbolic shape to assert for `v`, as a list of
-                  [`Dim`](/max/reference/mojo/graph/type/Dim) values.
+                  [`Dim`](/max/api/mojo/graph/type/Dim) values.
         message: The message printed if the rebind fails at runtime.
 
     Returns:

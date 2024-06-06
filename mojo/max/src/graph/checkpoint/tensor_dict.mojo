@@ -58,9 +58,9 @@ struct TensorDict(Sized):
     """A collection of keyed `Tensor` values used with checkpoint files.
 
     This is the type accepted by
-    [`save()`](/max/reference/mojo/graph/checkpoint/save_load/save) and
+    [`save()`](/max/api/mojo/graph/checkpoint/save_load/save) and
     returned by
-    [`load()`](/max/reference/mojo/graph/checkpoint/save_load/load).
+    [`load()`](/max/api/mojo/graph/checkpoint/save_load/load).
 
     For example:
 

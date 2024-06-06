@@ -15,7 +15,7 @@ def custom[name: StringLiteral](values: List[Symbol], out_type: Type) -> Symbol:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/reference/mojo/register/register/op)
+    the [`max.register.op`](/max/api/mojo/register/register/op)
     decorator.
 
     Parameters:
@@ -37,7 +37,7 @@ def custom[
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
-    the [`max.register.op`](/max/reference/mojo/register/register/op)
+    the [`max.register.op`](/max/api/mojo/register/register/op)
     decorator.
 
     Parameters:

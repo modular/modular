@@ -32,7 +32,7 @@ def save(tensor_dict: TensorDict, path: Path):
 
     The file is saved in a binary format that's specific to MAX. You can then
     load the checkpoint with
-    [`load()`](/max/reference/mojo/graph/checkpoint/save_load/load).
+    [`load()`](/max/api/mojo/graph/checkpoint/save_load/load).
 
     For example:
 
@@ -178,7 +178,7 @@ def load(path: Path) -> TensorDict:
     """Reads tensors from saved checkpoint file.
 
     This supports only MAX checkpoint files saved with
-    [`save()`](/max/reference/mojo/graph/checkpoint/save_load/save).
+    [`save()`](/max/api/mojo/graph/checkpoint/save_load/save).
 
     For example:
 
