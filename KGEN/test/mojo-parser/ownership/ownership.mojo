@@ -860,3 +860,46 @@ struct HasMemExample:
       self.fh = maybeMemExample()
     except:
       pass
+
+@value
+struct Dim:
+  var dim: Int
+
+fn maybeDim() raises -> Dim:
+   return Dim(3)
+
+@value
+struct List:
+  fn append(self, d: MemExample):
+     pass
+
+@value
+struct DoNotPropagateErrorStateIntoContinueSet:
+  var dims: List
+  # CHECK-LABEL: @"__init__({{.*}}::DoNotPropagateErrorStateIntoContinueSet
+  fn __init__(inout self, cond: __mlir_type.`i1`, owned list: List) raises:
+    # CHECK:     hlcf.loop "_loop_0" {
+    # CHECK-NEXT:  hlcf.if %cond {
+    # CHECK-NEXT:    hlcf.yield
+    # CHECK-NEXT:  } else {
+    # CHECK-NEXT:    hlcf.break "_loop_0"
+    # CHECK-NEXT:  }
+    while cond:
+      list.append(maybeMemExample())
+    self.dims = list
+
+fn use(x: MemExample): pass
+
+# CHECK-LABEL: lit.func @"destroyWholeValuesIfLastReferenceWasInLoop
+fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
+                                              i:Int,
+                                              owned memPair: MemPair) raises:
+   while cond:
+     # CHECK:      hlcf.if %cond {
+     # CHECK-NEXT:   hlcf.yield
+     # CHECK-NEXT: } else {
+     # CHECK-NEXT:   lit.call @{{.*}}::@MemPair::@"__del__({{.*}}(%memPair)
+     # CHECK-NEXT:   hlcf.break "_loop_0"
+     # CHECK-NEXT: }
+     if cond:
+        use(memPair.a)
