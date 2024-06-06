@@ -8,7 +8,7 @@ from memory.unsafe import DTypePointer
 from memory.unsafe_pointer import *
 from os import abort
 from pathlib import Path
-from sys.ffi import DLHandle
+from sys.ffi import DLHandle, C_char
 from utils import StringRef
 
 
@@ -17,7 +17,7 @@ from utils import StringRef
 struct CString:
     """Represents `const char*` in C. Useful for binding with C APIs."""
 
-    var ptr: DTypePointer[DType.int8]
+    var ptr: UnsafePointer[C_char]
 
     fn __init__(inout self, ptr: UnsafePointer[UInt8]):
         """
@@ -27,8 +27,7 @@ struct CString:
             ptr: The string data pointer to wrap.
         """
 
-        # TODO: Remove cast once UInt8 string types transition is complete.
-        self.ptr = DTypePointer(ptr.bitcast[Int8]())
+        self.ptr = ptr.bitcast[C_char]()
 
     fn get_as_string_ref(self) -> StringRef:
         """

@@ -7,7 +7,7 @@
 
 from builtin._location import __call_location
 from memory import stack_allocation
-from sys.ffi import external_call
+from sys.ffi import external_call, C_char
 
 
 @always_inline
@@ -58,7 +58,7 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     call_stack = stack_allocation[MAX_STACK_SIZE, Pointer[NoneType]]()
     frames = external_call["backtrace", Int](call_stack, MAX_STACK_SIZE)
     frame_strs = external_call[
-        "backtrace_symbols", Pointer[DTypePointer[DType.int8]]
+        "backtrace_symbols", UnsafePointer[UnsafePointer[C_char]]
     ](call_stack, frames)
     formatted = str("System stack:\n")
     for i in range(frames):
