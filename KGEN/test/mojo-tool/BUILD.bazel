@@ -45,7 +45,7 @@ lit_tests(
     }),
     tools = [
         "//KGEN/tools/kgen-opt",
-        "//KGEN/tools/mojo:mojo.opt",
+        "//KGEN/tools/mojo",
         "@llvm-project//llvm:llvm-objdump",
     ],
 )

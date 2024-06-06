@@ -28,11 +28,11 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     tools = [
-        "//KGEN/tools/kgen:kgen.opt",
+        "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/llvm-module-split",
-        "//KGEN/tools/mojo:mojo.opt",
+        "//KGEN/tools/mojo",
     ],
 )
 
@@ -54,6 +54,6 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
     tools = [
-        "//KGEN/tools/kgen:kgen.opt",
+        "//KGEN/tools/kgen",
     ],
 )

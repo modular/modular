@@ -1,5 +1,4 @@
 load("//bazel:api.bzl", "modular_cc_binary")
-load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,9 +25,4 @@ modular_cc_binary(
         "//Support:MArchTarget",
         "@llvm-project//mlir:BytecodeWriter",
     ],
-)
-
-opt_wrapper(
-    name = "kgen.opt",
-    dep = ":kgen",
 )

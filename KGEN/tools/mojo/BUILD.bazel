@@ -1,7 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@llvm-project//mlir:tblgen.bzl", "td_library")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library")
-load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
 package(default_visibility = ["//visibility:public"])
@@ -139,9 +138,4 @@ modular_cc_binary(
         "//Support:MDialect",
         "//Support:Telemetry",
     ],
-)
-
-opt_wrapper(
-    name = "mojo.opt",
-    dep = ":mojo",
 )
