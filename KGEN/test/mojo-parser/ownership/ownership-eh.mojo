@@ -309,3 +309,26 @@ fn emplace_error() raises:
     # CHECK: lit.error_return
     __get_nearest_error_slot() = Error()
     __mlir_op.`lit.raise`()
+
+struct InitFieldsDestroyedInThrowingConstructor:
+  var x:MemExample
+  fn __init__(inout self):
+     self.x = MemExample()
+
+  # CHECK-LABEL: lit.func @"__init__({{.*}}::InitFieldsDestroyedInThrowingConstructor=&,__mlir_type.i1)"
+  fn __init__(inout self, cond: __mlir_type.`i1`) raises:
+     self = InitFieldsDestroyedInThrowingConstructor()
+     # CHECK:      hlcf.elif {
+     # CHECK-NEXT:   hlcf.elif.yield %cond : i1
+     # CHECK-NEXT: } then {
+     # CHECK-NEXT:   [[V2:%.*]] = lit.ref.struct.ger %self[x]
+     # CHECK-NEXT:   lit.call @{{.*}}::@MemExample::@"__del__{{.*}}([[V2]])
+     # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
+     # CHECK-NEXT:   lit.ref.store
+     # CHECK-NEXT:   kgen.param.constant
+     # CHECK-NEXT:   lit.error_return
+     # CHECK-NEXT: } else {
+     # CHECK-NEXT:   hlcf.yield
+     # CHECK-NEXT: }
+     if cond:
+        raise Error()
