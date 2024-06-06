@@ -9,6 +9,7 @@ from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from runtime.llcl import ChainPromise
 from builtin.coroutine import _coro_resume_fn, _suspend_async
+from tensor import TensorSpec
 
 from max.engine._utils import (
     CString,
@@ -18,7 +19,6 @@ from max.engine._utils import (
 from max.engine import InferenceSession, Model, TensorMap
 from max.engine._compilation import CCompiledModel
 from max.serve.service import InferenceRequest, InferenceResponse
-from max.tensor import TensorSpec
 
 
 # ===----------------------------------------------------------------------=== #
