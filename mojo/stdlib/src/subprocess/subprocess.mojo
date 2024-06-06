@@ -8,6 +8,7 @@
 
 from sys import external_call
 from sys.info import os_is_windows
+from sys.ffi import C_char
 
 from memory.unsafe import DTypePointer, Pointer
 
@@ -51,7 +52,7 @@ struct _POpenHandle:
           A string containing the output of running the command.
         """
         var len: Int = 0
-        var line = DTypePointer[DType.int8]()
+        var line = UnsafePointer[C_char]()
         var res = String("")
 
         while True:
@@ -63,7 +64,7 @@ struct _POpenHandle:
             res += StringRef(line, read)
 
         if line:
-            external_call["free", NoneType](line.address.bitcast[NoneType]())
+            external_call["free", NoneType](line.bitcast[NoneType]())
 
         return res.rstrip()
 
