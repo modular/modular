@@ -360,7 +360,9 @@ def tile(input: Symbol, repeats: List[Int64]) -> Symbol:
         )
     for i in range(len(repeats)):
         input_dimension = input_type.dims[i]
-        if input_dimension.is_dynamic() or input_dimension.is_symbolic():
+        if input_dimension.is_symbolic() and repeats[i] == 1:
+            output_dims.append(input_dimension)
+        elif input_dimension.is_dynamic() or input_dimension.is_symbolic():
             output_dims.append(Dim.dynamic())
         else:
             output_dims.append(

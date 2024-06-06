@@ -158,3 +158,25 @@ fn _string_attr(
         name=_mlir.Identifier(ctx, name),
         attr=_mlir.builtin_attributes.StringAttr(ctx, value),
     )
+
+
+fn _shape_attr(
+    ctx: _mlir.Context, name: String, shape: List[Dim]
+) -> _mlir.NamedAttribute:
+    """Creates a new `Shape`-valued `Attribute`.
+
+    Args:
+        ctx: The mlir.Context in which to create the type.
+        name: The `Attribute` name.
+        shape: The dimensions that make up the shape.
+
+    Returns:
+        An _mlir.Type in the specified Context.
+    """
+    var dims = List[_mlir.Attribute](capacity=len(shape))
+    for i in range(len(shape)):
+        dims.append(shape[i].to_mlir(ctx))
+    return _mlir.NamedAttribute(
+        name=_mlir.Identifier(ctx, name),
+        attr=_c.attr_new_shape(ctx, dims),
+    )

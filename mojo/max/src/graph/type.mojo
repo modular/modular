@@ -298,6 +298,29 @@ struct Dim(CollectionElement):
             var dim = self.value[StaticDim].dim
             return _c.dim_new_static(ctx, dim)
 
+    @staticmethod
+    fn from_mlir(dim_attr: _mlir.Attribute) raises -> Dim:
+        """Constructs a dimension from an _mlir Attribute.
+
+        Args:
+            dim_attr: The _mlir Attribute object to parse into a dimension.
+
+        Returns:
+            The dimension represented by the _mlir Attr value.
+        """
+        if _c.dim_is_dynamic(dim_attr):
+            return Dim.dynamic()
+        elif _c.dim_is_static(dim_attr):
+            return Dim.static(_c.dim_static_value(dim_attr))
+        elif _c.dim_is_symbolic(dim_attr):
+            return Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
+        else:
+            debug_assert(
+                _c.dim_is_symbolic_expression(dim_attr),
+                "unknown dim variant",
+            )
+            raise "Unsupported dim type: symbolic expression"
+
     fn __str__(self) -> String:
         """Creates a string representation of the dimension.
 
@@ -429,20 +452,7 @@ struct TensorType(CollectionElement):
         var dims = List[Dim](capacity=int(rank))
         for i in range(rank):
             var dim_attr = _c.tensor_type_get_dim(t, i)
-            var dim: Dim
-            if _c.dim_is_dynamic(dim_attr):
-                dim = Dim.dynamic()
-            elif _c.dim_is_static(dim_attr):
-                dim = Dim.static(_c.dim_static_value(dim_attr))
-            elif _c.dim_is_symbolic(dim_attr):
-                dim = Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
-            else:
-                debug_assert(
-                    _c.dim_is_symbolic_expression(dim_attr),
-                    "unknown dim variant",
-                )
-                raise "Unsupported dim type: symbolic expression"
-            dims.append(dim)
+            dims.append(Dim.from_mlir(dim_attr))
         return Self(dtype, dims)
 
     # ===------------------------------------------------------------------=== #

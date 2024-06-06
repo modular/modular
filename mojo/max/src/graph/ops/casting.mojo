@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Ops that modify the shape or data type of a symbolic tensor."""
-
 from _mlir.ir import NamedAttribute, Identifier
 from _mlir.builtin_attributes import StringAttr
 
+from .._attributes import _shape_attr
 from ..error import error
 from ..type import Dim
 
@@ -186,6 +186,44 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         dims.append(1)
 
     return reshape(v, new_shape, dims)
+
+
+# TODO(GRA-578): Remove old reshape apis once we have dim expressions and remove dynamic dimensions.
+# Only this version should be needed in the future.
+fn reshape(v: Symbol, shape: List[Dim]) raises -> Symbol:
+    """Reshapes a symbolic tensor.
+
+    The number and order of the elements in the tensor is unchanged.
+    In other words, if you were to iterate over elements in the tensor
+    by major dimension to minor dimension, the iteration order would stay
+    the same.
+
+    If a value of -1 is present in the shape, that dimension becomes
+    an automatically calculated dimension collecting all unspecified dimensions.
+    Its length becomes the number of elements in the original tensor
+    divided by the product of elements of the reshape.
+
+    Args:
+        v: The input symbolic tensor to reshape.
+            This tensor may not contain any dynamic dimensions.
+        shape: The new shape as a list of dimensions.
+            Dynamic dimensions are not allowed.
+            A single dimension my be `-1`.
+
+    Returns:
+        A symbolic tensor with the same elements as the original tensor, but
+        in a new shape. Its symbolic shape is the same as `shape`.
+    """
+    var g = v.graph()
+
+    var ctx = g._context()
+    var newShapeAttr = _shape_attr(ctx, "newShape", shape)
+    return g.nvop(
+        "rmo.reshape",
+        List[Symbol](v),
+        attrs=List[NamedAttribute](newShapeAttr),
+        enable_result_type_inference=True,
+    )[0]
 
 
 fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:

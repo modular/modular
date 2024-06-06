@@ -124,6 +124,65 @@ struct Symbol(CollectionElement, Stringable):
         ) + ": Failed to rebind runtime shape"
         return ops.rebind(self, dims, message)
 
+    fn reshape(self) raises -> Symbol:
+        return ops.reshape(
+            self,
+            self.graph().vector[DType.int64](List[Int64]()),
+            List[Dim](),
+        )
+
+    # TODO(GRA-578): Once reshape with Variant[Symbol, Int] is removed, we can also remove this.
+    # Will only need Variant[Dim, Int].
+    @always_inline
+    fn reshape(self, *dims: Int) raises -> Symbol:
+        """Reshapes this `Symbol`.
+
+        Uses the `mo.reshape` op. Requires the symbol to be a `TensorType`.
+
+        Args:
+            dims: The new dimensions.
+
+        Returns:
+            A new `Symbol` that has the given shape.
+        """
+        from builtin._location import __call_location
+
+        try:
+            if len(dims) == 0:
+                return self.reshape()
+
+            var shape = List[Dim]()
+            for dim in dims:
+                shape.append(Dim(dim))
+
+            return ops.reshape(self, shape)
+        except e:
+            raise str(__call_location()) + ": " + str(e)
+
+    @always_inline
+    fn reshape(self, *dims: Dim) raises -> Symbol:
+        """Reshapes this `Symbol`.
+
+        Uses the `mo.reshape` op. Requires the symbol to be a `TensorType`.
+
+        Args:
+            dims: The new dimensions.
+
+        Returns:
+            A new `Symbol` that has the given shape.
+        """
+        try:
+            if len(dims) == 0:
+                return self.reshape()
+
+            var shape = List[Dim]()
+            for dim in dims:
+                shape.append(dim[])
+
+            return ops.reshape(self, shape)
+        except e:
+            raise str(__call_location()) + ": " + str(e)
+
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
 
@@ -135,15 +194,11 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             A new `Symbol` that has the given shape.
         """
+        if len(dims) == 0:
+            return self.reshape()
+
         var static_shape = List[Dim]()
         var symbolic_dims = List[Symbol]()
-
-        if len(dims) == 0:
-            return ops.reshape(
-                self,
-                self.graph().vector[DType.int64](List[Int64]()),
-                static_shape,
-            )
 
         for dim in dims:
             if dim[].isa[Symbol]():

@@ -193,6 +193,27 @@ fn attr_new_param_decl_array(
     return result
 
 
+fn attr_new_shape(
+    ctx: _mlir.Context,
+    dims: List[_mlir.Attribute],
+) -> _mlir.Attribute:
+    var result = cfunc[
+        "MAXG_attrNewShape",
+        fn (
+            _mlir.Context.cType,
+            Pointer[_mlir.Attribute.cType],
+            Int32,
+        ) -> _mlir.Attribute.cType,
+    ]()(
+        ctx.c,
+        Pointer[_mlir.Attribute](dims.data.address).bitcast[
+            _mlir.Attribute.cType
+        ](),
+        len(dims),
+    )
+    return result
+
+
 # ===----------------------------------------------------------------------===#
 # Type helpers
 # ===----------------------------------------------------------------------===#
@@ -232,7 +253,6 @@ fn tensor_type_new(
         ](),
         len(dims),
     )
-    _ = dims
     return result
 
 
