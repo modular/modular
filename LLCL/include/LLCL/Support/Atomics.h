@@ -11,7 +11,7 @@
 #ifndef LLCL_SUPPORT_ATOMICS_H
 #define LLCL_SUPPORT_ATOMICS_H
 
-#include "LLCL/Support/SpinWaiter.h"
+#include "Support/Threading/SpinWaiter.h"
 
 #include <atomic>
 #include <new>

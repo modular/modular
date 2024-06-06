@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_SPINWAITER_H
-#define LLCL_SUPPORT_SPINWAITER_H
+#ifndef SUPPORT_THREADING_SPINWAITER_H
+#define SUPPORT_THREADING_SPINWAITER_H
 
 #include <optional>
 
@@ -16,7 +16,7 @@
 #include <immintrin.h> // _mm_pause
 #endif
 
-namespace M::LLCL {
+namespace M {
 
 namespace Detail {
 // This is the non-templated base class of SpinWaiter.
@@ -138,6 +138,6 @@ private:
   std::optional<std::chrono::high_resolution_clock::time_point> busyWaitEndTime;
 };
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_SUPPORT_SPINWAITER_H
+#endif // SUPPORT_THREADING_SPINWAITER_H

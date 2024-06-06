@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Support/SpinWaiter.h"
+#include "Support/Threading/SpinWaiter.h"
 
-using namespace M::LLCL;
+using namespace M;
 
 bool Detail::SpinWaiterBase::yieldToOS() {
   // If that didn't work, we yield the thread back to the OS.  This is much

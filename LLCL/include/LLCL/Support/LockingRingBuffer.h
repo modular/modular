@@ -8,7 +8,7 @@
 #define LLCL_SUPPORT_LOCKINGRINGBUFFER_H
 
 #include "LLCL/Support/Atomics.h"
-#include "LLCL/Support/SpinWaiter.h"
+#include "Support/Threading/SpinWaiter.h"
 #include "llvm/Support/MathExtras.h"
 #include <cassert>
 #include <llvm/ADT/SmallVector.h>
