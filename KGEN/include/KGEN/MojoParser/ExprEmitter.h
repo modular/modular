@@ -42,6 +42,7 @@ enum ExprContext {
   EC_AttributeRefBase,      // x.field
   EC_AliasValue,            // alias something = x
   EC_CallArgValue,          // foo(x)
+  EC_CallRefArgValue,       // foo(x) where x is passed by 'ref'.
   EC_CallCalleeValue,       // x()
   EC_TypeParamValue,        // Vector[x]
   EC_CallParamValue,        // f[x]()
@@ -359,6 +360,11 @@ public:
   /// This returns null if emission fails.
   PValue emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
+
+  /// This helper emits the specified expression as a 'ref' expression value,
+  /// and returns the value of RefType for the result.
+  /// This emits an error and returns null if emission fails.
+  Value emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
   //===--------------------------------------------------------------------===//
   // Function Calls

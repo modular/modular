@@ -29,7 +29,8 @@ using namespace LIT;
 /// T is specified as 'type' and this returns the result !lit.ref type.
 static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
                                         ASTType type, StringRef valueName,
-                                        TypeCheckedParamList &paramList) {
+                                        TypeCheckedParamList &paramList,
+                                        bool isResult) {
   SharedState &shared = paramList.shared;
 
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
@@ -75,6 +76,13 @@ static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
       paramList.paramDeclAttrs.push_back(paramDecl);
       return ParamDeclRefAttr::get(paramDecl);
     };
+
+    if (isResult) {
+      emitter.emitError(lifetimeExpr->getLoc())
+          << "cannot infer lifetime for a function result"
+          << lifetimeExpr->getRange();
+      return hadError();
+    }
 
     auto isMut = addParam(valueName + "_is_mut",
                           IntegerType::get(shared.getContext(), 1));
@@ -954,7 +962,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.vararg = VarArgKind::None;
     }
     type = processLifetimeSpecifier(arg.refLifetimeExpr, type, arg.name,
-                                    tcSignature.paramList);
+                                    tcSignature.paramList, /*isResult=*/false);
     arg.kgenConvention = ArgConvention::Ref;
 
     if (isa<TypeCheckErrorType>(type.getReferenceElementType()))
@@ -1183,7 +1191,7 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
       resultType = processLifetimeSpecifier(
           resultRefLifetimeExpr, resultType,
           // TODO: Use the name of the return slot if present.
-          "__result__", tcSignature.paramList);
+          "__result__", tcSignature.paramList, /*isResult*/ true);
       tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
     }
   }

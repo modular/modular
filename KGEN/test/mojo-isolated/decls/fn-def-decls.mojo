@@ -207,3 +207,9 @@ def use_ref_result():
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
     # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
     def_ref_result(a) = MemoryOnly()
+
+# CHECK-LABEL: lit.func @"return_def_arg_box
+def return_def_arg_box(abc: MemoryOnly) -> ref [__lifetime_of(abc)] MemoryOnly:
+# CHECK-NEXT: lit.ref.store %abc, %__result__
+    return abc
+

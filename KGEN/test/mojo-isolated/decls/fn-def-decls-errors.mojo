@@ -124,7 +124,7 @@ fn ref_result_invalid() -> ref [4] MemoryType:
     pass
 
 fn ref_result_invalid2(inout a: MemoryType) -> ref [__lifetime_of(a)] Int:
-    # expected-error @+1 {{cannot return reference to non-memory value of type 'Int'}}
+    # expected-error @+1 {{cannot return reference with incompatible lifetime: 'anonymous*' vs 'a'}}
     return 4
 
 fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
@@ -132,13 +132,21 @@ fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
     # expected-error @+1 {{cannot return reference with incompatible lifetime: 'b' vs 'a'}}
     return b
 
-fn ref_result_invalid3(inout a: MemoryType, b: Int) -> ref [__lifetime_of(a)] MemoryType:
+fn ref_result_invalid4(inout a: MemoryType, b: Int) -> ref [__lifetime_of(a)] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
-fn ref_result_invalid4[T: AnyType](a: T) -> ref [__lifetime_of(a)] T:
+fn ref_result_invalid5[T: AnyType](a: T) -> ref [__lifetime_of(a)] T:
     # expected-error @+1 {{cannot return a reference to an argument that might instantiate to @register_passable type 'T'}}
     return a
+
+fn ref_result_invalid6(inout a: MemoryType, inout b: Int) -> ref [__lifetime_of(b)] Int:
+    # expected-error @+1 {{cannot implicitly convert 'MemoryType' value to 'Int'}}
+    return a
+
+# expected-error @+1 {{cannot infer lifetime for a function result}}
+fn ref_result_invalid7() -> ref [_] MemoryType:
+    pass
 
 fn valid_ref_result(x: MemoryType) -> ref [__lifetime_of(x)] MemoryType: return x
 
