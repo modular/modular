@@ -1,5 +1,4 @@
 load("//bazel:api.bzl", "modular_cc_binary")
-load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -27,9 +26,4 @@ modular_cc_binary(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
     ],
-)
-
-opt_wrapper(
-    name = "mojo-lsp-server.opt",
-    dep = ":mojo-lsp-server",
 )

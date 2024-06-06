@@ -3,7 +3,6 @@ load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
-load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
 package(default_visibility = ["//visibility:public"])
@@ -985,11 +984,6 @@ modular_shared_library(
         "//Support:Threading",
         "@llvm-project//llvm:Support",
     ],
-)
-
-opt_wrapper(
-    name = "CompilerRT.opt",
-    dep = ":CompilerRT",
 )
 
 # TODO: Move to configure.bzl?
