@@ -7,7 +7,7 @@
 #ifndef LLCL_SUPPORT_LOCKFREERINGBUFFER_H
 #define LLCL_SUPPORT_LOCKFREERINGBUFFER_H
 
-#include "LLCL/Support/Atomics.h"
+#include "Support/Threading/Atomics.h"
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/Support/MathExtras.h"
 #include <cassert>

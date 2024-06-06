@@ -888,6 +888,5 @@ modular_cc_library(
         ":Buffer",
         ":HTTP",
         ":Telemetry",
-        "//LLCL:Support",
     ],
 )

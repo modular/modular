@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_ATOMICS_H
-#define LLCL_SUPPORT_ATOMICS_H
+#ifndef SUPPORT_THREADING_ATOMICS_H
+#define SUPPORT_THREADING_ATOMICS_H
 
 #include "Support/Threading/SpinWaiter.h"
 
@@ -17,9 +17,9 @@
 #include <new>
 #include <type_traits>
 
-namespace M::LLCL {
+namespace M {
 
-/// Define `M::LLCL::hardware_destructive_interference_size` in a portable way.
+/// Define `M::ardware_destructive_interference_size` in a portable way.
 /// This is the alignment necessary to avoid false sharing between two atomic
 /// operations.
 #if defined(__cpp_lib_hardware_interference_size) && !defined(_MSC_VER)
@@ -115,6 +115,6 @@ static void atomicMin(std::atomic<T> &minValue, const T &value) {
   }
 }
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_SUPPORT_ATOMICS_H
+#endif // SUPPORT_THREADING_ATOMICS_H
