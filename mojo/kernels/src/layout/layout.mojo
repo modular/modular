@@ -41,6 +41,10 @@ trait LayoutTrait:
 
     """
 
+    fn __copyinit__(inout self, other: Self):
+        "Copy constructor."
+        ...
+
     fn __call__(self, index: IntTuple) -> Int:
         """Get the output index."""
         ...

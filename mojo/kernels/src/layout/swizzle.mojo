@@ -281,3 +281,117 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
 
     fn __str__(self) -> String:
         return String.format_sequence(self)
+
+
+struct SwizzleEx(LayoutTrait, Stringable, Formattable):
+    var bits: Int
+    var base: Int
+    var shift: Int
+    var yyy_mask: Int
+    var zzz_mask: Int
+
+    @always_inline
+    fn __init__(inout self, bits: Int, base: Int, shift: Int) raises:
+        if bits < 0 or base < 0:
+            raise Error("Require non-negative mask bits and base")
+
+        if abs(shift) < bits:
+            raise Error("Require shift greater than mask bits")
+
+        self.bits = bits
+        self.base = base
+        self.shift = shift
+        self.yyy_mask = ((1 << self.bits) - 1) << (
+            self.base + max(0, self.shift)
+        )
+        self.zzz_mask = ((1 << self.bits) - 1) << (
+            self.base - min(0, self.shift)
+        )
+
+    @always_inline
+    fn __copyinit__(inout self, other: Self):
+        self.bits = other.bits
+        self.base = other.base
+        self.shift = other.shift
+        self.yyy_mask = other.yyy_mask
+        self.zzz_mask = other.zzz_mask
+
+    @always_inline
+    fn __call__(self, index: IntTuple) -> Int:
+        return self.__call__(index.value())
+
+    @always_inline
+    fn __call__(self, offset: Int) -> Int:
+        return offset ^ shiftr(offset & self.yyy_mask, self.shift)
+
+    @always_inline
+    fn __call__(self, offset: Scalar) -> Scalar[offset.type]:
+        return offset ^ shiftr(offset & self.yyy_mask, self.shift)
+
+    @always_inline
+    fn size(self) -> Int:
+        return 1 << (self.bits + self.base + abs(self.shift))
+
+    @always_inline
+    fn cosize(self) -> Int:
+        return self.size()
+
+    @staticmethod
+    @always_inline
+    fn has_shape() -> Bool:
+        return False
+
+    fn format_to(self, inout writer: Formatter):
+        write_to(writer, "(")
+        write_to(writer, str(self.bits))
+        write_to(writer, ",")
+        write_to(writer, str(self.base))
+        write_to(writer, ",")
+        write_to(writer, str(self.shift))
+        write_to(writer, ")")
+
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+
+# ===-----------------------------------------------------------------------===#
+# Composed Layout                                                              #
+# ===-----------------------------------------------------------------------===#
+
+
+struct ComposedLayout[
+    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset_val: Int
+](LayoutTrait):
+    var layout_a: LayoutA
+    var layout_b: LayoutB
+    var offset: Int
+
+    @always_inline
+    fn __init__(inout self, layout_a: LayoutA, layout_b: LayoutB):
+        constrained[offset_val >= 0, "Requires non-negative offset value"]()
+        self.layout_a = layout_a
+        self.layout_b = layout_b
+        self.offset = offset_val
+
+    @always_inline
+    fn __copyinit__(inout self, other: Self):
+        self.layout_a = other.layout_a
+        self.layout_b = other.layout_b
+        self.offset = other.offset
+
+    @always_inline
+    fn __call__(self, idx: IntTuple) -> Int:
+        return self.layout_b(self.offset + self.layout_a(idx))
+
+    @always_inline
+    fn size(self) -> Int:
+        return self.layout_a.size()
+
+    @always_inline
+    fn cosize(self) -> Int:
+        return self.layout_b.cosize()
+
+    @staticmethod
+    @always_inline
+    fn has_shape() -> Bool:
+        return LayoutA.has_shape() or LayoutB.has_shape()
