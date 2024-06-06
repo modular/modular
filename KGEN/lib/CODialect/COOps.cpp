@@ -180,7 +180,7 @@ ArrayRef<Type> ExecuteOp::getResultTypes() { return getTypes(); }
 static bool compareAwaitArgTypes(TypeRange args, TypeRange slots) {
   if (args.size() != slots.size())
     return false;
-  for (auto [lhs, rhs] : llvm::zip(llvm::reverse(args), slots))
+  for (auto [lhs, rhs] : llvm::zip(args, slots))
     if (lhs != rhs)
       return false;
   return true;
@@ -189,18 +189,16 @@ static bool compareAwaitArgTypes(TypeRange args, TypeRange slots) {
 LogicalResult AwaitOp::canonicalize(AwaitOp op, PatternRewriter &b) {
   // `co.await(co.execute) -> inlined region`.
   if (auto execute = op.getCoroutine().getDefiningOp<ExecuteOp>()) {
+    SmallVector<Value, 2> args(llvm::reverse(op.getSlots()));
     // If the block argument types don't match the provided result slots, then
     // this operation is UB.
     if (!compareAwaitArgTypes(execute.getBody()->getArgumentTypes(),
-                              op.getSlots().getType()))
+                              ValueRange(args).getType()))
       return b.notifyMatchFailure(op.getLoc(), "result slot types don't match");
     // This should be the only user of the coroutine.
     if (!op.getCoroutine().hasOneUse())
       return b.notifyMatchFailure(op.getLoc(), "coroutine has other uses");
     IRMapping map;
-    SmallVector<Value, 2> args;
-    for (Value slot : llvm::reverse(op.getSlots()))
-      args.push_back(slot);
     auto [scope, singleExit] = KGEN::inlineRegion(
         b, map, op, args, execute.getBodyRegion(), /*takeBody=*/true);
     if (singleExit)
