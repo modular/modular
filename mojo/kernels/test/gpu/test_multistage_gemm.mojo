@@ -22,7 +22,6 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.intrinsics import convert
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -36,6 +35,9 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     _swizzle_signature,
     copy_dram_to_sram_async,
+    copy_local_to_sram,
+    copy_local_to_dram,
+    copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
@@ -304,7 +306,7 @@ fn multistage_gemm[
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
         accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
-    ].stack_allocation().vectorize[1, c_frag_size]()
+    ].stack_allocation()
 
     c_reg_tile.fill(0)
 
@@ -506,12 +508,14 @@ fn multistage_gemm[
 
                 @parameter
                 for n_mma in range(num_n_mmas):
+                    # fmt: off
                     mma(
-                        c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
+                        c_reg_tile.vectorize[1, c_frag_size]()[n_mma * num_m_mmas + m_mma, 0],
                         a_reg_tiles[current][m_mma, 0],
                         b_reg_tiles[current][n_mma, 0],
-                        c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
+                        c_reg_tile.vectorize[1, c_frag_size]()[n_mma * num_m_mmas + m_mma, 0],
                     )
+                    # fmt: on
 
             if k_mma + 2 == num_k_mmas:
                 var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
@@ -552,13 +556,13 @@ fn multistage_gemm[
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
-    # For bf16, each thread's fragment has 2x2 fp32 values. Casting to bf16 and
+    # Store FP32 mma results to half precision buffer in global memory.
+    # Each thread's fragment has 2x2 fp32 values. Casting to half float and
     # directly storing to global memory results in 2 4B writes. Following cutlass,
-    # we stage the fragments in shared memory so that each thread can store 16B
-    # bf16 data.
+    # we stage the fragments in shared memory so that each thread can store 16B.
     @parameter
-    if a_type == DType.bfloat16:
-        # Reuse a_smem for c tile in smem
+    if c_type.is_half_float():
+        # Stage fragments in shared memory. Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             accum_type,
             Layout.row_major(BM, BN),
@@ -567,87 +571,32 @@ fn multistage_gemm[
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
             int(warp_y), int(warp_x)
         )
+        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+            accum_smem_warp_tile.vectorize[1, 2](),
+            c_reg_tile.vectorize[1, 2]().transpose(),
+        )
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                var accum_smem_mma_tile = accum_smem_warp_tile.tile[
-                    MMA_M, MMA_N
-                ](m_mma, n_mma)
-                var accum_frag = accum_smem_mma_tile.vectorize[
-                    1, 2
-                ]().distribute[Layout.row_major(8, 4)](int(lane_id))
-                var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-                accum_frag.aligned_store[2](0, 0, c_reg.slice[2]())
-                accum_frag.aligned_store[2](1, 0, c_reg.slice[2, offset=2]())
-
+        # Guard writing to shared memory.
         barrier()
 
-        var c_gmem_store_frag = c_gmem_tile.vectorize[
-            1, simd_size
-        ]().distribute[
-            Layout.row_major(num_threads * simd_size // BN, BN // simd_size)
+        # Vectorized copy from shared to global memory, during which every 2 FP32
+        # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
+        # vector and stored using 16B store instruction.
+        copy_sram_to_dram[
+            thread_layout = Layout.row_major(
+                num_threads * simd_size // BN, BN // simd_size
+            )
         ](
-            int(tid)
+            c_gmem_tile.vectorize[1, simd_size](),
+            accum_smem_tile.vectorize[1, simd_size](),
         )
 
-        var accum_smem_load_frag = accum_smem_tile.vectorize[
-            1, simd_size
-        ]().distribute[
-            Layout.row_major(num_threads * simd_size // BN, BN // simd_size)
-        ](
-            int(tid)
-        )
-
-        alias num_stores_per_thread = c_gmem_store_frag.layout.size()
-
-        @parameter
-        for i in range(num_stores_per_thread):
-            var accum_vec = accum_smem_load_frag.aligned_load[simd_size](i, 0)
-            var c_vec: SIMD[c_type, simd_size] = 0
-
-            @parameter
-            fn cvt[j: Int]():
-                var vec_converted = convert[accum_type, c_type, 2](
-                    SIMD[accum_type, 2](accum_vec[2 * j], accum_vec[2 * j + 1])
-                )
-                c_vec[2 * j] = vec_converted[0]
-                c_vec[2 * j + 1] = vec_converted[1]
-
-            unroll[cvt, simd_size // 2]()
-
-            c_gmem_store_frag.aligned_store[simd_size](i, 0, c_vec)
-
+    # Store FP32 results to FP32 buffer in global memory.
     else:
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
-                    m_mma, n_mma
-                )
-                var c_frag = c_gmem_mma_tile.vectorize[1, 2]().distribute[
-                    Layout.row_major(8, 4)
-                ](int(lane_id))
-                var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-                c_frag.aligned_store[2](
-                    0,
-                    0,
-                    SIMD[c_type, 2](
-                        c_reg[0].cast[c_type](), c_reg[1].cast[c_type]()
-                    ),
-                )
-                c_frag.aligned_store[2](
-                    1,
-                    0,
-                    SIMD[c_type, 2](
-                        c_reg[2].cast[c_type](), c_reg[3].cast[c_type]()
-                    ),
-                )
+        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+            c_gmem_warp_tile.vectorize[1, 2](),
+            c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
+        )
 
 
 fn test[type: DType, transpose_b: Bool]() raises:
