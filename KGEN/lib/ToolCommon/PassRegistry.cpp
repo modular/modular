@@ -69,7 +69,6 @@ void KGEN::registerDefaultKGENPasses() {
   // Passes that require a runtime.
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
-  KGEN::registerForceInline();
   KGEN::registerInlineParametric();
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();

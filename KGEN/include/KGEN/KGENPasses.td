@@ -480,43 +480,6 @@ def ApplyInliner : Pass<"apply-inliner", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ForceInline
-//===----------------------------------------------------------------------===//
-
-def ForceInline : Pass<"force-inline", "ModuleOp"> {
-  let summary = "Process all 'always_inline' functions";
-  let description = [{
-    The `force-inline` pass will process all calls to 'always_inline` functions
-    and inline them. If a cycle is encountered during inlining, the pass emits
-    an error and fails to inline the cycle. This pass will strip debug info as
-    appropriate for functions marked 'always_inline(nodebug)'. This pass must
-    run on concrete KGEN IR.
-  }];
-
-  let dependentDialects = [
-    "MDialect",
-    "HLCF::HLCFDialect",
-  ];
-
-  let options = [
-    Option<"updateDebugInfo", "update-debug-info",
-           "M::KGEN::InlinerDebugInfoUpdateTime",
-           "M::KGEN::InlinerDebugInfoUpdateTime::kDeferred",
-           "How to update debug info of inlined functions.", "llvm::cl::values("
-           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kImmediate,"
-           "\"immediate\", \"Update immediately.\"),"
-           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kDeferred,"
-           "\"deferred\", \"Update at the end of the pass.\"),"
-           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kNever,"
-           "\"never\", \"Do not update debug info.\"))">,
-    Option<"optimizationLevel", "optimization-level", "unsigned", "1",
-           "Specify the compilation optimization level.">,
-    Option<"funcPipelineStr", "func-pipeline", "std::string", "\"\"",
-           "Specify the inner pipeline to use on functions.">
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // ResolveCompilerPromises
 //===----------------------------------------------------------------------===//
 
@@ -967,9 +930,8 @@ def AutomaticInline: Pass<"automatic-inline", "ModuleOp"> {
   let summary = "KGEN automatic inliner pass";
   let description = [{
     The `automatic inliner` pass inlines functions with InlineLevel::Automatic
-    automatically based on inline heuristics. This pass doesn't inline functions
-    with other InlineLevels such as `always_inline`
-    (inlined through ForceInline pass) or `no_inline` (should not be inlined).
+    automatically based on inline heuristics. This pass also inlines
+    `always_inline` functions, but not `no_inline` (should not be inlined) ones.
     The inline heuristics is based on compilation optimization level with more
     `-O3` has the most aggressive inlining and `-O0` the least.
     The heuristics is simple for current implementation, and is subject

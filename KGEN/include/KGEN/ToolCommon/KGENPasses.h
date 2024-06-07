@@ -126,11 +126,6 @@ createElaborateGenerators(TargetInfoAttr target,
 // Inlining
 //===----------------------------------------------------------------------===//
 
-/// Create a ForceInline pass with a function pass pipeline to run.
-std::unique_ptr<mlir::Pass> createForceInline(
-    const ForceInlineOptions &options = {},
-    std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
-
 /// Create an AutomaticInline pass with a function pass pipeline to run.
 std::unique_ptr<mlir::Pass> createAutomaticInline(
     const AutomaticInlineOptions &options = {},
