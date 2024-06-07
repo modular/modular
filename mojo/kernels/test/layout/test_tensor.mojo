@@ -671,8 +671,11 @@ fn test_copy_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
+    alias alignment = alignof[SIMD[DType.float32, 4]]()
     vec_8_1.print()
-    var tensor_8_8_zeros = stack_allocation_like(tensor_8_8).vectorize[1, 4]()
+    var tensor_8_8_zeros = LayoutTensor[
+        DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1))
+    ].aligned_stack_allocation[alignment]().vectorize[1, 4]()
     tensor_8_8_zeros.fill(0)
     tensor_8_8_zeros.copy_from(vec_8_1)
     # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
