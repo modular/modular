@@ -61,7 +61,7 @@ static constexpr int entitlementParsingError = -3;
 /// Parses the extension provided and if it's a modular entitlement OID, then it
 /// parses it and places it in the map.
 static int extensionCallback(void *context, mbedtls_x509_crt const *crt,
-                             mbedtls_x509_buf *oidBuf, int critical,
+                             const mbedtls_x509_buf *oidBuf, int critical,
                              const unsigned char *dataBegin,
                              const unsigned char *dataEnd) {
   auto *ctx = (MbedTLSCallbackContext *)context;
@@ -1183,8 +1183,8 @@ ErrorOrSuccess EntitlementStore::parseCertificateChain() {
 
   // Parse the certificate, providing the callback to the CertificateChain
   // object to use while it's parsing.
-  auto chainOr = M::Detail::CertificateChain::fromPEM(
-      (mbedtls_x509_crt_ext_cb_t)extensionCallback, &ctx, clientCert.copy());
+  auto chainOr = M::Detail::CertificateChain::fromPEM(extensionCallback, &ctx,
+                                                      clientCert.copy());
   if (chainOr.isError()) {
     if (ctx.error)
       return std::move(*ctx.error);
