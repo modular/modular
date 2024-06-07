@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -force-inline -verify-diagnostics %s
+// RUN: kgen-opt -split-input-file -automatic-inline -verify-diagnostics %s
 
 kgen.func @ok_to_inline() always_inline {
   kgen.return

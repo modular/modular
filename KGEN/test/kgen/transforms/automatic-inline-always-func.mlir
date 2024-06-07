@@ -1,6 +1,6 @@
-// RUN: kgen-opt -force-inline %s | FileCheck %s
-// RUN: kgen-opt -force-inline=func-pipeline='canonicalize,cse' %s | FileCheck %s --check-prefix=CANON
-// RUN: not kgen-opt --llcl-single-thread --mlir-disable-threading -pass-pipeline='builtin.module(force-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO
+// RUN: kgen-opt -automatic-inline %s | FileCheck %s
+// RUN: kgen-opt -automatic-inline=func-pipeline='canonicalize,cse' %s | FileCheck %s --check-prefix=CANON
+// RUN: not kgen-opt --llcl-single-thread --mlir-disable-threading -pass-pipeline='builtin.module(automatic-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO
 
 // CHECK-LABEL: kgen.func @top
 // CANON-LABEL: kgen.func @top
@@ -26,4 +26,4 @@ kgen.func @no_callers() {
   kgen.return
 }
 
-// REPRO: pipeline: "builtin.module(force-inline{func-pipeline=canonicalize,cse optimization-level=1 update-debug-info=deferred}, test-always-fail)"
+// REPRO: pipeline: "builtin.module(automatic-inline{func-pipeline=canonicalize,cse optimization-level=1 update-debug-info=deferred}, test-always-fail)"

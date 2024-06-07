@@ -984,7 +984,7 @@ def AutomaticInline: Pass<"automatic-inline", "ModuleOp"> {
   let options = [
     Option<"updateDebugInfo", "update-debug-info",
            "M::KGEN::InlinerDebugInfoUpdateTime",
-           "M::KGEN::InlinerDebugInfoUpdateTime::kNever",
+           "M::KGEN::InlinerDebugInfoUpdateTime::kDeferred",
            "How to update debug info of inlined functions.", "llvm::cl::values("
            "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kImmediate,"
            "\"immediate\", \"Update immediately.\"),"

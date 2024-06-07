@@ -1,8 +1,8 @@
-// RUN: kgen-opt %s -pass-pipeline='builtin.module(outline-closures,elaborate-generators,resolve-compiler-promises,force-inline,canonicalize)' | FileCheck %s
+// RUN: kgen-opt %s -pass-pipeline='builtin.module(outline-closures,elaborate-generators,resolve-compiler-promises,automatic-inline,canonicalize)' | FileCheck %s
 
 // COM: https://github.com/modularml/modular/issues/19175
 
-kgen.generator @use(%a: index) {
+kgen.generator @use(%a: index) no_inline {
   kgen.return
 }
 
