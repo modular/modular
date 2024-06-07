@@ -103,6 +103,11 @@ class ExecutionManager extends DisposableContext {
    */
   getTerminalForFile(doc: vscode.TextDocument, config: MojoSDKConfig,
                      newTerminalPerFile: boolean): vscode.Terminal {
+
+    if (vscode.window.activeTerminal && !newTerminalPerFile) {
+      return vscode.window.activeTerminal
+    }
+
     let terminalName = "Mojo";
     if (newTerminalPerFile)
       terminalName += `: ${doc.fileName}`;
