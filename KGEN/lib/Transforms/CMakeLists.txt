@@ -12,7 +12,7 @@ add_modular_library(KGENTransforms
   EliminateDeadSymbols.cpp
   FoldGlobalConstLoads.cpp
   HoistTrivialInvariants.cpp
-  Inlining.cpp
+  InlineParametric.cpp
   LiftAndFoldApply.cpp
   LoopUnrolling.cpp
   LowerAsyncFunctions.cpp
