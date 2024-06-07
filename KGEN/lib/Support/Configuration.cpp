@@ -112,6 +112,10 @@ StringRef MojoConfig::getTestExecutorPath() {
   return getValue(STRINGIFY_MOJO_CONFIG(".test_executor_path"));
 }
 
+StringRef MojoConfig::getLinkerDriver() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".linker_driver"));
+}
+
 void MojoConfig::getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
   StringRef systemLibsArg = getValue(STRINGIFY_MOJO_CONFIG(".system_libs"));
   systemLibsArg.split(libs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);

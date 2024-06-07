@@ -98,6 +98,9 @@ public:
   /// Return the path to the test executor executable in the mojo install.
   StringRef getTestExecutorPath();
 
+  /// Return the path to the linker driver to use when linking mojo executables.
+  StringRef getLinkerDriver();
+
   /// Return the system libraries to link with Mojo when building a standalone
   /// binary.
   void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
