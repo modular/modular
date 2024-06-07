@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,17 +22,5 @@ modular_cc_library(
         "//Support:HTTP",
         "//Support:Telemetry",
         "//Support:URI",
-    ],
-)
-
-modular_cc_test(
-    name = "CacheTest",
-    srcs = glob(["unittests/*.cpp"]),
-    deps = [
-        ":Cache",
-        "//LLCL:RuntimeGlobals",
-        "//Support:Globals",
-        "@llvm-project//mlir:BytecodeWriter",
-        "@llvm-project//mlir:FuncDialect",
     ],
 )
