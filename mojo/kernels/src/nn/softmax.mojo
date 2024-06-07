@@ -16,9 +16,9 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
-from gpu.host import Device, DeviceAttribute, Function, Stream
+from gpu.host import Device, DeviceContext, DeviceAttribute
 from gpu.memory import AddressSpace
-from runtime.llcl import Runtime
+from runtime.llcl import MojoCallContextPtr, Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
@@ -758,6 +758,7 @@ fn _softmax_gpu[
     shape: StaticIntTuple[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
+    ctx: DeviceContext,
 ) raises:
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
@@ -770,8 +771,7 @@ fn _softmax_gpu[
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
-    var stream = Stream.get_current_stream()
-    var func = Function[
+    var func = ctx.compile_function[
         softmax_kernel[
             BLOCK_SIZE,
             input_fn_wrapper,
@@ -785,13 +785,13 @@ fn _softmax_gpu[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    func(
+    ctx.enqueue_function(
+        func,
         shape,
         output,
         axis,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
-        stream=stream,
     )
 
 
@@ -808,7 +808,17 @@ fn softmax[
     shape: StaticIntTuple[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _softmax_cpu if target == "cpu" else _softmax_gpu
-    func[type, simd_width, rank, static_shape, input_fn](shape, output, axis)
+    if target == "cpu":
+        _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
+            shape, output, axis
+        )
+    else:
+        _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
+            shape,
+            output,
+            axis,
+            context.get_cuda_device(),
+        )

@@ -11,66 +11,64 @@ from random import rand, random_float64, seed
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host import Context, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-from nn.softmax import softmax
+from gpu.host.device_context import DeviceContext
+
+from nn.softmax import _softmax_cpu, _softmax_gpu
 from testing import assert_true
 
 
 # CHECK-LABEL: test_gpu_softmax
-fn test_gpu_softmax() raises:
+fn test_gpu_softmax(ctx: DeviceContext) raises:
     print("== test_gpu_softmax")
 
     alias type = DType.float32
     alias rank = 3
     var shape = StaticIntTuple[rank](3, 5, 515)
     var in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
-    var in_device_ptr = _malloc[type](shape.flattened_length())
+    var in_device_ptr = ctx.create_buffer[type](shape.flattened_length())
     var in_host = NDBuffer[type, rank](in_host_ptr, shape)
-    var in_device = NDBuffer[type, rank](in_device_ptr, shape)
+    var in_device = NDBuffer[type, rank](in_device_ptr.ptr, shape)
     var out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
     var out_ref_ptr = DTypePointer[type].alloc(shape.flattened_length())
-    var out_device_ptr = _malloc[type](shape.flattened_length())
+    var out_device_ptr = ctx.create_buffer[type](shape.flattened_length())
     var out_host = NDBuffer[type, rank](out_host_ptr, shape)
     var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
-    var out_device = NDBuffer[type, rank](out_device_ptr, shape)
+    var out_device = NDBuffer[type, rank](out_device_ptr.ptr, shape)
 
     rand[type](in_host_ptr, shape.flattened_length())
-    _copy_host_to_device(in_device_ptr, in_host_ptr, shape.flattened_length())
+    ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
 
     @__copy_capture(in_device)
     @parameter
     fn input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return in_device[rebind[StaticIntTuple[rank]](coords)]
+        return in_device.load[width=_simd_width](
+            rebind[StaticIntTuple[rank]](coords)
+        )
 
     @parameter
     fn input_fn_host[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return in_host[rebind[StaticIntTuple[rank]](coords)]
+        return in_host.load[width=_simd_width](
+            rebind[StaticIntTuple[rank]](coords)
+        )
 
-    softmax[
-        type, 1, rank, DimList.create_unknown[rank](), input_fn_device, "cuda"
-    ](shape, out_device, rank - 1)
+    _softmax_gpu[
+        type, 1, rank, DimList.create_unknown[rank](), input_fn_device
+    ](shape, out_device, rank - 1, ctx)
 
-    softmax[
+    _softmax_cpu[
         type,
         1,
         rank,
         DimList.create_unknown[rank](),
         input_fn_host,
-        "cpu",
     ](shape, out_ref, rank - 1)
 
-    synchronize()
-    _copy_device_to_host(out_host_ptr, out_device_ptr, shape.flattened_length())
+    ctx.synchronize()
+    ctx.enqueue_copy_from_device(out_host_ptr, out_device_ptr)
 
     # CHECK-NOT: ERROR
     for i in range(shape.flattened_length()):
@@ -86,11 +84,13 @@ fn test_gpu_softmax() raises:
     out_host_ptr.free()
     out_ref_ptr.free()
 
-    _free(in_device_ptr)
-    _free(out_device_ptr)
+    _ = in_device_ptr
+    _ = out_device_ptr
 
 
-def test_gpu_softmax_half[test_type: DType]():
+# CHECK-LABEL: test_gpu_softmax_half
+def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
+    print("== test_gpu_softmax_half")
     alias seed_val = 42
     seed(seed_val)
 
@@ -101,19 +101,23 @@ def test_gpu_softmax_half[test_type: DType]():
     var length = shape.flattened_length()
 
     var in_host_ref_ptr = DTypePointer[ref_type].alloc(length)
-    var in_device_ref_ptr = _malloc[ref_type](length)
+    var in_device_ref_ptr = ctx.create_buffer[ref_type](length)
     var in_host_test_ptr = DTypePointer[test_type].alloc(length)
-    var in_device_test_ptr = _malloc[test_type](length)
-    var in_device_ref = NDBuffer[ref_type, rank](in_device_ref_ptr, shape)
-    var in_device_test = NDBuffer[test_type, rank](in_device_test_ptr, shape)
+    var in_device_test_ptr = ctx.create_buffer[test_type](length)
+    var in_device_ref = NDBuffer[ref_type, rank](in_device_ref_ptr.ptr, shape)
+    var in_device_test = NDBuffer[test_type, rank](
+        in_device_test_ptr.ptr, shape
+    )
 
     var out_host_ref_ptr = DTypePointer[ref_type].alloc(length)
-    var out_device_ref_ptr = _malloc[ref_type](length)
+    var out_device_ref_ptr = ctx.create_buffer[ref_type](length)
     var out_host_test_ptr = DTypePointer[test_type].alloc(length)
-    var out_device_test_ptr = _malloc[test_type](length)
+    var out_device_test_ptr = ctx.create_buffer[test_type](length)
 
-    var out_device_ref = NDBuffer[ref_type, rank](out_device_ref_ptr, shape)
-    var out_device_test = NDBuffer[test_type, rank](out_device_test_ptr, shape)
+    var out_device_ref = NDBuffer[ref_type, rank](out_device_ref_ptr.ptr, shape)
+    var out_device_test = NDBuffer[test_type, rank](
+        out_device_test_ptr.ptr, shape
+    )
 
     # first fill BF16 pointer with random values, then cast to FP32 to
     # circumvent precision loss on casting of input. Skew the values to simulate
@@ -125,8 +129,8 @@ def test_gpu_softmax_half[test_type: DType]():
         )
         in_host_ref_ptr[i] = in_host_test_ptr[i].cast[ref_type]()
 
-    _copy_host_to_device(in_device_test_ptr, in_host_test_ptr, length)
-    _copy_host_to_device(in_device_ref_ptr, in_host_ref_ptr, length)
+    ctx.enqueue_copy_to_device(in_device_test_ptr, in_host_test_ptr)
+    ctx.enqueue_copy_to_device(in_device_ref_ptr, in_host_ref_ptr)
 
     @__copy_capture(in_device_ref)
     @parameter
@@ -142,36 +146,41 @@ def test_gpu_softmax_half[test_type: DType]():
     ](coords: StaticIntTuple[_rank]) -> SIMD[test_type, _simd_width]:
         return in_device_test[rebind[StaticIntTuple[rank]](coords)]
 
-    softmax[
+    _softmax_gpu[
         ref_type,
         1,
         rank,
         DimList.create_unknown[rank](),
         input_fn_ref,
-        "cuda",
-    ](shape, out_device_ref, rank - 1)
+    ](shape, out_device_ref, rank - 1, ctx)
 
-    softmax[
+    _softmax_gpu[
         test_type,
         1,
         rank,
         DimList.create_unknown[rank](),
         input_fn_test,
-        "cuda",
-    ](shape, out_device_test, rank - 1)
+    ](shape, out_device_test, rank - 1, ctx)
 
-    synchronize()
-    _copy_device_to_host(out_host_ref_ptr, out_device_ref_ptr, length)
-    _copy_device_to_host(out_host_test_ptr, out_device_test_ptr, length)
+    ctx.synchronize()
+    ctx.enqueue_copy_from_device(out_host_ref_ptr, out_device_ref_ptr)
+    ctx.enqueue_copy_from_device(out_host_test_ptr, out_device_test_ptr)
 
     for i in range(length):
         var ref_val = out_host_ref_ptr[i]
         var test_val = out_host_test_ptr[i].cast[ref_type]()
         assert_true(isclose(ref_val, test_val, atol=1e-2))
 
+    _ = in_device_ref_ptr
+    _ = in_device_test_ptr
+
 
 def main():
-    with Context() as ctx:
-        test_gpu_softmax()
-        test_gpu_softmax_half[DType.bfloat16]()
-        test_gpu_softmax_half[DType.float16]()
+    try:
+        var ctx = DeviceContext()
+        test_gpu_softmax(ctx)
+        test_gpu_softmax_half[DType.bfloat16](ctx)
+        test_gpu_softmax_half[DType.float16](ctx)
+        _ = ctx
+    except e:
+        print("CUDA_ERROR:", e)
