@@ -1,4 +1,4 @@
-// RUN: kgen-opt -force-inline -allow-unregistered-dialect -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -automatic-inline -allow-unregistered-dialect -split-input-file %s | FileCheck %s
 
 // CHECK-NOT: @inline_me.a
 kgen.func @inline_me.a() always_inline {

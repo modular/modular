@@ -1,4 +1,4 @@
-// RUN: kgen-opt -force-inline="update-debug-info=immediate optimization-level=0" -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -automatic-inline="update-debug-info=immediate optimization-level=0" -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 #subprogram = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #locCalleeInner = loc(fused<#subprogram>["foo.mlir":0:0])
