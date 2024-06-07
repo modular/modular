@@ -6,6 +6,7 @@
 
 #include "ArraySupport/StateContext.h"
 #include "ArraySupport/TensorBufferRef.h"
+#include "CUDASupport/CUDAOwnedMemoryBlock.h"
 #include "CUDASupport/CUDARuntime.h"
 #include "CUDASupport/Globals/Globals.h"
 #include "KGEN/CompilerRT/Registration.h"
@@ -25,6 +26,7 @@
 using namespace M;
 using namespace M::LLCL;
 using namespace M::KGEN;
+using namespace M::CUDA;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -345,6 +347,31 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncCUDABufferRef(void *data, size_t size,
+                                         LLCLWrapper<AnyAsyncValueRef> async,
+                                         LLCLWrapper<Runtime> runtimePtr,
+                                         LLCLMojoCallContextRef callCtx) {
+  Runtime &runtime = unwrap(runtimePtr);
+  CUDARuntime *cudaRuntimePtr =
+      reinterpret_cast<CUDARuntime *>(unwrap(callCtx).deviceRuntime);
+  AnyAsyncValueRef &value = unwrap(async);
+  AnyAsyncValueRef storageRef;
+  storageRef = storageRef.createReady<OwnedCUDAMemoryBlock>(
+      cudaRuntimePtr->runtime, reinterpret_cast<CUdeviceptr>(data), size,
+      *cudaRuntimePtr);
+
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<TensorBufferRef>(TensorBufferRef::create(
+        data, size, std::move(storageRef), /*alignment=*/1));
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<TensorBufferRef>(
+        runtime, TensorBufferRef::create(data, size, std::move(storageRef),
+                                         /*alignment=*/1));
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
                                       int8_t rawDType,
                                       LLCLWrapper<AnyAsyncValueRef> async,
@@ -522,6 +549,9 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_SetToError});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream",
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream});
+
+  funcs.push_back({"KGEN_CompilerRT_CreateAsyncCUDABufferRef",
+                   (void *)&KGEN_CompilerRT_CreateAsyncCUDABufferRef});
 
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeSpinWaiter",
                    (void *)&KGEN_CompilerRT_LLCL_InitializeSpinWaiter});
