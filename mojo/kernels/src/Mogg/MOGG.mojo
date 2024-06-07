@@ -3974,7 +3974,7 @@ fn gpu_multi_head_flash_attention[
             output_type,
             True,
             target,
-        ](output, q, k, v, mask, scale[0])
+        ](output, q, k, v, mask, scale[0], context=ctx)
 
 
 @mogg_register("no_mask_fused_attention_cpu")
