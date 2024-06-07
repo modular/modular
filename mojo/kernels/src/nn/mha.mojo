@@ -19,7 +19,6 @@ from gpu import (
     shuffle_xor,
     warp_reduce,
 )
-from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -36,6 +35,9 @@ from utils.numerics import neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import softmax
+
+from gpu.host import DeviceContext
+from runtime.llcl import MojoCallContextPtr
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -217,6 +219,7 @@ fn flash_attention[
     v: NDBuffer[v_type, rank, v_shape],
     mask: NDBuffer[mask_type, 3, mask_shape],
     scale: Float32,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -253,6 +256,8 @@ fn flash_attention[
         "Only support static head (H) and depth (D) dimensions",
     ]()
 
+    var ctx = context.get_cuda_device()
+
     # q shape [batch_size, seq_len, # heads, depth]
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
@@ -273,11 +278,9 @@ fn flash_attention[
         raise Error("32bits index overflow.")
 
     try:
-        var stream = Stream.get_current_stream()
-
         # Use fast kernel for context encoding benchmark.
         if seq_len == num_keys and seq_len % 128 == 0:
-            var func = Function[
+            var func = ctx.compile_function[
                 flash_attention_kernel[
                     BM=qtile_num_rows,
                     BN=ktile_num_rows,
@@ -290,7 +293,8 @@ fn flash_attention[
                 ]
             ]()
 
-            func(
+            ctx.enqueue_function(
+                func,
                 q.data,
                 k.data,
                 v.data,
@@ -305,12 +309,11 @@ fn flash_attention[
                     batch_size,
                 ),
                 block_dim=(128, 1, 1),
-                stream=stream,
             )
         # Slow path for token generation for now and context encoding with
         # seq_len % 128 != 0.
         else:
-            var func = Function[
+            var func = ctx.compile_function[
                 flash_attention_kernel_flexible_seqlen[
                     BM=qtile_num_rows,
                     BN=ktile_num_rows,
@@ -323,7 +326,8 @@ fn flash_attention[
                 ]
             ]()
 
-            func(
+            ctx.enqueue_function(
+                func,
                 q.data,
                 k.data,
                 v.data,
@@ -339,7 +343,6 @@ fn flash_attention[
                     batch_size,
                 ),
                 block_dim=(128, 1, 1),
-                stream=stream,
             )
 
     except e:

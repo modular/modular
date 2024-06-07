@@ -12,14 +12,9 @@ from sys import argv
 
 from buffer import NDBuffer
 from gpu import *
-from gpu.host import Context, Function, Stream, synchronize
+from gpu.host.device_context import DeviceContext
 from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+
 from memory.unsafe import DTypePointer
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -40,7 +35,9 @@ fn is_benchmark() -> Bool:
 
 
 # CHECK-LABEL: test_flash_attention
-fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
+fn test(
+    seq_len: Int, num_keys: Int, ctx: DeviceContext, is_benchmark: Bool = False
+) raises:
     print("test_flash_attention")
 
     # Query, key, value dimensions.
@@ -93,71 +90,41 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
         scale,
     )
 
-    var stream = Stream()
-
     # Device pointers
-    var q_device_ptr = _malloc[type](q_size)
-    var k_device_ptr = _malloc[type](k_size)
-    var v_device_ptr = _malloc[type](v_size)
-    var mask_device_ptr = _malloc[type](seq_len * num_keys)
-    var output_device_ptr = _malloc[type](o_size)
+    var q_device_ptr = ctx.create_buffer[type](q_size)
+    var k_device_ptr = ctx.create_buffer[type](k_size)
+    var v_device_ptr = ctx.create_buffer[type](v_size)
+    var mask_device_ptr = ctx.create_buffer[type](seq_len * num_keys)
+    var output_device_ptr = ctx.create_buffer[type](o_size)
 
     # Copy from host to device
-    _copy_host_to_device(q_device_ptr, q_ptr, q_size)
-    _copy_host_to_device(k_device_ptr, k_ptr, k_size)
-    _copy_host_to_device(v_device_ptr, v_ptr, v_size)
-    _copy_host_to_device(mask_device_ptr, mask_ptr, seq_len * num_keys)
+    ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
+    ctx.enqueue_copy_to_device(k_device_ptr, k_ptr)
+    ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
+    ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
 
     alias q_tile_num_rows = 32
 
     if seq_len == num_keys and seq_len % 128 == 0:
-        var func = Function[
-            flash_attention_kernel[
-                BM=32,  # q_tile_num_rows,
-                BN=128,  # kv_tile_num_rows,
-                BK=16,
-                depth=128,
-                num_heads=num_heads,
-                TM=8,
-                TN=4,
-                num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
-            ]
-        ]()
 
-        if is_benchmark:
-            alias nrun = 1000
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            var func = ctx.compile_function[
+                flash_attention_kernel[
+                    BM=32,  # q_tile_num_rows,
+                    BN=128,  # kv_tile_num_rows,
+                    BK=16,
+                    depth=128,
+                    num_heads=num_heads,
+                    TM=8,
+                    TN=4,
+                    num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
+                ]
+            ]()
 
-            @always_inline
-            @parameter
-            fn run_func(stream: Stream) raises:
-                for i in range(nrun):
-                    func(
-                        q_device_ptr,
-                        k_device_ptr,
-                        v_device_ptr,
-                        mask_device_ptr,
-                        output_device_ptr,
-                        scale,
-                        batch_size,
-                        seq_len,
-                        stream=stream,
-                        grid_dim=(
-                            ceildiv(seq_len, q_tile_num_rows),
-                            num_heads,
-                            batch_size,
-                        ),
-                        block_dim=(128, 1, 1),
-                    )
-
-            # Warmup
-            run_func(stream)
-
-            var nstime = time_function[run_func](stream) / nrun
-            var sectime = nstime / 1000000
-            print(nrun, "runs avg", sectime, "ms")
-
-        else:
-            func(
+            ctx.enqueue_function(
+                func,
                 q_device_ptr,
                 k_device_ptr,
                 v_device_ptr,
@@ -166,7 +133,6 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 scale,
                 batch_size,
                 seq_len,
-                stream=stream,
                 grid_dim=(
                     ceildiv(seq_len, q_tile_num_rows),
                     num_heads,
@@ -175,8 +141,21 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 block_dim=(128, 1, 1),
             )
 
+        if is_benchmark:
+            alias nrun = 1000
+
+            # Warmup
+            kernel_launch(ctx)
+
+            var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+            var sectime = nstime / 1000000
+            print(nrun, "runs avg", sectime, "ms")
+
+        else:
+            kernel_launch(ctx)
+
     else:
-        var func = Function[
+        var func = ctx.compile_function[
             flash_attention_kernel_flexible_seqlen[
                 BM=32,  # q_tile_num_rows,
                 BN=128,  # kv_tile_num_rows,
@@ -189,7 +168,8 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             ]
         ]()
 
-        func(
+        ctx.enqueue_function(
+            func,
             q_device_ptr,
             k_device_ptr,
             v_device_ptr,
@@ -205,12 +185,11 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 batch_size,
             ),
             block_dim=(128, 1, 1),
-            stream=stream,
         )
 
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(flash_output_ptr, output_device_ptr, q_size)
+    ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
 
     var succeed = True
     for h in range(num_heads):
@@ -227,11 +206,11 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                     succeed = False
                     break
 
-    _free(q_device_ptr)
-    _free(k_device_ptr)
-    _free(v_device_ptr)
-    _free(mask_device_ptr)
-    _free(output_device_ptr)
+    _ = q_device_ptr
+    _ = k_device_ptr
+    _ = v_device_ptr
+    _ = mask_device_ptr
+    _ = output_device_ptr
 
     q_ptr.free()
     k_ptr.free()
@@ -244,38 +223,36 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     if succeed:
         print("Succeed")
 
-    _ = stream^
-
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            # Context encoding demo.
-            test(100, 100)
-            test(31, 31)
-            test(1024, 1024, is_benchmark())  # only benchmark a large shape
-            # Token generation demo.
-            test(1, 1)
-            test(1, 2)
-            test(1, 3)
-            test(1, 4)
-            test(1, 5)
-            test(1, 6)
-            test(1, 7)
-            test(1, 8)
-            test(1, 9)
-            test(1, 10)
-            test(1, 11)
-            test(1, 12)
-            test(1, 13)
-            test(1, 14)
-            test(1, 15)
-            test(1, 20)
-            test(1, 25)
-            test(1, 30)
-            test(1, 50)
-            test(1, 100)
-            test(1, 200)
+        var ctx = DeviceContext()
+        # Context encoding demo.
+        test(100, 100, ctx)
+        test(31, 31, ctx)
+        test(1024, 1024, ctx, is_benchmark())  # only benchmark a large shape
+        # Token generation demo.
+        test(1, 1, ctx)
+        test(1, 2, ctx)
+        test(1, 3, ctx)
+        test(1, 4, ctx)
+        test(1, 5, ctx)
+        test(1, 6, ctx)
+        test(1, 7, ctx)
+        test(1, 8, ctx)
+        test(1, 9, ctx)
+        test(1, 10, ctx)
+        test(1, 11, ctx)
+        test(1, 12, ctx)
+        test(1, 13, ctx)
+        test(1, 14, ctx)
+        test(1, 15, ctx)
+        test(1, 20, ctx)
+        test(1, 25, ctx)
+        test(1, 30, ctx)
+        test(1, 50, ctx)
+        test(1, 100, ctx)
+        test(1, 200, ctx)
     except e:
         print("CUDA_ERROR:", e)
