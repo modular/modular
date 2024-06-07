@@ -908,6 +908,7 @@ cc_distributable_static_library(
     deps = [
         ":CompilerRT.static",
         "//ArraySupport",
+        "//CUDASupport",
         "//CUDASupport:Globals.static",
         "//Config",
         "//LLCL:Runtime",
@@ -916,6 +917,7 @@ cc_distributable_static_library(
         "//Runtime",
         "//Support:ADT",
         "//Support:Base",
+        "//Support:CUDA",
         "//Support:Configuration",
         "//Support:Filesystem",
         "//Support:Globals.static",
@@ -924,6 +926,7 @@ cc_distributable_static_library(
         "//Support:Threading",
         "@llvm-project//llvm:Demangle",
         "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:TargetParser",
         "@llvm-project//mlir:Support",
     ],
 )
@@ -967,7 +970,7 @@ modular_shared_library(
     output_name = "KGENCompilerRTShared",
     deps = [
         "//ArraySupport",
-        "//CUDASupport:CUDASupport.headers",
+        "//CUDASupport",
         "//CUDASupport:Globals",
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
