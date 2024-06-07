@@ -60,6 +60,7 @@ add_modular_tool(mojo
   MojoBuild
   MojoTesting
   MojoTooling
+  MSupport
   MSupportFilesystem
   MSupportDriver
   MSupportGlobals

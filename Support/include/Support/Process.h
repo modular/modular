@@ -17,6 +17,9 @@ namespace M {
 LogicalResult setProcessEnv(StringRef name, StringRef value,
                             bool overwrite = true);
 
+/// Get a list of all the environment variables of the current process.
+std::vector<StringRef> getEnv();
+
 //===----------------------------------------------------------------------===//
 // Memory usage
 //===----------------------------------------------------------------------===//
