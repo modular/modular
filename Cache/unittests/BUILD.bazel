@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+modular_cc_test(
+    name = "unittests",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//Cache",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:FuncDialect",
+    ],
+)
