@@ -255,11 +255,13 @@ static int linkExecutable(const State &state,
   }
 
   // Resolve the linker path.
-  llvm::ErrorOr<std::string> linker =
-      llvm::sys::findProgramByName(linkerFilename);
-  if (!linker) {
-    return state.reportError(
-        "unable to find suitable c++ compiler for linking");
+  llvm::ErrorOr<std::string> linker = config.getLinkerDriver().str();
+  if (linker->empty()) {
+    linker = llvm::sys::findProgramByName(linkerFilename);
+    if (!linker) {
+      return state.reportError(
+          "unable to find suitable c++ compiler for linking");
+    }
   }
 
   // Write the archive to a temporary file.
