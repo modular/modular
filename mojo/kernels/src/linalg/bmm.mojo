@@ -14,10 +14,10 @@ from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
-from gpu.host import Function, Stream
+from gpu.host import DeviceContext
 from memory import memset_zero
 from register import mogg_register
-from runtime.llcl import Runtime
+from runtime.llcl import MojoCallContextPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type
@@ -238,6 +238,7 @@ fn batched_matmul[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
@@ -261,7 +262,7 @@ fn batched_matmul[
         elementwise_epilogue_fn,
         saturated_vnni=saturated_vnni,
         target=target,
-    ](c_buf, a_buf, b_buf)
+    ](c_buf, a_buf, b_buf, context)
 
 
 @always_inline
@@ -504,6 +505,7 @@ fn _batched_matmul_gpu[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
+    ctx: DeviceContext,
 ):
     var a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
     var b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
@@ -518,7 +520,6 @@ fn _batched_matmul_gpu[
     var n = b_buf_reshaped.dim(2)
 
     try:
-        var stream = Stream.get_current_stream()
         alias bmm = batched_matmul_kernel[
             rank,
             c_type,
@@ -529,8 +530,9 @@ fn _batched_matmul_gpu[
             unkown_shape,
             elementwise_epilogue_fn,
         ]
-        var gpu_func = Function[bmm]()
-        gpu_func(
+        var gpu_func = ctx.compile_function[bmm]()
+        ctx.enqueue_function(
+            gpu_func,
             c_buf_reshaped,
             a_buf_reshaped,
             b_buf_reshaped,
@@ -541,7 +543,6 @@ fn _batched_matmul_gpu[
                 batch_size,
             ),
             block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
-            stream=stream,
         )
     except e:
         abort(e)
@@ -561,18 +562,29 @@ fn batched_matmul[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _batched_matmul_cpu if target == "cpu" else _batched_matmul_gpu
-    func[
-        rank,
-        a_type,
-        b_type,
-        c_type,
-        transpose_b,
-        elementwise_epilogue_fn,
-        saturated_vnni,
-    ](c_buf, a_buf, b_buf)
+    if target == "cpu":
+        _batched_matmul_cpu[
+            rank,
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            elementwise_epilogue_fn,
+            saturated_vnni,
+        ](c_buf, a_buf, b_buf)
+    else:
+        _batched_matmul_gpu[
+            rank,
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            elementwise_epilogue_fn,
+            saturated_vnni,
+        ](c_buf, a_buf, b_buf, context.get_cuda_device())
 
 
 @mogg_register("batch_matmul_shape")
