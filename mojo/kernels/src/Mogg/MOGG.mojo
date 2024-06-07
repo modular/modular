@@ -2710,7 +2710,7 @@ fn softmax[
         DimList.create_unknown[rank](),
         input_0_fn,
         target,
-    ](shape, output, rank - 1)
+    ](shape, output, rank - 1, context=ctx)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
