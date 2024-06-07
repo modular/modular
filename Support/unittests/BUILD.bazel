@@ -24,8 +24,6 @@ modular_cc_test(
         "ErrorOrTest.cpp",
         "ErrorTest.cpp",
         "FunctionExtrasTest.cpp",
-        "IPIntTest.cpp",
-        "IPRationalTest.cpp",
         "MathExtras.cpp",
         "RandomTest.cpp",
         "VersionTest.cpp",
@@ -37,10 +35,20 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "IPIntTest",
+    srcs = ["IPIntTest.cpp"],
+    deps = ["//Support:IPInt"],
+)
+
+modular_cc_test(
+    name = "IPRationalTest",
+    srcs = ["IPRationalTest.cpp"],
+    deps = ["//Support:IPRational"],
+)
+
+modular_cc_test(
     name = "BufferTest",
-    srcs = [
-        "BufferTest.cpp",
-    ],
+    srcs = ["BufferTest.cpp"],
     deps = ["//Support:Buffer"],
 )
 
