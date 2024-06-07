@@ -12,7 +12,7 @@ from random import random_float64
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu.host.device_context import DeviceContext, DeviceBuffer
-from LinAlg.BatchedMatmul import batched_matmul
+from LinAlg.BatchedMatmul import _batched_matmul_gpu
 from LinAlg.MatmulGPU import _matmul_gpu, matmul_kernel_naive
 from memory.unsafe import DTypePointer
 from testing import assert_true
@@ -317,20 +317,15 @@ fn run_batched_matmul(
     ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
         c_buf[(idx[0], idx[1], idx[2])] = rebind[BFloat16](val) + BFloat16(2.0)
 
-    batched_matmul[
+    _batched_matmul_gpu[
         rank=3,
         a_type = DType.bfloat16,
         b_type = DType.bfloat16,
         c_type = DType.bfloat16,
-        transpose_a=False,
         transpose_b=False,
         elementwise_epilogue_fn=elementwise_epilogue_fn1,
-        target="cuda",
-    ](
-        c_buf,
-        a_buf,
-        b_buf,
-    )
+    ](c_buf, a_buf, b_buf, ctx)
+
     ctx.enqueue_copy_from_device(c_host, c_device)
 
     ctx.enqueue_copy_to_device(a_device_n, a_host_n)
@@ -344,20 +339,15 @@ fn run_batched_matmul(
     ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
         c_buf_n[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 
-    batched_matmul[
+    _batched_matmul_gpu[
         rank=3,
         a_type = DType.float32,
         b_type = DType.float32,
         c_type = DType.float32,
-        transpose_a=False,
         transpose_b=False,
         elementwise_epilogue_fn=elementwise_epilogue_fn2,
-        target="cuda",
-    ](
-        c_buf_n,
-        a_buf_n,
-        b_buf_n,
-    )
+    ](c_buf_n, a_buf_n, b_buf_n, ctx)
+
     ctx.enqueue_copy_from_device(c_host_n, c_device_n)
     ctx.synchronize()
 
