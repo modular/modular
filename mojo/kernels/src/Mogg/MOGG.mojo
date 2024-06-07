@@ -2319,7 +2319,7 @@ fn batched_matmul[
             saturated_vnni=False,
             single_thread_blocking_override=single_thread_blocking_override,
             target=target,
-        ](c, a, b)
+        ](c, a, b, context=ctx)
 
 
 # ===----------------------------------------------------------------------===#
