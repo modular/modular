@@ -67,8 +67,8 @@ void M::KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createLowerCallingConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
-  // Run the ForceInline pass with an inner function pass pipeline.
-  auto buildForceInlineFuncPasses = [options](mlir::OpPassManager &pm) {
+  // Run the AutomaticInline pass with an inner function pass pipeline.
+  auto buildAutomaticInlineFuncPasses = [options](mlir::OpPassManager &pm) {
     if (options.optimizationLevel < 1)
       return;
     pm.addPass(createSimplifyCF());
@@ -88,14 +88,14 @@ void M::KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addPass(createCanonicalizer());
   };
 
-  pm.addPass(createForceInline(
+  pm.addPass(createAutomaticInline(
       {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
            ? InlinerDebugInfoUpdateTime::kNever
            : (options.optimizationLevel == 0
                   ? InlinerDebugInfoUpdateTime::kDeferred
                   : InlinerDebugInfoUpdateTime::kImmediate),
        options.optimizationLevel},
-      std::move(buildForceInlineFuncPasses)));
+      std::move(buildAutomaticInlineFuncPasses)));
 
   // Process debuginfo based on the selected debugging level.
   if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
@@ -119,30 +119,6 @@ void M::KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   }
 
   pm.addPass(createEliminateDeadSymbols());
-
-  // Run the AutomaticInliner with an inner function pass pipeline.
-  auto buildAutomaticInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
-    if (options.optimizationLevel < 1)
-      return;
-    pm.addPass(createSimplifyCF());
-    pm.addPass(createSROA());
-    pm.addPass(createMem2Reg());
-    // TODO: hoistTrivialInvariant is causing perf drop, needs further
-    // investigation.
-    // pm.addPass(createHoistTrivialInvariants());
-    pm.addPass(createStackReuse());
-    pm.addPass(createCanonicalizer());
-    pm.addPass(mlir::createCSEPass());
-  };
-
-  pm.addPass(createAutomaticInline(
-      {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
-           ? InlinerDebugInfoUpdateTime::kNever
-           : (options.optimizationLevel == 0
-                  ? InlinerDebugInfoUpdateTime::kDeferred
-                  : InlinerDebugInfoUpdateTime::kImmediate),
-       options.optimizationLevel},
-      std::move(buildAutomaticInlinerFuncPasses)));
 
   if (options.optimizationLevel >= 1) {
     pm.addNestedPass<FuncOp>(createRaiseForLoops());

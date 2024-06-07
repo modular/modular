@@ -34,7 +34,41 @@
 using namespace M;
 using namespace KGEN;
 
+static bool isAlwaysInlineFunction(FuncOp func) {
+  return func.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
+         func.getInlineLevel() == InlineLevel::Always;
+}
+
 namespace {
+//===----------------------------------------------------------------------===//
+// AlwaysInlineGraphNode
+//===----------------------------------------------------------------------===//
+
+struct AlwaysInlineGraphNode
+    : CallGraphNodeBase<AlwaysInlineGraphNode, FuncOp, KGENCallOpInterface> {
+  explicit AlwaysInlineGraphNode(FuncOp func) : CallGraphNodeBase(func) {}
+};
+
+//===----------------------------------------------------------------------===//
+// AlwaysInlineGraphNodeGraph
+//===----------------------------------------------------------------------===//
+
+struct AlwaysInlineGraph
+    : CallGraphBase<AlwaysInlineGraph, AlwaysInlineGraphNode> {
+  explicit AlwaysInlineGraph() : externalNode(nullptr) {}
+
+  static bool shouldAddToGraph(KGENCallOpInterface call,
+                               AlwaysInlineGraphNode *node) {
+    return isAlwaysInlineFunction(node->func);
+  }
+
+  LogicalResult diagnoseCycle(ModuleOp module, const SymbolTable &symtab);
+
+  /// External node that has all the functions that do not have a caller in the
+  /// Module as callees. This node is the entry node of the CallGraph for
+  /// computing SCCs.
+  AlwaysInlineGraphNode externalNode;
+};
 
 //===----------------------------------------------------------------------===//
 // CallGraphNode
@@ -52,6 +86,7 @@ struct CallGraphNode
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
   ~CallGraphNode() {
+
     // `func` is null for the root node.
     if (func && isFunctionDead()) {
       func->remove();
@@ -125,7 +160,7 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   /// Build the CallGraph.
   void build(ModuleOp module, const SymbolTable &symtab);
 
-  bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
+  static bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
     ++node->numCallers;
     return true;
   }
@@ -143,6 +178,9 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   /// Module as callees. This node is the entry node of the CallGraph for
   /// computing SCCs.
   CallGraphNode externalNode;
+
+  LogicalResult diagnoseAlwaysInliningCycle(ModuleOp module,
+                                            const SymbolTable &symtab);
 
 private:
   /// Reference to the LLCL runtime for launch jobs in parallel.
@@ -180,9 +218,70 @@ private:
 namespace llvm {
 template <>
 struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
+
+template <>
+struct GraphTraits<AlwaysInlineGraph *>
+    : public GraphTraits<AlwaysInlineGraph::BaseT *> {};
 } // namespace llvm
 
+LogicalResult AlwaysInlineGraph::diagnoseCycle(ModuleOp module,
+                                               const SymbolTable &symtab) {
+  build(module, symtab);
+
+  for (auto &[func, node] : nodes) {
+    if (node.callers.empty() || func.isExported() ||
+        isAlwaysInlineFunction(node.func))
+      externalNode.callsites.emplace_back(nullptr, &node);
+  }
+
+  llvm::scc_iterator<AlwaysInlineGraph *> sccIt = llvm::scc_begin(this);
+
+  while (!sccIt.isAtEnd() && !sccIt.hasCycle())
+    ++sccIt;
+
+  if (sccIt.isAtEnd())
+    return success();
+
+  // Build a set of nodes in the SCC for efficient queries.
+  DenseSet<AlwaysInlineGraphNode *> sccNodes;
+  for (AlwaysInlineGraphNode *node : (*sccIt))
+    sccNodes.insert(node);
+
+  // Determine the first cycle we can see in the SCC.
+  SmallVector<AlwaysInlineGraphNode::EdgeIteratorT> path;
+  DenseSet<AlwaysInlineGraphNode *> nodesInPath;
+  AlwaysInlineGraphNode *nextNode = sccIt->back();
+
+  while (nodesInPath.insert(nextNode).second) {
+    auto it = nextNode->begin();
+    while (!sccNodes.contains(it->node))
+      ++it;
+    path.push_back(it);
+    nextNode = it->node;
+  }
+
+  // Okay, emit the errors.
+  InFlightDiagnostic diag =
+      mlir::emitError(nextNode->func.getLoc())
+      << "function has recursive call to 'always_inline' function";
+  for (auto &it : path) {
+    AlwaysInlineGraphNode::EdgeT node = *it;
+    diag.attachNote(node.call.getLoc())
+        << (&it == &path.back() ? "call here recurses" : "through call here");
+    diag.attachNote(node.node->func.getLoc())
+        << (&it == &path.back() ? "back to function here"
+                                : "to function marked 'always_inline' here");
+  }
+
+  return failure();
+}
+
 bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
+  // Always inlines.
+  if (callee->func.getInlineLevel() == InlineLevel::Always ||
+      callee->func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
+    return true;
+
   // Try to inline callee if it is not in the same SCC as the current node
   // (which is the caller).
   return !sccNodes.contains(callee) && (callee != this) && callee->reachable;
@@ -190,8 +289,12 @@ bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
 
 bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
                                        uint64_t threshold) {
-  // Don't handle functions that are marked as always_inline. Leave them for
-  // ForceInlinePass.
+  // Should always inline `always_inline` ones.
+  if (callee->func.getInlineLevel() == InlineLevel::Always ||
+      callee->func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
+    return true;
+
+  // Don't handle functions that are not annotated as automatic.
   if (callee->func.getInlineLevel() != InlineLevel::Automatic)
     return false;
 
@@ -304,6 +407,59 @@ void CallGraph::performInlining(uint64_t threshold) {
   LLCL::await(done);
 }
 
+LogicalResult
+CallGraph::diagnoseAlwaysInliningCycle(ModuleOp module,
+                                       const SymbolTable &symtab) {
+  CallGraphBase::build(module, symtab, runtime);
+
+  for (auto &[func, node] : nodes) {
+    if (node.callers.empty() || func.isExported())
+      externalNode.callsites.emplace_back(nullptr, &node);
+  }
+
+  llvm::scc_iterator<CallGraph *> sccIt = llvm::scc_begin(this);
+
+  while (!sccIt.isAtEnd() && !sccIt.hasCycle())
+    ++sccIt;
+
+  if (sccIt.isAtEnd())
+    return success();
+
+  // Build a set of nodes in the SCC for efficient queries.
+  DenseSet<CallGraphNode *> sccNodes;
+  for (CallGraphNode *node : (*sccIt))
+    sccNodes.insert(node);
+
+  // Determine the first cycle we can see in the SCC.
+  SmallVector<CallGraphNode::EdgeIteratorT> path;
+  DenseSet<CallGraphNode *> nodesInPath;
+  CallGraphNode *nextNode = sccIt->front();
+
+  while (nodesInPath.insert(nextNode).second) {
+    auto it = nextNode->begin();
+    while (!sccNodes.contains(it->node))
+      ++it;
+    path.push_back(it);
+    nextNode = it->node;
+  }
+
+  // Okay, emit the errors.
+  InFlightDiagnostic diag =
+      mlir::emitError(nextNode->func.getLoc())
+      << "function has recursive call to 'always_inline' function";
+  for (auto &it : path) {
+    CallGraphNode::EdgeT node = *it;
+    diag.attachNote(node.call.getLoc())
+        << (&it == &path.back() ? "call here recurses" : "through call here");
+    diag.attachNote(node.node->func.getLoc())
+        << (&it == &path.back() ? "back to function here"
+                                : "to function marked 'always_inline' here");
+  }
+
+  done.copy().emplace();
+  return failure();
+}
+
 //===----------------------------------------------------------------------===//
 // AutomaticInlinePass
 //===----------------------------------------------------------------------===//
@@ -317,7 +473,7 @@ namespace {
 struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
   explicit AutomaticInline(
       const AutomaticInlineOptions &options = {},
-      std::function<void(mlir::OpPassManager &)> buildFuncPasses = {})
+      const std::function<void(mlir::OpPassManager &)> &buildFuncPasses = {})
       : AutomaticInlineBase(options), buildFuncPasses(buildFuncPasses) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
@@ -393,8 +549,24 @@ void AutomaticInline::runOnOperation() {
 
   LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  CallGraph graph(runtime, pms, updateAttrName, !optimizationLevel.getValue());
 
+  AlwaysInlineGraph verifyGraph;
+  // Check if there is cyclic always_inline function call chains, and errors out
+  // if found.
+  if (failed(verifyGraph.diagnoseCycle(
+          mlir::OperationPass<ModuleOp>::getOperation(), symtab))) {
+    return signalPassFailure();
+  }
+
+  CallGraph graph(runtime, pms, updateAttrName, !optimizationLevel.getValue());
+  // The CallGraph should be legal for always_inline functions (no cycles).
+  // Perform inlining here. For always_inline functions in a non-trivial SCC,
+  // there must be a function that is not always_inline which can be used to
+  // break the cycle. Don't inline any such functions that is in a non-trivial
+  // SCC and is not always_inline.
+  // Further optimization can be done by automatically inlining
+  // non-always_inline functions in an SCC as long as we can break the
+  // recursive cycle of inlining.
   graph.build(getOperation(), symtab);
   graph.performInlining(getInlineThreshold());
 
