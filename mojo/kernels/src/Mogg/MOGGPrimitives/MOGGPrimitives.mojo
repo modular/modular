@@ -15,7 +15,14 @@ from gpu.host.memory import _free, _malloc
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
-from gpu.host import CudaInstance, Device, Context as CudaContext
+from gpu.host import (
+    CudaInstance,
+    Device,
+    DeviceBuffer,
+    DeviceContext,
+    Context as CudaContext,
+)
+from runtime.llcl import MojoCallContextPtr
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
@@ -77,9 +84,9 @@ struct StaticTensorSpec[rank: Int]():
 
 
 @register_passable("trivial")
-struct Context:
-    """Defines a Context structure which holds a ptr to context and has accessors that go to external calls
-    This is currently meant as a mojo-side container for GML::Context."""
+struct StateContext:
+    """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
+    This is currently meant as a mojo-side container for GML::StateContext."""
 
     var numSlots: Int
     var ctxPtr: UnsafePointer[NoneType]
@@ -106,7 +113,9 @@ struct Context:
 @always_inline
 fn byte_buffer_alloc[
     target: StringLiteral
-](byte_size: Int, alignment: Int) raises -> NDBuffer[DType.int8, 1]:
+](
+    byte_size: Int, alignment: Int, callCtx: MojoCallContextPtr
+) raises -> NDBuffer[DType.int8, 1]:
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
     """
     # This primitive has a byte-size input, so always assume a byte format
@@ -114,8 +123,13 @@ fn byte_buffer_alloc[
 
     @parameter
     if target == "cuda":
-        # cuda has no notion of alignment since alloc is always aligned
-        return NDBuffer[DType.int8, 1](_malloc[DType.int8](byte_size), shape)
+        # For now, only cuda targets can use device context directly
+        return NDBuffer[DType.int8, 1](
+            callCtx.get_cuda_device().cuda_context.malloc_async[Int8](
+                byte_size, callCtx.get_cuda_device().cuda_stream
+            ),
+            shape,
+        )
     else:
         return NDBuffer[DType.int8, 1](
             DTypePointer[DType.int8].alloc(byte_size, alignment=alignment),
@@ -157,14 +171,23 @@ fn create_i1_async(
 @mogg_register("builtin.create_buffer_ref_async")
 @always_inline
 @export
-fn create_buffer_ref_async(
+fn create_buffer_ref_async[
+    target: StringLiteral
+](
     buffer: NDBuffer[DType.int8, 1],
     async_ptr: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
+    callCtx: MojoCallContextPtr,
 ):
-    external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, runtime
-    )
+    @parameter
+    if target == "cuda":
+        external_call["KGEN_CompilerRT_CreateAsyncCUDABufferRef", NoneType](
+            buffer.data, len(buffer), async_ptr, runtime, callCtx.ptr
+        )
+    else:
+        external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
+            buffer.data, len(buffer), async_ptr, runtime
+        )
 
 
 @mogg_register("builtin.create_tensor_spec_async")
@@ -229,15 +252,14 @@ fn unpack_async(
 @mogg_register("builtin.unpack_buffer")
 @always_inline
 @export
-fn unpack_buffer(
-    async_ptr: UnsafePointer[NoneType],
-) -> NDBuffer[DType.uint8, 1]:
+fn unpack_buffer[
+    target: StringLiteral
+](async_ptr: UnsafePointer[NoneType],) -> NDBuffer[DType.uint8, 1]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
         UnsafePointer[NoneType],
     ](async_ptr, Pointer.address_of(size))
-
     var shape = StaticIntTuple[1](int(size))
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
@@ -265,14 +287,14 @@ fn unpack_tensor_spec[
 @export
 fn unpack_context(
     async_ptr: UnsafePointer[NoneType],
-) -> Context:
+) -> StateContext:
     # We want to construct this because we want all payloads to be implemented
     var numSlots: UInt64 = 0
     var ctxPtr: UnsafePointer[NoneType] = external_call[
         "KGEN_CompilerRT_GetContextAndSizeFromAsync",
         UnsafePointer[NoneType],
     ](Pointer.address_of(numSlots), async_ptr)
-    return Context(int(numSlots), ctxPtr)
+    return StateContext(int(numSlots), ctxPtr)
 
 
 @mogg_register("builtin.get_buffer_data")
@@ -440,12 +462,14 @@ fn mgp_buffer_alloc_static[
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-](ctx: Context) raises -> NDBuffer[DType.int8, 1]:
+](stateCtx: StateContext, callCtx: MojoCallContextPtr) raises -> NDBuffer[
+    DType.int8, 1
+]:
     var alignment = int(cRawAlign)
     if cRawAlign == UInt64.MAX:
         # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
         alignment = alignof[DType.int8]()
-    return byte_buffer_alloc[dDevice](int(bSize), alignment)
+    return byte_buffer_alloc[dDevice](int(bSize), alignment, callCtx)
 
 
 @mogg_register("mgp.buffer.alloc.dynamic")
@@ -455,12 +479,14 @@ fn mgp_buffer_alloc_dynamic[
     aRuntimeSlot: UInt64,
     bRawAlign: UInt64,
     cDevice: StringLiteral,
-](ctx: Context, byte_size: Int) raises -> NDBuffer[DType.int8, 1]:
+](
+    ctx: StateContext, byte_size: Int, callCtx: MojoCallContextPtr
+) raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(bRawAlign)
     if bRawAlign == UInt64.MAX:
         # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
         alignment = alignof[DType.int8]()
-    return byte_buffer_alloc[cDevice](byte_size, alignment)
+    return byte_buffer_alloc[cDevice](byte_size, alignment, callCtx)
 
 
 @always_inline
@@ -569,7 +595,7 @@ fn fillBuffer[
 @always_inline
 @export
 fn mgp_buffer_set_with_index(
-    ctx: Context, buffer: NDBuffer[DType.uint8, 1], *vals: Int
+    ctx: StateContext, buffer: NDBuffer[DType.uint8, 1], *vals: Int
 ):
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
@@ -592,7 +618,7 @@ fn mgp_buffer_set_with_index(
 @export
 fn mgp_device_context_create[
     aDeviceRuntimeSlot: UInt64, bDevice: StringLiteral
-](ctx: Context):
+](ctx: StateContext):
     @parameter
     if bDevice == "cuda":
         var dev_ctx = UnsafePointer[Tuple[CudaContext, CudaInstance]].alloc(1)
@@ -611,6 +637,6 @@ fn mgp_device_context_create[
 
 @export
 fn mgp_device_context_destroy(
-    dev_ctx: UnsafePointer[Tuple[Context, CudaInstance]]
+    dev_ctx: UnsafePointer[Tuple[StateContext, CudaInstance]]
 ):
     dev_ctx.destroy_pointee()
