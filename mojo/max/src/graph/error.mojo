@@ -5,17 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 """Error helpers."""
 
-from builtin._location import __call_location
+from builtin._location import __call_location, _SourceLocation
 from memory import stack_allocation
 from sys.ffi import external_call, C_char
 
 
 @always_inline
-def error[T: Stringable](graph: Optional[Graph], message: T) -> Error:
+def error[
+    T: Stringable
+](
+    graph: Optional[Graph],
+    message: T,
+    location: Optional[_SourceLocation] = None,
+) -> Error:
     """Creates an error to raise that includes call information.
 
     This should be called internally at every point that can raise inside
-    Graph API. Currently this only includes the specific call site of the raise.
+    Graph API. By default, this only includes the specific call site of the raise.
     We hope to improve this in the future.
 
     Parameters:
@@ -24,21 +30,26 @@ def error[T: Stringable](graph: Optional[Graph], message: T) -> Error:
     Args:
         graph: The graph for context information.
         message: An error message to raise.
+        location: An optional location for a more specific error message.
 
     Returns:
         The error message augmented with call context information.
     """
-    var message_string: String
+    var layer_string = str("")
     if graph:
-        message_string = (
-            str(graph.value().current_layer()) + " - " + str(message)
-        )
+        layer_string = str(graph.value().current_layer())
+
+    var message_string: String
+    if layer_string:
+        message_string = layer_string + " - " + str(message)
     else:
         message_string = str(message)
+
     return (
-        message_string
-        + "\n\tat"
-        + str(__call_location())
+        "\n\n"
+        + message_string
+        + "\n\tat "
+        + str((location or __call_location()).value())
         + "\n\n"
         + format_system_stack()
     )

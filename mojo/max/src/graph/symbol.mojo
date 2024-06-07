@@ -12,7 +12,7 @@ from utils.variant import Variant
 import _mlir
 
 from ._attributes import _string_attr
-from .graph import Graph, _GraphRef
+from .graph import Graph, _GraphRef, error
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about
@@ -113,15 +113,23 @@ struct Symbol(CollectionElement, Stringable):
             out_dims.append(dim[])
 
         var message = str(
-            __call_location()
-        ) + ": Failed to rebind runtime shape"
+            error(
+                self.graph(),
+                "Failed to rebind runtime shape",
+                __call_location(),
+            )
+        )
         return ops.rebind(self, out_dims, message)
 
     @always_inline
     fn rebind(self, dims: List[Dim]) raises -> Symbol:
         var message = str(
-            __call_location()
-        ) + ": Failed to rebind runtime shape"
+            error(
+                self.graph(),
+                "Failed to rebind runtime shape",
+                __call_location(),
+            )
+        )
         return ops.rebind(self, dims, message)
 
     fn reshape(self) raises -> Symbol:
@@ -147,17 +155,18 @@ struct Symbol(CollectionElement, Stringable):
         """
         from builtin._location import __call_location
 
+        if len(dims) == 0:
+            return self.reshape()
+
+        var shape = List[Dim]()
+        for dim in dims:
+            shape.append(Dim(dim))
+
         try:
-            if len(dims) == 0:
-                return self.reshape()
-
-            var shape = List[Dim]()
-            for dim in dims:
-                shape.append(Dim(dim))
-
             return ops.reshape(self, shape)
         except e:
-            raise str(__call_location()) + ": " + str(e)
+            raise error(self.graph(), e, __call_location())
+        raise "Unreachable"
 
     @always_inline
     fn reshape(self, *dims: Dim) raises -> Symbol:
@@ -171,17 +180,18 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             A new `Symbol` that has the given shape.
         """
+        if len(dims) == 0:
+            return self.reshape()
+
+        var shape = List[Dim]()
+        for dim in dims:
+            shape.append(dim[])
+
         try:
-            if len(dims) == 0:
-                return self.reshape()
-
-            var shape = List[Dim]()
-            for dim in dims:
-                shape.append(dim[])
-
             return ops.reshape(self, shape)
         except e:
-            raise str(__call_location()) + ": " + str(e)
+            raise error(self.graph(), e, __call_location())
+        raise "Unreachable"
 
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
