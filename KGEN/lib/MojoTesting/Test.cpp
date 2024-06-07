@@ -20,6 +20,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
+#include "Support/Process.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/StringExtras.h"
@@ -1027,8 +1028,12 @@ executeTests(ArrayRef<Test> tests,
   SmallVector<StringRef> args = {testExecutorPath};
   for (StringRef path : additionalImportPaths)
     llvm::append_range(args, ArrayRef<StringRef>{"-I", path});
+
+  std::vector<StringRef> env = getEnv();
+  env.emplace_back("MODULAR_TELEMETRY_ENABLED=false");
+
   auto processInfo =
-      llvm::sys::ExecuteNoWait(testExecutorPath, args, /*Env=*/{}, redirects);
+      llvm::sys::ExecuteNoWait(testExecutorPath, args, env, redirects);
 
   // Build an unresolved result that waits for the process to complete.
   auto instance = std::make_unique<TestExecutionInstance>(

@@ -6,6 +6,7 @@
 
 #include "RPCServer.h"
 #include "Support/Configuration.h"
+#include "Support/Process.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
 #include <filesystem>
@@ -26,21 +27,6 @@ using SOCKET = int;
 using namespace M;
 
 namespace json = llvm::json;
-
-#if defined(_WIN32)
-extern char **_environ;
-#else
-extern char **environ;
-#endif
-
-char **getEnv() {
-#ifdef _WIN32
-  static char **envp = _environ;
-#else
-  static char **envp = environ;
-#endif
-  return envp;
-}
 
 /// Create an object with the common fields that are sent to the RPC server
 /// to start the different kinds of requests.
@@ -197,8 +183,8 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, int rpcPort,
     return Error("failed to get the current working path: " + ec.message());
 
   json::Array env;
-  for (char **entry = getEnv(); *entry; ++entry)
-    env.push_back(*entry);
+  for (StringRef entry : getEnv())
+    env.push_back(entry);
 
   payload->insert({"program", fullTarget.string()});
   payload->insert({"request", "launch"});

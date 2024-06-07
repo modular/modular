@@ -34,6 +34,24 @@ LogicalResult M::setProcessEnv(StringRef name, StringRef value,
 #endif
 }
 
+#if defined(_WIN32)
+extern char **_environ;
+#else
+extern char **environ;
+#endif
+
+std::vector<StringRef> M::getEnv() {
+#ifdef _WIN32
+  static char **envp = _environ;
+#else
+  static char **envp = environ;
+#endif
+  std::vector<StringRef> env;
+  for (char **entry = envp; *entry; ++entry)
+    env.emplace_back(*entry);
+  return env;
+}
+
 //===----------------------------------------------------------------------===//
 // Memory usage
 //===----------------------------------------------------------------------===//

@@ -10,6 +10,7 @@ add_modular_library(MojoTesting
   LINK_LIBS PUBLIC
   MojoParser
   MojoTooling
+  MSupport
   KGENSupport
   LLCLRuntimeGlobals
   MSupportGlobals
