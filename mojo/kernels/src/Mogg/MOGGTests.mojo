@@ -434,3 +434,11 @@ fn test_make_custom_simd[
     s_in: MyCustomSIMD[type1, rank2],
 ) -> MyCustomSIMD[type2, rank1]:
     return MyCustomSIMD[type2, rank1](0)
+
+
+# For testing support for Scalar[...] in Mojo
+@mogg_register("supports_scalar_kernel")
+@export
+fn supports_scalar_kernel[type: DType](x: Scalar[type], out: NDBuffer[type, 1]):
+    print("datatype is", type)
+    out[0] = x
