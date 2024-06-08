@@ -76,10 +76,12 @@ TEST(IPInt, arithmetic) {
         EXPECT_EQ(IPInt(i) & IPInt(j), IPInt(i & j));
         EXPECT_EQ(IPInt(i) | IPInt(j), IPInt(i | j));
         EXPECT_EQ(IPInt(i) ^ IPInt(j), IPInt(i ^ j));
-      }
 
-      if (j > 0) {
         // For positive RHS, shifting will be the same as for fixed width ints.
+        // Left shift on negative integers is undefined.
+        // https://stackoverflow.com/questions/3784996/why-does-left-shift-operation-invoke-undefined-behaviour-when-the-left-side-oper
+        // It is well defined for IPInt, but we shouldn't use normal integers as
+        // a test case for it.
         EXPECT_EQ(IPInt(i) << IPInt(j), IPInt(i << j));
         EXPECT_EQ(IPInt(i) >> IPInt(j), IPInt(i >> j));
       }
