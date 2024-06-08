@@ -14,7 +14,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <queue>
 #include <thread>
 
 namespace M::LLCL {
@@ -26,7 +25,8 @@ public:
   ~TimerHeap() { stop(); }
 
   /// Push a new function which will be executed at the given deadline.
-  void push(const deadline expiration, AsyncValueRef<Chain> chain);
+  void push(const deadline expiration, AsyncValueRef<Chain> &chain);
+  void cancel(AsyncValueRef<Chain> &chain);
 
 private:
   void stop();
@@ -38,7 +38,7 @@ private:
     Entry(const deadline expiration, AsyncValueRef<Chain> &&chain)
         : expiration(expiration), expired(std::move(chain)) {}
     deadline expiration;
-    AsyncValueRef<Chain> expired;
+    AsyncValueRef<Chain> expired; // Null if no longer needed.
 
     /// Something is *less* than something else if it expires further into the
     /// future. This is backwards, but useful for the priority queue. Think of
@@ -47,7 +47,7 @@ private:
       return expiration > other.expiration;
     }
   };
-  std::priority_queue<Entry> entries;
+  std::vector<Entry> entries;
   bool running;
 
   /// Protects `running` and `entries`.
