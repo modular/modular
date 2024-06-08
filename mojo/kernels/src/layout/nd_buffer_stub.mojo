@@ -668,7 +668,6 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         tensor_element_layout.rank() == 2
         and tensor_element_layout.stride[1] == 1
     ):
-        print("copy-2-d")
         alias num_copies = tensor_element_layout.shape[0].value()
         alias vec_width = tensor_element_layout.shape[1].value()
 
