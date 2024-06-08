@@ -71,7 +71,7 @@ struct ServerStats(ServerCallbacks):
         """Move initialize the server stats from a given ServerStats instance.
 
         Args:
-            existing: The existin ServerStats isntance.
+            existing: The existing ServerStats isntance.
         """
         self.options = existing.options^
         self.lock = BlockingSpinLock()

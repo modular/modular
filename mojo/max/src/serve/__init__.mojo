@@ -3,5 +3,4 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-"""Implements the MAX serve package."""
+"""The serve package provides utilities for implementation services and APIs."""

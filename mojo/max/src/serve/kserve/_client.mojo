@@ -3,26 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Provides C bindings to ServeRT."""
+"""Provides client-related C bindings to ServeRT."""
 
 from sys.ffi import DLHandle
 from memory import UnsafePointer
-from memory.unsafe import DTypePointer, Pointer
-from builtin.coroutine import _coro_resume_fn, _suspend_async
-from runtime.llcl import Runtime, Chain, ChainPromise
-from utils.variant import Variant
+from memory.unsafe import DTypePointer
+from runtime.llcl import Chain
 
-from max.engine import InferenceSession, Model
-from max.engine._compilation import CCompiledModel
-from max.engine._model_impl import CModel
 from max.engine._utils import call_dylib_func, exchange, CString
 
-from .._serve_rt import (
-    InferenceRequestImpl,
-    InferenceResponseImpl,
-    CInferenceRequest,
-    CInferenceResponse,
-)
+from ._types import CInferenceRequest, CInferenceResponse
 
 
 struct ClientResult:
@@ -40,7 +30,7 @@ struct ClientResult:
         call_dylib_func(lib, Self._FreeValueFnName, ptr)
 
 
-struct CKServeClientAsync:
+struct CGRPCClient:
     """Corresponds to the M_KServeClient C type."""
 
     var _lib: DLHandle
@@ -116,59 +106,3 @@ struct CKServeClientAsync:
             UnsafePointer.address_of(result),
         )
         return result
-
-
-struct KServeClientAsync:
-    var _impl: CKServeClientAsync
-    var _session: InferenceSession
-
-    fn __init__(
-        inout self,
-        lib: DLHandle,
-        address: String,
-        owned session: InferenceSession,
-    ):
-        self._impl = CKServeClientAsync(lib, address._strref_dangerous())
-        self._session = session^
-
-    fn __moveinit__(inout self: Self, owned existing: Self):
-        self._impl = existing._impl^
-        self._session = existing._session^
-
-    fn run(inout self):
-        self._impl.run()
-
-    fn create_infer_request(
-        inout self, name: String, version: String
-    ) -> InferenceRequestImpl:
-        return InferenceRequestImpl(
-            self._impl.create_infer_request(
-                name._strref_dangerous(), version._strref_dangerous()
-            ),
-            self._session,
-        )
-
-    async fn model_infer(
-        inout self,
-        request: InferenceRequestImpl,
-        inout response: Variant[InferenceResponseImpl, Error],
-    ):
-        await ChainPromise(self._impl.model_infer(request._impl))
-        var result = self._impl.take_infer_result(request._impl)
-        if result[].code != 0:
-            # The response should be null in this case.
-            response.set[Error](Error(str(result[].error)))
-        else:
-            # This hands ownership of the response to the underlying
-            # InferenceRequest object. It will be freed separately when this
-            # object is freed.
-            response.set[InferenceResponseImpl](
-                InferenceResponseImpl(
-                    CInferenceResponse(
-                        self._impl._lib, result[].response, owning=True
-                    ),
-                    self._session,
-                )
-            )
-        # Free the allocated result.
-        ClientResult.free(self._impl._lib, result)

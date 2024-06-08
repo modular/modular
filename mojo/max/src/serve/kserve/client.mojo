@@ -3,33 +3,26 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Provides basic KServe service/server implementations."""
+"""Provides basic KServe client functionality."""
 
 from sys.ffi import DLHandle
-from tensor import TensorSpec
-from runtime.llcl import Runtime
-from time import now
+from runtime.llcl import Runtime, ChainPromise
 from utils.variant import Variant
 
-from max.engine import InferenceSession, InputSpec, TensorMap
+from max.engine import InferenceSession, TensorMap
 from max.engine._utils import handle_from_config
 
-from ._client_impl import KServeClientAsync
-from .._serve_rt import TensorView, InferenceRequestImpl, InferenceResponseImpl
+from ._types import CInferenceResponse, CInferenceRequest
+from .types import InferenceResponse, InferenceRequest
+from ._client import CGRPCClient, ClientResult
 
 
-struct GRPCInferenceClient:
+struct GRPCClient:
     """Inference client implementing the KServe protocol over gRPC."""
 
     var _lib: DLHandle
+    var _impl: CGRPCClient
     var _session: InferenceSession
-    var _impl: KServeClientAsync
-
-    @staticmethod
-    fn create(
-        address: String, owned session: InferenceSession
-    ) raises -> GRPCInferenceClient:
-        return GRPCInferenceClient(address, session^)
 
     fn __init__(
         inout self,
@@ -44,8 +37,36 @@ struct GRPCInferenceClient:
         """
         self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
-        self._impl = KServeClientAsync(self._lib, address, self._session)
+        self._impl = CGRPCClient(self._lib, address._strref_dangerous())
         self._impl.run()
+
+    fn __moveinit__(inout self: Self, owned existing: Self):
+        self._lib = existing._lib
+        self._impl = existing._impl^
+        self._session = existing._session^
+
+    async fn _infer(
+        inout self, request: InferenceRequest
+    ) raises -> InferenceResponse:
+        await ChainPromise(self._impl.model_infer(request._impl))
+        var result = self._impl.take_infer_result(request._impl)
+        if result[].code != 0:
+            # The response should be null in this case.
+            var s = str(result[].error)
+            ClientResult.free(self._impl._lib, result)
+            raise Error(s)
+        else:
+            # This hands ownership of the response to the underlying
+            # InferenceRequest object. It will be freed separately when this
+            # object is freed.
+            var response = InferenceResponse(
+                CInferenceResponse(
+                    self._impl._lib, result[].response, owning=True
+                ),
+                self._session,
+            )
+            ClientResult.free(self._impl._lib, result)
+            return response^
 
     fn infer(
         inout self,
@@ -53,30 +74,13 @@ struct GRPCInferenceClient:
         version: String,
         inputs: TensorMap,
         outputs: List[String],
-    ) raises -> InferenceResponseImpl:
-        var rt = Runtime()
-        var result = Variant[InferenceResponseImpl, Error](Error())
-        _ = rt.run(self.async_infer(name, version, inputs, outputs, result))
-        if result.isa[Error]():
-            raise result.unsafe_take[Error]()
-        else:
-            return result.unsafe_take[InferenceResponseImpl]()
-
-    # TODO: Add TensorMap variant that owns tensors.
-    async fn async_infer(
-        inout self,
-        name: String,
-        version: String,
-        inputs: TensorMap,
-        outputs: List[String],
-        inout result: Variant[InferenceResponseImpl, Error],
-    ) -> None:
-        var request = self._impl.create_infer_request(name, version)
-        try:
-            request.set_input_tensors(inputs.keys(), inputs)
-            request.set_outputs(outputs)
-            var response = Variant[InferenceResponseImpl, Error](Error())
-            await self._impl.model_infer(request, response)
-            result = response^
-        except e:
-            result.set[Error](e)
+    ) raises -> InferenceResponse:
+        var request = InferenceRequest(
+            self._impl.create_infer_request(
+                name._strref_dangerous(), version._strref_dangerous()
+            ),
+            self._session,
+        )
+        request.set_input_tensors(inputs.keys(), inputs)
+        request.set_outputs(outputs)
+        return Runtime().run(self._infer(request))
