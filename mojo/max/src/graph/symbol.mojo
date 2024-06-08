@@ -240,10 +240,7 @@ struct Symbol(CollectionElement, Stringable):
     # Slicing operators
     # ===------------------------------------------------------------------=== #
 
-    @always_inline
-    fn __getitem__(
-        self, i: Variant[Symbol, Int], axis: Int = 0, keep_dims: Bool = False
-    ) raises -> Symbol:
+    fn __getitem__(self, i: Symbol, axis: Int = 0) raises -> Symbol:
         """Symbolic slicing - indexes a value by a single index.
 
         Uses the `mo.slice` op.
@@ -251,31 +248,30 @@ struct Symbol(CollectionElement, Stringable):
         Args:
             i: The index value.
             axis: The axis to index at.
-            keep_dims: Returns a tensor with the same rank as the input if set.
 
         Returns:
             The slicing result.
         """
-        var index_sym: Symbol
-        if i.isa[Int]():
-            index_sym = self.graph().scalar(Int64(i[Int]), rank=1)
-        else:
-            if i[Symbol].tensor_type().rank() != 0:
-                raise error(
-                    self.graph(),
-                    "Slicing a tensor by Symbol requires a rank 0 index",
-                    __call_location(),
-                )
+        return ops.slice(self, i, axis=axis)
 
-            index_sym = ops.unsqueeze(i[Symbol], axis=0)
+    fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
+        """Symbolic slicing - indexes a value by a single constant index.
 
-        # TODO(GRA-528): This should just gather with a scalar index if keep_dims is False but can't.
-        var out_sliced = ops.gather(self, index_sym, axis=axis)
+        Uses the `mo.gather` op and automatically wraps `i` inside a
+        `mo.constant`.
 
-        if keep_dims:
-            return out_sliced
-        else:
-            return ops.squeeze(out_sliced, axis)
+        Args:
+            i: The index value.
+            axis: The axis to index at.
+
+        Returns:
+            The slicing result.
+        """
+        # TODO(GRA-528): This should just gather with a scalar index but can't.
+        return ops.squeeze(
+            ops.gather(self, self.graph().scalar(Int64(i), rank=1), axis=axis),
+            axis,
+        )
 
     fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
         """Range-based slicing.

@@ -193,6 +193,47 @@ def slice(input: Symbol, s: Slice) -> Symbol:
     return slice(input, sym_slices, static_shape=dims)
 
 
+def slice[
+    keep_dims: Bool = False
+](input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
+    """Slices out a `n-1`-d plane from the input symbolic tensor.
+
+    Args:
+        input: The symbolic tensor to slice.
+        idx: The index to select along the given axis.
+        axis: The axis to select using the index.
+
+    Returns:
+        A new symbolic tensor representing the result of selecting every
+        value having the specified `index` in the specified `axis`. The result
+        will have rank `n-1` where `n` is the rank of the input tensor,
+        with the `axis` dimension removed.
+    """
+    var input_type = input.tensor_type()
+    var rank = input_type.rank()
+
+    if axis < 0:
+        axis = rank + axis
+
+    var slices = List[SymbolicSlice]()
+    var dims = List[Dim]()
+    for i in range(rank):
+        if i == axis:
+            slices.append(SymbolicSlice(idx, idx + 1, None))
+            dims.append(1)
+        else:
+            slices.append(SymbolicSlice(None, None, None))
+            dims.append(input_type.dims[i])
+
+    var out_sliced = slice(input, slices, static_shape=dims)
+
+    @parameter
+    if keep_dims:
+        return out_sliced
+    else:
+        return squeeze(out_sliced, axis)
+
+
 # ===----------------------------------------------------------------------=== #
 # Splitting
 # ===----------------------------------------------------------------------=== #
