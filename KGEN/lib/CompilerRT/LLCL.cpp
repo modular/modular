@@ -108,7 +108,7 @@ KGEN_CompilerRT_LLCL_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
   // Compute the expiration and push it to the heap.
   TimerHeap::deadline expiration =
       std::chrono::steady_clock::now() + std::chrono::nanoseconds(ns);
-  heap.push(expiration, expired.copy());
+  heap.push(expiration, expired);
 
   // Wait for either, return true if our wrapped chain is ready. Unfortunately
   // we have to have a separate shared allocation and two additional anonymous
@@ -124,7 +124,11 @@ KGEN_CompilerRT_LLCL_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
   });
 
   await(either);
-  return done.isReady();
+  if (done.isReady()) {
+    heap.cancel(expired);
+    return true;
+  }
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
