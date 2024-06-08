@@ -26,11 +26,15 @@ def find_dependencies(path):
 
     # Otherwise, read the file and find all dependencies. The dependencies are
     # computed by looking for `import` statements.
+    skip_regex = re.compile(r".*# disable-validate")
     import_regex = re.compile(r"import\s+(\w+)")
     from_regex = re.compile(r"from\s+(\w+)")
     dependencies = set()
     with open(path, "r") as f:
         for line in f:
+            skip_match = skip_regex.match(line)
+            if skip_match:
+                continue
             import_match = import_regex.match(line)
             if import_match:
                 dependencies.add(import_match.group(1))
