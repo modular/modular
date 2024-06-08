@@ -20,7 +20,7 @@ struct Element[dtype: DType, layout: Layout](Stringable):
         self.element_data = element_data
 
     @staticmethod
-    fn load(ptr: DTypePointer[dtype]) -> Self:
+    fn load(ptr: DTypePointer[dtype, _]) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -92,7 +92,7 @@ struct Element[dtype: DType, layout: Layout](Stringable):
 
                 return element_data
 
-    fn store(self, ptr: DTypePointer[dtype]):
+    fn store(self, ptr: DTypePointer[dtype, _]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -126,7 +126,7 @@ struct Element[dtype: DType, layout: Layout](Stringable):
                 for i in range(elements):
                     alias offset = layout(IntTuple(0, i))
                     vec_type.store[alignment=alignment](
-                        ptr.offset(offset),
+                        ptr + offset,
                         self.element_data.slice[size, offset = i * size](),
                     )
 
@@ -141,7 +141,7 @@ struct Element[dtype: DType, layout: Layout](Stringable):
                 for i in range(elements):
                     alias offset = layout(IntTuple(i, 0))
                     vec_type.store[alignment=alignment](
-                        ptr.offset(offset),
+                        ptr + offset,
                         self.element_data.slice[size, offset = i * size](),
                     )
             else:

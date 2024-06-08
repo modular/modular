@@ -22,6 +22,7 @@ from utils.numerics import max_finite
 
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
+from layout.element import Element
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -926,141 +927,28 @@ struct LayoutTensor[
             "For masked src only scalar copy is supported",
         ]()
 
-        # Vectorize 1-D element read/writes.
+        alias is_masked = self.masked or other_mask
+        constrained[
+            not is_masked, "copy_from doesn't support masked tensors."
+        ]()
+
         @parameter
-        if (
-            other_element_layout.rank() == 1
-            and other_element_layout.stride[0] == 1
-            and self.element_layout.rank() == 1
-            and self.element_layout.stride[0] == 1
-            and dst_element_size > 1  #
-        ):
-
-            @parameter
-            for i in range(dst_size):
-                alias src_idx = make_layout(other.element_layout, other_layout)(
-                    i * src_element_size
+        for i in range(dst_size):
+            alias src_idx = make_layout(other.element_layout, other_layout)(
+                i * src_element_size
+            )
+            alias dst_idx = make_layout(self.element_layout, self.layout)(
+                i * dst_element_size
+            )
+            var src_element = Element[dtype, other.element_layout].load(
+                other.ptr.offset(src_idx)
+            )
+            alias dst_element_type = Element[dtype, self.element_layout]
+            dst_element_type(
+                rebind[dst_element_type.element_data_type](
+                    src_element.element_data
                 )
-                alias dst_idx = make_layout(self.element_layout, self.layout)(
-                    i * dst_element_size
-                )
-                var src_vec = rebind[self.element_type](
-                    SIMD[size=src_element_size].load[
-                        alignment = alignof[other.element_type]()
-                    ](other.ptr, src_idx)
-                )
-                SIMD[size = self.element_size].store[
-                    alignment = alignof[self.element_type](),
-                ](self.ptr, dst_idx, src_vec)
-
-        # Vector read scalar writes.
-        elif (
-            other_element_layout.rank() == 1
-            and other_element_layout.stride[0] == 1
-            and self.element_layout.rank() == 1
-            and self.element_layout.stride[0] != 1
-        ):
-
-            @parameter
-            for i in range(src_size):
-                alias src_idx = make_layout(other.element_layout, other_layout)(
-                    i * src_element_size
-                )
-
-                var src_vec = rebind[self.element_type](
-                    SIMD[size=src_element_size].load[
-                        alignment = alignof[self.element_type]()
-                    ](other.ptr, src_idx)
-                )
-
-                @parameter
-                for e_i in range(src_element_size):
-                    alias dst_idx = make_layout(
-                        self.element_layout, self.layout
-                    )(i * dst_element_size + e_i)
-                    Scalar.store(self.ptr, dst_idx, src_vec[e_i])
-
-        # Vector write scalar reads.
-        elif (
-            other_element_layout.rank() == 1
-            and other_element_layout.stride[0] != 1
-            and self.element_layout.rank() == 1
-            and self.element_layout.stride[0] == 1
-        ):
-
-            @parameter
-            for i in range(dst_size):
-                alias dst_idx = make_layout(self.element_layout, self.layout)(
-                    i * dst_element_size
-                )
-
-                var src_vec = self.element_type()
-
-                @parameter
-                for e_i in range(src_element_size):
-                    alias src_idx = make_layout(
-                        other_element_layout, other.layout
-                    )(i * src_element_size + e_i)
-                    src_vec[e_i] = Scalar.load(other.ptr, src_idx)
-
-                SIMD[size = self.element_size].store(self.ptr, dst_idx, src_vec)
-
-        # Vectorized copy between 2D row-major elements, used for C in gemm.
-        elif (
-            # Not trivial element
-            self.element_layout != Layout(IntTuple(1, 1))
-            and self.element_layout.rank() == 2
-            and other_element_layout.shape == self.element_layout.shape
-            and other_element_layout.stride[1] == 1
-            and self.element_layout.stride[1] == 1
-        ):
-            # Copy an element tensor.
-            @parameter
-            for i in range(dst_size):
-                # Offset to the current element.
-                alias src_offset = other_layout(i)
-                alias dst_offset = self.layout(i)
-                alias num_copies = self.element_layout.shape[0].value()
-                alias vec_width = self.element_layout.shape[1].value()
-
-                @parameter
-                for j in range(num_copies):
-                    alias src_idx = src_offset + other_element_layout(j)
-                    alias dst_idx = dst_offset + self.element_layout(j)
-
-                    var src_vec = SIMD[size=vec_width].load[
-                        alignment = alignof[SIMD[dtype, vec_width]]()
-                    ](other.ptr, src_idx).cast[dtype]()
-
-                    SIMD[size=vec_width].store[
-                        alignment = alignof[SIMD[dtype, vec_width]](),
-                    ](self.ptr, dst_idx, src_vec)
-        else:
-
-            @parameter
-            for i in range(dst_size * dst_element_size):
-                alias src_idx = make_layout(other.element_layout, other_layout)(
-                    i
-                )
-                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
-
-                @parameter
-                if other.masked:
-                    alias idx = idx2crd(
-                        dst_idx, self.layout.shape, self.layout.stride
-                    )
-                    var can_access_src = other._is_not_masked_elemenet[idx]()
-                    if can_access_src:
-                        self.ptr[dst_idx] = other.ptr[src_idx]
-                elif Self.masked:
-                    alias idx = idx2crd(
-                        src_idx, self.layout.shape, self.layout.stride
-                    )
-                    var can_access_dst = self._is_not_masked_elemenet[idx]()
-                    if can_access_dst:
-                        self.ptr[dst_idx] = other.ptr[src_idx]
-                else:
-                    self.ptr[dst_idx] = other.ptr[src_idx]
+            ).store(self.ptr.offset(dst_idx))
 
     @always_inline
     fn copy_from_async[
