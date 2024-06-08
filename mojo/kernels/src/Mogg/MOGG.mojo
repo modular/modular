@@ -991,8 +991,8 @@ fn abs_wrapped[
 @export
 fn argmax_wrapped[
     type: DType,
-    input_0_static_shape: DimList,
     axis_type: DType,
+    input_0_static_shape: DimList,
     input_1_static_shape: DimList,
     out_type: DType,
     input_2_static_shape: DimList,
@@ -1017,8 +1017,8 @@ fn argmax_wrapped[
 @export
 fn argmin_wrapped[
     type: DType,
-    input_0_static_shape: DimList,
     axis_type: DType,
+    input_0_static_shape: DimList,
     input_1_static_shape: DimList,
     out_type: DType,
     input_2_static_shape: DimList,
@@ -1061,10 +1061,9 @@ fn concat_from_list[
     input_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    axis_type: DType,
 ](
     inputs: InlinedFixedVector[NDBuffer[input_type, input_rank]],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[input_type, input_rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1082,11 +1081,10 @@ fn concat[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    axis_type: DType,
     target: StringLiteral = "cpu",
 ](
     output: NDBuffer[type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[type, rank],
 ) raises:
@@ -1110,9 +1108,8 @@ fn concat_shape[
     input_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    axis_type: DType,
 ](
-    axis_buf: NDBuffer[axis_type, 1],
+    axis_buf: Scalar,
     *input_bufs: NDBuffer[input_type, input_rank],
 ) raises -> StaticIntTuple[input_rank]:
     # TODO we should refactor this with `concat_from_list_shape`, but this
@@ -1259,13 +1256,12 @@ fn max_pool_ceil_mode_true[
 @export
 fn cumsum[
     type: DType,
-    axis_type: DType,
     rank: Int,
     exclusive: Int,
     reverse: Int,
 ](
     input: NDBuffer[type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1287,12 +1283,11 @@ fn split[
     type: DType,
     rank: Int,
     simd_width: Int,
-    axis_type: DType,
     split_sizes_type: DType,
 ](
     input: NDBuffer[type, rank],
     split_sizes: NDBuffer[split_sizes_type, 1],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     ctx: MojoCallContextPtr,
     *variadic_outs: NDBuffer[type, rank],
 ) raises:
@@ -1377,7 +1372,6 @@ fn mogg_min[
 @export
 fn mean[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
@@ -1390,7 +1384,7 @@ fn mean[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1523,11 +1517,10 @@ fn pad_repeat[
 fn reduce_shape[
     input_rank: Int,
     input_type: DType,
-    axis_type: DType,
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[input_type, input_rank],
-    axis_buf: NDBuffer[axis_type, 1],
+    axis_buf: Scalar,
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -1536,7 +1529,6 @@ fn reduce_shape[
     Parameters:
         input_rank: Input_rank of the input tensor.
         input_type: Type of the input tensor.
-        axis_type: Type of the axis tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
 
@@ -1569,7 +1561,6 @@ fn reduce_shape[
 @export
 fn reduce_add[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
@@ -1581,7 +1572,7 @@ fn reduce_add[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1625,7 +1616,6 @@ fn reduce_add[
 @export
 fn reduce_max[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
@@ -1637,7 +1627,7 @@ fn reduce_max[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1681,7 +1671,6 @@ fn reduce_max[
 @export
 fn reduce_min[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
@@ -1693,7 +1682,7 @@ fn reduce_min[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1738,7 +1727,6 @@ fn reduce_min[
 @export
 fn reduce_mul[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
@@ -1750,7 +1738,7 @@ fn reduce_mul[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2102,7 +2090,6 @@ fn gather[
     in_rank: Int,
     indices_type: DType,
     indices_rank: Int,
-    axis_type: DType,
     output_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
@@ -2116,7 +2103,7 @@ fn gather[
 ](
     input_shape: StaticIntTuple[in_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    axis_buffer: NDBuffer[axis_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2343,12 +2330,11 @@ fn scatter[
     rank: Int,
     input_type: DType,
     indices_type: DType,
-    axis_type: DType,
 ](
     input: NDBuffer[input_type, rank],
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[input_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2375,12 +2361,11 @@ fn scatter_add[
     rank: Int,
     input_type: DType,
     indices_type: DType,
-    axis_type: DType,
 ](
     input: NDBuffer[input_type, rank],
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[input_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2407,12 +2392,11 @@ fn scatter_max[
     rank: Int,
     input_type: DType,
     indices_type: DType,
-    axis_type: DType,
 ](
     input: NDBuffer[input_type, rank],
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[input_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2439,12 +2423,11 @@ fn scatter_min[
     rank: Int,
     input_type: DType,
     indices_type: DType,
-    axis_type: DType,
 ](
     input: NDBuffer[input_type, rank],
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[input_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2471,12 +2454,11 @@ fn scatter_mul[
     rank: Int,
     input_type: DType,
     indices_type: DType,
-    axis_type: DType,
 ](
     input: NDBuffer[input_type, rank],
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
-    axis: NDBuffer[axis_type, 1],
+    axis: Scalar,
     output: NDBuffer[input_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -3062,7 +3044,6 @@ fn conv[
     strides_type: DType,
     dilation_type: DType,
     padding_type: DType,
-    num_groups_type: DType,
     output_type: DType,
     input_6_static_shape: DimList,
     filter_packed: Bool,
@@ -3079,7 +3060,7 @@ fn conv[
     strides: NDBuffer[strides_type, strides_rank],
     dilation: NDBuffer[dilation_type, dilation_rank],
     paddings: NDBuffer[padding_type, padding_rank],
-    num_groups: NDBuffer[num_groups_type, 1],
+    num_groups: Scalar,
     # output and input have the same rank.
     output: NDBuffer[output_type, input_rank, input_6_static_shape],
     ctx: MojoCallContextPtr,
@@ -3417,11 +3398,10 @@ fn return_error[
 fn bottom_k[
     type: DType,
     rank: Int,
-    axis_type: DType,
 ](
     input: NDBuffer[type, rank],
-    k_buf: NDBuffer[axis_type, 1],
-    axis_buf: NDBuffer[axis_type, 1],
+    k_buf: Scalar,
+    axis_buf: Scalar,
     sorted: NDBuffer[DType.bool, 1],
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[DType.int64, rank],
@@ -3444,11 +3424,10 @@ fn bottom_k[
 fn top_k[
     type: DType,
     rank: Int,
-    axis_type: DType,
 ](
     input: NDBuffer[type, rank],
-    k_buf: NDBuffer[axis_type, 1],
-    axis_buf: NDBuffer[axis_type, 1],
+    k_buf: Scalar,
+    axis_buf: Scalar,
     sorted: NDBuffer[DType.bool, 1],
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[DType.int64, rank],
@@ -3809,7 +3788,6 @@ fn logical_xor[
 @export
 fn reduce_min_and_max[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
@@ -3821,7 +3799,7 @@ fn reduce_min_and_max[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -3900,12 +3878,11 @@ fn reduce_min_and_max[
 @export
 fn reduce_min_and_max_shape_func[
     type: DType,
-    index_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
 ](
     data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    axis_buffer: NDBuffer[index_type, 1],
+    axis_buffer: Scalar,
 ) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     var axis = int(normalize_neg_index(axis_buffer[0], rank))
@@ -4147,8 +4124,7 @@ fn no_mask_flash_attention_cpu[
     q: NDBuffer[type, rank],
     input_1_shape: StaticIntTuple[rank],
     input_2_shape: StaticIntTuple[rank],
-    # TODO(28121): This should be rank 0, but only works with rank 1
-    scale: NDBuffer[type, 1],
+    scale: Scalar[type],
     output: NDBuffer[type, rank, input_4_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -4234,8 +4210,7 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     input_3_shape: StaticIntTuple[rank + 1],
     input_4_shape: StaticIntTuple[rank + 1],
     input_5_shape: StaticIntTuple[rank],
-    # TODO(28121): This should be rank 0, but only works with rank 1
-    scale: NDBuffer[type, 1],
+    scale: Scalar[type],
     output: NDBuffer[type, rank, input_7_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -4360,8 +4335,7 @@ fn with_mask_flash_attention_cpu[
     input_1_shape: StaticIntTuple[rank],
     input_2_shape: StaticIntTuple[rank],
     input_3_shape: StaticIntTuple[rank],
-    # TODO(28121): This should be rank 0, but only works with rank 1
-    scale: NDBuffer[type, 1],
+    scale: Scalar[type],
     output: NDBuffer[type, rank, input_5_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
