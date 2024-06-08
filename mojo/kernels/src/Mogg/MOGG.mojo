@@ -405,6 +405,15 @@ fn tensor_to_shape[
 
 
 # Extract a value from a shape.
+@mogg_register("get_scalar_from_ndbuffer")
+@always_inline
+fn get_scalar_from_ndbuffer[
+    dtype: DType
+](tensor: NDBuffer[dtype, 1]) -> Scalar[dtype]:
+    return tensor[0]
+
+
+# Extract a value from a shape.
 @mogg_register("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
