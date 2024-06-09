@@ -1410,11 +1410,7 @@ fn mean[
             output_0_fn,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](
-            input_shape,
-            int(axis),
-            output_shape,
-        )
+        ](input_shape, int(axis), output_shape, context=ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1608,7 +1604,7 @@ fn reduce_add[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type](0), int(axis))
+        ](input_shape, Scalar[type](0), int(axis), context=ctx)
 
 
 @mogg_register("mo.reduce.max")
@@ -1663,7 +1659,7 @@ fn reduce_max[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type].MIN, int(axis))
+        ](input_shape, Scalar[type].MIN, int(axis), context=ctx)
 
 
 @mogg_register("mo.reduce.min")
@@ -1719,7 +1715,7 @@ fn reduce_min[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type].MAX, int(axis))
+        ](input_shape, Scalar[type].MAX, int(axis), context=ctx)
 
 
 @mogg_register("mo.reduce.mul")
@@ -1775,7 +1771,7 @@ fn reduce_mul[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, Scalar[type](1), int(axis))
+        ](input_shape, Scalar[type](1), int(axis), context=ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -3866,11 +3862,7 @@ fn reduce_min_and_max[
             reduce_fn,
             single_thread_blocking_override=single_thread_blocking_override,
             target=target,
-        ](
-            input_shape,
-            init=init,
-            reduce_dim=axis,
-        )
+        ](input_shape, init=init, reduce_dim=axis, context=ctx)
 
 
 @mogg_register_shape_func("reduce_min_and_max")
