@@ -162,11 +162,7 @@ fn _small_batched_matmul[
                     output_fn,
                     reduce_impl,
                     single_thread_blocking_override=True,
-                ](
-                    a_view.dynamic_shape,
-                    init=Scalar[c_type](0),
-                    reduce_dim=0,
-                )
+                ](a_view.dynamic_shape, init=Scalar[c_type](0), reduce_dim=0)
             except e:
                 abort(e)
 
