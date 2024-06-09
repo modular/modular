@@ -18,7 +18,7 @@ from gpu import (
     shuffle_down,
     warp_reduce,
 )
-from gpu.host import Device, DeviceAttribute, Function, Stream
+from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 
@@ -347,14 +347,14 @@ fn reduce_launch[
     shape: StaticIntTuple[rank],
     axis: Int,
     init: StaticTuple[Scalar[type], num_reductions],
-    stream: Stream,
+    ctx: DeviceContext,
 ) raises:
     alias BLOCK_SIZE = 128
     alias register_width = 32
 
     alias packing_factor = 1
 
-    var func = Function[
+    var func = ctx.compile_function[
         reduce_kernel[
             rank,
             num_reductions,
@@ -372,11 +372,11 @@ fn reduce_launch[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    func(
+    ctx.enqueue_function(
+        func,
         shape,
         axis,
         init,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
-        stream=stream,
     )

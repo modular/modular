@@ -22,8 +22,9 @@ from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import Dim, DimList
 from builtin.math import min as _min
-from gpu.host import Stream
+from gpu.host import DeviceContext
 from memory.unsafe import bitcast
+from runtime.llcl import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple, StaticTuple
 from utils.loop import unroll
@@ -438,6 +439,7 @@ fn _reduce_generator[
     shape: StaticIntTuple,
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Reduce the given tensor using the given reduction function. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -458,17 +460,29 @@ fn _reduce_generator[
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        context: The pointer to DeviceContext.
     """
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _reduce_generator_gpu if target == "cuda" else _reduce_generator_cpu
-    func[
-        num_reductions,
-        init_type,
-        input_0_fn,
-        output_0_fn,
-        reduce_function,
-        single_thread_blocking_override,
-    ](shape, init, reduce_dim)
+
+    @parameter
+    if target == "cpu":
+        _reduce_generator_cpu[
+            num_reductions,
+            init_type,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+            single_thread_blocking_override,
+        ](shape, init, reduce_dim)
+    else:
+        _reduce_generator_gpu[
+            num_reductions,
+            init_type,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+            single_thread_blocking_override,
+        ](shape, init, reduce_dim, context.get_cuda_device())
 
 
 @always_inline
@@ -490,6 +504,7 @@ fn _reduce_generator_gpu[
     shape: StaticIntTuple,
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
+    ctx: DeviceContext,
 ) raises:
     """Reduce the given tensor using the given reduction function on GPU. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -509,6 +524,7 @@ fn _reduce_generator_gpu[
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        ctx: The pointer to DeviceContext.
     """
 
     var reduce_dim_normalized = (
@@ -518,7 +534,6 @@ fn _reduce_generator_gpu[
     if reduce_dim_normalized != len(shape) - 1:
         raise "GPU reduction currently limited to inner axis."
 
-    var stream = Stream.get_current_stream()
     reduce_launch[
         num_reductions,
         input_0_fn,
@@ -526,7 +541,7 @@ fn _reduce_generator_gpu[
         reduce_function,
         shape.size,
         init_type,
-    ](shape, reduce_dim_normalized, init, stream)
+    ](shape, reduce_dim_normalized, init, ctx)
 
 
 @always_inline
@@ -620,7 +635,12 @@ fn _reduce_generator[
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple, init: Scalar, reduce_dim: Int,) raises:
+](
+    shape: StaticIntTuple,
+    init: Scalar,
+    reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
     """Reduce the given tensor using the given reduction function.
 
     Constraints:
@@ -638,6 +658,7 @@ fn _reduce_generator[
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        context: The pointer to DeviceContext.
     """
 
     alias num_reductions = 1
@@ -671,7 +692,7 @@ fn _reduce_generator[
         reduce_fn_wrapper,
         single_thread_blocking_override,
         target,
-    ](shape, init_wrapped, reduce_dim)
+    ](shape, init_wrapped, reduce_dim, context)
 
 
 fn _reduce_along_inner_dimension[
@@ -1298,6 +1319,7 @@ fn mean[
     input_shape: StaticIntTuple,
     reduce_dim: Int,
     output_shape: StaticIntTuple[input_shape.size],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Computes the mean across the input and output shape.
 
@@ -1317,6 +1339,7 @@ fn mean[
         input_shape: The input shape.
         reduce_dim: The axis to perform the mean on.
         output_shape: The output shape.
+        context: The pointer to DeviceContext.
     """
 
     @always_inline
@@ -1358,6 +1381,7 @@ fn mean[
             input_shape,
             init=Scalar[type](0),
             reduce_dim=reduce_dim,
+            context=context,
         )
 
     else:
@@ -1383,6 +1407,7 @@ fn mean[
             input_shape,
             init=Scalar[type](0),
             reduce_dim=reduce_dim,
+            context=context,
         )
 
 
