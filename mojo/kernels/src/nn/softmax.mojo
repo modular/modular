@@ -77,8 +77,8 @@ fn _softmax_2_pass_step1[
     #   end for
     #   return runningMax, runningSum
 
-    var running_max_vec = SIMD[type, simd_width].splat(min_or_neg_inf[type]())
-    var running_sum_vec = SIMD[type, simd_width].splat(0)
+    var running_max_vec = SIMD[type, simd_width](min_or_neg_inf[type]())
+    var running_sum_vec = SIMD[type, simd_width](0)
 
     # TODO: Because vectorize cannot currently capture values from outside
     # scope, we therefore replicate the logic of Functional.vectorize here.
@@ -89,7 +89,7 @@ fn _softmax_2_pass_step1[
 
     for i in range(0, vector_end, simd_width):
         var simd_elem = input.load[width=simd_width](i)
-        var new_max_vec = SIMD[type, simd_width].splat(
+        var new_max_vec = SIMD[type, simd_width](
             running_max_vec.max(simd_elem).reduce_max()
         )
         running_sum_vec = running_sum_vec * exp(
@@ -130,8 +130,8 @@ fn _softmax_2_pass_step2[
     @always_inline
     @parameter
     fn _step_2[simd_width: Int](idx: Int):
-        var running_max_simd = SIMD[type, simd_width].splat(running_max)
-        var running_sum_simd = SIMD[type, simd_width].splat(running_sum)
+        var running_max_simd = SIMD[type, simd_width](running_max)
+        var running_sum_simd = SIMD[type, simd_width](running_sum)
         var input_val = input.load[width=simd_width](idx)
         output.store[width=simd_width](
             idx,
@@ -225,7 +225,7 @@ fn _softmax_3_pass_step_2[
     @parameter
     fn step_2[simd_width: Int](idx: Int):
         var vin = input_fn_1d[simd_width](idx)
-        var elem = vin - SIMD[type, simd_width].splat(max_val)
+        var elem = vin - SIMD[type, simd_width](max_val)
 
         elem = pre_update_func[type, simd_width](elem)
         output.store[width=simd_width](idx, elem)
@@ -262,7 +262,7 @@ fn _softmax_3_pass_step_3[
     @__copy_capture(accum_proc)
     @parameter
     fn step_3[simd_width: Int](idx: Int):
-        var accum_simd = SIMD[type, simd_width].splat(accum_proc)
+        var accum_simd = SIMD[type, simd_width](accum_proc)
         var elem = output.load[width=simd_width](idx)
         elem = accum_apply_func[type, simd_width](elem, accum_simd)
         output.store[width=simd_width](idx, elem)

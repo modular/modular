@@ -216,7 +216,7 @@ fn gather_reduce[
                 for j in range(0, j_residual_start, j_tile_size):
                     accums = reduce_j_tile[j_tile_size](accums, j)
 
-                var accum = SIMD[type, simd_width].splat(reduce_init)
+                var accum = SIMD[type, simd_width](reduce_init)
 
                 # TODO: use tree reduction here by generalizing simd reduce method
                 @parameter

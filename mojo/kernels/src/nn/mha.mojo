@@ -437,7 +437,7 @@ fn _fill[
 
     @parameter
     for i in range(0, vector_end, simd_width):
-        SIMD.store(ptr, i, SIMD[type, simd_width].splat(val))
+        SIMD.store(ptr, i, SIMD[type, simd_width](val))
 
     @parameter
     for i in range(vector_end, len, 1):
