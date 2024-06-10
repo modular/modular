@@ -220,6 +220,10 @@ struct _InferenceSessionImpl(Movable):
             self.context.borrow_ptr(), self.engine.lib, session^
         )
 
+    fn __del__(owned self):
+        _ = self.context^
+        _ = self.engine^
+
 
 @value
 struct InputSpec(CollectionElement):
