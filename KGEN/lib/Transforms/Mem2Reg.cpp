@@ -244,9 +244,12 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       continue;
     }
     if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(op)) {
-      assert(op.getNumOperands() == 1);
-      if (state.contains(op.getOperand(0).getDefiningOp<StackAllocationOp>()))
-        op.erase();
+      llvm::BitVector eraseIndices(op.getNumOperands());
+      for (auto [idx, value] : llvm::enumerate(op.getOperands())) {
+        if (state.contains(value.getDefiningOp<StackAllocationOp>()))
+          eraseIndices.set(idx);
+      }
+      op.eraseOperands(eraseIndices);
       continue;
     }
     if (auto store = dyn_cast<StoreOp>(op)) {
