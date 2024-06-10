@@ -646,7 +646,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp, HLCF::SwitchOp, HLCF::IfOp>(op)) {
+  if (isa<HLCF::ElifOp, HLCF::IfOp>(op)) {
     if (size_t num = op.getNumResults())
       results.resize(num, ResultEffect::ignore);
     return OverallOpValueEffect::acyclicControlFlowNodeOp;
@@ -659,5 +659,6 @@ OverallOpValueEffect LIT::getOperationEffects(
   if (isa<LIT::TryOp>(op))
     return OverallOpValueEffect::tryOp;
 
+  assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspention Points");
   return OverallOpValueEffect::unknownOp;
 }

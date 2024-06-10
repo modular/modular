@@ -614,44 +614,6 @@ lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kg
     kgen.return %none : !kgen.none
 }
 
-// CHECK-LABEL: @switch
-lit.func @switch(%arg0: index,
-                  %A: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
-                  %B: !lit.ref<@S, mut #lit.lifetime> owned_in_mem) -> !kgen.none {
-  // CHECK: hlcf.switch %arg0
-  // CHECK-NEXT: default {
-  // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%A)
-  // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%B)
-  // CHECK-NEXT:   hlcf.yield
-  // CHECK-NEXT: }
-  // CHECK-NEXT: case 0 {
-  // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%B)
-  // CHECK-NEXT:   lit.call @print(%A)
-  // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%A)
-  // CHECK-NEXT:   hlcf.yield
-  // CHECK-NEXT: }
-  // CHECK-NEXT: case 1 {
-  // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%A)
-  // CHECK-NEXT:   lit.call @print(%B)
-  // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%B)
-  // CHECK-NEXT:   hlcf.yield
-  // CHECK-NEXT: }
-  hlcf.switch %arg0
-  default {
-    hlcf.yield
-  }
-  case 0 {
-    lit.call @print(%A) : !lit.signature<(!lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none>
-    hlcf.yield
-  }
-  case 1 {
-    lit.call @print(%B) : !lit.signature<(!lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none>
-    hlcf.yield
-  }
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
 // CHECK-LABEL: @breakAndContinueInElif
 lit.func @breakAndContinueInElif(
      %s1: i1 borrow,
