@@ -227,6 +227,7 @@ struct Graph(CollectionElement, Stringable):
         """
         return str(self._module())
 
+    @always_inline
     fn verify(self) raises:
         """Verifies the `Graph` and its contents.
 
@@ -241,8 +242,9 @@ struct Graph(CollectionElement, Stringable):
             If the `Graph` did not pass verification. In this case it will also
             print a diagnostic message indicating the error.
         """
-        if not self._graph[].op.verify():
-            raise error(self, "graph did not verify")
+        with self._context().diagnostic_error():
+            if not self._graph[].op.verify():
+                raise error(self, "graph did not verify")
 
     fn layer(inout self, name: String) -> _GraphLayerContext:
         """Creates a context manager for a graph layer.
