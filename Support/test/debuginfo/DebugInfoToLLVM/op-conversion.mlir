@@ -55,6 +55,24 @@
 > : !debuginfo.unresolved<i32>
 #deref_expr = #debuginfo.expr.deref<#debuginfo.expr.irvalue : !debuginfo.ptr<!llvm.ptr {sizeInBits = 64, alignInBits = 64}>> : !debuginfo.unresolved<!llvm.ptr>
 
+!struct = !debuginfo.struct<MyStruct(
+            !debuginfo.member<first: !debuginfo.unresolved<i32>>,
+            !debuginfo.member<second: !debuginfo.unresolved<i32>>
+          )>
+#irvalue = #debuginfo.expr.irvalue : !debuginfo.unresolved<i32>
+#fragment_expr0 = #debuginfo.expr.agg<#irvalue, 0> : !struct
+#fragment_expr1 = #debuginfo.expr.agg<#irvalue, 1> : !struct
+
+// CHECK-DAG: #[[LOCAL_VAR_STRUCT:.*]] = #llvm.di_local_variable<scope = {{.*}}, name = "foo_struct"
+#local_variable_struct = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo_struct",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 64
+> : !struct
+
 // CHECK-LABEL: func @simple
 func.func @simple() {
   // CHECK: %[[VAL:.*]] = llvm.mlir.constant(0 : i32) : i32
@@ -274,6 +292,25 @@ llvm.func @block_arguments() {
 // CHECK: fused<#di_subprogram>
 ^bb1(%arg0: i32 loc(fused<#subprogram>["foo.mlir":0:0])):
   llvm.return
+}
+
+// CHECK-LABEL: func @value_with_struct_fields
+func.func @value_with_struct_fields() -> (i32, i32) {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(8 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i8 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE1:.*]] = "test.op"() : () -> i32
+  // CHECK: llvm.store %[[VALUE1]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #[[LOCAL_VAR_STRUCT]] = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[VALUE2:.*]] = "test.op2"() : () -> i32
+  // CHECK: %[[GEP:.*]] = llvm.getelementptr %[[ALLOC]][4]
+  // CHECK: llvm.store %[[VALUE2]], %[[GEP]] : i32, !llvm.ptr
+  // CHECK: return %[[VALUE1]], %[[VALUE2]] : i32, i32
+
+  %value1 = "test.op"() : () -> i32
+  debuginfo.value #local_variable_struct #fragment_expr0 = %value1 : i32
+  %value2 = "test.op2"() : () -> i32
+  debuginfo.value #local_variable_struct #fragment_expr1 = %value2 : i32
+  return %value1, %value2 : i32, i32
 }
 
 // CHECK: #[[LOC_UNKNOWN]] = loc(unknown)
