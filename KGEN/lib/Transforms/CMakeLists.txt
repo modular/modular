@@ -13,6 +13,7 @@ add_modular_library(KGENTransforms
   FoldGlobalConstLoads.cpp
   HoistTrivialInvariants.cpp
   InlineParametric.cpp
+  IPDF.cpp
   LiftAndFoldApply.cpp
   LoopUnrolling.cpp
   LowerAsyncFunctions.cpp

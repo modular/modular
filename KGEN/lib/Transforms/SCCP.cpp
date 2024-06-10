@@ -19,19 +19,15 @@
 #define DEBUG_TYPE "kgen-sccp"
 
 using namespace M;
-using namespace M::HLCF;
+using namespace HLCF;
 using namespace KGEN;
+
 using namespace mlir::dataflow;
 using mlir::ChangeResult;
 
 //===----------------------------------------------------------------------===//
-// SCCPPass
+// SCCPAnalysis
 //===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-#define GEN_PASS_DEF_SCCP
-#include "KGEN/KGENPasses.h.inc"
-} // namespace M::KGEN
 
 namespace {
 class SCCPAnalysis {
@@ -646,6 +642,15 @@ LogicalResult SCCPAnalysis::run(Operation *op) {
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_SCCP
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
 /// Sparse Conditional Constant Propagation (SCCP).
 /// This pass conditionally propagates constant values following
@@ -654,7 +659,6 @@ namespace {
 struct SCCP : impl::SCCPBase<SCCP> {
   explicit SCCP() : SCCPBase() {}
 
-  /// Run SCCP on current operation for the pass.
   void runOnOperation() override;
 };
 } // namespace
@@ -664,12 +668,10 @@ void SCCP::runOnOperation() {
 
   SCCPAnalysis analysis;
 
-  if (failed(analysis.run(getOperation()))) {
-    signalPassFailure();
-    return;
-  }
+  if (failed(analysis.run(getOperation())))
+    return signalPassFailure();
 
   // Rewrite the IR with constant result.
   if (failed(analysis.rewrite(&getContext(), getOperation()->getRegions())))
-    signalPassFailure();
+    return signalPassFailure();
 }
