@@ -1,7 +1,5 @@
 load("//bazel:api.bzl", "modular_cc_library")
 
-package(default_visibility = ["//visibility:public"])
-
 modular_cc_library(
     name = "common",
     srcs = glob(["*.cpp"]),

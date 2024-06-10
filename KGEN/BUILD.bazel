@@ -3,8 +3,6 @@ load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library", "td_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 
-package(default_visibility = ["//visibility:public"])
-
 td_library(
     name = "CODialectTdFiles",
     srcs = glob(["include/KGEN/CODialect/*.td"]),
@@ -173,6 +171,7 @@ td_library(
     name = "KGENDialectTdFiles",
     srcs = glob(["include/KGEN/KGENDialect/*.td"]),
     includes = ["include"],
+    visibility = ["//visibility:public"],
     deps = [
         ":InterpreterTdFiles",
         "//Support:DebugInfoTdFiles",
@@ -905,6 +904,7 @@ modular_cc_library(
 cc_distributable_static_library(
     name = "CompilerRT.distributable",
     library_name = "libKGENCompilerRT-static.a",
+    visibility = ["//visibility:public"],
     deps = [
         ":CompilerRT.static",
         "//ArraySupport",
@@ -1294,6 +1294,7 @@ modular_cc_binary(
 cc_import(
     name = "liblldb.wrapper",
     shared_library = "lldb19.0.0git",
+    visibility = [":__subpackages__"],
 )
 
 # TODO: Remove once https://github.com/llvm/llvm-project/pull/91789 is in
@@ -1318,6 +1319,7 @@ alias(
         "@platforms//os:macos": ":debugserver",
         "//conditions:default": "@llvm-project//lldb:lldb-server",
     }),
+    visibility = ["//visibility:public"],
 )
 
 # TODO: Replace with copy_file when https://github.com/llvm/llvm-project/pull/91549 is in

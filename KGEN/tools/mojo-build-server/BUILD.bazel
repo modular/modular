@@ -1,7 +1,5 @@
 load("//bazel:api.bzl", "kgen_kernel", "modular_cc_binary")
 
-package(default_visibility = ["//visibility:public"])
-
 kgen_kernel(
     name = "mojo_build_server",
     src = "mojo_build_server.mojo",
