@@ -156,13 +156,13 @@ fn map_reduce[
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
     var vector_end = align_down(length, simd_width)
 
-    var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
+    var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width](init)
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
         var val_simd = input_gen_fn[type, unrolled_simd_width](i)
         dst.store(i, val_simd)
         acc_unrolled_simd = reduce_vec_to_vec_fn(acc_unrolled_simd, val_simd)
 
-    var acc_simd = SIMD[acc_type, simd_width].splat(init)
+    var acc_simd = SIMD[acc_type, simd_width](init)
     for i in range(unrolled_vector_end, vector_end, simd_width):
         var val_simd = input_gen_fn[type, simd_width](i)
         dst.store(i, val_simd)
@@ -344,7 +344,7 @@ fn _reduce_3D[
         @__copy_capture(w)
         @parameter
         fn reduce_w_chunked[simd_width: Int](idx: Int):
-            var accum = SIMD[init.element_type, simd_width].splat(init)
+            var accum = SIMD[init.element_type, simd_width](init)
             for j in range(w):
                 var chunk = src.load[width=simd_width](
                     StaticIntTuple[src.rank](i, j, idx)
@@ -832,7 +832,7 @@ fn _reduce_along_inner_dimension[
                 acc_unrolled_simd_tup[i] = SIMD[
                     init_type,
                     unrolled_simd_width,
-                ].splat(init_value[i])
+                ](init_value[i])
 
             # Loop over unroll_factor*simd_width chunks.
             acc_unrolled_simd_tup = unrolled_reduce_helper_fn[
@@ -978,7 +978,7 @@ fn _reduce_along_outer_dimension[
 
                 @parameter
                 for i in range(num_reductions):
-                    acc_simd_tup[i] = SIMD[init_type, simd_width].splat(init[i])
+                    acc_simd_tup[i] = SIMD[init_type, simd_width](init[i])
 
                 var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
                 var indices = _get_nd_indices_from_flat_index(
@@ -1443,9 +1443,7 @@ fn variance(
     fn input_fn[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
-        var mean_simd = SIMD[mean_value.type, width].splat(mean_value).cast[
-            _type
-        ]()
+        var mean_simd = SIMD[mean_value.type, width](mean_value).cast[_type]()
         var x = src.load[width=width](idx[0])
         var diff = x.cast[_type]() - mean_simd
         return rebind[SIMD[_type, width]](diff * diff)
@@ -1926,7 +1924,7 @@ fn cumsum(dst: Buffer, src: __type_of(dst)):
     for i in range(0, div_size, simd_width):
         var x_simd = dst.load[width=simd_width](i) + offset
         dst.store(i, x_simd)
-        offset = offset.splat(x_simd[simd_width - 1])
+        offset = SIMD[dst.type, simd_width](x_simd[simd_width - 1])
 
     # Handles the tail, i.e., num of elements at the end that don't
     # fit within a simd_width-elements vector.
