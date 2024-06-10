@@ -51,7 +51,6 @@ def error[
         + "\n\tat "
         + str((location or __call_location()).value())
         + "\n\n"
-        + format_system_stack()
     )
 
 
