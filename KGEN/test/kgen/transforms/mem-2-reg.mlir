@@ -492,6 +492,17 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   kgen.return %res2 : index
 }
 
+// CHECK-LABEL: kgen.func @lifetimes
+kgen.func @lifetimes(%arg0: index) -> index {
+  %0 = pop.stack_allocation 1 x index
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg0, %0 : !kgen.pointer<index>
+  %1 = pop.load %0 : !kgen.pointer<index>
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  // CHECK-NEXT: return %arg0
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: kgen.generator @param_for
 kgen.generator @param_for() -> index {
   %mem = pop.stack_allocation 1 x index

@@ -43,6 +43,8 @@ static Type getAllocType(StackAllocationOp alloc) {
 /// operation.
 static bool canPromote(StackAllocationOp alloc) {
   for (Operation *user : alloc->getUsers()) {
+    if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
+      continue;
     if (isa<LoadOp, DebugInfo::ValueOp>(user)) {
       if (userCrossesFunctionCFG(alloc, user))
         return false;
@@ -239,6 +241,12 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
           value.erase();
         }
       }
+      continue;
+    }
+    if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(op)) {
+      assert(op.getNumOperands() == 1);
+      if (state.contains(op.getOperand(0).getDefiningOp<StackAllocationOp>()))
+        op.erase();
       continue;
     }
     if (auto store = dyn_cast<StoreOp>(op)) {

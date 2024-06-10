@@ -2055,7 +2055,7 @@ def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end"> {
 
     ```mlir
     %2 = pop.stack_allocation 1 x index
-    pop.stack_alloc.lifetime.end(%2) : <index>
+    pop.stack_alloc.lifetime.end(%2) : !kgen.pointer<index>
     ```
   }];
 
@@ -2079,7 +2079,7 @@ def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start"> {
 
     ```mlir
     %2 = pop.stack_allocation 1 x index
-    pop.stack_alloc.lifetime.start(%2) : <index>
+    pop.stack_alloc.lifetime.start(%2) : !kgen.pointer<index>
     ```
   }];
 

@@ -140,7 +140,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
     // %ptr = pop.stack_allocation 1 x T
     // pop.store %value, %ptr
     // %gep = pop.offset %argPtrs[%i]
-    // %opaque = pop.pointer.bitcast %pt : pointer<T> to pointer<none>
+    // %opaque = pop.pointer.bitcast %ptr : pointer<T> to pointer<none>
     // pop.store %opaque, %gep
     // ```
     Value value = b.create<POP::CompilerGlobalLoadOp>(type, capture);
