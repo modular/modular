@@ -432,3 +432,17 @@ kgen.func @two_users() {
   kgen.call @use2(%1) : (!kgen.struct<(i1, i2)>) -> ()
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @lifetime_markers
+kgen.func @lifetime_markers() {
+  // CHECK-NEXT: [[S0:%.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: [[S1:%.*]] = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x struct<(index, index)>
+  // CHECK-NEXT: [[F:%.*]] = pop.stack_allocation 1 x f32
+  %1 = pop.stack_allocation 1 x f32
+  // CHECK-NEXT: lifetime.start([[F]], [[S0]], [[S1]])
+  pop.stack_alloc.lifetime.start(%1, %0, %0) : !kgen.pointer<f32>, !kgen.pointer<struct<(index, index)>>, !kgen.pointer<struct<(index, index)>>
+  // CHECK-NEXT: lifetime.end([[F]], [[S0]], [[S1]], [[S0]], [[S1]])
+  pop.stack_alloc.lifetime.end(%0, %1, %0) : !kgen.pointer<struct<(index, index)>>, !kgen.pointer<f32>, !kgen.pointer<struct<(index, index)>>
+  kgen.return
+}
