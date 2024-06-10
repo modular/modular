@@ -1,0 +1,10 @@
+filegroup(
+    name = "engine",
+    srcs = [
+        "__init__.py",
+        "api.py",
+        "core.pyi",
+        "py.typed",
+    ],
+    visibility = ["//visibility:public"],
+)
