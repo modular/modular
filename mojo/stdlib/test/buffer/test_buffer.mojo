@@ -3,15 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D TEMP_FILE_DIR=%T -debug-level full %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from pathlib import Path
-from sys.param_env import env_get_string
+from tempfile import NamedTemporaryFile
 
 from buffer import Buffer
 from buffer.list import Dim
-
-alias TEMP_FILE_DIR = env_get_string["TEMP_FILE_DIR"]()
 
 
 # CHECK-LABEL: test_buffer
@@ -36,20 +34,20 @@ def test_buffer_tofile():
     print("== test_buffer")
     var buf = Buffer[DType.float32, 4].stack_allocation()
     buf.fill(2.0)
-    var TEMP_FILE = Path(TEMP_FILE_DIR) / "test_buffer"
-    buf.tofile(TEMP_FILE)
+    with NamedTemporaryFile(name=str("test_buffer")) as TEMP_FILE:
+        buf.tofile(TEMP_FILE.name)
 
-    with open(TEMP_FILE, "r") as f:
-        var str = f.read()
-        var buf_read = Buffer[DType.float32, 4](
-            str.unsafe_ptr().bitcast[Float32]()
-        )
-        for i in range(4):
-            # CHECK: 0.0
-            print(buf[i] - buf_read[i])
+        with open(TEMP_FILE.name, "r") as f:
+            var str = f.read()
+            var buf_read = Buffer[DType.float32, 4](
+                str.unsafe_ptr().bitcast[Float32]()
+            )
+            for i in range(4):
+                # CHECK: 0.0
+                print(buf[i] - buf_read[i])
 
-        # Ensure string is not destroyed before the above check.
-        _ = str[0]
+            # Ensure string is not destroyed before the above check.
+            _ = str[0]
 
 
 def main():
