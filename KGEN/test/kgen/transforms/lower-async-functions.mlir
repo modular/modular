@@ -734,3 +734,452 @@ kgen.func @set_byref_none(%arg0: !co.routine, %arg1: !kgen.pointer<none>) {
 }
 
 }
+
+// -----
+
+// COM: Stack Allocations Are Lowered To Frame Allocations
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg1: index, %arg2: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0
+  %0 = pop.stack_allocation 2 x index
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  %idx1 = index.constant 1
+  // CHECK-NEXT: %idx1 = index.constant 1
+  // CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7:]]] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index, array<2, index>)>>
+  // CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7+2]]]
+  // CHECK-NEXT: [[V4:%.*]] = pop.pointer.bitcast [[V3]] : !kgen.pointer<array<2, index>> to !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[V2]], [[V4]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V5:%.*]] = pop.offset [[V4]][%idx1] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V6:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 1]]]
+  // CHECK-NEXT: [[V7:%.*]] = pop.load [[V6]]
+  // CHECK-NEXT: pop.store [[V7]], [[V5]]
+  // CHECK-NEXT: kgen.call @use([[V5]])
+  // CHECK-NEXT: kgen.call @use([[V4]])
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
+  pop.store %arg2, %1 : !kgen.pointer<index>
+  %3 = kgen.call @use(%1) : (!kgen.pointer<index>) -> index
+  %22 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK: [[V8:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 2]]]
+  // CHECK-NEXT: [[V9:%.*]] = pop.pointer.bitcast [[V8]] : !kgen.pointer<array<2, index>> to !kgen.pointer<index>
+  // CHECK-NEXT: kgen.call @use([[V9]]) : (!kgen.pointer<index>) -> index
+  // CHECK-NOT:  pop.stack_alloc.lifetime
+  %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}
+
+// -----
+
+// COM: Stack Allocations Are Not Lowered To Frame Allocations If Lifetime Contained In State
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg1: index) async -> index {
+  // CHECK-NEXT: [[V0:%.*]] = pop.pointer.bitcast %arg0
+  %0 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK:      co.suspend
+  // CHECK-NEXT:   co.suspend.end
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start
+  // CHECK-NEXT: [[V2:%.*]] = kgen.struct.gep [[V0]][[[#FRAME7:]]] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index)>>
+  // CHECK-NEXT: [[V3:%.*]] = pop.load [[V2]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[V3]], [[V1]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.call @use([[V1]]) : (!kgen.pointer<index>) -> index
+  // CHECK:  pop.stack_alloc.lifetime
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  kgen.return %2 : index
+}
+}
+
+// -----
+
+// COM: Stack Allocations Are Lowered To Frame Allocations When Stack Allocation Not Used Outside Lifetime End
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg1: index, %arg2: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0
+  %0 = pop.stack_allocation 2 x index
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  // CHECK-NEXT: %idx1 = index.constant 1
+  %idx1 = index.constant 1
+  // Extract pointer to inline frame memory instead of stack allocation.
+  // CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME9:]]] : <struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, pointer<index>, array<2, index>)>>
+  // CHECK-NEXT: [[V2:%.*]] = pop.pointer.bitcast [[V1]] : !kgen.pointer<array<2, index>> to !kgen.pointer<index>
+
+  // Store pointer to frame memory in frame since it's used across states.
+  // CHECK-NEXT: [[V3:%.*]] = pop.offset [[V2]][%idx1] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME9 - 1]]]
+  // CHECK-NEXT: pop.store [[V3]], [[V4]]
+
+  // Store the argument into the frame variable
+  // CHECK-NEXT: [[V5:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME9 - 2]]]
+  // CHECK-NEXT: [[V6:%.*]] = pop.load [[V5]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[V6]], [[V3]] : !kgen.pointer<index>
+  %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
+  pop.store %arg2, %1 : !kgen.pointer<index>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // Extract out the pointer to the frame memory
+  // CHECK: [[V7:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME9 - 1]]]
+  // CHECK-NEXT: [[V8:%.*]] = pop.load [[V7]]
+  // CHECK-NEXT: kgen.call @use([[V8]]) : (!kgen.pointer<index>) -> index
+  // CHECK-NOT:  pop.stack_alloc.lifetime
+  %2 = kgen.call @use(%1) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  kgen.return %2 : index
+}
+}
+
+// -----
+
+// COM: Stack Allocations Of Size 1 Do Not Have Array Types
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<struct<(index, index)>>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg1: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, struct<(index, index)>)>>
+  // CHECK-NEXT: [[STACK_ALLOC:%.*]] = kgen.struct.gep %0[[[#FRAME8:]]]
+  // CHECK-NEXT: [[SLOT:%.*]] = kgen.struct.gep [[STACK_ALLOC]][1] : <struct<(index, index)>>
+  // CHECK-NEXT: [[ARG_SLOT:%.*]] = kgen.struct.gep %0[[[#FRAME8 - 1]]]
+  // CHECK-NEXT: [[ARG:%.*]] = pop.load [[ARG_SLOT]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[ARG]], [[SLOT]] : !kgen.pointer<index>
+  %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)>
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<struct<(index, index)>>
+  %1 = kgen.struct.gep %0[1] : !kgen.pointer<struct<(index,index)>>
+  pop.store %arg1, %1 : !kgen.pointer<index>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK:       [[STACK_ALLOC2:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8]]]
+  // CHECK-NEXT:  kgen.call @use([[STACK_ALLOC2]])
+  %2 = kgen.call @use(%0) : (!kgen.pointer<struct<(index, index)>>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<struct<(index, index)>>
+  kgen.return %2 : index
+}
+}
+
+// -----
+
+
+// COM: Do not remove lifetime markers of stack allocations not added to frame.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg1: index) async -> index {
+  %0 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+      co.suspend.end
+  }
+  // CHECK: pop.stack_alloc.lifetime.start
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  // CHECK: pop.stack_alloc.lifetime.end
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  kgen.return %2 : index
+}
+}
+
+// -----
+
+// COM: Stack Allocation With Multiple Lifetimes
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @not_in_frame_resume
+kgen.func @not_in_frame(%arg1: index, %arg2: index) async -> index {
+  // CHECK: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index)>>
+  %0 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+      co.suspend.end
+  }
+  // CHECK:      [[OG_SA:%.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start([[OG_SA]]) : !kgen.pointer<index>
+  // CHECK-NEXT: [[ARG_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7:]]]
+  // CHECK-NEXT: [[ARG:%.*]] = pop.load [[ARG_SLOT]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[ARG]], [[OG_SA]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.call @use([[OG_SA]])
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end([[OG_SA]])
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT: co.suspend.end
+  // CHECK-NEXT: }
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK-NEXT: [[CLONE:%.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start([[CLONE]]) : !kgen.pointer<index>
+  // CHECK-NEXT: [[ARG1_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 1]]]
+  // CHECK-NEXT: [[ARG:%.*]] = pop.load [[ARG1_SLOT]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[ARG]], [[CLONE]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.call @use([[CLONE]]) : (!kgen.pointer<index>) -> index
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end([[CLONE]]) : !kgen.pointer<index>
+  // CHECK-NEXT: co.suspend {
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg2, %0 : !kgen.pointer<index>
+  %3 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @in_frame_resume
+kgen.func @in_frame(%arg1: index, %arg2: index) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index, index)>>
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT: co.suspend.end
+  // CHECK-NEXT: }
+  %0 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+      co.suspend.end
+  }
+  // CHECK-NEXT: [[OG_SA:%.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start([[OG_SA]]) : !kgen.pointer<index>
+  // CHECK-NEXT: [[ARG_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7:]]]
+  // CHECK-NEXT: [[ARG:%.*]] = pop.load [[ARG_SLOT]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[ARG]], [[OG_SA]]
+  // CHECK-NEXT: kgen.call @use([[OG_SA]])
+  // CHECK-NEXT: pop.stack_alloc.lifetime.end([[OG_SA]]) : !kgen.pointer<index>
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT:   co.suspend.end
+  // CHECK-NEXT: }
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+
+  // CHECK-NEXT: [[ARG2_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 1]]]
+  // CHECK-NEXT: [[ARG2:%.*]] = pop.load [[ARG2_SLOT]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[FRAME_SA:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 2]]]
+  // CHECK-NEXT: pop.store [[ARG2]], [[FRAME_SA]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.call @use([[FRAME_SA]]) : (!kgen.pointer<index>) -> index
+  // CHECK-NEXT: [[ARG1_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7]]]
+  // CHECK-NEXT: [[ARG1:%.*]] = pop.load [[ARG1_SLOT]]
+  // CHECK-NEXT: pop.store [[ARG1]], [[FRAME_SA]] : !kgen.pointer<index>
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT:   co.suspend.end
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[FRAME_SA2:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 2]]]
+  // CHECK-NEXT: kgen.call @use([[FRAME_SA2]]) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg2, %0 : !kgen.pointer<index>
+  %3 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.store %arg1, %0 : !kgen.pointer<index>
+
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %4 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}
+
+// -----
+
+// COM: Stack Allocations With Control Flow In Frame
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @in_frame_cf_resume
+kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
+  // CHECK:      [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, i1, index, index)>>
+  // CHECK-NEXT: hlcf.elif {
+  // CHECK-NEXT:  [[ARG3_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8:]]]
+  // CHECK-NEXT:  [[ARG3:%.*]] = pop.load [[ARG3_SLOT]] : !kgen.pointer<i1>
+  // CHECK-NEXT:  hlcf.elif.yield [[ARG3]] : i1
+  // CHECK-NEXT: } then {
+  // CHECK-NEXT: [[ARG2_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8 + 1]]]
+  // CHECK-NEXT: [[ARG2:%.*]] = pop.load [[ARG2_SLOT]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[SA:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8 + 2]]]
+  // CHECK-NEXT: pop.store [[ARG2]], [[SA]] : !kgen.pointer<index>
+  // CHECK-NEXT: hlcf.yield
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT: [[ARG1_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8 - 1]]]
+  // CHECK-NEXT: [[ARG1:%.*]] = pop.load %6 : !kgen.pointer<index>
+  // CHECK-NEXT: [[SA2:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8 + 2]]]
+  // CHECK-NEXT: pop.store [[ARG1]], [[SA2]] : !kgen.pointer<index>
+  // CHECK-NEXT: hlcf.yield
+  // CHECK-NEXT: }
+  %0 = pop.stack_allocation 1 x index
+  hlcf.elif {
+    hlcf.elif.yield %arg3 : i1
+  } then {
+    pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+    pop.store %arg2, %0 : !kgen.pointer<index>
+    hlcf.yield
+  } else {
+    pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+    pop.store %arg1, %0 : !kgen.pointer<index>
+    hlcf.yield
+  }
+  // CHECK-NEXT: co.suspend
+  // CHECK-NEXT: co.suspend.end
+  // CHECK-NEXT: }
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+  // CHECK-NEXT: [[SA3:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8 + 2]]]
+  // CHECK-NEXT: kgen.call @use([[SA3]]) : (!kgen.pointer<index>) -> index
+  // CHECK-NEXT: hlcf.elif {
+  // CHECK-NEXT:   [[ARG3_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8:]]]
+  // CHECK-NEXT:   [[ARG3:%.*]] = pop.load [[ARG3_SLOT]] : !kgen.pointer<i1>
+  // CHECK-NEXT:   hlcf.elif.yield [[ARG3]] : i1
+  // CHECK-NEXT: } then {
+  // CHECK-NEXT:   hlcf.yield
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:   hlcf.yield
+  // CHECK-NEXT: }
+  hlcf.elif {
+    hlcf.elif.yield %arg3 : i1
+  } then {
+    pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+    hlcf.yield
+  } else {
+    pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+    hlcf.yield
+  }
+  kgen.return %2 : index
+}
+}
+
+// -----
+
+// COM: Stack Allocations With Control Flow Not In Frame
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @not_in_frame_cf_resume
+kgen.func @not_in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, i1, index)>>
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT: co.suspend.end
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[ARG3_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8:]]]
+  // CHECK-NEXT: [[ARG3:%.*]] = pop.load [[ARG3_SLOT]] : !kgen.pointer<i1>
+  // CHECK-NEXT: hlcf.if [[ARG3]] {
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT:  co.suspend.end
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[SA:%.*]] = pop.stack_allocation 1 x index
+
+  // CHECK: pop.stack_alloc.lifetime.start([[SA]])
+  // CHECK: pop.stack_alloc.lifetime.start([[SA]])
+  // CHECK: pop.stack_alloc.lifetime.start([[SA]])
+  // CHECK: pop.stack_alloc.lifetime.end([[SA]])
+  %0 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  hlcf.if %arg3 {
+    co.suspend (%hdl) {
+      co.suspend.end
+    }
+    hlcf.elif {
+      hlcf.elif.yield %arg3 : i1
+    } then {
+      hlcf.if %arg3 {
+        pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+        pop.store %arg1, %0 : !kgen.pointer<index>
+        hlcf.yield
+      } else {
+        pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+        pop.store %arg2, %0 : !kgen.pointer<index>
+        hlcf.yield
+      }
+      hlcf.yield
+    } else {
+      pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+      pop.store %arg1, %0 : !kgen.pointer<index>
+      hlcf.yield
+    }
+    %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
+    pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}

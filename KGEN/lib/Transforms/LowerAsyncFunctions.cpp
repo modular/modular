@@ -53,8 +53,10 @@ public:
 /// we can reuse loaded frame variables when legal.
 struct FrameData {
   /// Error value and result value are excluded from the frame
-  FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-            Value errorValue, Value resultValue);
+  FrameData(
+      FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
+      Value resultValue,
+      std::function<void(DenseMap<Operation *, int> &, FuncOp)> &transform);
   FrameData() {}
 
   /// Given a value, determine the state of its defining op or block argument.
@@ -267,16 +269,34 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
   SmallVector<std::pair<Region *, Block::iterator>> regionsToProcess;
   regionsToProcess.push_back({&resumeFunction.getBodyRegion(),
                               resumeFunction.getBodyRegion().front().begin()});
+  SmallVector<Operation *> opsToDelete;
   while (!regionsToProcess.empty()) {
     auto [parentRegion, begin] = regionsToProcess.back();
     regionsToProcess.pop_back();
     // Process the ops of a region.
-    for (auto iter = begin; iter != parentRegion->front().end(); ++iter) {
-      Operation *op = &*iter;
+    Operation *current = &*begin;
+    while (current) {
+      Operation *op = current;
+      current = op->getNextNode();
+      if (isa<StackAllocLifetimeEndOp, StackAllocLifetimeStartOp>(op)) {
+        // FIXME:
+        // https://linear.app/modularml/issue/MOCO-820/support-multiple-operands-in-lifetime-markers
+        assert(op->getNumOperands() == 1 &&
+               "TODO: support lists of stack allocations");
+        auto entry = frameData.operationToIndexInFrame.find(
+            op->getOperand(0).getDefiningOp());
+        if (entry != frameData.operationToIndexInFrame.end())
+          op->erase();
+        continue;
+      }
 
       // Store op in frame if needed.
       auto entry = frameData.operationToIndexInFrame.find(op);
       if (entry != frameData.operationToIndexInFrame.end()) {
+        if (isa<StackAllocationOp>(op)) {
+          opsToDelete.push_back(op);
+          continue;
+        }
         builder.setInsertionPointAfter(op);
         Type frameEntryType = frameData.frameTypes[entry->getSecond()];
         assert(frameEntryType == op->getResultTypes().front() &&
@@ -300,7 +320,11 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
           Operation *definingOp = operand.getDefiningOp();
           if (definingOp)
             defState = frameData.opToState[definingOp];
-          if (defState == useState)
+          // Stack allocated variables are an exception. They are pulled from
+          // the frame regardless of state status because the stack allocation
+          // is replaced with a frame allocation.
+          if (defState == useState &&
+              (!(definingOp && isa<StackAllocationOp>(definingOp))))
             continue;
           Value image = frameVariables.getFrameValueForOperand(
               continuation, operand, op, useState);
@@ -355,6 +379,8 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       body.eraseArgument(0);
     }
   });
+  for (auto op : opsToDelete)
+    op->erase();
 }
 void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
                                                   FuncOp resumeFunction,
@@ -471,7 +497,18 @@ Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
       unsigned frameIndex = entry->getSecond();
       Value dataSlot =
           builder.create<StructGEPOp>(continuation, Frame + frameIndex);
-      image = builder.create<LoadOp>(dataSlot);
+      if (operand.getDefiningOp() &&
+          isa<StackAllocationOp>(operand.getDefiningOp())) {
+        auto stackAlloc = dyn_cast<StackAllocationOp>(operand.getDefiningOp());
+        if (cast<IntegerAttr>(stackAlloc.getCount()).getInt() == 1) {
+          image = dataSlot;
+        } else {
+          image =
+              builder.create<PointerBitcastOp>(stackAlloc.getType(), dataSlot);
+        }
+      } else {
+        image = builder.create<LoadOp>(dataSlot);
+      }
     }
     if (wasExtractedInThisState)
       frameVariablesForValue.erase(existingImage);
@@ -516,8 +553,10 @@ int FrameData::getDefinitionStateForValue(Value operand) const {
   return opToState.at(definingOp);
 }
 
-FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-                     Value errorValue, Value resultValue) {
+FrameData::FrameData(
+    FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
+    Value resultValue,
+    std::function<void(DenseMap<Operation *, int> &, FuncOp)> &transform) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -723,11 +762,13 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
       }
     }
   }
+  // Give caller chance to transform before frame calculation.
+  transform(opToState, originalFunction);
+
   // Calculate the frame. Whenever there is a use whose def lives in another
   // state, it must be added to the frame. We need to store the location of the
   // value in the frame so that when we generate the resume function the frame
   // values can be extracted.
-
   originalFunction.walk([&](Operation *operation) {
     int useState = opToState[operation];
     for (Value operand : operation->getOperands()) {
@@ -742,10 +783,25 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
       int defState = getDefinitionStateForValue(operand);
       if (defState < useState) {
         unsigned index = frameTypes.size();
-        frameTypes.push_back(operand.getType());
+        Type frameVariableType = operand.getType();
+        if (Operation *definitingOp = operand.getDefiningOp()) {
+          if (auto stackAllocation =
+                  dyn_cast<StackAllocationOp>(definitingOp)) {
+            int64_t count =
+                cast<IntegerAttr>(stackAllocation.getCount()).getInt();
+            if (count == 1) {
+              frameVariableType = stackAllocation.getType().getElementType();
+            } else {
+              frameVariableType = POP::ArrayType::get(
+                  stackAllocation.getCount(),
+                  stackAllocation.getType().getElementType());
+            }
+          }
+
+          operationToIndexInFrame.insert({definitingOp, index});
+        }
+        frameTypes.push_back(frameVariableType);
         valueToIndexInFrame.insert({operand, index});
-        if (operand.getDefiningOp())
-          operationToIndexInFrame.insert({operand.getDefiningOp(), index});
       }
     }
   });
@@ -790,7 +846,87 @@ void LowerAsyncFunctionsPass::runOnOperation() {
           if (resultIndex > -1)
             memoryResultValue = funcOp.getArgument(resultIndex);
         }
-        FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue);
+        // Preprocess the function to move stack allocation ops as close to
+        // lifetime start as possible.
+        DenseMap<StackAllocationOp, Operation *> closestCommonParent;
+        funcOp.walk([&](StackAllocLifetimeStartOp startOp) {
+          StackAllocationOp stackAlloc = cast<StackAllocationOp>(
+              startOp.getValues().front().getDefiningOp());
+          auto entry = closestCommonParent.find(stackAlloc);
+          if (entry == closestCommonParent.end()) {
+            closestCommonParent[stackAlloc] = startOp;
+          } else {
+            Operation *commonParent = entry->second;
+            Region *currentRegion = startOp->getParentRegion();
+            while (!commonParent->getParentRegion()->isProperAncestor(
+                currentRegion)) {
+              commonParent = commonParent->getParentOp();
+            }
+            closestCommonParent[stackAlloc] = commonParent;
+          }
+        });
+        for (auto [stackAllocation, closestCommonParentOp] :
+             closestCommonParent)
+          stackAllocation->moveBefore(closestCommonParentOp);
+        std::function<void(DenseMap<Operation *, int> &, FuncOp)> transform =
+            [&](DenseMap<Operation *, int> &opToState, FuncOp target) {
+              // Now that we have a state label for every op, clone stack
+              // allocations that have multiple lifespans
+              SmallVector<Block *> blocks;
+              blocks.push_back(&target.getBodyRegion().front());
+              while (!blocks.empty()) {
+                Block *current = blocks.pop_back_val();
+                Operation *curr = &current->front();
+                while (curr) {
+                  Operation *operation = curr;
+                  curr = operation->getNextNode();
+                  int useState = opToState[operation];
+                  if (StackAllocLifetimeStartOp startOp =
+                          dyn_cast<StackAllocLifetimeStartOp>(operation)) {
+
+                    // FIXME:
+                    // https://linear.app/modularml/issue/MOCO-820/support-multiple-operands-in-lifetime-markers
+                    assert(startOp->getNumOperands() == 1 &&
+                           "TODO: support lists of stack allocations");
+                    StackAllocationOp stackAllocationOp =
+                        cast<StackAllocationOp>(
+                            startOp->getOperand(0).getDefiningOp());
+                    int defState = opToState[stackAllocationOp];
+                    if (defState == useState)
+                      continue;
+                    // Otherwise, this is a second lifetime. We need a clone.
+
+                    // Clone the original stack alloc and replace all uses of
+                    // the original that appear after this start lifetime
+                    // marker.
+                    auto oldPoint = b.saveInsertionPoint();
+                    b.setInsertionPoint(startOp);
+                    auto clone = b.create<StackAllocationOp>(
+                        startOp->getLoc(), stackAllocationOp.getType(),
+                        stackAllocationOp.getCount());
+                    if (stackAllocationOp.getAddressSpace().has_value())
+                      clone.setAddressSpaceAttr(
+                          stackAllocationOp.getAddressSpace().value());
+                    if (stackAllocationOp.getAlignment().has_value())
+                      clone.setAlignmentAttr(
+                          stackAllocationOp.getAlignment().value());
+                    opToState[clone] = useState;
+                    startOp->setOperand(0, clone->getResult(0));
+                    stackAllocationOp->replaceUsesWithIf(
+                        clone, [&](OpOperand &operand) -> bool {
+                          bool willReplace =
+                              domInfo.dominates(startOp, operand.getOwner());
+                          return willReplace;
+                        });
+                    b.restoreInsertionPoint(oldPoint);
+                  }
+                  for (Region &region : operation->getRegions())
+                    blocks.push_back(&region.front());
+                }
+              }
+            };
+        FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
+                            transform);
         COTypes cotypes(module.getContext(), frameData);
         buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
                                         memoryResultValue);
