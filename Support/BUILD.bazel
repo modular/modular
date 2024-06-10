@@ -1,7 +1,7 @@
 load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_shared_library", "td_library")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
-package(default_visibility = ["//visibility:public"])
+exports_files(["include/Support/Driver/DriverCommand.td"])
 
 modular_cc_library(
     name = "SymbolExport",
@@ -244,6 +244,7 @@ expand_root_cert_inc(
         "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/key.pem",
     }),
     source = "lib/Entitlements/RootCertificates/RootCert.inc.in",
+    visibility = [":__subpackages__"],
 )
 
 modular_cc_library(
@@ -470,6 +471,7 @@ td_library(
         "include/Support/Compiler/*.td",
     ]),
     includes = ["include"],
+    visibility = ["//visibility:public"],
     deps = [
         ":Base",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
@@ -606,6 +608,7 @@ filegroup(
         "include/Support/DebugInfoDialect/**/*.td",
         "include/Support/Compiler/*.td",
     ]),
+    visibility = ["//visibility:public"],
 )
 
 gentbl_modular_passes(
@@ -819,15 +822,9 @@ modular_cc_library(
 
 td_library(
     name = "DriverCommandTdFiles",
-    srcs = glob(
-        [
-            "include/Support/Driver/*.td",
-        ],
-        exclude = [
-            "include/Support/Driver/OptTable.inc",
-        ],
-    ),
+    srcs = glob(["include/Support/Driver/*.td"]),
     includes = ["include"],
+    visibility = ["//visibility:public"],
     deps = [
         "@llvm-project//llvm:OptParserTdFiles",
     ],
@@ -837,6 +834,7 @@ td_library(
     name = "OptTableTdFiles",
     srcs = ["include/Support/Driver/OptTable.inc"],
     includes = ["include"],
+    visibility = ["//visibility:public"],
 )
 
 modular_cc_library(

@@ -7,8 +7,6 @@ load(
     "td_library",
 )
 
-package(default_visibility = ["//visibility:public"])
-
 expand_template(
     name = "MojoDebugHeaderGen",
     out = "MojoDebug.h",
