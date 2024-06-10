@@ -72,10 +72,9 @@ struct Replacer {
     derived->createScalarAllocs();
 
     // For each user of the allocation replace it with the scalar equivilent.
-    for (Operation *user : alloc->getUsers()) {
+    for (Operation *user : llvm::make_early_inc_range(alloc->getUsers())) {
       builder.setInsertionPointAfter(user);
       derived->replaceUser(user, toDelete);
-      toDelete.push_back(user);
     }
     toDelete.push_back(alloc);
 
@@ -106,8 +105,18 @@ struct Replacer {
         if constexpr (std::is_same_v<ContainerType, POP::StackAllocationOp>)
           break;
       }
+      toDelete.push_back(user);
+    } else if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user)) {
+      llvm::BitVector eraseIndices(user->getNumOperands());
+      for (auto [idx, value] : llvm::enumerate(user->getOperands())) {
+        if (value == alloc)
+          eraseIndices.set(idx);
+      }
+      user->eraseOperands(eraseIndices);
+      user->insertOperands(user->getNumOperands(), newAllocas);
     } else {
       derived->replaceUserImpl(user, toDelete);
+      toDelete.push_back(user);
     }
   }
 };
@@ -198,8 +207,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
       // a call then we cannot perfom the optimization.
-      if (!isa<StructGEPOp, POP::StoreOp, POP::LoadOp, DebugInfo::ValueOp>(
-              user))
+      if (!isa<StructGEPOp, POP::StoreOp, POP::LoadOp, DebugInfo::ValueOp,
+               StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
@@ -328,7 +337,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
       // a call then we cannot perfom the optimization.
-      if (!isa<POP::ArrayGEPOp, POP::StoreOp, POP::LoadOp>(user))
+      if (!isa<POP::ArrayGEPOp, POP::StoreOp, POP::LoadOp,
+               StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
@@ -458,7 +468,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
       if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
-               StructGEPOp>(user))
+               StructGEPOp, StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(
+              user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
