@@ -165,32 +165,79 @@ def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
     )
 
 
-# TODO: Change to List once Slice is a CollectionElement.
-def slice(input: Symbol, s: Slice) -> Symbol:
+def slice(input: Symbol, *slices: SliceNew) -> Symbol:
     """Slices a symbolic tensor along its first dimension.
 
     Args:
         input: The symbolic tensor to slice.
-        s: A slice applied to the first dimension of the input.
+        slices: Slices across the tensor's dimensions. If fewer than
+            `input.rank()` slices are provided, the remaining dimensions
+            will be trivially sliced.
 
     Returns:
         A new symbolic tensor representing the result of slicing the
-        input along its major dimension according to `s`. The output will
+        input along its dimension according to `slices`. The output will
         have the same rank as the input, but fewer values depending on the
-        slice.
+        slice values.
     """
-    var t = input.tensor_type()
-    var dims = List[Dim]()
-    var sym_slices = List[SymbolicSlice]()
-    # There's a lot of corner cases we're getting wrong here:
-    # - if `s` has no `end` then it uses utils.numerics.max_finite[DType.index]
-    #    which causes `len` to be very wrong
-    # - slices are allowed to negative-index, and for instance `len(Slice(0, -1)) is -1`
-    dims.append(s.unsafe_indices())
-    sym_slices.append(SymbolicSlice(input.graph(), s))
-    for i in range(1, t.rank()):
-        dims.append(t.dims[i])
-    return slice(input, sym_slices, static_shape=dims)
+    return slice(input, slices)
+
+
+def slice(input: Symbol, slices: VariadicList[SliceNew]) -> Symbol:
+    """Slices a symbolic tensor along its first dimension.
+
+    Args:
+        input: The symbolic tensor to slice.
+        slices: Slices across the tensor's dimensions. If fewer than
+            `input.rank()` slices are provided, the remaining dimensions
+            will be trivially sliced.
+
+    Returns:
+        A new symbolic tensor representing the result of slicing the
+        input along its dimension according to `slices`. The output will
+        have the same rank as the input, but fewer values depending on the
+        slice values.
+    """
+    g = input.graph()
+    t = input.tensor_type()
+    if len(slices) > t.rank():
+        message = str("got {} slices, tensor only has rank {}")
+        raise error(g, message.format(len(slices), t.rank()))
+
+    slice_max = int(max_finite[DType.int64]())
+    empty_slice = slice_new(start=None, end=None, step=1)
+
+    dims = List[Dim]()
+    starts = List[Int64]()
+    stops = List[Int64]()
+    steps = List[Int64]()
+
+    for i in range(t.rank()):
+        slice = slices[i] if i < len(slices) else empty_slice
+        dim = t.dims[i]
+
+        start, stop, step = slice.indices(
+            int(dim.num_elements() if dim.is_static() else slice_max)
+        )
+        if step < 1:
+            raise error(g, "negative slices unsupported")
+
+        starts.append(start)
+        stops.append(stop)
+        steps.append(step)
+        # compute output dim if possible
+        if slice == empty_slice:
+            dims.append(dim)
+        elif dim.is_static():
+            dims.append(len(range(start, stop, step)))
+        else:
+            dims.append(Dim.dynamic())
+
+    return g.op(
+        "mo.slice",
+        List(input, g.vector(starts), g.vector(stops), g.vector(steps)),
+        TensorType(t.dtype, dims),
+    )
 
 
 def slice(

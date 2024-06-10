@@ -289,18 +289,20 @@ struct Symbol(CollectionElement, Stringable):
             slices.append(sval[])
         return ops.slice(self, slices)
 
-    fn __getitem__(self, s: Slice) raises -> Symbol:
+    fn __getitem__(self, *slices: SliceNew) raises -> Symbol:
         """Shorthand for symbolic slicing with an `Int` range.
 
-        This overload only supports slicing along the first axis.
-
         Args:
-            s: The slice value.
+            slices: The slice values for each dimension respectively.
+              If fewer than `rank()` slices are provided, the remaining
+              dimensions will be trivially sliced. In other words
+              `s[:, :2]` is equivalent to `s[:, :2, :, :]` for a tensor of
+              rank 4. Currently indexing and slicing may not be mixed.
 
         Returns:
             The slicing result.
         """
-        return ops.slice(self, s)
+        return ops.slice(self, slices)
 
     # ===------------------------------------------------------------------=== #
     # Arithmetic operators
@@ -736,7 +738,7 @@ struct SymbolicSlice(CollectionElement):
         self.stop = stop
         self.step = Optional[Symbol]()
 
-    def __init__(inout self, g: Graph, s: Slice):
+    def __init__(inout self, g: Graph, s: SliceNew):
         """Convenience constructor from a `Slice`.
 
         This wraps any indices in `s` into constant nodes (using `mo.constant`).
@@ -749,8 +751,8 @@ struct SymbolicSlice(CollectionElement):
         self.stop = Optional[Symbol]()
         self.step = Optional[Symbol]()
         if s.start:
-            self.start = g.scalar(Int64(s.start))
+            self.start = g.scalar(Int64(s.start.value()))
         if s.end:
-            self.stop = g.scalar(Int64(s.end))
+            self.stop = g.scalar(Int64(s.end.value()))
         if s.step:
             self.step = g.scalar(Int64(s.step))
