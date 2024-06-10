@@ -1845,7 +1845,7 @@ class SBCommandReturnObject:
     def GetStatus(self):
         ...
 
-    def SetStatus(self, status):
+    def SetStatus(self, status: int):
         ...
 
     def Succeeded(self):
@@ -1863,7 +1863,7 @@ class SBCommandReturnObject:
     def GetDescription(self, description):
         ...
 
-    def PutCString(self, string):
+    def PutCString(self, string: str) -> None:
         ...
 
     def GetOutput(self, *args):
@@ -3142,7 +3142,7 @@ class SBFrame:
     def IsArtificial(self, *args):
         ...
 
-    def EvaluateExpression(self, *args):
+    def EvaluateExpression(self, *args: Any) -> "SBValue":
         ...
 
     def GetFrameBlock(self):
@@ -3172,7 +3172,7 @@ class SBFrame:
     def FindVariable(self, *args: Any) -> "SBValue":
         ...
 
-    def GetValueForVariablePath(self, *args):
+    def GetValueForVariablePath(self, *args: Any) -> "SBValue":
         ...
 
     def FindValue(self, *args):
@@ -5043,13 +5043,13 @@ class SBStructuredData:
     def IsValid(self):
         ...
 
-    def SetFromJSON(self, *args):
+    def SetFromJSON(self, *args: Any) -> None:
         ...
 
     def Clear(self):
         ...
 
-    def GetAsJSON(self, stream):
+    def GetAsJSON(self, stream: Any) -> str:
         ...
 
     def GetDescription(self, stream):
@@ -7054,7 +7054,7 @@ class SBValue:
     def Clear(self):
         ...
 
-    def GetError(self):
+    def GetError(self) -> SBError:
         ...
 
     def GetID(self):
