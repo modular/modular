@@ -240,7 +240,10 @@ struct Symbol(CollectionElement, Stringable):
     # Slicing operators
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__(self, i: Symbol, axis: Int = 0) raises -> Symbol:
+    @always_inline
+    fn __getitem__(
+        self, i: Variant[Symbol, Int], axis: Int = 0, keep_dims: Bool = False
+    ) raises -> Symbol:
         """Symbolic slicing - indexes a value by a single index.
 
         Uses the `mo.slice` op.
@@ -248,30 +251,25 @@ struct Symbol(CollectionElement, Stringable):
         Args:
             i: The index value.
             axis: The axis to index at.
+            keep_dims: Returns a tensor with the same rank as the input if set.
 
         Returns:
             The slicing result.
         """
-        return ops.slice(self, i, axis=axis)
+        var index_sym: Symbol
+        if i.isa[Int]():
+            index_sym = self.graph().scalar(Int64(i[Int]))
+        else:
+            if i[Symbol].tensor_type().rank() != 0:
+                raise error(
+                    self.graph(),
+                    "Slicing a tensor by Symbol requires a rank 0 index",
+                    __call_location(),
+                )
 
-    fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
-        """Symbolic slicing - indexes a value by a single constant index.
+            index_sym = i[Symbol]
 
-        Uses the `mo.gather` op and automatically wraps `i` inside a
-        `mo.constant`.
-
-        Args:
-            i: The index value.
-            axis: The axis to index at.
-
-        Returns:
-            The slicing result.
-        """
-        # TODO(GRA-528): This should just gather with a scalar index but can't.
-        return ops.squeeze(
-            ops.gather(self, self.graph().scalar(Int64(i), rank=1), axis=axis),
-            axis,
-        )
+        return ops.slice(self, index_sym, axis, keep_dims)
 
     fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
         """Range-based slicing.
@@ -730,6 +728,13 @@ struct SymbolicSlice(CollectionElement):
 
     var step: Optional[Symbol]
     """The slice's step."""
+
+    def __init__(inout self, start: Optional[Symbol], stop: Optional[Symbol]):
+        """Convenience constructor from `start` and `step` that doesn't require `step`.
+        """
+        self.start = start
+        self.stop = stop
+        self.step = Optional[Symbol]()
 
     def __init__(inout self, g: Graph, s: Slice):
         """Convenience constructor from a `Slice`.
