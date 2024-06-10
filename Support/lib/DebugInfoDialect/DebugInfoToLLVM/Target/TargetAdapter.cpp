@@ -237,10 +237,10 @@ public:
     /// Whether any dbg.value ops include DW_OP_LLVM_fragment paths.
     bool anyFragments = false;
     /// Whether any dbg.value ops include DW_OP_deref paths.
-    bool anyPointers = false;
+    bool anyDerefs = false;
     /// Whether the deref paths are the same length (IE same number of pointer
     /// dereferences to get to the variable).
-    bool allPointersMatchedLength = true;
+    bool allDerefsMatchedLength = true;
     /// Whether to skip processing, IE it is not actually processable due to
     /// having an exprLocation that we can't handle.
     bool skip = false;
@@ -268,16 +268,16 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
     }
 
     if (value.getDefiningOp<LLVM::UndefOp>()) {
-      auto [iter, inserted] =
-          debugValuesToProcess.try_emplace(op.getVarInfo(), op, true);
+      auto [iter, inserted] = debugValuesToProcess.try_emplace(
+          op.getVarInfo(), op, /*isUndef=*/true);
       if (!inserted)
         iter->second.additionalUndefs.push_back(op);
       return;
     }
 
     // Not undef.
-    auto [iter, inserted] =
-        debugValuesToProcess.try_emplace(op.getVarInfo(), op, false);
+    auto [iter, inserted] = debugValuesToProcess.try_emplace(
+        op.getVarInfo(), op, /*isUndef=*/false);
     if (!inserted)
       iter->second.valueOps.push_back(op);
   });
@@ -288,16 +288,16 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
     // DW_OP_LLVM_fragment, but no fragments before deref, and no other
     // operations.
     bool onFirstPass = true;
-    uint64_t firstNumPointers = 0;
+    uint64_t firstNumDerefs = 0;
     for (auto valueOp : processable.valueOps) {
       if (processable.skip)
         break;
       bool foundFragment = false;
-      uint64_t numPointers = 0;
+      uint64_t numDerefs = 0;
       for (auto exprOp : valueOp.getLocationExpr().getOperations()) {
         if (exprOp.getOpcode() == llvm::dwarf::DW_OP_deref) {
-          processable.anyPointers = true;
-          ++numPointers;
+          processable.anyDerefs = true;
+          ++numDerefs;
           if (foundFragment) {
             processable.skip = true;
             break;
@@ -311,9 +311,9 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
         }
       }
       if (onFirstPass)
-        firstNumPointers = numPointers;
-      else if (firstNumPointers != numPointers)
-        processable.allPointersMatchedLength = false;
+        firstNumDerefs = numDerefs;
+      else if (firstNumDerefs != numDerefs)
+        processable.allDerefsMatchedLength = false;
       onFirstPass = false;
     }
   }
@@ -345,17 +345,17 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
               processable.valueOps[0].getValue().getType()))
         continue;
 
-      // For the usePointerMode case, we switch from dbg.value to dbg.declare,
+      // For the useDerefMode case, we switch from dbg.value to dbg.declare,
       // but we only allocate if the SSA value for the dbg.value is a block
       // argument.
-      bool usePointerMode =
-          processable.anyPointers && processable.allPointersMatchedLength &&
+      bool useDerefMode =
+          processable.anyDerefs && processable.allDerefsMatchedLength &&
           !processable.anyFragments && processable.additionalUndefs.empty();
       // For the declareDirectMode case, we switch from dbg.value to
       // dbg.declare, and we assemble struct fragments where applicable.  But it
       // requires that we have SSA values with no pointers in the exprLocation.
       bool declareDirectMode =
-          !processable.anyPointers && processable.additionalUndefs.empty();
+          !processable.anyDerefs && processable.additionalUndefs.empty();
       // For everything else, there's dbg.value.  If there are fragments behind
       // pointers, we would have to load them to assemble them in one place to
       // use dbg.declare, which is unsafe since some of the pointers may be null
@@ -367,9 +367,9 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       // implies a lifetime for the whole scope.  Note that where values are in
       // SSA values, we still make stack allocations for this case to ensure
       // that variables are in memory for GPU debugging.
-      bool useDbgValueMode = !(usePointerMode || declareDirectMode);
+      bool useDbgValueMode = !(useDerefMode || declareDirectMode);
 
-      auto valueOpHasPointer = [](LLVM::DbgValueOp valueOp) -> bool {
+      auto valueOpHasDeref = [](LLVM::DbgValueOp valueOp) -> bool {
         if (valueOp.getLocationExpr().getOperations().empty())
           return false;
         return valueOp.getLocationExpr().getOperations()[0].getOpcode() ==
@@ -431,14 +431,14 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       };
 
       bool eraseValueOps = false;
-      llvm::MapVector<LLVM::DbgValueOp, Value> oldValueMap;
+      llvm::DenseMap<LLVM::DbgValueOp, Value> oldValueMap;
 
       // Convert all processable variables.
       for (LLVM::DbgValueOp valueOp : processable.valueOps) {
         if (useDbgValueMode) {
           // If we are keeping dbg.value ops and it is already a pointer, there
           // is nothing to do.
-          if (valueOpHasPointer(valueOp))
+          if (valueOpHasDeref(valueOp))
             continue;
           ArrayRef<LLVM::DIExpressionElemAttr> location =
               valueOp.getLocationExpr().getOperations();
@@ -455,7 +455,7 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           ArrayRef<LLVM::DIExpressionElemAttr> locationOps =
               valueOp.getLocationExpr().getOperations();
           Value declareOpArg = valueOp.getValue();
-          if (usePointerMode) {
+          if (useDerefMode) {
             if (isa<BlockArgument>(valueOp.getValue())) {
               // Block args are not compatible directly with DbgDeclare.  So we
               // allocate to add indirection to make it compatible.
@@ -466,9 +466,8 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
               locationOps = locationOps.drop_front();
             }
           } else {
+            // declareDirectMode case
             declareOpArg = getAllocaOp(valueOp);
-          }
-          if (declareDirectMode) {
             // The declareDirectMode case has an empty expression path, it is
             // simply the whole variable.
             locationOps = SmallVector<LLVM::DIExpressionElemAttr>();
