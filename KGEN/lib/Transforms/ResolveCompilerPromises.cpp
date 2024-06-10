@@ -8,7 +8,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/TransformUtils/CallGraphUtils.h"
+#include "KGEN/TransformUtils/SCCUtils.h"
 #include "KGEN/TransformUtils/Walkers.h"
 #include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Support/ForkJoin.h"
@@ -61,32 +61,15 @@ private:
   Operation *op;
 };
 
+//===----------------------------------------------------------------------===//
+// CallGraphNode
+//===----------------------------------------------------------------------===//
+
 /// A basic callgraph node, containing state for this dataflow analysis across
 /// the callgraph.
-struct CallGraphNode
-    : public CallGraphNodeBase<CallGraphNode, FuncOp, CallLikeOp> {
-  CallGraphNode(FuncOp func) : CallGraphNodeBase(func) {}
-  CallGraphNode(CallGraphNode &&other) : CallGraphNodeBase(std::move(other)) {}
-
-  /// The unit of analysis for this pass is a single SCC in the callgraph. This
-  /// struct contains the nodes in an SCC and is the dependency node for it in
-  /// the work processing graph.
-  struct SCC {
-    SCC() {}
-    SCC(SCC &&other) {} // only used in `reserve`
-
-    /// The nodes in the SCC. In most cases, SCCs should have a single node (no
-    /// or self recursion).
-    SmallVector<CallGraphNode *, 2> nodes;
-
-    std::vector<SCC *> callers;
-    bool hasRecursion = false;
-    std::atomic<unsigned> numCallees = 0;
-    std::atomic<unsigned> numReady = 0;
-  };
-
-  /// Pointer to the SCC the node is contained in.
-  SCC *scc = nullptr;
+struct CallGraphNode : public SCCNode<CallGraphNode, FuncOp, CallLikeOp> {
+  CallGraphNode(FuncOp func) : SCCNode(func) {}
+  CallGraphNode(CallGraphNode &&other) : SCCNode(std::move(other)) {}
 
   /// The current set of required promises for the function.
   llvm::MapVector<StringAttr, std::pair<Type, unsigned>> requiredPromises;
@@ -96,10 +79,9 @@ struct CallGraphNode
 // CallGraph
 //===----------------------------------------------------------------------===//
 
-struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
-  CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab,
-            TargetInfoAttr target)
-      : runtime(runtime), symtab(symtab), target(target) {}
+struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
+  CallGraph(const SymbolTable &symtab, TargetInfoAttr target)
+      : symtab(symtab), target(target) {}
 
   /// Only add nodes to the graph that are to functions that are capturing,
   /// since those are the only functions we need to handle.
@@ -118,19 +100,9 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 
   /// Run an iteration of the analysis and transformation on a single node.
   /// Return true if anything changed.
-  bool resolvePromises(CallGraphNode *node);
-  void resolvePromises(CallGraphNode::SCC *scc);
-  void resolveAndCleanUp(FuncOp func);
-  void doWork(CallGraphNode::SCC *scc, LLCL::ForkJoin &state);
+  bool doAnalysis(CallGraphNode *node);
+  void doRewrite(FuncOp func);
 
-  /// Run the analysis and rewrite.
-  void run();
-
-  /// The virtual root node of the callgraph. This node points to every other
-  /// node in the callgraph.
-  CallGraphNode externalNode{nullptr};
-
-  LLCL::Runtime &runtime;
   const SymbolTable &symtab;
   TargetInfoAttr target;
 };
@@ -214,7 +186,7 @@ static void resolveCaptureListExpand(CaptureListExpandOp op) {
   op.erase();
 }
 
-void CallGraph::resolveAndCleanUp(FuncOp func) {
+void CallGraph::doRewrite(FuncOp func) {
   func.walk([this](Operation *op) {
     if (isa<POP::CompilerGlobalStoreOp>(op))
       op->erase();
@@ -227,7 +199,7 @@ void CallGraph::resolveAndCleanUp(FuncOp func) {
   });
 }
 
-bool CallGraph::resolvePromises(CallGraphNode *node) {
+bool CallGraph::doAnalysis(CallGraphNode *node) {
   FuncOp func = node->func;
   llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
       requiredPromises;
@@ -426,108 +398,6 @@ bool CallGraph::resolvePromises(CallGraphNode *node) {
   return true;
 }
 
-void CallGraph::resolvePromises(CallGraphNode::SCC *scc) {
-  CompilerTimeTraceScope traceScope("resolvePromises(SCC)");
-
-  // The common case of a single node in the SCC.
-  if (LLVM_LIKELY(scc->nodes.size() == 1)) {
-    CallGraphNode *node = scc->nodes.front();
-    bool changed = resolvePromises(node);
-    // The common case of no self-recursion. We can exit immediately regardless
-    // of whether anything changed.
-    if (LLVM_LIKELY(!scc->hasRecursion) || !changed)
-      return;
-    // Fixed-point iterate the same function. We expect it to converge after at
-    // most a single iteration.
-    changed = resolvePromises(node);
-    assert(!changed && "self recursion didn't converge in 2 iterations");
-    return;
-  }
-
-  // Each node get visited at least once.
-  SmallVector<CallGraphNode *, 2> worklist;
-  llvm::append_range(worklist, scc->nodes);
-
-  while (!worklist.empty()) {
-    CallGraphNode *node = worklist.pop_back_val();
-    if (!resolvePromises(node))
-      continue;
-
-    // The node changed, so reschedule its dependendees in the SCC.
-    for (CallGraphNode *caller : node->callers)
-      if (caller->scc == scc)
-        worklist.push_back(caller);
-  }
-}
-
-namespace llvm {
-template <>
-struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
-} // namespace llvm
-
-void CallGraph::doWork(CallGraphNode::SCC *scc, LLCL::ForkJoin &state) {
-  // Skip the root node.
-  if (!scc->nodes.front()->func)
-    return;
-  resolvePromises(scc);
-
-  for (CallGraphNode::SCC *caller : scc->callers)
-    if (++caller->numReady == caller->numCallees)
-      state.fork([this, &state, caller] { doWork(caller, state); });
-
-  for (CallGraphNode *node : scc->nodes)
-    resolveAndCleanUp(node->func);
-}
-
-void CallGraph::run() {
-  // Add every node as a child of the virtual root node.
-  for (auto &[func, node] : nodes)
-    externalNode.callsites.emplace_back(nullptr, &node);
-
-  // There cannot be more SCCs than there are nodes (plus 1 for the root node).
-  // Reserve to avoid indirection and iterator invalidation.
-  std::vector<CallGraphNode::SCC> sccs;
-  sccs.reserve(nodes.size() + 1);
-
-  llvm::SetVector<CallGraphNode *, SmallVector<CallGraphNode *, 2>,
-                  llvm::SmallPtrSet<CallGraphNode *, 2>>
-      sccNodes;
-  llvm::SetVector<CallGraphNode::SCC *, std::vector<CallGraphNode::SCC *>>
-      callers;
-  for (auto sccIt = llvm::scc_begin(this); !sccIt.isAtEnd(); ++sccIt) {
-    CallGraphNode::SCC &scc = sccs.emplace_back(CallGraphNode::SCC{});
-    for (CallGraphNode *node : *sccIt) {
-      sccNodes.insert(node);
-      node->scc = &scc;
-    }
-    scc.nodes = sccNodes.takeVector();
-    scc.hasRecursion = sccIt.hasCycle();
-  }
-
-  // Compute the dependency graph between the SCCs.
-  for (CallGraphNode::SCC &scc : sccs) {
-    for (CallGraphNode *node : scc.nodes) {
-      for (CallGraphNode *caller : node->callers) {
-        if (caller->scc != node->scc) {
-          if (callers.insert(caller->scc))
-            ++caller->scc->numCallees;
-        }
-      }
-    }
-    scc.callers = callers.takeVector();
-  }
-
-  LLCL::ForkJoin state(runtime);
-
-  // Because SCCs are visited in reverse topological order by the SCC iterator,
-  // this will schedule leaf nodes first, which is good for utilization.
-  for (CallGraphNode::SCC &scc : sccs)
-    if (!scc.numCallees)
-      state.fork([this, &state, scc = &scc] { doWork(scc, state); });
-
-  state.join();
-}
-
 //===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
@@ -551,7 +421,7 @@ void ResolveCompilerPromisesPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
   LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
-  CallGraph cg(runtime, symtab, getTargetInfo(getOperation()));
+  CallGraph cg(symtab, getTargetInfo(getOperation()));
   cg.build(getOperation(), symtab);
-  cg.run();
+  cg.run(runtime);
 }
