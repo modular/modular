@@ -1183,3 +1183,95 @@ kgen.func @not_in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index
   kgen.return %idx0 : index
 }
 }
+
+// -----
+
+// COM: LifetimeMarkers With Multiple Operands.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<index>, %arg1:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @in_frame_resume
+kgen.func @in_frame(%arg1: index) async -> index {
+  // CHECK: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to
+  // CHECK-SAME: !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index, index)>>
+  // CHECK-NOT: pop.stack_alloc.lifetime.start
+  // CHECK-NOT: pop.stack_alloc.lifetime.end
+  %0 = pop.stack_allocation 1 x index
+  %1 = pop.stack_allocation 1 x index
+  pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  pop.store %arg1, %1 : !kgen.pointer<index>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %2 = kgen.call @use(%0, %1) : (!kgen.pointer<index>, !kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+  kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func @not_in_frame_resume
+kgen.func @not_in_frame(%arg1: index) async -> index {
+  // CHECK: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to
+  // CHECK-SAME: !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index)>>
+  // CHECK: [[V1:%.*]] = pop.stack_allocation 1 x index
+  // CHECK: [[V2:%.*]] = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index
+  %1 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK: pop.stack_alloc.lifetime.start
+  pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  pop.store %arg1, %1 : !kgen.pointer<index>
+  %2 = kgen.call @use(%0, %1) : (!kgen.pointer<index>, !kgen.pointer<index>) -> index
+  // CHECK: pop.stack_alloc.lifetime.end
+  pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @multiple_lifetimes_frame_resume
+kgen.func @multiple_lifetimes_frame(%arg1: index, %arg2: i1) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, i1)>>
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT:   co.suspend.end
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index
+  %1 = pop.stack_allocation 1 x index
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK: hlcf.if {{.*}} {
+  // CHECK-NEXT: [[V10:%.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.stack_alloc.lifetime.start([[V1]], [[V10]])
+  hlcf.if %arg2 {
+    pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+    pop.store %arg1, %0 : !kgen.pointer<index>
+    pop.store %arg1, %1 : !kgen.pointer<index>
+    %2 = kgen.call @use(%0, %1) : (!kgen.pointer<index>, !kgen.pointer<index>) -> index
+    pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  // CHECK: pop.stack_alloc.lifetime.start([[V1]])
+  pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
+  pop.store %arg1, %0 : !kgen.pointer<index>
+  %4 = kgen.call @use(%0, %0) : (!kgen.pointer<index>, !kgen.pointer<index>) -> index
+  pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+}

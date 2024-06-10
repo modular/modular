@@ -279,13 +279,16 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       Operation *op = current;
       current = op->getNextNode();
       if (isa<StackAllocLifetimeEndOp, StackAllocLifetimeStartOp>(op)) {
-        // FIXME:
-        // https://linear.app/modularml/issue/MOCO-820/support-multiple-operands-in-lifetime-markers
-        assert(op->getNumOperands() == 1 &&
-               "TODO: support lists of stack allocations");
-        auto entry = frameData.operationToIndexInFrame.find(
-            op->getOperand(0).getDefiningOp());
-        if (entry != frameData.operationToIndexInFrame.end())
+        int index = 0;
+        for (Value value : op->getOperands()) {
+          auto entry =
+              frameData.operationToIndexInFrame.find(value.getDefiningOp());
+          if (entry != frameData.operationToIndexInFrame.end())
+            op->eraseOperand(index);
+          else
+            index++;
+        }
+        if (op->getNumOperands() == 0)
           op->erase();
         continue;
       }
@@ -850,19 +853,22 @@ void LowerAsyncFunctionsPass::runOnOperation() {
         // lifetime start as possible.
         DenseMap<StackAllocationOp, Operation *> closestCommonParent;
         funcOp.walk([&](StackAllocLifetimeStartOp startOp) {
-          StackAllocationOp stackAlloc = cast<StackAllocationOp>(
-              startOp.getValues().front().getDefiningOp());
-          auto entry = closestCommonParent.find(stackAlloc);
-          if (entry == closestCommonParent.end()) {
-            closestCommonParent[stackAlloc] = startOp;
-          } else {
-            Operation *commonParent = entry->second;
-            Region *currentRegion = startOp->getParentRegion();
-            while (!commonParent->getParentRegion()->isProperAncestor(
-                currentRegion)) {
-              commonParent = commonParent->getParentOp();
+          for (Value value : startOp.getValues()) {
+            StackAllocationOp stackAlloc =
+                cast<StackAllocationOp>(value.getDefiningOp());
+            auto entry = closestCommonParent.find(stackAlloc);
+            if (entry == closestCommonParent.end()) {
+              closestCommonParent[stackAlloc] = startOp;
+            } else {
+              Operation *opInCommonRegion = entry->second;
+              Region *currentRegion = startOp->getParentRegion();
+              while (!opInCommonRegion->getParentRegion()->isProperAncestor(
+                         currentRegion) &&
+                     opInCommonRegion->getParentRegion() != currentRegion) {
+                opInCommonRegion = opInCommonRegion->getParentOp();
+              }
+              closestCommonParent[stackAlloc] = opInCommonRegion;
             }
-            closestCommonParent[stackAlloc] = commonParent;
           }
         });
         for (auto [stackAllocation, closestCommonParentOp] :
@@ -883,41 +889,37 @@ void LowerAsyncFunctionsPass::runOnOperation() {
                   int useState = opToState[operation];
                   if (StackAllocLifetimeStartOp startOp =
                           dyn_cast<StackAllocLifetimeStartOp>(operation)) {
-
-                    // FIXME:
-                    // https://linear.app/modularml/issue/MOCO-820/support-multiple-operands-in-lifetime-markers
-                    assert(startOp->getNumOperands() == 1 &&
-                           "TODO: support lists of stack allocations");
-                    StackAllocationOp stackAllocationOp =
-                        cast<StackAllocationOp>(
-                            startOp->getOperand(0).getDefiningOp());
-                    int defState = opToState[stackAllocationOp];
-                    if (defState == useState)
-                      continue;
-                    // Otherwise, this is a second lifetime. We need a clone.
-
                     // Clone the original stack alloc and replace all uses of
                     // the original that appear after this start lifetime
                     // marker.
                     auto oldPoint = b.saveInsertionPoint();
                     b.setInsertionPoint(startOp);
-                    auto clone = b.create<StackAllocationOp>(
-                        startOp->getLoc(), stackAllocationOp.getType(),
-                        stackAllocationOp.getCount());
-                    if (stackAllocationOp.getAddressSpace().has_value())
-                      clone.setAddressSpaceAttr(
-                          stackAllocationOp.getAddressSpace().value());
-                    if (stackAllocationOp.getAlignment().has_value())
-                      clone.setAlignmentAttr(
-                          stackAllocationOp.getAlignment().value());
-                    opToState[clone] = useState;
-                    startOp->setOperand(0, clone->getResult(0));
-                    stackAllocationOp->replaceUsesWithIf(
-                        clone, [&](OpOperand &operand) -> bool {
-                          bool willReplace =
-                              domInfo.dominates(startOp, operand.getOwner());
-                          return willReplace;
-                        });
+                    for (auto [index, value] :
+                         llvm::enumerate(startOp.getValues())) {
+                      StackAllocationOp stackAllocationOp =
+                          cast<StackAllocationOp>(value.getDefiningOp());
+                      int defState = opToState[stackAllocationOp];
+                      if (defState == useState)
+                        continue;
+                      // Otherwise, this is a second lifetime. We need a clone.
+                      auto clone = b.create<StackAllocationOp>(
+                          startOp->getLoc(), stackAllocationOp.getType(),
+                          stackAllocationOp.getCount());
+                      if (stackAllocationOp.getAddressSpace().has_value())
+                        clone.setAddressSpaceAttr(
+                            stackAllocationOp.getAddressSpace().value());
+                      if (stackAllocationOp.getAlignment().has_value())
+                        clone.setAlignmentAttr(
+                            stackAllocationOp.getAlignment().value());
+                      opToState[clone] = useState;
+                      startOp->setOperand(index, clone->getResult(0));
+                      stackAllocationOp->replaceUsesWithIf(
+                          clone, [&](OpOperand &operand) -> bool {
+                            bool willReplace =
+                                domInfo.dominates(startOp, operand.getOwner());
+                            return willReplace;
+                          });
+                    }
                     b.restoreInsertionPoint(oldPoint);
                   }
                   for (Region &region : operation->getRegions())
