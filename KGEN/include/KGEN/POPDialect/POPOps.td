@@ -2061,7 +2061,7 @@ def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end"> {
 
   let arguments = (ins Variadic<PointerType>:$values);
   let assemblyFormat = [{
-    attr-dict (`(` $values^ `)` `:` type($values))?
+    attr-dict `(` $values `)` (`:` type($values)^)?
   }];
 }
 
@@ -2085,7 +2085,7 @@ def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start"> {
 
   let arguments = (ins Variadic<PointerType>:$values);
   let assemblyFormat = [{
-    attr-dict (`(` $values^ `)` `:` type($values))?
+    attr-dict `(` $values `)` (`:` type($values)^)?
   }];
 }
 
