@@ -23,19 +23,12 @@
 using namespace M;
 using namespace KGEN;
 
-namespace M::KGEN {
-#define GEN_PASS_DEF_RESOLVECOMPILERPROMISES
-#include "KGEN/KGENPasses.h.inc"
-} // namespace M::KGEN
-
 namespace {
-struct ResolveCompilerPromisesPass
-    : impl::ResolveCompilerPromisesBase<ResolveCompilerPromisesPass> {
-  void runOnOperation() override;
-};
-} // namespace
 
-namespace {
+//===----------------------------------------------------------------------===//
+// CallLikeOp
+//===----------------------------------------------------------------------===//
+
 /// Op-like wrapper for call operations and capture list operations that must
 /// behave as edges in the callgraph.
 class CallLikeOp {
@@ -98,6 +91,10 @@ struct CallGraphNode
   /// The current set of required promises for the function.
   llvm::MapVector<StringAttr, std::pair<Type, unsigned>> requiredPromises;
 };
+
+//===----------------------------------------------------------------------===//
+// CallGraph
+//===----------------------------------------------------------------------===//
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab,
@@ -530,6 +527,22 @@ void CallGraph::run() {
 
   state.join();
 }
+
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_RESOLVECOMPILERPROMISES
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct ResolveCompilerPromisesPass
+    : impl::ResolveCompilerPromisesBase<ResolveCompilerPromisesPass> {
+  void runOnOperation() override;
+};
+} // namespace
 
 void ResolveCompilerPromisesPass::runOnOperation() {
   CompilerTimeTraceScope traceScope(
