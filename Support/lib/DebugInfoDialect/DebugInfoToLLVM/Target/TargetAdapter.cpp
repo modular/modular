@@ -352,11 +352,10 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           processable.anyPointers && processable.allPointersMatchedLength &&
           !processable.anyFragments && processable.additionalUndefs.empty();
       // For the declareDirectMode case, we switch from dbg.value to
-      // dbg.declare.  But it requires that we have SSA values with no pointers
-      // in the exprLocation.
-      bool declareDirectMode = !processable.anyPointers &&
-                               processable.additionalUndefs.empty() &&
-                               !processable.anyFragments;
+      // dbg.declare, and we assemble struct fragments where applicable.  But it
+      // requires that we have SSA values with no pointers in the exprLocation.
+      bool declareDirectMode =
+          !processable.anyPointers && processable.additionalUndefs.empty();
       // For everything else, there's dbg.value.  If there are fragments behind
       // pointers, we would have to load them to assemble them in one place to
       // use dbg.declare, which is unsafe since some of the pointers may be null
@@ -401,6 +400,19 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
         int allocElems = 1;
         Type allocType = valueOp.getValue().getType();
 
+        if (declareDirectMode && processable.anyFragments) {
+          uint64_t sizeInBits = 0;
+          if (auto t = dyn_cast<LLVM::DIBasicTypeAttr>(varInfo.getType()))
+            sizeInBits = t.getSizeInBits();
+          else if (auto t =
+                       dyn_cast<LLVM::DICompositeTypeAttr>(varInfo.getType()))
+            sizeInBits = t.getSizeInBits();
+          else if (auto t =
+                       dyn_cast<LLVM::DIDerivedTypeAttr>(varInfo.getType()))
+            sizeInBits = t.getSizeInBits();
+          allocElems = (sizeInBits / 8) + (sizeInBits % 8 ? 1 : 0);
+          allocType = allocBuilder.getI8Type();
+        }
         auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
             erasedLoc, allocBuilder.getI32Type(), allocElems);
 
@@ -477,9 +489,35 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
         if (useDbgValueMode)
           oldValue = oldValueMap.lookup(valueOp);
         Location erasedLoc = UnknownLoc::get(oldValue.getContext());
+        Type pointerType = LLVM::LLVMPointerType::get(oldValue.getContext());
+
+        // We are only dealing with fragments in cases where there are no
+        // pointers.
+        uint64_t offsetInBits = 0;
+        // We only want to actually store at an offset if we are using
+        // dbg.declare to hold the full struct, and we need to store
+        // individual fields in it.
+        if (declareDirectMode) {
+          for (auto exprOp : valueOp.getLocationExpr().getOperations()) {
+            if (exprOp.getOpcode() == llvm::dwarf::DW_OP_LLVM_fragment) {
+              assert(exprOp.getArguments().size() == 2 &&
+                     "bad DW_OP_LLVM_fragment");
+              offsetInBits += exprOp.getArguments()[0];
+            }
+          }
+        }
 
         auto makeStore = [&](OpBuilder storeBuilder, Location storeLoc) {
           Value storeToPointer = getAllocaOp(valueOp);
+          if (offsetInBits != 0) {
+            uint64_t offsetInBytes = offsetInBits / 8;
+            assert(offsetInBits % 8 == 0 && "offset makes sense");
+            LLVM::GEPOp uglyGep = storeBuilder.create<LLVM::GEPOp>(
+                erasedLoc, /*resultType=*/pointerType,
+                /*elementType=*/storeBuilder.getI8Type(),
+                /*basePtr=*/storeToPointer, LLVM::GEPArg(offsetInBytes));
+            storeToPointer = uglyGep;
+          }
           storeBuilder.create<LLVM::StoreOp>(storeLoc, oldValue,
                                              storeToPointer);
         };
