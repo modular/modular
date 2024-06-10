@@ -448,12 +448,12 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
 
                 c_int32[0, col] = dot_i8_to_i32_saturated_x86(
                     c_int32[0, col],
-                    SIMD[DType.int32, simd_width].splat(a_val_lo),
+                    SIMD[DType.int32, simd_width](a_val_lo),
                     bitcast[DType.int32, simd_width](b_data_i4_lo),
                 )
                 c_int32[0, col] = dot_i8_to_i32_saturated_x86(
                     c_int32[0, col],
-                    SIMD[DType.int32, simd_width].splat(a_val_hi),
+                    SIMD[DType.int32, simd_width](a_val_hi),
                     bitcast[DType.int32, simd_width](b_data_i4_hi),
                 )
 

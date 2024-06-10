@@ -24,7 +24,7 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
     var skew_slightly_pos = uniform + 1.842
     var skew_slightly_neg = uniform - 1.842
     var big_range = uniform * 1000
-    var unitary = SIMD[DType.float32, group_size].splat(1.0)
+    var unitary = SIMD[DType.float32, group_size](1.0)
 
     fn run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
         var packed_result = Q4sym[group_size, DType.float32](input_vec)
