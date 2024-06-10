@@ -966,6 +966,7 @@ modular_shared_library(
     ]),
     local_defines = [
         "MODULAR_BUILDING_COMPILERRT",
+        "MAX_CONFIG_SECTION=max",
     ],
     output_name = "KGENCompilerRTShared",
     deps = [
