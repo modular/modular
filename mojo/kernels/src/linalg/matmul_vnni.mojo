@@ -137,7 +137,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
 
                 @parameter
                 if has_neon_int8_dotprod():
-                    var a_val2 = SIMD[c_type, simd_size].splat(a_val)
+                    var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,
                         bitcast[a.type, simd_size * 4](a_val2),
