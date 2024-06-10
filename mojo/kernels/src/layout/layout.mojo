@@ -34,16 +34,12 @@ from .int_tuple import (
 # ===-----------------------------------------------------------------------===#
 
 
-trait LayoutTrait:
+trait LayoutTrait(Copyable):
     """The LayoutTrait trait destribles layouts, swizzles, and composed layouts.
 
     They are used to map indices, e.g. from thread id to memory location.
 
     """
-
-    fn __copyinit__(inout self, other: Self):
-        "Copy constructor."
-        ...
 
     fn __call__(self, index: IntTuple) -> Int:
         """Get the output index."""

@@ -240,13 +240,8 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
             abs(shift) >= bits, "Require shift greater than mask bits"
         ]()
 
+    @always_inline
     fn __call__(self, index: IntTuple) -> Int:
-        # Disable this function for now because we can't prevent user from
-        # passing in non-trivial tuples.
-        constrained[
-            False, "Swizzle don't support IntTuple as argument for now"
-        ]()
-
         return self.__call__(index.value())
 
     @always_inline

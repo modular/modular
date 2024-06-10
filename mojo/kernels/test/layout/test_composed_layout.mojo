@@ -37,6 +37,22 @@ fn test_composed_layout() raises:
 fn test_composed_layout_swizzle() raises:
     print("== test_composed_layout_swizzle")
 
+    alias swizzle = Swizzle[1, 0, 2]
+    var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
+
+    var comp_layout = ComposedLayout[Layout, swizzle, 0](layout, swizzle())
+
+    assert_equal(comp_layout(0), 0)
+    assert_equal(comp_layout(1), 8)
+    assert_equal(comp_layout(2), 16)
+    assert_equal(comp_layout(3), 24)
+    assert_equal(comp_layout(4), 32)
+    assert_equal(comp_layout(5), 40)
+
+
+fn test_composed_layout_swizzle_rt() raises:
+    print("== test_composed_layout_swizzle_rt")
+
     var swizzle = SwizzleEx(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
@@ -54,5 +70,6 @@ fn main():
     try:
         test_composed_layout()
         test_composed_layout_swizzle()
+        test_composed_layout_swizzle_rt()
     except e:
         print("Error => ", e)
