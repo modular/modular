@@ -2251,22 +2251,28 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
     // (b) partially consumed in continueSet (we referenced a subfield of this
     // value in loop) should be fully consumed in the loop.
     for (auto [index, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
+      if (!valueInfo.isIndirect)
+        continue; // Register values only have a single bit.
+
+      // If the whole-value is already considered live, then there is nothing
+      // to do.
+      if (continueSet.test(valueInfo.endValueBit - 1))
+        continue;
+
+      // FIXME: This is checking the break set, which isn't right. We actually
+      // want the live in to any blocks that break, not the result of those
+      // blocks.  This should be handled by normal 'if' merging.
       ValueRef valueRef(index, valueInfo.startValueBit, valueInfo.endValueBit,
                         valueInfo.isIndirect);
-      bool isMissingInUpwardConsumeSet = valueRef.isAllMissing(breakSet);
-      bool isPartialSetInLoop = false;
-      if (isMissingInUpwardConsumeSet &&
-          !loopBodySets.continueSet->test(valueInfo.endValueBit - 1)) {
-        BitVector justMe(*loopBodySets.continueSet);
-        justMe.reset(0, valueInfo.startValueBit);
-        justMe.reset(valueInfo.endValueBit - 1, breakSet.size());
-        isPartialSetInLoop = justMe.any();
-      }
+      if (!valueRef.isAllMissing(breakSet))
+        continue;
 
-      if (isMissingInUpwardConsumeSet && isPartialSetInLoop)
-        loopBodySets.continueSet->set(valueInfo.startValueBit,
-                                      valueInfo.endValueBit);
+      // If some values are live across the loop then make all of them live
+      // across the loop.
+      if (!valueRef.isAllMissing(continueSet))
+        continueSet.set(valueInfo.startValueBit, valueInfo.endValueBit);
     }
+
     loopBodySets.scanBlock(loopOp.getRegion(0).front());
   }
 
