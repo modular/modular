@@ -258,6 +258,11 @@ fn multistage_gemm[
     alias async_copy_b_layout = Layout.row_major(
         num_threads * simd_size // BD_1, BD_1 // simd_size
     )
+    alias async_copy_b_swizzle = None if transpose_b else (
+        OptionalReg[_swizzle_signature](
+            xor_2bits_per8T if a_type == DType.float32 else xor_3bits_per16T
+        )
+    )
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
@@ -273,7 +278,9 @@ fn multistage_gemm[
             a_gmem_iter.get().vectorize[1, simd_size](),
         )
 
-        copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
+        ](
             b_smem_tile.vectorize[1, simd_size](),
             b_gmem_iter.get().vectorize[1, simd_size](),
         )
@@ -386,7 +393,7 @@ fn multistage_gemm[
                     ) if b_type
                     == DType.bfloat16 else None,
                     transposed=True,
-                ](b_mma_tile, 0)
+                ](b_mma_tile, n_mma2 * 2)
                 b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
                     SIMD[b_type, 4](vec[0], vec[1], vec[2], vec[3])
                 )
@@ -527,7 +534,10 @@ fn multistage_gemm[
                         a_gmem_iter.get().vectorize[1, simd_size](),
                     )
 
-                    copy_dram_to_sram_async[thread_layout=async_copy_b_layout](
+                    copy_dram_to_sram_async[
+                        thread_layout=async_copy_b_layout,
+                        swizzle=async_copy_b_swizzle,
+                    ](
                         b_smem_prefetch_tile.vectorize[1, simd_size](),
                         b_gmem_iter.get().vectorize[1, simd_size](),
                     )
