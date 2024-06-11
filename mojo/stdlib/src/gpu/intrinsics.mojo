@@ -127,7 +127,7 @@ fn convert[
         Float32,
         Float32,
         constraints="=r,f,f",
-    ](src[0].cast[DType.float32](), src[1].cast[DType.float32]())
+    ](src[1].cast[DType.float32](), src[0].cast[DType.float32]())
 
     # Reinterpret cast uint32 to 2 bf16.
     var ptr = Pointer.address_of(bf16x2_as_uint32).bitcast[
