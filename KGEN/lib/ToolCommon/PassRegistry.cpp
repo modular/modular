@@ -56,6 +56,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerVerifyParameters();
   KGEN::registerLowerSuspensionPoints();
   KGEN::registerLowerToLLVMPipeline();
+  KGEN::registerIPDF();
   KGEN::registerSCCP();
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
