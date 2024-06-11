@@ -266,6 +266,26 @@ fn test_composition() raises:
     ]()
 
 
+# CHECK-LABEL: test_by_mode_composition
+fn test_by_mode_composition() raises:
+    print("== test_by_mode_composition")
+
+    # The correctness here is built on top of default composition, which has
+    # been tested extensively above. Keep simple tests only.
+
+    alias layout0 = Layout.row_major(8, 4)
+    alias tiler = MakeLayoutList(Layout(4, 1), Layout(2, 1))
+    assert_equal(
+        composition(layout0, tiler), Layout(IntTuple(4, 2), IntTuple(4, 1))
+    )
+
+    alias layout1 = Layout.row_major(IntTuple(IntTuple(8, 6), 4, 2))
+    assert_equal(
+        composition(layout1, tiler),
+        Layout(IntTuple(4, 2, 2), IntTuple(48, 2, 1)),
+    )
+
+
 fn validate_complement[layout: Layout]() raises:
     alias layoutR = complement(layout)
 
@@ -433,6 +453,7 @@ def main():
     test_layout_basic()
     test_coalesce()
     test_composition()
+    test_by_mode_composition()
     test_complement()
     test_logcial_divide()
     test_logical_product()

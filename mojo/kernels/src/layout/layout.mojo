@@ -371,8 +371,13 @@ fn composition(layoutA: Layout, layoutB: Layout) -> Layout:
 # Tuple of layouts
 fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     var result = Layout()
-    for t in tiler:
-        result.append(composition(layout_a, t[]))
+    for i in range(len(tiler)):
+        result.append(composition(layout_a[i], tiler[i]))
+
+    # Remainder if tiler is shorter.
+    for i in range(len(tiler), len(layout_a)):
+        result.append(layout_a[i])
+
     return result
 
 
