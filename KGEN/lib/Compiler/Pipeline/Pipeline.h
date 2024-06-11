@@ -53,13 +53,13 @@ void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
                                    const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
-// buildLowerToLLVMPipeline
+// PostElaborationPipeline
 //===----------------------------------------------------------------------===//
-/// Build the pass pipeline to convert post-elaboration KGEN IR to LLVM IR.
-/// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
-/// of LLVM lowerings, and the canonicalizer again.
-void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
-                              const LowerToLLVMOptions &options);
+
+/// This populates the post-elaboration optimization and simplification passes.
+/// These passes are intended to run immediately after the elaborator.
+void buildPostElaborationPipeline(mlir::PassManager &pm,
+                                  const CompilationOptions &options);
 
 } // namespace KGEN
 } // namespace M

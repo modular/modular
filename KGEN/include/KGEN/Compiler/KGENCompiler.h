@@ -79,8 +79,7 @@ ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
 initializeExecutionEngine(mlir::MLIRContext &context,
                           const KGEN::CompilationOptions &compilationOptions,
                           KGEN::ExecutionEngineOptions executionEngineOptions,
-                          bool isJIT, PassManagerConfigOptions pmOptions,
-                          bool isSearch = false);
+                          bool isJIT, PassManagerConfigOptions pmOptions);
 
 /// This creates the materialize packages pass with the default library
 /// generation pipeline, i.e. `runGenerateLibraryPipeline`.

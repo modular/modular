@@ -14,15 +14,6 @@ namespace M {
 namespace KGEN {
 
 //===----------------------------------------------------------------------===//
-// PostElaborationPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the post-elaboration optimization and simplification passes.
-/// These passes are intended to run immediately after the elaborator.
-void buildPostElaborationPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
-
-//===----------------------------------------------------------------------===//
 // buildLowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
 
