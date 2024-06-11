@@ -165,7 +165,7 @@ def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
     )
 
 
-def slice(input: Symbol, *slices: SliceNew) -> Symbol:
+def slice(input: Symbol, *slices: Slice) -> Symbol:
     """Slices a symbolic tensor along its first dimension.
 
     Args:
@@ -183,7 +183,7 @@ def slice(input: Symbol, *slices: SliceNew) -> Symbol:
     return slice(input, slices)
 
 
-def slice(input: Symbol, slices: VariadicList[SliceNew]) -> Symbol:
+def slice(input: Symbol, slices: VariadicList[Slice]) -> Symbol:
     """Slices a symbolic tensor along its first dimension.
 
     Args:
@@ -205,7 +205,7 @@ def slice(input: Symbol, slices: VariadicList[SliceNew]) -> Symbol:
         raise error(g, message.format(len(slices), t.rank()))
 
     slice_max = int(max_finite[DType.int64]())
-    empty_slice = slice_new(start=None, end=None, step=1)
+    empty_slice = Slice(start=None, end=None, step=1)
 
     dims = List[Dim]()
     starts = List[Int64]()

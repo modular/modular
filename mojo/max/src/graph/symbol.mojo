@@ -289,7 +289,7 @@ struct Symbol(CollectionElement, Stringable):
             slices.append(sval[])
         return ops.slice(self, slices)
 
-    fn __getitem__(self, *slices: SliceNew) raises -> Symbol:
+    fn __getitem__(self, *slices: Slice) raises -> Symbol:
         """Shorthand for symbolic slicing with an `Int` range.
 
         Args:
@@ -738,7 +738,7 @@ struct SymbolicSlice(CollectionElement):
         self.stop = stop
         self.step = Optional[Symbol]()
 
-    def __init__(inout self, g: Graph, s: SliceNew):
+    def __init__(inout self, g: Graph, s: Slice):
         """Convenience constructor from a `Slice`.
 
         This wraps any indices in `s` into constant nodes (using `mo.constant`).
