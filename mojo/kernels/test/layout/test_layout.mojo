@@ -27,13 +27,26 @@ from testing import assert_equal, assert_not_equal
 # CHECK-LABEL: test_layout_basic
 fn test_layout_basic() raises:
     print("== test_layout_basic")
+
+    # Basic constructor
     alias shape = IntTuple(2, IntTuple(3, IntTuple(4)))
     alias stride = IntTuple(1, IntTuple(2, IntTuple(6)))
     alias layout = Layout(shape, stride)
     assert_equal(
         layout, Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6)))
     )
+
+    # Row major variadic input
     assert_equal(Layout.row_major(2, 3), Layout(IntTuple(2, 3), IntTuple(3, 1)))
+    # Row major tuple input
+    assert_equal(
+        Layout.row_major(IntTuple(2, 3)), Layout(IntTuple(2, 3), IntTuple(3, 1))
+    )
+    assert_equal(
+        Layout.row_major(IntTuple(2, IntTuple(3, 4))),
+        Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(12, IntTuple(4, 1))),
+    )
+
     assert_equal(Layout.col_major(2, 3), Layout(IntTuple(2, 3), IntTuple(1, 2)))
 
 

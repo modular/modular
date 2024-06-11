@@ -153,6 +153,31 @@ struct Layout(
             shape.append(dim)
         return Layout(shape, reverse(stride))
 
+    @staticmethod
+    fn _row_major_tuple(
+        shape: IntTuple, inout stride: IntTuple, inout current_stride: Int
+    ):
+        var tmp_stride = IntTuple()
+
+        for i in reversed(range(len(shape))):
+            var current_shape = shape[i]
+            if current_shape.is_value():
+                tmp_stride.append(current_stride)
+                current_stride *= current_shape.value()
+            else:
+                Self._row_major_tuple(current_shape, tmp_stride, current_stride)
+
+        stride.append(tmp_stride)
+
+    @staticmethod
+    fn row_major(shape: IntTuple) -> Layout:
+        var current_stride = 1
+        var stride = IntTuple()
+
+        Self._row_major_tuple(shape, stride, current_stride)
+
+        return Layout(shape, reverse(stride[0]))
+
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
         self.shape = existing.shape^
