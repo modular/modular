@@ -75,23 +75,16 @@ struct DynamicTupleBase[
         return self._elements[idx]
 
     @always_inline
-    fn _adjust_span(self, owned span: Slice) -> Slice:
-        if span.start < 0:
-            span.start = len(self) + span.start
-
-        if not span._has_end():
-            span.end = len(self)
-        elif span.end < 0:
-            span.end = len(self) + span.end
-
-        return span
-
-    @always_inline
     fn __getitem__(self, owned span: Slice) -> Self:
-        span = self._adjust_span(span)
+        var start: Int
+        var end: Int
+        var step: Int
+        start, end, step = span.indices(len(self))
+
+        var r = range(start, end, step)
         var result = Self()
-        result._elements.reserve(span.unsafe_indices())
-        for i in range(span.start, span.end, span.step):
+        result._elements.reserve(len(r))
+        for i in r:
             result._elements.append(self[i])
         return result
 

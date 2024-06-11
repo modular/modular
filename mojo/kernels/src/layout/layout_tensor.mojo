@@ -98,9 +98,11 @@ fn _need_mask[*tile_sizes: Int](shape: IntTuple) -> Bool:
 
 # Returns the size of the slice in layout dim.
 #
-fn _get_slice_size(layout: Layout, slice: Slice, dim: Int) -> Int:
-    var end = slice.end if slice._has_end() else to_int(layout.shape[dim])
-    return end - slice.start
+fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
+    var start: Int
+    var end: Int
+    start, end, _ = slc.indices(to_int(layout.shape[dim]))
+    return end - start
 
 
 # Returns true if n isn't in `tuple`.
@@ -733,7 +735,10 @@ struct LayoutTensor[
         ]()
         alias stride_m = to_int(__slice_layout.stride[0])
         alias stride_n = to_int(__slice_layout.stride[1])
-        var offset = d0_slice.start * stride_m + d1_slice.start * stride_n
+        var offset = (
+            d0_slice.start.value() * stride_m
+            + d1_slice.start.value() * stride_n
+        )
         return LayoutTensor[
             dtype,
             __slice_layout,
@@ -770,7 +775,7 @@ struct LayoutTensor[
         alias stride_0 = to_int(__slice_layout.stride[0])
         alias stride_1 = to_int(__slice_layout.stride[1])
 
-        var slice_offset = d0_slice.start * stride_0 + d1_slice.start * stride_1
+        var slice_offset = d0_slice.start.value() * stride_0 + d1_slice.start.value() * stride_1
 
         var idx = 0
 
@@ -818,7 +823,7 @@ struct LayoutTensor[
 
         alias stride_0 = to_int(__slice_layout.stride[0])
 
-        var slice_offset = d0_slice.start * stride_0
+        var slice_offset = d0_slice.start.value() * stride_0
 
         var idx = 0
 
