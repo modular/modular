@@ -14,6 +14,12 @@ from sys import argv
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu.cublas.cublas import (
+    check_cublas_error,
+    cublasContext,
+    cublasCreate,
+    cublasDestroy,
+)
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.event import time_function
 from gpu.host.memory import (
@@ -46,7 +52,7 @@ from layout.tensor_core import (
     get_mma_shape,
     TensorCore,
 )
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from LinAlg.MatmulCublas import cublas_matmul
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
@@ -737,31 +743,36 @@ fn test[type: DType, transpose_b: Bool]() raises:
     synchronize()
 
     _copy_device_to_host(c_host, c_device, M * N)
-    _copy_host_to_device(b_device, b_host, K * N)
 
-    # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
-    var func_naive = Function[gemm_naive](threads_per_block=256)
     var c_buffer_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
-    func_naive(
-        c_buffer_ref,
-        a_buffer,
-        b_buffer,
-        M,
-        N,
-        K,
-        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
-        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+
+    var handle = Pointer[cublasContext]()
+    check_cublas_error(cublasCreate(Pointer.address_of(handle)))
+    check_cublas_error(
+        cublas_matmul(
+            handle,
+            c_buffer_ref,
+            a_buffer,
+            b_buffer,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
     )
+    check_cublas_error(cublasDestroy(handle))
 
     synchronize()
     _copy_device_to_host(c_host_ref, c_device_ref, M * N)
 
+    var rtol = 0.01 if transpose_b else 0.002
     for i in range(M * N):
-        if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
-            print(i, c_host[i], c_host_ref[i])
-        assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
+        if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
+            print(
+                i,
+                c_host[i],
+                c_host_ref[i],
+                abs((c_host[i] - c_host_ref[i]) / c_host_ref[i]),
+            )
+        assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
 
     _free(c_device)
     _free(c_device_ref)
@@ -775,7 +786,6 @@ fn test[type: DType, transpose_b: Bool]() raises:
     b_trans_host.free()
 
     _ = func^
-    _ = func_naive^
     _ = stream^
 
 
