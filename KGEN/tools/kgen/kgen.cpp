@@ -556,6 +556,7 @@ int main(int argc, char **argv) {
   registerMLIRContextCLOptions();
   registerAsmPrinterCLOptions();
   registerDefaultTimingManagerCLOptions();
+  KGEN::registerDefaultKGENPasses();
   registerPassManagerCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
