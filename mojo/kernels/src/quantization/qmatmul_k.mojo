@@ -41,10 +41,14 @@ fn _to_dtype_pointer[
 struct _block_QK_K:
     alias quantized_k = 256
 
+    @staticmethod
+    fn calc_group_count[group_size: Int]() -> Int:
+        return _block_QK_K.quantized_k // group_size
+
 
 struct _block_Q4_K:
     alias group_size = 32
-    alias group_count = _block_QK_K.quantized_k // Self.group_size
+    alias group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
     var base_scale: Float16
     var base_min: Float16
@@ -56,7 +60,7 @@ struct _block_Q4_K:
 
 struct _block_Q6_K:
     alias group_size = 16
-    alias group_count = _block_QK_K.quantized_k // Self.group_size
+    alias group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
     var q_bits_lo: InlineArray[UInt8, _block_QK_K.quantized_k // 2]
     var q_bits_hi: InlineArray[UInt8, _block_QK_K.quantized_k // 4]
@@ -190,8 +194,9 @@ struct _packed_int6_array[size: Int]:
 struct _block_Q4_K_packed[block_n: Int = 1]:
     var base_scales: InlineArray[Float16, block_n]
     var base_mins: InlineArray[Float16, block_n]
-    var q_scales: _packed_int6_array[_block_Q4_K.group_count * block_n]
-    var q_mins: _packed_int6_array[_block_Q4_K.group_count * block_n]
+    var q_scales_and_mins: _packed_int6_array[
+        2 * _block_Q4_K.group_count * block_n
+    ]
     var q_bits: _packed_int4_array[_block_QK_K.quantized_k * block_n]
 
 
@@ -202,7 +207,7 @@ struct _block_Q6_K_packed[block_n: Int = 1]:
 
 
 struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
-    alias group_count = _block_QK_K.quantized_k // Self.group_size
+    alias group_count = _block_QK_K.calc_group_count[group_size]()
 
     var q_bits: InlineArray[Int8, _block_QK_K.quantized_k * tile_m]
     var scales: InlineArray[Float32, tile_m]
@@ -350,7 +355,6 @@ fn _pack_block_Q4_K[
 ):
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
-    alias tuple_size = 4
 
     constrained[
         sizeof[_block_Q4_K]() * block_n
@@ -398,25 +402,53 @@ fn _pack_block_Q4_K[
 
         src_ptr += stride
 
-    var q_mins_ptr = q_mins_buf
+    # Allocate a staging buffer to pack the scales and minimums as a single
+    # blob and to do processor specific reordering of the values for the
+    # compute kernel.
+    var q_scales_and_mins_buf = stack_allocation[
+        2 * group_count * block_n, DType.uint8
+    ]()
+    var q_scales_reorder_buf = q_scales_and_mins_buf
+    var q_mins_reorder_buf = q_scales_and_mins_buf + group_count * block_n
 
-    var q_mins_arch_buf = stack_allocation[group_count * block_n, DType.uint8]()
+    # Scales are not currently transformed.
+    memcpy(q_scales_reorder_buf, q_scales_buf, group_count * block_n)
 
-    @parameter
-    if is_x86() or has_neon():
-        for g in range(0, group_count, 2):
-            for n in range(block_n):
-                q_mins_arch_buf[g * block_n + n * 2 + 0] = q_mins_buf[
-                    (g + 0) * block_n + n
-                ]
-                q_mins_arch_buf[g * block_n + n * 2 + 1] = q_mins_buf[
-                    (g + 1) * block_n + n
-                ]
+    # Minimums are row interleaved with a stride to enable use of int16->int32
+    # multiply/add instructions.
+    #
+    # For x86: The compute kernel uses `pmaddwd` + `paddd' (optimized to
+    # `vpdpwssd` on processors that support VNNI). The two rows are interleaved
+    # to form pairs of int16 values:
+    #       [n0_g0 n0_g1 : n1_g0 n1_g1 : n2_g0 n2_g1 : n3_g0 n3_g1]
+    #
+    # For NEON: The compute kernel uses `smull(2)` and `smlal(2)` instructions
+    # to do an `int16*int16` widening multiply/add to an int32 accumulator. The
+    # two rows are split across the lower and upper halves of the register:
+    #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
+    for g in range(0, group_count, 2):
+        var q_mins_row_0_ptr = q_mins_buf + g * block_n
+        var q_mins_row_1_ptr = q_mins_row_0_ptr + block_n
+        for n in range(block_n):
+            var q_mins_row_0_val = q_mins_row_0_ptr[n]
+            var q_mins_row_1_val = q_mins_row_1_ptr[n]
 
-        q_mins_ptr = q_mins_arch_buf
+            @parameter
+            if is_x86():
+                var reorder_idx = g * block_n + n * 2
+                q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
+                q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
+            elif has_neon():
+                alias split_width = simdwidthof[DType.int32]()
+                var n_idx_hi = n // split_width
+                var n_idx_lo = n % split_width
+                var reorder_idx = g * block_n + n_idx_hi * split_width * 2 + n_idx_lo
+                q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
+                q_mins_reorder_buf[reorder_idx + split_width] = q_mins_row_1_val
+            else:
+                constrained[False, "unsupported architecture"]()
 
-    dst_ptr[].q_scales.pack(q_scales_buf)
-    dst_ptr[].q_mins.pack(q_mins_ptr)
+    dst_ptr[].q_scales_and_mins.pack(q_scales_and_mins_buf)
     dst_ptr[].q_bits.pack(q_bits_block_buf)
 
 
@@ -585,6 +617,103 @@ fn matmul_neon_dotprod[
                     )
 
 
+@always_inline
+fn _apply_zero_point_correction[
+    group_count: Int, tile_m: Int, tile_n: Int, simd_width: Int
+](
+    a_group_sums_ptr: DTypePointer[DType.int16],
+    b_q_mins_ptr: DTypePointer[DType.uint8],
+    b_base_mins_ptr: DTypePointer[DType.float16],
+    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+):
+    """Applies the zero point correction to the running float accumulator."""
+    alias block_n = tile_n * simd_width
+
+    var corrections = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+    corrections.init()
+
+    for g in range(0, group_count, 2):
+
+        @parameter
+        if is_x86():
+            # Use `pmaddwd` + `paddd' (optimized to `vpdpwssd` on processors
+            # that support VNNI) to multiply/add a pair of minimum values with
+            # a pair of group sums from matrix A.
+            @parameter
+            for col in range(tile_n):
+                # The minimum values vector is encoded as pairs of int16 values
+                # from group_0 and group_1:
+                #       [n0_g0 n0_g1 : n1_g0 n1_g1 : n2_g0 n2_g1 : n3_g0 n3_g1]
+                var q_mins = SIMD[size = simd_width * 2].load(
+                    b_q_mins_ptr, g * block_n + col * simd_width * 2
+                ).cast[DType.int16]()
+
+                @parameter
+                for row in range(tile_m):
+                    var a_group_sums = SIMD[size=2].load(
+                        a_group_sums_ptr, g * tile_m + row * 2
+                    )
+                    corrections[row, col] = dot_i16_to_i32_x86(
+                        corrections[row, col],
+                        bitcast[DType.int32, simd_width](q_mins),
+                        bitcast[DType.int32, 1](a_group_sums),
+                    )
+
+        elif has_neon():
+            # Use `smull(2)` and `smlal(2)` instructions to do an `int16*int16`
+            # widening multiply/add to an int32 accumulator.
+            var group_sums = SIMD[size = tile_m * 2].load(
+                a_group_sums_ptr + g * tile_m
+            )
+
+            @parameter
+            for col in range(tile_n):
+                # The minimum values vector is encoded as pairs of int16 values
+                # from group_0 and group_1:
+                #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
+                var q_mins = SIMD[size = simd_width * 2].load(
+                    b_q_mins_ptr, g * block_n + col * simd_width * 2
+                ).cast[DType.int16]()
+
+                # Logically slice the minimum values vector. This selects
+                # between `smull` (lower half) or `smull2` (upper half).
+                var q_mins_lo = q_mins.slice[simd_width, offset=0]()
+                var q_mins_hi = q_mins.slice[simd_width, offset=simd_width]()
+
+                @parameter
+                for row in range(tile_m):
+                    # Note: The ARM64 backend fuses `smull` with an int32 add to
+                    # form `smlal` instructions. Also, the element broadcast is
+                    # fused to with the instruction to generate the form
+                    # `smlal r, a, b[lane]`. The instrinsic `vmlal_lane_s16` uses
+                    # the same IR pattern to emit this instruction.
+                    corrections[row, col] += llvm_intrinsic[
+                        "llvm.aarch64.neon.smull.v4i32",
+                        SIMD[DType.int32, simd_width],
+                    ](q_mins_lo, SIMD[size=simd_width](group_sums[row * 2 + 0]))
+                    corrections[row, col] += llvm_intrinsic[
+                        "llvm.aarch64.neon.smull.v4i32",
+                        SIMD[DType.int32, simd_width],
+                    ](q_mins_hi, SIMD[size=simd_width](group_sums[row * 2 + 1]))
+
+        else:
+            constrained[False, "unsupported architecture"]()
+
+    # Scale the correction value by the shared base minimum and update the
+    # float accumulator.
+    @parameter
+    for col in range(tile_n):
+        var base_mins = SIMD[size=simd_width].load(
+            b_base_mins_ptr + col * simd_width
+        ).cast[DType.float32]()
+
+        @parameter
+        for row in range(tile_m):
+            c_float[row, col] -= (
+                corrections[row, col].cast[DType.float32]() * base_mins
+            )
+
+
 fn _matmul_Q4_K[
     tile_n: Int
 ](
@@ -605,11 +734,8 @@ fn _matmul_Q4_K[
     var b_q_bits = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
-    var b_q_scales = stack_allocation[
-        group_count * block_n, DType.uint8, alignment=alignment
-    ]()
-    var b_q_mins = stack_allocation[
-        group_count * block_n, DType.uint8, alignment=alignment
+    var b_q_scales_and_mins_buf = stack_allocation[
+        2 * group_count * block_n, DType.uint8, alignment=alignment
     ]()
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
@@ -617,8 +743,10 @@ fn _matmul_Q4_K[
     # Convert the packed bit arrays into local arrays that can be efficiently
     # used by the inner kernel.
     b_tile_ptr[].q_bits.unpack(b_q_bits)
-    b_tile_ptr[].q_scales.unpack(b_q_scales)
-    b_tile_ptr[].q_mins.unpack(b_q_mins)
+    b_tile_ptr[].q_scales_and_mins.unpack(b_q_scales_and_mins_buf)
+
+    var b_q_scales_ptr = b_q_scales_and_mins_buf
+    var b_q_mins_ptr = b_q_scales_and_mins_buf + group_count * block_n
 
     @parameter
     @always_inline
@@ -660,7 +788,7 @@ fn _matmul_Q4_K[
             @parameter
             for col in range(tile_n):
                 var b_q_scale_val = SIMD[size=simd_width].load(
-                    b_q_scales, col * simd_width + g * block_n
+                    b_q_scales_ptr, col * simd_width + g * block_n
                 ).cast[DType.int32]()
 
                 @parameter
@@ -686,78 +814,12 @@ fn _matmul_Q4_K[
                     c_int32_block[row, col].cast[DType.float32]() * b_scale
                 )
 
-        c_int32_block.init()
-
-        # TODO: Resolve how to best implement the zero point correction across
-        # architectures. The code below is biased for AVX.
-        """
-        for g in range(group_count):
-
-            @parameter
-            for col in range(tile_n):
-                var b_min = b_q_mins.load[width=simd_width](
-                    col * simd_width + g * block_n
-                ).cast[DType.int32]()
-
-                @parameter
-                for row in range(tile_m):
-                    c_int32_block[row, col] += (
-                        b_min * _to_dtype_pointer(a_tile_ptr[].group_sums).bitcast[DType.int32]()[g * tile_m + row]
-                    )
-        """
-        var a_group_sums_ptr = _to_dtype_pointer(a_tile_ptr[].group_sums)
-
-        for g in range(0, group_count, 2):
-
-            @parameter
-            for col in range(tile_n):
-                var b_q_min_vals = SIMD[size = simd_width * 2].load(
-                    b_q_mins, g * block_n + col * simd_width * 2
-                ).cast[DType.int16]()
-
-                @parameter
-                for row in range(tile_m):
-                    var a_group_sum_pair = SIMD[size=2].load(
-                        a_group_sums_ptr, g * tile_m + row * 2
-                    )
-
-                    @parameter
-                    if is_x86():
-                        c_int32_block[row, col] = dot_i16_to_i32_x86(
-                            c_int32_block[row, col],
-                            bitcast[DType.int32, simd_width](b_q_min_vals),
-                            bitcast[DType.int32, 1](a_group_sum_pair),
-                        )
-                    else:
-                        var b0 = SIMD[DType.int16, b_q_min_vals.size // 2]()
-                        var b1 = SIMD[DType.int16, b_q_min_vals.size // 2]()
-                        (b0, b1) = b_q_min_vals.deinterleave()
-                        var v1 = a_group_sum_pair[0].cast[
-                            DType.int32
-                        ]() * b0.cast[DType.int32]()
-                        var v2 = a_group_sum_pair[1].cast[
-                            DType.int32
-                        ]() * b1.cast[DType.int32]()
-                        c_int32_block[row, col] += rebind[
-                            SIMD[DType.int32, simd_width]
-                        ](v1 + v2)
-
-        # """
-
-        # Apply the block zero point of matrix B.
-        @parameter
-        for col in range(tile_n):
-            var b_mins = SIMD[size=simd_width].load(
-                _to_dtype_pointer(b_tile_ptr[].base_mins).offset(
-                    col * simd_width
-                )
-            ).cast[DType.float32]()
-
-            @parameter
-            for row in range(tile_m):
-                c_float[row, col] -= (
-                    c_int32_block[row, col].cast[DType.float32]() * b_mins
-                )
+        _apply_zero_point_correction[group_count](
+            _to_dtype_pointer(a_tile_ptr[].group_sums),
+            b_q_mins_ptr,
+            _to_dtype_pointer(b_tile_ptr[].base_mins),
+            c_float,
+        )
 
         var a_scales_ptr = _to_dtype_pointer(a_tile_ptr[].scales)
 

@@ -389,6 +389,9 @@ struct GemmContext[qgemm: QuantizedGemm]:
 def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int):
     var ctx = GemmContext[qgemm](M, N, K)
 
+    if K % _block_QK_K.quantized_k != 0:
+        raise ("K must be a multiple of 256")
+
     reference_gemm[qgemm](ctx.a, ctx.b, ctx.c_golden)
     qgemm.kernel(ctx.a, ctx.b_packed, ctx.c)
 
