@@ -6,11 +6,13 @@
 """This module provides abstractions for using Tensor Cores do to arithmetic and matrix operations
 """
 
-from gpu import WARP_SIZE, lane_id
-from gpu.mma import mma
+from gpu import WARP_SIZE, lane_id, ThreadIdx
+from gpu.mma import mma, ld_matrix
+from gpu.memory import AddressSpace
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor
+from layout.layout_tensor import LayoutTensor, _swizzle_signature
+from layout.swizzle import *
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
@@ -25,7 +27,12 @@ alias shape_16x8x16 = StaticIntTuple[3](16, 8, 16)
 alias shape_8x8x4 = StaticIntTuple[3](8, 8, 4)
 
 
-struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
+struct TensorCore[
+    out_type: DType,
+    in_type: DType,
+    shape: StaticIntTuple[3],
+    transpose_b: Bool = False,
+]:
 
     """
     Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
@@ -61,6 +68,9 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
         IntTuple(IntTuple(4, 8), IntTuple(2, 2, 2)),
         IntTuple(IntTuple(31, 1), IntTuple(16, 8, 128)),
     )
+
+    alias supported_fp32 = in_type == DType.float32 and shape == shape_16x8x8
+    alias supported_half = in_type.is_half_float() and shape == shape_16x8x16
 
     fn __init__(inout self):
         pass
@@ -294,6 +304,99 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
         var d = SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]()
         mma(d, a, b, c)
         return d
+
+    @always_inline
+    fn load_a[
+        *,
+        type0: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        masked0: Bool,
+        type1: DType,
+        layout1: Layout,
+        element_layout1: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type0,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0,
+            masked=masked0,
+        ],
+        fragments: LayoutTensor[type1, layout1, element_layout=element_layout1],
+        offset: Int = 0,
+    ):
+        constrained[self.supported_fp32 or self.supported_half]()
+
+        alias frag_type = fragments.element_type
+        alias num_frags = fragments.dim[0]()
+
+        @parameter
+        for i in range(num_frags):
+            var mma_tile = warp_tile.tile[shape[0], warp_tile.dim[1]()](i, 0)
+            fragments[i, 0] = rebind[frag_type](
+                _load_matrix_frag(mma_tile, offset)
+            )
+
+
+# fmt: off
+@always_inline
+fn _load_matrix_frag[
+    # Refactor the three parameters with ComposedLayout
+    # swizzle: OptionalReg[_swizzle_signature] = None,
+    transposed: Bool = False,
+    *,
+    # work around parameter deduction
+    __type: DType,
+    __layout: Layout,
+    # __element_layout: Layout,
+    # __index_type: DType,
+    __masked: Bool,
+    # Nvidia GPU register is 4B.
+    __register_width: Int = 4,
+    __num_matrices: Int = 4,
+    __output_width: Int =__num_matrices * __register_width // sizeof[__type]()
+](
+    mma_tile: LayoutTensor[
+        __type,
+        __layout,
+        address_space = AddressSpace.SHARED,
+        # element_layout=__element_layout,
+        # index_type=__index_type,
+        masked=__masked,
+    ],
+    offset: Int,
+) -> SIMD[mma_tile.dtype, __output_width]:
+# fmt: on
+
+    alias simd_size = simdwidthof[__type]()
+    alias row_size = mma_tile.dim[1]()
+
+    var lane = lane_id()
+
+    # For fp32, A is 16x8. After vectorization, it becomes 16x2 vectors.
+    # Each ld_matrix instruction loads 8 vectors in the same column and load
+    # 4 matrices.
+    alias ldmatrix_threadmap = Layout.col_major(16, 2)
+
+    # ldmatrix is essentially simd load.
+    # alias mma_tile_simd_layout = mma_tile.vectorize[1, simd_size]().layout
+    var mma_tile_vectorized = mma_tile.vectorize[1, simd_size]()
+    alias mma_tile_simd_layout = Layout.row_major(
+        mma_tile_vectorized.layout.shape
+    )
+
+    alias ldmatrix_layout = ComposedLayout(
+        composition(mma_tile_simd_layout, ldmatrix_threadmap),
+        make_ldmatrix_swizzleex[__type, row_size](),
+    )
+
+    var lane_offset = eval_composed[ldmatrix_layout](int(lane), offset) * simd_size
+
+    return ld_matrix[__type, __output_width, transposed](
+        mma_tile.ptr + lane_offset
+    )
 
 
 @always_inline

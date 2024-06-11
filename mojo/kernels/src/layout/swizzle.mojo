@@ -197,6 +197,8 @@
 
 
 from .layout import LayoutTrait
+from .int_tuple import flatten
+from gpu.shuffle import _static_log2
 
 # ===-----------------------------------------------------------------------===#
 # Helpers                                                                      #
@@ -286,12 +288,12 @@ struct SwizzleEx(LayoutTrait, Stringable, Formattable):
     var zzz_mask: Int
 
     @always_inline
-    fn __init__(inout self, bits: Int, base: Int, shift: Int) raises:
-        if bits < 0 or base < 0:
-            raise Error("Require non-negative mask bits and base")
+    fn __init__(inout self, bits: Int, base: Int, shift: Int):
+        # if bits < 0 or base < 0:
+        #     raise Error("Require non-negative mask bits and base")
 
-        if abs(shift) < bits:
-            raise Error("Require shift greater than mask bits")
+        # if abs(shift) < bits:
+        #     raise Error("Require shift greater than mask bits")
 
         self.bits = bits
         self.base = base
@@ -349,34 +351,77 @@ struct SwizzleEx(LayoutTrait, Stringable, Formattable):
         return String.format_sequence(self)
 
 
+@always_inline
+fn make_ldmatrix_swizzleex[type: DType, row_size: Int]() -> SwizzleEx:
+    """Make a swizzle to avoid bank conflict for ldmatrix."""
+
+    # For Nvidia GPU, there are 32 4B banks.
+    alias bytes_32_banks = 128
+    alias bytes_row = row_size * sizeof[type]()
+
+    constrained[
+        bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0,
+        (
+            "Should choose row sizes to be multiple of 32 banks or multiple"
+            " rows fit in 32 banks."
+        ),
+    ]()
+
+    # `ldmatrix` loads 8x4 matrix, where each row is 4x4B = 16B vector and is
+    # handled by one 16B load. The stride between two adjacent vectors is `row_size`.
+    # The number of conflicts (aka conflict ways) is total number of banks the
+    # 8x4 matrix spans divided by 32.
+    # E.g fp32 and row_size = 16, row 0, 2, 4, 6 in `ld_matrix` conflict.
+    alias conflict_ways = min(
+        8 * row_size * sizeof[type]() // bytes_32_banks, 8
+    )
+    alias bits = _static_log2[conflict_ways]()
+
+    # One swizzle bit pattern e.g. ^01 is applied to the same row if the row
+    # is longer than 32 banks or multiple rows that fits in 32 banks.
+    alias simd_size = simdwidthof[type]()
+    alias shifts = _static_log2[max(row_size // simd_size, 8)]()
+
+    return SwizzleEx(bits, 0, shifts)
+
+
 # ===-----------------------------------------------------------------------===#
 # Composed Layout                                                              #
 # ===-----------------------------------------------------------------------===#
 
 
 struct ComposedLayout[
-    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset_val: Int
+    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: OptionalReg[Int] = 0
 ](LayoutTrait):
     var layout_a: LayoutA
     var layout_b: LayoutB
-    var offset: Int
 
     @always_inline
     fn __init__(inout self, layout_a: LayoutA, layout_b: LayoutB):
-        constrained[offset_val >= 0, "Requires non-negative offset value"]()
+        constrained[
+            not offset or (offset and offset.value() >= 0),
+            "Requires non-negative offset if present",
+        ]()
         self.layout_a = layout_a
         self.layout_b = layout_b
-        self.offset = offset_val
 
     @always_inline
     fn __copyinit__(inout self, other: Self):
         self.layout_a = other.layout_a
         self.layout_b = other.layout_b
-        self.offset = other.offset
 
     @always_inline
     fn __call__(self, idx: IntTuple) -> Int:
-        return self.layout_b(self.offset + self.layout_a(idx))
+        var offset_val = offset.value() if offset else 0
+        return self.layout_b(offset_val + self.layout_a(idx))
+
+    @always_inline
+    fn __call__(self, idx: IntTuple, offset_val: Int) -> Int:
+        constrained[
+            not offset,
+            "Offset has been statically set and should not take runtime value.",
+        ]()
+        return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
     fn size(self) -> Int:
@@ -390,3 +435,54 @@ struct ComposedLayout[
     @always_inline
     fn has_shape() -> Bool:
         return LayoutA.has_shape() or LayoutB.has_shape()
+
+
+@always_inline
+fn eval_composed[
+    # Need to pass concrete types for LayoutTrait otherwise compose_layout's
+    # type is not complete. However, this limits the usage to a single comb.
+    composed_layout: ComposedLayout[Layout, SwizzleEx]
+](idx: Int, offset: Int = 0) -> Int:
+    var a_idx = idx
+    var b_idx = 0
+
+    # layout or composed layout
+    @parameter
+    if composed_layout.layout_a.has_shape():
+        alias shape_a = flatten(composed_layout.layout_a.shape)
+        alias stride_a = flatten(composed_layout.layout_a.stride)
+
+        @parameter
+        for i in range(len(stride_a)):
+            # var coor_i = a_idx % shape_a[i].value()
+            # b_idx += coor_i * stride_a[i].value()
+            # a_idx = a_idx // shape_a[i].value()
+            alias shape_a_i = shape_a[i].value()
+            alias stride_a_i = stride_a[i].value()
+            var coord_i = a_idx % shape_a_i
+            b_idx += coord_i * stride_a_i
+            a_idx = a_idx // shape_a_i
+    # swizzle
+    else:
+        b_idx = composed_layout.layout_a(b_idx)
+
+    b_idx += offset
+
+    # !!! The following check must be commented out becasue layout_b is limited
+    # to be a swizzle, which doesn't have shape or stride.
+    # # layout or composed layout
+    # @parameter
+    # if composed_layout.layout_b.has_shape():
+    #     var res = 0
+
+    #     alias shape_b = flatten(composed_layout.layout_b.shape)
+    #     alias stride_b = flatten(composed_layout.layout_b.stride)
+
+    #     @parameter
+    #     for i in range(len(stride_b)):
+    #         var coor_i = b_idx % shape_b[i].value()
+    #         res += coor_i * stride_b[i].value()
+    #         b_idx = b_idx // shape_b[i].value()
+    # # swizzle
+    # else:
+    return composed_layout.layout_b(b_idx)
