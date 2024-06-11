@@ -351,6 +351,36 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 }
 
 //===----------------------------------------------------------------------===//
+// StackAllocLifetimeStartOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verifyLifetimeMarker(Operation *op) {
+  for (auto [idx, value] : llvm::enumerate(op->getOperands())) {
+    if (auto alloc = value.getDefiningOp<StackAllocationOp>()) {
+      continue;
+    }
+    InFlightDiagnostic diag = op->emitOpError()
+                              << "operand #" << idx
+                              << " is not defined by a stack allocation op";
+    diag.attachNote(value.getLoc()) << "value is defined here";
+    return diag;
+  }
+  return success();
+}
+
+LogicalResult StackAllocLifetimeStartOp::verify() {
+  return verifyLifetimeMarker(*this);
+}
+
+//===----------------------------------------------------------------------===//
+// StackAllocLifetimeEndOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult StackAllocLifetimeEndOp::verify() {
+  return verifyLifetimeMarker(*this);
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===---------------------------------------------------------------------===//
 

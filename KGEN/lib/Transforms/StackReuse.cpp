@@ -212,6 +212,8 @@ runAnalysis(Region &top, PassInfo &pass,
           continue;
         }
         // Any other using operation conservatively is an escape.
+        // TODO: Properly handle lifetime markers in this pass. They change how
+        // liveness is defined for stack allocations.
         return WalkResult::advance();
       }
     }
