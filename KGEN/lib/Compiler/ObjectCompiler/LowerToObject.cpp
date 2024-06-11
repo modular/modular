@@ -331,7 +331,7 @@ static LLCL::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     return output;
   };
 
-  auto onCacheHit = [&runtime](BufferRef buf) {
+  auto onCacheHit = [&](BufferRef buf) {
 #ifdef MODULAR_ENABLE_TELEMETRY
     Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
         .recordCacheHit("compileOptimizedLLVMModuleToObject");
