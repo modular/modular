@@ -40,7 +40,12 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
+from layout.tensor_core import (
+    get_accum_type,
+    get_fragment_size,
+    get_mma_shape,
+    TensorCore,
+)
 from LinAlg.MatmulGPU import matmul_kernel_naive
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory.unsafe import DTypePointer
@@ -326,17 +331,9 @@ fn multistage_gemm[
         b_wtile_coord0, b_wtile_coord1
     )
 
-    # TODO: possbile to not rebind?
-    @parameter
-    for m_mma in range(num_m_mmas):
-        var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
-        a_reg_tiles[0][m_mma, 0] = rebind[a_frag_type](
-            ld_mma[
-                4,
-                Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                swizzle=xor_2bits_per8T,
-            ](a_mma_tile, 0)
-        )
+    var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
+
+    mma_op.load_a(a_warp_tile, a_reg_tiles[0])
 
     @parameter
     if transpose_b:
@@ -425,19 +422,11 @@ fn multistage_gemm[
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-                var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
-                a_reg_tiles[next][m_mma, 0] = rebind[a_frag_type](
-                    ld_mma[
-                        4,
-                        Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](
-                        a_mma_tile,
-                        (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
-                    )
-                )
+            mma_op.load_a(
+                a_warp_tile,
+                a_reg_tiles[next],
+                (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
+            )
 
             @parameter
             if transpose_b:
