@@ -53,23 +53,23 @@ using namespace KGEN;
 ErrorOr<std::unique_ptr<ObjectCompiler>>
 ObjectCompiler::create(StringRef basePath, CompilationOptions options,
                        bool isJIT, MLIRContext &context,
-                       PassManagerConfigOptions pmOptions, bool isSearch) {
+                       PassManagerConfigOptions pmOptions) {
   auto transformCache = Cache::getLocalDefaultBackendChain(
       std::filesystem::path(basePath.str()) / "transform", KGEN_VERSION_STRING);
   if (failed(transformCache))
     return transformCache.takeError();
   return std::unique_ptr<ObjectCompiler>(
       new ObjectCompiler(std::move(*transformCache), std::move(options), isJIT,
-                         isSearch, context, std::move(pmOptions)));
+                         context, std::move(pmOptions)));
 }
 
 ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
                                CompilationOptions options, bool isJIT,
-                               bool isSearch, MLIRContext &context,
+                               MLIRContext &context,
                                PassManagerConfigOptions pmOptions)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      options(std::move(options)), isJIT(isJIT), isSearch(isSearch),
+      options(std::move(options)), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context) {}
 
 //===----------------------------------------------------------------------===//

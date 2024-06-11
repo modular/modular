@@ -41,8 +41,7 @@ public:
   static ErrorOr<std::unique_ptr<ObjectCompiler>>
   create(StringRef basePath, CompilationOptions options, bool isJIT,
          MLIRContext &context,
-         PassManagerConfigOptions pmOptions = PassManagerConfigOptions(),
-         bool isSearch = false);
+         PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
@@ -93,9 +92,6 @@ public:
     return transformCache.copy();
   }
 
-  /// Configure the object compiler to be used for search.
-  void setForSearch(bool useForSearch) { isSearch = useForSearch; }
-
   /// Get whether compilation is for JIT.
   bool getIsJIT() const { return isJIT; }
 
@@ -103,7 +99,7 @@ private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(
       RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
-      bool isJIT, bool isSearch, MLIRContext &context,
+      bool isJIT, MLIRContext &context,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
@@ -134,10 +130,6 @@ private:
   /// where we aren't going to immediately execute it, we need to be able to
   /// change the codegen mode.
   bool isJIT;
-
-  /// When the elaborator performs search, the IR coming reaching the
-  /// ObjectCompilerLayer is post-elaboration IR.
-  bool isSearch;
 
   /// PassManager configuration options.
   PassManagerConfigOptions pmOptions;

@@ -114,11 +114,6 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (configPM)
     return configPM.takeError();
 
-  // We only need to run the post-elaboration passes if we are searching. In
-  // non-search mode, we know the passes have already been run.
-  if (isSearch)
-    buildPostElaborationPipeline(mgr, options);
-
   adaptDebugEmissionKind(module, options.targetTriple,
                          options.getDIEmissionKind());
 

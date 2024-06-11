@@ -513,7 +513,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
 ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
     mlir::MLIRContext &context, const CompilationOptions &compilationOptions,
     ExecutionEngineOptions executionEngineOptions, bool isJIT,
-    PassManagerConfigOptions pmOptions, bool isSearch) {
+    PassManagerConfigOptions pmOptions) {
 
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
@@ -527,9 +527,8 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // Add the object compiler layer.
-  auto compiler =
-      ObjectCompiler::create(".mojo_cache", compilationOptions, isJIT, context,
-                             std::move(pmOptions), isSearch);
+  auto compiler = ObjectCompiler::create(".mojo_cache", compilationOptions,
+                                         isJIT, context, std::move(pmOptions));
   if (failed(compiler))
     return compiler.takeError();
 
