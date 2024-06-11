@@ -618,6 +618,28 @@ fn matmul_neon_dotprod[
 
 
 @always_inline
+fn _apply_base_scales[
+    tile_m: Int, tile_n: Int, simd_width: Int
+](
+    b_base_scales_ptr: DTypePointer[DType.float16],
+    c_int32_block: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+):
+    # Convert to floating point and apply the block scale of matrix B.
+    @parameter
+    for col in range(tile_n):
+        var b_scale = SIMD[size=simd_width].load(
+            b_base_scales_ptr + col * simd_width
+        ).cast[DType.float32]()
+
+        @parameter
+        for row in range(tile_m):
+            c_float[row, col] = (
+                c_int32_block[row, col].cast[DType.float32]() * b_scale
+            )
+
+
+@always_inline
 fn _apply_zero_point_correction[
     group_count: Int, tile_m: Int, tile_n: Int, simd_width: Int
 ](
@@ -714,6 +736,38 @@ fn _apply_zero_point_correction[
             )
 
 
+@always_inline
+fn _apply_a_scales[
+    tile_m: Int, tile_n: Int, simd_width: Int
+](
+    a_scales_ptr: DTypePointer[DType.float32],
+    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+):
+    @parameter
+    if has_neon():
+        # NEON supports a multiply instruction that can broadcast from a
+        # vector element, so help the compiler produce that by doing a
+        # vector load.
+        var a_scale = SIMD[size=tile_m].load(a_scales_ptr)
+
+        @parameter
+        for row in range(tile_m):
+
+            @parameter
+            for col in range(tile_n):
+                c_float[row, col] *= a_scale[row]
+
+    else:
+
+        @parameter
+        for row in range(tile_m):
+            var a_scale = a_scales_ptr[row]
+
+            @parameter
+            for col in range(tile_n):
+                c_float[row, col] *= a_scale
+
+
 fn _matmul_Q4_K[
     tile_n: Int
 ](
@@ -799,20 +853,9 @@ fn _matmul_Q4_K[
 
         var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
 
-        # Convert to floating point and apply the block scale of matrix B.
-        @parameter
-        for col in range(tile_n):
-            var b_scale = SIMD[size=simd_width].load(
-                _to_dtype_pointer(b_tile_ptr[].base_scales).offset(
-                    col * simd_width
-                )
-            ).cast[DType.float32]()
-
-            @parameter
-            for row in range(tile_m):
-                c_float[row, col] = (
-                    c_int32_block[row, col].cast[DType.float32]() * b_scale
-                )
+        _apply_base_scales(
+            _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+        )
 
         _apply_zero_point_correction[group_count](
             _to_dtype_pointer(a_tile_ptr[].group_sums),
@@ -821,32 +864,7 @@ fn _matmul_Q4_K[
             c_float,
         )
 
-        var a_scales_ptr = _to_dtype_pointer(a_tile_ptr[].scales)
-
-        # Apply the block scale of matrix A.
-        @parameter
-        if has_neon():
-            # NEON supports a multiply instruction that can broadcast from a
-            # vector element, so help the compiler produce that by doing a
-            # vector load.
-            var a_scale = SIMD[size=tile_m].load(a_scales_ptr)
-
-            @parameter
-            for row in range(tile_m):
-
-                @parameter
-                for col in range(tile_n):
-                    c_float[row, col] *= a_scale[row]
-
-        else:
-
-            @parameter
-            for row in range(tile_m):
-                var a_scale = a_scales_ptr[row]
-
-                @parameter
-                for col in range(tile_n):
-                    c_float[row, col] *= a_scale
+        _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
 
         var c_float2 = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
 
@@ -1027,49 +1045,11 @@ fn _matmul_Q6_K[
 
         var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
 
-        # Convert to floating point and apply the block scale of matrix B.
-        @parameter
-        for col in range(tile_n):
-            var b_scale = SIMD[size=simd_width].load(
-                _to_dtype_pointer(b_tile_ptr[].base_scales).offset(
-                    col * simd_width
-                )
-            ).cast[DType.float32]()
+        _apply_base_scales(
+            _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+        )
 
-            @parameter
-            for row in range(tile_m):
-                c_float[row, col] = (
-                    c_int32_block[row, col].cast[DType.float32]() * b_scale
-                )
-
-        c_int32_block.init()
-
-        var a_scales_ptr = _to_dtype_pointer(a_tile_ptr[].scales)
-
-        # Apply the block scale of matrix A.
-        @parameter
-        if has_neon():
-            # NEON supports a multiply instruction that can broadcast from a
-            # vector element, so help the compiler produce that by doing a
-            # vector load.
-            var a_scale = SIMD[size=tile_m].load(a_scales_ptr)
-
-            @parameter
-            for row in range(tile_m):
-
-                @parameter
-                for col in range(tile_n):
-                    c_float[row, col] *= a_scale[row]
-
-        else:
-
-            @parameter
-            for row in range(tile_m):
-                var a_scale = a_scales_ptr[row]
-
-                @parameter
-                for col in range(tile_n):
-                    c_float[row, col] *= a_scale
+        _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
 
         var c_float2 = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
 
