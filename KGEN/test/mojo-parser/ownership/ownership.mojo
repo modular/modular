@@ -892,8 +892,10 @@ fn use(x: MemExample): pass
 
 # CHECK-LABEL: lit.func @"destroyWholeValuesIfLastReferenceWasInLoop
 fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
-                                              i:Int,
-                                              owned memPair: MemPair) raises:
+                                              owned memPair: MemPair):
+   # Part of mempair is used in the loop, but this keeps the entire thing
+   # alive during the loop.  The solution here is to destroy memPair immediately
+   # before the implicit break out of the loop
    while cond:
      # CHECK:      hlcf.if %cond {
      # CHECK-NEXT:   hlcf.yield
