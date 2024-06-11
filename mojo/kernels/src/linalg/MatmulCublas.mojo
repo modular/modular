@@ -41,6 +41,8 @@ fn cublas_matmul(
     var alpha = Scalar[DType.float32](1.0)
     var beta = Scalar[DType.float32](0.0)
 
+    var compute_type = ComputeType.COMPUTE_32F_FAST_TF32 if a.type == DType.float32 else ComputeType.COMPUTE_32F
+
     # Cublas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
     # can swap A, B and output a NxM column-major matrix, which is same as
@@ -64,7 +66,7 @@ fn cublas_matmul(
             Pointer.address_of(alpha).bitcast[NoneType](),
             b.data.address.bitcast[NoneType](),
             _convert_to_cublas_datatype[b.type](),
-            N,
+            K if transpose_b else N,
             a.data.address.bitcast[NoneType](),
             _convert_to_cublas_datatype[a.type](),
             K,
@@ -72,7 +74,7 @@ fn cublas_matmul(
             c.data.address.bitcast[NoneType](),
             _convert_to_cublas_datatype[c.type](),
             N,
-            ComputeType.COMPUTE_32F,
+            compute_type,
             Algorithm.DEFAULT,
         )
     # Default column-major.
@@ -90,11 +92,11 @@ fn cublas_matmul(
             M,
             b.data.address.bitcast[NoneType](),
             _convert_to_cublas_datatype[b.type](),
-            K,
+            N if transpose_b else K,
             Pointer.address_of(beta).bitcast[NoneType](),
             c.data.address.bitcast[NoneType](),
             _convert_to_cublas_datatype[c.type](),
             M,
-            ComputeType.COMPUTE_32F,
+            compute_type,
             Algorithm.DEFAULT,
         )
