@@ -99,8 +99,7 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
         state.fork([this, &state, caller] { doWork(caller, state); });
 
     for (NodeT *node : scc->nodes) {
-      state.fork(
-          [this, func = node->func] { ParentT::getDerived().doRewrite(func); });
+      state.fork([this, node] { ParentT::getDerived().doRewrite(node); });
     }
   }
 

@@ -965,7 +965,7 @@ def AutomaticInline: Pass<"automatic-inline", "ModuleOp"> {
 // IPDF
 //===----------------------------------------------------------------------===//
 
-def IPDF : Pass<"ipdf"> {
+def IPDF : Pass<"ipdf", "ModuleOp"> {
   let summary = "interprocedural dataflow analysis and optimization";
 }
 

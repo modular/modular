@@ -68,8 +68,7 @@ private:
 /// A basic callgraph node, containing state for this dataflow analysis across
 /// the callgraph.
 struct CallGraphNode : public SCCNode<CallGraphNode, FuncOp, CallLikeOp> {
-  CallGraphNode(FuncOp func) : SCCNode(func) {}
-  CallGraphNode(CallGraphNode &&other) : SCCNode(std::move(other)) {}
+  using SCCNode::SCCNode;
 
   /// The current set of required promises for the function.
   llvm::MapVector<StringAttr, std::pair<Type, unsigned>> requiredPromises;
@@ -101,7 +100,7 @@ struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
   /// Run an iteration of the analysis and transformation on a single node.
   /// Return true if anything changed.
   bool doAnalysis(CallGraphNode *node);
-  void doRewrite(FuncOp func);
+  void doRewrite(const CallGraphNode *node);
 
   const SymbolTable &symtab;
   TargetInfoAttr target;
@@ -186,7 +185,8 @@ static void resolveCaptureListExpand(CaptureListExpandOp op) {
   op.erase();
 }
 
-void CallGraph::doRewrite(FuncOp func) {
+void CallGraph::doRewrite(const CallGraphNode *node) {
+  FuncOp func = node->func;
   func.walk([this](Operation *op) {
     if (isa<POP::CompilerGlobalStoreOp>(op))
       op->erase();
