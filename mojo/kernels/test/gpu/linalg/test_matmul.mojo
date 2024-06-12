@@ -135,10 +135,10 @@ fn run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host.data)
     ctx.enqueue_copy_to_device(b_device, b_host.data)
 
-    var func = ctx.compile_function[matmul]()
+    var func_matmul = ctx.compile_function[matmul]()
 
     ctx.enqueue_function(
-        func,
+        func_matmul,
         a_device,
         b_device,
         c_device,
@@ -163,6 +163,8 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = a_host
     _ = b_host
     _ = c_host
+
+    _ = func_matmul^
 
 
 fn test_gemm_transpose_b[
@@ -236,6 +238,8 @@ fn test_gemm_transpose_b[
     b_host_mem.free()
     c_host_mem.free()
     c_host_ref_mem.free()
+
+    _ = func_naive^
 
 
 fn run_matmul_from_mogg_interface[
