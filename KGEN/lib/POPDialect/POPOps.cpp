@@ -356,6 +356,15 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
   build(b, state, result, b.getIndexAttr(count), alignment, addressSpace);
 }
 
+void StackAllocationOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  // If the op is live by default, then this op allocates its result pointer.
+  // Otherwise, it's pure -- it defines the stack allocation but doesn't mark it
+  // live or do anything to it.
+  if (!getMarkedLifetimes())
+    effects.emplace_back(mlir::MemoryEffects::Allocate::get(), getResult());
+}
+
 //===----------------------------------------------------------------------===//
 // StackAllocLifetimeStartOp
 //===----------------------------------------------------------------------===//
@@ -386,12 +395,26 @@ LogicalResult StackAllocLifetimeStartOp::verify() {
   return verifyLifetimeMarker(*this);
 }
 
+void StackAllocLifetimeStartOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  // This op allocates all its operands.
+  for (Value value : getValues())
+    effects.emplace_back(mlir::MemoryEffects::Allocate::get(), value);
+}
+
 //===----------------------------------------------------------------------===//
 // StackAllocLifetimeEndOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult StackAllocLifetimeEndOp::verify() {
   return verifyLifetimeMarker(*this);
+}
+
+void StackAllocLifetimeEndOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  // This op frees all its operands.
+  for (Value value : getValues())
+    effects.emplace_back(mlir::MemoryEffects::Free::get(), value);
 }
 
 //===----------------------------------------------------------------------===//
