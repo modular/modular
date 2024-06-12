@@ -10,7 +10,7 @@
 from max.graph import Graph, TensorType, Symbol, Type
 from tensor import TensorSpec
 from driver import compile_graph, cpu_device, CPUDescriptor, AnyMemory, Tensor
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, assert_raises
 import tensor
 
 
@@ -129,6 +129,12 @@ def test_mnist():
         _assert_values(output[])
 
 
+def test_error():
+    with assert_raises(contains="No such file or directory"):
+        _ = compile_graph("invalid/path", cpu_device())
+
+
 def main():
     test_graph_execution()
     test_mnist()
+    test_error()
