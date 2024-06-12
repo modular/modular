@@ -1275,3 +1275,43 @@ kgen.func @multiple_lifetimes_frame(%arg1: index, %arg2: i1) async -> index {
 }
 
 }
+
+// -----
+
+// COM: Lower ResumeOp
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @coroutine1(%arg0: i1) async -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg0: i1) async -> index {
+  hlcf.if %arg0 {
+    %idx1 = index.constant 1
+    kgen.return %idx1 : index
+  } else {
+    hlcf.yield
+  }
+  %true = index.bool.constant true
+  %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
+  // CHECK:      [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME1:]]]
+  // CHECK-NEXT:   [[TYPED_RESUME:%.*]] = pop.pointer.bitcast [[RESUME_SLOT]] : !kgen.pointer<(!kgen.pointer<none>) -> ()> to !kgen.pointer<(!kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>>) -> ()>
+  // CHECK-NEXT:   [[RESUME:%.*]] = pop.load [[TYPED_RESUME]]
+  // CHECK-NEXT:   kgen.call_indirect [[RESUME]]([[CORO]]) : (!kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>>) -> ()
+  // CHECK-NEXT:   co.suspend.end
+  // CHECK-NEXT: }
+  co.suspend (%hdl) {
+    %fn = co.resume %coro : <(!co.routine) -> ()>
+    kgen.call_indirect %fn(%coro) : (!co.routine) -> ()
+    co.suspend.end
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}
+

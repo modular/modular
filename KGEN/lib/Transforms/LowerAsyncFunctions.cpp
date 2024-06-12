@@ -968,6 +968,16 @@ void LowerAsyncFunctionsPass::runOnOperation() {
         setByRefArgument(result, AsyncContinuationField::ResultSlot);
       }
       op->erase();
+    } else if (auto resumeOp = dyn_cast<ResumeOp>(op)) {
+      rewriter.setInsertionPoint(op);
+      Value continuation = resumeOp.getOperand();
+      Value slot = rewriter.create<StructGEPOp>(op->getLoc(), continuation,
+                                                ResumeFunction);
+      Value typed = rewriter.create<PointerBitcastOp>(
+          op->getLoc(), PointerType::get(resumeOp.getType()), slot);
+      Value load = rewriter.create<LoadOp>(op->getLoc(), typed);
+      resumeOp.replaceAllUsesWith(load);
+      resumeOp->erase();
     }
   });
 }
