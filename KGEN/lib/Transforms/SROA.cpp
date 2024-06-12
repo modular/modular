@@ -109,10 +109,11 @@ struct Replacer {
     } else if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user)) {
       llvm::BitVector eraseIndices(user->getNumOperands());
       for (auto [idx, value] : llvm::enumerate(user->getOperands())) {
-        if (value == alloc)
-          eraseIndices.set(idx);
+        if (value == alloc) {
+          user->eraseOperand(idx);
+          break;
+        }
       }
-      user->eraseOperands(eraseIndices);
       user->insertOperands(user->getNumOperands(), newAllocas);
     } else {
       derived->replaceUserImpl(user, toDelete);

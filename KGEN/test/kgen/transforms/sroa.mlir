@@ -441,8 +441,8 @@ kgen.func @lifetime_markers() {
   // CHECK-NEXT: [[F:%.*]] = pop.stack_allocation 1 x f32
   %1 = pop.stack_allocation 1 x f32 marked
   // CHECK-NEXT: lifetime.start([[F]], [[S0]], [[S1]])
-  pop.stack_alloc.lifetime.start(%1, %0, %0) : !kgen.pointer<f32>, !kgen.pointer<struct<(index, index)>>, !kgen.pointer<struct<(index, index)>>
-  // CHECK-NEXT: lifetime.end([[F]], [[S0]], [[S1]], [[S0]], [[S1]])
-  pop.stack_alloc.lifetime.end(%0, %1, %0) : !kgen.pointer<struct<(index, index)>>, !kgen.pointer<f32>, !kgen.pointer<struct<(index, index)>>
+  pop.stack_alloc.lifetime.start(%1, %0) : !kgen.pointer<f32>, !kgen.pointer<struct<(index, index)>>
+  // CHECK-NEXT: lifetime.end([[F]], [[S0]], [[S1]])
+  pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<struct<(index, index)>>, !kgen.pointer<f32>
   kgen.return
 }
