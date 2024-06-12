@@ -98,6 +98,9 @@ public:
     return instrumentLevel == Level::USER;
   }
 
+  // Gets the machine id attribute.
+  StringRef getMachineId() const { return machineId; }
+
 #ifdef MODULAR_ENABLE_TELEMETRY
   bool initUserMetricsReader(
       std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader);
@@ -281,6 +284,7 @@ public:
 private:
   /// Configured telemetry level for this telemetry context.
   Level telemetryLevel;
+  StringRef machineId;
 #ifdef MODULAR_ENABLE_TELEMETRY
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> userMetricsProvider;
