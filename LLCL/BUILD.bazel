@@ -60,7 +60,10 @@ modular_cc_library(
         ":Support",
         "//Support:ADT",
         "//Support:Profiling",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["@gperftools//:tcmalloc"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_shared_library(
