@@ -1018,8 +1018,9 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-def POP_StackAllocationOp : POPOp<"stack_allocation",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def POP_StackAllocationOp : POPOp<"stack_allocation", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "scoped stack allocation operation";
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped
@@ -1095,7 +1096,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
     OptionalAttr<AttrOfType<Index>>:$address_space,
     UnitAttr:$markedLifetimes
   );
-  let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
+  let results = (outs PointerType:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
@@ -1121,7 +1122,8 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 // StackAllocLifetimeStartOp
 //===----------------------------------------------------------------------===//
 
-def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start"> {
+def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start",
+    [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "Marks the start of stack allocated values lifetimes";
   let description = [{
     The `pop.stack_alloc.lifetime.start` operation marks the beginning of
@@ -1146,7 +1148,8 @@ def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start"> {
 // StackAllocLifetimeEndOp
 //===----------------------------------------------------------------------===//
 
-def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end"> {
+def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end",
+    [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "Marks the end of stack allocated values lifetimes";
   let description = [{
     The `pop.stack_alloc.lifetime.end` operation marks the end of the

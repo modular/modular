@@ -1028,3 +1028,11 @@ kgen.func @select_of_select(%arg0: i1, %arg1: index, %arg2: index, %arg3: index)
   // CHECK-NEXT: return %0, %1
   kgen.return %1, %3 : index, index
 }
+
+// CHECK-LABEL: kgen.func @lifetime_markers
+kgen.func @lifetime_markers() {
+  pop.stack_alloc.lifetime.start()
+  pop.stack_alloc.lifetime.end()
+  // CHECK-NEXT: return
+  kgen.return
+}
