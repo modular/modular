@@ -345,6 +345,12 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 }
 
 void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
+                              int64_t count, bool markedLifetimes) {
+  build(b, state, result, b.getIndexAttr(count), /*alignment=*/TypedAttr(),
+        /*addressSpace=*/TypedAttr(), markedLifetimes);
+}
+
+void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
                               int64_t count, TypedAttr alignment,
                               unsigned addressSpace) {
   build(b, state, result, b.getIndexAttr(count), alignment, addressSpace);
@@ -356,14 +362,22 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 
 static LogicalResult verifyLifetimeMarker(Operation *op) {
   for (auto [idx, value] : llvm::enumerate(op->getOperands())) {
-    if (auto alloc = value.getDefiningOp<StackAllocationOp>()) {
-      continue;
+    auto alloc = value.getDefiningOp<StackAllocationOp>();
+    if (!alloc) {
+      InFlightDiagnostic diag = op->emitOpError()
+                                << "operand #" << idx
+                                << " is not defined by a stack allocation op";
+      diag.attachNote(value.getLoc()) << "value is defined here";
+      return diag;
     }
-    InFlightDiagnostic diag = op->emitOpError()
-                              << "operand #" << idx
-                              << " is not defined by a stack allocation op";
-    diag.attachNote(value.getLoc()) << "value is defined here";
-    return diag;
+    if (!alloc.getMarkedLifetimes()) {
+      InFlightDiagnostic diag =
+          op->emitOpError()
+          << "operand #" << idx
+          << " is not defined by a stack allocation with marked lifetimes";
+      diag.attachNote(alloc.getLoc()) << "stack allocation defined here";
+      return diag;
+    }
   }
   return success();
 }
