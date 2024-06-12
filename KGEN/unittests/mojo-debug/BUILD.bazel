@@ -46,6 +46,7 @@ modular_cc_test(
     # __jit_debug_descriptor exists in liblldb and libMojoLLDB
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

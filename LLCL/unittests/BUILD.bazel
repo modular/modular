@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "modular_cc_test")
 modular_cc_test(
     name = "AsyncValueTest",
     srcs = ["AsyncValueTest.cpp"],
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
@@ -29,6 +33,10 @@ modular_cc_test(
 modular_cc_test(
     name = "RuntimeTest",
     srcs = ["RuntimeTest.cpp"],
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
