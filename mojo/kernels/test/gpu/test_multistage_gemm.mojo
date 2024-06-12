@@ -106,59 +106,6 @@ fn identity[type: DType](tid: Scalar[type]) -> Scalar[type]:
 
 
 @always_inline
-fn ld_mma[
-    num_matrices: Int,
-    # Refactor the three parameters with ComposedLayout
-    thread_layout: Layout,
-    swizzle: OptionalReg[_swizzle_signature] = None,
-    transposed: Bool = False,
-    *,
-    # work around parameter deduction
-    __layout: Layout,
-    __element_layout: Layout,
-    __index_type: DType,
-    __masked: Bool,
-    __dtype: DType,
-    # Nvidia GPU register is 4B.
-    __register_width: Int = 4,
-    __output_width: Int = num_matrices * __register_width // sizeof[__dtype](),
-](
-    mat: LayoutTensor[
-        __dtype,
-        __layout,
-        address_space = AddressSpace.SHARED,
-        element_layout=__element_layout,
-        index_type=__index_type,
-        masked=__masked,
-    ],
-    offset: Int,
-) -> SIMD[mat.dtype, __output_width]:
-    constrained[num_matrices == 4, "Only support loading 4 matrices."]()
-
-    # TODO: Either optimize signed int division or restrict this to uint32.
-    var lane_id = UInt32(ThreadIdx.x()) % WARP_SIZE
-
-    alias stride = thread_layout.stride[0].value()
-    alias simd_size = simdwidthof[mat.dtype]()
-
-    # TODO: the index calculation can be refactored when layout(i) works on GPU.
-    # var row_offset = thread_layout(lane_id)
-    var row_offset = lane_id % 16 * stride + lane_id // 16
-    row_offset += offset
-
-    @parameter
-    if swizzle:
-        alias swizzle_fn = swizzle.value()
-        row_offset = swizzle_fn(row_offset)
-
-    row_offset = row_offset * simd_size
-
-    return ld_matrix[mat.dtype, __output_width, transposed](
-        mat.ptr + row_offset
-    )
-
-
-@always_inline
 fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
     @parameter
     if swap:
@@ -328,9 +275,6 @@ fn multistage_gemm[
 
     c_reg_tile.fill(0)
 
-    alias a_frag_type = __type_of(a_reg_tiles).ElementType.element_type
-    alias b_frag_type = __type_of(b_reg_tiles).ElementType.element_type
-
     var a_warp_tile = a_smem_iter.get().tile[WM, BK](int(warp_y), 0)
 
     # TODO: warp the following in the tile method, maybe tile[shape: IntTuple].
@@ -347,65 +291,7 @@ fn multistage_gemm[
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
     mma_op.load_a(a_warp_tile, a_reg_tiles[0])
-
-    @parameter
-    if transpose_b:
-        # Use ld_matrix because with transposed B the thread layout in mma is
-        # row-major(8, 4). TF32 mma needs 2 8x4 matrices but we can combine 2
-        # mmas and load 4 matrics per iteration, reducing instruction count.
-        @parameter
-        for n_mma2 in range(num_n_mmas // 2):
-            var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
-            var vec = ld_mma[
-                4,
-                Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                swizzle=xor_2bits_per8T,
-            ](b_mma_tile, 0)
-            b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
-                SIMD[b_type, 2](vec[0], vec[2])
-            )
-            b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-                SIMD[b_type, 2](vec[1], vec[3])
-            )
-
-    else:
-        # Use normal scalar load for FP32 because the thread layout in mma is column-majored.
-        @parameter
-        if b_type == DType.float32:
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](0, n_mma)
-                var b_mma_frag = b_mma_tile.distribute[Layout.col_major(4, 8)](
-                    int(lane_id)
-                )
-                b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
-                    SIMD[b_type, 2](
-                        rebind[Scalar[b_type]](b_mma_frag[0]),
-                        rebind[Scalar[b_type]](b_mma_frag[1]),
-                    )
-                )
-        # Use transposed ldmatrix for half precision since the matrix is square.
-        else:
-
-            @parameter
-            for n_mma2 in range(num_n_mmas // 2):
-                var b_mma_tile = b_warp_tile.tile[MMA_K, WN](0, 0)
-                var vec = ld_mma[
-                    4,
-                    Layout(IntTuple(16, 2), IntTuple(BN // simd_size, 1)),
-                    swizzle = OptionalReg[_swizzle_signature](
-                        xor_3bits_per16T
-                    ) if b_type
-                    == DType.bfloat16 else None,
-                    transposed=True,
-                ](b_mma_tile, n_mma2 * 2)
-                b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
-                    SIMD[b_type, 4](vec[0], vec[1], vec[2], vec[3])
-                )
-                b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-                    SIMD[b_type, 4](vec[4], vec[5], vec[6], vec[7])
-                )
+    mma_op.load_b(b_warp_tile, b_reg_tiles[0])
 
     var num_k_tiles = ceildiv(K, BK)
 
@@ -436,74 +322,11 @@ fn multistage_gemm[
                 )
 
             mma_op.load_a(
-                a_warp_tile,
-                a_reg_tiles[next],
-                (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
+                a_warp_tile, a_reg_tiles[next], (k_mma + 1) % num_k_mmas
             )
-
-            @parameter
-            if transpose_b:
-
-                @parameter
-                for n_mma2 in range(num_n_mmas // 2):
-                    var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
-                    var vec = ld_mma[
-                        4,
-                        Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](
-                        b_mma_tile,
-                        (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
-                    )
-                    b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
-                        SIMD[b_type, 2](vec[0], vec[2])
-                    )
-                    b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-                        SIMD[b_type, 2](vec[1], vec[3])
-                    )
-            else:
-
-                @parameter
-                if b_type == DType.float32:
-
-                    @parameter
-                    for n_mma in range(num_n_mmas):
-                        var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](
-                            (k_mma + 1) % num_k_mmas, n_mma
-                        )
-                        var b_mma_frag = b_mma_tile.distribute[
-                            Layout.col_major(4, 8)
-                        ](int(lane_id))
-                        b_reg_tiles[next][n_mma, 0] = rebind[b_frag_type](
-                            SIMD[b_type, 2](
-                                rebind[Scalar[b_type]](b_mma_frag[0]),
-                                rebind[Scalar[b_type]](b_mma_frag[1]),
-                            )
-                        )
-                else:
-
-                    @parameter
-                    for n_mma2 in range(num_n_mmas // 2):
-                        var b_mma_tile = b_warp_tile.tile[MMA_K, WN](
-                            (k_mma + 1) % num_k_mmas, 0
-                        )
-                        var vec = ld_mma[
-                            4,
-                            Layout(
-                                IntTuple(16, 2), IntTuple(BN // simd_size, 1)
-                            ),
-                            swizzle = OptionalReg[_swizzle_signature](
-                                xor_3bits_per16T
-                            ) if b_type
-                            == DType.bfloat16 else None,
-                            transposed=True,
-                        ](b_mma_tile, 2 * n_mma2)
-                        b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
-                            SIMD[b_type, 4](vec[0], vec[1], vec[2], vec[3])
-                        )
-                        b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[
-                            b_frag_type
-                        ](SIMD[b_type, 4](vec[4], vec[5], vec[6], vec[7]))
+            mma_op.load_b(
+                b_warp_tile, b_reg_tiles[next], (k_mma + 1) % num_k_mmas
+            )
 
             @parameter
             for m_mma in range(num_m_mmas):
