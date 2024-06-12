@@ -328,19 +328,11 @@ fn multistage_gemm[
                 b_warp_tile, b_reg_tiles[next], (k_mma + 1) % num_k_mmas
             )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
-                    # fmt: off
-                    mma(
-                        c_reg_tile.vectorize[1, c_frag_size]()[n_mma * num_m_mmas + m_mma, 0],
-                        a_reg_tiles[current][m_mma, 0],
-                        b_reg_tiles[current][n_mma, 0],
-                        c_reg_tile.vectorize[1, c_frag_size]()[n_mma * num_m_mmas + m_mma, 0],
-                    )
-                    # fmt: on
+            mma_op.mma(
+                a_reg_tiles[current],
+                b_reg_tiles[current],
+                c_reg_tile.vectorize[1, c_frag_size](),
+            )
 
             if k_mma + 2 == num_k_mmas:
                 var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
