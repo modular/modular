@@ -370,6 +370,7 @@ void StackAllocationOp::getEffects(
 //===----------------------------------------------------------------------===//
 
 static LogicalResult verifyLifetimeMarker(Operation *op) {
+  llvm::SmallDenseSet<Value> seen;
   for (auto [idx, value] : llvm::enumerate(op->getOperands())) {
     auto alloc = value.getDefiningOp<StackAllocationOp>();
     if (!alloc) {
@@ -385,6 +386,12 @@ static LogicalResult verifyLifetimeMarker(Operation *op) {
           << "operand #" << idx
           << " is not defined by a stack allocation with marked lifetimes";
       diag.attachNote(alloc.getLoc()) << "stack allocation defined here";
+      return diag;
+    }
+    if (!seen.insert(value).second) {
+      InFlightDiagnostic diag = op->emitOpError("operand #")
+                                << idx << " is a duplicate";
+      diag.attachNote(value.getLoc()) << "operand defined here";
       return diag;
     }
   }
