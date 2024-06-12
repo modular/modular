@@ -749,7 +749,7 @@ kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
 // CHECK-LABEL: kgen.func @coroutine_resume
 kgen.func @coroutine(%arg1: index, %arg2: index) async -> index {
   // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0
-  %0 = pop.stack_allocation 2 x index
+  %0 = pop.stack_allocation 2 x index marked
   pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
   %idx1 = index.constant 1
   // CHECK-NEXT: %idx1 = index.constant 1
@@ -800,7 +800,7 @@ kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
 // CHECK-LABEL: kgen.func @coroutine_resume
 kgen.func @coroutine(%arg1: index) async -> index {
   // CHECK-NEXT: [[V0:%.*]] = pop.pointer.bitcast %arg0
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
     co.suspend.end
   }
@@ -837,7 +837,7 @@ kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
 // CHECK-LABEL: kgen.func @coroutine_resume
 kgen.func @coroutine(%arg1: index, %arg2: index) async -> index {
   // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0
-  %0 = pop.stack_allocation 2 x index
+  %0 = pop.stack_allocation 2 x index marked
   pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
   // CHECK-NEXT: %idx1 = index.constant 1
   %idx1 = index.constant 1
@@ -889,7 +889,7 @@ kgen.func @coroutine(%arg1: index) async -> index {
   // CHECK-NEXT: [[ARG_SLOT:%.*]] = kgen.struct.gep %0[[[#FRAME8 - 1]]]
   // CHECK-NEXT: [[ARG:%.*]] = pop.load [[ARG_SLOT]] : !kgen.pointer<index>
   // CHECK-NEXT: pop.store [[ARG]], [[SLOT]] : !kgen.pointer<index>
-  %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)>
+  %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)> marked
   pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<struct<(index, index)>>
   %1 = kgen.struct.gep %0[1] : !kgen.pointer<struct<(index,index)>>
   pop.store %arg1, %1 : !kgen.pointer<index>
@@ -918,7 +918,7 @@ kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
 
 // CHECK-LABEL: kgen.func @coroutine_resume
 kgen.func @coroutine(%arg1: index) async -> index {
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
       co.suspend.end
   }
@@ -945,7 +945,7 @@ kgen.func @use(%arg0:!kgen.pointer<index>) -> index {
 // CHECK-LABEL: kgen.func @not_in_frame_resume
 kgen.func @not_in_frame(%arg1: index, %arg2: index) async -> index {
   // CHECK: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index)>>
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
       co.suspend.end
   }
@@ -993,7 +993,7 @@ kgen.func @in_frame(%arg1: index, %arg2: index) async -> index {
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT: co.suspend.end
   // CHECK-NEXT: }
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
       co.suspend.end
   }
@@ -1075,7 +1075,7 @@ kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
   // CHECK-NEXT: pop.store [[ARG1]], [[SA2]] : !kgen.pointer<index>
   // CHECK-NEXT: hlcf.yield
   // CHECK-NEXT: }
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   hlcf.elif {
     hlcf.elif.yield %arg3 : i1
   } then {
@@ -1147,7 +1147,7 @@ kgen.func @not_in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index
   // CHECK: pop.stack_alloc.lifetime.start([[SA]])
   // CHECK: pop.stack_alloc.lifetime.start([[SA]])
   // CHECK: pop.stack_alloc.lifetime.end([[SA]])
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
     co.suspend.end
   }
@@ -1201,8 +1201,8 @@ kgen.func @in_frame(%arg1: index) async -> index {
   // CHECK-SAME: !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index, index, index)>>
   // CHECK-NOT: pop.stack_alloc.lifetime.start
   // CHECK-NOT: pop.stack_alloc.lifetime.end
-  %0 = pop.stack_allocation 1 x index
-  %1 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
+  %1 = pop.stack_allocation 1 x index marked
   pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
   pop.store %arg1, %0 : !kgen.pointer<index>
   pop.store %arg1, %1 : !kgen.pointer<index>
@@ -1220,8 +1220,8 @@ kgen.func @not_in_frame(%arg1: index) async -> index {
   // CHECK-SAME: !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index)>>
   // CHECK: [[V1:%.*]] = pop.stack_allocation 1 x index
   // CHECK: [[V2:%.*]] = pop.stack_allocation 1 x index
-  %0 = pop.stack_allocation 1 x index
-  %1 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
+  %1 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
     co.suspend.end
   }
@@ -1244,8 +1244,8 @@ kgen.func @multiple_lifetimes_frame(%arg1: index, %arg2: i1) async -> index {
   // CHECK-NEXT:   co.suspend.end
   // CHECK-NEXT: }
   // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x index
-  %0 = pop.stack_allocation 1 x index
-  %1 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
+  %1 = pop.stack_allocation 1 x index marked
   co.suspend (%hdl) {
     co.suspend.end
   }

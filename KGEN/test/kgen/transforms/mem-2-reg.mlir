@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -mem-2-reg -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -mem-2-reg -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @simple_add
 kgen.generator @simple_add(%arg0: index, %arg1: index) -> index {
@@ -285,8 +285,6 @@ kgen.generator @unknown_region_op() {
   kgen.return
 }
 
-// -----
-
 // CHECK-LABEL: @for_variant
 kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.scalar<f32>, %arg5: !pop.scalar<f32>) -> (index, index, index, !pop.scalar<f32>) {
   %var0 = pop.stack_allocation 1 x index
@@ -494,7 +492,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
 
 // CHECK-LABEL: kgen.func @lifetime_markers
 kgen.func @lifetime_markers(%arg0: index) -> index {
-  %0 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
   // CHECK-NEXT: lifetime.start()
   pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<index>
@@ -508,8 +506,8 @@ kgen.func @lifetime_markers(%arg0: index) -> index {
 // CHECK-LABEL: kgen.func @lifetime_multiple_args
 kgen.func @lifetime_multiple_args() {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
-  %0 = pop.stack_allocation 1 x index
-  %1 = pop.stack_allocation 1 x pointer<index>
+  %0 = pop.stack_allocation 1 x index marked
+  %1 = pop.stack_allocation 1 x pointer<index> marked
   // CHECK-NEXT: lifetime.start(%0)
   pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<pointer<index>>
   pop.store %0, %1 : !kgen.pointer<pointer<index>>

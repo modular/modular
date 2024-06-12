@@ -896,23 +896,16 @@ void LowerAsyncFunctionsPass::runOnOperation() {
                     b.setInsertionPoint(startOp);
                     for (auto [index, value] :
                          llvm::enumerate(startOp.getValues())) {
-                      StackAllocationOp stackAllocationOp =
+                      auto stackAllocationOp =
                           cast<StackAllocationOp>(value.getDefiningOp());
                       int defState = opToState[stackAllocationOp];
                       if (defState == useState)
                         continue;
                       // Otherwise, this is a second lifetime. We need a clone.
-                      auto clone = b.create<StackAllocationOp>(
-                          startOp->getLoc(), stackAllocationOp.getType(),
-                          stackAllocationOp.getCount());
-                      if (stackAllocationOp.getAddressSpace().has_value())
-                        clone.setAddressSpaceAttr(
-                            stackAllocationOp.getAddressSpace().value());
-                      if (stackAllocationOp.getAlignment().has_value())
-                        clone.setAlignmentAttr(
-                            stackAllocationOp.getAlignment().value());
+                      auto clone =
+                          cast<StackAllocationOp>(b.clone(*stackAllocationOp));
                       opToState[clone] = useState;
-                      startOp->setOperand(index, clone->getResult(0));
+                      startOp->setOperand(index, clone.getResult());
                       stackAllocationOp->replaceUsesWithIf(
                           clone, [&](OpOperand &operand) -> bool {
                             bool willReplace =

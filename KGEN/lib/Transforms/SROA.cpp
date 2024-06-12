@@ -224,7 +224,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
     newAllocas.reserve(containerTy.getNumElements());
     for (Type elem : containerTy.getElementTypes()) {
       auto asPtr = PointerType::get(elem);
-      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1);
+      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1,
+                                                  alloc.getMarkedLifetimes());
       newAllocas.push_back(v);
     }
   }
@@ -372,7 +373,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
     Type elem = containerTy.getElementType();
     auto asPtr = PointerType::get(elem);
     for (int64_t i = 0; i < numElems; ++i) {
-      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1);
+      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1,
+                                                  alloc.getMarkedLifetimes());
       newAllocas.push_back(v);
     }
   }
@@ -517,7 +519,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 
     auto ptr = cast<PointerType>(alloc.getResult().getType());
     for (int64_t i = 0; i < numElems; ++i) {
-      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), ptr, 1);
+      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), ptr, 1,
+                                                  alloc.getMarkedLifetimes());
       newAllocas.push_back(v);
     }
   }

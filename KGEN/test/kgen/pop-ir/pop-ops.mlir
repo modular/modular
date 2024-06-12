@@ -1101,8 +1101,8 @@ kgen.func @fence() {
 
 // CHECK-LABEL: @stack_lifetime
 kgen.func @stack_lifetime() {
-  %0 = pop.stack_allocation 1 x index
-  %1 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x index marked
+  %1 = pop.stack_allocation 1 x index marked
   // CHECK: pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
   pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
   // CHECK: pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
