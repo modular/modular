@@ -325,22 +325,107 @@ struct TensorCore[
             masked=masked0,
         ],
         fragments: LayoutTensor[type1, layout1, element_layout=element_layout1],
-        offset: Int = 0,
+        mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
         alias frag_type = fragments.element_type
+        alias simd_size = simdwidthof[type0]()
         alias num_frags = fragments.dim[0]()
+
+        var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
 
         @parameter
         for i in range(num_frags):
             var mma_tile = warp_tile.tile[shape[0], warp_tile.dim[1]()](i, 0)
             fragments[i, 0] = rebind[frag_type](
-                _load_matrix_frag(mma_tile, offset)
+                _load_matrix_frag(mma_tile, swizzle_offset)
             )
 
+    @always_inline
+    fn load_b[
+        *,
+        type0: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        masked0: Bool,
+        layout1: Layout,
+        element_layout1: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type0,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0,
+            masked=masked0,
+        ],
+        fragments: LayoutTensor[type0, layout1, element_layout=element_layout1],
+        mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
+    ):
+        constrained[self.supported_fp32 or self.supported_half]()
 
-# fmt: off
+        alias frag_type = fragments.element_type
+        alias simd_size = simdwidthof[in_type]()
+        alias num_frags = fragments.dim[0]()
+
+        @parameter
+        if transpose_b:
+            constrained[
+                self.supported_fp32, "only support fp32 for transposed B."
+            ]()
+
+            var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
+
+            @parameter
+            for i in range(0, num_frags, 2):
+                var mma_tile = warp_tile.tile[2 * shape[1], warp_tile.dim[1]()](
+                    i // 2, 0
+                )
+                var vec = _load_matrix_frag(mma_tile, swizzle_offset)
+                fragments[i, 0] = rebind[frag_type](
+                    SIMD[type0, 2](vec[0], vec[2])
+                )
+                fragments[i + 1, 0] = rebind[frag_type](
+                    SIMD[type0, 2](vec[1], vec[3])
+                )
+        else:
+
+            @parameter
+            if in_type == DType.float32:
+
+                @parameter
+                for i in range(num_frags):
+                    var mma_tile = warp_tile.tile[shape[2], shape[1]](
+                        mma_tile_coordk, i
+                    )
+                    var frag = mma_tile.distribute[Layout.col_major(4, 8)](
+                        int(lane_id())
+                    )
+                    fragments[i, 0] = rebind[frag_type](
+                        SIMD[type0, 2](
+                            rebind[Scalar[type0]](frag[0]),
+                            rebind[Scalar[type0]](frag[1]),
+                        )
+                    )
+
+            else:
+                constrained[self.supported_half]()
+
+                @parameter
+                for i in range(0, num_frags, 2):
+                    var mma_tile = warp_tile.tile[shape[2], warp_tile.dim[1]()](
+                        mma_tile_coordk, 0
+                    )
+                    var vec = _load_matrix_frag[transposed=True](mma_tile, i)
+                    fragments[i, 0] = rebind[frag_type](
+                        SIMD[type0, 4](vec[0], vec[1], vec[2], vec[3])
+                    )
+                    fragments[i + 1, 0] = rebind[frag_type](
+                        SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
+                    )
+
+
 @always_inline
 fn _load_matrix_frag[
     # Refactor the three parameters with ComposedLayout
@@ -350,49 +435,48 @@ fn _load_matrix_frag[
     # work around parameter deduction
     __type: DType,
     __layout: Layout,
-    # __element_layout: Layout,
-    # __index_type: DType,
     __masked: Bool,
     # Nvidia GPU register is 4B.
     __register_width: Int = 4,
     __num_matrices: Int = 4,
-    __output_width: Int =__num_matrices * __register_width // sizeof[__type]()
+    __output_width: Int = __num_matrices * __register_width // sizeof[__type](),
 ](
     mma_tile: LayoutTensor[
         __type,
         __layout,
         address_space = AddressSpace.SHARED,
-        # element_layout=__element_layout,
-        # index_type=__index_type,
         masked=__masked,
     ],
     offset: Int,
 ) -> SIMD[mma_tile.dtype, __output_width]:
-# fmt: on
-
     alias simd_size = simdwidthof[__type]()
-    alias row_size = mma_tile.dim[1]()
+
+    # mma_tile is tiled from the row major shared memory buffer. Retrieve the
+    # buffer's stride for computing the swizzle.
+    alias row_size = mma_tile.stride[0]()
 
     var lane = lane_id()
 
-    # For fp32, A is 16x8. After vectorization, it becomes 16x2 vectors.
-    # Each ld_matrix instruction loads 8 vectors in the same column and load
-    # 4 matrices.
+    # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
+    # and each thread loads one vector. For mma shape 16x8 or 16x16, the 4
+    # matrices are arranged in column major.
     alias ldmatrix_threadmap = Layout.col_major(16, 2)
 
-    # ldmatrix is essentially simd load.
-    # alias mma_tile_simd_layout = mma_tile.vectorize[1, simd_size]().layout
-    var mma_tile_vectorized = mma_tile.vectorize[1, simd_size]()
-    alias mma_tile_simd_layout = Layout.row_major(
-        mma_tile_vectorized.layout.shape
+    # Layout of a strip in smem: mma_tile's height x smem buffer's width.
+    # The layout has been vectorized i.e. the width is number of vectors not elements.
+    # This serves as the base for composed layout in swizzling.
+    alias smem_layout = Layout.row_major(
+        mma_tile.dim[0](), row_size // simd_size
     )
 
     alias ldmatrix_layout = ComposedLayout(
-        composition(mma_tile_simd_layout, ldmatrix_threadmap),
+        composition(smem_layout, ldmatrix_threadmap),
         make_ldmatrix_swizzleex[__type, row_size](),
     )
 
-    var lane_offset = eval_composed[ldmatrix_layout](int(lane), offset) * simd_size
+    var lane_offset = eval_composed[ldmatrix_layout](
+        int(lane), offset
+    ) * simd_size
 
     return ld_matrix[__type, __output_width, transposed](
         mma_tile.ptr + lane_offset
