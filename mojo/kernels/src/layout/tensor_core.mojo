@@ -425,6 +425,33 @@ struct TensorCore[
                         SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
                     )
 
+    @always_inline
+    fn mma(
+        self, a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+    ):
+        # TODO: Assume that fragments are all vectorized layout tensor with
+        # dims num_vectors x 1. Consider using TensorCore to allocate fragments
+        # so the caller don't explicitly maintain the shape.
+        alias num_m_mmas = a_frag.dim[0]()
+        alias num_n_mmas = b_frag.dim[0]()
+
+        constrained[
+            c_frag.dim[0]() == num_m_mmas * num_n_mmas,
+            "Fragments size mismatch.",
+        ]()
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                mma(
+                    c_frag[n_mma * num_m_mmas + m_mma, 0],
+                    a_frag[m_mma, 0],
+                    b_frag[n_mma, 0],
+                    c_frag[n_mma * num_m_mmas + m_mma, 0],
+                )
+
 
 @always_inline
 fn _load_matrix_frag[
