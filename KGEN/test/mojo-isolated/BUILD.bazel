@@ -27,6 +27,10 @@ lit_tests(
     env = {
         "MODULAR_MOJO_IMPORT_SRCS": "$(location //KGEN/test/test-packages:stdlib/__init__.mojo)",
     },
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tools = [
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",

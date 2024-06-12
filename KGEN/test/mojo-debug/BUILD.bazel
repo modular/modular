@@ -39,6 +39,7 @@ lit_tests(
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],  # __jit_debug_descriptor exists in liblldb and libMojoLLDB
+        "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tools = [
