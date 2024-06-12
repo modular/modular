@@ -928,7 +928,10 @@ cc_distributable_static_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
         "@llvm-project//mlir:Support",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["@gperftools//:tcmalloc_objects"],
+        "//conditions:default": [],
+    }),
 )
 
 write_file(
