@@ -414,6 +414,16 @@ KGEN_CompilerRT_CreateOwnedAsyncMojoValue(void *data,
   }
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_MojoValueAllocateBuffer(size_t size, size_t align) {
+  return MojoValue::allocateBuffer(size, align);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_MojoValueFreeBuffer(void *ptr) {
+  MojoValue::freeBuffer(ptr);
+}
+
 //===----------------------------------------------------------------------===//
 // Unpacking functions for reading async values
 //===----------------------------------------------------------------------===//
@@ -540,6 +550,10 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
   funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncMojoValue",
                    (void *)&KGEN_CompilerRT_CreateOwnedAsyncMojoValue});
+  funcs.push_back({"KGEN_CompilerRT_MojoValueAllocateBuffer",
+                   (void *)&KGEN_CompilerRT_MojoValueAllocateBuffer});
+  funcs.push_back({"KGEN_CompilerRT_MojoValueFreeBuffer",
+                   (void *)&KGEN_CompilerRT_MojoValueFreeBuffer});
   funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
                    (void *)&KGEN_CompilerRT_GetValueFromAsync});
   funcs.push_back({"KGEN_CompilerRT_GetTensorSpecFromAsync",
