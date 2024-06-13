@@ -1315,3 +1315,49 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 }
 }
 
+// -----
+
+
+// COM: Lower GetCallbackPtrOp
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @coroutine1(%arg0: i1) async -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @callback(%arg0: !kgen.pointer<none>) -> !kgen.none {
+  %none = kgen.param.constant: !kgen.none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg0: i1) async -> index {
+  hlcf.if %arg0 {
+    %idx1 = index.constant 1
+    kgen.return %idx1 : index
+  } else {
+    hlcf.yield
+  }
+  %true = index.bool.constant true
+  // CHECK:      [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
+  // CHECK-NEXT: [[CALLBACK:%.*]] = kgen.create_closure[(!kgen.pointer<none>) -> !kgen.none: @callback]()
+  // CHECK-NEXT: [[SLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME2:]]]
+  // CHECK-NEXT: [[CAST:%.*]] = pop.pointer.bitcast [[SLOT]]
+  // CHECK-NEXT: [[SLOT2:%.*]] = kgen.struct.gep [[CAST]][0] : <struct<((!kgen.pointer<none>) -> !kgen.none, pointer<none>)>>
+  // CHECK-NEXT: pop.store [[CALLBACK]], [[SLOT2]] : !kgen.pointer<(!kgen.pointer<none>) -> !kgen.none>
+  // CHECK-NEXT: co.suspend {
+  %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
+  %callback = kgen.create_closure[(!kgen.pointer<none>) -> !kgen.none: @callback]()
+  %ptr = co.get_callback_ptr %coro : <struct<(!kgen.signature<(!kgen.pointer<none>) -> !kgen.none>, pointer<none>)>>
+  %callbackSlot = kgen.struct.gep %ptr[0] : <struct<(!kgen.signature<(!kgen.pointer<none>) -> !kgen.none>, pointer<none>)>>
+  pop.store %callback, %callbackSlot : !kgen.pointer<!kgen.signature<(!kgen.pointer<none>) -> !kgen.none>>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}
+
