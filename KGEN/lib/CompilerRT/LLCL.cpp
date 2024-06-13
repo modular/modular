@@ -275,7 +275,8 @@ KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream(
     LLCLMojoCallContextRef callContext) {
-  return unwrap(callContext).cuStream;
+  auto runtime = unwrap(callContext).deviceRuntime;
+  return reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream;
 }
 
 /// Get cuda device from cuda runtime.
