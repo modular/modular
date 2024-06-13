@@ -751,6 +751,34 @@ kgen.func @atomic_rmw(%ptr0: !kgen.pointer<scalar<index>>,
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @stack_lifetimes
+kgen.func @stack_lifetimes() {
+  // CHECK-NEXT: [[ONE:%.*]] = llvm.mlir.constant(1 : i64)
+  // CHECK-NEXT: [[ALLOC:%.*]] = llvm.alloca [[ONE]] x i64
+  // CHECK-NEXT: llvm.intr.lifetime.end 8, [[ALLOC]]
+  %0 = pop.stack_allocation 1 x index marked
+  // CHECK-NEXT: return
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @multi_lifetimes
+kgen.func @multi_lifetimes() {
+  // CHECK: [[A1:%.*]] = llvm.alloca {{.*}} x i32
+  // CHECK-NEXT: llvm.intr.lifetime.end 4, [[A1]]
+  // CHECK: [[A0:%.*]] = llvm.alloca {{.*}} x i64
+  // CHECK-NEXT: llvm.intr.lifetime.end 8, [[A0]]
+  %0 = pop.stack_allocation 1 x i64 marked
+  %1 = pop.stack_allocation 1 x i32 marked
+  // CHECK-NEXT: lifetime.start 8, [[A0]]
+  // CHECK-NEXT: lifetime.start 4, [[A1]]
+  pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<i64>, !kgen.pointer<i32>
+  // CHECK-NEXT: lifetime.end 8, [[A0]]
+  // CHECK-NEXT: lifetime.end 4, [[A1]]
+  pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<i64>, !kgen.pointer<i32>
+  // CHECK-NEXT: return
+  kgen.return
+}
+
 // CHECK-LABEL: @variadic_create
 // CHECK-SAME: %[[A0:.*]]: i24, %[[B0:.*]]: i24
 kgen.func @variadic_create(%a: i24, %b: i24) {

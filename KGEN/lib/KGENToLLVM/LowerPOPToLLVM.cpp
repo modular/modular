@@ -535,23 +535,29 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
       b.create<LLVM::ConstantOp>(hoistedLoc, b.getI64IntegerAttr(count));
 
   unsigned addressSpace = 0;
-  if (auto stackAlloc = dyn_cast<StackAllocationOp>(op);
-      stackAlloc && stackAlloc.getAddressSpaceAttr())
+  auto alloca = dyn_cast<StackAllocationOp>(op);
+  if (alloca) {
     if (auto addrSpaceAttr =
-            cast_or_null<IntegerAttr>(stackAlloc.getAddressSpaceAttr()))
+            cast_or_null<IntegerAttr>(alloca.getAddressSpaceAttr()))
       addressSpace = addrSpaceAttr.getInt();
+  }
 
   auto ptr = b.create<LLVM::AllocaOp>(
       hoistedLoc, LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
       elementType, countVal, align);
 
-  // Insert lifetime markers starting from the op to the end of its block.
-  b.setInsertionPoint(op);
-  auto start =
-      b.create<LLVM::LifetimeStartOp>(op->getLoc(), typeAllocSize * count, ptr);
-  b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-  b.create<LLVM::LifetimeEndOp>(hoistedLoc, typeAllocSize * count, ptr);
-  b.setInsertionPointAfter(start);
+  if (alloca && alloca.getMarkedLifetimes()) {
+    // If this alloca has marked lifetimes, it always begins as dead.
+    b.create<LLVM::LifetimeEndOp>(hoistedLoc, typeAllocSize * count, ptr);
+  } else {
+    // Insert lifetime markers starting from the op to the end of its block.
+    b.setInsertionPoint(op);
+    auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(),
+                                                 typeAllocSize * count, ptr);
+    b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
+    b.create<LLVM::LifetimeEndOp>(hoistedLoc, typeAllocSize * count, ptr);
+    b.setInsertionPointAfter(start);
+  }
 
   return ptr;
 }
@@ -576,6 +582,67 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   rewriter.replaceOp(op, alloca);
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPStackAllocLifetimeStart
+//===----------------------------------------------------------------------===//
+
+template <typename OpT>
+static void lowerLifetimeMarker(Operation *op, ValueRange values,
+                                TargetInfoAttr target,
+                                ConversionPatternRewriter &b) {
+  for (auto [ptr, values] : llvm::zip(op->getOperands(), values)) {
+    int64_t typeAllocSize = *DataLayoutInterface::getTypeAllocSize(
+        target, cast<PointerType>(ptr.getType()).getElementType());
+    auto alloc = ptr.getDefiningOp<StackAllocationOp>();
+    assert(alloc && "expected a parent stack allocation");
+    int64_t count = cast<IntegerAttr>(alloc.getCountAttr()).getInt();
+    b.create<OpT>(op->getLoc(), typeAllocSize * count, values);
+  }
+  b.eraseOp(op);
+}
+
+class ConvertPOPStackAllocLifetimeStart
+    : public ConvertPOPToLLVMPattern<StackAllocLifetimeStartOp> {
+public:
+  explicit ConvertPOPStackAllocLifetimeStart(mlir::LLVMTypeConverter &tc,
+                                             TargetInfoAttr target)
+      : ConvertPOPToLLVMPattern(tc), target(target) {}
+
+  LogicalResult matchAndRewrite(StackAllocLifetimeStartOp op,
+                                StackAllocLifetimeStartOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    lowerLifetimeMarker<LLVM::LifetimeStartOp>(op, adaptor.getValues(), target,
+                                               b);
+    return success();
+  }
+
+private:
+  TargetInfoAttr target;
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPStackAllocLifetimeEnd
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPStackAllocLifetimeEnd
+    : public ConvertPOPToLLVMPattern<StackAllocLifetimeEndOp> {
+public:
+  explicit ConvertPOPStackAllocLifetimeEnd(mlir::LLVMTypeConverter &tc,
+                                           TargetInfoAttr target)
+      : ConvertPOPToLLVMPattern(tc), target(target) {}
+
+  LogicalResult matchAndRewrite(StackAllocLifetimeEndOp op,
+                                StackAllocLifetimeEndOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    lowerLifetimeMarker<LLVM::LifetimeEndOp>(op, adaptor.getValues(), target,
+                                             b);
+    return success();
+  }
+
+private:
+  TargetInfoAttr target;
+};
 
 //===----------------------------------------------------------------------===//
 // ConvertPOPArrayCreate
@@ -1402,6 +1469,8 @@ void LowerPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,
                   ConvertPOPVariadicSplat>(
       typeConverter, &func->getFunctionBody().front(), targetInfo);
+  patterns.insert<ConvertPOPStackAllocLifetimeStart,
+                  ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
