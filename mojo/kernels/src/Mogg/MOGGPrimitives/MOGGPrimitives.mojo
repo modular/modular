@@ -224,9 +224,9 @@ fn create_mojo_value_async(
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
     move_fn: fn (UnsafePointer[UInt8], UnsafePointer[UInt8]) -> None,
 ):
-    var dst_ptr = UnsafePointer[UInt8](
-        address=int(_malloc_cpu[UInt8](size, alignment=align))
-    )
+    var dst_ptr = external_call[
+        "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
+    ](size, align)
     move_fn(dst_ptr, val_ptr)
 
     external_call["KGEN_CompilerRT_CreateOwnedAsyncMojoValue", NoneType](
@@ -621,7 +621,10 @@ fn mgp_device_context_create[
 ](ctx: StateContext):
     @parameter
     if bDevice == "cuda":
-        var dev_ctx = UnsafePointer[Tuple[CudaContext, CudaInstance]].alloc(1)
+        alias dev_ty = Tuple[CudaContext, CudaInstance]
+        var dev_ctx = external_call[
+            "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[dev_ty]
+        ](sizeof[dev_ty](), alignof[dev_ty]())
         try:
             var instance = CudaInstance()
             var context = CudaContext(Device(instance))
