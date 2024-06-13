@@ -978,6 +978,15 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       Value load = rewriter.create<LoadOp>(op->getLoc(), typed);
       resumeOp.replaceAllUsesWith(load);
       resumeOp->erase();
+    } else if (auto callbackOp = dyn_cast<GetCallbackPtrOp>(op)) {
+      rewriter.setInsertionPoint(op);
+      Value continuation = callbackOp.getOperand();
+      Value slot =
+          rewriter.create<StructGEPOp>(op->getLoc(), continuation, CallbackFn);
+      Value slotCast = rewriter.create<PointerBitcastOp>(
+          op->getLoc(), callbackOp.getType(), slot);
+      callbackOp.replaceAllUsesWith(slotCast);
+      callbackOp->erase();
     }
   });
 }
