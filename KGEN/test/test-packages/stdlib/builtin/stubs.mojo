@@ -63,6 +63,9 @@ struct Error:
     fn __init__(inout self):
         pass
 
+    fn __init__(inout self, value: StringLiteral):
+        pass
+
     fn __copyinit__(inout self, existing: Self):
         pass
 
