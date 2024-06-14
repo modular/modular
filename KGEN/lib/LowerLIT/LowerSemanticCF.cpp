@@ -582,15 +582,6 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       lowerBlock(paramFor.getBody().front(), loopRaises, loopBreaks,
                  loopFallsThrough);
       doesRaise |= loopRaises;
-
-      // HACK: CheckLifetimes doesn't like infinite loops. Do this to make it
-      // happy by modeling a fake break.
-      auto b = OpBuilder::atBlockBegin(&paramFor.getBody().front());
-      auto cond = b.create<ParamIfOp>(paramFor.getLoc(), b.getBoolAttr(false));
-      b.createBlock(&cond.getThenRegion());
-      b.create<ParamForBreakOp>(paramFor.getLoc());
-      b.createBlock(&cond.getElseRegion());
-      b.create<ParamYieldOp>(paramFor.getLoc());
       continue;
     }
 
