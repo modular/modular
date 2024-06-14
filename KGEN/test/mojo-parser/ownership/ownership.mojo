@@ -260,18 +260,14 @@ struct FieldSensitiveMemExample:
   fn mutate2(inout self):
     # Disable the dtor of 'self' before we overwrite it to show we can do this,
     # both F1 and F2 need to be destroyed before being overwritten
-    # CHECK-NEXT: [[REF:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}([[REF]], %self)
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %self[f2]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
 
-    # CHECK-NEXT: [[LITVALREF:%.*]] = lit.ref.struct.ger [[REF]][value]
-    # CHECK-NEXT: [[LITREF:%.*]] = lit.ref.load [[LITVALREF]]
-    # CHECK-NEXT: lit.ownership.mark_destroyed [[LITREF]]
+    # CHECK-NEXT: lit.ownership.mark_destroyed %self
     __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       Reference(self).value)
+       __get_mvalue_as_litref(self))
 
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
     self = FieldSensitiveMemExample()
@@ -289,19 +285,14 @@ struct FieldSensitiveMemExample:
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.func @"disableDtor
 fn disableDtor(owned x: FieldSensitiveMemExample):
-  # CHECK-NEXT: [[REF:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}([[REF]], %x)
-
   # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
   # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
-  # CHECK-NEXT: [[LITVALREF:%.*]] = lit.ref.struct.ger [[REF]][value]
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.ref.load [[LITVALREF]]
-  # CHECK-NEXT: lit.ownership.mark_destroyed [[LITREF]]
+  # CHECK-NEXT: lit.ownership.mark_destroyed %x
   # CHECK-NEXT: kgen.param.constant: none
   __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       Reference(x).value)
+       __get_mvalue_as_litref(x))
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
