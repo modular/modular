@@ -1022,6 +1022,11 @@ fn _matmul_gpu_dispatch[
             m % 128 == 0 and n % 128 == 0 and k % 128 == 0
         )
         alias matmul_supported_format = (
+            a_type in (DType.float32, DType.bfloat16)
+            and b_type in (DType.float32, DType.bfloat16)
+            and c_type in (DType.float32, DType.bfloat16)
+        )
+        alias buffer_matmul_supported_format = (
             a_type == DType.float32
             and b_type == DType.float32
             and c_type == DType.float32
@@ -1042,18 +1047,18 @@ fn _matmul_gpu_dispatch[
                 alias num_pipeline_stages = 4
                 alias BM = 128
                 alias BN = 128
-                alias BK = 16
+                alias BK = 32 if a_type == DType.bfloat16 else 16
                 alias WM = 64
                 alias WN = 64
                 alias shared_mem_bytes = 80 * 1024
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
                 alias mgemm = multistage_gemm[
-                    DType.float32,
+                    c_type,
                     c_shape,
-                    DType.float32,
+                    a_type,
                     a_shape,
-                    DType.float32,
+                    b_type,
                     b_shape,
                     transpose_b,
                     BM,
@@ -1086,7 +1091,7 @@ fn _matmul_gpu_dispatch[
 
         # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.
         @parameter
-        if matmul_supported_format and b_shape.all_known[2]():
+        if buffer_matmul_supported_format and b_shape.all_known[2]():
             if double_buffer_supported_cond:
                 # TODO: Add shape constraints for K << M and K << N.
                 alias NUM_THREADS = 256
@@ -1132,7 +1137,7 @@ fn _matmul_gpu_dispatch[
                 )
                 return
 
-        if warp_tiled_matmul_supported_shape and matmul_supported_format:
+        if warp_tiled_matmul_supported_shape and buffer_matmul_supported_format:
             # TODO: Auto tune these for A100.
             # TODO: NUM_THREADS need to vary as M, N varies.
             alias NUM_THREADS = 128

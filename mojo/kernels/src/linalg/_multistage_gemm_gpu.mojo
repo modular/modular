@@ -7,20 +7,24 @@
 # RUN: %mojo %s
 
 from collections.optional import OptionalReg
-from math import ceildiv, isclose
-from pathlib import Path
-from sys import argv
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
-from gpu.host.event import time_function
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from gpu import (
+    WARP_SIZE,
+    BlockIdx,
+    ThreadIdx,
+    barrier,
+    lane_id,
+)
+
+from gpu.intrinsics import convert
+from gpu.host import Context, Function, synchronize, Stream, FuncAttribute
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
-    _free,
-    _malloc,
 )
 from gpu.memory import (
     async_copy_commit_group,
@@ -32,21 +36,29 @@ from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
+    LayoutTensorIter,
     _swizzle_signature,
     copy_dram_to_sram_async,
+    copy_local_to_sram,
+    copy_local_to_dram,
+    copy_sram_to_dram,
 )
 from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
+    copy_from_nd_buffer_async,
     copy_to_nd_buffer,
     distribute,
     vectorize,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from layout.tensor_core import (
+    get_accum_type,
+    get_fragment_size,
+    get_mma_shape,
+    TensorCore,
+)
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory.unsafe import DTypePointer
-from testing import assert_almost_equal
 
 from utils.index import Index
 
@@ -58,6 +70,12 @@ from .MatmulUtils import apply_epilogue, elementwise_epilogue_type
 @always_inline
 fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
     return Swizzle[2, 0, 3]()(tid)
+
+
+# Figure out the math using BN, BK, dtype to define swizzle parameters.
+@always_inline
+fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
+    return Swizzle[3, 0, 4]()(tid)
 
 
 @always_inline
@@ -72,15 +90,20 @@ fn ld_mma[
     # Refactor the three parameters with ComposedLayout
     thread_layout: Layout,
     swizzle: OptionalReg[_swizzle_signature] = None,
+    transposed: Bool = False,
     *,
     # work around parameter deduction
     __layout: Layout,
     __element_layout: Layout,
     __index_type: DType,
     __masked: Bool,
+    __dtype: DType,
+    # Nvidia GPU register is 4B.
+    __register_width: Int = 4,
+    __output_width: Int = num_matrices * __register_width // sizeof[__dtype](),
 ](
     mat: LayoutTensor[
-        _,
+        __dtype,
         __layout,
         address_space = AddressSpace.SHARED,
         element_layout=__element_layout,
@@ -88,27 +111,19 @@ fn ld_mma[
         masked=__masked,
     ],
     offset: Int,
-) -> SIMD[mat.dtype, num_matrices]:
-    constrained[
-        num_matrices == 2 or num_matrices == 4,
-        "Only support loading 2 or 4 matrices.",
-    ]()
+) -> SIMD[mat.dtype, __output_width]:
+    constrained[num_matrices == 4, "Only support loading 4 matrices."]()
 
     # TODO: Either optimize signed int division or restrict this to uint32.
-    var lane_id = UInt32(ThreadIdx.x()) % WARP_SIZE
+    var ln_id = lane_id()
 
     alias stride = thread_layout.stride[0].value()
     alias simd_size = simdwidthof[mat.dtype]()
 
     # TODO: the index calculation can be refactored when layout(i) works on GPU.
     # var row_offset = thread_layout(lane_id)
-    fn get_row_offset() -> Int:
-        var quo: Int
-        var rem: Int
-        quo, rem = divmod(int(lane_id), 16 if num_matrices == 4 else 8)
-        return rem * stride + quo + offset
-
-    var row_offset = UInt32(get_row_offset())
+    var row_offset = ln_id % 16 * stride + ln_id // 16
+    row_offset += offset
 
     @parameter
     if swizzle:
@@ -117,7 +132,37 @@ fn ld_mma[
 
     row_offset = row_offset * simd_size
 
-    return ld_matrix[mat.dtype, num_matrices](mat.ptr + row_offset)
+    return ld_matrix[mat.dtype, __output_width, transposed](
+        mat.ptr + row_offset
+    )
+
+
+@always_inline
+fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
+    @parameter
+    if swap:
+        return (arg_1, arg_0)
+    else:
+        return (arg_0, arg_1)
+
+
+# fmt: off
+@always_inline
+fn block_swizzle_by_scale[scale0: Int](
+    block_idx: StaticIntTuple[2], grid_dim: StaticIntTuple[2]
+) -> StaticIntTuple[2]:
+    var scale = scale0
+    var num_partitions = (1 << scale)
+    while (grid_dim[0] & (num_partitions - 1)) != 0 and scale > 1:
+        scale -= 1
+        num_partitions = (1 << scale)
+
+    var bx = block_idx[0] >> scale
+    var by = (block_idx[1] << scale)  + ((block_idx[0]) & ((1 << scale) - 1))
+    bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
+    by = by % grid_dim[1]
+
+    return Index(bx, by)
 
 
 fn multistage_gemm[
@@ -141,20 +186,24 @@ fn multistage_gemm[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
 ):
+    # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
-        c_type == DType.float32
-        and a_type == DType.float32
-        and b_type == DType.float32,
-        "Only support tf32 mma",
+        a_type in (DType.float32, DType.bfloat16)
+        and a_type == b_type == c_type,
+        "Pipeline gemm only supports tf32 or BF16 mma",
     ]()
 
-    constrained[BK == 16, "Only support BK = 16."]()
+    constrained[
+        (BK == 16 and a_type == DType.float32)
+        or (BK == 32 and a_type == DType.bfloat16),
+        "Pipeline gemm only supports BK = 16 w/ FP32 and BK = 32 w/ BF16.",
+    ]()
 
     alias simd_size = simdwidthof[c_type]()
 
     var M = c.dim[0]()
-    alias N = b_shape.get[1]()
-    var K = a.dim[1]()
+    alias N = c_shape.get[1]()
+    alias K = a_shape.get[1]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -165,89 +214,97 @@ fn multistage_gemm[
     ]()
 
     var tid: UInt32 = ThreadIdx.x()
-    var warp_id = tid // WARP_SIZE
-    var lane_id = lane_id()
+    var ln_id = lane_id()
+
+    # Only apply block swizzling for half precision types.
+    alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
+
+    var block_idx = block_swizzle_by_scale[3](
+        Index(BlockIdx.x(), BlockIdx.y()), Index(N // BN, M // BM)
+    ) if swizzle_block else Index(BlockIdx.x(), BlockIdx.y())
 
     # Coordinates of the current warp.
     var warp_x: Int
     var warp_y: Int
-    warp_y, warp_x = divmod(int(warp_id), num_warps_n)
+    warp_y, warp_x = divmod(int(tid) // WARP_SIZE, num_warps_n)
 
-    var a_smem = dynamic_shared_memory[Scalar[a_type], alignment=4]()
-    var b_smem = (a_smem + num_pipeline_stages * BM * BK).bitcast[
-        Scalar[b_type]
+    # Prepare circular shared memory buffer for A and B.
+    # Each pipeline stage has its own buffer.
+    var a_smem = dynamic_shared_memory[
+        Scalar[a_type], alignment = alignof[SIMD[a_type, simd_size]]()
     ]()
+    alias a_smem_size = num_pipeline_stages * BM * BK
+    var a_smem_iter = LayoutTensorIter[
+        a_type, Layout.row_major(BM, BK), AddressSpace.SHARED, circular=True
+    ](a_smem, a_smem_size)
 
-    alias thread_async_copy_a_layout = Layout.row_major(
+    # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
+    var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
+    alias b_smem_size = num_pipeline_stages * BK * BN
+    alias BD_0 = BN if transpose_b else BK
+    alias BD_1 = BK if transpose_b else BN
+    alias b_smem_layout = Layout.row_major(BD_0, BD_1)
+    var b_smem_iter = LayoutTensorIter[
+        b_type, b_smem_layout, AddressSpace.SHARED, circular=True
+    ](b_smem, b_smem_size)
+
+    
+    # create input layout tensors A and B
+    var a_gmem_slice = LayoutTensor[
+        a_type, Layout.row_major(BM, K),
+    ](a.data.offset(BM * block_idx[1] * K))
+
+    alias b_layout = Layout.row_major(N, K) if transpose_b else Layout.row_major(K, N)
+    var b_gmem_tensor = LayoutTensor[
+        b_type, b_layout,
+    ](b.data)
+
+    # global memory iterator
+    var a_gmem_iter = a_gmem_slice.tiled_iterator[BM, BK, axis=1](0, 0)
+    var b_tile_coords = (block_idx[0], 0) if transpose_b else (0, block_idx[0])
+    alias b_tile_axis = 1 if transpose_b else 0
+    var b_gmem_iter = b_gmem_tensor.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
+        b_tile_coords[0], b_tile_coords[1]
+    )
+
+    alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
 
-    alias thread_async_copy_b_layout = Layout.row_major(
-        num_threads * simd_size // BK, BK // simd_size
-    ) if transpose_b else Layout.row_major(
-        num_threads * simd_size // BN, BN // simd_size
+    alias async_copy_b_layout = Layout.row_major(
+        num_threads * simd_size // BD_1, BD_1 // simd_size
     )
-
-    alias b_smem_layout = Layout.row_major(
-        BN, BK
-    ) if transpose_b else Layout.row_major(BK, BN)
+    alias async_copy_b_swizzle = None if transpose_b else (
+        OptionalReg[_swizzle_signature](
+            xor_2bits_per8T if a_type == DType.float32 else xor_3bits_per16T
+        )
+    )
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
     for stage in range(num_pipeline_stages - 1):
-        var a_smem_tile = LayoutTensor[
-            a_type,
-            Layout.row_major(BM, BK),
-            address_space = AddressSpace.SHARED,
-        ](a_smem + stage * BM * BK)
+        var a_smem_tile = a_smem_iter.next(stage).get()
+        var b_smem_tile = b_smem_iter.next(stage).get()
 
-        var b_smem_tile = LayoutTensor[
-            b_type,
-            b_smem_layout,
-            address_space = AddressSpace.SHARED,
-        ](b_smem + stage * BN * BK)
-
-        copy_from_nd_buffer[
-            thread_layout=thread_async_copy_a_layout,
-            is_async=True,
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_a_layout,
             swizzle=xor_2bits_per8T,
         ](
-            a_smem_tile.vectorize[1, simd_size]().distribute[
-                thread_async_copy_a_layout
-            ](ThreadIdx.x()),
-            a.tile[BM, BK]((BlockIdx.y(), stage)),
-            ThreadIdx.x(),
+            a_smem_tile.vectorize[1, simd_size](),
+            a_gmem_iter.get().vectorize[1, simd_size](),
         )
 
-        # fmt: off
-        @parameter
-        if transpose_b:
-            copy_from_nd_buffer[
-                thread_layout=thread_async_copy_b_layout,
-                is_async=True,
-                swizzle=xor_2bits_per8T,
-            ](
-                b_smem_tile.vectorize[1, simd_size]().distribute[
-                    thread_async_copy_b_layout
-                ](ThreadIdx.x()),
-                b.tile[BN, BK]((BlockIdx.x(), stage)),
-                ThreadIdx.x(),
-            )
-        else:
-            copy_from_nd_buffer[
-                thread_layout=thread_async_copy_b_layout,
-                is_async=True,
-                swizzle=xor_2bits_per8T,
-            ](
-                b_smem_tile.vectorize[1, simd_size]().distribute[
-                    thread_async_copy_b_layout
-                ](ThreadIdx.x()),
-                b.tile[BK, BN]((stage, BlockIdx.x())),
-                ThreadIdx.x(),
-            )
-        # fmt: on
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
+        ](
+            b_smem_tile.vectorize[1, simd_size](),
+            b_gmem_iter.get().vectorize[1, simd_size](),
+        )
 
         async_copy_commit_group()
+
+        a_gmem_iter += 1
+        b_gmem_iter += 1
 
     # Guard stage 0.
     async_copy_wait_group(num_pipeline_stages - 2)
@@ -261,6 +318,7 @@ fn multistage_gemm[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
+    alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias a_frag_size = frag_size[0]
     alias b_frag_size = frag_size[1]
@@ -275,29 +333,12 @@ fn multistage_gemm[
         b_type, Layout.row_major(2 * num_n_mmas, b_frag_size)
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
-        c_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
-    ].stack_allocation().vectorize[1, c_frag_size]()
+        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
+    ].stack_allocation()
 
     c_reg_tile.fill(0)
 
-    alias a_frag_type = __type_of(a_reg_tiles).ElementType.element_type
-    alias b_frag_type = __type_of(b_reg_tiles).ElementType.element_type
-
-    # Load shared -> registers for stage 0's mma.
-    # TODO: remove the cast.
-    var a_smem_tile0 = LayoutTensor[
-        a_type,
-        Layout.row_major(BM, BK),
-        address_space = AddressSpace.SHARED,
-    ](a_smem)
-
-    var b_smem_tile0 = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        address_space = AddressSpace.SHARED,
-    ](b_smem)
-
-    var a_warp_tile = a_smem_tile0.tile[WM, BK](int(warp_y), 0)
+    var a_warp_tile = a_smem_iter.get().tile[WM, BK](int(warp_y), 0)
 
     # TODO: warp the following in the tile method, maybe tile[shape: IntTuple].
     # I can't use b_warp_tile = ... if transpose_b else ... because the operands
@@ -306,77 +347,25 @@ fn multistage_gemm[
     alias b_wtile_dim1 = BK if transpose_b else WN
     var b_wtile_coord0 = int(warp_x) if transpose_b else 0
     var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
-    var b_warp_tile = b_smem_tile0.tile[b_wtile_dim0, b_wtile_dim1](
+    var b_warp_tile = b_smem_iter.get().tile[b_wtile_dim0, b_wtile_dim1](
         b_wtile_coord0, b_wtile_coord1
     )
 
-    # TODO: possbile to not rebind?
-    @parameter
-    for m_mma in range(num_m_mmas):
-        var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
-        a_reg_tiles[0][m_mma, 0] = rebind[a_frag_type](
-            ld_mma[
-                4,
-                Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                swizzle=xor_2bits_per8T,
-            ](a_mma_tile, 0)
-        )
+    var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
-    @parameter
-    if transpose_b:
-        # Use ld_matrix because with transposed B the thread layout in mma is
-        # row-major(8, 4). TF32 mma needs 2 8x4 matrices but we can combine 2
-        # mmas and load 4 matrics per iteration, reducing instruction count.
-        @parameter
-        for n_mma2 in range(num_n_mmas // 2):
-            var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
-            var vec = ld_mma[
-                4,
-                Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                swizzle=xor_2bits_per8T,
-            ](b_mma_tile, 0)
-            b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
-                SIMD[b_type, 2](vec[0], vec[2])
-            )
-            b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-                SIMD[b_type, 2](vec[1], vec[3])
-            )
-
-    else:
-        # Use normal scalar load because the thread layout in mma is column-majored.
-        @parameter
-        for n_mma in range(num_n_mmas):
-            var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](0, n_mma)
-            var b_mma_frag = b_mma_tile.distribute[Layout.col_major(4, 8)](
-                int(lane_id)
-            )
-            b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
-                SIMD[b_type, 2](
-                    rebind[Scalar[b_type]](b_mma_frag[0]),
-                    rebind[Scalar[b_type]](b_mma_frag[1]),
-                )
-            )
+    mma_op.load_a(a_warp_tile, a_reg_tiles[0])
+    mma_op.load_b(b_warp_tile, b_reg_tiles[0])
 
     var num_k_tiles = ceildiv(K, BK)
 
     for k_tile_id in range(num_k_tiles):
-        var stage = k_tile_id % num_pipeline_stages
+        var a_iter = a_smem_iter.next(k_tile_id)
+        var b_iter = b_smem_iter.next(k_tile_id)
 
-        var a_smem_tile = LayoutTensor[
-            a_type,
-            Layout.row_major(BM, BK),
-            address_space = AddressSpace.SHARED,
-        ](a_smem + stage * BM * BK)
-
-        var b_smem_tile = LayoutTensor[
-            b_type,
-            b_smem_layout,
-            address_space = AddressSpace.SHARED,
-        ](b_smem + stage * BN * BK)
-
-        var a_warp_tile = a_smem_tile.tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_smem_tile.tile[b_wtile_dim0, b_wtile_dim1](
-            b_wtile_coord0, b_wtile_coord1
+        var a_warp_tile = a_iter.get().tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_iter.get().tile[b_wtile_dim0, b_wtile_dim1](
+            b_wtile_coord0,
+            b_wtile_coord1,
         )
 
         # Perform prefetch registers and mma until current shared memory tile's
@@ -385,88 +374,28 @@ fn multistage_gemm[
         for k_mma in range(num_k_mmas):
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
-            var next_stage = (k_tile_id + 1) % num_pipeline_stages
 
             if k_mma == num_k_mmas - 1:
-                var a_smem_next_tile = LayoutTensor[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    address_space = AddressSpace.SHARED,
-                ](a_smem + next_stage * BM * BK)
-
-                var b_smem_next_tile = LayoutTensor[
-                    b_type,
-                    b_smem_layout,
-                    address_space = AddressSpace.SHARED,
-                ](b_smem + next_stage * BN * BK)
+                var a_smem_next_tile = a_iter.next().get()
+                var b_smem_next_tile = b_iter.next().get()
 
                 a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                 b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-                var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
-                a_reg_tiles[next][m_mma, 0] = rebind[a_frag_type](
-                    ld_mma[
-                        4,
-                        Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](
-                        a_mma_tile,
-                        (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
-                    )
-                )
+            mma_op.load_a(
+                a_warp_tile, a_reg_tiles[next], (k_mma + 1) % num_k_mmas
+            )
+            mma_op.load_b(
+                b_warp_tile, b_reg_tiles[next], (k_mma + 1) % num_k_mmas
+            )
 
-            @parameter
-            if transpose_b:
-
-                @parameter
-                for n_mma2 in range(num_n_mmas // 2):
-                    var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
-                    var vec = ld_mma[
-                        4,
-                        Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](
-                        b_mma_tile,
-                        (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
-                    )
-                    b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
-                        SIMD[b_type, 2](vec[0], vec[2])
-                    )
-                    b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-                        SIMD[b_type, 2](vec[1], vec[3])
-                    )
-            else:
-
-                @parameter
-                for n_mma in range(num_n_mmas):
-                    var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](
-                        (k_mma + 1) % num_k_mmas, n_mma
-                    )
-                    var b_mma_frag = b_mma_tile.distribute[
-                        Layout.col_major(4, 8)
-                    ](int(lane_id))
-                    b_reg_tiles[next][n_mma, 0] = rebind[b_frag_type](
-                        SIMD[b_type, 2](
-                            rebind[Scalar[b_type]](b_mma_frag[0]),
-                            rebind[Scalar[b_type]](b_mma_frag[1]),
-                        )
-                    )
-
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
-                    mma(
-                        c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
-                        a_reg_tiles[current][m_mma, 0],
-                        b_reg_tiles[current][n_mma, 0],
-                        c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
-                    )
+            mma_op.mma(
+                a_reg_tiles[current],
+                b_reg_tiles[current],
+                c_reg_tile.vectorize[1, c_frag_size](),
+            )
 
             if k_mma + 2 == num_k_mmas:
                 var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
@@ -474,71 +403,31 @@ fn multistage_gemm[
                 # Prefetch one k tile (if valid) from global memory to current
                 # shared memory buffer.
                 if prefetch_tile_id < num_k_tiles:
-                    var prefetch_stage = prefetch_tile_id % num_pipeline_stages
-
-                    var a_smem_prefetch_tile = LayoutTensor[
-                        a_type,
-                        Layout.row_major(BM, BK),
-                        address_space = AddressSpace.SHARED,
-                    ](a_smem + prefetch_stage * BM * BK)
-
-                    var b_smem_prefetch_tile = LayoutTensor[
-                        b_type,
-                        b_smem_layout,
-                        address_space = AddressSpace.SHARED,
-                    ](b_smem + prefetch_stage * BN * BK)
+                    # fmt: off
+                    var a_smem_prefetch_tile = a_iter.next(num_pipeline_stages - 1).get()
+                    var b_smem_prefetch_tile = b_iter.next(num_pipeline_stages - 1).get()
+                    # fmt: on
 
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
                     # prefetch for the three two iterations should be dummy.
-                    copy_from_nd_buffer[
-                        thread_layout=thread_async_copy_a_layout,
-                        is_async=True,
+                    copy_dram_to_sram_async[
+                        thread_layout=async_copy_a_layout,
                         swizzle=xor_2bits_per8T,
                     ](
-                        a_smem_prefetch_tile.vectorize[
-                            1, simd_size
-                        ]().distribute[thread_async_copy_a_layout](
-                            ThreadIdx.x()
-                        ),
-                        a.tile[BM, BK](
-                            (BlockIdx.y(), prefetch_tile_id % num_k_tiles)
-                        ),
-                        ThreadIdx.x(),
+                        a_smem_prefetch_tile.vectorize[1, simd_size](),
+                        a_gmem_iter.get().vectorize[1, simd_size](),
                     )
 
-                    @parameter
-                    if transpose_b:
-                        copy_from_nd_buffer[
-                            thread_layout=thread_async_copy_b_layout,
-                            is_async=True,
-                            swizzle=xor_2bits_per8T,
-                        ](
-                            b_smem_prefetch_tile.vectorize[
-                                1, simd_size
-                            ]().distribute[thread_async_copy_b_layout](
-                                ThreadIdx.x()
-                            ),
-                            b.tile[BN, BK](
-                                (BlockIdx.x(), prefetch_tile_id % num_k_tiles)
-                            ),
-                            ThreadIdx.x(),
-                        )
-                    else:
-                        copy_from_nd_buffer[
-                            thread_layout=thread_async_copy_b_layout,
-                            is_async=True,
-                            swizzle=xor_2bits_per8T,
-                        ](
-                            b_smem_prefetch_tile.vectorize[
-                                1, simd_size
-                            ]().distribute[thread_async_copy_b_layout](
-                                ThreadIdx.x()
-                            ),
-                            b.tile[BK, BN](
-                                (prefetch_tile_id % num_k_tiles, BlockIdx.x())
-                            ),
-                            ThreadIdx.x(),
-                        )
+                    copy_dram_to_sram_async[
+                        thread_layout=async_copy_b_layout,
+                        swizzle=async_copy_b_swizzle,
+                    ](
+                        b_smem_prefetch_tile.vectorize[1, simd_size](),
+                        b_gmem_iter.get().vectorize[1, simd_size](),
+                    )
+
+                    a_gmem_iter += 1
+                    b_gmem_iter += 1
 
                 async_copy_commit_group()
 
@@ -547,65 +436,105 @@ fn multistage_gemm[
                 barrier()
 
     # Map global memory tile down to thread.
+    var c_gmem_slice = LayoutTensor[
+        c_type, Layout.row_major(BM, N)
+    ](c.data.offset(block_idx[1] * BM * N))
+    var c_gmem_tile = c_gmem_slice.tile[BM, BN](0, block_idx[0])
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
+    # Store FP32 mma results to half precision buffer in global memory.
+    # Each thread's fragment has 2x2 fp32 values. Casting to half float and
+    # directly storing to global memory results in 2 4B writes. Following cutlass,
+    # we stage the fragments in shared memory so that each thread can store 16B.
     @parameter
-    if elementwise_lambda_fn:
-        alias thread_layout = Layout.row_major(8, 4)
-        var c_gmem_slice = LayoutTensor[c_type, Layout.row_major(BM, N)](
-            c.data.offset(BM * BlockIdx.y() * N)
-        )
-        var c_gmem_tile = c_gmem_slice.tile[BM, BN](0, BlockIdx.x())
-        var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](
+    if c_type.is_half_float():
+        # Stage fragments in shared memory. Reuse a_smem for c tile in smem
+        var accum_smem_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(BM, BN),
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[accum_type]]())
+        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
             int(warp_y), int(warp_x)
         )
-        alias epilogue = elementwise_lambda_fn.value()
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
-                    m_mma, n_mma
-                )
-                var c_frag = c_gmem_mma_tile.vectorize[1, 2]().distribute[
-                    Layout.row_major(8, 4)
-                ](int(lane_id))
-                var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-                var offset_0 = c_frag.distance(c.data)
-                epilogue[c_type, 2](
-                    Index(offset_0 // N, offset_0 % N),
-                    SIMD[c_type, 2](c_reg[0], c_reg[1]),
-                )
-                epilogue[c_type, 2](
-                    Index(offset_0 // N + 8, offset_0 % N),
-                    SIMD[c_type, 2](c_reg[2], c_reg[3]),
-                )
-
-    else:
-        var c_gmem_tile = c.tile[BM, BN]((BlockIdx.y(), BlockIdx.x()))
-        var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](
-            (int(warp_y), int(warp_x))
+        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+            accum_smem_warp_tile.vectorize[1, 2](),
+            c_reg_tile.vectorize[1, 2]().transpose(),
         )
 
-        @parameter
-        for m_mma in range(num_m_mmas):
+        # Guard writing to shared memory.
+        barrier()
 
+        # Vectorized copy from shared to global memory, during which every 2 FP32
+        # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
+        # vector and stored using 16B store instruction.
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+            alias c_store_layout = Layout.row_major(
+                num_threads * simd_size // BN, BN // simd_size
+            )
+            var c_gmem_frag = c_gmem_tile.vectorize[1, simd_size]().distribute[
+                c_store_layout
+            ](ThreadIdx.x())
+            var c_smem_frag = accum_smem_tile.vectorize[1, simd_size]().distribute[
+                c_store_layout
+            ](ThreadIdx.x())
+            var thread_offset = c_gmem_frag.distance(c.data)
+            var m: Int
+            var n: Int
             @parameter
-            for n_mma in range(num_n_mmas):
-                var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
-                    (m_mma, n_mma)
+            for i in range(c_gmem_frag.layout.size()):
+                var src_vec = c_smem_frag.aligned_load[simd_size](i, 0)
+                alias dst_idx = c_gmem_frag.layout(i)
+                var vec: SIMD[c_type, simd_size] = 0
+                m, n = divmod(thread_offset + dst_idx, N)
+
+                @parameter
+                for j in range(0, simd_size, 2):
+                    var vec_converted = convert[accum_type, c_type, 2](
+                        SIMD[accum_type, 2](src_vec[j], src_vec[j + 1])
+                    )
+                    vec[j] = vec_converted[0]
+                    vec[j + 1] = vec_converted[1]
+                epilogue((m, n), vec)
+                    
+        else:
+            copy_sram_to_dram[
+                thread_layout = Layout.row_major(
+                    num_threads * simd_size // BN, BN // simd_size
                 )
-                var c_frag = vectorize[1, 2](c_gmem_mma_tile)
-                var c_frag_local = distribute[
-                    thread_layout = Layout.row_major(8, 4)
-                ](c_frag[0], int(lane_id))
-                var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-                SIMD[size=2].store[alignment = alignof[SIMD[c_type, 2]]()](
-                    c_frag_local._offset((0, 0)),
-                    SIMD[c_type, 2](c_reg[0], c_reg[1]),
-                )
-                SIMD[size=2].store[alignment = alignof[SIMD[c_type, 2]]()](
-                    c_frag_local._offset((1, 0)),
-                    SIMD[c_type, 2](c_reg[2], c_reg[3]),
-                )
+            ](
+                c_gmem_tile.vectorize[1, simd_size](),
+                accum_smem_tile.vectorize[1, simd_size](),
+            )
+
+    # Store FP32 results to FP32 buffer in global memory.
+    else:
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+                Layout.row_major(8, 4)
+            ](int(ln_id))
+            var c_reg_frag = c_reg_tile.vectorize[1, 2]().transpose()
+            var m: Int
+            var n: Int
+            var thread_offset = c_gmem_frag.distance(c.data)
+            @parameter
+            for i in range(c_gmem_frag.layout.size()):
+                alias src_idx = c_reg_frag.layout(i)
+                alias dst_idx = c_gmem_frag.layout(i)
+                m, n = divmod(thread_offset + dst_idx, N)
+                # var idx_x: Int
+                # var idx_y: Int
+                # idx_y, idx_x = divmod(i, c_reg_frag.dim[0]())
+                # var vec = c_reg_frag.aligned_load[2](idx_x, idx_y)
+                var vec = SIMD[size=2].load[alignment = alignof[SIMD[c_type, 2]]()](c_reg_frag.ptr.offset(src_idx))
+                epilogue((m, n), vec)
+                
+        else:
+            copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                c_gmem_warp_tile.vectorize[1, 2](),
+                c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
+            )
