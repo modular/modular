@@ -1361,3 +1361,43 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 }
 }
 
+// -----
+
+// COM: Lower DestroyOp
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @coroutine1(%arg0: i1) async -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @coroutine_resume
+kgen.func @coroutine(%arg0: i1) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0
+  hlcf.if %arg0 {
+    %idx1 = index.constant 1
+    kgen.return %idx1 : index
+  } else {
+    hlcf.yield
+  }
+  %true = index.bool.constant true
+  // CHECK: [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
+  // CHECK-NEXT:  [[CORO_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8:]]]
+  // CHECK-NEXT: pop.store [[CORO]], [[CORO_SLOT]]
+  // CHECK-NEXT: co.suspend {
+  // CHECK-NEXT: co.suspend.end
+  // CHECK-NEXT: }
+  %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  // CHECK-NEXT: [[CORO2_SLOT:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME8]]]
+  // CHECK-NEXT:  [[CORO2:%.*]] = pop.load [[CORO2_SLOT]]
+  // CHECK-NEXT: pop.aligned_free [[CORO2]]
+  co.destroy %coro
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}
+
