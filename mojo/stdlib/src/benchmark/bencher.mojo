@@ -362,7 +362,9 @@ struct BenchmarkInfo(CollectionElement, Stringable):
                 throughput = throughput + "," + str(t[])
 
         return (
-            self.name
+            '"'
+            + self.name
+            + '"'
             + ","
             + str(self.result.mean(unit=Unit.ms))
             + ","
@@ -825,15 +827,15 @@ struct Bench:
                 var sep = "\n" if i < num_runs - 1 else ""
                 report += (self.info_vec[i]._csv_str(width_list)) + sep
         else:
-            report += String("name, met (ms), iters")
+            report += String("name,met (ms),iters")
             if num_runs > 0:
                 for measure in self.info_vec[0].measures:
-                    report += ", " + str(measure[])
+                    report += "," + str(measure[])
 
                 if self.config.verbose_timing:
                     for t in self.config.VERBOSE_TIMING_LABELS:
                         var measure_name = t[]
-                        report += ", " + measure_name
+                        report += "," + measure_name
             report += "\n"
 
             for i in range(num_runs):
