@@ -142,6 +142,18 @@ struct Int(Copyable):
         ](lhs.value, rhs.value)
 
     @always_inline("nodebug")
+    fn __lt__(lhs, rhs: Int) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate sgt>`
+        ](rhs.value, lhs.value)
+
+    @always_inline("nodebug")
+    fn __gt__(lhs, rhs: Int) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate sgt>`
+        ](lhs.value, rhs.value)
+
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         return not (self == 0)
 
@@ -165,11 +177,17 @@ struct StringLiteral:
 
 
 struct String(KeyElement):
-    fn __len__(self) -> Int:
-        return 0
-
     fn __init__(inout self, literal: StringLiteral):
         pass
+
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+    fn __moveinit__(inout self, owned existing: String):
+        pass
+
+    fn __len__(self) -> Int:
+        return 0
 
 
 @value
@@ -552,3 +570,93 @@ struct UnsafePointer[
     ) -> ref [Self._ref_lifetime, address_space._value.value] T:
         while __mlir_attr.true:
             pass
+
+
+@value
+@register_passable("trivial")
+struct _StridedRangeIterator:
+    var start: Int
+    var end: Int
+    var step: Int
+
+    @always_inline
+    fn __len__(self) -> Int:
+        if self.step > 0 and self.start < self.end:
+            return self.end - self.start
+        elif self.step < 0 and self.start > self.end:
+            return self.start - self.end
+        else:
+            return 0
+
+    @always_inline
+    fn __next__(inout self) -> Int:
+        var result = self.start
+        self.start += self.step
+        return result
+
+
+# ===----------------------------------------------------------------------===#
+# parameter_for
+# ===----------------------------------------------------------------------===#
+
+
+trait _IntNext(Copyable):
+    fn __next__(inout self) -> Int:
+        ...
+
+
+trait _IntIter(_IntNext):
+    fn __len__(self) -> Int:
+        ...
+
+
+trait _IntIterable(_IntIter):
+    fn __iter__(self) -> Self:
+        ...
+
+
+trait _StridedIterable(_IntIter):
+    fn __iter__(self) -> _StridedRangeIterator:
+        ...
+
+
+struct _ParamForIterator[IteratorT: Copyable]:
+    var next_it: IteratorT
+    var value: Int
+    var stop: Bool
+
+    fn __init__(inout self, next_it: IteratorT, value: Int, stop: Bool):
+        self.next_it = next_it
+        self.value = value
+        self.stop = stop
+
+
+fn declval[T: AnyType]() -> T:
+    while True:
+        pass
+
+
+fn parameter_for_generator[
+    T: _IntIterable,
+](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
+    return _generator(range.__iter__())
+
+
+fn parameter_for_generator[
+    T: _StridedIterable,
+](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
+    return _generator(range.__iter__())
+
+
+fn _generator[
+    IteratorT: _IntIter
+](it: IteratorT) -> _ParamForIterator[IteratorT]:
+    if it.__len__() == 0:
+        return _ParamForIterator[IteratorT](
+            __mlir_attr[`#kgen.unknown : !kgen.paramref<`, IteratorT, `>`],
+            0,
+            True,
+        )
+    var next_it = it
+    var value = next_it.__next__()
+    return _ParamForIterator(next_it, value, False)

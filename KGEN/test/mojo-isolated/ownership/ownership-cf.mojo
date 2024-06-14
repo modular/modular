@@ -10,8 +10,18 @@
 
 # Control flow related CheckLifetimes tests.
 
-fn use(err: Error): pass
-fn use(str: String): pass
+
+fn use(err: Error):
+    pass
+
+
+fn use(str: String):
+    pass
+
+
+fn use(a: MemExample):
+    pass
+
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
@@ -105,6 +115,7 @@ fn if_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
     d.noop()
     # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
+
 
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
@@ -351,7 +362,7 @@ fn testInfiniteloop():
     while True:
         # CHECK-NEXT:  %localThing = lit.var.decl
         # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
-        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %localThing
+        # CHECK-NEXT:  [[IMMREF:%.*]] = lit.ref.immut %localThing
         # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}([[IMMREF]])
         # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
         var localThing = MemExample()
@@ -371,6 +382,7 @@ struct TrivialRange:
 
     fn __len__(self) -> Int:
         return 1
+
 
 # Issue #98: https://github.com/modularml/mojo/issues/98
 # CHECK-LABEL: lit.func @"mojo98
@@ -396,7 +408,7 @@ struct MyStringReturningCtx:
         return ""
 
 
-# CHECK: lit.func @"testErrorReturn
+# CHECK-LABEL: lit.func @"testErrorReturn
 fn testErrorReturn() raises:
     var input: String
     # CHECK: try
@@ -406,3 +418,88 @@ fn testErrorReturn() raises:
         input = "hello"
     # CHECK: except
     use(input)
+
+
+fn marker():
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_param_for1
+# MOCO-831
+fn test_param_for1(cond: Bool, cond2: Bool):
+    # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
+    var mem = MemExample()
+
+    # CHECK: kgen.param.for *"x`1"{{.*}}!kgen.none>
+    # CHECK-NEXT: {
+    @parameter
+    for x in TrivialRange():
+        # Make sure nothing sneaks in here.
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+
+        # CHECK-NEXT: hlcf.elif {
+        # ... cond ...
+        # CHECK: } then {
+        if cond:
+            # CHECK: lit.call {{.*}}__del__{{.*}}(%mem)
+            # CHECK-NEXT: lit.call {{.*}}marker()
+            marker()
+            # CHECK-NEXT: kgen.param.for.break
+            break
+
+        # CHECK: hlcf.elif {
+        # ... cond2 ...
+        # CHECK: } then {
+        if cond2:
+            # CHECK: lit.call {{.*}}__del__{{.*}}(%mem)
+            # CHECK-NEXT: lit.call {{.*}}marker()
+            marker()
+            # CHECK-NEXT: kgen.param.for.break
+            break
+        # CHECK-NEXT: } else {
+        # CHECK-NEXT:   hlcf.yield
+        # CHECK-NEXT: }
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+        # CHECK-NEXT: kgen.param.for.continue
+
+    # CHECK-NEXT: } else {
+    else:
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
+        # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[TMP]])
+        use(mem)
+        # CHECK: lit.call {{.*}}__del__{{.*}}(%mem)
+
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+        # CHECK-NEXT: kgen.param.yield
+
+
+# CHECK-LABEL: lit.func @"test_param_for2
+# MOCO-831
+fn test_param_for2():
+    # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
+    var mem = MemExample()
+
+    # CHECK: kgen.param.for *"x`1"{{.*}}!kgen.none>
+    # CHECK-NEXT: {
+    @parameter
+    for x in TrivialRange():
+        # Make sure nothing sneaks in here.
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
+        # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[TMP]])
+        use(mem)
+        # CHECK-NEXT: kgen.param.for.continue
+
+    # CHECK-NEXT: } else {
+    else:
+        # HECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem)
+
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+
+        # CHECK-NEXT: kgen.param.yield
