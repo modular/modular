@@ -7,11 +7,9 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
-# COM: Crashes on darwin (mac). See https://linear.app/modularml/issue/KERN-438/kernelstestlinalgtest-matmulmojo-fails-to-run-on-macos
-# REQUIRES: linux
 # RUN: %mojo %s
 
-from sys.info import has_avx2, has_neon_int8_matmul
+from sys.info import has_avx2, has_neon_int8_matmul, os_is_macos
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -167,7 +165,6 @@ def test_matmul[
 
     gemm_naive(a, b, golden, m, n, k)
 
-    var errors: Int = 0
     for i in range(m):
         for j in range(n):
             assert_almost_equal(
@@ -249,6 +246,10 @@ def test_shapes[
 
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
+    @parameter
+    if b_packed and os_is_macos():
+        return
+
     test_shapes[
         DType.uint8,
         DType.uint8,
