@@ -28,7 +28,7 @@ alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
 
 
-struct AnyLifetime[is_mutable: __mlir_type.i1]:
+struct AnyLifetime[is_mutable: Bool]:
     """This represents a lifetime reference of potentially parametric type.
     TODO: This should be replaced with a parametric type alias.
 
@@ -38,7 +38,7 @@ struct AnyLifetime[is_mutable: __mlir_type.i1]:
 
     alias type = __mlir_type[
         `!lit.lifetime<`,
-        is_mutable,
+        is_mutable.value,
         `>`,
     ]
 
@@ -173,6 +173,7 @@ struct Bool(AnyType):
     fn __init__(inout self, value: __mlir_type.i1):
         self.value = value
 
+    @always_inline("nodebug")
     fn __mlir_i1__(self) -> __mlir_type.i1:
         return self.value
 
@@ -257,6 +258,38 @@ struct VariadicList[type: AnyTrivialRegType]:
         return
 
 
+# Helper to compute the union of two lifetimes:
+# TODO: parametric aliases would be nice.
+struct _lit_lifetime_union[
+    is_mutable: Bool,
+    a: AnyLifetime[is_mutable].type,
+    b: AnyLifetime[is_mutable].type,
+]:
+    alias result = __mlir_attr[
+        `#lit.lifetime.union<`,
+        a,
+        `,`,
+        b,
+        `> : !lit.lifetime<`,
+        is_mutable.value,
+        `>`,
+    ]
+
+
+struct _lit_mut_cast[
+    is_mutable: Bool, //,
+    operand: AnyLifetime[is_mutable].type,
+    result_mutable: Bool,
+]:
+    alias result = __mlir_attr[
+        `#lit.lifetime.mutcast<`,
+        operand,
+        `> : !lit.lifetime<`,
+        +result_mutable.value,
+        `>`,
+    ]
+
+
 struct VariadicListMem[
     element_type: AnyType,
     elt_is_mutable: __mlir_type.i1,
@@ -287,6 +320,23 @@ struct VariadicListMem[
         ],
     ):
         pass
+
+    fn __getitem__(
+        self, idx: Int
+    ) -> ref [
+        _lit_lifetime_union[
+            Bool {value: elt_is_mutable},
+            lifetime,
+            # cast mutability of self to match the mutability of the element,
+            # since that is what we want to use in the ultimate reference and
+            # the union overall doesn't matter.
+            _lit_mut_cast[
+                __lifetime_of(self), Bool {value: elt_is_mutable}
+            ].result,
+        ].result
+    ] element_type:
+        while True:
+            pass
 
 
 alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]

@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # Control flow related CheckLifetimes tests.
 
+fn use(err: Error): pass
+fn use(str: String): pass
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
@@ -104,11 +106,6 @@ fn if_examples(cond: __mlir_type.i1):
     d.noop()
     # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
 
-
-fn use(err: Error):
-    pass
-
-
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: %a = lit.var.decl
@@ -116,8 +113,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK: lit.try
     # CHECK-NOT: %a
     try:
-        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__copyinit__{{.*}}(%err)
-        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
+        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__copyinit__{{.*}}(%__try_error__, %err)
         raise err
         # COM: The error value isn't used on the except branch, so it is immediately
         # COM: destroyed.
@@ -364,11 +360,23 @@ fn testInfiniteloop():
     # CHECK-NEXT:  }
 
 
+@value
+@register_passable("trivial")
+struct TrivialRange:
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(inout self) -> Int:
+        return 1
+
+    fn __len__(self) -> Int:
+        return 1
+
 # Issue #98: https://github.com/modularml/mojo/issues/98
 # CHECK-LABEL: lit.func @"mojo98
 fn mojo98(n: Int):
     var a = MemExample()
-    for i in range(n):
+    for i in TrivialRange():
         a.x = i
 
 
@@ -382,10 +390,10 @@ struct MyStringReturningCtx:
         return self^
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.s = existing.s
+        self.s = ""
 
     fn read(self) raises -> String:
-        return str(self.s)
+        return ""
 
 
 # CHECK: lit.func @"testErrorReturn
@@ -397,4 +405,4 @@ fn testErrorReturn() raises:
         var x = ctx.read()
         input = "hello"
     # CHECK: except
-    print(input)
+    use(input)

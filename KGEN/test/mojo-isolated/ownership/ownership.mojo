@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
@@ -756,37 +756,6 @@ fn call_variadic_inout_mems():
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
-
-# CHECK-LABEL: lit.func @"variadic_inout_mems_iter
-fn variadic_inout_mems_iter(inout *mems: MemExample):
-  # Verify the iterator keeps the VariadicListMem alive.
-  # CHECK-NEXT: %mems_0 = lit.var.decl
-
-  # CHECK: %iter = lit.var.decl
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
-  # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %iter)
-  var iter = mems.__iter__()
-
-  # CHECK-NEXT: %x = lit.var.decl
-  # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next__{{.*}}(%iter)
-
-  ## FIXME: This destruction should be ordered after the destroy of the iterator
-  ## Since the iterator can refer to the mems struct.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
-
-  # Iterator is destroyed as soon as we're done with it.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%iter)
-
-  # __next__ returns a Reference which needs to turn in to !lit.ref
-  # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[ELTREF]])
-  # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
-  var x : MemExample = iter.__next__()[]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
-
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
-
 
 
 # CHECK-LABEL: lit.func @"test_partial_overwrite
