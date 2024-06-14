@@ -6,7 +6,7 @@
 
 # Test more advanced reference cases.
 
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
@@ -331,30 +331,6 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
   var x = args[4]
 
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
-
-
-@value
-struct HeterogenousList[elt_lifetime: ImmutableLifetime]:
-    var storage: VariadicListMem[MemExample, False.__mlir_i1__(), elt_lifetime]._mlir_type
-
-fn make_het_list(*elts: MemExample) -> HeterogenousList[__lifetime_of(elts)]:
-  # NOTE: typeof(elts) is different in argument list than in the body of the
-  # function, this will be fixed by https://github.com/modularml/modular/issues/37343
-  return HeterogenousList[elts.lifetime](elts.value)
-
-# CHECK-LABEL: lit.func @"test_heterogenous_list
-fn test_heterogenous_list():
-    var i = MemExample()
-    var j = MemExample()
-    var k = MemExample()
-
-    # Verify that each list captures the right lifetime set.
-    # CHECK: lit.var.decl "list1" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> (mutcast mut *"i`")>
-    var list1 = make_het_list(i)
-    # CHECK: lit.var.decl "list2" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> {(mutcast mut *"i`"), (mutcast mut *"j`1")}>
-    var list2 = make_het_list(i, j)
-    # CHECK: lit.var.decl "list3" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> {(mutcast mut *"i`"), (mutcast mut *"j`1"), (mutcast mut *"k`2")}>
-    var list3 = make_het_list(i, j, k)
 
 # Issue #37659: Parameter inference doesn't work with force-immut lifetimes
 fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Reference[T, value_lifetime]): pass

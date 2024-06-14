@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
 
 struct Empty:
     fn __init__(inout self):
@@ -296,7 +296,7 @@ fn disableDtor(owned x: MoreComplexExample):
 
 fn badMarkDestroyed(owned x: MoreComplexExample):
     # expected-error @+1 {{cannot mark subobjects destroyed}}
-    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](Reference(x.mem).value)
+    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](__get_mvalue_as_litref(x.mem))
 
 
 # expected-error @+3 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
@@ -389,9 +389,21 @@ struct WrapperNestedInt:
     var x: NestedInt
 
 
+@value
+@register_passable("trivial")
+struct TrivialRange:
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(inout self) -> Int:
+        return 1
+
+    fn __len__(self) -> Int:
+        return 1
+
 fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
-    for i in range(0, 1):
+    for i in TrivialRange():
         w.x.y = 0
 
 

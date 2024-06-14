@@ -10,6 +10,8 @@ alias float = __mlir_type.`!pop.scalar<f64>`
 
 alias NoneType = __mlir_type.`!kgen.none`
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
+alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
+alias MutableLifetime = __mlir_type.`!lit.lifetime<1>`
 
 alias `0` = __mlir_attr.`0 : index`
 alias `1` = __mlir_attr.`1 : index`
@@ -112,6 +114,9 @@ struct FloatDyn:
 struct Int(Copyable):
     var value: int
 
+    fn __init__(inout self):
+        self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
+
     @always_inline("nodebug")
     fn __init__(inout self, value: IntLiteral):
         self.value = __mlir_op.`kgen.int_literal.convert`[
@@ -121,6 +126,10 @@ struct Int(Copyable):
     @always_inline("nodebug")
     fn __add__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.add`(lhs.value, rhs.value)
+
+    @always_inline("nodebug")
+    fn __sub__(lhs, rhs: Int) -> Int:
+        return __mlir_op.`index.sub`(lhs.value, rhs.value)
 
     @always_inline("nodebug")
     fn __iadd__(inout self, rhs: Int):
@@ -156,6 +165,9 @@ struct StringLiteral:
 
 
 struct String(KeyElement):
+    fn __len__(self) -> Int:
+        return 0
+
     fn __init__(inout self, literal: StringLiteral):
         pass
 
@@ -290,6 +302,40 @@ struct _lit_mut_cast[
     ]
 
 
+@value
+struct _VariadicListMemIter[
+    elt_is_mutable: Bool, //,
+    elt_type: AnyType,
+    elt_lifetime: AnyLifetime[elt_is_mutable].type,
+    list_lifetime: ImmutableLifetime,
+]:
+    """Iterator for VariadicListMem.
+
+    Parameters:
+        elt_is_mutable: Whether the elements in the list are mutable.
+        elt_type: The type of the elements in the list.
+        elt_lifetime: The lifetime of the elements.
+        list_lifetime: The lifetime of the VariadicListMem.
+    """
+
+    alias variadic_list_type = VariadicListMem[
+        elt_type, elt_is_mutable.value, elt_lifetime
+    ]
+
+    var index: Int
+    var src: Reference[Self.variadic_list_type, list_lifetime]
+
+    fn __next__(inout self) -> Self.variadic_list_type.reference_type:
+        self.index += 1
+        # TODO: Need to make this return a dereferenced reference, not a
+        # reference that must be deref'd by the user.
+        # NOTE: Using UnsafePointer here to get lifetimes to match.
+        return UnsafePointer.address_of(self.src[][self.index - 1])[]
+
+    fn __len__(self) -> Int:
+        return Int()
+
+
 struct VariadicListMem[
     element_type: AnyType,
     elt_is_mutable: __mlir_type.i1,
@@ -298,6 +344,8 @@ struct VariadicListMem[
     alias _mlir_type = __mlir_type[
         `!lit.ref<`, element_type, `, `, lifetime, `, 0>`
     ]
+
+    alias reference_type = Reference[element_type, lifetime]
 
     fn __init__(
         inout self,
@@ -338,6 +386,20 @@ struct VariadicListMem[
         while True:
             pass
 
+    fn __iter__(
+        self,
+    ) -> _VariadicListMemIter[element_type, lifetime, __lifetime_of(self),]:
+        """Iterate over the list.
+
+        Returns:
+            An iterator to the start of the list.
+        """
+        return _VariadicListMemIter[
+            element_type,
+            lifetime,
+            __lifetime_of(self),
+        ](0, self)
+
 
 alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
 
@@ -361,6 +423,12 @@ struct VariadicPack[
 
     fn __init__(inout self, value: Self._mlir_pack_type, is_owned: Bool):
         pass
+
+    fn __getitem__[
+        index: Int
+    ](self) -> ref [Self.lifetime] element_types[index.value]:
+        while True:
+            pass
 
 
 @register_passable
@@ -407,7 +475,7 @@ struct AddressSpace:
 @value
 @register_passable("trivial")
 struct Reference[
-    is_mutable: __mlir_type.i1, //,
+    is_mutable: Bool, //,
     type: AnyType,
     lifetime: AnyLifetime[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -422,12 +490,15 @@ struct Reference[
         `>`,
     ]
 
-    fn __init__(inout self, value: Self._mlir_type):
-        pass
+    var value: Self._mlir_type
 
-    fn __getitem__(self) -> ref [lifetime, address_space] type:
-        while __mlir_attr.true:
-            pass
+    fn __init__(
+        inout self, ref [lifetime, address_space._value.value]value: type
+    ):
+        self.value = __get_mvalue_as_litref(value)
+
+    fn __getitem__(self) -> ref [lifetime, address_space._value.value] type:
+        return __get_litref_as_mvalue(self.value)
 
 
 struct Tuple[*element_types: AnyType]:
@@ -452,6 +523,23 @@ struct UnsafePointer[
     T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC
 ]:
     alias _ref_lifetime = __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`
+
+    alias _mlir_type = __mlir_type[
+        `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
+    ]
+    var address: Self._mlir_type
+
+    fn __init__() -> Self:
+        return Self {
+            address: __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
+        }
+
+    fn __init__(value: Self._mlir_type) -> Self:
+        return Self {address: value}
+
+    @staticmethod
+    fn address_of(ref [_, address_space._value.value]arg: T) -> Self:
+        return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
     fn __getitem__(
         self,

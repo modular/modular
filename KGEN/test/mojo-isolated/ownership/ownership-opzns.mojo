@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
+# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # Test for CheckLifetimes optimizations.
 
