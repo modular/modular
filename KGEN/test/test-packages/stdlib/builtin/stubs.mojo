@@ -63,6 +63,9 @@ struct Error:
     fn __init__(inout self):
         pass
 
+    fn __init__(inout self, value: StringLiteral):
+        pass
+
     fn __copyinit__(inout self, existing: Self):
         pass
 
@@ -169,6 +172,12 @@ struct String(KeyElement):
         return 0
 
     fn __init__(inout self, literal: StringLiteral):
+        pass
+
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+    fn __moveinit__(inout self, owned existing: String):
         pass
 
 
