@@ -666,6 +666,12 @@ def main():
         run_low_precision_test_with_epilogue[
             1024, 3072, 5120, DType.float32, DType.float32
         ](ctx)
+        run_low_precision_test[
+            1024, 3072, 5120, DType.bfloat16, DType.bfloat16
+        ](ctx)
+        run_low_precision_test_with_epilogue[
+            1024, 3072, 5120, DType.bfloat16, DType.bfloat16
+        ](ctx)
 
         _ = ctx
     except e:
