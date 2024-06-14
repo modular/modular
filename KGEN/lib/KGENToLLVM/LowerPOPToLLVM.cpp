@@ -594,7 +594,7 @@ static void lowerLifetimeMarker(Operation *op, ValueRange values,
   for (auto [ptr, values] : llvm::zip(op->getOperands(), values)) {
     int64_t typeAllocSize = *DataLayoutInterface::getTypeAllocSize(
         target, cast<PointerType>(ptr.getType()).getElementType());
-    auto alloc = ptr.getDefiningOp<StackAllocationOp>();
+    auto alloc = ptr.template getDefiningOp<StackAllocationOp>();
     assert(alloc && "expected a parent stack allocation");
     int64_t count = cast<IntegerAttr>(alloc.getCountAttr()).getInt();
     b.create<OpT>(op->getLoc(), typeAllocSize * count, values);
