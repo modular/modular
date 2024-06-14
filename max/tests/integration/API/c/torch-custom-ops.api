@@ -1,7 +1,7 @@
 // REQUIRES: mtorch
 // REQUIRES: pytorch-generated-tests
-// RUN: modular-api-executor --torch-library=%torchvisionlib --compile-specs=2xf32 --print-metadata %pytorch_generated_tests_dir/TorchVisionOps.pt | FileCheck %s --check-prefix=CHECK-METADATA
-// RUN: modular-api-executor --torch-library=%torchvisionlib --model-inputs=ones --input-specs=2xf32 --result-output-style=full %pytorch_generated_tests_dir/TorchVisionOps.pt | FileCheck %s --check-prefix=CHECK-EXECUTE
+// RUN: modular-api-executor --torch-library="%libpython" --torch-library="%libtorch_python" --torch-library="%libtorchvision" --compile-specs=2xf32 --print-metadata %pytorch_generated_tests_dir/TorchVisionOps.pt | FileCheck %s --check-prefix=CHECK-METADATA
+// RUN: modular-api-executor --torch-library="%libpython" --torch-library="%libtorch_python" --torch-library="%libtorchvision" --model-inputs=ones --input-specs=2xf32 --result-output-style=full %pytorch_generated_tests_dir/TorchVisionOps.pt | FileCheck %s --check-prefix=CHECK-EXECUTE
 
 // CHECK-METADATA: Inputs:
 // CHECK-METADATA: - name: scores

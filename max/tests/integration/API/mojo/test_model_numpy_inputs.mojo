@@ -25,8 +25,6 @@ fn test_model_numpy_input() raises:
 
     assert_equal(len(args), 2)
 
-    assert_equal(args[1], "mo.mlir")
-
     var model_path = args[1]
     var session = InferenceSession()
     var model = session.load(Path(model_path))
