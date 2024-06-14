@@ -987,6 +987,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
           op->getLoc(), callbackOp.getType(), slot);
       callbackOp.replaceAllUsesWith(slotCast);
       callbackOp->erase();
+    } else if (auto destroyOp = dyn_cast<DestroyOp>(op)) {
+      rewriter.setInsertionPoint(op);
+      Value continuation = destroyOp.getOperand();
+      rewriter.create<AlignedFreeOp>(destroyOp->getLoc(), continuation);
+      destroyOp->erase();
     }
   });
 }
