@@ -442,3 +442,55 @@ fn test_make_custom_simd[
 fn supports_scalar_kernel[type: DType](x: Scalar[type], out: NDBuffer[type, 1]):
     print("datatype is", type)
     out[0] = x
+
+
+struct MyCustomScalar[type: DType](Movable):
+    var val: Scalar[type]
+
+    fn __init__(inout self, val: Scalar[type]):
+        print("MyCustomScalar.__init__", val)
+        self.val = val
+
+    fn __moveinit__(inout self, owned other: Self):
+        print("MyCustomScalar.__moveinit__", other.val)
+        self.val = other.val
+
+    fn __del__(owned self):
+        print("MyCustomScalar.__del__", self.val)
+
+
+@mogg_register("tensor_to_my_custom_scalar")
+@export
+fn tensor_to_my_custom_scalar[
+    type: DType
+](x: ExtensibilityTensor[type, 1]) -> MyCustomScalar[type]:
+    var val = x.simd_load[simd_width=1](0)
+    return MyCustomScalar(val)
+
+
+@mogg_register("my_custom_scalar_to_tensor")
+@export
+fn my_custom_scalar_to_tensor[
+    type: DType
+](x: MyCustomScalar[type]) -> ExtensibilityTensor[type, 1]:
+    var out = empty_tensor[type, 1](StaticIntTuple[1](1))
+    out.store[width=1](0, x.val)
+    return out^
+
+
+@mogg_register("scale_with_my_custom_scalar")
+@export
+fn scale_with_my_custom_scalar[
+    type: DType, rank: Int
+](
+    x: ExtensibilityTensor[type, rank], scale: MyCustomScalar[type]
+) -> ExtensibilityTensor[type, rank]:
+    var out = empty_tensor[x.type](x.shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int](i: StaticIntTuple[rank]) -> SIMD[out.type, width]:
+        return x.simd_load[width](i) * scale.val
+
+    out.for_each[func]()
+    return out^
