@@ -4,15 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
-# RUN: %parse-mojo-isolated %s --debug-level full -o /dev/null
+# RUN: kgen-translate -import-mojo %s --debug-level full -o /dev/null
 
 # Error Handling related CheckLifetimes tests.
 
-fn use(x: Int): pass
-fn use(x: String): pass
-def use_and_raise(x: Int): pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}RegExample::@"__del__
@@ -64,6 +61,15 @@ struct MemExample:
     fn __del__(owned self):
         pass
 
+
+def foo(x: Int):
+    pass
+
+
+fn use(x: Int):
+    pass
+
+
 # Use of uninitialized value after call to def function
 
 
@@ -72,7 +78,7 @@ struct MemExample:
 def error_handling_int_let():
     # CHECK: lit.var.decl "x"
     var x: Int = 1
-    _ = use_and_raise(x)
+    _ = foo(x)
     use(x)
 
 
@@ -173,7 +179,7 @@ struct MyStringReturningCtx:
         self.s = existing.s
 
     fn read(self) raises -> String:
-        return ""
+        return str(self.s)
 
 
 # CHECK: lit.func @"testErrorReturn
@@ -185,7 +191,7 @@ fn testErrorReturn() raises:
         var x = ctx.read()
         input = "hello"
     # CHECK: except
-    use(input)
+    print(input)
 
 
 # COM: Test partial destruction of initialized fields upon an error return.
@@ -299,7 +305,7 @@ struct ThrowingSelfInit:
 
 # CHECK-LABEL: lit.func @"emplace_error
 fn emplace_error() raises:
-    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}(%__error__)
+    # CHECK: lit.ref.store {{.*}}, %__error__
     # CHECK: lit.error_return
     __get_nearest_error_slot() = Error()
     __mlir_op.`lit.raise`()
@@ -318,6 +324,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
      # CHECK-NEXT:   [[V2:%.*]] = lit.ref.struct.ger %self[x]
      # CHECK-NEXT:   lit.call @{{.*}}::@MemExample::@"__del__{{.*}}([[V2]])
      # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
+     # CHECK-NEXT:   lit.ref.store
      # CHECK-NEXT:   kgen.param.constant
      # CHECK-NEXT:   lit.error_return
      # CHECK-NEXT: } else {

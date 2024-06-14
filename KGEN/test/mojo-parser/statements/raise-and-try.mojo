@@ -119,7 +119,8 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK:  lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%__error__, %err)
+    # CHECK: %[[ERRVALCOPY:.*]] = lit.call {{.*}}@Error::@"__copyinit__
+    # CHECK-NEXT: lit.ref.store %[[ERRVALCOPY]], %__error__
     # CHECK-NEXT: lit.raise
     raise err
 
@@ -128,7 +129,8 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.elif
     if cond:
-        # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%__error__, %err)
+        # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__
+        # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
         # CHECK-NEXT: lit.raise
         raise err
 
@@ -137,7 +139,8 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try %__try_error__
     try:
-        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%__try_error__, %err)
+        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
+        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
         # CHECK-NEXT: lit.raise
         raise err
     except:
