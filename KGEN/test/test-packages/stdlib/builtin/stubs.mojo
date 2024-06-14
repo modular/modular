@@ -58,7 +58,11 @@ trait KeyElement:
 
 @register_passable
 struct Error:
-    pass
+    fn __init__(inout self):
+        pass
+
+    fn __copyinit__(inout self, existing: Self):
+        pass
 
 
 struct object:
@@ -131,6 +135,14 @@ struct Int(Copyable):
     @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         return not (self == 0)
+
+    @always_inline("nodebug")
+    fn __index__(self) -> Int:
+        return self
+
+    @always_inline("nodebug")
+    fn __mlir_index__(self) -> __mlir_type.index:
+        return self.value
 
 
 @value
