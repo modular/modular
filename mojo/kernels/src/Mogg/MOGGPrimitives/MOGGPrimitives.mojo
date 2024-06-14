@@ -318,6 +318,13 @@ fn mip_constant_index[value: Int64]() -> Int:
     return value.value
 
 
+@mogg_register("mip.print.index")
+@always_inline
+@export
+fn mip_print_index(x: Int):
+    print("index = ", x)
+
+
 @mogg_register("mip.add")
 @always_inline
 @export
