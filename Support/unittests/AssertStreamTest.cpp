@@ -11,6 +11,6 @@
 #include "gtest/gtest.h"
 
 TEST(Assert, Aborts) {
-  EXPECT_EXIT(ASSERT_STREAM(false) << "Error message",
+  EXPECT_EXIT(ASSERT_STREAM(false, << "Error message"),
               testing::KilledBySignal(6), "Error message");
 }

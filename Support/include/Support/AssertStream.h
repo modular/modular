@@ -48,11 +48,11 @@ struct FailedAssertion {
 /// Assert that a condition holds. Users can append addition information to the
 /// error message by using the << operator.
 /// ```
-///   ASSERT_STREAM(false) << "This condition is always false!";
+///   ASSERT_STREAM(false, << "This condition is always false!");
 /// ```
-#define ASSERT_STREAM(e)                                                       \
-  if (LLVM_UNLIKELY(!(e)))                                                     \
-  ::M::FailedAssertion(__FILE__, __LINE__).getStorage().os << #e               \
-                                                           << " is false.\n"
+#define ASSERT_STREAM(condition, message)                                      \
+  if (LLVM_UNLIKELY(!(condition)))                                             \
+  ::M::FailedAssertion(__FILE__, __LINE__).getStorage().os                     \
+      << #condition << " is false.\n" message
 
 #endif // SUPPORT_ASSERT_STREAM_H
