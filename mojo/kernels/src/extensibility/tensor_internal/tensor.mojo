@@ -359,7 +359,8 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn __del__(owned self):
         """Delete the spec and release any owned memory."""
-        self._ptr.free()
+        if self._ptr:
+            self._ptr.free()
 
     @always_inline
     fn __copyinit__(inout self, other: Self):
