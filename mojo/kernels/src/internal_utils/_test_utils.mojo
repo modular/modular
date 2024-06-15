@@ -15,7 +15,7 @@ from utils import InlineArray
 
 fn get_minmax[
     dtype: DType
-](x: DTypePointer[dtype], N: Int) -> InlineArray[Scalar[dtype], 2]:
+](x: DTypePointer[dtype], N: Int) -> (Scalar[dtype], Scalar[dtype]):
     var max_val = x[0]
     var min_val = x[0]
     for i in range(1, N):
@@ -23,7 +23,7 @@ fn get_minmax[
             max_val = x[i]
         if x[i] < min_val:
             min_val = x[i]
-    return InlineArray[Scalar[dtype], 2](min_val, max_val)
+    return (min_val, max_val)
 
 
 # TODO: use assert_true for comparisons atol_minmax,rtol_minmax = InlineArray[Scalar[dtype],2]
@@ -31,7 +31,6 @@ fn compare[
     dtype: DType, N: Int
 ](x: DTypePointer[dtype], y: DTypePointer[dtype], label: String):
     alias alignment = alignof[dtype]()
-    alias unroll_factor = 8
 
     var atol = DTypePointer[dtype].alloc(N, alignment=alignment)
     var rtol = DTypePointer[dtype].alloc(N, alignment=alignment)
