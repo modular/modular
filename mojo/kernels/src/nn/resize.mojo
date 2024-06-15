@@ -326,6 +326,8 @@ fn _resize[
         out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
         using_tmp1 = not using_tmp1
 
-    tmp_buffer1.free()
-    tmp_buffer2.free()
+    if tmp_buffer1:
+        tmp_buffer1.free()
+    if tmp_buffer2:
+        tmp_buffer2.free()
     resize_dims._del_old()
