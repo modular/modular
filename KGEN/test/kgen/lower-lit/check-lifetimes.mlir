@@ -695,9 +695,8 @@ lit.func @breakAndContinueInElifParamFor(
     kgen.param.for.continue
   // CHECK-NEXT: } else {
   } else {
-    // FIXME: We're not modeling else correctly.
-    // HECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%A)
-    // HECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%D)
+    // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%A)
+    // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%D)
     // CHECK-NEXT: kgen.param.yield
     kgen.param.yield
   }

@@ -1548,12 +1548,12 @@ private:
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
-  struct BlockConsumeInfo {
-    const BitVector &consumedValues;
-    Block &block;
-  };
-  void unifyConsumedSets(Operation &condOp, Block &consumedValueBlock,
-                         BlockConsumeInfo otherBlockInfo);
+  BitVector unifyConsumedSets(const BitVector &set1, const BitVector &set2);
+  void destroyValuesAtEntryIfNeeded(const BitVector &currentConsumeSet,
+                                    Block &block,
+                                    const BitVector &fullSetToDestroy,
+                                    Location loc);
+
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
@@ -2073,41 +2073,54 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
   thenConsumedValues.swap(consumedValues);
   scanBlock(ifElseOp.getRegion(1).front());
 
-  unifyConsumedSets(ifElseOp, ifElseOp.getRegion(1).front(),
-                    {thenConsumedValues, ifElseOp.getRegion(0).front()});
+  BitVector merged = unifyConsumedSets(consumedValues, thenConsumedValues);
+  if (merged.empty()) // Common case, they are identical.
+    return;
+
+  // 'consumedValues' is the current set for the 'else' block, so insert those
+  // dtors if needed.
+  destroyValuesAtEntryIfNeeded(consumedValues, ifElseOp.getRegion(1).front(),
+                               merged, ifElseOp.getLoc());
+
+  // Insert destructors in the 'then' block.
+  destroyValuesAtEntryIfNeeded(thenConsumedValues,
+                               ifElseOp.getRegion(0).front(), merged,
+                               ifElseOp.getLoc());
+
+  // The upward consume set is the union of both sides.
+  consumedValues = std::move(merged);
 }
 
-/// Unify consumed sets across two branches of a conditional operation.  The
-/// 'consumedValues' set is considered to be the 'consumed' set at the top of
-/// the 'consumedValueBlock' block and 'otherInfo' contains the set from the
-/// top of some other region.  Both of them meet at condOp.
-void DestructorInsertion::unifyConsumedSets(Operation &condOp,
-                                            Block &consumedValueBlock,
-                                            BlockConsumeInfo otherBlockInfo) {
-  // At this point, 'thenConsumedValues' is the set of upwardly consumed
-  // values from the 'then' block and 'consumedValues' is the set of upwardly
-  // consumed values from the else branch.  See if they agree already, then
-  // there is nothing to do.
-  if (consumedValues == otherBlockInfo.consumedValues)
-    return;
+/// Given two consume sets that correspond to an 'if-like' construct which
+/// diverges control flow, compute the union of the two consume sets and return
+/// it, or RETURN AN EMPTY BITVECTOR if they are identical.
+///
+/// Consider:     if cond: use(a) else: use(b)
+///
+/// In this case, the 'then' block will use "a" and the else block will use "b".
+/// This returns the union of both {a,b}.  This union operation is non-trivial
+/// in other cases though.
+///
+BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
+                                                 const BitVector &set2) {
+  // If they agree already, then there is nothing to do.
+  if (set1 == set2)
+    return BitVector();
 
   // We don't want to perform meets with unreachable code (e.g. from `if False:
   // stuff`: if either of the regions is unreachable, then propagate the other
   // one.  This matters because there is no conservative "missing" set for whole
   // object bits.  We use the sentinel's consume bit to know if anything is
   // consumed.
-  if (!otherBlockInfo
-           .consumedValues[0]) // If "then" isn't reachable, return "else".
-    return;
-  if (!consumedValues[0]) { // If "else" isn't reachable, return "then".
-    consumedValues = otherBlockInfo.consumedValues;
-    return;
-  }
+  if (!set1[0]) // If "then" isn't reachable, return "else".
+    return set2;
+  if (!set2[0]) // If "else" isn't reachable, return "then".
+    return set1;
 
   // Given two consume sets, our upward propagated final set will be the
   // union of both sets.
-  BitVector upwardConsumeSet = consumedValues;
-  upwardConsumeSet |= otherBlockInfo.consumedValues;
+  BitVector result = set1;
+  result |= set2;
 
   // It is possible that some subfields out of a value that is fully consumed
   // are not demanded.  For example, consider something like:
@@ -2155,40 +2168,11 @@ void DestructorInsertion::unifyConsumedSets(Operation &condOp,
     // If it is missing in one side or the other, then the upward set needs to
     // consume the entire object.
     size_t endBit = valueInfo.endValueBit - 1;
-    if (consumedValues[endBit] != otherBlockInfo.consumedValues[endBit])
-      upwardConsumeSet.set(valueInfo.startValueBit, valueInfo.endValueBit);
+    if (set1[endBit] != set2[endBit])
+      result.set(valueInfo.startValueBit, valueInfo.endValueBit);
   }
 
-  // If we are in a dryrun, just return the computed union of the two sets.
-  if (dryRun) {
-    consumedValues = upwardConsumeSet;
-    return;
-  }
-
-  // Otherwise we have to emit destructors for any non-trivial members to get
-  // the branches to line up. If the one branch consumed values that the other
-  // branch didn't, then we need to destroy those corresponding values in the
-  // other branch.
-
-  // destroyValuesAtEntry will mutate consumedValues, so do the block this set
-  // represents first.
-
-  // needToConsumeInElse = upwardConsumeSet & ~consumedValues.
-  BitVector needToConsumeInElse = upwardConsumeSet;
-  needToConsumeInElse.reset(consumedValues);
-  destroyValuesAtEntry(needToConsumeInElse, consumedValueBlock,
-                       condOp.getLoc());
-
-  // Next handle the "other" set.
-
-  //    needToConsumeInThen = upwardConsumeSet & ~thenConsumedValues.
-  BitVector needToConsumeInThen = upwardConsumeSet;
-  needToConsumeInThen.reset(otherBlockInfo.consumedValues);
-  destroyValuesAtEntry(needToConsumeInThen, otherBlockInfo.block,
-                       condOp.getLoc());
-
-  // Restore consumedValues to the merged set.
-  consumedValues = upwardConsumeSet;
+  return result;
 }
 
 /// For a loop, we know the consume sets for any break statements, but need
@@ -2208,13 +2192,19 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // set for break statements.
   BitVector breakSet(consumedValues);
 
-  // If there is an 'else' on a @parameter for, process it to determine the
-  // consume set going into the bottom of the loop.
-  if (loopOp.getNumRegions() == 2)
-    scanBlock(loopOp.getRegion(1).front());
-
   // The original set will be what any 'break' statement sees.
   loopBodySets.breakSet = &breakSet;
+
+  // If there is an 'else' on a @parameter for, process it to determine the
+  // consume set going into the bottom of the loop.
+  BitVector elseBlockConsumeSet;
+  if (loopOp.getNumRegions() == 2 && isParamFor) {
+    scanBlock(loopOp.getRegion(1).front());
+    // Save the set of values consumed by the 'else' block for later.  It is
+    // possible that the loop will consume more values and we'll need to insert
+    // destructor calls into the else.
+    elseBlockConsumeSet = consumedValues;
+  }
 
   // The continueSet is the set of values consumed upwards from the top of the
   // loop and carried over the loop.
@@ -2297,6 +2287,15 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
     }
 
     loopBodySets.scanBlock(loopOp.getRegion(0).front());
+
+    // If we are a '@parameter for' with an else block, the loop body may have
+    // more demands than the else block does.  Make sure we destroy these values
+    // in the else block if needed.
+    if (!elseBlockConsumeSet.empty()) {
+      destroyValuesAtEntryIfNeeded(
+          elseBlockConsumeSet, loopOp.getRegion(1).front(),
+          loopBodySets.consumedValues, loopOp.getLoc());
+    }
   }
 
   consumedValues = std::move(loopBodySets.consumedValues);
@@ -3134,6 +3133,31 @@ void DestructorInsertion::emitDebugKillAndDestructorCallAt(
   emitDestructorCallAt(value, valueRef.isIndirect, builder, opWithUse);
 }
 
+/// Insert destructors calls into the start of 'block' for objects in the
+/// 'fullSetToDestroy' that are not already in the 'currentConsumeSet'.  This is
+/// used at control flow merges.
+///
+/// This does not modify 'consumedValues', and does respect 'dryRun'.
+void DestructorInsertion::destroyValuesAtEntryIfNeeded(
+    const BitVector &currentConsumeSet, Block &block,
+    const BitVector &fullSetToDestroy, Location loc) {
+  // If we are in a dry run or the two sets match, don't actually insert
+  // anything.
+  if (dryRun || currentConsumeSet == fullSetToDestroy)
+    return;
+
+  // entriesToDestroy = fullSetToDestroy & ~currentConsumeSet.
+  BitVector entriesToDestroy = fullSetToDestroy;
+  entriesToDestroy.reset(currentConsumeSet);
+
+  // Move consumedValues out of the way so we don't break it.
+  BitVector savedConsumedValues = std::move(consumedValues);
+  destroyValuesAtEntry(entriesToDestroy, block, loc);
+
+  // Restore consumedValues.
+  consumedValues = std::move(savedConsumedValues);
+}
+
 /// Destroy any values whose bits are indicated in the specified set.  Insert
 /// the destructor calls at the entry to the specified block.  This leaves the
 /// consumedValues set in an unpredictable state, and is not safe in dryRun
@@ -3152,6 +3176,8 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
   // We *only* want to destroy the values in entries, not any other values that
   // may be partially overlapped, so mark all the other things as "already
   // destroyed".
+  assert(&entries != &consumedValues &&
+         "This logic doesn't work when passed 'consumedValues' directly");
   consumedValues = entries;
   consumedValues.flip();
 

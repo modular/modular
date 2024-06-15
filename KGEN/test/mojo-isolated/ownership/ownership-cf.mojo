@@ -497,8 +497,7 @@ fn test_param_for2():
 
     # CHECK-NEXT: } else {
     else:
-        # HECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem)
-
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem)
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
 
