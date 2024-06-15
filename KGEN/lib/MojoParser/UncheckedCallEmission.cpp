@@ -701,6 +701,21 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   if (!underlyingDest)
     return false;
 
+  // If this is a throwing function, then we cannot write to a field of a
+  // lifetime tracked value.  Consider:
+  //     x.f = foo()
+  // The contract for the result slot is that 'x.f' has to be uninitialized
+  // before the function call, so we would have to destroy any live value in the
+  // slot before calling the function:
+  //     x.f.__del__()
+  //     foo(x.f, __error__)  # Passed as byref_result
+  // However, when the function throws, if 'x' is unused, we need to be able to
+  // delete the full 'x' value.  However, we cannot call the destructor on 'x'
+  // because the whole value isn't initialized.  Address this by not assigning
+  // into submembers in throwing functions.
+  if (calleeSig.isThrows() && underlyingDest != destBuffer)
+    return false;
+
   // Check to see if the specified argument value pointer could alias with the
   // destination buffer, returning true if it might.  We can only disambiguate
   // this safely when we can prove that the pointer points to a different

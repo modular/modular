@@ -808,16 +808,38 @@ struct UninitField:
 fn maybeMemExample() raises -> MemExample:
    return MemExample()
 
-# FIXME: https://linear.app/modularml/issue/MOCO-807/fix-conditionally-initialized-values
 struct HasMemExample:
   var fh: MemExample
   # CHECK: lit.func @"destroyPotentiallyOverwrittenValueRegardlessOfOutcome
   fn destroyPotentiallyOverwrittenValueRegardlessOfOutcome(inout self):
-    # CHECK: lit.ref.struct.ger %self[fh]
-    # CHECK-NEXT: lit.call @{{.*}}::@MemExample::@"__del__
-    # CHECK: lit.try {
+    # CHECK-NEXT: %__try_error__ = lit.var.dec
+    # CHECK-NEXT: lit.try {
     try:
+      # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %self[fh]
+      # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+      # CHECK-NEXT: lit.call {{.*}}maybeMemExample{{.*}}(%__try_error__, %__call_result_tmp__)
       self.fh = maybeMemExample()
+
+      # Handle the error and other case.  The error isn't used, so delete it
+      # here.
+
+      # CHECK-NEXT: hlcf.if
+      #   CHECK-NEXT: lit.ownership.mark_initialized %__try_error__
+      #   CHECK-NEXT: lit.ref.load %__try_error__
+      #   CHECK-NEXT: lit.call {{.*}}Error::@"__del__
+      #   CHECK-NEXT: lit.try.raise
+      # CHECK-NEXT: } else {
+
+      # On success, we overwrite the field.
+      # CHECK-NEXT: [[FIELD2:%.*]] = lit.ref.struct.ger %self[fh]
+      # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[FIELD2]])
+      # CHECK-NEXT: lit.ownership.mark_initialized %__call_result_tmp__
+      # CHECK-NEXT: hlcf.yield
+      # CHECK-NEXT: }
+
+      # On success we move the result value into the destination.
+      # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD]], %__call_result_tmp__)
+      # CHECK-NEXT: lit.try.yield
     except:
       pass
 
