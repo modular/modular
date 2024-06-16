@@ -293,7 +293,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
             elif stride_type == InnerStride.Contiguous:
 
                 @parameter
-                if type == DType.bool:
+                if type is DType.bool:
                     var v = SIMD[size=simd_width].load(
                         self.data.bitcast[DType.uint8](), flat_index
                     )
@@ -303,7 +303,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
             else:
 
                 @parameter
-                if type == DType.bool:
+                if type is DType.bool:
                     var v = strided_load[DType.uint8, simd_width](
                         self.data.bitcast[DType.uint8]().offset(flat_index),
                         stride,
