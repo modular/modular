@@ -21,6 +21,7 @@ from math import (
     sin,
     sqrt,
     trunc,
+    copysign,
 )
 from sys.info import has_neon
 
@@ -51,25 +52,21 @@ fn test_factorial() raises:
 
 def test_copysign():
     var x = Int32(2)
-    assert_equal(2, math.copysign(x, x))
-    assert_equal(-2, math.copysign(x, -x))
-    assert_equal(2, math.copysign(-x, x))
-    assert_equal(-2, math.copysign(-x, -x))
+    assert_equal(2, copysign(x, x))
+    assert_equal(-2, copysign(x, -x))
+    assert_equal(2, copysign(-x, x))
+    assert_equal(-2, copysign(-x, -x))
 
-    assert_equal(1, math.copysign(Float32(1), Float32(2)))
-    assert_equal(-1, math.copysign(Float32(1), Float32(-2)))
-    assert_equal(
-        neg_inf[DType.float32](), math.copysign(inf[DType.float32](), -2.0)
-    )
-    assert_equal(
-        -nan[DType.float32](), math.copysign(nan[DType.float32](), -2.0)
-    )
+    assert_equal(1, copysign(Float32(1), Float32(2)))
+    assert_equal(-1, copysign(Float32(1), Float32(-2)))
+    assert_equal(neg_inf[DType.float32](), copysign(inf[DType.float32](), -2.0))
+    assert_equal(-nan[DType.float32](), copysign(nan[DType.float32](), -2.0))
 
     # Test some cases with 0 and signed zero
-    assert_equal(1, math.copysign(Float32(1.0), Float32(0.0)))
-    assert_equal(0, math.copysign(Float32(0.0), Float32(1.0)))
-    assert_equal(0, math.copysign(Float32(-0.0), Float32(1.0)))
-    assert_equal(-0, math.copysign(Float32(0.0), Float32(-1.0)))
+    assert_equal(1, copysign(Float32(1.0), Float32(0.0)))
+    assert_equal(0, copysign(Float32(0.0), Float32(1.0)))
+    assert_equal(0, copysign(Float32(-0.0), Float32(1.0)))
+    assert_equal(-0, copysign(Float32(0.0), Float32(-1.0)))
 
     # TODO: Add some test cases for SIMD vector with width > 1
 
