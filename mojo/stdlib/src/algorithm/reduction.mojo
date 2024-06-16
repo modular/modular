@@ -1522,7 +1522,7 @@ fn all_true(src: Buffer) -> Bool:
         type: DType, simd_width: Int
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
-        if type == DType.bool:
+        if type is DType.bool:
             return val.cast[DType.bool]().reduce_and()
         return (val != 0).reduce_and()
 
@@ -1555,7 +1555,7 @@ fn any_true(src: Buffer) -> Bool:
         type: DType, simd_width: Int
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
-        if type == DType.bool:
+        if type is DType.bool:
             return val.cast[DType.bool]().reduce_or()
         return (val != 0).reduce_or()
 
@@ -1589,7 +1589,7 @@ fn none_true(src: Buffer) -> Bool:
         type: DType, simd_width: Int
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
-        if type == DType.bool:
+        if type is DType.bool:
             return not val.cast[DType.bool]().reduce_or()
         return not (val != 0).reduce_or()
 
