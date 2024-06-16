@@ -459,7 +459,7 @@ fn _load_matrix_frag[
     # swizzle: OptionalReg[_swizzle_signature] = None,
     transposed: Bool = False,
     *,
-    # work around parameter deduction
+    # Work around parameter deduction MOCO-854.
     __type: DType,
     __layout: Layout,
     __masked: Bool,
@@ -476,7 +476,7 @@ fn _load_matrix_frag[
     ],
     offset: Int,
 ) -> SIMD[mma_tile.dtype, __output_width]:
-    alias simd_size = simdwidthof[__type]()
+    alias simd_size = simdwidthof[mma_tile.dtype]()
 
     # mma_tile is tiled from the row major shared memory buffer. Retrieve the
     # buffer's stride for computing the swizzle.
@@ -498,14 +498,14 @@ fn _load_matrix_frag[
 
     alias ldmatrix_layout = ComposedLayout(
         composition(smem_layout, ldmatrix_threadmap),
-        make_ldmatrix_swizzleex[__type, row_size](),
+        make_ldmatrix_swizzleex[mma_tile.dtype, row_size](),
     )
 
     var lane_offset = eval_composed[ldmatrix_layout](
         int(lane), offset
     ) * simd_size
 
-    return ld_matrix[__type, __output_width, transposed](
+    return ld_matrix[mma_tile.dtype, __output_width, transposed](
         mma_tile.ptr + lane_offset
     )
 
