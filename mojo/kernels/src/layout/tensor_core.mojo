@@ -78,11 +78,11 @@ struct TensorCore[
     @staticmethod
     fn get_shapes[out_type: DType, in_type: DType]() -> List[StaticIntTuple[3]]:
         @parameter
-        if out_type == DType.float32 and in_type == DType.float32:
+        if out_type is DType.float32 and in_type is DType.float32:
             return List[StaticIntTuple[3]](shape_16x8x4, shape_16x8x8)
-        elif out_type == DType.float32 and in_type == DType.bfloat16:
+        elif out_type is DType.float32 and in_type is DType.bfloat16:
             return List[StaticIntTuple[3]](shape_16x8x8, shape_16x8x16)
-        elif out_type == DType.float32 and in_type == DType.float16:
+        elif out_type is DType.float32 and in_type is DType.float16:
             return List[StaticIntTuple[3]](shape_16x8x8, shape_8x8x4)
         else:
             constrained[False, "No valid shape of mma"]()
@@ -101,7 +101,7 @@ struct TensorCore[
         alias layout_tf32 = self.tile_16x4 if reg_per_thread == 2 else self.tile_16x8
         alias layout_f16 = self.tile_16x8_row if reg_per_thread == 4 else self.tile_16x16_row
         alias layout_a = (layout_f16) if (
-            in_type == DType.bfloat16 or in_type == DType.float16
+            in_type is DType.bfloat16 or in_type is DType.float16
         ) else (layout_tf32)
 
         var mat_a = a.reshape[layout_a]()
@@ -109,7 +109,7 @@ struct TensorCore[
         var group_lane_id = int(lane_id()) % 4
 
         @parameter
-        if in_type == DType.float32:
+        if in_type is DType.float32:
 
             @parameter
             if reg_per_thread == 2:
@@ -136,7 +136,7 @@ struct TensorCore[
                 constrained[
                     False, "No valid mma shape to load matrix fragment a"
                 ]()
-        elif in_type == DType.bfloat16 or in_type == DType.float16:
+        elif in_type is DType.bfloat16 or in_type is DType.float16:
 
             @parameter
             if reg_per_thread == 4:
@@ -173,7 +173,7 @@ struct TensorCore[
         alias layout_tf32 = self.tile_8x4 if reg_per_thread == 1 else self.tile_8x8
         alias layout_f16 = self.tile_8x8_row if reg_per_thread == 2 else self.tile_16x8
         alias layout_b = (layout_f16) if (
-            in_type == DType.bfloat16 or in_type == DType.float16
+            in_type is DType.bfloat16 or in_type is DType.float16
         ) else (layout_tf32)
 
         var mat_b = b.transpose().reshape[layout_b]()
@@ -181,7 +181,7 @@ struct TensorCore[
         var group_lane_id = int(lane_id()) % 4
 
         @parameter
-        if in_type == DType.float32:
+        if in_type is DType.float32:
 
             @parameter
             if reg_per_thread == 1:
@@ -199,7 +199,7 @@ struct TensorCore[
                 constrained[
                     False, "No valid mma shape to load matrix fragment b"
                 ]()
-        elif in_type == DType.bfloat16 or in_type == DType.float16:
+        elif in_type is DType.bfloat16 or in_type is DType.float16:
 
             @parameter
             if reg_per_thread == 2:
@@ -234,7 +234,7 @@ struct TensorCore[
         var group_lane_id = int(lane_id()) % 4
 
         @parameter
-        if out_type == DType.float32:
+        if out_type is DType.float32:
 
             @parameter
             if reg_per_thread == 4:
@@ -275,7 +275,7 @@ struct TensorCore[
         var group_lane_id = int(lane_id()) % 4
 
         @parameter
-        if out_type == DType.float32:
+        if out_type is DType.float32:
 
             @parameter
             if reg_per_thread == 4:
@@ -515,7 +515,7 @@ fn get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
 ]() -> StaticIntTuple[3]:
     @parameter
-    if accum_type == DType.float32 and input_type == DType.float32:
+    if accum_type is DType.float32 and input_type is DType.float32:
 
         @parameter
         if shape_id == 0:
@@ -523,7 +523,7 @@ fn get_mma_shape[
         else:
             return shape_16x8x4
 
-    elif accum_type == DType.float32 and input_type == DType.bfloat16:
+    elif accum_type is DType.float32 and input_type is DType.bfloat16:
 
         @parameter
         if shape_id == 0:
@@ -531,7 +531,7 @@ fn get_mma_shape[
         else:
             return shape_16x8x8
 
-    elif accum_type == DType.float32 and input_type == DType.float16:
+    elif accum_type is DType.float32 and input_type is DType.float16:
 
         @parameter
         if shape_id == 0:
@@ -550,16 +550,16 @@ fn get_accum_type[
     input_type: DType, preferred_accum_type: DType = input_type
 ]() -> DType:
     @parameter
-    if input_type == DType.float32:
+    if input_type is DType.float32:
         return DType.float32
-    elif input_type == DType.bfloat16:
+    elif input_type is DType.bfloat16:
         return DType.float32
     # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
     # performance and use fp32 only when it's specified via preferred type.
-    elif input_type == DType.float16:
+    elif input_type is DType.float16:
 
         @parameter
-        if preferred_accum_type == DType.float32:
+        if preferred_accum_type is DType.float32:
             return preferred_accum_type
         else:
             return DType.float16
