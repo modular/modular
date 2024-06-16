@@ -69,13 +69,13 @@ fn check_cublas_error(stat: Result):
 @always_inline
 fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
     @parameter
-    if mojo_type == DType.float32:
+    if mojo_type is DType.float32:
         return DataType.R_32F
-    elif mojo_type == DType.float16:
+    elif mojo_type is DType.float16:
         return DataType.R_16F
     else:
         constrained[
-            mojo_type == DType.bfloat16,
+            mojo_type is DType.bfloat16,
             (
                 "Only support FP32, FP16 and BF16. Please extend it if more"
                 " types are needed."

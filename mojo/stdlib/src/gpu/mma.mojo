@@ -32,13 +32,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     @parameter
     if (
-        d.type == DType.float16
+        d.type is DType.float16
         and d.size == 4
-        and a.type == DType.float16
+        and a.type is DType.float16
         and a.size == 4
-        and b.type == DType.float16
+        and b.type is DType.float16
         and b.size == 2
-        and c.type == DType.float16
+        and c.type is DType.float16
         and c.size == 4
     ):
         var sa = _split(a)
@@ -57,13 +57,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d[2] = rebind[Scalar[d.type]](d1[0])
         d[3] = rebind[Scalar[d.type]](d1[1])
     elif (
-        d.type == DType.float16
+        d.type is DType.float16
         and d.size == 2
-        and a.type == DType.float16
+        and a.type is DType.float16
         and a.size == 1
-        and b.type == DType.float16
+        and b.type is DType.float16
         and b.size == 1
-        and c.type == DType.float16
+        and c.type is DType.float16
         and c.size == 2
     ):
         var r = llvm_intrinsic[
@@ -78,13 +78,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
     elif (
-        d.type == DType.float32
+        d.type is DType.float32
         and d.size == 4
-        and a.type == DType.float16
+        and a.type is DType.float16
         and a.size == 4
-        and b.type == DType.float16
+        and b.type is DType.float16
         and b.size == 2
-        and c.type == DType.float32
+        and c.type is DType.float32
         and c.size == 4
     ):
         var sa = _split(a)
@@ -110,13 +110,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d[2] = rebind[Scalar[d.type]](r[2])
         d[3] = rebind[Scalar[d.type]](r[3])
     elif (
-        d.type == DType.float32
+        d.type is DType.float32
         and d.size == 2
-        and a.type == DType.float16
+        and a.type is DType.float16
         and a.size == 1
-        and b.type == DType.float16
+        and b.type is DType.float16
         and b.size == 1
-        and c.type == DType.float32
+        and c.type is DType.float32
         and c.size == 2
     ):
         var r = llvm_intrinsic[
@@ -131,13 +131,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F32 = BF16 * BF16 + F32
     # ===------------------------------------------------------------------===#
     elif (
-        d.type == DType.float32
+        d.type is DType.float32
         and d.size == 4
-        and a.type == DType.bfloat16
+        and a.type is DType.bfloat16
         and a.size == 4
-        and b.type == DType.bfloat16
+        and b.type is DType.bfloat16
         and b.size == 2
-        and c.type == DType.float32
+        and c.type is DType.float32
         and c.size == 4
     ):
         var sa = _split(a)
@@ -164,13 +164,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d[3] = rebind[Scalar[d.type]](r[3])
 
     elif (
-        d.type == DType.float32
+        d.type is DType.float32
         and d.size == 4
-        and a.type == DType.bfloat16
+        and a.type is DType.bfloat16
         and a.size == 8
-        and b.type == DType.bfloat16
+        and b.type is DType.bfloat16
         and b.size == 4
-        and c.type == DType.float32
+        and c.type is DType.float32
         and c.size == 4
     ):
         var sa = _split(a)
@@ -206,13 +206,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F32 = tf32 * tf32 + F32
     # ===------------------------------------------------------------------===#
     elif (
-        d.type == DType.float32
+        d.type is DType.float32
         and d.size == 4
-        and a.type == DType.float32
+        and a.type is DType.float32
         and a.size == 2
-        and b.type == DType.float32
+        and b.type is DType.float32
         and b.size == 1
-        and c.type == DType.float32
+        and c.type is DType.float32
         and c.size == 4
     ):
         var a0 = a
@@ -242,13 +242,13 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d[3] = rebind[Scalar[d.type]](r[3])
 
     elif (
-        d.type == DType.float32
+        d.type is DType.float32
         and d.size == 4
-        and a.type == DType.float32
+        and a.type is DType.float32
         and a.size == 4
-        and b.type == DType.float32
+        and b.type is DType.float32
         and b.size == 2
-        and c.type == DType.float32
+        and c.type is DType.float32
         and c.size == 4
     ):
         var a0 = a

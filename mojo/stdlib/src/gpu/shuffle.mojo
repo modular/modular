@@ -37,11 +37,11 @@ fn _shuffle[
     ]()
 
     @parameter
-    if type.is_float32():
+    if type is DType.float32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[type]
         ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))
-    elif type.is_int32():
+    elif type is DType.int32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
         ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))

@@ -14,10 +14,10 @@ fn tc_reduce[
 ](val: Scalar[in_type]) -> Scalar[out_type]:
     """Using Tensor Cores to do warp level reduction."""
 
-    constrained[out_type == DType.float32]()
+    constrained[out_type is DType.float32]()
 
     @parameter
-    if out_type == DType.float32 and in_type == DType.float16:
+    if out_type is DType.float32 and in_type is DType.float16:
         var d_reg = SIMD[out_type, 2]()
         var a_reg = SIMD[in_type, 1](1)
         var b_reg = SIMD[in_type, 1](val)
@@ -31,7 +31,7 @@ fn tc_reduce[
 
         return d_reg[0]
 
-    elif out_type == DType.float32 and in_type == DType.bfloat16:
+    elif out_type is DType.float32 and in_type is DType.bfloat16:
         var d_reg = SIMD[out_type, 4]()
         var a_reg = SIMD[in_type, 4](1)
         var b_reg = SIMD[in_type, 2]()
@@ -46,7 +46,7 @@ fn tc_reduce[
 
         return d_reg[0]
 
-    elif out_type == DType.float32 and in_type == DType.float32:
+    elif out_type is DType.float32 and in_type is DType.float32:
         var d_reg = SIMD[out_type, 4]()
         var a_reg = SIMD[in_type, 2](1)
         var b_reg = Scalar[in_type](val)
@@ -61,7 +61,7 @@ fn tc_reduce[
 
     else:
         constrained[
-            in_type == DType.float16 and out_type == DType.float16,
+            in_type is DType.float16 and out_type is DType.float16,
             "unsupported dtype",
         ]()
         var d_reg = SIMD[out_type, 2]()

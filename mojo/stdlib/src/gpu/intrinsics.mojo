@@ -26,39 +26,39 @@ fn ldg[type: DType](x: DTypePointer[type]) -> Scalar[type]:
     alias alignment = Int32(alignof[Scalar[type]]())
 
     @parameter
-    if type == DType.uint8 or type == DType.int8:
+    if type is DType.uint8 or type is DType.int8:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i8", Int8](
                 x.bitcast[DType.int8](), alignment
             )
         )
-    elif type == DType.uint16 or type == DType.int16:
+    elif type is DType.uint16 or type is DType.int16:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i16", Int16](
                 x.bitcast[DType.int16](), alignment
             )
         )
-    elif type == DType.uint32 or type == DType.int32:
+    elif type is DType.uint32 or type is DType.int32:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i32", Int32](
                 x.bitcast[DType.int32](), alignment
             )
         )
-    elif type == DType.uint64 or type == DType.int64:
+    elif type is DType.uint64 or type is DType.int64:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i64", Int64](
                 x.bitcast[DType.int64](), alignment
             )
         )
-    elif type == DType.float32:
+    elif type is DType.float32:
         return llvm_intrinsic["llvm.nvvm.ldg.global.f.f32", Scalar[type]](
             x, alignment
         )
-    elif type == DType.float64:
+    elif type is DType.float64:
         return llvm_intrinsic["llvm.nvvm.ldg.global.f.f64", Scalar[type]](
             x, alignment
         )
-    elif type == DType.bfloat16:
+    elif type is DType.bfloat16:
         return llvm_intrinsic["llvm.nvvm.ldg.global.f.bf16", Scalar[type]](
             x, alignment
         )
@@ -117,7 +117,7 @@ fn convert[
     This is for conversions not covered by `cast`."""
 
     constrained[
-        src_type == DType.float32 and dst_type == DType.bfloat16 and width == 2,
+        src_type is DType.float32 and dst_type is DType.bfloat16 and width == 2,
         "Only support 2xfp32 to 2xbf16 conversion",
     ]()
 
