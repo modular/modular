@@ -1364,7 +1364,7 @@ fn test_in(a: String, b: String):
 # Test that parameter inference can handle this.
 fn dependent_call_it[dtype: DType](ptr: DTypePointer[dtype]):
    dependent_callee(ptr, 0.0)
-# This requires substitution to realize that storage.type == dtype
+# This requires substitution to realize that storage.type == DType
 fn dependent_callee[dtype: DType](storage: DTypePointer[dtype],
                    pad_value: Scalar[storage.type]):
    pass
