@@ -252,17 +252,13 @@ fn _perfect_vectorized_impl[
     alias unrolled_simd_width = simd_width * unroll_factor
     var vector_end_unrolled_simd = align_down(size, unrolled_simd_width)
 
-    @always_inline
-    @parameter
-    fn unrolled_func(unrolled_simd_idx: Int):
-        @parameter
-        for idx in range(unroll_factor):
-            func[simd_width](unrolled_simd_idx + idx * simd_width)
-
     for unrolled_simd_idx in range(
         0, vector_end_unrolled_simd, unrolled_simd_width
     ):
-        unrolled_func(unrolled_simd_idx)
+
+        @parameter
+        for idx in range(unroll_factor):
+            func[simd_width](unrolled_simd_idx + idx * simd_width)
 
     @parameter
     if unroll_factor != 1:
@@ -607,17 +603,14 @@ fn tile[
     var work_idx = offset
     alias num_tiles = len(secondary_tile_size_list)
 
-    @always_inline
     @parameter
-    fn static_tile_impl[idx: Int]():
-        alias secondary_tile_size = secondary_tile_size_list[idx]
-        var primary_tile_size = primary_tile_size_list[idx]
+    for i in range(num_tiles):
+        alias secondary_tile_size = secondary_tile_size_list[i]
+        var primary_tile_size = primary_tile_size_list[i]
 
         while work_idx <= upperbound - primary_tile_size:
             workgroup_function[secondary_tile_size](work_idx, primary_tile_size)
             work_idx += primary_tile_size
-
-    unroll[static_tile_impl, num_tiles]()
 
     # launch the last cleanup tile
     if work_idx < upperbound:
@@ -669,16 +662,14 @@ fn tile[
     alias num_tiles_x = len(tile_sizes_x)
     alias num_tiles_y = len(tile_sizes_y)
 
-    @always_inline
     @parameter
-    fn tile_on_y[idx_y: Int]():
+    for idx_y in range(num_tiles_y):
         alias tile_size_y = tile_sizes_y[idx_y]
         while current_offset_y <= upperbound_y - tile_size_y:
             current_offset_x = offset_x
 
-            @always_inline
             @parameter
-            fn tile_on_x[idx_x: Int]():
+            for idx_x in range(num_tiles_x):
                 alias tile_size_x = tile_sizes_x[idx_x]
                 while current_offset_x <= upperbound_x - tile_size_x:
                     workgroup_function[tile_size_x, tile_size_y](
@@ -686,10 +677,7 @@ fn tile[
                     )
                     current_offset_x += tile_size_x
 
-            unroll[tile_on_x, num_tiles_x]()
             current_offset_y += tile_size_y
-
-    unroll[tile_on_y, num_tiles_y]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -827,11 +815,10 @@ fn tile_and_unswitch[
     """
 
     # Initialize where to start on the overall work load.
-    var current_offset: Int = offset
+    var current_offset = offset
 
-    @always_inline
     @parameter
-    fn static_tile_impl[idx: Int]():
+    for idx in range(len(tile_size_list)):
         # Get the tile size to proceed with.
         var tile_size = tile_size_list[idx]
 
@@ -842,8 +829,6 @@ fn tile_and_unswitch[
                 current_offset, upperbound
             )
             current_offset += tile_size
-
-    unroll[static_tile_impl, len(tile_size_list)]()
 
     # Use the last tile size to process the residue.
     if current_offset < upperbound:
@@ -954,16 +939,13 @@ fn tile_middle_unswitch_boundaries[
         offset += left_tile_size
 
     # Middle
-    @always_inline
     @parameter
-    fn static_tile_impl[idx: Int]():
+    for idx in range(len(middle_tile_sizes)):
         alias tile_size = middle_tile_sizes[idx]
 
         while offset <= right_boundary_start - tile_size:
             work_fn[tile_size, False](offset)
             offset += tile_size
-
-    unroll[static_tile_impl, len(middle_tile_sizes)]()
 
     # Right boundary region.
     while offset < right_boundary_end:
