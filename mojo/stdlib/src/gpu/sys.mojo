@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for getting NVIDIA GPUs features."""
 
-from sys.info import _current_cpu, _current_target
+from sys.info import _current_arch, _current_target
 
 
 @always_inline("nodebug")
 fn _get_sm_name() -> StringLiteral:
-    return _current_cpu()
+    return _current_arch()
 
 
 @always_inline("nodebug")
