@@ -22,6 +22,8 @@ from math import (
     sqrt,
     trunc,
     copysign,
+    gcd,
+    lcm,
 )
 from sys.info import has_neon
 
@@ -358,6 +360,45 @@ def test_log2():
         _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
+def test_gcd():
+    var l = List(2, 4, 6, 8, 16)
+    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    assert_equal(gcd(Span[Int](il)), 2)
+    assert_equal(gcd(2, 4, 6, 8, 16), 2)
+    assert_equal(gcd(l), 2)
+    assert_equal(gcd(88, 24), 8)
+    assert_equal(gcd(0, 0), 0)
+    assert_equal(gcd(1, 0), 1)
+    assert_equal(gcd(-2, 4), 2)
+    assert_equal(gcd(-2, -4), 2)
+    assert_equal(gcd(24826148, 45296490), 526)
+    assert_equal(gcd(0, 9), 9)
+    assert_equal(gcd(4, 4), 4)
+    assert_equal(gcd(8), 8)
+    assert_equal(gcd(), 0)
+    assert_equal(gcd(List[Int]()), 0)
+    assert_equal(gcd(List(16)), 16)
+
+
+def test_lcm():
+    assert_equal(lcm(-2, 4), 4)
+    assert_equal(lcm(2345, 23452), 54994940)
+    var l = List(4, 6, 7, 3)
+    assert_equal(lcm(Span(l)), 84)
+    assert_equal(lcm(l), 84)
+    assert_equal(lcm(4, 6, 7, 3), 84)
+    assert_equal(lcm(), 1)
+    assert_equal(lcm(List(3)), 3)
+    assert_equal(lcm(List[Int]()), 1)
+    assert_equal(lcm(0, 4), 0)
+    assert_equal(lcm(5, 33), 165)
+    assert_equal(lcm(-34, -56, -32), 3808)
+    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    assert_equal(lcm(Span[Int](il)), 48)
+    assert_equal(lcm(345, 623, 364, 84, 93), 346475220)
+    assert_equal(lcm(0, 0), 0)
+
+
 def main():
     test_sin()
     test_cos()
@@ -374,3 +415,5 @@ def main():
     test_frexp()
     test_log()
     test_log2()
+    test_gcd()
+    test_lcm()
