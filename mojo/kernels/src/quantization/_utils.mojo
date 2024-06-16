@@ -17,7 +17,7 @@ fn roundeven_to_int32[
     # set to do rounding to nearest with ties to even (roundeven). This
     # replaces a `vrndscaleps` and `vcvttps2dq` instruction pair.
     @parameter
-    if has_avx512f() and type == DType.float32 and simd_width >= native_width:
+    if has_avx512f() and type is DType.float32 and simd_width >= native_width:
         var x_i32 = SIMD[DType.int32, simd_width]()
 
         @parameter
@@ -40,7 +40,7 @@ fn roundeven_to_int32[
     # with rounding to nearest with ties to even (roundeven). This
     # replaces a `frintn` and `fcvtzs` instruction pair.
     @parameter
-    if has_neon() and type == DType.float32 and simd_width >= native_width:
+    if has_neon() and type is DType.float32 and simd_width >= native_width:
         var x_i32 = SIMD[DType.int32, simd_width]()
 
         @parameter
