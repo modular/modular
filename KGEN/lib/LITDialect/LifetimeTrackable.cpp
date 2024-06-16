@@ -21,6 +21,11 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+/// Return true if the specified MLIR type is obviously a trivial register type.
+static bool isTypeObviouslyTrivial(Type type) {
+  return isa<KGEN::NoneType, IntegerType, RefType>(type);
+}
+
 //===----------------------------------------------------------------------===//
 // LifetimeTrackable
 //===----------------------------------------------------------------------===//
@@ -110,42 +115,43 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {
-    auto handleCallResult = [&]() {
-      // As a microoptimization for CheckLifetimes, don't track None result
-      // types, which are very common: they are the return types of memory-only
-      // calls and exception-throwing calls.
-      if (isa<KGEN::NoneType, IntegerType>(v.getType()))
-        return;
+    // We have several different common cases, including:
+    // 1) a trivial MLIR type that doesn't matter, or a register passable
+    //    trivial type that we can track it for convenience.
+    // 2) an non-trivial register passable (e.g. Arc) which we need to track
+    //    as being defined by the call and needing to be consumed before the
+    //    function exit.
+    // 3) a ref-result type, which is tracked by lifetime tracking but isn't
+    //    owned.  We don't (and can't) track this, but CheckLifetimes will
+    //    notice the lifetime it contains.
 
-      // We have several different common cases, including:
-      // 1) a trivial MLIR type that doesn't matter, or a register passable
-      //    trivial type that we can track it for convenience.  We filtered a
-      //    few common ones above, but there are many more.
-      // 2) an non-trivial register passable (e.g. Arc) which we need to track
-      //    as being defined by the call and needing to be consumed before the
-      //    function exit.
-      // 3) a ref-result type, which is tracked by lifetime tracking but isn't
-      //    owned.  We don't (and can't) track this, but CheckLifetimes will
-      //    notice the lifetime it contains.
+    // If this is a ref result (#3) or a raw !lit.ref returned with
+    // __mlir_type, we *can't* track it as an owned result, because this
+    // doesn't own the value!
+    if (isTypeObviouslyTrivial(v.getType()))
+      return;
 
-      // If this is a ref result (#3) or a raw !lit.ref returned with
-      // __mlir_type, we *can't* track it as an owned result, because this
-      // doesn't own the value!
-      if (isa<RefType>(v.getType()))
-        return;
-
+    if (isa<KGENCallOpInterface, LIT::CallIndirectOp>(res.getOwner())) {
       // Otherwise we tell CheckLifetimes to track it because it is either an
       // owned register result or it doesn't matter because it is trivial.
       name = StringAttr::get(v.getContext(), "(call result)");
       isIndirect = false;
       startsUninit = true;
       endInitState = EndsUninit;
-    };
-
-    if (isa<KGENCallOpInterface, LIT::CallIndirectOp>(res.getOwner())) {
-      handleCallResult();
       return;
     }
+
+    // The results of an if operation can be owned.
+    if (isa<HLCF::IfOp, HLCF::ElifOp>(res.getOwner())) {
+      name = StringAttr::get(v.getContext(), "(if result)");
+      isIndirect = false;
+      startsUninit = true;
+      endInitState = EndsUninit;
+      return;
+    }
+
+    // Otherwise, some other unknown op result.
+    return;
   }
 
   // If this is a function argument, check to see what ownership it has.
@@ -489,10 +495,9 @@ getCallOpEffects(Operation &op,
   // a definition
   if (op.getNumResults()) {
     assert(op.getNumResults() == 1);
-    results.push_back(
-        isa<KGEN::NoneType, IntegerType, RefType>(op.getResult(0).getType())
-            ? ResultEffect::ignore
-            : ResultEffect::regDefine);
+    results.push_back(isTypeObviouslyTrivial(op.getResult(0).getType())
+                          ? ResultEffect::ignore
+                          : ResultEffect::regDefine);
   }
 }
 
@@ -615,10 +620,16 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   // A return consumes all the live-out values from the function.
-  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp>(op)) {
+  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp,
+          HLCF::YieldOp>(op)) {
     // We always consume the result register - even if it is often trivial.
     for (auto o : op.getOperands())
       operands.push_back({o, OperandEffect::regConsume});
+
+    // Yield doesn't need any special processing, just handling of its operands.
+    if (isa<HLCF::YieldOp>(op))
+      return {};
+
     return OverallOpValueEffect::terminatorOp;
   }
 
@@ -639,16 +650,24 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   // If-like operations.
   if (isa<ParamIfOp, HLCF::IfOp>(op)) {
-    // i1 value is never owned, and the markers are not used either.
-    // TODO: IfOp could return an owned result.
-    if (size_t num = op.getNumResults())
-      results.resize(num, ResultEffect::ignore);
+    // If-like ops can return owned results.
+    for (auto result : op.getResults()) {
+      auto effect = isTypeObviouslyTrivial(result.getType())
+                        ? ResultEffect::ignore
+                        : ResultEffect::regDefine;
+      results.push_back(effect);
+    }
     return OverallOpValueEffect::ifLikeOp;
   }
 
   if (isa<HLCF::ElifOp>(op)) {
-    if (size_t num = op.getNumResults())
-      results.resize(num, ResultEffect::ignore);
+    // If-like ops can return owned results.
+    for (auto result : op.getResults()) {
+      auto effect = isTypeObviouslyTrivial(result.getType())
+                        ? ResultEffect::ignore
+                        : ResultEffect::regDefine;
+      results.push_back(effect);
+    }
     return OverallOpValueEffect::elifOp;
   }
 
