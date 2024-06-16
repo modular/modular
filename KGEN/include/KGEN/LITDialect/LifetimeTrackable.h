@@ -151,11 +151,11 @@ enum class OverallOpValueEffect {
   /// perform local control flow.
   localControlFlowOp,
 
-  /// This is HLCF::ElifOp or HLCF::SwitchOp.
-  acyclicControlFlowNodeOp,
-
   /// This is HLCF::IfOp, ParamIfOp, which are all if-like.
   ifLikeOp,
+
+  /// This is HLCF::ElifOp specifically.
+  elifOp,
 
   /// This is HLCF::LoopOp.
   loopOp,

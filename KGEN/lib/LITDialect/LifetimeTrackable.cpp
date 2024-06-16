@@ -638,7 +638,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::localControlFlowOp;
 
   // If-like operations.
-  if (isa<ParamIfOp>(op)) {
+  if (isa<ParamIfOp, HLCF::IfOp>(op)) {
     // i1 value is never owned, and the markers are not used either.
     // TODO: IfOp could return an owned result.
     if (size_t num = op.getNumResults())
@@ -646,10 +646,10 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp, HLCF::IfOp>(op)) {
+  if (isa<HLCF::ElifOp>(op)) {
     if (size_t num = op.getNumResults())
       results.resize(num, ResultEffect::ignore);
-    return OverallOpValueEffect::acyclicControlFlowNodeOp;
+    return OverallOpValueEffect::elifOp;
   }
 
   /// This is HLCF::LoopOp.

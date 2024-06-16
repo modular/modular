@@ -27,18 +27,6 @@ using namespace KGEN;
 using namespace LIT;
 using llvm::BitVector;
 
-// Targets that are outside the ControlFlowNode. Negative numbers indicate
-// outside of op. Positive numbers are indices into regions of control flow
-// node.
-enum ControlFlowTarget {
-  ParentPrev = -1,
-  ParentPost = -2,
-  Continue = -3,
-  Break = -4,
-  Raise = -5,
-  Return = -6
-};
-
 /// Find all the functions and types in the module.
 static std::tuple<std::vector<LIT::FuncOp>,
                   DenseMap<SymbolRefAttr, LIT::FuncOp>,
@@ -834,8 +822,8 @@ struct UninitializedValueScan {
 private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
-  void checkAcyclicControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
+  void checkElIfOp(HLCF::ElifOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -1289,8 +1277,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
-    case OverallOpValueEffect::acyclicControlFlowNodeOp:
-      checkAcyclicControlFlowOp(op);
+    case OverallOpValueEffect::elifOp:
+      checkElIfOp(cast<HLCF::ElifOp>(op));
       break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
@@ -1306,11 +1294,15 @@ void UninitializedValueScan::scanBlock(Block &block) {
 /// function. A value may be always uninitialized or initialized, or it may be
 /// depending on the exit kind.
 static bool isUninitializedAtExit(const ValueInfo &valueInfo, Operation &exit) {
-  return (valueInfo.endInitState == LifetimeTrackable::EndsUninit) ||
-         (valueInfo.endInitState == LifetimeTrackable::InitOnNormal &&
-          isa<ErrorReturnOp>(exit)) ||
-         (valueInfo.endInitState == LifetimeTrackable::InitOnError &&
-          isa<KGEN::ReturnOp>(exit));
+  if (valueInfo.endInitState == LifetimeTrackable::EndsUninit)
+    return true;
+
+  if (valueInfo.endInitState == LifetimeTrackable::InitOnNormal)
+    return isa<ErrorReturnOp>(exit);
+
+  if (valueInfo.endInitState == LifetimeTrackable::InitOnError)
+    return isa<KGEN::ReturnOp>(exit);
+  return false;
 }
 
 /// This is called when the op is a return, lit.error_return or unreachable op.
@@ -1366,63 +1358,6 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveValues.set();
 }
 
-void UninitializedValueScan::checkAcyclicControlFlowOp(Operation &op) {
-  auto controlFlowNode = cast<HLCF::ControlFlowNode>(op);
-  std::optional<BitVector> resultValues;
-
-  SmallVector<std::pair<HLCF::ControlFlowTarget, BitVector>> liveValuesAtTarget;
-  SmallVector<HLCF::ControlFlowTarget> targets;
-  SmallVector<Attribute> controlFlowNodeOperands;
-  for (unsigned i = 0, e = controlFlowNode->getNumOperands(); i < e; i++)
-    controlFlowNodeOperands.push_back(Attribute());
-  controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
-  assert(!targets.empty() && "expected at least 1 target to enter op");
-  for (HLCF::ControlFlowTarget target : targets)
-    liveValuesAtTarget.emplace_back(
-        std::pair<HLCF::ControlFlowTarget, BitVector>(target, liveValues));
-  while (!liveValuesAtTarget.empty()) {
-    auto [target, localLiveValues] = liveValuesAtTarget.back();
-    liveValuesAtTarget.pop_back();
-    if (target.index.has_value()) {
-      unsigned index = target.index.value();
-      BitVector initialLiveValues = localLiveValues;
-      Region &targetRegion = op.getRegion(index);
-
-      // Compute Liveness after this target.
-      liveValues = initialLiveValues;
-      scanBlock(targetRegion.front());
-      BitVector postLiveValues = liveValues;
-
-      // Advance to next target.
-      HLCF::ControlFlowTerminator term = cast<HLCF::ControlFlowTerminator>(
-          targetRegion.front().getTerminator());
-      if (!term.isParentNode(controlFlowNode) || isa<UnreachableOp>(term)) {
-        // Path has completed.
-        if (resultValues.has_value())
-          resultValues.value() &= postLiveValues;
-        else
-          resultValues = postLiveValues;
-        continue;
-      }
-      SmallVector<HLCF::ControlFlowTarget> termTargets;
-      SmallVector<Attribute> operands(term->getNumOperands());
-      term.getBranchTargets(operands, termTargets);
-      for (HLCF::ControlFlowTarget t : termTargets) {
-        liveValuesAtTarget.emplace_back(
-            std::pair<HLCF::ControlFlowTarget, BitVector>(t, postLiveValues));
-      }
-    } else {
-      // Path has completed.
-      if (resultValues.has_value())
-        resultValues.value() &= localLiveValues;
-      else
-        resultValues = localLiveValues;
-    }
-  }
-  assert(resultValues.has_value() && "expected at least 1 completed path");
-  liveValues = resultValues.value();
-}
-
 /// This is HLCF::IfOp, ParamIfOp, or a throwing call, which are all if-like.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
@@ -1437,6 +1372,44 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   liveValuesCopy.swap(liveValues);
   scanBlock(op.getRegion(1).front());
   liveValues &= liveValuesCopy;
+}
+
+// This is used for the HLCF::ElifOp.
+void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
+  // ElIf contains pairs of regions in the elifRegions list, which correspond
+  // to a 'condition' and a 'if true' block for each condition.  The live-out
+  // set is the intersection of all of the live-out sets for each condition.
+  MutableArrayRef<Region> ifRegions = op.getElifRegions();
+  assert((ifRegions.size() % 2) == 0 && "Must have pairs of regions");
+
+  // The ultimate live-out set is the intersection of each of the "then" blocks,
+  // along with the live-out set of the ultimate else.  Start with everything
+  // and wittle it down from there.
+  BitVector thenLiveOutValues(liveValues.size(), 1);
+  BitVector scratchSet;
+
+  for (size_t nextElIfRegion = 0, e = ifRegions.size(); nextElIfRegion != e;
+       nextElIfRegion += 2) {
+    // Check the next condition accumulating into liveValues.
+    scanBlock(ifRegions[nextElIfRegion].front());
+    // Save the live set after the condition but before the 'then' block.
+    scratchSet = liveValues;
+
+    // Scan the "then" block for this condition, the result is the exit set for
+    // this case.
+    scanBlock(ifRegions[nextElIfRegion + 1].front());
+    thenLiveOutValues &= liveValues;
+
+    // Restore the live-in set to the set of things before the 'then' block.
+    std::swap(liveValues, scratchSet);
+  }
+
+  // After each of the cases has been evaluated, check the 'else' block.
+  scanBlock(op.getElseRegion().front());
+
+  // The live out set of the whole 'elif' is the intersection of the output set
+  // of the else as well as all the 'then' blocks.
+  liveValues &= thenLiveOutValues;
 }
 
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
@@ -1544,7 +1517,7 @@ private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
-  void checkAcyclicControlFlowOp(Operation &op);
+  void checkElIfOp(HLCF::ElifOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -1558,8 +1531,7 @@ private:
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
                 Operation *opWithUse, bool isDeref);
-  void checkDef(Value value, Operation &op, bool isDeref,
-                bool needsCheckUse = true);
+  void checkDef(Value value, Operation &op, bool isDeref);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
@@ -1716,8 +1688,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
-    case OverallOpValueEffect::acyclicControlFlowNodeOp:
-      checkAcyclicControlFlowOp(op);
+    case OverallOpValueEffect::elifOp:
+      checkElIfOp(cast<HLCF::ElifOp>(op));
       break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
@@ -1793,7 +1765,7 @@ void DestructorInsertion::scanBlock(Block &block) {
           consumedValues.set(valueRef.endBit - 1);
         break;
       case OperandEffect::memStoreConditional:
-        checkDef(operand, op, /*isDeref=*/true, /*needsCheckUse=*/false);
+        // This should have been handled by `checkIfLikeOp` above.
         break;
       }
     }
@@ -1814,12 +1786,15 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.
 
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
+    // If this value must be live on exit from the function (e.g. an inout
+    // argument) demand it.
     if (isUninitializedAtExit(valueInfo, op))
       continue;
 
     consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
   }
 }
+
 void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
@@ -1837,224 +1812,6 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
   assert(isa<LIT::TryRaiseOp>(op) && "Unknown local control flow op");
   assert(raiseSet && "Not in a 'try'?");
   consumedValues = *raiseSet;
-}
-
-void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
-  auto controlFlowNode = cast<HLCF::ControlFlowNode>(op);
-  SmallVector<SmallVector<int>> succ(op.getNumRegions());
-  SmallVector<SmallVector<int>> pred(op.getNumRegions());
-  SmallVector<int> entries;
-
-  // Initialize paths.
-  SmallVector<HLCF::ControlFlowTarget> targets;
-  SmallVector<Attribute> cfnOperands(controlFlowNode->getNumOperands());
-  controlFlowNode.getEntryTargets(cfnOperands, targets);
-  for (HLCF::ControlFlowTarget target : targets) {
-    if (target.index.has_value()) {
-      pred[target.index.value()].push_back(ParentPrev);
-      entries.push_back(target.index.value());
-    }
-  }
-
-  // Compute successor list and predecessor list.
-  llvm::DenseSet<int> errorRegions;
-  llvm::DenseSet<int> throwRegions;
-  for (unsigned curr = 0, e = op.getNumRegions(); curr < e; curr++) {
-    Region &region = op.getRegion(curr);
-    HLCF::ControlFlowTerminator term =
-        cast<HLCF::ControlFlowTerminator>(region.front().getTerminator());
-
-    // Terminator branches outside this op.
-    if (!term.isParentNode(&op) || isa<UnreachableOp>(term)) {
-      if (isa<LIT::ErrorReturnOp>(term))
-        errorRegions.insert(curr);
-
-      if (isa<HLCF::ContinueOp, ParamForContinueOp>(term))
-        succ[curr].push_back(Continue);
-
-      if (isa<HLCF::BreakOp, ParamForBreakOp>(term))
-        succ[curr].push_back(Break);
-
-      if (isa<LIT::TryRaiseOp>(term)) {
-        succ[curr].push_back(Raise);
-        throwRegions.insert(curr);
-      }
-
-      continue;
-    }
-    SmallVector<HLCF::ControlFlowTarget> termTargets;
-    SmallVector<Attribute> operands(term->getNumOperands());
-    term.getBranchTargets(operands, termTargets);
-    for (HLCF::ControlFlowTarget t : termTargets) {
-      if (t.index.has_value()) {
-        succ[curr].push_back(t.index.value());
-        pred[t.index.value()].push_back(curr);
-        continue;
-      }
-      succ[curr].push_back(ParentPost);
-    }
-  }
-
-  DenseMap<int, BitVector> consumedValuesInRegion;
-  consumedValuesInRegion[ParentPost] = consumedValues;
-  if (continueSet)
-    consumedValuesInRegion[Continue] = *this->continueSet;
-  if (breakSet)
-    consumedValuesInRegion[Break] = *this->breakSet;
-  if (raiseSet)
-    consumedValuesInRegion[Raise] = *this->raiseSet;
-
-  SmallVector<int> empty;
-  auto getSuccessors = [&](int curr) -> SmallVector<int> & {
-    if (curr < 0 && curr != ParentPrev)
-      return empty;
-    return curr == ParentPrev ? entries : succ[curr];
-  };
-  auto getPredecessors = [&](int curr) -> SmallVector<int> & {
-    if (curr < 0)
-      return empty;
-    return pred[curr];
-  };
-
-  // Partially order blocks so that a block's successors are processed before
-  // it.
-  SmallVector<int> sortedBlocks;
-  SmallVector<int> worklist;
-  for (int entry : entries)
-    worklist.push_back(entry);
-  while (!worklist.empty()) {
-    int curr = worklist.pop_back_val();
-    if (std::find(sortedBlocks.begin(), sortedBlocks.end(), curr) !=
-        sortedBlocks.end())
-      continue;
-    sortedBlocks.push_back(curr);
-    for (int s : getSuccessors(curr)) {
-      if (s < 0)
-        continue;
-      bool allPredsSeen = true;
-      for (int p : getPredecessors(s)) {
-        if (std::find(sortedBlocks.begin(), sortedBlocks.end(), p) ==
-            sortedBlocks.end()) {
-          allPredsSeen = false;
-          break;
-        }
-      }
-      if (!allPredsSeen)
-        continue;
-      worklist.push_back(s);
-    }
-  }
-
-  // The self value requires special correction in the context of handling
-  // conditional self initialization.
-  int selfInitIndex = -1;
-  for (ValueInfo &v : valueSet.getValueInfos())
-    if (v.isIndirect && v.isFullObjectLiveOnEntry)
-      selfInitIndex = v.endValueBit - 1;
-
-  // If a success region does not consume a self init value and there is an
-  // error region, the unifier will try and insert an illegal destructor.
-  llvm::DenseSet<int> errorToValueNoDestruction;
-
-  // Scan all blocks to insert destructors. Insert parentPrev so it's successors
-  // are checked for self initialization.
-  sortedBlocks.insert(sortedBlocks.begin(), ParentPrev);
-  for (auto currPtr = sortedBlocks.rbegin(); currPtr != sortedBlocks.rend();
-       currPtr++) {
-    int curr = *currPtr;
-    BitVector consumedInSomeSucc(consumedValues.size(), false);
-    SmallVector<int> &successors = getSuccessors(curr);
-    for (unsigned successor : successors) {
-      assert(consumedValuesInRegion.contains(successor) &&
-             "a successor to current has not been processed, which suggests a "
-             "cycle!");
-      BitVector &consumptionInSucc = consumedValuesInRegion[successor];
-      consumedInSomeSucc |= consumptionInSucc;
-    }
-
-    if (curr == ParentPrev)
-      continue;
-    Region &region = op.getRegion(curr);
-    BitVector oldConsumedValues(consumedValues);
-    consumedValues = consumedInSomeSucc;
-    scanBlock(region.front());
-    consumedValuesInRegion[curr] = consumedValues;
-    consumedValues = oldConsumedValues;
-
-    bool isError = errorRegions.contains(curr);
-
-    // Correct unification exception case 1: a region that overwrites a
-    // subfield. Ignore error case since that overwrite is artificial.
-    BitVector &consumedHere = consumedValuesInRegion[curr];
-    BitVector consumedInRegion(consumedHere);
-    if (consumedInSomeSucc == consumedHere)
-      consumedInRegion.reset();
-    else if (!successors.empty())
-      consumedInRegion.reset(consumedInSomeSucc);
-    for (const ValueInfo &v : valueSet.getValueInfos()) {
-      if ((int)(v.endValueBit - 1) == selfInitIndex && isError)
-        continue;
-      // We have identified a full object. Makes sure the subfields are
-      // reset so that we don't render a full object indestructible by
-      // destroying its subfields.
-      if (v.isIndirect && consumedInRegion.test(v.endValueBit - 1)) {
-        BitVector destroySubfields(consumedHere);
-        destroySubfields.flip();
-        destroySubfields.reset(0, v.startValueBit);
-        destroySubfields.reset(v.endValueBit, destroySubfields.size());
-        if (!destroySubfields.none()) {
-          if (!dryRun)
-            destroyValuesAtEntry(destroySubfields,
-                                 op.getRegion(*currPtr).front(), op.getLoc());
-          consumedHere.set(v.startValueBit, v.endValueBit);
-        }
-      }
-    }
-  }
-
-  // Unify Destructor paths.
-  bool needsUpdate = true;
-  int i = 0;
-  while (needsUpdate) {
-    assert(i++ < 2 && "This should be executed at most twice because elif "
-                      "nodes have at most one predecessor.");
-    needsUpdate = false;
-    for (auto currPtr = sortedBlocks.rbegin(); currPtr != sortedBlocks.rend();
-         currPtr++) {
-      int curr = *currPtr;
-      // for each branch, insert destructors for values that are destroyed in
-      // some other branch
-      BitVector consumedInSomeSucc(consumedValues.size(), false);
-      for (int successor : getSuccessors(curr)) {
-        // Ignore the contribution if the successor is unreachable.
-        if (!consumedValuesInRegion[successor][0])
-          continue;
-        consumedInSomeSucc |= consumedValuesInRegion[successor];
-      }
-      for (int successor : getSuccessors(curr)) {
-        // Only self contained successors are corrected.
-        if (successor < 0)
-          continue;
-        BitVector consumedInAltBranch(consumedInSomeSucc);
-        consumedInAltBranch ^= consumedValuesInRegion[successor];
-        consumedValuesInRegion[successor] = consumedInSomeSucc;
-        if (consumedInAltBranch.none())
-          continue;
-        needsUpdate = true;
-        // Do not destroy the self out the error/throw regions.
-        if (selfInitIndex > -1 && (errorRegions.contains(successor) ||
-                                   throwRegions.contains(successor)))
-          consumedInAltBranch.reset(selfInitIndex);
-        if (!dryRun)
-          destroyValuesAtEntry(consumedInAltBranch,
-                               op.getRegion(successor).front(), op.getLoc());
-      }
-    }
-  }
-
-  // All entry paths have unified consumed values; it doesn't matter which we
-  // use to update the consumed values.
-  consumedValues = consumedValuesInRegion[entries.front()];
 }
 
 /// 'if' operations propagate the consume sets into each branch, and use the
@@ -2089,6 +1846,65 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
 
   // The upward consume set is the union of both sides.
   consumedValues = std::move(merged);
+}
+
+// This is used for the HLCF::ElifOp.
+void DestructorInsertion::checkElIfOp(HLCF::ElifOp op) {
+  // ElIf contains pairs of regions in the elifRegions list, which correspond
+  // to a 'condition' and a 'if true' block for each condition.  The live-out
+  // set is the intersection of all of the live-out sets for each condition.
+  MutableArrayRef<Region> ifRegions = op.getElifRegions();
+  assert((ifRegions.size() % 2) == 0 && "Must have pairs of regions");
+
+  // Destructor insertion is a backward pass, so we process the else to see the
+  // consumed set coming in, then process each if/then pair as merging with its
+  // consume set.
+  BitVector thenExitConsumedValues = consumedValues;
+  Block *elseBlock = &op.getElseRegion().front();
+  scanBlock(*elseBlock);
+
+  // For each `if cond: then else: ..` block, we have a consumed value set for
+  // the else, which we have to unify with this then block before we can
+  // continue up the if/else chain.
+  for (size_t i = ifRegions.size(); i != 0; i -= 2) {
+    Block &condBlock = ifRegions[i - 2].front();
+    Block &thenBlock = ifRegions[i - 1].front();
+
+    // Process the 'then' block with the consume set from after the 'if' chain.
+    BitVector elseConsumeSet = std::move(consumedValues);
+    consumedValues = thenExitConsumedValues;
+    scanBlock(thenBlock);
+
+    // We now have the consume set from the 'then' and else'.  Merge these
+    // two sets, and if they differ, insert destructor calls.
+    BitVector merged = unifyConsumedSets(consumedValues, elseConsumeSet);
+    if (!merged.empty()) { // In the common case, they are identical.
+      // 'consumedValues' is the current set for the 'then' block, so insert
+      // those dtors if needed.
+      destroyValuesAtEntryIfNeeded(consumedValues, thenBlock, merged,
+                                   op.getLoc());
+
+      // Insert destructors in the 'else' block.
+      destroyValuesAtEntryIfNeeded(elseConsumeSet, *elseBlock, merged,
+                                   op.getLoc());
+
+      // The upward consume set is the union of both sides.
+      consumedValues = std::move(merged);
+    }
+
+    // After the 'then' and 'else' blocks are unified, we need to scan the
+    // 'cond' block to see which one was picked.  The condition block contains
+    // an arbitrary expression which can be the last use of various values, so
+    // it gets destructors inserted as well.
+    scanBlock(condBlock);
+
+    // For the next 'if cond: then' block, this condition is the effective else
+    // block.
+    elseBlock = &condBlock;
+  }
+
+  // At the end, the upwardly demanded set for the whole statement is what the
+  // statement demands.
 }
 
 /// Given two consume sets that correspond to an 'if-like' construct which
@@ -2154,10 +1970,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
   //       pair.__del__()    # block doesn't demand pair at all.
   //       return
   //
-  // This only happens when the whole object bit is demanded in one set, but not
-  // the other for an entire top-level object.  We know this is the case because
-  // any use of a subfield will end up demanding the object as a whole.  If we
-  // see this, have the union set demand the whole object so it can be
+  // If we see this, have the union set demand the whole object so it can be
   // destroyed.
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
     // If the whole-object consume bits agree on both sides, then there is
@@ -2165,11 +1978,31 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
     if (!valueInfo.isIndirect)
       continue; // Register values have a single bit.
 
-    // If it is missing in one side or the other, then the upward set needs to
-    // consume the entire object.
-    size_t endBit = valueInfo.endValueBit - 1;
-    if (set1[endBit] != set2[endBit])
-      result.set(valueInfo.startValueBit, valueInfo.endValueBit);
+    // If the whole object is already destroyed on both sides, then we don't
+    // have to worry about this.  It may be consuming subobjects at a time.
+    auto endBit = valueInfo.endValueBit - 1;
+    if (set1[endBit] && set2[endBit])
+      continue;
+
+    // If any subfields are consumed, then we consume the whole object so the
+    // destructor can be run.
+    ValueRef ref(/*index*/ 0, valueInfo.startValueBit, valueInfo.endValueBit,
+                 valueInfo.isIndirect);
+    // If no part of this value is consumed, then ignore it.
+    if (ref.isAllMissing(result))
+      continue;
+
+    // If this is a merge between 'self' which is not consumed at all on one
+    // side, and is consumed a bit on the other side, ignore this and propagate
+    // up the simple union.  This happens in error handling scenarios because
+    // the error result doesn't demand anything (not even the full object bit)
+    // but the other path can demand a partially initialized set of stuff.
+    if (valueInfo.isFullObjectLiveOnEntry)
+      continue;
+
+    // Otherwise, some part is required, so require the whole thing on both
+    // sides so it can be destroyed.
+    result.set(valueInfo.startValueBit, valueInfo.endValueBit);
   }
 
   return result;
@@ -2258,34 +2091,6 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // to insert destructors.
   if (!dryRun) {
     loopBodySets.dryRun = false;
-
-    // Correct values in the continue set. Any value that is both
-    // (a) not consumed in consumedValues (after loop)
-    // (b) partially consumed in continueSet (we referenced a subfield of this
-    // value in loop) should be fully consumed in the loop.
-    for (auto [index, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
-      if (!valueInfo.isIndirect)
-        continue; // Register values only have a single bit.
-
-      // If the whole-value is already considered live, then there is nothing
-      // to do.
-      if (continueSet.test(valueInfo.endValueBit - 1))
-        continue;
-
-      // FIXME: This is checking the break set, which isn't right. We actually
-      // want the live in to any blocks that break, not the result of those
-      // blocks.  This should be handled by normal 'if' merging.
-      ValueRef valueRef(index, valueInfo.startValueBit, valueInfo.endValueBit,
-                        valueInfo.isIndirect);
-      if (!valueRef.isAllMissing(breakSet))
-        continue;
-
-      // If some values are live across the loop then make all of them live
-      // across the loop.
-      if (!valueRef.isAllMissing(continueSet))
-        continueSet.set(valueInfo.startValueBit, valueInfo.endValueBit);
-    }
-
     loopBodySets.scanBlock(loopOp.getRegion(0).front());
 
     // If we are a '@parameter for' with an else block, the loop body may have
@@ -2468,6 +2273,9 @@ void DestructorInsertion::checkUse(Value value,
     for (auto lifetimeRelatedValue : lifetimeRelatedValues) {
       ValueInfo &valueInfo =
           valueSet.getValueInfos()[lifetimeRelatedValue.valueId];
+      if (valueInfo.hasErrorDiagnosed)
+        continue;
+
       destroyValueIfNeeded(valueInfo.value, lifetimeRelatedValue, builder,
                            opWithUse);
     }
@@ -2476,37 +2284,19 @@ void DestructorInsertion::checkUse(Value value,
 
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
-void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
-                                   bool needsCheckUse) {
-  // If there is no use of the value we are defining, emit a dtor after the op.
-  // This happens when we have things like:
+void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
+  // If there is no use of the value we are defining, emit a dtor after the
+  // op. This happens when we have things like:
   //
   //   init(&aggregate)
   //   ...
   //   aggregate.field1 = newValue  <<-- we are here
-  if (needsCheckUse)
-    checkUse(value, op, isDeref);
+  checkUse(value, op, isDeref);
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.  If this is a direct reference, we mark the
   // target as being consumed.
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
-    // FIXME(#579): Rework Error handling in the Compiler so we can remove error
-    // handling.
-    if (isa<OwnershipMarkInitializedOp>(op)) {
-      ValueInfo valueInfo = valueSet.getValueInfo(direct.valueId);
-      bool isUninitInErrorBranch =
-          valueInfo.endInitState == LifetimeTrackable::EndsUninit ||
-          valueInfo.endInitState == LifetimeTrackable::InitOnNormal;
-      Operation *term = op.getParentRegion()->front().getTerminator();
-      bool isError = isa<ErrorReturnOp, TryRaiseOp>(term);
-      // If is initialized in error branch, avoid generating destruction in
-      // success branch. Destruction of overwritten memory will be handled at
-      // callsite.
-      if (!isError && !isUninitInErrorBranch)
-        return;
-    }
-
     if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
       mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
       emitDebugInit(value, direct, builder);
@@ -2517,8 +2307,8 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   }
 
   // Otherwise, we need to direct-emit a destructor call of the reference
-  // itself since this operation will overwrite the value and we can't model it
-  // in a field sensitive way.  The uninitialized checker verified that the
+  // itself since this operation will overwrite the value and we can't model
+  // it in a field sensitive way.  The uninitialized checker verified that the
   // value is guaranteed live-in when nontrivial and indirect.
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
     // Destructor call goes ahead of the mutation.
@@ -2609,6 +2399,23 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     return;
   }
 
+  // 'self' in an initializer is modeled as having its whole-object bit set
+  // on entry to the function, but the fields may be in partially initialized
+  // states throughout the body of the initializer.  We only treat the full
+  // object as being initialized if all of its fields are.  This allows the
+  // definition and rewrite of 'self' to work correctly, but doesn't try to
+  // run the destructor on a partially initialized self.
+  ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+  if (valueEntry.isFullObjectLiveOnEntry &&
+      valueEntry.endValueBit == valueRef.endBit &&
+      valueEntry.startValueBit == valueRef.startBit) {
+    // If some of the fields are already missing, don't destroy self.
+    --valueRef.endBit;
+    if (!valueRef.isAllMissing(consumedValues))
+      consumedValues[valueRef.endBit] = true;
+    ++valueRef.endBit;
+  }
+
   // If the entire value needs to be destroyed, then emit a destructor for the
   // whole value.
   if (!consumedValues.test(valueRef.endBit - 1)) {
@@ -2621,7 +2428,6 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     // an error, because we cannot run the destructor on the whole object if one
     // of the fields is missing.
     if (!valueRef.isAllMissing(consumedValues)) {
-      ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
       if (valueEntry.hasErrorDiagnosed)
         return; // Only report one error per symbolic value.
       valueEntry.hasErrorDiagnosed = true;
