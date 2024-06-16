@@ -903,3 +903,30 @@ fn overwrite(y: MemExample, x: Bool) raises:
    # CHECK-NEXT: }
    # CHECK: lit.call @{{.*}}::@MemPair::@"__del__{{.*}}(%foo)
    foo.a = MemExample()
+
+
+# CHECK-LABEL: lit.func @"test_if_ownership
+# MOCO-721: Test that ownership is transfered and all the move optimizations are
+# done.
+fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegExample:
+    # CHECK-NEXT: %a_0 = lit.var.decl
+    # CHECK-NEXT: lit.ref.store %a, %a_0
+    # CHECK-NEXT: %b_1 = lit.var.decl
+    # CHECK-NEXT: lit.ref.store %b, %b_1
+
+
+    # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
+    # CHECK-NEXT: [[RES:%.*]] = hlcf.if
+    # CHECK-NEXT:    [[B:%.*]] = lit.ref.load %b_1
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}([[B]])
+    # CHECK-NEXT:    [[A:%.*]] = lit.ref.load %a_0
+    # CHECK-NEXT:    hlcf.yield [[A]]
+    # CHECK-NEXT:  } else {
+    # CHECK-NEXT:    [[A:%.*]] = lit.ref.load %a_0
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}([[A]])
+    # CHECK-NEXT:    [[B:%.*]] = lit.ref.load %b_1
+    # CHECK-NEXT:    hlcf.yield [[B]]
+    # CHECK-NEXT:  }
+    # CHECK-NEXT:  kgen.return [[RES]]
+    return a if x else b
+
