@@ -378,18 +378,20 @@ struct _Accumulator[
         """
 
         # TODO: could we lift partial_load_size out of the loop?
-        @always_inline
         @parameter
-        fn body[i: Int, j: Int]():
-            var input_ptr = input + i * input_stride + j * simd_width
-            alias partial_load_last_vec = partial_load and (j == num_cols - 1)
+        for i in range(num_rows):
 
-            # TODO: check if partial_load_size has value.
-            self[i, j] = _simd_load_maybe_partial[
-                simd_width, partial_load_last_vec
-            ](input_ptr, 0, partial_load_size).cast[type]()
+            @parameter
+            for j in range(num_cols):
+                var input_ptr = input + i * input_stride + j * simd_width
+                alias partial_load_last_vec = partial_load and (
+                    j == num_cols - 1
+                )
 
-        unroll[body, num_rows, num_cols]()
+                # TODO: check if partial_load_size has value.
+                self[i, j] = _simd_load_maybe_partial[
+                    simd_width, partial_load_last_vec
+                ](input_ptr, 0, partial_load_size).cast[type]()
 
     @always_inline
     fn store[
@@ -412,18 +414,20 @@ struct _Accumulator[
         """
 
         # TODO: could we lift partial_store_size out of the loop?
-        @always_inline
         @parameter
-        fn body[i: Int, j: Int]():
-            alias partial_store_last_vec = partial_store and (j == num_cols - 1)
-            _simd_store_maybe_partial[simd_width, partial_store_last_vec](
-                output,
-                i * output_stride + j * simd_width,
-                self[i, j].cast[output.type](),
-                partial_store_size,
-            )
+        for i in range(num_rows):
 
-        unroll[body, num_rows, num_cols]()
+            @parameter
+            for j in range(num_cols):
+                alias partial_store_last_vec = partial_store and (
+                    j == num_cols - 1
+                )
+                _simd_store_maybe_partial[simd_width, partial_store_last_vec](
+                    output,
+                    i * output_stride + j * simd_width,
+                    self[i, j].cast[output.type](),
+                    partial_store_size,
+                )
 
     # ===----------------------------------------------------------------------===#
     # Accumulation entry point.
