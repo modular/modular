@@ -175,7 +175,7 @@ fn multistage_mma[
     for stage in range(num_pipeline_stages - 1):
 
         @parameter
-        if a_iter.address_space == AddressSpace.GENERIC:
+        if a_iter.address_space is AddressSpace.GENERIC:
             var a_smem_tile = a_smem_iter.next(stage).get()
 
             copy_dram_to_sram_async[
@@ -191,7 +191,7 @@ fn multistage_mma[
             a_iter += 1
 
         @parameter
-        if b_iter.address_space == AddressSpace.GENERIC:
+        if b_iter.address_space is AddressSpace.GENERIC:
             var b_smem_tile = b_smem_iter.next(stage).get()
 
             copy_dram_to_sram_async[
@@ -298,7 +298,7 @@ fn multistage_mma[
                 if prefetch_tile_id < num_iters:
 
                     @parameter
-                    if a_iter.address_space == AddressSpace.GENERIC:
+                    if a_iter.address_space is AddressSpace.GENERIC:
                         var a_smem_prefetch_tile = a_smem_iter_tmp.next(
                             num_pipeline_stages - 1
                         ).get()
@@ -318,7 +318,7 @@ fn multistage_mma[
                         a_iter += 1
 
                     @parameter
-                    if b_iter.address_space == AddressSpace.GENERIC:
+                    if b_iter.address_space is AddressSpace.GENERIC:
                         var b_smem_prefetch_tile = b_smem_iter_tmp.next(
                             num_pipeline_stages - 1
                         ).get()
