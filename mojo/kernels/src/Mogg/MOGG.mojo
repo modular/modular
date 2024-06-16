@@ -671,7 +671,7 @@ fn _simd_load_internal[
     type, simd_width
 ]:
     @parameter
-    if type == DType.bool:
+    if type is DType.bool:
         var v = SIMD[size=simd_width].load(
             buffer.data.bitcast[DType.uint8](), index
         )
@@ -699,7 +699,7 @@ fn simd_load[
     elif stride > 1:
 
         @parameter
-        if type == DType.bool:
+        if type is DType.bool:
             var v = strided_load[DType.uint8, simd_width](
                 buffer.data.bitcast[DType.uint8]().offset(flat_index), stride
             )
@@ -727,7 +727,7 @@ fn simd_store[
 
     # We have to cast bools into their runtime storage type.
     @parameter
-    if type == DType.bool:
+    if type is DType.bool:
         var v = val.cast[DType.uint8]()
         SIMD[size=simd_width].store(
             buffer.data.bitcast[DType.uint8](), flat_index, v
@@ -4622,7 +4622,7 @@ fn vroom_q4_0_matmul(
         (a.type == c.type) and a.type.is_floating_point(),
         "expected float inputs and outputs",
     ]()
-    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+    constrained[b.type is DType.uint8, "expected uint8 input b"]()
 
     with Trace[TraceLevel.OP]("mojo.vroom_q4_0_matmul"):
         matmul_qint4[32](a, b, c)
@@ -4639,7 +4639,7 @@ fn vroom_q4_0_matmul_shape_func[
     constrained[
         a.type.is_floating_point(), "expected float inputs and outputs"
     ]()
-    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+    constrained[b.type is DType.uint8, "expected uint8 input b"]()
     constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
 
     return StaticIntTuple[2](a.dim[0](), b.dim[0]())
@@ -4680,7 +4680,7 @@ fn ggml_q4_0_matmul[
         (a.type == c.type) and a.type.is_floating_point(),
         "expected float inputs and outputs",
     ]()
-    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+    constrained[b.type is DType.uint8, "expected uint8 input b"]()
 
     with Trace[TraceLevel.OP]("mojo.ggml_q4_0_matmul"):
         ggml_q4_0_matmul_impl[group_size=32, type=float_dtype](a, b, c)
@@ -4697,7 +4697,7 @@ fn ggml_q4_0_matmul_shape_func[
     constrained[
         a.type.is_floating_point(), "expected float inputs and outputs"
     ]()
-    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+    constrained[b.type is DType.uint8, "expected uint8 input b"]()
     constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
 
     return StaticIntTuple[2](a.dim[0](), b.dim[0]())
@@ -4723,7 +4723,7 @@ fn ggml_q4_0_dequantize(
 fn ggml_q4_0_dequantize_shape_func[
     single_thread_blocking_override: Bool
 ](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
-    constrained[input.type == DType.uint8, "expected uint8 input"]()
+    constrained[input.type is DType.uint8, "expected uint8 input"]()
 
     alias block_nbytes = sizeof[Q4sym[group_size=32]]()
     alias quants_per_block = 32
