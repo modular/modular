@@ -171,12 +171,10 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
     ) -> Int:
         var flat_index: Int = 0
 
-        @always_inline
         @parameter
-        fn body[idx: Int]():
-            flat_index = fma(index[idx], self.strides[idx], flat_index)
+        for i in range(static_rank):
+            flat_index = fma(index[i], self.strides[i], flat_index)
 
-        unroll[body, static_rank]()
         return flat_index
 
     @always_inline

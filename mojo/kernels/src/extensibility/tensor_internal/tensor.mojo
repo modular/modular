@@ -1194,9 +1194,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var output = Tensor[DType.index](output_shape)
 
         @parameter
-        @always_inline
-        fn rank_dispatch[idx: Int]() raises:
-            alias rank = idx + 1
+        for rank in range(1, ARGMAX_MAX_TENSOR_RANK):
             if rank == self.rank():
                 argmax(
                     self._to_ndbuffer[rank](),
@@ -1204,11 +1202,11 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
                     output._to_ndbuffer[rank](),
                 )
 
-        unroll[rank_dispatch, ARGMAX_MAX_TENSOR_RANK]()
+                output.ireshape(
+                    TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
+                )
 
-        output.ireshape(
-            TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
-        )
+                return output
 
         return output
 
@@ -1233,9 +1231,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var output = Tensor[DType.index](output_shape)
 
         @parameter
-        @always_inline
-        fn rank_dispatch[idx: Int]() raises:
-            alias rank = idx + 1
+        for rank in range(1, ARGMIN_MAX_TENSOR_RANK):
             if rank == self.rank():
                 argmin(
                     self._to_ndbuffer[rank](),
@@ -1243,11 +1239,11 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
                     output._to_ndbuffer[rank](),
                 )
 
-        unroll[rank_dispatch, ARGMIN_MAX_TENSOR_RANK]()
+                output.ireshape(
+                    TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
+                )
 
-        output.ireshape(
-            TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
-        )
+                return output
 
         return output
 
