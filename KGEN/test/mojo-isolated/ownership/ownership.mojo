@@ -887,3 +887,19 @@ fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
      # CHECK-NEXT: }
      if cond:
         use(memPair.a)
+
+# CHECK-LABEL: lit.func @"overwrite
+# MOCO-700
+fn overwrite(y: MemExample, x: Bool) raises:
+   var foo = MemPair()
+   if x:
+   # CHECK: } then {
+   # CHECK-NEXT: lit.call @{{.*}}::@MemPair::@"__del__
+      raise Error()
+   # CHECK: } else {
+   # CHECK-NEXT: [[V7:%.*]] = lit.ref.struct.ger %foo[a]
+   # CHECK-NEXT: lit.call @{{.*}}@MemExample::@"__del__
+   # CHECK-NEXT: hlcf.yield
+   # CHECK-NEXT: }
+   # CHECK: lit.call @{{.*}}::@MemPair::@"__del__{{.*}}(%foo)
+   foo.a = MemExample()
