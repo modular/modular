@@ -11,16 +11,10 @@
 # Control flow related CheckLifetimes tests.
 
 
-fn use(err: Error):
-    pass
-
-
-fn use(str: String):
-    pass
-
-
-fn use(a: MemExample):
-    pass
+fn use(err: Error): pass
+fn use(str: String): pass
+fn use(a: MemExample): pass
+fn use_mut(inout a: MemExample): pass
 
 
 # CHECK-LABEL: lit.struct.decl @MemExample
@@ -490,9 +484,8 @@ fn test_param_for2():
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
 
-        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
-        # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[TMP]])
-        use(mem)
+        # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem)
+        use_mut(mem)
         # CHECK-NEXT: kgen.param.for.continue
 
     # CHECK-NEXT: } else {
@@ -502,3 +495,61 @@ fn test_param_for2():
         marker()
 
         # CHECK-NEXT: kgen.param.yield
+
+
+
+# CHECK-LABEL: lit.func @"test_elif
+fn test_elif(cond: Bool, cond2: Bool):
+    var mem1 = MemExample()
+    var mem2 = MemExample()
+    var mem3 = MemExample()
+
+    # CHECK: hlcf.elif {
+    # CHECK-NEXT:  __mlir_i1__
+    # CHECK-NEXT: hlcf.elif.yield
+    # CHECK-NEXT: } then {
+    if cond:
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+        # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem1)
+        use_mut(mem1)
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
+
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+        # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: } {
+    # mem1 never used at this point, destroy in the condition.
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
+    # CHECK-NEXT: __mlir_i1__
+    # CHECK-NEXT: hlcf.elif.yield
+
+    # CHECK-NEXT: } then {
+    elif cond2:
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+        # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: } {
+
+    # Last use of mem2 is in this condition.
+    # CHECK-NEXT: lit.ref.struct.ger %mem2[x] 
+    # CHECK-NEXT: lit.ref.load
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+    # CHECK: hlcf.elif.yield
+
+    # CHECK-NEXT: } then {
+    elif mem2.x == 0:
+        # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem3)
+        use_mut(mem3)
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+
+        # CHECK-NEXT: lit.call {{.*}}marker()
+        marker()
+        # CHECK-NEXT: hlcf.yield
+
+    # CHECK-NEXT: } else {
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+        # CHECK-NEXT: hlcf.yield

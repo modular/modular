@@ -226,12 +226,12 @@ struct DestructSome:
         # CHECK-NEXT: __copyinit__{{.*}}([[FIELD]], %b)
         self.b = b
 
+        # At this point 'self' is fully initialized, so any exit out should
+        # destroy the whole thing.
+
         # CHECK: call {{.*}}somethingThatRaises
         # CHECK-NEXT: hlcf.if
-        # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
-        # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
-        # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[b]
-        # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
+        # CHECK-NEXT:   __del__{{.*}}(%self)
         # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
@@ -284,7 +284,7 @@ struct ThrowingSelfInit:
         # CHECK-NEXT: else
         # CHECK-NEXT:   mark_initialized %self
         # CHECK-NEXT:   yield
-        self.__init__()
+        self = ThrowingSelfInit()
 
     # CHECK-LABEL: lit.func @"__init__
     fn __init__(inout self, x: Int, y: Int) raises:
@@ -293,9 +293,9 @@ struct ThrowingSelfInit:
         # CHECK-NEXT:   mark_initialized %self
         # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
         # CHECK-NEXT:   yield
-        self.__init__()
+        self = ThrowingSelfInit()
         # CHECK:      lit.call {{.*}}__init__{{.*}}(%self, %__error__)
-        self.__init__()
+        self = ThrowingSelfInit()
 
 
 # CHECK-LABEL: lit.func @"emplace_error
@@ -316,8 +316,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
      # CHECK:      hlcf.elif {
      # CHECK-NEXT:   hlcf.elif.yield %cond : i1
      # CHECK-NEXT: } then {
-     # CHECK-NEXT:   [[V2:%.*]] = lit.ref.struct.ger %self[x]
-     # CHECK-NEXT:   lit.call @{{.*}}::@MemExample::@"__del__{{.*}}([[V2]])
+     # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
      # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
      # CHECK-NEXT:   kgen.param.constant
      # CHECK-NEXT:   lit.error_return
