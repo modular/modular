@@ -327,29 +327,29 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
                 var key = keys[i]
                 var dtype = self.get_spec(key).dtype()
                 repr += "'" + key + "' : "
-                if dtype == DType.bool:
+                if dtype is DType.bool:
                     repr += str(self.get[DType.bool](key))
-                elif dtype == DType.uint8:
+                elif dtype is DType.uint8:
                     repr += str(self.get[DType.uint8](key))
-                elif dtype == DType.uint16:
+                elif dtype is DType.uint16:
                     repr += str(self.get[DType.uint16](key))
-                elif dtype == DType.uint32:
+                elif dtype is DType.uint32:
                     repr += str(self.get[DType.uint32](key))
-                elif dtype == DType.uint64:
+                elif dtype is DType.uint64:
                     repr += str(self.get[DType.uint64](key))
-                elif dtype == DType.int8:
+                elif dtype is DType.int8:
                     repr += str(self.get[DType.int8](key))
-                elif dtype == DType.int16:
+                elif dtype is DType.int16:
                     repr += str(self.get[DType.int16](key))
-                elif dtype == DType.int32:
+                elif dtype is DType.int32:
                     repr += str(self.get[DType.int32](key))
-                elif dtype == DType.int64:
+                elif dtype is DType.int64:
                     repr += str(self.get[DType.int64](key))
-                elif dtype == DType.float16:
+                elif dtype is DType.float16:
                     repr += str(self.get[DType.float16](key))
-                elif dtype == DType.float32:
+                elif dtype is DType.float32:
                     repr += str(self.get[DType.float32](key))
-                elif dtype == DType.float64:
+                elif dtype is DType.float64:
                     repr += str(self.get[DType.float64](key))
                 else:
                     repr += str(self.get[DType.uint8](key))

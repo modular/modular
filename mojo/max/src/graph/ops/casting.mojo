@@ -252,7 +252,7 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     """
     var g = v.graph()
     var dtype = shape.tensor_type().dtype
-    if not (dtype == DType.int64 or dtype == DType.int32):
+    if not (dtype is DType.int64 or dtype is DType.int32):
         raise error(g, "reshape shape must be int32 or int64")
     if shape.tensor_type().rank() != 1:
         raise error(g, "reshape shape must be rank 1")

@@ -214,31 +214,31 @@ struct EngineNumpyView:
                 shape.append(dim)
             return TensorSpec(ty, shape)
 
-        if self.dtype().is_int8():
+        if self.dtype() is DType.int8:
             return get_spec[DType.int8]()
-        if self.dtype().is_int16():
+        if self.dtype() is DType.uint16:
             return get_spec[DType.int16]()
-        if self.dtype().is_int32():
+        if self.dtype() is DType.int32:
             return get_spec[DType.int32]()
-        if self.dtype().is_int64():
+        if self.dtype() is DType.int64:
             return get_spec[DType.int64]()
 
-        if self.dtype().is_uint8():
+        if self.dtype() is DType.uint8:
             return get_spec[DType.uint8]()
-        if self.dtype().is_uint16():
+        if self.dtype() is DType.uint16:
             return get_spec[DType.uint16]()
-        if self.dtype().is_uint32():
+        if self.dtype() is DType.uint32:
             return get_spec[DType.uint32]()
-        if self.dtype().is_uint64():
+        if self.dtype() is DType.uint64:
             return get_spec[DType.uint64]()
 
-        if self.dtype().is_float16():
+        if self.dtype() is DType.float16:
             return get_spec[DType.float16]()
-        if self.dtype().is_float32():
+        if self.dtype() is DType.float32:
             return get_spec[DType.float32]()
-        if self.dtype().is_float64():
+        if self.dtype() is DType.float64:
             return get_spec[DType.float64]()
-        if self.dtype().is_bool():
+        if self.dtype() is DType.bool:
             return get_spec[DType.bool]()
 
         raise String("Expected type: ") + self.dtype().__str__()

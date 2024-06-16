@@ -32,34 +32,34 @@ struct EngineDType:
     alias bool: Int32 = 30
 
     fn __init__(inout self, dtype: DType):
-        if dtype == DType.int8:
+        if dtype is DType.int8:
             self.dtype = EngineDType.int8
-        elif dtype == DType.int16:
+        elif dtype is DType.int16:
             self.dtype = EngineDType.int16
-        elif dtype == DType.int32:
+        elif dtype is DType.int32:
             self.dtype = EngineDType.int32
-        elif dtype == DType.int64:
+        elif dtype is DType.int64:
             self.dtype = EngineDType.int64
 
-        elif dtype == DType.uint8:
+        elif dtype is DType.uint8:
             self.dtype = EngineDType.uint8
-        elif dtype == DType.uint16:
+        elif dtype is DType.uint16:
             self.dtype = EngineDType.uint16
-        elif dtype == DType.uint32:
+        elif dtype is DType.uint32:
             self.dtype = EngineDType.uint32
-        elif dtype == DType.uint64:
+        elif dtype is DType.uint64:
             self.dtype = EngineDType.uint64
 
-        elif dtype == DType.float16:
+        elif dtype is DType.float16:
             self.dtype = EngineDType.float16
-        elif dtype == DType.float32:
+        elif dtype is DType.float32:
             self.dtype = EngineDType.float32
-        elif dtype == DType.float64:
+        elif dtype is DType.float64:
             self.dtype = EngineDType.float64
-        elif dtype == DType.bfloat16:
+        elif dtype is DType.bfloat16:
             self.dtype = EngineDType.bfloat16
 
-        elif dtype == DType.bool:
+        elif dtype is DType.bool:
             self.dtype = EngineDType.bool
         else:
             self.dtype = EngineDType.unknown

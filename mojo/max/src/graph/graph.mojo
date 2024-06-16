@@ -573,37 +573,37 @@ struct Graph(CollectionElement, Stringable):
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
         """
-        if dtype == DType.uint8:
+        if dtype is DType.uint8:
             return self.scalar(UInt8(value))
-        if dtype == DType.uint16:
+        if dtype is DType.uint16:
             return self.scalar(UInt16(value))
-        if dtype == DType.uint32:
+        if dtype is DType.uint32:
             return self.scalar(UInt32(value))
-        if dtype == DType.uint64:
+        if dtype is DType.uint64:
             return self.scalar(UInt64(value))
 
-        if dtype == DType.int8:
+        if dtype is DType.int8:
             return self.scalar(Int8(value))
-        if dtype == DType.int16:
+        if dtype is DType.int16:
             return self.scalar(Int16(value))
-        if dtype == DType.int32:
+        if dtype is DType.int32:
             return self.scalar(Int32(value))
-        if dtype == DType.int64:
+        if dtype is DType.int64:
             return self.scalar(Int64(value))
 
         # TODO(KERN-228): support BF16 on neon systems.
         @parameter
         if not has_neon():
-            if dtype == DType.bfloat16:
+            if dtype is DType.bfloat16:
                 return self.scalar(BFloat16(value))
 
         # TODO(#33932): Enable once KGENCompilerRT provides __truncdfhf2.
-        # if dtype == DType.float16:
+        # if dtype is DType.float16:
         #     return self.scalar(Float16(value))
 
-        if dtype == DType.float32:
+        if dtype is DType.float32:
             return self.scalar(Float32(value))
-        if dtype == DType.float64:
+        if dtype is DType.float64:
             return self.scalar(Float64(value))
 
         raise error(self, "unimplemented Int conversion dtype: " + str(dtype))
@@ -628,16 +628,16 @@ struct Graph(CollectionElement, Stringable):
         # TODO(KERN-228): support BF16 on neon systems.
         @parameter
         if not has_neon():
-            if dtype == DType.bfloat16:
+            if dtype is DType.bfloat16:
                 return self.scalar(BFloat16(value))
 
         # TODO(#33932): Enable once KGENCompilerRT provides __truncdfhf2.
-        # if dtype == DType.float16:
+        # if dtype is DType.float16:
         #     return self.scalar(Float16(value))
 
-        if dtype == DType.float32:
+        if dtype is DType.float32:
             return self.scalar(Float32(value))
-        if dtype == DType.float64:
+        if dtype is DType.float64:
             return self.scalar(Float64(value))
 
         raise error(
