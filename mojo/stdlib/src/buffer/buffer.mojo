@@ -546,13 +546,10 @@ fn _compute_ndbuffer_stride[
     var stride = shape
     stride[rank - 1] = 1
 
-    @always_inline
     @parameter
-    fn body[idx: Int]():
-        alias i = rank - idx - 1
+    for i in reversed(range(1, rank)):
         stride[i - 1] = shape[i] * stride[i]
 
-    unroll[body, rank - 1]()
     return stride
 
 
