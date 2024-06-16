@@ -24,7 +24,7 @@ fn vpdpwssd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type == DType.int32, "the type of C must be int32"]()
+    constrained[c_type is DType.int32, "the type of C must be int32"]()
 
     @parameter
     if width == 16:
@@ -52,7 +52,7 @@ fn vpdpwssds[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type == DType.int32, "the type of C must be int32"]()
+    constrained[c_type is DType.int32, "the type of C must be int32"]()
 
     @parameter
     if width == 16:
@@ -80,7 +80,7 @@ fn vpdpbusd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type == DType.int32, "the type of C must be int32"]()
+    constrained[c_type is DType.int32, "the type of C must be int32"]()
 
     @parameter
     if width == 16:
@@ -108,7 +108,7 @@ fn vpdpbusds[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type == DType.int32, "the type of C must be int32"]()
+    constrained[c_type is DType.int32, "the type of C must be int32"]()
 
     @parameter
     if width == 16:

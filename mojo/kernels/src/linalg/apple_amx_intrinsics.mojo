@@ -321,7 +321,7 @@ fn transpose_z_to_x_or_y[
     # The destination must be either "X" or "Y".
     constrained[destination == "X" or destination == "Y"]()
     # The type must be Float32.
-    constrained[type == DType.float32]()
+    constrained[type is DType.float32]()
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -363,7 +363,7 @@ fn fma[
     # The mode must be either "TILE" or "ROW".
     constrained[mode == "TILE" or mode == "ROW"]()
     # The type must be Float32.
-    constrained[type == DType.float32]()
+    constrained[type is DType.float32]()
 
     alias is_row_mode = mode == "ROW"
 
@@ -479,12 +479,12 @@ fn dot_at_b_impl(
 @always_inline
 fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
     constrained[
-        c.type == DType.float32 or c.type == DType.float16,
+        c.type is DType.float32 or c.type is DType.float16,
         "the buffer dtype must be float32 or float16",
     ]()
 
     @parameter
-    if c.type == DType.float32:
+    if c.type is DType.float32:
         dot_at_b_impl(
             NDBuffer[
                 DType.float32,
@@ -511,7 +511,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
                 b.data.bitcast[DType.float32, AddressSpace.GENERIC](),
             ),
         )
-    elif c.type == DType.float16:
+    elif c.type is DType.float16:
         dot_at_b_impl(
             NDBuffer[
                 DType.float16,

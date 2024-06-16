@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
-# RUN: %mojo %s
 
 from collections.optional import OptionalReg
 from math import ceildiv
@@ -248,7 +246,7 @@ fn multistage_gemm[
         b_type, b_smem_layout, AddressSpace.SHARED, circular=True
     ](b_smem, b_smem_size)
 
-    
+
     # create input layout tensors A and B
     var a_gmem_slice = LayoutTensor[
         a_type, Layout.row_major(BM, K),
@@ -498,7 +496,7 @@ fn multistage_gemm[
                     vec[j] = vec_converted[0]
                     vec[j + 1] = vec_converted[1]
                 epilogue((m, n), vec)
-                    
+
         else:
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
@@ -532,7 +530,7 @@ fn multistage_gemm[
                 # var vec = c_reg_frag.aligned_load[2](idx_x, idx_y)
                 var vec = SIMD[size=2].load[alignment = alignof[SIMD[c_type, 2]]()](c_reg_frag.ptr.offset(src_idx))
                 epilogue((m, n), vec)
-                
+
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
                 c_gmem_warp_tile.vectorize[1, 2](),

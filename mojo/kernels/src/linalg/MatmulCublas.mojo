@@ -27,7 +27,7 @@ fn cublas_matmul(
 ) -> Result:
     constrained[
         a.type == b.type
-        and (a.type == DType.float32 or a.type.is_half_float()),
+        and (a.type is DType.float32 or a.type.is_half_float()),
         (
             "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
             " it if more types are needed."

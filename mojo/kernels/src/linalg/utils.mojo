@@ -586,14 +586,14 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     @parameter
     if has_neon_int8_dotprod() and not has_neon_int8_matmul():
         return (
-            (a_type == DType.int8 and b_type == DType.int8)
-            or (a_type == DType.uint8 and b_type == DType.uint8)
-        ) and c_type == DType.int32
+            (a_type is DType.int8 and b_type is DType.int8)
+            or (a_type is DType.uint8 and b_type is DType.uint8)
+        ) and c_type is DType.int32
     elif has_avx2():
         return (
-            a_type == DType.uint8
-            and b_type == DType.int8
-            and c_type == DType.int32
+            a_type is DType.uint8
+            and b_type is DType.int8
+            and c_type is DType.int32
         )
     else:
         return False
@@ -606,9 +606,9 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
         # Return False for now until i8mm is fully ready.
         has_neon_int8_matmul()
         and (
-            (a_type == DType.uint8 and b_type == DType.uint8)
-            or (a_type == DType.uint8 and b_type == DType.int8)
-            or (a_type == DType.int8 and b_type == DType.int8)
+            (a_type is DType.uint8 and b_type is DType.uint8)
+            or (a_type is DType.uint8 and b_type is DType.int8)
+            or (a_type is DType.int8 and b_type is DType.int8)
         )
     )
 

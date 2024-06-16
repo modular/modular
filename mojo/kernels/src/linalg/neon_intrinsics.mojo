@@ -20,7 +20,7 @@ fn _neon_dotprod[
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, width * 4],
 ) -> SIMD[c_type, width]:
-    constrained[c_type.is_int32(), "the type of C must be int32"]()
+    constrained[c_type is DType.int32, "the type of C must be int32"]()
     constrained[width == 4]()
 
     @parameter
@@ -29,9 +29,9 @@ fn _neon_dotprod[
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     @parameter
-    if a_type.is_uint8() and b_type.is_uint8():
+    if a_type is DType.uint8 and b_type is DType.uint8:
         return call_intrinsic["llvm.aarch64.neon.udot.v4i32.v16i8"]()
-    elif a_type.is_int8() and b_type.is_int8():
+    elif a_type is DType.int8 and b_type is DType.int8:
         return call_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
     else:
         constrained[False, "unsupported A and B types"]()
@@ -50,7 +50,9 @@ fn _neon_dotprod_lane[
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, b_width],
 ) -> SIMD[c_type, width]:
-    constrained[b_type.is_int8() or b_type.is_uint8(), "unsupported B type"]()
+    constrained[
+        b_type is DType.int8 or b_type is DType.uint8, "unsupported B type"
+    ]()
     constrained[4 <= b_width <= 16, "unsupported B width"]()
     constrained[0 <= lane < (b_width // 4), "invalid lane index"]()
 
@@ -72,7 +74,7 @@ fn _neon_matmul[
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, width * 4],
 ) -> SIMD[c_type, width]:
-    constrained[c_type.is_int32(), "the type of C must be int32"]()
+    constrained[c_type is DType.int32, "the type of C must be int32"]()
     constrained[width == 4]()
 
     @parameter
@@ -81,11 +83,11 @@ fn _neon_matmul[
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     @parameter
-    if a_type.is_uint8() and b_type.is_uint8():
+    if a_type is DType.uint8 and b_type is DType.uint8:
         return call_intrinsic["llvm.aarch64.neon.ummla.v4i32.v16i8"]()
-    elif a_type.is_uint8() and b_type.is_int8():
+    elif a_type is DType.uint8 and b_type is DType.int8:
         return call_intrinsic["llvm.aarch64.neon.usmmla.v4i32.v16i8"]()
-    elif a_type.is_int8() and b_type.is_int8():
+    elif a_type is DType.int8 and b_type is DType.int8:
         return call_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
     else:
         constrained[False, "unsupported A and B types"]()
