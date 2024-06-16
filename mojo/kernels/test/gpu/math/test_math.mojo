@@ -155,7 +155,7 @@ def main():
                 ceil_fn,
                 pow_fn,
                 powi_fn,
-                # powf_fn,
+                powf_fn,
             ]()
     except e:
         print("CUDA_ERROR:", e)
