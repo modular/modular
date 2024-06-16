@@ -137,9 +137,9 @@ fn multistage_gemm[
     b: NDBuffer[b_type, 2, b_shape],
 ):
     constrained[
-        c_type == DType.float32
-        and a_type == DType.float32
-        and b_type == DType.float32,
+        c_type is DType.float32
+        and a_type is DType.float32
+        and b_type is DType.float32,
         "Only support tf32 mma",
     ]()
 

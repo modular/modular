@@ -71,8 +71,8 @@ def run_elementwise[type: DType]():
             + str(i)
             + " for dtype="
             + str(type),
-            atol=1e-08 if type == DType.float32 else 1e-04,
-            rtol=1e-05 if type == DType.float32 else 1e-03,
+            atol=1e-08 if type is DType.float32 else 1e-04,
+            rtol=1e-05 if type is DType.float32 else 1e-03,
         )
 
     _free(in_device)

@@ -136,14 +136,14 @@ fn multistage_gemm[
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
-        (a_type == DType.float32 or a_type == DType.bfloat16)
+        (a_type is DType.float32 or a_type is DType.bfloat16)
         and a_type == b_type == c_type,
         "Pipeline gemm only supports tf32 or BF16 mma",
     ]()
 
     constrained[
-        (BK == 16 and a_type == DType.float32)
-        or (BK == 32 and a_type == DType.bfloat16),
+        (BK == 16 and a_type is DType.float32)
+        or (BK == 32 and a_type is DType.bfloat16),
         "Pipeline gemm only supports BK = 16 w/ FP32 and BK = 32 w/ BF16.",
     ]()
 
@@ -381,8 +381,8 @@ fn multistage_gemm[
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
     @parameter
-    if c_type.is_half_float():
-        # Stage fragments in shared memory. Reuse a_smem for c tile in smem
+    if a_type in (DType.bfloat16, DType.float16):
+        # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             accum_type,
             Layout.row_major(BM, BN),
@@ -426,7 +426,7 @@ fn test[type: DType, transpose_b: Bool]() raises:
     alias K = 128
     alias BM = 128
     alias BN = 128
-    alias BK = 32 if type == DType.bfloat16 else 16
+    alias BK = 32 if type is DType.bfloat16 else 16
     alias WM = 64
     alias WN = 64
     alias shared_mem_bytes = 80 * 1024

@@ -38,7 +38,7 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
     alias alignment = Int32(alignof[SIMD[type, 4]]())
 
     @parameter
-    if type == DType.float32:
+    if type is DType.float32:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
