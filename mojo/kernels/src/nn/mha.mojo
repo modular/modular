@@ -243,11 +243,11 @@ fn flash_attention[
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
     constrained[rank == 4, "only support rank 4 used in llama 2."]()
     constrained[
-        q_type == DType.float32
-        and k_type == DType.float32
-        and v_type == DType.float32
-        and mask_type == DType.float32
-        and output_type == DType.float32,
+        q_type is DType.float32
+        and k_type is DType.float32
+        and v_type is DType.float32
+        and mask_type is DType.float32
+        and output_type is DType.float32,
         "only support float32 in llama 2.",
     ]()
 

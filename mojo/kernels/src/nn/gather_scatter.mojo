@@ -940,7 +940,7 @@ fn scatter_elements[
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
     """
     constrained[
-        indices_type == DType.int32 or indices_type == DType.int64,
+        indices_type is DType.int32 or indices_type is DType.int64,
         "indices in scatter_elements must be int32 or int64",
     ]()
 
@@ -1070,7 +1070,7 @@ fn gather_elements[
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
     """
     constrained[
-        indices_type == DType.int32 or indices_type == DType.int64,
+        indices_type is DType.int32 or indices_type is DType.int64,
         "indices in gather_elements must be int32 or int64",
     ]()
 
