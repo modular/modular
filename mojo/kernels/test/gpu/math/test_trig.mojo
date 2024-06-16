@@ -16,7 +16,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from testing import assert_true
+from testing import assert_almost_equal
 
 
 fn run_func[
@@ -38,7 +38,7 @@ fn run_func[
     synchronize()
     var out_h = DTypePointer[type].alloc(1)
     _copy_device_to_host(out_h, out, 1)
-    assert_true(math.isclose(out_h[0], ref_))
+    assert_almost_equal(out_h[0], ref_)
     _free(out)
 
 

@@ -123,7 +123,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     for i in range(M * N):
         var out_val = c_host.load(i)
         var out_ref = c_host_n.load(i).cast[DType.bfloat16]()
-        assert_true(math.isclose(out_val, out_ref))
+        assert_true(isclose(out_val, out_ref))
 
     _ = a_device
     _ = b_device
@@ -240,9 +240,9 @@ fn run_matmul[
         var out_val = c_host.load(i)
         var out_ref = c_host_n.load(i)
         if debug:
-            if not math.isclose[type, 1](out_val, out_ref, rtol=rtol):
+            if not isclose[type, 1](out_val, out_ref, rtol=rtol):
                 print(i, out_val, out_ref)
-        assert_true(math.isclose[type, 1](out_val, out_ref, rtol=rtol))
+        assert_true(isclose[type, 1](out_val, out_ref, rtol=rtol))
 
     _ = a_device
     _ = b_device
@@ -354,7 +354,7 @@ fn run_batched_matmul(
     for i in range(B * M * N):
         var out_val = c_host.load(i)
         var out_ref = c_host_n.load(i).cast[DType.bfloat16]()
-        assert_true(math.isclose(out_val, out_ref, rtol=1e-02))
+        assert_true(isclose(out_val, out_ref, rtol=1e-02))
 
     _ = a_device
     _ = b_device
