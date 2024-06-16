@@ -1399,7 +1399,7 @@ struct NDBuffer[
         """
         constrained[rank == 2]()
         constrained[shape.all_known[2]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias TM = shape.at[0]().get()
         alias TN = shape.at[1]().get()
@@ -1426,7 +1426,7 @@ struct NDBuffer[
         """
         constrained[rank == 2]()
         constrained[shape.all_known[2]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias TM = shape.at[0]().get()
         alias TN = shape.at[1]().get()
@@ -1454,7 +1454,7 @@ struct NDBuffer[
         """
         constrained[rank == 2]()
         constrained[shape.all_known[2]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias TM = shape.at[0]().get()
         alias TN = shape.at[1]().get()
@@ -1485,7 +1485,7 @@ struct NDBuffer[
         """
         constrained[rank == 1]()
         constrained[shape.all_known[1]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias m = shape.at[0]().get()
 
@@ -1511,7 +1511,7 @@ struct NDBuffer[
         """
         constrained[rank == 1]()
         constrained[shape.all_known[1]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias m = shape.at[0]().get()
 
@@ -1537,7 +1537,7 @@ struct NDBuffer[
         """
         constrained[rank == 1]()
         constrained[shape.all_known[1]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias simd_size = simdwidthof[type]()
 
@@ -1572,7 +1572,7 @@ struct NDBuffer[
         """
         constrained[rank == 2]()
         constrained[shape.all_known[2]()]()
-        constrained[type == DType.float32]()
+        constrained[type is DType.float32]()
 
         alias m = shape.at[0]().get()
         alias n = shape.at[1]().get()
