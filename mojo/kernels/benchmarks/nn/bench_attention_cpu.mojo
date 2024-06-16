@@ -158,7 +158,7 @@ def bench_attention[
 
 
 def main():
-    alias specs = List[AttentionSpec](
+    var specs = List[AttentionSpec](
         # bert-base-uncased-seqlen-16.yaml
         AttentionSpec(
             batch_size=12,
