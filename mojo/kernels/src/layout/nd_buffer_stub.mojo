@@ -708,6 +708,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     else:
         # This @parameter for for some reason doesn't produce the same results.
         # for i in range(num_elements * dst.element_size):
+        # MOCO-856
         @parameter
         fn _copy_element[i: Int]():
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
@@ -938,7 +939,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 
     # Scalar case.
     else:
-
+        # We do not use param for here because of MOCO-856
         @parameter
         fn _copy_element[i: Int]():
             # Evaluate the mask, skip OOB element copies
