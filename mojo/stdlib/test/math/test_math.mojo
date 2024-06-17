@@ -24,7 +24,9 @@ from math import (
     sin,
     sqrt,
     trunc,
+    ulp,
 )
+from utils.numerics import isnan, isinf
 from sys.info import has_neon
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
@@ -399,6 +401,16 @@ def test_lcm():
     assert_equal(lcm(0, 0), 0)
 
 
+def test_ulp():
+    assert_true(isnan(ulp(nan[DType.float32]())))
+    assert_true(isinf(ulp(inf[DType.float32]())))
+    assert_true(isinf(ulp(-inf[DType.float32]())))
+    assert_almost_equal(ulp(Float64(0)), 5e-324)
+    assert_equal(ulp(Float64.MAX_FINITE), 1.99584030953472e292)
+    assert_equal(ulp(Float64(5)), 8.881784197001252e-16)
+    assert_equal(ulp(Float64(-5)), 8.881784197001252e-16)
+
+
 def main():
     test_sin()
     test_cos()
@@ -417,3 +429,4 @@ def main():
     test_log2()
     test_gcd()
     test_lcm()
+    test_ulp()
