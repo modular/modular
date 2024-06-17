@@ -129,7 +129,7 @@ fn erf_elementwise(buf: DTypePointer[DType.float32], len: Int):
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simdwidthof[DType.float32](), 1](
+    elementwise[func, simdwidthof[DType.float32]()](
         StaticIntTuple[1](granularity)
     )
 
