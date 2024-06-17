@@ -124,11 +124,10 @@ fn setup_tile_config() -> tileconfig:
     tc.palette_id = 1
 
     @always_inline
-    fn tc_fill[idx: Int]():
-        tc.rows[idx] = nrows.value
-        tc.colb[idx] = colb.value
+    for i in range(8):
+        tc.rows[i] = nrows.value
+        tc.colb[i] = colb.value
 
-    unroll[tc_fill, 8]()
     return tc
 
 
