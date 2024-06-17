@@ -400,7 +400,7 @@ struct ComposedLayout[
     @always_inline
     fn __init__(inout self, layout_a: LayoutA, layout_b: LayoutB):
         constrained[
-            not offset or (offset and offset.value() >= 0),
+            not offset or offset.value() >= 0,
             "Requires non-negative offset if present",
         ]()
         self.layout_a = layout_a
