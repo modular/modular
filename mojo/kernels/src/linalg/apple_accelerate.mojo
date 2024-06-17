@@ -392,7 +392,7 @@ fn apple_matmul[
                 var c_val = c.load[width=simd_width](c_coord)
                 epilogue[c.type, simd_width](c_coord, c_val)
 
-            elementwise[epilogue_on_col_chunk, simd_size, 2](
+            elementwise[epilogue_on_col_chunk, simd_size](
                 StaticIntTuple[2](m, n)
             )
         return
