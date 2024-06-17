@@ -11,8 +11,8 @@ from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import DimList
-from LinAlg.neon_intrinsics import _neon_dotprod
-from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
+from linalg.neon_intrinsics import _neon_dotprod
+from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
 from memory.unsafe import bitcast
 
 from utils import Index, StaticIntTuple, StaticTuple, unroll

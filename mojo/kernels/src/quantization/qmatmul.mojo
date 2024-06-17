@@ -14,9 +14,9 @@ from sys.info import (
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.accumulate import _Accumulator
-from LinAlg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
-from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
+from linalg.accumulate import _Accumulator
+from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
+from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
 from memory.unsafe import DTypePointer
 
 from utils import InlineArray
