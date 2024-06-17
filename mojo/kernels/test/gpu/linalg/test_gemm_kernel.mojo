@@ -124,7 +124,7 @@ fn gemm_kernel[
         barrier()
 
         @parameter
-        fn reduce_k[k_i: Int]():
+        for k_i in range(BK):
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](warp_m, 0).slice[
                 :, k_i : k_i + 1
             ]()
@@ -139,8 +139,6 @@ fn gemm_kernel[
                 b_reg, b_smem_warp_row
             )
             outer_product_acc(c_reg, a_reg, b_reg)
-
-        unroll[reduce_k, BK]()
 
         # Otherwise a data race, faster threads will modify shared memory.
         barrier()
