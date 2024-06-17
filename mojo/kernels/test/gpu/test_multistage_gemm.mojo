@@ -52,7 +52,7 @@ from layout.tensor_core import (
     get_mma_shape,
     TensorCore,
 )
-from LinAlg.MatmulCublas import cublas_matmul
+from linalg.cublas import cublas_matmul
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal

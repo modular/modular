@@ -22,8 +22,8 @@ from gpu.host.memory import (
 )
 from gpu.memory import AddressSpace
 from gpu.mma import mma
-from LinAlg.MatmulGPU import matmul_kernel_naive
-from LinAlg.MatmulUtils import elementwise_epilogue_type
+from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.utils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 

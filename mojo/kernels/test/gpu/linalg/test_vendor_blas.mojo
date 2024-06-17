@@ -20,8 +20,8 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from LinAlg.MatmulCublas import cublas_matmul
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from linalg.cublas import cublas_matmul
+from linalg.matmul_gpu import matmul_kernel_naive
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
 

@@ -21,7 +21,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from LinAlg.MatmulGPU import sgemm_warp_tiling_kernel
+from linalg.matmul_gpu import sgemm_warp_tiling_kernel
 from memory.unsafe import DTypePointer
 
 from utils.index import Index

@@ -15,7 +15,7 @@ from memory.reference import _GPUAddressSpace as AddressSpace
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE
 from gpu.host.device_context import DeviceContext, DeviceBuffer
 
-from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
+from linalg.matmul_gpu import matmul_kernel_naive, _matmul_gpu
 from memory import memset_zero, stack_allocation
 from testing import assert_almost_equal, assert_true
 

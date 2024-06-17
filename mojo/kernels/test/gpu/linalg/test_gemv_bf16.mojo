@@ -17,7 +17,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from LinAlg.MatmulGPU import gemv_tc_kernel, matmul_kernel_naive
+from linalg.matmul_gpu import gemv_tc_kernel, matmul_kernel_naive
 from memory.unsafe import DTypePointer
 
 from utils.numerics import isnan

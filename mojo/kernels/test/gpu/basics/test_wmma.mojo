@@ -20,7 +20,7 @@ from gpu.host.memory import (
 )
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from linalg.matmul_gpu import matmul_kernel_naive
 from memory.unsafe import DTypePointer
 
 from utils.numerics import isnan

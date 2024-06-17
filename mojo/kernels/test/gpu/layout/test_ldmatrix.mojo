@@ -21,7 +21,7 @@ from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from linalg.matmul_gpu import matmul_kernel_naive
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from testing import assert_true

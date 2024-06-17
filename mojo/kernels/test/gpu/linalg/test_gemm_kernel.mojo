@@ -25,7 +25,7 @@ from gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import copy_sram_to_local, outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from linalg.matmul_gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
 from utils import Index

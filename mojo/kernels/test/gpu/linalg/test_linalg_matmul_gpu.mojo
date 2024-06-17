@@ -13,8 +13,8 @@ from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceContext, DeviceBuffer
-from LinAlg.Matmul import matmul
-from LinAlg.MatmulGPU import _matmul_gpu
+from linalg.matmul import matmul
+from linalg.matmul_gpu import _matmul_gpu
 from runtime.llcl import MojoCallContextPtr
 from testing import assert_almost_equal
 
