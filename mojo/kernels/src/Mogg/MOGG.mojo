@@ -358,17 +358,12 @@ fn to_buffer[
     var stride_tuple = StaticIntTuple[rank]()
     var stride: Int = 1
 
-    @always_inline
-    @__copy_capture(shape_ptr)
     @parameter
-    fn body[idx: Int]():
+    for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
-        var i = rank - 1 - idx
-        shape_tuple[i] = shape_ptr.load(i)
+        shape_tuple[i] = shape_ptr[i]
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
-
-    unroll[body, rank]()
 
     return NDBuffer[type, rank](data, shape_tuple, stride_tuple)
 
@@ -379,13 +374,9 @@ fn to_shape[rank: Int](shape: Pointer[Int]) -> StaticIntTuple[rank]:
     var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
 
-    @always_inline
-    @__copy_capture(shape_ptr)
     @parameter
-    fn body[idx: Int]():
-        shape_tuple[idx] = shape_ptr.load(idx)
-
-    unroll[body, rank]()
+    for i in range(rank):
+        shape_tuple[i] = shape_ptr[i]
 
     return shape_tuple
 
@@ -560,17 +551,13 @@ fn to_tensor[
     if shape.has_static_length():
         alias rank = len(static_shape)
 
-        @always_inline
-        @__copy_capture(shape_ptr)
         @parameter
-        fn body[idx: Int]():
+        for i in reversed(range(rank)):
             # Start from the back so we can accumulate the strides.
-            var i = rank - 1 - idx
-            shape[i] = shape_ptr.load(i)
+            shape[i] = shape_ptr[i]
             strides[i] = stride
             stride *= shape[i]
 
-        unroll[body, rank]()
     else:
         # Start from the back so we can accumulate the strides.
         for i in reversed(range(length)):
@@ -602,17 +589,12 @@ fn to_extensibility_tensor[
     var stride_tuple = StaticIntTuple[rank]()
     var stride: Int = 1
 
-    @always_inline
-    @__copy_capture(shape_ptr)
     @parameter
-    fn body[idx: Int]():
+    for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
-        var i = rank - 1 - idx
-        shape_tuple[i] = shape_ptr.load(i)
+        shape_tuple[i] = shape_ptr[i]
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
-
-    unroll[body, rank]()
 
     return ExtensibilityTensor[type, rank](
         data,
@@ -655,12 +637,10 @@ fn _compute_flat_index[
 ) -> Int:
     var flat_index: Int = 0
 
-    @always_inline
     @parameter
-    fn body[idx: Int]():
-        flat_index = fma(index[idx], buffer.dynamic_stride[idx], flat_index)
+    for i in range(iters):
+        flat_index = fma(index[i], buffer.dynamic_stride[i], flat_index)
 
-    unroll[body, iters]()
     return flat_index
 
 
@@ -1990,14 +1970,11 @@ fn transpose[
     if _guard_against_gpu_target[target](ctx):
         return input
 
-    @always_inline
     @parameter
-    fn body[i: Int]():
+    for i in range(rank):
         var dim = int(perms[i])
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
-
-    unroll[body, rank]()
 
     # Create the transposed view.
     return NDBuffer[type, rank](input.data, new_shape, new_stride)
