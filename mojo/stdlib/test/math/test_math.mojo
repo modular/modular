@@ -8,22 +8,22 @@
 from collections import List
 from math import (
     ceil,
+    copysign,
     cos,
     exp2,
     factorial,
     floor,
     frexp,
+    gcd,
     iota,
     isclose,
+    lcm,
     log,
     log2,
     rsqrt,
     sin,
     sqrt,
     trunc,
-    copysign,
-    gcd,
-    lcm,
 )
 from sys.info import has_neon
 
