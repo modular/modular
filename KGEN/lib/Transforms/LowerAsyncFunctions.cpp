@@ -193,14 +193,16 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
 
   // Create Ramp Function.
   StringAttr rampName = builder.getStringAttr(funcOp.getSymName() + "_ramp");
-  int start = 0;
+  unsigned end = funcOp.getNumArguments();
   if (funcOp.isThrows())
-    ++start;
+    --end;
   if (funcOp.getSignature().hasMemoryOnlyResult())
-    ++start;
+    --end;
+  SmallVector<Type> args;
+  for (unsigned i = 0; i < end; ++i)
+    args.push_back(funcOp.getArgument(i).getType());
   FunctionType rampFunctionType =
-      builder.getFunctionType(funcOp.getSignature().getArguments().slice(start),
-                              PointerType::get(continuationType));
+      builder.getFunctionType(args, PointerType::get(continuationType));
   auto rampSignature = SignatureType::get(rampFunctionType);
   builder.setInsertionPoint(funcOp);
   FuncOp rampFunction = builder.create<FuncOp>(rampName, rampSignature);
@@ -415,8 +417,8 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
   builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
 
   // Store arguments in frame.
-  for (auto [arg, image] :
-       llvm::zip(funcOp.getArguments(), rampFunction.getArguments())) {
+  for (auto [index, image] : llvm::enumerate(rampFunction.getArguments())) {
+    Value arg = funcOp.getArgument(index);
     // If the argument is not in the frame metadata it is unused. Do not
     // store in frame.
     if (!frameData.valueToIndexInFrame.contains(arg))
