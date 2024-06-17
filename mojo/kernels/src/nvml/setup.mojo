@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import device_count
+
 from .nvml import Device
 
 
