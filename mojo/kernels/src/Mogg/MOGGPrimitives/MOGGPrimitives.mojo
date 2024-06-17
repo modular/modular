@@ -11,17 +11,12 @@ from buffer import NDBuffer
 from buffer.list import Dim, DimList
 from builtin.dtype import _get_runtime_dtype_size
 from extensibility import Tensor as ExtensibilityTensor
+from gpu.host import Context as CudaContext
+from gpu.host import CudaInstance, Device, DeviceBuffer, DeviceContext
 from gpu.host.memory import _free, _malloc
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
-from gpu.host import (
-    CudaInstance,
-    Device,
-    DeviceBuffer,
-    DeviceContext,
-    Context as CudaContext,
-)
 from runtime.llcl import MojoCallContextPtr
 
 # ===----------------------------------------------------------------------===#

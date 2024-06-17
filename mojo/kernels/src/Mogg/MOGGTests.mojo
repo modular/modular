@@ -8,13 +8,12 @@ from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from buffer import NDBuffer
 from buffer.list import DimList
+from extensibility import Tensor as ExtensibilityTensor
+from extensibility import empty_tensor
 from register import *
 from runtime.llcl import MojoCallContextPtr
-from extensibility import Tensor as ExtensibilityTensor, empty_tensor
 
 from utils.index import StaticIntTuple
-
-from extensibility import Tensor as ExtensibilityTensor
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests

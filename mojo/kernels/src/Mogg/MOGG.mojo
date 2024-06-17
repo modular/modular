@@ -34,14 +34,14 @@ from linalg.bmm import (
     get_trace_information as get_trace_information_batched_matmul,
 )
 from linalg.matmul import matmul as _matmul
+from linalg.matrix_band_part import matrix_band_part
+from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from linalg.packing import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import GemmShape, get_trace_information
-from linalg.matrix_band_part import matrix_band_part
-from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
