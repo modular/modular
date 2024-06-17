@@ -98,7 +98,7 @@ fn kernel(
         @parameter
         @always_inline
         fn calc[idx0: Int, idx1: Int]():
-            var av = a.load[width=1](idx0 * k + pr).cast[dtype]()
+            var av = a[idx0 * k + pr].cast[dtype]()
             var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
             var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
             cv += av * bv

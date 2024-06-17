@@ -73,37 +73,37 @@ fn kernel6x4(
             PrefetchOptions().for_read().high_locality().to_data_cache()
         ](b_ptr.offset(4 * simd_size * pr + simd_size * 19))
 
-        var av = a_ptr.offset(0 * k + pr).load[width=1]().cast[DType.float32]()
+        var av = a_ptr[0 * k + pr].cast[DType.float32]()
         cv0 += av * bv0
         cv1 += av * bv1
         cv2 += av * bv2
         cv3 += av * bv3
 
-        av = a_ptr.offset(1 * k + pr).load[width=1]().cast[DType.float32]()
+        av = a_ptr[1 * k + pr].cast[DType.float32]()
         cv4 += av * bv0
         cv5 += av * bv1
         cv6 += av * bv2
         cv7 += av * bv3
 
-        av = a_ptr.offset(2 * k + pr).load[width=1]().cast[DType.float32]()
+        av = a_ptr[2 * k + pr].cast[DType.float32]()
         cv8 += av * bv0
         cv9 += av * bv1
         cv10 += av * bv2
         cv11 += av * bv3
 
-        av = a_ptr.offset(3 * k + pr).load[width=1]().cast[DType.float32]()
+        av = a_ptr[3 * k + pr].cast[DType.float32]()
         cv12 += av * bv0
         cv13 += av * bv1
         cv14 += av * bv2
         cv15 += av * bv3
 
-        av = a_ptr.offset(4 * k + pr).load[width=1]().cast[DType.float32]()
+        av = a_ptr[4 * k + pr].cast[DType.float32]()
         cv16 += av * bv0
         cv17 += av * bv1
         cv18 += av * bv2
         cv19 += av * bv3
 
-        av = a_ptr.offset(5 * k + pr).load[width=1]().cast[DType.float32]()
+        av = a_ptr[5 * k + pr].cast[DType.float32]()
         cv20 += av * bv0
         cv21 += av * bv1
         cv22 += av * bv2
