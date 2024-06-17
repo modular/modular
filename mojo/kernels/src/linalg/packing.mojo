@@ -149,10 +149,8 @@ struct PackMatrixRows[
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
-        @always_inline
-        @__copy_capture(read_bound, start_idx_global)
         @parameter
-        fn body[idx: Int]():
+        for idx in range(simd_size):
             alias inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
@@ -188,8 +186,6 @@ struct PackMatrixRows[
                 transpose_buffer.store[width=simd_size](
                     (inner_row_idx, 0), SIMD[type, simd_size](0)
                 )
-
-        unroll[body, simd_size]()
 
         # Transpose the buffered data
         transpose_inplace[simd_size, simd_size, type](transpose_buffer)

@@ -793,7 +793,7 @@ fn apply_epilogue[
         constrained[dst_element_layout.rank() == 1]()
 
         @parameter
-        fn update_scalar[i: Int]():
+        for i in range(src.layout.size() * src.element_size):
             alias src_idx = make_layout(src.element_layout, src.layout)(i)
             alias dst_idx = make_layout(dst_element_layout, dst_layout)(i)
             # C matrix dimension. For scalar or 1D vector element, the layout
@@ -804,5 +804,3 @@ fn apply_epilogue[
             var n = (src_idx + offset) % N
 
             elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])
-
-        unroll[update_scalar, src.layout.size() * src.element_size]()

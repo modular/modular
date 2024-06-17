@@ -50,15 +50,13 @@ fn _get_batch_dims[
     var out = StaticIntTuple[rank]()
     var curr_index = flat_index
 
-    @always_inline
     @parameter
-    fn compute_shape[idx: Int]():
+    for idx in range(rank - 2):
         # Count from the back, skipping last two dims.
         alias i = rank - idx - 3
         out[i] = curr_index % shape[i]
         curr_index //= shape[i]
 
-    unroll[compute_shape, rank - 2]()
     return out
 
 
