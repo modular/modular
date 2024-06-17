@@ -18,7 +18,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from LinAlg.MatmulGPU import (
+from linalg.matmul_gpu import (
     gemv_kernel,
     gemv_tc_kernel,
     matmul_kernel_naive,

@@ -12,7 +12,7 @@ from gpu.host.device_context import DeviceContext, DeviceBuffer
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 
-from LinAlg.MatmulGPU import _matmul_gpu
+from linalg.matmul_gpu import _matmul_gpu
 
 from buffer import NDBuffer, DimList, Dim
 

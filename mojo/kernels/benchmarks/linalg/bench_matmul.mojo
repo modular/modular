@@ -10,8 +10,8 @@
 from random import rand
 
 from benchmark import keep
-from LinAlg.Matmul import matmul
-from LinAlg.MatmulPack import pack_b_ndbuffer, pack_matmul_b_shape_func
+from linalg.matmul import matmul
+from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from buffer import NDBuffer
 from benchmark import *
 from testing import assert_almost_equal
