@@ -8,14 +8,12 @@ from math import isclose
 from sys.info import alignof
 
 from buffer import DimList, NDBuffer
-from testing import assert_equal
+from testing import assert_equal, assert_true
 
 from utils import InlineArray
 
 
-fn get_minmax[
-    dtype: DType
-](x: DTypePointer[dtype], N: Int) -> (Scalar[dtype], Scalar[dtype]):
+fn get_minmax[dtype: DType](x: DTypePointer[dtype], N: Int) -> SIMD[dtype, 2]:
     var max_val = x[0]
     var min_val = x[0]
     for i in range(1, N):
@@ -23,13 +21,14 @@ fn get_minmax[
             max_val = x[i]
         if x[i] < min_val:
             min_val = x[i]
-    return (min_val, max_val)
+    return SIMD[dtype, 2](min_val, max_val)
 
 
-# TODO: use assert_true for comparisons atol_minmax,rtol_minmax = InlineArray[Scalar[dtype],2]
 fn compare[
-    dtype: DType, N: Int
-](x: DTypePointer[dtype], y: DTypePointer[dtype], label: String):
+    dtype: DType, N: Int, verbose: Bool = True
+](x: DTypePointer[dtype], y: DTypePointer[dtype], label: String) -> SIMD[
+    dtype, 4
+]:
     alias alignment = alignof[dtype]()
 
     var atol = DTypePointer[dtype].alloc(N, alignment=alignment)
@@ -42,18 +41,23 @@ fn compare[
         atol[i] = d
         rtol[i] = e
 
-    print(label)
     var atol_minmax = get_minmax[dtype](atol, N)
     var rtol_minmax = get_minmax[dtype](rtol, N)
-    print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
-    print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
-    print("==========================================================")
+    if verbose:
+        print(label)
+        print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
+        print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
+        print("==========================================================")
     atol.free()
     rtol.free()
+    return SIMD[dtype, 4](
+        atol_minmax[0], atol_minmax[1], rtol_minmax[0], rtol_minmax[1]
+    )
 
 
 fn array_equal[
-    type: DType, rank: Int, output_shape: DimList
+    type: DType,
+    rank: Int,
 ](x: DTypePointer[type], y: DTypePointer[type], num_elements: Int,) -> Bool:
     for i in range(num_elements):
         if not isclose(x[i], y[i]):
