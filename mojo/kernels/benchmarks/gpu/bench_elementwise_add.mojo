@@ -8,10 +8,11 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
+from random import randn
+
+from algorithm.functional import _elementwise_impl_gpu
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
-
-from random import randn
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu.host import Context, Stream
@@ -21,7 +22,6 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from algorithm.functional import _elementwise_impl_gpu
 
 
 fn bench_add[

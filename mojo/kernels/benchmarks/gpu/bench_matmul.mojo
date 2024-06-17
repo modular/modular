@@ -8,13 +8,10 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from gpu.host.device_context import DeviceContext, DeviceBuffer
-
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-
+from buffer import Dim, DimList, NDBuffer
+from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
-
-from buffer import NDBuffer, DimList, Dim
 
 
 fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:

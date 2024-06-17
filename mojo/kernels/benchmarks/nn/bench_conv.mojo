@@ -7,13 +7,14 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from math import ceildiv, align_up
+from math import align_up, ceildiv
 from random import rand
-from sys.param_env import env_get_string, env_get_int
+from sys.param_env import env_get_int, env_get_string
 
+from benchmark import *
 from benchmark import keep
 from buffer import NDBuffer
-from benchmark import *
+from buffer.list import DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -22,7 +23,6 @@ from nn.conv_utils import (
 )
 
 from utils.index import Index
-from buffer.list import DimList
 
 
 fn bench_conv(inout m: Bench, spec: ConvSpec) raises:

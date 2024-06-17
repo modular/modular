@@ -7,19 +7,25 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from layout import *
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
-from builtin.range import _StridedRange
-from builtin.simd import _simd_apply
+from math.polynomial import polynomial_evaluate
 from sys.arg import argv
 
-from math.polynomial import polynomial_evaluate
 from algorithm.functional import vectorize
-from benchmark import keep
-from benchmark import Bencher, BenchId, Bench, BenchMetric, ThroughputMeasure
+from benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+    keep,
+)
 from buffer import Buffer
+from builtin.range import _StridedRange
+from builtin.simd import _simd_apply
 from compile import *
+from layout import *
 
 
 fn apply[

@@ -11,12 +11,13 @@
 
 from random import random_si64
 
-from benchmark import Bencher, BenchId, Bench, BenchConfig
+from benchmark import Bench, BenchConfig, Bencher, BenchId
+from buffer import NDBuffer
 from nn.gather_scatter import gather_reduce
 from nn.math import add
 from runtime.llcl import Runtime
+
 from utils import Index, StaticIntTuple
-from buffer import NDBuffer
 
 
 @parameter

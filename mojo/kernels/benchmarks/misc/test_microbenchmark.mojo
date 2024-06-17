@@ -10,13 +10,13 @@ from sys.info import sizeof
 from time import now
 
 import microbenchmark
-from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from buffer import NDBuffer
+from buffer.list import DimList
+from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from memory.unsafe import DTypePointer, bitcast
 from microbenchmark import Benchmarkable
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 alias alignment = 64
 

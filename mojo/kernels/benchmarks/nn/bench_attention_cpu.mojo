@@ -7,12 +7,14 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
+from random import rand
+
 from benchmark import *
 from buffer import NDBuffer
 from buffer.list import Dim, DimList
 from nn.flash_attention import flash_attention
 from nn.mha import fused_attention
-from random import rand
+
 from utils.index import Index
 
 

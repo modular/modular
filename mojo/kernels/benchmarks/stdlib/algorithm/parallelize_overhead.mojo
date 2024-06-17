@@ -6,12 +6,10 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from algorithm import (
-    sync_parallelize,
-    parallelize,
-)
 from sys.info import num_physical_cores
-from benchmark import Bencher, BenchId, Bench, keep
+
+from algorithm import parallelize, sync_parallelize
+from benchmark import Bench, Bencher, BenchId, keep
 
 
 @parameter

@@ -6,22 +6,20 @@
 
 # Meant to be run on an AVX512 system
 
+from math import align_up
 from sys.intrinsics import PrefetchOptions
 
 import benchmark
-from utils.loop import unroll
 from buffer import Buffer, NDBuffer
-from memory.unsafe import DTypePointer
-
-from utils.index import Index
 from buffer.list import Dim, DimList
-
-from math import align_up
-
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
+from memory.unsafe import DTypePointer
+
+from utils.index import Index
+from utils.loop import unroll
 
 alias dtype = DType.float32
 alias simd_size = simdwidthof[dtype]()

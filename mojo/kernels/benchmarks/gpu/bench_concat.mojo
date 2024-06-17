@@ -8,10 +8,11 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
+from random import randn
+
+from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
-
-from random import randn
 from buffer import NDBuffer
 from gpu.host import Context, Stream
 from gpu.host.memory import (
@@ -20,9 +21,9 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from utils import StaticTuple
-from algorithm.functional import elementwise
 from nn.concat import _concat_gpu_elementwise
+
+from utils import StaticTuple
 
 
 fn bench_concat[

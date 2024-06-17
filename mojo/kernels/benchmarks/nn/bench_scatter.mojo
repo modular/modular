@@ -7,12 +7,14 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from benchmark import *
-from nn.gather_scatter import scatter_elements
-from buffer import NDBuffer
-from buffer.list import Dim, DimList
 from collections.vector import InlinedFixedVector
 from random import rand, randint
+
+from benchmark import *
+from buffer import NDBuffer
+from buffer.list import Dim, DimList
+from nn.gather_scatter import scatter_elements
+
 from utils.index import Index
 
 

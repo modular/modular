@@ -9,25 +9,15 @@
 # CHECK: Benchmark results
 
 from math import ceildiv
+from random import randn
 
 from benchmark import *
 from gpu import WARP_SIZE
 from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-from linalg.matmul_gpu import (
-    gemv_kernel,
-    gemv_tc_kernel,
-    matmul_kernel_naive,
-)
-
-from memory.unsafe import DTypePointer
+from gpu.host.memory import _copy_host_to_device, _free, _malloc
+from linalg.matmul_gpu import gemv_kernel, gemv_tc_kernel, matmul_kernel_naive
 from memory import memset
-
-from random import randn
+from memory.unsafe import DTypePointer
 
 
 @parameter

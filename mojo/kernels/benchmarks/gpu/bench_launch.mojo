@@ -8,8 +8,8 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
+from benchmark import Bench, Bencher, BenchId
 from gpu.host import Context, Dim, Function, Stream
-from benchmark import Bencher, BenchId, Bench
 from layout import *
 
 

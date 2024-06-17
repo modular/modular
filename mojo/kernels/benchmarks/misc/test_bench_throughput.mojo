@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import randint, seed
+
 from benchmark import (
     Bench,
     Bencher,
     BenchId,
-    keep,
     BenchMetric,
     ThroughputMeasure,
+    keep,
 )
 
 

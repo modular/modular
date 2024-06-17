@@ -6,17 +6,17 @@
 
 # Meant to be run on an AVX512 system
 
-import benchmark
-from utils.loop import unroll
-from buffer import NDBuffer
-from layout import *
-
 from math import align_up
 
+import benchmark
+from buffer import NDBuffer
+from layout import *
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
+
+from utils.loop import unroll
 
 alias MR = 6
 alias NR = 64
