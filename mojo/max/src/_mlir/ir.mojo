@@ -6,8 +6,8 @@
 
 
 from collections.optional import Optional
-from utils.variant import Variant
 
+from utils.variant import Variant
 
 import ._c
 import ._c.IR

@@ -15,6 +15,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from .IR import (
+    MlirAttribute,
+    MlirContext,
+    MlirLocation,
+    MlirOperation,
+    MlirRegion,
+    MlirType,
+    MlirValue,
+)
+from .Support import MlirLogicalResult, MlirStringRef, MlirTypeID
 
 # ===-- mlir-c/Interfaces.h - C API to Core MLIR IR interfaces ----*- C -*-===//
 #
@@ -29,17 +39,6 @@ from .ffi import MLIR_func
 #  intended to contain interfaces defined in lib/Interfaces.
 #
 # ===----------------------------------------------------------------------===//
-
-from .IR import (
-    MlirAttribute,
-    MlirContext,
-    MlirLocation,
-    MlirOperation,
-    MlirRegion,
-    MlirType,
-    MlirValue,
-)
-from .Support import MlirLogicalResult, MlirStringRef, MlirTypeID
 
 
 fn mlirOperationImplementsInterface(

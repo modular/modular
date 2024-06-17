@@ -15,6 +15,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from .IR import MlirContext, MlirLocation, MlirStringRef
+from .Support import MlirLogicalResult
 
 # ===-- mlir-c/Diagnostics.h - MLIR Diagnostic subsystem C API ----*- C -*-===//
 #
@@ -28,9 +30,6 @@ from .ffi import MLIR_func
 #  This header declares the C APIs accessing MLIR Diagnostics subsystem.
 #
 # ===----------------------------------------------------------------------===//
-
-from .IR import MlirContext, MlirLocation, MlirStringRef
-from .Support import MlirLogicalResult
 
 
 @register_passable("trivial")

@@ -15,6 +15,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from .IR import MlirContext, MlirDialectRegistry
 
 # ===-- mlir-c/RegisterEverything.h - Register all MLIR entities --*- C -*-===//
 #
@@ -30,8 +31,6 @@ from .ffi import MLIR_func
 #  to the entire set of upstream facilities. For those that do care, they
 #  should use registration functions specific to their project.
 # ===----------------------------------------------------------------------===//
-
-from .IR import MlirContext, MlirDialectRegistry
 
 
 fn mlirRegisterAllDialects(registry: MlirDialectRegistry) -> NoneType:

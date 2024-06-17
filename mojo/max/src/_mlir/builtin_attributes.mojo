@@ -7,10 +7,10 @@
 from collections import List
 
 import ._c
-from .ir import Attribute, Context, DialectAttribute, Type
-from ._c.ffi import MLIR_func
 import ._c.BuiltinAttributes
 import ._c.BuiltinTypes
+from ._c.ffi import MLIR_func
+from .ir import Attribute, Context, DialectAttribute, Type
 
 
 @value

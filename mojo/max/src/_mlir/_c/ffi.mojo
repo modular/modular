@@ -4,15 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
-from os import getenv, abort
+from os import abort, getenv
 from pathlib import Path
-from sys.ffi import (
-    RTLD,
-    DLHandle,
-    _get_dylib_function,
-)
+from sys.ffi import RTLD, DLHandle, _get_dylib_function
 from sys.param_env import env_get_string
+
+from memory import UnsafePointer
 
 
 # Init fns inspired by gpu.host._utils

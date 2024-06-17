@@ -15,6 +15,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from .Support import (
+    MlirLlvmThreadPool,
+    MlirLogicalResult,
+    MlirStringRef,
+    MlirTypeID,
+)
 
 # ===-- mlir-c/IR.h - C API to Core MLIR IR classes ---------------*- C -*-===//
 #
@@ -33,12 +39,6 @@ from .ffi import MLIR_func
 #
 # ===----------------------------------------------------------------------===//
 
-from .Support import (
-    MlirLlvmThreadPool,
-    MlirLogicalResult,
-    MlirStringRef,
-    MlirTypeID,
-)
 
 # ===----------------------------------------------------------------------===//
 #  Opaque type declarations.

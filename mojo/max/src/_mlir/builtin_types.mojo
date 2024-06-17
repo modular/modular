@@ -6,8 +6,8 @@
 
 from collections import List
 
-from .ir import Context, DialectType, Type
 from ._c.ffi import MLIR_func
+from .ir import Context, DialectType, Type
 
 
 @value

@@ -15,6 +15,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from .IR import MlirContext, MlirDialectHandle, MlirOperation
+from .Support import MlirLogicalResult, MlirStringRef, MlirTypeID
 
 # ===-- mlir-c/Pass.h - C API to Pass Management ------------------*- C -*-===//
 #
@@ -29,8 +31,6 @@ from .ffi import MLIR_func
 #
 # ===----------------------------------------------------------------------===//
 
-from .IR import MlirContext, MlirDialectHandle, MlirOperation
-from .Support import MlirLogicalResult, MlirStringRef, MlirTypeID
 
 # ===----------------------------------------------------------------------===//
 #  Opaque type declarations.

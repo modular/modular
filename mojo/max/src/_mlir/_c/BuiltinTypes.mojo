@@ -14,7 +14,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from .AffineMap import MlirAffineMap
 from .ffi import MLIR_func
+from .IR import MlirAttribute, MlirContext, MlirLocation, MlirType
+from .Support import MlirStringRef, MlirTypeID
 
 # ===-- mlir-c/BuiltinTypes.h - C API for MLIR Builtin types ------*- C -*-===//
 #
@@ -25,9 +28,6 @@ from .ffi import MLIR_func
 #
 # ===----------------------------------------------------------------------===//
 
-from .AffineMap import MlirAffineMap
-from .IR import MlirAttribute, MlirContext, MlirLocation, MlirType
-from .Support import MlirStringRef, MlirTypeID
 
 # ===----------------------------------------------------------------------===//
 #  Integer types.

@@ -15,6 +15,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from .IR import MlirModule
+from .Support import MlirLogicalResult, MlirStringRef
 
 # ===-- mlir-c/ExecutionEngine.h - Execution engine management ---*- C -*-====//
 #
@@ -29,9 +31,6 @@ from .ffi import MLIR_func
 #  experimental at the moment.
 #
 # ===----------------------------------------------------------------------===//
-
-from .IR import MlirModule
-from .Support import MlirLogicalResult, MlirStringRef
 
 
 @register_passable("trivial")

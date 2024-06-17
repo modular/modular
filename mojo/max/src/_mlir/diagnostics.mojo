@@ -6,13 +6,14 @@
 
 
 from collections.optional import Optional
+
 import memory.unsafe
+
 from utils.variant import Variant
 
-
 import ._c
-import ._c.IR
 import ._c.Diagnostics
+import ._c.IR
 from ._c.ffi import MLIR_func
 from ._c.Support import MlirLogicalResult
 from .ir import _to_string

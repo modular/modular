@@ -14,7 +14,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from .AffineMap import MlirAffineMap
 from .ffi import MLIR_func
+from .IR import (
+    MlirAttribute,
+    MlirContext,
+    MlirLocation,
+    MlirNamedAttribute,
+    MlirType,
+)
+from .Support import MlirStringRef, MlirTypeID
 
 # ===-- mlir-c/BuiltinAttributes.h - C API for Builtin Attributes -*- C -*-===//
 #
@@ -28,16 +37,6 @@ from .ffi import MLIR_func
 #  This header declares the C interface to MLIR Builtin attributes.
 #
 # ===----------------------------------------------------------------------===//
-
-from .AffineMap import MlirAffineMap
-from .IR import (
-    MlirAttribute,
-    MlirContext,
-    MlirLocation,
-    MlirNamedAttribute,
-    MlirType,
-)
-from .Support import MlirStringRef, MlirTypeID
 
 
 fn mlirAttributeGetNull() -> MlirAttribute:

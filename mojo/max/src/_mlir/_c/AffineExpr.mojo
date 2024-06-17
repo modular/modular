@@ -14,8 +14,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
 from .AffineMap import MlirAffineMap
+from .ffi import MLIR_func
+from .IR import MlirContext
+from .Support import MlirStringRef
 
 # ===-- mlir-c/AffineExpr.h - C API for MLIR Affine Expressions ---*- C -*-===//
 #
@@ -26,8 +28,6 @@ from .AffineMap import MlirAffineMap
 #
 # ===----------------------------------------------------------------------===//
 
-from .IR import MlirContext
-from .Support import MlirStringRef
 
 # ===----------------------------------------------------------------------===//
 #  Opaque type declarations.

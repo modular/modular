@@ -7,7 +7,6 @@
 
 
 import _mlir
-
 from testing import assert_equal
 
 
