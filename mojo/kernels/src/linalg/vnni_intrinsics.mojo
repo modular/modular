@@ -206,6 +206,90 @@ fn _dot_i8_to_i32_4(
     return src + t1 + t2
 
 
+fn pmaddubs[
+    width: Int
+](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
+    DType.int32, width
+]:
+    @parameter
+    if width == 16:
+        return rebind[SIMD[DType.int32, width]](
+            bitcast[DType.int32, 16](
+                llvm_intrinsic[
+                    "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
+                ](
+                    bitcast[DType.int8, 64](a),
+                    bitcast[DType.int8, 64](b),
+                )
+            )
+        )
+    elif width == 8:
+        return rebind[SIMD[DType.int32, width]](
+            bitcast[DType.int32, 8](
+                llvm_intrinsic[
+                    "llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]
+                ](
+                    bitcast[DType.int8, 32](a),
+                    bitcast[DType.int8, 32](b),
+                )
+            )
+        )
+    else:
+        constrained[width == 4]()
+        return rebind[SIMD[DType.int32, width]](
+            bitcast[DType.int32, 4](
+                llvm_intrinsic[
+                    "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
+                ](
+                    bitcast[DType.int8, 16](a),
+                    bitcast[DType.int8, 16](b),
+                )
+            )
+        )
+
+
+fn pmaddw[
+    width: Int
+](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
+    DType.int32, width
+]:
+    @parameter
+    if width == 16:
+        return rebind[SIMD[DType.int32, width]](
+            bitcast[DType.int32, 16](
+                llvm_intrinsic[
+                    "llvm.x86.avx512.pmaddw.d.512", SIMD[DType.int32, width]
+                ](
+                    bitcast[DType.int16, 32](a),
+                    bitcast[DType.int16, 32](b),
+                )
+            )
+        )
+    elif width == 8:
+        return rebind[SIMD[DType.int32, width]](
+            bitcast[DType.int32, 8](
+                llvm_intrinsic[
+                    "llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, width]
+                ](
+                    bitcast[DType.int16, 16](a),
+                    bitcast[DType.int16, 16](b),
+                )
+            )
+        )
+    else:
+        constrained[width == 4]()
+        return rebind[SIMD[DType.int32, width]](
+            bitcast[DType.int32, 16](
+                llvm_intrinsic[
+                    "llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, width]
+                ](
+                    bitcast[DType.int16, 8](a),
+                    bitcast[DType.int16, 8](b),
+                )
+            )
+        )
+
+
 fn _dot_i8_to_i32_saturated_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
