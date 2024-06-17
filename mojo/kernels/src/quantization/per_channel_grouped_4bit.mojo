@@ -317,11 +317,8 @@ struct Q4sym[
     fn _encode_bits(
         qdata: SIMD[DType.uint8, group_size]
     ) -> SIMD[DType.uint8, group_size // 2]:
-        var lower_elements = qdata.slice[group_size // 2]()
-        var upper_elements = qdata.slice[
-            group_size // 2, offset = group_size // 2
-        ]() << 4
-        return lower_elements | upper_elements
+        var lo_hi = qdata.split()
+        return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
     fn _decode_bits(inout self) -> SIMD[DType.uint8, group_size]:

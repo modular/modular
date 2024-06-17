@@ -699,8 +699,7 @@ fn _apply_zero_point_correction[
 
                 # Logically slice the minimum values vector. This selects
                 # between `smull` (lower half) or `smull2` (upper half).
-                var q_mins_lo = q_mins.slice[simd_width, offset=0]()
-                var q_mins_hi = q_mins.slice[simd_width, offset=simd_width]()
+                var q_mins_lo_hi = q_mins.split()
 
                 @parameter
                 for row in range(tile_m):
@@ -712,11 +711,17 @@ fn _apply_zero_point_correction[
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
                         SIMD[DType.int32, simd_width],
-                    ](q_mins_lo, SIMD[size=simd_width](group_sums[row * 2 + 0]))
+                    ](
+                        q_mins_lo_hi[0],
+                        SIMD[size=simd_width](group_sums[row * 2 + 0]),
+                    )
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
                         SIMD[DType.int32, simd_width],
-                    ](q_mins_hi, SIMD[size=simd_width](group_sums[row * 2 + 1]))
+                    ](
+                        q_mins_lo_hi[1],
+                        SIMD[size=simd_width](group_sums[row * 2 + 1]),
+                    )
 
         else:
             constrained[False, "unsupported architecture"]()
