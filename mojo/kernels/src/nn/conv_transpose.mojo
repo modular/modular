@@ -1147,12 +1147,9 @@ fn pack_filter_shape(
     # Input channel
     packed_shape[filter.rank - 1] = filter.dim[filter.rank - 1]()
 
-    @always_inline
     @parameter
-    fn assign[i: Int]():
+    for i in range(filter.rank - 2):
         packed_shape[i + 1] = filter.dim[i]()
-
-    unroll[assign, filter.rank - 2]()
 
     return packed_shape
 
@@ -1168,12 +1165,9 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
     # Product of filter window dims.
     var window_dims_prod = 1
 
-    @always_inline
     @parameter
-    fn multiply[i: Int]():
+    for i in range(filter.rank - 2):
         window_dims_prod *= filter.dim[i]()
-
-    unroll[multiply, filter.rank - 2]()
 
     var C = filter.dim[filter.rank - 1]()
     var F = filter.dim[filter.rank - 2]()

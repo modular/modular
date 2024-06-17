@@ -419,12 +419,9 @@ fn gather_elementwise_fn_wrapper[
         var indices_index = StaticIntTuple[indices_rank]()
 
         # Get the indices of the index.
-        @always_inline
         @parameter
-        fn indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + int(axis)]
-
-        unroll[indices_get, indices_rank]()
+        for i in range(indices_rank):
+            indices_index[i] = idx[i + int(axis)]
 
         # The index we are gathering.
         var data_index = indices_fn[1, indices_rank](indices_index)
@@ -436,21 +433,17 @@ fn gather_elementwise_fn_wrapper[
 
         # Build the indices for the input. We have replaced in index in 'axis'
         # with an index from the indices tensor.
-        @always_inline
-        @__copy_capture(data_index, skip_factor)
         @parameter
-        fn input_indices_get[unrolled_i: Int]():
-            if unrolled_i == int(axis):
-                data_indices[unrolled_i] = int(
+        for i in range(input_rank):
+            if i == int(axis):
+                data_indices[i] = int(
                     normalize_neg_index(data_index, input_shape[axis])
                 )
-            elif unrolled_i > int(axis):
+            elif i > int(axis):
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
-                data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
+                data_indices[i] = idx[i + skip_factor]
             else:
-                data_indices[unrolled_i] = idx[unrolled_i]
-
-        unroll[input_indices_get, input_rank]()
+                data_indices[i] = idx[i]
 
         # Load the the data.
         @parameter

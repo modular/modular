@@ -1305,11 +1305,9 @@ fn _concat_gpu_elementwise[
 ) raises:
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
     @parameter
-    fn dispatch[idx: Int]() raises:
-        if idx == axis:
-            return _concat_gpu_elementwise[axis=idx](output, inputs, stream)
-
-    unroll[dispatch, rank]()
+    for i in range(rank):
+        if i == axis:
+            return _concat_gpu_elementwise[axis=i](output, inputs, stream)
 
 
 @always_inline
@@ -1379,9 +1377,8 @@ fn _concat_gpu[
     fn _concat_buffers_contiguously() raises:
         var input_size = 0
 
-        @always_inline
         @parameter
-        fn copy_body[i: Int]() raises:
+        for i in range(num_inputs):
             # Skip empty inputs.
             if inputs[i].num_elements() > 0:
                 _copy_device_to_device_async(
@@ -1391,8 +1388,6 @@ fn _concat_gpu[
                     stream,
                 )
                 input_size += inputs[i].num_elements()
-
-        unroll[copy_body, num_inputs]()
 
     # If outer_dims are ones use device-to-device copies.
     if outer_dims == 1:

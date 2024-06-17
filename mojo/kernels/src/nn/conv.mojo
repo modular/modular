@@ -1766,10 +1766,8 @@ struct ConvDirectNHWC[
             var filter_ptr = filter_base.offset(r * S * filter_S_stride)
             var w = wo * conv_attr.strides()[1] - conv_attr.pad_left()
 
-            @__copy_capture(output_micro_tile)
             @parameter
-            @always_inline
-            fn body[s: Int]():
+            for s in range(S):
                 # Adjustment of micro kernel height for left padding
                 # The first left_adjust x micro_kernel_width registers are
                 # ignored because they fall in padding.
@@ -1815,7 +1813,6 @@ struct ConvDirectNHWC[
                 filter_ptr = filter_ptr.offset(filter_S_stride)
                 input_ptr = input_ptr.offset(s_stride_in_input)
 
-            unroll[body, S]()
             h_shift += conv_attr.dilations()[0]
 
         acc.store(output_micro_tile.data, micro_kernel_width * simd_size)
@@ -2469,12 +2466,9 @@ fn pack_conv_filter_shape[
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
 
-    @always_inline
     @parameter
-    fn assign[i: Int]():
+    for i in range(filter.rank - 1):
         packed_shape[i + 1] = filter.dim[i]()
-
-    unroll[assign, filter.rank - 1]()
 
     return packed_shape
 
@@ -2533,12 +2527,9 @@ fn pack_filter_shape[
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
 
-    @always_inline
     @parameter
-    fn assign[i: Int]():
+    for i in range(filter.rank - 1):
         packed_shape[i + 1] = filter.dim[i]()
-
-    unroll[assign, filter.rank - 1]()
 
     return packed_shape
 
@@ -2563,11 +2554,8 @@ fn _get_group_filter_base(
     # The packed filter has layout e.x. FRSCf. The [1, rank-2) dims are filter
     # window sizes.
     @parameter
-    @always_inline
-    fn multiply[i: Int]():
+    for i in range(rank - 3):
         filter_window_size *= packed_filter.dim[i + 1]()
-
-    unroll[multiply, rank - 3]()
 
     # Size of one group's packed filter.
     # fmt: off
@@ -2641,12 +2629,9 @@ fn pack_filter[
     # Product of filter dims upto (rank - 1).
     var outer_dims_prod = 1
 
-    @always_inline
     @parameter
-    fn multiply[i: Int]():
+    for i in range(filter.rank - 1):
         outer_dims_prod *= filter.dim[i]()
-
-    unroll[multiply, filter.rank - 1]()
 
     var F = filter.dim[filter.rank - 1]()
     var F_per_group = F // num_groups
