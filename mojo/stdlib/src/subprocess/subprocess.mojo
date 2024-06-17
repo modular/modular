@@ -7,8 +7,8 @@
 
 
 from sys import external_call
-from sys.info import os_is_windows
 from sys.ffi import C_char
+from sys.info import os_is_windows
 
 from memory.unsafe import DTypePointer, Pointer
 
