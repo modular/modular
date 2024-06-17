@@ -14,14 +14,6 @@ from memory.unsafe import Pointer, bitcast
 from utils import StaticTuple
 
 
-fn _split(
-    x: SIMD,
-) -> StaticTuple[SIMD[x.type, x.size // 2], 2]:
-    return StaticTuple[SIMD[x.type, x.size // 2], 2](
-        x.slice[x.size // 2](), x.slice[x.size // 2, offset = x.size // 2]()
-    )
-
-
 @always_inline
 fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs warp sync Tensor Core based Matrix-multiply and accumulate(MMA) operation.
@@ -41,8 +33,8 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.type is DType.float16
         and c.size == 4
     ):
-        var sa = _split(a)
-        var sc = _split(c)
+        var sa = a.split()
+        var sc = c.split()
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.f16.f16",
@@ -87,7 +79,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.type is DType.float32
         and c.size == 4
     ):
-        var sa = _split(a)
+        var sa = a.split()
         var c0 = c
 
         var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
@@ -140,7 +132,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.type is DType.float32
         and c.size == 4
     ):
-        var sa = _split(a)
+        var sa = a.split()
         var c0 = c
 
         var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
@@ -173,10 +165,10 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.type is DType.float32
         and c.size == 4
     ):
-        var sa = _split(a)
-        var sa1 = _split(sa[0])
-        var sa2 = _split(sa[1])
-        var sb = _split(b)
+        var sa = a.split()
+        var sa1 = sa[0].split()
+        var sa2 = sa[1].split()
+        var sb = b.split()
         var c0 = c
 
         var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
