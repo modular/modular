@@ -5,18 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
 from sys.info import (
+    has_vnni,
+    has_avx2,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_apple_silicon,
-    is_x86,
 )
 
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from buffer.list import DimList
+
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
-from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
+from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
 from memory.unsafe import DTypePointer
 
 from utils import InlineArray
@@ -220,17 +222,37 @@ fn _unpack_weights[
                 @parameter
                 if needs_correction:
                     alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                    var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
+                    var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
+                    var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
 
-                    b_column_sums[col] = dot_i8_to_i32_saturated_x86(
-                        b_column_sums[col],
-                        bitcast[DType.int32, simd_width](a_zero_point),
-                        bitcast[DType.int32, simd_width](b_data_i4_lo),
-                    )
-                    b_column_sums[col] = dot_i8_to_i32_saturated_x86(
-                        b_column_sums[col],
-                        bitcast[DType.int32, simd_width](a_zero_point),
-                        bitcast[DType.int32, simd_width](b_data_i4_hi),
-                    )
+                    @parameter
+                    if has_vnni():
+                        b_column_sums[col] = dot_i8_to_i32_saturated_x86(
+                            b_column_sums[col], a_zp, b_lo
+                        )
+                        b_column_sums[col] = dot_i8_to_i32_saturated_x86(
+                            b_column_sums[col], a_zp, b_hi
+                        )
+                    else:
+                        # Get the partial 16-bit dot product low and high.
+                        # The full 32-bit dot product is finished in the
+                        # apply_a_scale_avx2 function.
+                        var pdot_lo = bitcast[DType.int16, 2 * simd_width](
+                            pmaddubs(a_zp, b_lo)
+                        )
+                        var pdot_hi = bitcast[DType.int16, 2 * simd_width](
+                            pmaddubs(a_zp, b_hi)
+                        )
+                        var ci16 = bitcast[DType.int16, 2 * simd_width](
+                            b_column_sums[col]
+                        )
+                        # Add the low and high 16-bit partial dot products.
+                        ci16 -= pdot_lo + pdot_hi
+
+                        b_column_sums[col] = bitcast[DType.int32, simd_width](
+                            ci16
+                        )
 
                 @parameter
                 if is_i8mm:
@@ -268,7 +290,9 @@ fn _unpack_weights[
             @parameter
             for col in range(tile_n):
                 SIMD.store(
-                    b_correction_ptr, simd_width * col, -b_column_sums[col]
+                    b_correction_ptr,
+                    simd_width * col,
+                    -b_column_sums[col] if has_vnni() else b_column_sums[col],
                 )
 
             b_correction_ptr += tile_n * simd_width
@@ -303,8 +327,22 @@ fn _scale_and_accumulate[
     fn apply_a_scale[row: Int](a_scale: Float32):
         @parameter
         for col in range(tile_n):
+            var dot = c_int32[row, col]
+
+            # Withtout VNNI on x86 the 2-wide 8-bit to 16-bit dot
+            # product was calculed in process_group_packed.
+            # Now complete the 4-wide 8-bit to 32-bit dot product.
+            @parameter
+            if has_avx2() and not has_vnni():
+                dot = pmaddw(
+                    dot,
+                    bitcast[DType.int32, simd_width](
+                        SIMD[DType.int16, 2 * simd_width](1)
+                    ),
+                )
+
             c_float[row, col] += (
-                c_int32[row, col].cast[DType.float32]() * a_scale * b_scale[col]
+                dot.cast[DType.float32]() * a_scale * b_scale[col]
             )
 
     # Convert and rescale the integer accumulators and accumulate to the output
@@ -374,7 +412,7 @@ trait _MatmulQInt4Kernel:
         ...
 
 
-struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
+struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn aq_type() -> DType:
@@ -514,6 +552,175 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
                     c_int32[row, col] = dot_i8_to_i32_saturated_x86(
                         c_int32[row, col], a_val, b_val
                     )
+
+        _scale_and_accumulate[group_size](
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
+        )
+
+
+struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
+    @always_inline
+    @staticmethod
+    fn aq_type() -> DType:
+        return DType.uint8
+
+    @always_inline
+    @staticmethod
+    fn aq_tuple_type() -> DType:
+        return DType.int32
+
+    @always_inline
+    @staticmethod
+    fn quantize_a_buffer[
+        group_size: Int, type: DType, aq_type: DType
+    ](
+        a: NDBuffer[type, 2],
+        a_quant: NDBuffer[aq_type, 2],
+        a_scale: NDBuffer[DType.float32, 2],
+    ):
+        return _quantize_a_buffer[group_size](a, a_quant, a_scale)
+
+    @staticmethod
+    fn process_group_packed[
+        group_size: Int, tile_n: Int, simd_width: Int
+    ](
+        a_ptr: DTypePointer[DType.int8],
+        a_scale_ptr: DTypePointer[DType.float32],
+        b_ptr: DTypePointer[DType.int8],
+        inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+    ):
+        var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
+
+        c_int32.init()
+
+        # Skip over the float16 scales.
+        var b_offset = DType.float16.sizeof() * tile_n * simd_width
+
+        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
+            0
+        )
+
+        @parameter
+        for k in range(0, group_size, 8):
+            var a_lo = SIMD[DType.int32, simd_width](
+                bitcast[DType.int32, 1](SIMD[size=4].load(a_ptr, k + 0))
+            )
+            var a_hi = SIMD[DType.int32, simd_width](
+                bitcast[DType.int32, 1](SIMD[size=4].load(a_ptr, k + 4))
+            )
+
+            @parameter
+            for col in range(tile_n):
+                var b_data_packed = SIMD[size = simd_width * 4].load(
+                    b_ptr, b_offset
+                ).cast[DType.uint8]()
+                b_offset += simd_width * 4
+
+                var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
+                var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
+
+                alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+
+                var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
+                var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
+                var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
+
+                # Get the partial 16-bit dot product low and high.
+                # The full 32-bit dot product is finished in the
+                # apply_a_scale function.
+                var pdot_lo = bitcast[DType.int16, 2 * simd_width](
+                    pmaddubs(a_zp, b_lo)
+                )
+                var pdot_hi = bitcast[DType.int16, 2 * simd_width](
+                    pmaddubs(a_zp, b_hi)
+                )
+                var b_column_sum_i16 = bitcast[DType.int16, 2 * simd_width](
+                    b_column_sums[col]
+                )
+                # Add the low and high 16-bit partial dot products.
+                b_column_sum_i16 -= pdot_lo + pdot_hi
+
+                b_column_sums[col] = bitcast[DType.int32, simd_width](
+                    b_column_sum_i16
+                )
+
+                var si16_lo = bitcast[DType.int16, 2 * simd_width](
+                    pmaddubs(a_lo, b_lo)
+                )
+                var si16_hi = bitcast[DType.int16, 2 * simd_width](
+                    pmaddubs(a_hi, b_hi)
+                )
+                var ci16 = bitcast[DType.int16, 2 * simd_width](c_int32[0, col])
+                ci16 += si16_lo + si16_hi
+                c_int32[0, col] = bitcast[DType.int32, simd_width](ci16)
+
+        @parameter
+        for col in range(tile_n):
+            var b_column_sum_i16 = bitcast[DType.int16, 2 * simd_width](
+                b_column_sums[col]
+            )
+            var ci16 = bitcast[DType.int16, 2 * simd_width](c_int32[0, col])
+            ci16 += b_column_sum_i16
+            c_int32[0, col] = bitcast[DType.int32, simd_width](ci16)
+
+        var b_scale_ptr = b_ptr.bitcast[DType.float16]()
+
+        _scale_and_accumulate[group_size](
+            a_scale_ptr, b_scale_ptr, c_int32, c_float
+        )
+
+    @always_inline
+    @staticmethod
+    fn process_group_unpacked[
+        group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
+    ](
+        a_ptr: DTypePointer[DType.int8],
+        a_scale_ptr: DTypePointer[DType.float32],
+        b_ptr: DTypePointer[DType.int8],
+        b_scale_ptr: DTypePointer[DType.float32],
+        b_correction_ptr: DTypePointer[DType.int32],
+        inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    ):
+        var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+
+        # Initialize the integer accumulators with the zero point corrections.
+        @parameter
+        for col in range(tile_n):
+            var correction_val = SIMD[size=simd_width].load(
+                b_correction_ptr, col * simd_width
+            )
+
+            @parameter
+            for row in range(tile_m):
+                c_int32[row, col] = correction_val
+
+        var b_offset = 0
+
+        @parameter
+        for k in range(0, group_size, 4):
+
+            @parameter
+            for col in range(tile_n):
+                var b_val = bitcast[DType.int32, simd_width](
+                    SIMD[size = simd_width * 4].load(b_ptr, b_offset)
+                )
+                b_offset += simd_width * 4
+
+                @parameter
+                for row in range(tile_m):
+                    var a_val = SIMD[DType.int32, simd_width](
+                        bitcast[DType.int32, 1](
+                            SIMD[size=4].load(a_ptr, row * group_size + k)
+                        )
+                    )
+                    var si16 = bitcast[DType.int16, 2 * simd_width](
+                        pmaddubs(a_val, b_val)
+                    )
+                    var ci16 = bitcast[DType.int16, 2 * simd_width](
+                        c_int32[row, col]
+                    )
+                    ci16 += si16
+                    c_int32[row, col] = bitcast[DType.int32, simd_width](ci16)
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -1003,8 +1210,10 @@ fn matmul_qint4[
         return _matmul_qint4[kernel, group_size=group_size](a, b, c)
 
     @parameter
-    if is_x86():
-        kernel_dispatch[_MatmulQInt4Kernel_x86]()
+    if has_vnni():
+        kernel_dispatch[_MatmulQInt4Kernel_x86_vnni]()
+    elif has_avx2():
+        kernel_dispatch[_MatmulQInt4Kernel_x86_avx]()
     elif has_neon_int8_matmul() and not is_apple_silicon():
         kernel_dispatch[_MatmulQInt4Kernel_neon_i8mm]()
     elif has_neon_int8_dotprod():
