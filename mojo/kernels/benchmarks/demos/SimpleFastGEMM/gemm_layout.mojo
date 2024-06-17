@@ -57,11 +57,8 @@ fn kernel[
     var c_cache = TensorBuilder[MR, NR, dtype].OnStackAligned[alignment]()
 
     @parameter
-    @always_inline
-    fn loadc[m: Int]():
+    for m in range(MR):
         c_cache.store[NR](m, 0, c.load[NR](m, 0))
-
-    unroll[loadc, MR]()
 
     for pr in range(K // NR):
         var a_tile = a.tile[MR, NR](0, pr)
@@ -85,11 +82,8 @@ fn kernel[
                 )
 
     @parameter
-    @always_inline
-    fn storec[m: Int]():
+    for m in range(MR):
         c.store[NR](m, 0, c_cache.load[NR](m, 0))
-
-    unroll[storec, MR]()
 
 
 fn pack_b[
