@@ -23,11 +23,11 @@ from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type
 
 from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
-from .Matmul import _submatmul_sequential_sync
-from .MatmulUtils import (
+from .matmul import _submatmul_sequential_sync
+from .utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from .MatmulUtils import (
+from .utils import (
     get_kernel_config,
     get_kernel_type,
     get_matmul_num_tasks,

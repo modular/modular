@@ -12,7 +12,7 @@
 
 from sys.info import has_neon_int8_matmul
 
-from LinAlg.neon_intrinsics import _neon_matmul
+from linalg.neon_intrinsics import _neon_matmul
 
 
 # CHECK-LABEL: test_has_neon_int8_matmul

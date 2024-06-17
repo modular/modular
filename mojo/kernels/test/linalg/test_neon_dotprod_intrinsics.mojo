@@ -12,7 +12,7 @@
 
 from sys.info import has_neon_int8_dotprod
 
-from LinAlg.neon_intrinsics import _neon_dotprod, _neon_dotprod_lane
+from linalg.neon_intrinsics import _neon_dotprod, _neon_dotprod_lane
 
 
 # CHECK-LABEL: test_has_neon_int8_dotprod

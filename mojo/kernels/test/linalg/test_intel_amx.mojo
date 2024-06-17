@@ -16,7 +16,7 @@ from sys.info import has_intel_amx, os_is_linux
 
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from LinAlg.intel_amx_intrinsics import (
+from linalg.intel_amx_intrinsics import (
     _tile_dpbssd,
     _tile_dpbssd_emulated,
     _tile_loadconfig,
@@ -28,8 +28,8 @@ from LinAlg.intel_amx_intrinsics import (
     init_intel_amx,
     tileconfig,
 )
-from LinAlg.Matmul import Matrix, naive_matmul
-from LinAlg.transpose import transpose, transpose_inplace
+from linalg.matmul import Matrix, naive_matmul
+from linalg.transpose import transpose, transpose_inplace
 from memory import memcmp, memset_zero
 from memory.unsafe import DTypePointer, Pointer
 

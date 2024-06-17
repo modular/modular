@@ -9,7 +9,7 @@
 
 from sys import has_intel_amx, os_is_linux
 
-from LinAlg.intel_amx_intrinsics import init_intel_amx
+from linalg.intel_amx_intrinsics import init_intel_amx
 from testing import assert_false, assert_true
 
 

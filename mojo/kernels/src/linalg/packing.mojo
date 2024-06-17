@@ -16,8 +16,8 @@ from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
 from .apple_accelerate import use_apple_accelerate_lib
-from .Gemv import gemv
-from .MatmulUtils import (
+from .gemv import gemv
+from .utils import (
     GemmShape,
     KernelConfig,
     _get_tile_n_k,

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from LinAlg.MatmulUtils import SubMatmulConfig, get_partitioned_matmul_mojo
+from linalg.utils import SubMatmulConfig, get_partitioned_matmul_mojo
 
 alias kernel_rows = 6
 alias kernel_cols = 64

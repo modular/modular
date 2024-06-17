@@ -9,7 +9,7 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from .matmul_gpu import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
     BlockIdx,
@@ -60,7 +60,7 @@ from memory.unsafe import DTypePointer
 
 from utils.index import Index
 
-from .MatmulUtils import apply_epilogue, elementwise_epilogue_type
+from .utils import apply_epilogue, elementwise_epilogue_type
 
 
 # Mask ^ tid's 2 least significant and every 8 threads share one mask.

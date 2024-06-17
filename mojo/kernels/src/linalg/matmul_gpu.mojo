@@ -43,7 +43,7 @@ from utils.numerics import get_accum_type
 from utils.static_tuple import InlineArray, StaticTuple
 
 from ._multistage_gemm_gpu import multistage_gemm
-from .MatmulUtils import GemmShape, apply_epilogue, elementwise_epilogue_type
+from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 
 
 @always_inline

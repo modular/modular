@@ -13,8 +13,8 @@ from sys.info import has_avx2, has_neon_int8_matmul, os_is_macos
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul import _matmul_cpu, matmul
-from LinAlg.MatmulPack import (
+from linalg.matmul import _matmul_cpu, matmul
+from linalg.packing import (
     _pack_b_ndbuffer_impl,
     _pack_matmul_b_shape_func_impl,
     pack_b_ndbuffer,

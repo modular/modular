@@ -12,7 +12,7 @@ from buffer.list import Dim, DimList
 
 from utils.index import Index
 
-from .MatmulUtils import elementwise_epilogue_type
+from .utils import elementwise_epilogue_type
 
 # Parallelized version of Gemv
 

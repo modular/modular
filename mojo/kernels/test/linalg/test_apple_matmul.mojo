@@ -15,16 +15,16 @@ from sys.info import os_is_macos
 import benchmark
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.BatchedMatmul import batched_matmul
-from LinAlg.Matmul import _matmul_cpu, matmul
-from LinAlg.MatmulPack import (
+from linalg.bmm import batched_matmul
+from linalg.matmul import _matmul_cpu, matmul
+from linalg.packing import (
     _pack_b_ndbuffer_impl,
     _pack_matmul_b_shape_func_impl,
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from LinAlg.MatmulUtils import elementwise_epilogue_type
+from linalg.utils import elementwise_epilogue_type
 from testing import assert_almost_equal, assert_true
 
 from utils.index import Index, StaticIntTuple

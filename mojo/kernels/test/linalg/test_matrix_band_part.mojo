@@ -7,7 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.MatrixBandPart import matrix_band_part as _matrix_band_part
+from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
 from testing import assert_equal
 
 

@@ -17,8 +17,8 @@ from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
 from .accumulate import _Accumulator
-from .Matmul import InnerMatmulKernel
-from .MatmulUtils import GemmShape, get_matmul_prefetch_b_distance_k
+from .matmul import InnerMatmulKernel
+from .utils import GemmShape, get_matmul_prefetch_b_distance_k
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
