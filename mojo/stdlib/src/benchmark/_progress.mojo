@@ -6,6 +6,7 @@
 """Implements benchmark progress bar."""
 
 from os import getenv
+
 from builtin.range import _StridedRange
 
 
