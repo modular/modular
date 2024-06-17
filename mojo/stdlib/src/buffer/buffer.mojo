@@ -1017,13 +1017,12 @@ struct NDBuffer[
         var shape = StaticIntTuple[rank]()
 
         @parameter
-        fn compute_offset_and_fill_shape[i: Int]():
+        for i in range(rank):
             alias tile_size_i = tile_sizes[i].get()
             shape[i] = tile_size_i
             var coord_i = tile_coords[i]
             offset += coord_i * tile_size_i * self.dynamic_stride[i]
 
-        unroll[compute_offset_and_fill_shape, rank]()
         # The tile buffer has the same stride and an offset calculated as
         # computed above, why?
         # Consider the 2d case, tile(i, j) of size tile_m, tile_n can be accessed
@@ -1920,10 +1919,7 @@ fn prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
     var product: Int = 1
 
     @parameter
-    @always_inline
-    fn loop[idx: Int]():
-        product *= x.dim[start_dim + idx]()
-
-    unroll[loop, end_dim - start_dim]()
+    for i in range(start_dim, end_dim):
+        product *= x.dim[i]()
 
     return product
