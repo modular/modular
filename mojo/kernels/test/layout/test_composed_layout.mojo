@@ -8,7 +8,7 @@
 
 from layout import *
 from layout.layout import Layout
-from layout.swizzle import Swizzle, SwizzleEx, ComposedLayout
+from layout.swizzle import ComposedLayout, Swizzle, SwizzleEx
 from testing import assert_equal, assert_not_equal
 
 

@@ -196,9 +196,10 @@
 #
 
 
-from .layout import LayoutTrait
-from .int_tuple import flatten
 from gpu.shuffle import _static_log2
+
+from .int_tuple import flatten
+from .layout import LayoutTrait
 
 # ===-----------------------------------------------------------------------===#
 # Helpers                                                                      #

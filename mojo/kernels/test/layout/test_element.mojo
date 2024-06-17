@@ -6,7 +6,7 @@
 
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout import LayoutTensor, Layout, IntTuple
+from layout import IntTuple, Layout, LayoutTensor
 from layout.element import Element
 
 

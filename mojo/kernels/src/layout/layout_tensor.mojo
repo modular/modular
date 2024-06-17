@@ -11,8 +11,9 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
-from gpu.memory import async_copy
 from gpu.intrinsics import convert
+from gpu.memory import async_copy
+from layout.element import Element
 from memory import memcpy
 from memory.reference import AddressSpace, _GPUAddressSpace
 from memory.unsafe import DTypePointer
@@ -22,7 +23,6 @@ from utils.numerics import max_finite
 
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
-from layout.element import Element
 
 
 # Distribute thread_layout into data_layout, if axis is provided
