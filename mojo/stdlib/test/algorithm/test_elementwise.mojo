@@ -66,11 +66,10 @@ fn test_elementwise_implicit_runtime():
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         vector[idx[0]] = 42
 
-    elementwise[func, 1, 1](Index(20))
+    elementwise[func, 1](Index(20))
 
     for i in range(len(vector)):
-        var expected_val = i + 2
-        if Int(vector[i].value) != 42:
+        if int(vector[i]) != 42:
             print("ERROR: Expecting the result to be 42")
             return
 

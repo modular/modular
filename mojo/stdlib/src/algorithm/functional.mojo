@@ -1123,13 +1123,13 @@ fn _elementwise_impl[
 ](shape: StaticIntTuple[rank]):
     @parameter
     if target == "cuda":
-        _elementwise_impl_gpu[func, simd_width, rank](
+        _elementwise_impl_gpu[func, simd_width](
             shape, Stream.get_current_stream()
         )
     else:
         constrained[target == "cpu", "unsupported target"]()
         alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-        impl[func, simd_width, rank, use_blocking_impl](shape)
+        impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
 
 @always_inline
@@ -1157,26 +1157,51 @@ fn _elementwise[
     @parameter
     if target == "cuda":
         _elementwise_impl[
-            func, simd_width, rank, use_blocking_impl=False, target=target
+            func, simd_width, use_blocking_impl=False, target=target
         ](shape)
     else:
-        elementwise[func, simd_width, rank](shape)
+        elementwise[func, simd_width](shape)
 
 
 @always_inline
 fn elementwise[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
-    rank: Int,
-](shape: StaticIntTuple[rank]):
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
+](shape: Int):
+    """Executes `func[width, rank](index)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
 
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
+
+    Args:
+        shape: The shape of the buffer.
+    """
+    _elementwise_impl[
+        func,
+        simd_width,
+        # On CUDA devices, we do not want to launch threads, so we use the
+        # blocking API
+        use_blocking_impl = triple_is_nvidia_cuda(),
+    ](Index(shape))
+
+
+@always_inline
+fn elementwise[
+    rank: Int, //,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+](shape: StaticIntTuple[rank]):
+    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns when
+    all sub-tasks have completed.
+
+    Parameters:
         rank: The rank of the buffer.
+        func: The body function.
+        simd_width: The SIMD vector width to use.
 
     Args:
         shape: The shape of the buffer.
@@ -1185,7 +1210,6 @@ fn elementwise[
     _elementwise_impl[
         func,
         simd_width,
-        rank,
         # On CUDA devices, we do not want to launch threads, so we use the
         # blocking API
         use_blocking_impl = triple_is_nvidia_cuda(),
@@ -1194,9 +1218,10 @@ fn elementwise[
 
 @always_inline
 fn _elementwise_impl_cpu_1d[
+    rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
-    rank: Int,
+    *,
     use_blocking_impl: Bool,
 ](shape: StaticIntTuple[rank]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
@@ -1204,9 +1229,9 @@ fn _elementwise_impl_cpu_1d[
     all sub-tasks have completed.
 
     Parameters:
+        rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        rank: The rank of the buffer.
         use_blocking_impl: If true the functions execute without sub-tasks.
 
     Args:
@@ -1256,9 +1281,10 @@ fn _elementwise_impl_cpu_1d[
 
 @always_inline
 fn _elementwise_impl_cpu_nd[
+    rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
-    rank: Int,
+    *,
     use_blocking_impl: Bool,
 ](shape: StaticIntTuple[rank]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
@@ -1266,9 +1292,9 @@ fn _elementwise_impl_cpu_nd[
     when all sub-tasks have completed.
 
     Parameters:
+        rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        rank: The rank of the buffer.
         use_blocking_impl: If true this is a blocking op.
 
     Args:
@@ -1351,17 +1377,17 @@ fn _elementwise_impl_cpu_nd[
 
 @always_inline
 fn _elementwise_impl_gpu[
+    rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
-    rank: Int,
 ](shape: StaticIntTuple[rank], stream: Stream):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
     Parameters:
+        rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        rank: The rank of the buffer.
 
     Args:
         shape: The shape of the buffer.
