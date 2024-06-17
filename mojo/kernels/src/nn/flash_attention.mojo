@@ -19,8 +19,8 @@ from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
-from linalg.utils import partition_work
 from linalg.transpose import transpose_inplace
+from linalg.utils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime

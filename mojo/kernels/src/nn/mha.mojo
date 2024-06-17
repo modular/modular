@@ -19,6 +19,7 @@ from gpu import (
     shuffle_xor,
     warp_reduce,
 )
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -29,15 +30,13 @@ from linalg.transpose import transpose
 from memory import stack_allocation
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
+from runtime.llcl import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
 from utils.numerics import neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import softmax
-
-from gpu.host import DeviceContext
-from runtime.llcl import MojoCallContextPtr
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

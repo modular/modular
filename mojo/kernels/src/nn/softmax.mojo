@@ -16,7 +16,7 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
-from gpu.host import Device, DeviceContext, DeviceAttribute
+from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from runtime.llcl import MojoCallContextPtr, Runtime
 from runtime.tracing import Trace, TraceLevel

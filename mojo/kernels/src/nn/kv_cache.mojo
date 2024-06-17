@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 from buffer import NDBuffer
+from buffer.list import DimList
 from driver import Device, DeviceMemory, Tensor, TensorSlice
-from tensor import TensorSpec, TensorShape
+from tensor import TensorShape, TensorSpec
+
 from .util import (
     ndbuffer_view_from_tensor,
     ndbuffer_view_from_tensor_with_tensor_shape,
 )
-from buffer.list import DimList
 
 
 # register_passable isn't compatible with custom kernels via extensibility, requirement for mo.opaque
