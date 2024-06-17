@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux
-# RUN: %mojo  -I%S/.. %s | FileCheck %s
+# RUN: %mojo %s
 
 
 from math import erf
 from random import randn, seed
+from testing import assert_almost_equal
 
 from closed_source_utils import compare
 from test_utils import libm_call
@@ -71,7 +72,7 @@ fn test_erf_float64():
 
 
 # CHECK-LABEL: test_erf_libm
-fn test_erf_libm():
+fn test_erf_libm() raises:
     print("== test_erf_libm")
     seed(0)
     alias N = 8192
@@ -96,8 +97,7 @@ fn test_erf_libm():
     fn erf_libm[
         type: DType, simd_width: Int
     ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-        var eval = libm_call[type, simd_width, "erff", "err"](arg)
-        return eval
+        return libm_call[type, simd_width, "erff", "err"](arg)
 
     var libm_out = DTypePointer[test_dtype].alloc(N, alignment=alignment)
     for i in range(N):
@@ -106,14 +106,24 @@ fn test_erf_libm():
     # CHECK: Compare Mojo math.erf vs. LibM
     # CHECK: AbsErr-Min/Max 0.0 5.9604644775390625e-08
     # CHECK: RelErr-Min/Max 0.0 1.172195140952681e-07
-    compare[test_dtype, N](y32, libm_out, "Compare Mojo math.erf vs. LibM")
+
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[test_dtype, 4](
+        0.0, 5.9604644775390625e-08, 0.0, 1.172195140952681e-07
+    )
+
+    var err = compare[test_dtype, N](
+        y32, libm_out, "Compare Mojo math.erf vs. LibM"
+    )
+
+    assert_almost_equal(err, abs_rel_err)
 
     DTypePointer[test_dtype].free(x32)
     DTypePointer[test_dtype].free(y32)
     DTypePointer[test_dtype].free(libm_out)
 
 
-fn main():
+def main():
     test_erf_float32()
     test_erf_float64()
     test_erf_libm()

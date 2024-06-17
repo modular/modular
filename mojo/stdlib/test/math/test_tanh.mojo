@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux
-# RUN: %mojo  -I%S/../ %s | FileCheck %s
+# RUN: %mojo %s
 
 from math import tanh
 from random import randn, seed
@@ -53,11 +53,14 @@ fn test_tanh_tfvals_fp32() raises:
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
 
-    # CHECK: AbsErr-Min/Max 0.0 1.1920928955078125e-07
-    # CHECK: RelErr-Min/Max 0.0 1.1920928955078125e-07
-    compare[dtype, 4](
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[dtype, 4](
+        0.0, 1.1920928955078125e-07, 0.0, 1.1920928955078125e-07
+    )
+    var err = compare[dtype, 4](
         y.data, tfvals_fp32.data, "Compare Mojo vs. Tensorflow FP32"
     )
+    assert_almost_equal(err, abs_rel_err)
 
 
 # CHECK-LABEL: test_tanh_tfvals_fp64
@@ -98,9 +101,18 @@ fn test_tanh_tfvals_fp64() raises:
 
     # CHECK: AbsErr-Min/Max 7.2062200651146213e-09 1.2149700800989649e-08
     # CHECK: RelErr-Min/Max 8.3577847290501252e-09 1.4283624095774667e-08
-    compare[dtype, 4](
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[dtype, 4](
+        7.2062200651146213e-09,
+        1.2149700800989649e-08,
+        8.3577847290501252e-09,
+        1.4283624095774667e-08,
+    )
+
+    var err = compare[dtype, 4](
         y.data, tfvals_fp64.data, "Compare Mojo vs. Tensorflow FP64"
     )
+    assert_almost_equal(err, abs_rel_err)
 
 
 # CHECK-LABEL: test_tanh_libm
@@ -130,7 +142,15 @@ fn test_tanh_libm[N: Int = 8192]() raises:
     # CHECK: Compare Mojo vs. LibM
     # CHECK: AbsErr-Min/Max 0.0 2.384185791015625e-07
     # CHECK: RelErr-Min/Max 0.0 2.5438197326366208e-07
-    compare[test_dtype, N](y32, libm_out, "Compare Mojo vs. LibM")
+
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[test_dtype, 4](
+        0.0, 2.384185791015625e-07, 0.0, 2.5438197326366208e-07
+    )
+
+    var err = compare[test_dtype, N](y32, libm_out, "Compare Mojo vs. LibM")
+    assert_almost_equal(err, abs_rel_err)
+
     DTypePointer[test_dtype].free(x32)
     DTypePointer[test_dtype].free(y32)
     DTypePointer[test_dtype].free(libm_out)
