@@ -1347,11 +1347,7 @@ fn _concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    _elementwise_impl_gpu[
-        per_output_elem,
-        1,
-        rank,
-    ](output.get_shape(), stream)
+    _elementwise_impl_gpu[per_output_elem, 1](output.get_shape(), stream)
 
 
 @always_inline

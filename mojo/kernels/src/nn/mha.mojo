@@ -1312,7 +1312,7 @@ fn _naive_attention[
         )
         score.store[width=width](rebind[StaticIntTuple[4]](coords), vec)
 
-    elementwise[scale_and_mask, simd_size, 4](score.dynamic_shape)
+    elementwise[scale_and_mask, simd_size](score.dynamic_shape)
 
     try:
         softmax[type, simd_size, 4](

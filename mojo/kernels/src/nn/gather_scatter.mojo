@@ -976,7 +976,7 @@ fn scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1, rank](indices.get_shape())
+    elementwise[update_func, 1](indices.get_shape())
 
 
 @mogg_register("scatter_shape")
@@ -1093,7 +1093,7 @@ fn gather_elements[
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[gather_func, 1, rank](output.get_shape())
+    elementwise[gather_func, 1](output.get_shape())
 
 
 # ===----------------------------------------------------------------------===#
