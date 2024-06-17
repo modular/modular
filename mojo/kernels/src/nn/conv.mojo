@@ -23,8 +23,8 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.list import Dim, DimList
-from LinAlg.accumulate import _Accumulator
-from LinAlg.MatmulUtils import partition_work
+from linalg.accumulate import _Accumulator
+from linalg.utils import partition_work
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from register import mogg_register

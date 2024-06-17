@@ -23,9 +23,9 @@ from gpu.memory import AddressSpace
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram
-from LinAlg.BatchedMatmul import batched_matmul
-from LinAlg.Matmul import matmul
-from LinAlg.transpose import transpose
+from linalg.bmm import batched_matmul
+from linalg.matmul import matmul
+from linalg.transpose import transpose
 from memory import stack_allocation
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast

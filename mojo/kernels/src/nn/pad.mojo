@@ -15,7 +15,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 
 # TODO Refactor -- we should decide on and put them into a more common file
-from LinAlg.transpose import _fill_strides
+from linalg.transpose import _fill_strides
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from register import mogg_register

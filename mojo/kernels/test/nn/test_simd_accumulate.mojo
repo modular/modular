@@ -9,7 +9,7 @@ from sys.info import has_neon, simdwidthof
 
 from algorithm.functional import vectorize
 from buffer import Buffer
-from LinAlg.accumulate import _Accumulator, _simd_load_maybe_partial
+from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
 from memory import stack_allocation
 from testing import *
 

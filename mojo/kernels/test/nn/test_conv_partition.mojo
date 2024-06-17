@@ -7,7 +7,7 @@
 
 from sys.info import simdwidthof
 
-from LinAlg.MatmulUtils import partition_work
+from linalg.utils import partition_work
 from nn.conv_utils import ConvShape, get_conv_num_partitions
 
 from utils.index import Index, StaticIntTuple

@@ -18,7 +18,7 @@ from sys.info import (
 
 from buffer import NDBuffer
 from buffer.list import Dim, DimList
-from LinAlg.MatmulUtils import partition_work
+from linalg.utils import partition_work
 
 from utils.index import Index, StaticIntTuple
 

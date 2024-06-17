@@ -16,8 +16,8 @@ from algorithm import (
 )
 from buffer.buffer import NDBuffer
 from buffer.list import Dim, DimList
-from LinAlg.accumulate import _Accumulator
-from LinAlg.MatmulUtils import partition_work
+from linalg.accumulate import _Accumulator
+from linalg.utils import partition_work
 from memory.unsafe import DTypePointer
 from register import mogg_register
 from runtime.llcl import Runtime
