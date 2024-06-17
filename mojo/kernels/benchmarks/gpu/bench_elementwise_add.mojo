@@ -62,9 +62,7 @@ fn bench_add[
         @parameter
         @always_inline
         fn kernel_launch(stream: Stream) raises:
-            _elementwise_impl_gpu[add, simd_width=unroll_by, rank=rank](
-                shape, stream
-            )
+            _elementwise_impl_gpu[add, simd_width=unroll_by](shape, stream)
 
         b.iter_custom[time_async_cuda_kernel[kernel_launch]]()
 
