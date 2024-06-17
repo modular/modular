@@ -9,21 +9,10 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from .matmul_gpu import matmul_kernel_naive
-from gpu import (
-    WARP_SIZE,
-    BlockIdx,
-    ThreadIdx,
-    barrier,
-    lane_id,
-)
-
+from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
+from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
 from gpu.intrinsics import convert
-from gpu.host import Context, Function, synchronize, Stream, FuncAttribute
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-)
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -37,8 +26,8 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     _swizzle_signature,
     copy_dram_to_sram_async,
-    copy_local_to_sram,
     copy_local_to_dram,
+    copy_local_to_sram,
     copy_sram_to_dram,
 )
 from layout.nd_buffer_stub import (
@@ -50,16 +39,17 @@ from layout.nd_buffer_stub import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import (
+    TensorCore,
     get_accum_type,
     get_fragment_size,
     get_mma_shape,
-    TensorCore,
 )
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory.unsafe import DTypePointer
 
 from utils.index import Index
 
+from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
 
 

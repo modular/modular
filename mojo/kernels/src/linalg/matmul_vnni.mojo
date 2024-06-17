@@ -23,8 +23,8 @@ from utils.loop import unroll
 
 from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel
-from .utils import GemmShape, get_matmul_prefetch_b_distance_k
 from .neon_intrinsics import _neon_dotprod
+from .utils import GemmShape, get_matmul_prefetch_b_distance_k
 from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 

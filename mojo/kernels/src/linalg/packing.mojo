@@ -17,6 +17,7 @@ from utils.loop import unroll
 
 from .apple_accelerate import use_apple_accelerate_lib
 from .gemv import gemv
+from .transpose import transpose, transpose_inplace
 from .utils import (
     GemmShape,
     KernelConfig,
@@ -29,7 +30,6 @@ from .utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from .transpose import transpose, transpose_inplace
 
 
 @value

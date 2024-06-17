@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer
 from gpu.cublas.cublas import (
+    Algorithm,
     ComputeType,
     _convert_to_cublas_datatype,
     _convert_to_cublas_transpose,
     cublasContext,
-    Algorithm,
     cublasGemmEx,
 )
 from gpu.cublas.dtype import DataType

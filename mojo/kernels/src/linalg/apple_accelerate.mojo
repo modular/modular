@@ -27,9 +27,7 @@ from .bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from .packing import pack_b_ndbuffer
-from .utils import (
-    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
-)
+from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 
 alias cblas_gemm_type = fn (
     _CBLASOrder,
