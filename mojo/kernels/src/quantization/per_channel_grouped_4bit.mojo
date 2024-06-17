@@ -611,31 +611,25 @@ fn _matmul_int4_dotprod[
             return c_local
 
         @parameter
-        @always_inline
-        fn fill_c_local[idx: Int]():
+        for i in range(4):
             c_local += (
-                a.slice[simd_width, offset = idx * simd_width]().cast[
+                a.slice[simd_width, offset = i * simd_width]().cast[
                     DType.int32
                 ]()
-                * b_s8.slice[simd_width, offset = idx * simd_width]().cast[
+                * b_s8.slice[simd_width, offset = i * simd_width]().cast[
                     DType.int32
                 ]()
             )
-
-        unroll[fill_c_local, 4]()
         return c_local
 
     var c = SIMD[DType.int32, simd_width](0)
 
     @parameter
-    @always_inline
-    fn unroll_fn[i: Int]():
+    for i in range(ceildiv(group_size, simd_width * 4)):
         alias idx = i * simd_width * 4
         var a_slice = a.slice[simd_width * 4, offset=idx]()
         var b_slice = b.slice[simd_width * 4, offset=idx]()
         c = dotprod(a_slice, b_slice, c)
-
-    unroll[unroll_fn, ceildiv(group_size, simd_width * 4)]()
 
     return c
 
