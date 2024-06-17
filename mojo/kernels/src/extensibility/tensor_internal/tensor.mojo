@@ -77,9 +77,7 @@ fn _elementwise[
         var idx = indices[0]
         result_buffer.store(idx, op[type, width](buffer.load[width=width](idx)))
 
-    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
-        Index(len(buffer))
-    )
+    elementwise[func=func, simd_width = simdwidthof[type]()](len(buffer))
 
     return result
 
@@ -107,9 +105,7 @@ fn _elementwise[
             ),
         )
 
-    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
-        Index(len(a_buffer))
-    )
+    elementwise[func=func, simd_width = simdwidthof[type]()](len(a_buffer))
 
     return result
 

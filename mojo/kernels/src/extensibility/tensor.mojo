@@ -344,7 +344,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
             var val = func[width](coords)
             self.store(coords, val)
 
-        elementwise[elementwise_fn_wrapper, simd_width, static_rank](self.shape)
+        elementwise[elementwise_fn_wrapper, simd_width](self.shape)
 
     @no_inline
     fn __str__(self) -> String:
