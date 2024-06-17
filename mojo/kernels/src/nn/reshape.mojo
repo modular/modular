@@ -30,15 +30,11 @@ fn reshape[
     var stride: Int = 1
 
     # Create contiguous strides.
-    @always_inline
     @parameter
-    fn body[idx: Int]():
+    for i in reversed(range(output_rank)):
         # Start from the back so we can accumulate the strides.
-        var i = output_rank - 1 - idx
         stride_tuple[i] = stride
         stride *= new_shape[i]
-
-    unroll[body, output_rank]()
 
     # Return the a view with the new shape.
     return NDBuffer[type, output_rank](input.data, new_shape, stride_tuple)

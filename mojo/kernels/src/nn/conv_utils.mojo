@@ -280,9 +280,8 @@ fn get_conv_shape[
     var input_dims = StaticIntTuple[rank](0)
     var filter_dims = StaticIntTuple[rank](0)
 
-    @always_inline
     @parameter
-    fn assign[i: Int]():
+    for i in range(rank):
         output_dims[i] = output.dim[i + 1]()
         input_dims[i] = input.dim[i + 1]()
 
@@ -291,8 +290,6 @@ fn get_conv_shape[
             filter_dims[i] = filter.dim[i + 1]()
         else:
             filter_dims[i] = filter.dim[i]()
-
-    unroll[assign, rank]()
 
     return ConvShape[rank] {
         n: input.dim[0](),
