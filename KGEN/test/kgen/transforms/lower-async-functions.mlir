@@ -1401,3 +1401,22 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 }
 }
 
+// -----
+
+// COM: Ensure Non-Result Args Are Mapped to Resume.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @coroutine_ramp(%arg0: index) -> !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, index)>>
+kgen.func @coroutine(%arg0: index, %__result__: !kgen.pointer<index> byref_result) async -> index {
+  %idx1 = index.constant 1
+  %result1 = index.add %arg0, %idx1
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+}
+
