@@ -429,7 +429,7 @@ struct PackMatrixCols[
                         ] >= nc else self.original_matrix[
                             self.global_offset + local_idx
                         ]
-                        self.packed_matrix.store[width=1](
+                        self.packed_matrix.store(
                             (j, i // vnni_cols, vnni_cols * p + l),
                             val,
                         )
