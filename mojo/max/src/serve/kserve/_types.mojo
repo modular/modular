@@ -238,7 +238,10 @@ struct CInferenceRequest:
         self._ptr = exchange[DTypePointer[DType.invalid]](
             existing._ptr, DTypePointer[DType.invalid]()
         )
+        # Regardless of whether existing owned it or not, we copy owning.
         self._owning = existing._owning
+        # But after copying it, existing doesn't own it anymore.
+        existing._owning = False
 
     fn __copyinit__(inout self, existing: Self):
         self._lib = existing._lib
@@ -331,6 +334,7 @@ struct CInferenceResponse:
             existing._ptr, DTypePointer[DType.invalid]()
         )
         self._owning = existing._owning
+        existing._owning = False
 
     fn __copyinit__(inout self, existing: Self):
         self._lib = existing._lib
