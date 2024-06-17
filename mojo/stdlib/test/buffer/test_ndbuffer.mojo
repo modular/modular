@@ -7,8 +7,8 @@
 
 from math import iota
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from sys.intrinsics import PrefetchOptions
+from tempfile import NamedTemporaryFile
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.list import DimList
