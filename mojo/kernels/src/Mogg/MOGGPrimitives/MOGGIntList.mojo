@@ -203,12 +203,10 @@ struct IntList[static_values: DimList = DimList()](Sized):
         @parameter
         if Self.has_static_length():
 
-            @always_inline
             @parameter
-            fn body[idx: Int]():
-                num_elms *= self[idx]
+            for i in range(Self._length):
+                num_elms *= self[i]
 
-            unroll[body, Self._length]()
         else:
             for i in range(len(self)):
                 num_elms *= self[i]
