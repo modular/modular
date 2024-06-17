@@ -695,12 +695,11 @@ struct ConvDirectNHWC[
 
         @parameter
         for i in range(micro_kernel_height):
-            input_base_offsets.store[width=1](
-                i,
+            input_base_offsets[i] = (
                 self.conv_shape.output_flat_coord_to_input_offset(
                     n, output_flat_coord + i
                 )
-                + c_tile_offset,
+                + c_tile_offset
             )
 
         alias alignment = alignof[SIMD[output_type, simd_size]]()

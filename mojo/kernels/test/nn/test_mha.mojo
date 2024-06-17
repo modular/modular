@@ -48,8 +48,8 @@ fn is_ndbuffer_close[
 
     for i in range(a.num_elements()):
         var nd_idx = _compute_nd_index(a, i)
-        var expect = a.load[width=1](nd_idx)
-        var actual = b.load[width=1](nd_idx)
+        var expect = a[nd_idx]
+        var actual = b[nd_idx]
         if not isclose(expect, actual, atol=abs_tol, rtol=rel_tol):
             is_close = False
             if print_wrong_value and num_errs < max_num_print:
