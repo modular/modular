@@ -83,12 +83,14 @@ fn print_element[
     var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)
 
     @parameter
-    fn _fill_element[i: Int, j: Int]():
-        simd_element[i * element_shape[1] + j] = element_ptr[
-            i * element_layout.stride[0] + j * element_layout.stride[1]
-        ]
+    for i in range(element_shape[0]):
 
-    unroll[_fill_element, element_shape[0], element_shape[1]]()
+        @parameter
+        for j in range(element_shape[1]):
+            simd_element[i * element_shape[1] + j] = element_ptr[
+                i * element_layout.stride[0] + j * element_layout.stride[1]
+            ]
+
     print(simd_element, end=" ")
 
 
