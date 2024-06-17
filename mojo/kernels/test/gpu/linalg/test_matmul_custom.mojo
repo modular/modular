@@ -11,7 +11,7 @@ from random import random_float64
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host.device_context import DeviceContext, DeviceBuffer
+from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory.unsafe import DTypePointer

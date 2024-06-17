@@ -12,7 +12,6 @@ from random import rand, random_float64, seed
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu.host.device_context import DeviceContext
-
 from nn.softmax import _softmax_cpu, _softmax_gpu
 from testing import assert_true
 

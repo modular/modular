@@ -14,7 +14,6 @@ from buffer import NDBuffer
 from gpu import *
 from gpu.host.device_context import DeviceContext
 from gpu.host.event import time_function
-
 from memory.unsafe import DTypePointer
 from nn.mha import (
     _naive_attention_with_transpose,

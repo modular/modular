@@ -12,7 +12,7 @@ from math import isclose
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import Dim, DimList, NDBuffer
-from gpu.host.device_context import DeviceContext, DeviceBuffer
+from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
 from runtime.llcl import MojoCallContextPtr

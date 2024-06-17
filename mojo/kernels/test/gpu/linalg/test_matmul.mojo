@@ -11,12 +11,11 @@ from random import random_float64
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from memory.reference import _GPUAddressSpace as AddressSpace
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE
-from gpu.host.device_context import DeviceContext, DeviceBuffer
-
-from linalg.matmul_gpu import matmul_kernel_naive, _matmul_gpu
+from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu.host.device_context import DeviceBuffer, DeviceContext
+from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
+from memory.reference import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal, assert_true
 
 from utils.index import Index

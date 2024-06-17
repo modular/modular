@@ -41,16 +41,16 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     _swizzle_signature,
     copy_dram_to_sram_async,
-    copy_local_to_sram,
     copy_local_to_dram,
+    copy_local_to_sram,
     copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import (
+    TensorCore,
     get_accum_type,
     get_fragment_size,
     get_mma_shape,
-    TensorCore,
 )
 from linalg.cublas import cublas_matmul
 from memory.reference import _GPUAddressSpace as AddressSpace
