@@ -82,9 +82,9 @@ fn block_reduce[
     ) -> StaticTuple[SIMD[type, simd_width], num_reductions]:
         var result = StaticTuple[SIMD[type, simd_width], num_reductions]()
 
-        @always_inline
         @parameter
-        fn unrolled_warp_reduce_helper[i: Int]():
+        for i in range(num_reductions):
+
             @always_inline
             @parameter
             fn reduce_wrapper[
@@ -96,7 +96,6 @@ fn block_reduce[
 
             result[i] = warp_reduce[shuffle_down, reduce_wrapper](val[i])
 
-        unroll[unrolled_warp_reduce_helper, num_reductions]()
         return result
 
     var shared = stack_allocation[
@@ -138,9 +137,9 @@ fn block_reduce[
     var result_packed = do_warp_reduce(last_accum)
     var result = StaticTuple[Scalar[type], num_reductions]()
 
-    @always_inline
     @parameter
-    fn unrolled_simd_reduce_helper[i: Int]():
+    for i in range(num_reductions):
+
         @always_inline
         @parameter
         fn reduce_wrapper[
@@ -149,8 +148,6 @@ fn block_reduce[
             return reduce_fn[type, width, i](lhs, rhs)
 
         result[i] = result_packed[i].reduce[reduce_wrapper]()
-
-    unroll[unrolled_simd_reduce_helper, num_reductions]()
 
     return result
 
@@ -242,13 +239,9 @@ fn row_reduce[
             accum_type
         ]()
 
-        @always_inline
-        @__copy_capture(val)
         @parameter
-        fn unrolled_reduce_wrapper[i: Int]():
+        for i in range(num_reductions):
             accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
-
-        unroll[unrolled_reduce_wrapper, num_reductions]()
 
     var scalar_accum = block_reduce[
         BLOCK_SIZE,
@@ -263,13 +256,9 @@ fn row_reduce[
         row_coords[axis] = idx_in_padded_row
         var val = input_fn[type, 1, rank](row_coords).cast[accum_type]()
 
-        @always_inline
-        @__copy_capture(val)
         @parameter
-        fn unrolled_scalar_reduce_wrapper[i: Int]():
+        for i in range(num_reductions):
             scalar_accum[i] = reduce_fn[accum_type, 1, i](val, scalar_accum[i])
-
-        unroll[unrolled_scalar_reduce_wrapper, num_reductions]()
 
     return scalar_accum
 

@@ -754,10 +754,9 @@ fn _reduce_along_inner_dimension[
             SIMD[init_type, out_width], num_reductions
         ]()
 
-        @always_inline
-        @__copy_capture(unrolled_simd_compatible_size, simd_compatible_size)
         @parameter
-        fn unroll_simd_helper[i: Int]():
+        for i in range(num_reductions):
+
             @always_inline
             @parameter
             fn simd_reduce_wrapper[
@@ -770,8 +769,6 @@ fn _reduce_along_inner_dimension[
             out_acc_tup[i] = in_acc_tup[i].reduce[
                 simd_reduce_wrapper, out_width
             ]()
-
-        unroll[unroll_simd_helper, num_reductions]()
 
         return out_acc_tup
 
@@ -806,15 +803,11 @@ fn _reduce_along_inner_dimension[
                         indices
                     )
 
-                    @always_inline
-                    @__copy_capture(load_value)
                     @parameter
-                    fn _unroll_helper[i: Int]():
+                    for i in range(num_reductions):
                         acc[i] = reduce_function[init_type, width, i](
                             load_value, acc[i]
                         )
-
-                    unroll[_unroll_helper, num_reductions]()
 
                 return acc
 
@@ -990,15 +983,11 @@ fn _reduce_along_outer_dimension[
                         init_type, simd_width, shape.size
                     ](indices)
 
-                    @always_inline
-                    @__copy_capture(load_value)
                     @parameter
-                    fn unroll_reduce_helper[i: Int]():
+                    for i in range(num_reductions):
                         acc_simd_tup[i] = reduce_function[
                             init_type, simd_width, i
                         ](load_value, acc_simd_tup[i])
-
-                    unroll[unroll_reduce_helper, num_reductions]()
 
                 indices[reduce_dim] = 0
                 output_0_fn[init_type, simd_width, indices.size](
@@ -1632,16 +1621,13 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
     if canonical_axis != rank - 1:
         raise Error("axis other than innermost not supported yet")
 
-    @always_inline
     @parameter
-    fn check_dim_body[subaxis: Int]() raises:
+    for subaxis in range(rank):
         if subaxis == canonical_axis:
             if output.dim(subaxis) != 1:
                 raise Error("expected axis to have size 1 in output")
         elif input.dim(subaxis) != output.dim(subaxis):
             raise Error("input and output dims must match aside from 'axis'")
-
-    unroll[check_dim_body, rank]()
 
     var axis_size = input.dim(canonical_axis)
     var input_stride: Int
@@ -1898,10 +1884,9 @@ fn cumsum(dst: Buffer, src: __type_of(dst)):
         var x_simd = src.load[width=simd_width](i)
 
         @parameter
-        fn loop_body[idx: Int]():
-            x_simd += x_simd.shift_right[2**idx]()
+        for i in range(rep):
+            x_simd += x_simd.shift_right[2**i]()
 
-        unroll[loop_body, rep]()
         dst.store(i, x_simd)
 
     # e.g., Assuming input buffer 1, 2, 3, 4, 5, 6, 7, 8 and simd_width = 4
