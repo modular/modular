@@ -590,6 +590,37 @@ struct ListType(CollectionElement):
 
 
 @value
+struct _OpaqueType(CollectionElement):
+    """A type representing an opaque type."""
+
+    var name: String
+
+    fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
+        """Converts to an _mlir.Type instance.
+
+        Args:
+            ctx: The mlir.Context in which to create the type.
+
+        Returns:
+            An _mlir.Type in the specified Context.
+        """
+        return _c.opaque_type_new(ctx, self.name)
+
+    @staticmethod
+    fn from_mlir(t: _mlir.Type) -> Self:
+        """Constructs an opaque type from an _mlir type.
+
+        Args:
+            t: The _mlir Type object to parse into an opaque type.
+
+        Returns:
+            The opaque type represented by the _mlir Type value.
+        """
+        var name = String(_c.opaque_type_name(t))
+        return Self(name)
+
+
+@value
 struct Type(CollectionElement):
     """Represents any possible type for Graph Symbol values.
 
@@ -598,7 +629,7 @@ struct Type(CollectionElement):
     about an individual Value.
     """
 
-    var type: Variant[TensorType, ListType]
+    var type: Variant[TensorType, ListType, _OpaqueType]
     """The type data."""
 
     fn __init__(inout self, t: TensorType):
@@ -614,6 +645,14 @@ struct Type(CollectionElement):
 
         Args:
             t: The list type.
+        """
+        self.type = t
+
+    fn __init__(inout self, t: _OpaqueType):
+        """Constructs a type from an opaque typ.
+
+        Args:
+            t: The opaque type.
         """
         self.type = t
 
@@ -649,6 +688,22 @@ struct Type(CollectionElement):
             raise "Not a tensor type!"
         return self.type[TensorType]
 
+    fn _opaque(self) raises -> _OpaqueType:
+        """Extracts the type as an opaque type.
+
+        This doesn't have any impact at graph execution time, it just retrieves
+        the underlying opaque type.
+
+        Returns:
+            The underlying type specifically as an opaque type.
+
+        Raises:
+            If the type is some other data type besides an an opaque type.
+        """
+        if not self.type.isa[_OpaqueType]():
+            raise "Not an opaque type!"
+        return self.type[_OpaqueType]
+
     fn dims(self) -> List[Dim]:
         """Returns a list of all dims referenced by the type.
 
@@ -676,9 +731,11 @@ struct Type(CollectionElement):
         """
         if self.type.isa[TensorType]():
             return self.type[TensorType].to_mlir(ctx)
-        else:
-            debug_assert(self.type.isa[ListType](), "MO type variants")
+        elif self.type.isa[ListType]():
             return self.type[ListType].to_mlir(ctx)
+        else:
+            debug_assert(self.type.isa[_OpaqueType](), "MO type variants")
+            return self.type[_OpaqueType].to_mlir(ctx)
 
     @staticmethod
     fn from_mlir(t: _mlir.Type) raises -> Self:
@@ -695,6 +752,8 @@ struct Type(CollectionElement):
                 _c.list_type_element_type(t)
             )
             return Self(ListType(element_type))
-        else:
-            debug_assert(_c.type_is_tensor(t), "MO type variants")
+        elif _c.type_is_tensor(t):
             return Self(TensorType.from_mlir(t))
+        else:
+            debug_assert(_c.type_is_opaque(t), "MO type variants")
+            return Self(_OpaqueType.from_mlir(t))

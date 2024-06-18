@@ -355,3 +355,20 @@ fn type_is_list(t: _mlir.Type) -> Bool:
 
 fn type_is_tensor(t: _mlir.Type) -> Bool:
     return cfunc["MAXG_typeIsTensor", fn (_mlir.Type.cType) -> Bool]()(t.c)
+
+
+fn type_is_opaque(t: _mlir.Type) -> Bool:
+    return cfunc["MAXG_typeIsOpaque", fn (_mlir.Type.cType) -> Bool]()(t.c)
+
+
+fn opaque_type_new(ctx: _mlir.Context, name: String) -> _mlir.Type:
+    return cfunc[
+        "MAXG_opaqueTypeNew",
+        fn (_mlir.Context.cType, StringRef) -> _mlir.Type.cType,
+    ]()(ctx.c, name._strref_dangerous())
+
+
+fn opaque_type_name(t: _mlir.Type) -> StringRef:
+    return cfunc["MAXG_opaqueTypeName", fn (_mlir.Type.cType) -> StringRef]()(
+        t.c
+    )

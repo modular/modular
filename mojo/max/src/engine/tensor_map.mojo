@@ -205,6 +205,18 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         )
         key._strref_keepalive()
 
+    fn _move_mojo_value[T: Movable](self, key: String, owned value: T) raises:
+        """Move the mojo value inside the map at the key location.
+
+        Parameters:
+            T: Type of the mojo value.
+
+        Args:
+            key: Name of value in map.
+            value: Mojo Value to insert into map.
+        """
+        self._ptr.move_mojo_value_by_name(key, value^, self._lib)
+
     fn get[type: DType](self, key: String) raises -> Tensor[type]:
         """Gets the tensor / numpy array indicated by the key.
            The value is copied and returned to the user.
@@ -225,6 +237,23 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         var tensor = mof_tensor.tensor[type]()
         return tensor^
+
+    fn _take_mojo_value[T: Movable](self, key: String) raises -> T:
+        """Gets the custom mojo value indicated by the key.
+           The value is moved and returned to the user.
+           The same key can't be requested again.
+
+        Parameters:
+            T: Type of value of to be returned.
+
+        Args:
+            key: Name of value in the map.
+
+        Returns:
+            The mojo object held by the map.
+        """
+        var val = self.get_value(key)
+        return val._take_mojo_value[T]()
 
     fn buffer[type: DType](self, key: String) raises -> Buffer[type]:
         """Gets a buffer to the tensor pointed by the key.

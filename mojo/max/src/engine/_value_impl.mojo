@@ -9,6 +9,8 @@ from sys.ffi import DLHandle
 from ._tensor_impl import CTensor
 from ._utils import call_dylib_func
 
+alias CMojoVal = UnsafePointer[UInt8]
+
 
 @value
 @register_passable("trivial")
@@ -20,6 +22,7 @@ struct CValue:
     alias _GetTensorFnName = "M_getTensorFromValue"
     alias _GetBoolFnName = "M_getBoolFromValue"
     alias _GetListFnName = "M_getListFromValue"
+    alias _TakeMojoValueFnName = "M_takeMojoValueFromValue"
     alias _FreeValueFnName = "M_freeValue"
 
     fn get_c_tensor(self, lib: DLHandle) -> CTensor:
@@ -33,6 +36,10 @@ struct CValue:
     fn get_list(self, lib: DLHandle) -> CList:
         """Get list within value."""
         return call_dylib_func[CList](lib, Self._GetListFnName, self)
+
+    fn take_mojo_value(self, lib: DLHandle) -> CMojoVal:
+        """Take ownership of mojo_val within value."""
+        return call_dylib_func[CMojoVal](lib, Self._TakeMojoValueFnName, self)
 
     fn free(self, lib: DLHandle):
         """Free value."""

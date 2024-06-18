@@ -145,6 +145,22 @@ struct Value:
             raise "value is not a list"
         return List(ptr, self._lib, self._session)
 
+    fn _take_mojo_value[T: Movable](self) raises -> T:
+        """Move the mojo object out of this value.
+
+        Owernship of the object is transfered to the caller.
+
+        Parameters:
+            T: the type of the mojo object inside the value.
+
+        Returns:
+            The mojo object inside the value.
+        """
+        var ptr = self._ptr.take_mojo_value(self._lib).bitcast[T]()
+        var res = ptr.take_pointee()
+        external_call["KGEN_CompilerRT_MojoValueFreeBuffer", NoneType](ptr)
+        return res^
+
 
 struct List(Sized):
     """Uncounted reference to underlying storage of a list `Value`.

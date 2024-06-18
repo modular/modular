@@ -165,6 +165,32 @@ struct FiveArgCallable[
         return self.func(arg1, arg2, arg3, arg4, arg5)
 
 
+@value
+@register_passable("trivial")
+struct SixArgCallable[
+    ResultTy: AnyTrivialRegType,
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+]:
+    var func: fn (Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty) -> ResultTy
+
+    @always_inline("nodebug")
+    fn __call__(
+        self,
+        arg1: Arg1Ty,
+        arg2: Arg2Ty,
+        arg3: Arg3Ty,
+        arg4: Arg4Ty,
+        arg5: Arg5Ty,
+        arg6: Arg6Ty,
+    ) -> ResultTy:
+        return self.func(arg1, arg2, arg3, arg4, arg5, arg6)
+
+
 @always_inline("nodebug")
 fn call_dylib_func[
     ResultTy: AnyTrivialRegType
@@ -283,6 +309,28 @@ fn call_dylib_func[
 
 @always_inline("nodebug")
 fn call_dylib_func[
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+](
+    lib: DLHandle,
+    name: StringRef,
+    arg1: Arg1Ty,
+    arg2: Arg2Ty,
+    arg3: Arg3Ty,
+    arg4: Arg4Ty,
+    arg5: Arg5Ty,
+):
+    """Call function `name` in dylib with no result and five arguments."""
+    return lib.get_function[
+        FiveArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty]
+    ](name)(arg1, arg2, arg3, arg4, arg5)
+
+
+@always_inline("nodebug")
+fn call_dylib_func[
     ResultTy: AnyTrivialRegType,
     Arg1Ty: AnyTrivialRegType,
     Arg2Ty: AnyTrivialRegType,
@@ -302,6 +350,30 @@ fn call_dylib_func[
     return lib.get_function[
         FiveArgCallable[ResultTy, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty]
     ](name)(arg1, arg2, arg3, arg4, arg5)
+
+
+@always_inline("nodebug")
+fn call_dylib_func[
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+](
+    lib: DLHandle,
+    name: StringRef,
+    arg1: Arg1Ty,
+    arg2: Arg2Ty,
+    arg3: Arg3Ty,
+    arg4: Arg4Ty,
+    arg5: Arg5Ty,
+    arg6: Arg6Ty,
+):
+    """Call function `name` in dylib with no result and six arguments."""
+    return lib.get_function[
+        SixArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty]
+    ](name)(arg1, arg2, arg3, arg4, arg5, arg6)
 
 
 struct OwningVector[T: Movable](Sized):

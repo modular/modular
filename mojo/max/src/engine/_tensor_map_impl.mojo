@@ -13,6 +13,10 @@ from ._tensor_impl import CTensor
 from ._value_impl import CValue
 
 
+fn _destroy_pointee_wrapper[T: AnyType](ptr: UnsafePointer[T]):
+    ptr.destroy_pointee()
+
+
 @value
 @register_passable("trivial")
 struct CTensorMap:
@@ -24,6 +28,7 @@ struct CTensorMap:
     alias FreeAsyncTensorMapFnName = "M_freeAsyncTensorMap"
     alias BorrowTensorIntoFnName = "M_borrowTensorInto"
     alias BorrowValueIntoFnName = "M_borrowValueInto"
+    alias MoveMojoValueIntoFnName = "M_moveMojoValueInto"
     alias GetTensorByNameFromFnName = "M_getTensorByNameFrom"
     alias GetValueByNameFromFnName = "M_getValueByNameFrom"
     alias GetTensorMapSizeFnName = "M_getTensorMapSize"
@@ -83,6 +88,42 @@ struct CTensorMap:
         _ = name
         if status:
             raise status.__str__()
+
+    fn move_mojo_value_by_name[
+        T: Movable
+    ](self, name: String, owned val: T, lib: DLHandle,) raises:
+        """Create a new MojoValue object and store in the tensormap.
+
+        Parameters:
+            T: Type of the mojo object.
+
+        Arguments:
+            name: Name of the entry in the tensormap.
+            val: mojo object stored in the map as a MojoValue.
+            lib: dlhandle for the lib
+        """
+
+        # Allocate buffer and move val.
+        var value_destructor = _destroy_pointee_wrapper[T]
+        var data_ptr = external_call[
+            "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[T]
+        ](sizeof[T](), alignof[T]())
+        data_ptr.init_pointee_move(val^)
+
+        # Store the data_ptr and destructor into an AnyAsyncValue.
+        var status = Status(lib)
+        call_dylib_func(
+            lib,
+            Self.MoveMojoValueIntoFnName,
+            self,
+            name.unsafe_ptr(),
+            data_ptr,
+            value_destructor,
+            status.borrow_ptr(),
+        )
+        _ = name
+        if status:
+            raise str(status)
 
     fn keys(self, size_ptr: Pointer[Int64], lib: DLHandle) -> Pointer[CString]:
         return call_dylib_func[Pointer[CString]](

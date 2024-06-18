@@ -52,6 +52,7 @@ from .symbol import Symbol
 from .type import (
     Dim,
     ListType,
+    _OpaqueType,
     StaticDim,
     TensorType,
     Type,
