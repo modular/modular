@@ -18,9 +18,9 @@ from sys.info import num_physical_cores, triple_is_nvidia_cuda
 
 from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
-from gpu.host import Device, Function, Stream
+from gpu.host import Device, DeviceContext
 from runtime import tracing
-from runtime.llcl import Runtime, TaskGroup
+from runtime.llcl import Runtime, TaskGroup, MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, StaticIntTuple
@@ -1111,6 +1111,7 @@ fn _get_start_indices_of_nth_subvolume[
     return out
 
 
+# TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
 fn _elementwise_impl[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
@@ -1120,11 +1121,37 @@ fn _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank]):
+](shape: StaticIntTuple[rank], context: DeviceContext,):
     @parameter
     if target == "cuda":
         _elementwise_impl_gpu[func, simd_width](
-            shape, Stream.get_current_stream()
+            shape,
+            context,
+        )
+    else:
+        constrained[target == "cpu", "unsupported target"]()
+        alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
+        impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
+
+
+@always_inline
+fn _elementwise_impl[
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+    rank: Int,
+    /,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    shape: StaticIntTuple[rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    @parameter
+    if target == "cuda":
+        _elementwise_impl_gpu[func, simd_width](
+            shape,
+            context.get_cuda_device(),
         )
     else:
         constrained[target == "cpu", "unsupported target"]()
@@ -1380,7 +1407,7 @@ fn _elementwise_impl_gpu[
     rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
-](shape: StaticIntTuple[rank], stream: Stream):
+](shape: StaticIntTuple[rank], ctx: DeviceContext):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1391,7 +1418,7 @@ fn _elementwise_impl_gpu[
 
     Args:
         shape: The shape of the buffer.
-        stream: Stream on which to launch the kernel.
+        ctx: The pointer to DeviceContext.
     """
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
@@ -1478,11 +1505,15 @@ fn _elementwise_impl_gpu[
     try:
         # TODO cleanup after #26672
         if shape[rank - 1] % simd_width == 0:
-            var gpu_func = Function[_invoke_without_edge_case]()
-            gpu_func(grid_dim=num_blocks, block_dim=block_size, stream=stream)
+            var gpu_func = ctx.compile_function[_invoke_without_edge_case]()
+            ctx.enqueue_function(
+                gpu_func, grid_dim=num_blocks, block_dim=block_size
+            )
         else:
-            var gpu_func = Function[_invoke_with_edge_case]()
-            gpu_func(grid_dim=num_blocks, block_dim=block_size, stream=stream)
+            var gpu_func = ctx.compile_function[_invoke_with_edge_case]()
+            ctx.enqueue_function(
+                gpu_func, grid_dim=num_blocks, block_dim=block_size
+            )
 
     except e:
         abort(e)
