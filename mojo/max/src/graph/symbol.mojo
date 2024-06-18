@@ -289,8 +289,11 @@ struct Symbol(CollectionElement, Stringable):
             slices.append(sval[])
         return ops.slice(self, slices)
 
-    fn __getitem__(self, *slices: Slice) raises -> Symbol:
-        """Shorthand for symbolic slicing with an `Int` range.
+    @always_inline
+    fn __getitem__(
+        self, *slices: Slice, out_dims: List[Dim] = List[Dim]()
+    ) raises -> Symbol:
+        """Shorthand for symbolic slicing with `Int` ranges.
 
         Args:
             slices: The slice values for each dimension respectively.
@@ -298,11 +301,16 @@ struct Symbol(CollectionElement, Stringable):
               dimensions will be trivially sliced. In other words
               `s[:, :2]` is equivalent to `s[:, :2, :, :]` for a tensor of
               rank 4. Currently indexing and slicing may not be mixed.
+            out_dims: The expected output dimensions returned by slicing.
+              These will be assert at graph execution time to be correct.
 
         Returns:
             The slicing result.
+
+        Raises:
+            An exception if out_dims is empty and can't be calculated at graph build time.
         """
-        return ops.slice(self, slices)
+        return ops.slice(self, slices, out_dims, __call_location())
 
     # ===------------------------------------------------------------------=== #
     # Arithmetic operators

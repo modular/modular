@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that slice, index, stack, concat etc."""
 
+from builtin._location import __call_location, _SourceLocation
 from collections.optional import Optional
 from utils.numerics import max_finite
 
@@ -165,38 +166,78 @@ def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
     )
 
 
-def slice(input: Symbol, *slices: Slice) -> Symbol:
-    """Slices a symbolic tensor along its first dimension.
+def _slice_size(s: Slice, length: Optional[Int64]) -> Optional[Int]:
+    """Calculates the size of a slice into a tensor or returns None."""
+
+    def sign(x: Int64) -> Bool:
+        return x > 0
+
+    if length:
+        start, stop, step = s.indices(int(length.value()))
+        return len(range(start, stop, step))
+    elif s.end and sign((s.start or 0).value()) == sign(s.end.value()):
+        return s.unsafe_indices()
+    return None
+
+
+@always_inline
+def slice(
+    input: Symbol,
+    *slices: Slice,
+    out_dims: List[Dim] = List[Dim](),
+    location: Optional[_SourceLocation] = None,
+) -> Symbol:
+    """Slices a symbolic tensor with `Int` ranges.
 
     Args:
         input: The symbolic tensor to slice.
         slices: Slices across the tensor's dimensions. If fewer than
             `input.rank()` slices are provided, the remaining dimensions
             will be trivially sliced.
+        out_dims: The expected output dimensions returned by slicing.
+          These will be assert at graph execution time to be correct.
+        location: An optional location for a more specific error message.
 
     Returns:
         A new symbolic tensor representing the result of slicing the
         input along its dimension according to `slices`. The output will
         have the same rank as the input, but fewer values depending on the
         slice values.
+
+    Raises:
+        An exception if out_dims is empty and can't be calculated at graph build time.
     """
-    return slice(input, slices)
+    return slice(input, slices, out_dims, location)
 
 
-def slice(input: Symbol, slices: VariadicList[Slice]) -> Symbol:
-    """Slices a symbolic tensor along its first dimension.
+@always_inline
+def slice(
+    input: Symbol,
+    slices: VariadicList[Slice],
+    out_dims: List[Dim] = List[Dim](),
+    location: Optional[_SourceLocation] = None,
+) -> Symbol:
+    """Slices a symbolic tensor with `Int` ranges.
+
+    Will raise an exception if out_dim is not set and can't be calculated at graph build time.
 
     Args:
         input: The symbolic tensor to slice.
         slices: Slices across the tensor's dimensions. If fewer than
             `input.rank()` slices are provided, the remaining dimensions
             will be trivially sliced.
+        out_dims: The expected output dimensions returned by slicing.
+          These will be assert at graph execution time to be correct.
+        location: An optional location for a more specific error message.
 
     Returns:
         A new symbolic tensor representing the result of slicing the
         input along its dimension according to `slices`. The output will
         have the same rank as the input, but fewer values depending on the
         slice values.
+
+    Raises:
+        An exception if out_dims is empty and can't be calculated at graph build time.
     """
     g = input.graph()
     t = input.tensor_type()
@@ -204,13 +245,23 @@ def slice(input: Symbol, slices: VariadicList[Slice]) -> Symbol:
         message = str("got {} slices, tensor only has rank {}")
         raise error(g, message.format(len(slices), t.rank()))
 
-    slice_max = int(max_finite[DType.int64]())
+    slice_max = int(Int64.MAX)
     empty_slice = Slice(start=None, end=None, step=1)
 
     dims = List[Dim]()
     starts = List[Int64]()
     stops = List[Int64]()
     steps = List[Int64]()
+
+    loc = location or __call_location()
+    if out_dims:
+        dims = out_dims
+        if len(dims) != len(slices):
+            raise error(
+                input.graph(),
+                "Must specify an output dim for every slice dimension",
+                loc,
+            )
 
     for i in range(t.rank()):
         slice = slices[i] if i < len(slices) else empty_slice
@@ -225,16 +276,44 @@ def slice(input: Symbol, slices: VariadicList[Slice]) -> Symbol:
         starts.append(start)
         stops.append(stop)
         steps.append(step)
-        # compute output dim if possible
+
+        if i < len(dims):
+            continue
+
         if slice == empty_slice:
             dims.append(dim)
-        elif dim.is_static():
-            dims.append(len(range(start, stop, step)))
-        else:
-            dims.append(Dim.dynamic())
+            continue
+
+        length = dim.maybe_num_elements()
+        size = _slice_size(slice, length)
+
+        if not size:
+            raise error(
+                input.graph(),
+                "Could not calculate slice size at graph build time for dim="
+                + str(i)
+                + ". Please set out_dims.",
+                loc,
+            )
+        # TODO(GRA-578): This should be handled by the slice op builder.
+        # It should raise if the slice may load the wrong number of elements.
+        # Technically this is based on the last loaded index rather than the end.
+        if length and slice.end and slice.end.value() > int(length.value()):
+            raise error(
+                input.graph(),
+                "Calculate slice end for dim="
+                + str(i)
+                + " was "
+                + str(slice.end.value())
+                + ", but the dimensions only has "
+                + str(length.value())
+                + " elements.",
+                loc,
+            )
+        dims.append(size.value())
 
     return g.op(
-        "mo.slice",
+        "rmo.mo.slice",
         List(input, g.vector(starts), g.vector(stops), g.vector(steps)),
         TensorType(t.dtype, dims),
     )

@@ -233,6 +233,17 @@ struct Dim(CollectionElement):
         """
         return self.value[StaticDim].dim if self.is_static() else _dyn()
 
+    fn maybe_num_elements(self) raises -> Optional[Int64]:
+        """Returns the number of elements in the dimension, if known.
+
+        Returns:
+            For a static dimension, we return the known static dimension size.
+            Otherwise, return None.
+        """
+        if self.is_static():
+            return self.value[StaticDim].dim
+        return None
+
     fn __eq__(self, other: Dim) -> Bool:
         """Checks whether two dimensions are equal.
 
