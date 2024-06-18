@@ -1420,3 +1420,50 @@ kgen.func @coroutine(%arg0: index, %__result__: !kgen.pointer<index> byref_resul
 
 }
 
+// -----
+
+// COM: Default Behavior For Stack Allocations Without Markers.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+kgen.func @use(%arg0:!kgen.pointer<struct<(index, index)>>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+kgen.func @use2(%arg0:!kgen.pointer<index>) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @missing_markers_resume
+kgen.func @missing_markers(%arg1: index, %arg2: i1) async -> index {
+  // CHECK-NEXT: [[CONT:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to
+  // CHECK-SAME: !kgen.pointer<struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>, struct<(index, index)>, i1, index)>>
+  // CHECK-NEXT: [[STACK_ALLOC:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7:]]]
+  // CHECK-NEXT: [[V2:%.*]] = kgen.struct.gep [[STACK_ALLOC]][1] : <struct<(index, index)>>
+  %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)>
+  %1 = kgen.struct.gep %0[1] : !kgen.pointer<struct<(index,index)>>
+  // CHECK: hlcf.if
+  hlcf.if %arg2 {
+    // CHECK-NEXT: [[V12:%.*]] = pop.stack_allocation 1 x index
+    // CHECK-NEXT: [[V13:%.*]] = kgen.call @use2([[V12]]) : (!kgen.pointer<index>) -> index
+    %3 = pop.stack_allocation 1 x index
+    %4 = kgen.call @use2(%3) : (!kgen.pointer<index>) -> index
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  // CHECK:      [[INFRAME:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7 + 2]]]
+  // CHECK-NEXT: [[V6:%.*]] = pop.load [[INFRAME]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store [[V6]], [[V2]] : !kgen.pointer<index>
+  // CHECK-NEXT: co.suspend {
+  pop.store %arg1, %1 : !kgen.pointer<index>
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %2 = kgen.call @use(%0) : (!kgen.pointer<struct<(index, index)>>) -> index
+  kgen.return %2 : index
+}
+
+}
+

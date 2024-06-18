@@ -774,8 +774,34 @@ FrameData::FrameData(
   // state, it must be added to the frame. We need to store the location of the
   // value in the frame so that when we generate the resume function the frame
   // values can be extracted.
+  auto addToFrame = [&](Type frameVariableType, Operation *definingOp) {
+    unsigned index = frameTypes.size();
+    frameTypes.push_back(frameVariableType);
+    operationToIndexInFrame.insert({definingOp, index});
+  };
+  auto stackAllocationFrameType =
+      [](StackAllocationOp stackAllocation) -> Type {
+    int64_t count = cast<IntegerAttr>(stackAllocation.getCount()).getInt();
+    if (count == 1) {
+      return stackAllocation.getType().getElementType();
+    } else {
+      return POP::ArrayType::get(stackAllocation.getCount(),
+                                 stackAllocation.getType().getElementType());
+    }
+  };
   originalFunction.walk([&](Operation *operation) {
     int useState = opToState[operation];
+    if (StackAllocationOp stackAllocationOp =
+            dyn_cast<StackAllocationOp>(operation)) {
+      if (!stackAllocationOp.getMarkedLifetimes()) {
+        int endState = opToState
+            [stackAllocationOp->getParentRegion()->front().getTerminator()];
+        if (endState > useState)
+          addToFrame(stackAllocationFrameType(stackAllocationOp),
+                     stackAllocationOp);
+      }
+    }
+
     for (Value operand : operation->getOperands()) {
       // Results and Errors are stored in the header of the continuation, not in
       // the frame.
@@ -788,24 +814,25 @@ FrameData::FrameData(
       int defState = getDefinitionStateForValue(operand);
       if (defState < useState) {
         unsigned index = frameTypes.size();
-        Type frameVariableType = operand.getType();
         if (Operation *definitingOp = operand.getDefiningOp()) {
           if (auto stackAllocation =
                   dyn_cast<StackAllocationOp>(definitingOp)) {
-            int64_t count =
-                cast<IntegerAttr>(stackAllocation.getCount()).getInt();
-            if (count == 1) {
-              frameVariableType = stackAllocation.getType().getElementType();
+            // Stack allocations without marked lifetimes are checked for frame
+            // membership at definition site.
+            if (stackAllocation.getMarkedLifetimes()) {
+              addToFrame(stackAllocationFrameType(stackAllocation),
+                         definitingOp);
             } else {
-              frameVariableType = POP::ArrayType::get(
-                  stackAllocation.getCount(),
-                  stackAllocation.getType().getElementType());
+              valueToIndexInFrame.insert(
+                  {operand, operationToIndexInFrame[definitingOp]});
+              continue;
             }
+          } else {
+            addToFrame(operand.getType(), definitingOp);
           }
-
-          operationToIndexInFrame.insert({definitingOp, index});
+        } else {
+          frameTypes.push_back(operand.getType());
         }
-        frameTypes.push_back(frameVariableType);
         valueToIndexInFrame.insert({operand, index});
       }
     }
