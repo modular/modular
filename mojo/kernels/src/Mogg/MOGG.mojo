@@ -518,9 +518,7 @@ fn elementwise_wrapper[
             rank,
             use_blocking_impl=single_thread_blocking_override,
             target=target,
-        ](
-            buffer.dynamic_shape,
-        )
+        ](buffer.dynamic_shape, context=ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1049,7 +1047,10 @@ fn concat_from_list[
 ) raises:
     with Trace[TraceLevel.OP]("mojo.concat_from_list") as t:
         _concat[input_rank, input_type, single_thread_blocking_override](
-            output, int(normalize_neg_index(axis[0], input_rank)), inputs
+            output,
+            int(normalize_neg_index(axis[0], input_rank)),
+            inputs,
+            context=ctx,
         )
 
 
@@ -1074,9 +1075,7 @@ fn concat[
     with Trace[TraceLevel.OP]("mojo.concat") as t:
         var ins = variadic_list_to_vector(variadic_ins)
         _concat[rank, type, single_thread_blocking_override, target](
-            output,
-            int(normalize_neg_index(axis[0], rank)),
-            ins,
+            output, int(normalize_neg_index(axis[0], rank)), ins, context=ctx
         )
         ins._del_old()
 
@@ -2108,6 +2107,7 @@ fn gather[
         input_shape,
         indices.dynamic_shape,
         output_shape,
+        context=ctx,
     )
 
 
@@ -2485,7 +2485,7 @@ fn scatter_nd[
         updates_rank,
         single_thread_blocking_override,
         target,
-    ](input, indices, updates, output)
+    ](input, indices, updates, output, context=ctx)
 
 
 @mogg_register("mo.scatter_nd.add")
@@ -2525,7 +2525,7 @@ fn scatter_nd_add[
         single_thread_blocking_override,
         target,
         reduce_fn=reduce_fn,
-    ](input, indices, updates, output)
+    ](input, indices, updates, output, context=ctx)
 
 
 @mogg_register("mo.scatter_nd.max")
@@ -2565,7 +2565,7 @@ fn scatter_nd_max[
         single_thread_blocking_override,
         target,
         reduce_fn=reduce_fn,
-    ](input, indices, updates, output)
+    ](input, indices, updates, output, context=ctx)
 
 
 @mogg_register("mo.scatter_nd.min")
@@ -2605,7 +2605,7 @@ fn scatter_nd_min[
         single_thread_blocking_override,
         target,
         reduce_fn=reduce_fn,
-    ](input, indices, updates, output)
+    ](input, indices, updates, output, context=ctx)
 
 
 @mogg_register("mo.scatter_nd.mul")
@@ -2645,7 +2645,7 @@ fn scatter_nd_mul[
         single_thread_blocking_override,
         target,
         reduce_fn=reduce_fn,
-    ](input, indices, updates, output)
+    ](input, indices, updates, output, context=ctx)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
