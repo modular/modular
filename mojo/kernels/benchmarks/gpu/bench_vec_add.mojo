@@ -1,0 +1,118 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# REQUIRES: has_cuda_device
+# RUN: %mojo-no-debug %s -t
+
+from pathlib import Path
+
+from gpu import *
+from gpu.host import Device, Dim, Function, Stream
+from gpu.host.device_context import DeviceContext
+
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from benchmark._cuda import time_async_cuda_kernel
+from testing import assert_equal
+
+
+fn vec_func(
+    in0: DTypePointer[DType.float32],
+    in1: DTypePointer[DType.float32],
+    out: DTypePointer[DType.float32],
+    len: Int,
+):
+    var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+    if tid >= len:
+        return
+    out[tid] = in0[tid] + in1[tid]
+
+
+@no_inline
+fn bench_vec_add(
+    inout b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
+) raises:
+    alias dtype = DType.float32
+    var in0_host = DTypePointer[dtype].alloc(length)
+    var in1_host = DTypePointer[dtype].alloc(length)
+    var out_host = DTypePointer[dtype].alloc(length)
+
+    for i in range(length):
+        in0_host[i] = i
+        in1_host[i] = 2
+
+    var in0_device = context.create_buffer[dtype](length)
+    var in1_device = context.create_buffer[dtype](length)
+    var out_device = context.create_buffer[dtype](length)
+
+    context.enqueue_copy_to_device(in0_device, in0_host)
+    context.enqueue_copy_to_device(in1_device, in1_host)
+
+    var func = context.compile_function[vec_func]()
+
+    @always_inline
+    @__copy_capture(block_dim, in0_device, in1_device, out_device, func)
+    @parameter
+    fn run_func() raises:
+        context.enqueue_function(
+            func,
+            in0_device,
+            in1_device,
+            out_device,
+            length,
+            grid_dim=(length // block_dim),
+            block_dim=(block_dim),
+        )
+
+    @parameter
+    @always_inline
+    fn ctx_time_async_cuda_kernel[
+        func: fn (DeviceContext) raises capturing -> None
+    ](num_iters: Int) raises -> Int:
+        return context.execution_time[func](num_iters)
+
+    @parameter
+    @always_inline
+    fn bench_func(inout b: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            run_func()
+
+        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
+
+    b.bench_function[bench_func](
+        BenchId("vec_add", input_id="block_dim=" + str(block_dim)),
+        ThroughputMeasure(BenchMetric.flops, length),
+    )
+    context.synchronize()
+    context.enqueue_copy_from_device(out_host, out_device)
+
+    for i in range(length):
+        assert_equal(i + 2, out_host[i])
+
+    _ = in0_device
+    _ = in1_device
+    _ = out_device
+
+    in0_host.free()
+    in1_host.free()
+    out_host.free()
+
+
+# CHECK-NOT: CUDA_ERROR
+def main():
+    var b = Bench()
+
+    try:
+        var ctx = DeviceContext()
+        for block_dim in List[Int](32, 64, 128, 256, 512, 1024):
+            bench_vec_add(
+                b, block_dim=block_dim[], length=32 * 1024, context=ctx
+            )
+        _ = ctx
+    except e:
+        print("CUDA_ERROR:", e)
+
+    b.dump_report()
