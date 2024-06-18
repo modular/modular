@@ -624,6 +624,17 @@ private:
                      CompactRuntimePtr runtime)
       : SomeConcreteAsyncValue(SubclassKind::kConcrete, state, hasVTable,
                                typeID, runtime) {
+// This static assert verifies that no padding is inserted between the
+// AsyncValue in the base class and the union containing T below.
+// Since ConcreteAsyncValue<T> is not a standard-layout class, the use of
+// offsetof() is "conditionally-supported" rather than fully portable.
+// Both GCC and Clang raise a warning here, but offsetof() still works and
+// gives us the result we expect, so we accept that this use is justified and
+// suppress the warning.
+//
+// See also:
+// https://en.cppreference.com/w/cpp/types/offsetof
+// https://en.cppreference.com/w/cpp/language/classes#Standard-layout_class
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
