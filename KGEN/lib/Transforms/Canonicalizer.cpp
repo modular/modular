@@ -383,7 +383,8 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
 
   void runOnOperation() override {
     mlir::GreedyRewriteConfig config;
-    config.enableRegionSimplification = false;
+    config.enableRegionSimplification =
+        mlir::GreedySimplifyRegionLevel::Disabled;
     (void)applyPatternsAndFoldGreedily(getOperation(), patterns, config);
   }
 
