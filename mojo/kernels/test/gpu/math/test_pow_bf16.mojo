@@ -6,24 +6,21 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import Context
+from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
-    _free,
-    _malloc,
 )
-from gpu.host.sync import synchronize
 from testing import assert_almost_equal
 
 alias type = DType.float32
 
 
-def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
+def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     alias length = 256
 
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
@@ -38,13 +35,13 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
     for i in range(length):
         in_host[i] = (Scalar[type](i) - length // 2) + epsilon
 
-    var in_device = _malloc[type](flattened_length)
-    var out_device = _malloc[type](flattened_length)
+    var in_device = ctx.create_buffer[type](flattened_length)
+    var out_device = ctx.create_buffer[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data, flattened_length)
+    ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 1](in_device, (length))
-    var out_buffer = NDBuffer[type, 1](out_device, (length))
+    var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
+    var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)
@@ -62,14 +59,10 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
             result = val**exponent
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
-    _elementwise_impl[
-        func, pack_size, 1, use_blocking_impl=True, target="cuda"
-    ](
-        StaticIntTuple[1](length),
-    )
-    synchronize()
+    _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
+    ctx.synchronize()
 
-    _copy_device_to_host(out_host.data, out_device, flattened_length)
+    ctx.enqueue_copy_from_device(out_host.data, out_device)
 
     for i in range(length):
         var expected_value: SIMD[DType.float32, 1]
@@ -88,19 +81,20 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
             rtol=2e-02,
         )
 
-    _free(in_device)
-    _free(out_device)
+    _ = in_device
+    _ = out_device
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    with Context() as ctx:
-        run_elementwise[False](-1)
-        run_elementwise[False](2)
-        run_elementwise[False](3)
-        run_elementwise[False](5)
-        run_elementwise[False](6)
-        run_elementwise[True](2)
-        run_elementwise[True](3)
-        run_elementwise[True](5)
-        run_elementwise[True](6)
+    var ctx = DeviceContext()
+    run_elementwise[False](-1, ctx)
+    run_elementwise[False](2, ctx)
+    run_elementwise[False](3, ctx)
+    run_elementwise[False](5, ctx)
+    run_elementwise[False](6, ctx)
+    run_elementwise[True](2, ctx)
+    run_elementwise[True](3, ctx)
+    run_elementwise[True](5, ctx)
+    run_elementwise[True](6, ctx)
+    _ = ctx

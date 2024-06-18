@@ -11,14 +11,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-
+from gpu.host.device_context import DeviceContext
 from utils.index import Index
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
@@ -101,6 +94,7 @@ fn scatter_nd[
     indices: NDBuffer[indices_type, indices_rank, _],
     updates: NDBuffer[type, updates_rank, _],
     output: NDBuffer[type, data_rank, _],
+    ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
@@ -120,6 +114,7 @@ fn scatter_nd[
         updates: Tensor containing values to update output tensor based on
                  indices tensor.
         output: Tensor of rank data_rank, shaped the same as data tensor.
+        ctx: DeviceContext.
     """
     if data.get_shape() != output.get_shape():
         print("Input and output shapes in scatter_nd must be the same.")
@@ -132,8 +127,6 @@ fn scatter_nd[
             "updates rank must be: data_rank + indices_rank -"
             " indices_shape[-1] - 1"
         )
-
-    var stream = Stream.get_current_stream()
 
     # Copy input data to output (appropriate elements will be updated as needed
     # by the end of scatternd kernel).
@@ -204,20 +197,18 @@ fn scatter_nd[
 
     # Allocate and copy output data, elements_counts_and_input_dims, updates,
     # indices to GPU.
-    var output_device = _malloc[type](data_count_copy)
-    var element_counts_and_input_dims_device = _malloc[DType.int64](
+    var output_device = ctx.create_buffer[type](data_count_copy)
+    var element_counts_and_input_dims_device = ctx.create_buffer[DType.int64](
         last_shape_of_indices * 2
     )
-    var updates_device = _malloc[type](updates_count_copy)
-    var indices_device = _malloc[indices_type](indices_count_copy)
-    _copy_host_to_device(output_device, output_flat.data, data_count_copy)
-    _copy_host_to_device(
-        element_counts_and_input_dims_device,
-        element_counts_and_input_dims.data,
-        last_shape_of_indices * 2,
+    var updates_device = ctx.create_buffer[type](updates_count_copy)
+    var indices_device = ctx.create_buffer[indices_type](indices_count_copy)
+    ctx.enqueue_copy_to_device(output_device, output_flat.data)
+    ctx.enqueue_copy_to_device(
+        element_counts_and_input_dims_device, element_counts_and_input_dims.data
     )
-    _copy_host_to_device(updates_device, updates.data, updates_count_copy)
-    _copy_host_to_device(indices_device, indices.data, indices_count_copy)
+    ctx.enqueue_copy_to_device(updates_device, updates.data)
+    ctx.enqueue_copy_to_device(indices_device, indices.data)
 
     # Number of indices (that is without last dimension).
     # Each thread will handle one index.
@@ -228,9 +219,12 @@ fn scatter_nd[
 
     var num_updates_elements = count_copy
 
-    var func = Function[scatter_nd_gpu[type=type, indices_type=indices_type],]()
+    var func = ctx.compile_function[
+        scatter_nd_gpu[type=type, indices_type=indices_type],
+    ]()
 
-    func(
+    ctx.enqueue_function(
+        func,
         output_device,
         indices_device,
         element_counts_and_input_dims_device,
@@ -240,22 +234,20 @@ fn scatter_nd[
         num_updates_elements,
         grid_dim=(ceildiv(num_indices, MAX_THREADS_PER_BLOCK)),
         block_dim=(MAX_THREADS_PER_BLOCK),
-        stream=stream,
     )
-    synchronize()
+    ctx.synchronize()
 
     # Copy back output data from GPU to CPU.
-    _copy_device_to_host(output.data, output_device, data_count_copy)
+    ctx.enqueue_copy_from_device(output.data, output_device)
 
-    _free(output_device)
-    _free(element_counts_and_input_dims_device)
-    _free(updates_device)
-    _free(indices_device)
+    _ = output_device
+    _ = element_counts_and_input_dims_device
+    _ = updates_device
+    _ = indices_device
 
     ptr.free()
 
     _ = func^
-    _ = stream^
 
 
 fn linear_fill[
@@ -291,13 +283,9 @@ fn test_case[
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
     try:
-        with Context() as ctx:
-            scatter_nd(
-                data,
-                indices,
-                updates,
-                output,
-            )
+        var ctx = DeviceContext()
+        scatter_nd(data, indices, updates, output, ctx)
+        _ = ctx
     except e:
         print("CUDA_ERROR:", e)
 
@@ -374,7 +362,7 @@ fn main():
             # fmt: on
         )
 
-        test_case[
+        _ = test_case[
             DType.float32,
             input_shape = DimList(4, 4, 4),
             indices_shape = DimList(2, 1),

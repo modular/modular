@@ -9,22 +9,15 @@
 from math import exp
 from sys.info import has_neon
 
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import Context
+from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-from gpu.host.sync import synchronize
 from testing import *
 
 
-def run_elementwise[type: DType]():
+def run_elementwise[type: DType](ctx: DeviceContext):
     alias length = 256
 
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
@@ -36,13 +29,13 @@ def run_elementwise[type: DType]():
     for i in range(length):
         in_host[i] = 0.001 * (Scalar[type](i) - length // 2)
 
-    var in_device = _malloc[type](flattened_length)
-    var out_device = _malloc[type](flattened_length)
+    var in_device = ctx.create_buffer[type](flattened_length)
+    var out_device = ctx.create_buffer[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data, flattened_length)
+    ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 1](in_device, (length))
-    var out_buffer = NDBuffer[type, 1](out_device, (length))
+    var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
+    var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -54,14 +47,11 @@ def run_elementwise[type: DType]():
             idx, exp(in_buffer.load[width=simd_width](idx))
         )
 
-    _elementwise_impl[
-        func, pack_size, 1, use_blocking_impl=True, target="cuda"
-    ](
-        StaticIntTuple[1](length),
-    )
-    synchronize()
+    _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
 
-    _copy_device_to_host(out_host.data, out_device, flattened_length)
+    ctx.synchronize()
+
+    ctx.enqueue_copy_from_device(out_host.data, out_device)
 
     for i in range(length):
         assert_almost_equal(
@@ -75,16 +65,18 @@ def run_elementwise[type: DType]():
             rtol=1e-05 if type is DType.float32 else 1e-03,
         )
 
-    _free(in_device)
-    _free(out_device)
+    _ = in_device
+    _ = out_device
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    with Context() as ctx:
+    var ctx = DeviceContext()
 
-        @parameter
-        if not has_neon():
-            run_elementwise[DType.float16]()
+    @parameter
+    if not has_neon():
+        run_elementwise[DType.float16](ctx)
 
-        run_elementwise[DType.float32]()
+    run_elementwise[DType.float32](ctx)
+
+    _ = ctx

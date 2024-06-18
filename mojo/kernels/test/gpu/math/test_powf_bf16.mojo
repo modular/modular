@@ -10,21 +10,14 @@
 from algorithm.functional import _elementwise_impl
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import Context
+from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-from gpu.host.sync import synchronize
 from testing import assert_almost_equal
 
 alias type = DType.float32
 
 
-def run_elementwise(exponent: BFloat16):
+def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
     alias length = 256
 
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
@@ -39,13 +32,13 @@ def run_elementwise(exponent: BFloat16):
     for i in range(length):
         in_host[i] = (Scalar[type](i) - length // 2) + epsilon
 
-    var in_device = _malloc[type](flattened_length)
-    var out_device = _malloc[type](flattened_length)
+    var in_device = ctx.create_buffer[type](flattened_length)
+    var out_device = ctx.create_buffer[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data, flattened_length)
+    ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 1](in_device, (length))
-    var out_buffer = NDBuffer[type, 1](out_device, (length))
+    var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
+    var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)
@@ -59,12 +52,10 @@ def run_elementwise(exponent: BFloat16):
 
     _elementwise_impl[
         func, pack_size, 1, use_blocking_impl=True, target="cuda"
-    ](
-        StaticIntTuple[1](length),
-    )
-    synchronize()
+    ](StaticIntTuple[1](length), ctx)
+    ctx.synchronize()
 
-    _copy_device_to_host(out_host.data, out_device, flattened_length)
+    ctx.enqueue_copy_from_device(out_host.data, out_device)
 
     for i in range(length):
         var expected_value = in_host[i] ** exponent.cast[DType.float32]()
@@ -76,13 +67,14 @@ def run_elementwise(exponent: BFloat16):
             rtol=2e-02,
         )
 
-    _free(in_device)
-    _free(out_device)
+    _ = in_device
+    _ = out_device
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     # NOTE: This is expected to fail. Keeping this around as a negative test
     # so we know when its fixed.
-    with Context() as ctx:
-        run_elementwise(0.375)
+    var ctx = DeviceContext()
+    run_elementwise(0.375, ctx)
+    _ = ctx

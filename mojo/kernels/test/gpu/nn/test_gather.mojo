@@ -10,22 +10,13 @@ from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host import Context
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-    _memset,
-)
-from gpu.host.sync import synchronize
+from gpu.host.device_context import DeviceContext
 from nn.gather_scatter import gather
-
 from utils.index import Index, StaticIntTuple
 
 
 # CHECK-LABEL: test_gather
-fn test_gather() raises:
+fn test_gather(ctx: DeviceContext) raises:
     print("== test_gather")
 
     @always_inline
@@ -42,17 +33,15 @@ fn test_gather() raises:
         for i in range(num_rows):
             for j in range(row_size):
                 input_host[Index(i, j)] = Float32(i).value
-        var input_device_ptr = _malloc[DType.float32](
+        var input_device_ptr = ctx.create_buffer[DType.float32](
             input_host.size() * sizeof[DType.float32]()
         )
-        _copy_host_to_device(
-            input_device_ptr, input_host.data, input_host.size()
-        )
+        ctx.enqueue_copy_to_device(input_device_ptr, input_host.data)
         var input_device = NDBuffer[
             DType.float32,
             2,
             DimList(num_rows, row_size),
-        ](input_device_ptr)
+        ](input_device_ptr.ptr)
 
         alias num_indices = 16
         var indices_host = NDBuffer[
@@ -60,23 +49,21 @@ fn test_gather() raises:
             1,
             DimList(num_indices),
         ].stack_allocation()
-        var indices_device_ptr = _malloc[indices_type](
+        var indices_device_ptr = ctx.create_buffer[indices_type](
             indices_host.size() * sizeof[indices_type]()
         )
         var indices_device = NDBuffer[
             indices_type,
             1,
             DimList(num_indices),
-        ](indices_device_ptr)
+        ](indices_device_ptr.ptr)
 
         for i in range(num_indices):
             indices_host[Index(i)] = i // 2
         indices_host[0] = -1
         indices_host[1] = -num_rows
 
-        _copy_host_to_device(
-            indices_device_ptr, indices_host.data, indices_host.size()
-        )
+        ctx.enqueue_copy_to_device(indices_device_ptr, indices_host.data)
 
         # create output
         var output_host = NDBuffer[
@@ -84,29 +71,28 @@ fn test_gather() raises:
             2,
             DimList(num_indices, row_size),
         ].stack_allocation()
-        var output_device_ptr = _malloc[DType.float32](
+        var output_device_ptr = ctx.create_buffer[DType.float32](
             output_host.size() * sizeof[DType.float32]()
         )
         var output_device = NDBuffer[
             DType.float32,
             2,
             DimList(num_indices, row_size),
-        ](output_device_ptr)
+        ](output_device_ptr.ptr)
 
         gather[axis=0, target="cuda"](
             output_device.make_dims_unknown(),
             input_device.make_dims_unknown(),
             indices_device.make_dims_unknown(),
+            context=ctx,
         )
-        synchronize()
+        ctx.synchronize()
 
-        _copy_device_to_host(
-            output_host.data, output_device_ptr, output_host.size()
-        )
+        ctx.enqueue_copy_from_device(output_host.data, output_device_ptr)
 
-        _free(input_device_ptr)
-        _free(indices_device_ptr)
-        _free(output_device_ptr)
+        _ = input_device_ptr
+        _ = indices_device_ptr
+        _ = output_device_ptr
 
         print(output_host[Index(0, 0)])
         print(output_host[Index(1, 0)])
@@ -128,5 +114,6 @@ fn test_gather() raises:
 
 
 fn main() raises:
-    with Context() as ctx:
-        test_gather()
+    var ctx = DeviceContext()
+    test_gather(ctx)
+    _ = ctx

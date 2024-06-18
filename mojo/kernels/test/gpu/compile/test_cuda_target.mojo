@@ -8,7 +8,7 @@
 from math import erf
 from sys.info import simdwidthof, triple_is_nvidia_cuda
 
-from algorithm import elementwise
+from algorithm.functional import _elementwise_impl
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
@@ -21,7 +21,9 @@ from gpu import (
     shuffle_up,
     shuffle_xor,
 )
+from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code, _get_nvptx_target
+
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
@@ -114,7 +116,9 @@ def test_hello_mojo_sm90():
 # ===----------------------------------------------------------------------===#
 
 
-fn erf_elementwise(buf: DTypePointer[DType.float32], len: Int):
+fn erf_elementwise(
+    buf: DTypePointer[DType.float32], len: Int, ctx: DeviceContext
+):
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
 
@@ -129,8 +133,8 @@ fn erf_elementwise(buf: DTypePointer[DType.float32], len: Int):
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simdwidthof[DType.float32]()](
-        StaticIntTuple[1](granularity)
+    _elementwise_impl[func, simdwidthof[DType.float32]()](
+        StaticIntTuple[1](granularity), ctx
     )
 
 
