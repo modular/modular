@@ -94,14 +94,14 @@ struct COTypes {
 public:
   Type getContinuationType() const { return continuationType; }
   FrameData &getFrameData() const { return frameData; }
-  Type getHeaderType() const { return headerType; }
+  StructType getHeaderType() const { return headerType; }
 
 private:
   Type continuationType;
   Type resumeSignatureType;
   Type opaquePointerType;
   Type callbackSignature;
-  Type headerType;
+  StructType headerType;
   MLIRContext *cxt;
   FrameData &frameData;
 };
@@ -189,7 +189,7 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
     FuncOp funcOp, mlir::DominanceInfo &domInfo, COTypes &coTypes,
     Value errorValue, Value memoryResultValue) {
   MLIRContext *cxt = funcOp.getContext();
-  Type continuationType = coTypes.getContinuationType();
+  StructType headerType(coTypes.getHeaderType());
 
   // Create Ramp Function.
   StringAttr rampName = builder.getStringAttr(funcOp.getSymName() + "_ramp");
@@ -202,7 +202,7 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
   for (unsigned i = 0; i < end; ++i)
     args.push_back(funcOp.getArgument(i).getType());
   FunctionType rampFunctionType =
-      builder.getFunctionType(args, PointerType::get(continuationType));
+      builder.getFunctionType(args, PointerType::get(headerType));
   auto rampSignature = SignatureType::get(rampFunctionType);
   builder.setInsertionPoint(funcOp);
   FuncOp rampFunction = builder.create<FuncOp>(rampName, rampSignature);
@@ -427,7 +427,9 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
     Value slot = builder.create<StructGEPOp>(continuation, Frame + argSlot);
     builder.create<StoreOp>(image, slot);
   }
-  builder.create<ReturnOp>(continuation);
+  Value headerTypedContinuation = builder.create<PointerBitcastOp>(
+      PointerType::get(coTypes.getHeaderType()), continuation);
+  builder.create<ReturnOp>(headerTypedContinuation);
 }
 
 //===----------------------------------------------------------------------===//
@@ -447,7 +449,7 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData)
   callbackSignature = SignatureType::get(callbackFunctionType);
 
   // Build Continuation Type.
-  size_t size = Frame + frameData.frameTypes.size();
+  size_t size = Frame;
   SmallVector<Type> types(size);
   types[State] = typeForField(State);
   types[ResumeFunction] = typeForField(ResumeFunction);
@@ -460,7 +462,7 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData)
   // Header type omits the variable sized frame.
   headerType = StructType::get(types);
   for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
-    types[Frame + index] = frameVariableType;
+    types.push_back(frameVariableType);
   continuationType = StructType::get(types);
 }
 
@@ -975,7 +977,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
         rewriter.setInsertionPoint(op);
         auto callOp = rewriter.create<CallOp>(
-            invokeOp->getLoc(), PointerType::get(continuationType), newSymbol,
+            invokeOp->getLoc(),
+            PointerType::get(opaqueCoroutineTypes.getHeaderType()), newSymbol,
             invokeOp.getOperands());
         rewriter.replaceOp(invokeOp, callOp);
       }
