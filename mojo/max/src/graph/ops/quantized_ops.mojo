@@ -70,10 +70,15 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
 
     This quantizes the `lhs` floating point value to match the encoding of the
     `rhs` quantized value, performs matmul, and then dequantizes the result.
-    That is, where `.` is the matmul operator, this function returns the result
-    from:
+    Beware that, compared to a regular matmul op, this one expects the `rhs`
+    value to be transposed. For example, if the `lhs` shape is `[32, 64]`, and
+    the quantized `rhs` shape is also `[32, 64]`, then the output shape is
+    `[32, 32]`
 
-        dequantize(quantize(lhs) . rhs)
+    That is, where `.` is a normal matmul operator, this function returns the
+    result from:
+
+        dequantize(quantize(lhs) . transpose(rhs))
 
     The last two dimensions in `lhs` are treated as matricies and multiplied
     by `rhs` (which must be a 2D tensor). Any remaining dimensions in `lhs`
@@ -86,7 +91,7 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Args:
         lhs: The non-quantized, left-hand-side of the matmul.
-        rhs: The quantized, right-hand-side of the matmul.
+        rhs: The transposed and quantized right-hand-side of the matmul.
              Must be rank 2 (a 2D tensor/matrix) and in a supported
              [quantization encoding](/max/api/mojo/graph/quantization/).
 
