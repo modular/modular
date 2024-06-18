@@ -13,11 +13,10 @@ from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import _elementwise_impl, tile
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host.memory import _copy_device_to_device_async
-from gpu.host.stream import Stream
+from gpu.host import DeviceBuffer, DeviceContext
 from memory import memset_zero, stack_allocation
 from register import mogg_register
-from runtime.llcl import Runtime
+from runtime.llcl import Runtime, MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 
 from utils import StaticIntTuple, StaticTuple, unroll
@@ -239,6 +238,7 @@ fn gather_reduce[
     sync_parallelize[task_func](num_tasks)
 
 
+# TODO: Delete / for testing purposes (test_gather.mojo)
 fn gather[
     axis: Int,
     output_rank: Int,
@@ -251,6 +251,7 @@ fn gather[
     output: NDBuffer[type, output_rank],
     input: NDBuffer[type, input_rank],
     indices: NDBuffer[indices_type, indices_rank],
+    context: DeviceContext,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -338,6 +339,111 @@ fn gather[
         input.dynamic_shape,
         indices.dynamic_shape,
         output.dynamic_shape,
+        context=context,
+    )
+
+
+fn gather[
+    axis: Int,
+    output_rank: Int,
+    input_rank: Int,
+    indices_rank: Int,
+    type: DType,
+    indices_type: DType,
+    target: StringLiteral = "cpu",
+](
+    output: NDBuffer[type, output_rank],
+    input: NDBuffer[type, input_rank],
+    indices: NDBuffer[indices_type, indices_rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
+
+    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
+    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+    """
+
+    alias prefetch_offset = 12  # TODO: search
+
+    var end_indices_ptr = indices.flatten().data.offset(indices.size())
+
+    @parameter
+    @__copy_capture(end_indices_ptr)
+    @always_inline
+    fn prefetch_fn[
+        _input_rank: Int, _indices_rank: Int
+    ](
+        _input_coords: StaticIntTuple[_input_rank],
+        _indices_coords: StaticIntTuple[_indices_rank],
+    ):
+        var __input_coords = _input_coords
+        var input_coords = rebind[StaticIntTuple[input_rank]](__input_coords)
+        var indices_coords = rebind[StaticIntTuple[indices_rank]](
+            _indices_coords
+        )
+
+        @parameter
+        if prefetch_offset > 0:
+            var indices_ptr = indices._offset(indices_coords)
+            var indices_remaining = (
+                int(end_indices_ptr) - int(indices_ptr)
+            ) // sizeof[indices_type]()
+            # assumes that indices are layed out in row major order
+            var next_idx_ptr = indices._offset(indices_coords) + min(
+                indices_remaining - 1, prefetch_offset
+            )
+            input_coords[axis] = int(
+                normalize_neg_index(
+                    Scalar.load(next_idx_ptr),
+                    input.get_shape()[axis],
+                )
+            )
+            input.prefetch[
+                PrefetchOptions().for_read().high_locality().to_data_cache()
+            ](input_coords)
+
+    @parameter
+    @always_inline
+    fn input_fn[
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        return input.load[width=width](
+            rebind[StaticIntTuple[input_rank]](coords)
+        )
+
+    @parameter
+    @always_inline
+    fn indices_fn[
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
+        return indices.load[width=width](
+            rebind[StaticIntTuple[indices_rank]](coords)
+        )
+
+    @parameter
+    @always_inline
+    fn output_fn[
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank], val: SIMD[type, width]):
+        output.store[width=width](
+            rebind[StaticIntTuple[output_rank]](coords),
+            rebind[SIMD[type, width]](val),
+        )
+
+    gather[
+        type,
+        indices_type,
+        input_fn,
+        indices_fn,
+        output_fn,
+        prefetch_fn=prefetch_fn,
+        target=target,
+    ](
+        axis,
+        input.dynamic_shape,
+        indices.dynamic_shape,
+        output.dynamic_shape,
+        context=context,
     )
 
 
@@ -458,6 +564,7 @@ fn gather_elementwise_fn_wrapper[
     gather_elementwise_fn[simd_width](coords)
 
 
+# TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
 fn gather[
     type: DType,
@@ -488,6 +595,7 @@ fn gather[
     input_shape: StaticIntTuple[input_rank],
     indices_shape: StaticIntTuple[indices_rank],
     output_shape: StaticIntTuple[output_rank],
+    context: DeviceContext,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -528,9 +636,7 @@ fn gather[
                 output_rank,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](
-                output_shape,
-            )
+            ](output_shape, context)
         else:
             _elementwise_impl[
                 gather_elementwise_fn,
@@ -538,9 +644,89 @@ fn gather[
                 output_rank,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](
-                output_shape,
-            )
+            ](output_shape, context)
+
+
+@always_inline
+fn gather[
+    type: DType,
+    indices_type: DType,
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    indices_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[indices_type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    prefetch_fn: OptionalReg[
+        fn[
+            input_rank: Int, indices_rank: Int
+        ] (
+            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
+        ) capturing -> None
+    ] = None,
+    target: StringLiteral = "cpu",
+    single_thread_blocking_override: Bool = False,
+](
+    axis: Axis,
+    input_shape: StaticIntTuple[input_rank],
+    indices_shape: StaticIntTuple[indices_rank],
+    output_shape: StaticIntTuple[output_rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
+
+    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
+    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+    """
+    gather_guards(axis, input_shape, indices_shape, output_shape)
+    with Trace[TraceLevel.OP]("mojo.gather") as t:
+        if (
+            input_shape.flattened_length() == 0
+            or indices_shape.flattened_length() == 0
+        ):
+            return
+
+        @parameter
+        @always_inline
+        fn gather_elementwise_fn[
+            simd_width: Int, rank: Int
+        ](idx: StaticIntTuple[rank]):
+            gather_elementwise_fn_wrapper[
+                type,
+                input_rank,
+                indices_type,
+                indices_rank,
+                output_rank,
+                input_fn,
+                indices_fn,
+                output_fn,
+                simd_width=simd_width,
+                prefetch_fn=prefetch_fn,
+            ](axis, input_shape, indices_shape, output_shape, idx)
+
+        # If we are gathering on the last dimension then we have to be scalar.
+        if int(axis) == input_rank - 1:
+            _elementwise_impl[
+                gather_elementwise_fn,
+                1,
+                output_rank,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output_shape, context)
+        else:
+            _elementwise_impl[
+                gather_elementwise_fn,
+                simdwidthof[type](),
+                output_rank,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output_shape, context)
 
 
 # ===----------------------------------------------------------------------===#
@@ -568,6 +754,7 @@ fn scatter_nd_generator[
     indices: NDBuffer[indices_type, indices_rank],
     updates: NDBuffer[output_type, updates_rank],
     output: NDBuffer[output_type, data_rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
@@ -592,6 +779,7 @@ fn scatter_nd_generator[
         updates: Tensor containing values to update output tensor based on
                  indices tensor.
         output: Tensor of rank data_rank, shaped the same as data tensor.
+        context: Pointer to DeviceContext.
     """
     if data.get_shape() != output.get_shape():
         raise Error("Input and output shapes in scatter_nd must be the same.")
@@ -623,15 +811,24 @@ fn scatter_nd_generator[
 
     @parameter
     if target == "cuda":
-        var stream = Stream.get_current_stream()
         try:
             # TODO: Does it matter if output.data or output_flat.data (and data)?
-            _copy_device_to_device_async(
+            var ctx = context.get_cuda_device()
+            # TODO: Owning = True or False?
+            var outp = DeviceBuffer(
+                ctx,
                 output.data,
-                data.data,
                 data.num_elements(),
-                stream,
+                owning=False,
             )
+            var inp = DeviceBuffer(
+                ctx, data.data, data.num_elements(), owning=False
+            )
+            ctx.enqueue_copy_device_to_device(
+                outp,
+                inp,
+            )
+
         except e:
             abort(e)
 
@@ -731,7 +928,7 @@ fn scatter_nd_generator[
         indices_rank - 1,
         use_blocking_impl=single_thread_blocking_override,
         target=target,
-    ](iter_shape)
+    ](iter_shape, context)
 
 
 @always_inline
@@ -748,6 +945,7 @@ fn scatter_nd[
     indices: NDBuffer[indices_type, indices_rank],
     updates: NDBuffer[output_type, updates_rank],
     output: NDBuffer[output_type, data_rank],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Scatter_nd operation without any reduction."""
 
@@ -760,7 +958,7 @@ fn scatter_nd[
         single_thread_blocking_override,
         target,
         reduce_fn=None,
-    ](data, indices, updates, output)
+    ](data, indices, updates, output, context)
 
 
 @mogg_register("scatter_nd_shape")

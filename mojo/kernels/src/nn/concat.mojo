@@ -17,13 +17,14 @@ from algorithm.functional import (
 )
 from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
-from gpu.host import Function, Stream
-from gpu.host.memory import _copy_device_to_device_async
+from gpu.host import DeviceContext, DeviceBuffer
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from register import mogg_register
+from runtime.llcl import MojoCallContextPtr
 
 from utils import StaticIntTuple, StaticTuple, product
+
 
 # ===----------------------------------------------------------------------===#
 # concat
@@ -508,6 +509,7 @@ fn _concat_gpu_impl[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    ctx: DeviceContext,
 ) raises:
     try:
         var num_inputs = len(inputs)
@@ -516,27 +518,25 @@ fn _concat_gpu_impl[
         # operation that accept Variadic<MO_Tensor>
         if num_inputs == 1:
             return _concat_gpu[num_inputs=1](
-                output,
-                axis,
-                StaticTuple[_, 1](inputs[0]),
+                output, axis, StaticTuple[_, 1](inputs[0]), ctx
             )
         if num_inputs == 2:
             return _concat_gpu[num_inputs=2](
-                output,
-                axis,
-                StaticTuple[_, 2](inputs[0], inputs[1]),
+                output, axis, StaticTuple[_, 2](inputs[0], inputs[1]), ctx
             )
         if num_inputs == 3:
             return _concat_gpu[num_inputs=3](
                 output,
                 axis,
                 StaticTuple[_, 3](inputs[0], inputs[1], inputs[2]),
+                ctx,
             )
         if num_inputs == 4:
             return _concat_gpu[num_inputs=4](
                 output,
                 axis,
                 StaticTuple[_, 4](inputs[0], inputs[1], inputs[2], inputs[3]),
+                ctx,
             )
         if num_inputs == 5:
             return _concat_gpu[num_inputs=5](
@@ -545,6 +545,7 @@ fn _concat_gpu_impl[
                 StaticTuple[_, 5](
                     inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]
                 ),
+                ctx,
             )
         if num_inputs == 6:
             return _concat_gpu[num_inputs=6](
@@ -558,6 +559,7 @@ fn _concat_gpu_impl[
                     inputs[4],
                     inputs[5],
                 ),
+                ctx,
             )
         if num_inputs == 7:
             return _concat_gpu[num_inputs=7](
@@ -572,6 +574,7 @@ fn _concat_gpu_impl[
                     inputs[5],
                     inputs[6],
                 ),
+                ctx,
             )
         if num_inputs == 8:
             return _concat_gpu[num_inputs=8](
@@ -587,6 +590,7 @@ fn _concat_gpu_impl[
                     inputs[6],
                     inputs[7],
                 ),
+                ctx,
             )
         if num_inputs == 9:
             return _concat_gpu[num_inputs=9](
@@ -603,6 +607,7 @@ fn _concat_gpu_impl[
                     inputs[7],
                     inputs[8],
                 ),
+                ctx,
             )
         if num_inputs == 10:
             return _concat_gpu[num_inputs=10](
@@ -620,6 +625,7 @@ fn _concat_gpu_impl[
                     inputs[8],
                     inputs[9],
                 ),
+                ctx,
             )
         if num_inputs == 11:
             return _concat_gpu[num_inputs=11](
@@ -638,6 +644,7 @@ fn _concat_gpu_impl[
                     inputs[9],
                     inputs[10],
                 ),
+                ctx,
             )
         if num_inputs == 12:
             return _concat_gpu[num_inputs=12](
@@ -657,6 +664,7 @@ fn _concat_gpu_impl[
                     inputs[10],
                     inputs[11],
                 ),
+                ctx,
             )
         if num_inputs == 13:
             return _concat_gpu[num_inputs=13](
@@ -677,6 +685,7 @@ fn _concat_gpu_impl[
                     inputs[11],
                     inputs[12],
                 ),
+                ctx,
             )
         if num_inputs == 14:
             return _concat_gpu[num_inputs=14](
@@ -698,6 +707,7 @@ fn _concat_gpu_impl[
                     inputs[12],
                     inputs[13],
                 ),
+                ctx,
             )
         if num_inputs == 15:
             return _concat_gpu[num_inputs=15](
@@ -720,6 +730,7 @@ fn _concat_gpu_impl[
                     inputs[13],
                     inputs[14],
                 ),
+                ctx,
             )
         if num_inputs == 16:
             return _concat_gpu[num_inputs=16](
@@ -743,6 +754,7 @@ fn _concat_gpu_impl[
                     inputs[14],
                     inputs[15],
                 ),
+                ctx,
             )
         if num_inputs == 17:
             return _concat_gpu[num_inputs=17](
@@ -767,6 +779,7 @@ fn _concat_gpu_impl[
                     inputs[15],
                     inputs[16],
                 ),
+                ctx,
             )
         if num_inputs == 18:
             return _concat_gpu[num_inputs=18](
@@ -792,6 +805,7 @@ fn _concat_gpu_impl[
                     inputs[16],
                     inputs[17],
                 ),
+                ctx,
             )
         if num_inputs == 19:
             return _concat_gpu[num_inputs=19](
@@ -818,6 +832,7 @@ fn _concat_gpu_impl[
                     inputs[17],
                     inputs[18],
                 ),
+                ctx,
             )
         if num_inputs == 20:
             return _concat_gpu[num_inputs=20](
@@ -845,6 +860,7 @@ fn _concat_gpu_impl[
                     inputs[18],
                     inputs[19],
                 ),
+                ctx,
             )
         if num_inputs == 21:
             return _concat_gpu[num_inputs=21](
@@ -873,6 +889,7 @@ fn _concat_gpu_impl[
                     inputs[19],
                     inputs[20],
                 ),
+                ctx,
             )
         if num_inputs == 22:
             return _concat_gpu[num_inputs=22](
@@ -902,6 +919,7 @@ fn _concat_gpu_impl[
                     inputs[20],
                     inputs[21],
                 ),
+                ctx,
             )
         if num_inputs == 23:
             return _concat_gpu[num_inputs=23](
@@ -932,6 +950,7 @@ fn _concat_gpu_impl[
                     inputs[21],
                     inputs[22],
                 ),
+                ctx,
             )
         if num_inputs == 24:
             return _concat_gpu[num_inputs=24](
@@ -963,6 +982,7 @@ fn _concat_gpu_impl[
                     inputs[22],
                     inputs[23],
                 ),
+                ctx,
             )
         if num_inputs == 25:
             return _concat_gpu[num_inputs=25](
@@ -995,6 +1015,7 @@ fn _concat_gpu_impl[
                     inputs[23],
                     inputs[24],
                 ),
+                ctx,
             )
         if num_inputs == 26:
             return _concat_gpu[num_inputs=26](
@@ -1028,6 +1049,7 @@ fn _concat_gpu_impl[
                     inputs[24],
                     inputs[25],
                 ),
+                ctx,
             )
         if num_inputs == 27:
             return _concat_gpu[num_inputs=27](
@@ -1062,6 +1084,7 @@ fn _concat_gpu_impl[
                     inputs[25],
                     inputs[26],
                 ),
+                ctx,
             )
         if num_inputs == 28:
             return _concat_gpu[num_inputs=28](
@@ -1097,6 +1120,7 @@ fn _concat_gpu_impl[
                     inputs[26],
                     inputs[27],
                 ),
+                ctx,
             )
         if num_inputs == 29:
             return _concat_gpu[num_inputs=29](
@@ -1133,6 +1157,7 @@ fn _concat_gpu_impl[
                     inputs[27],
                     inputs[28],
                 ),
+                ctx,
             )
         if num_inputs == 30:
             return _concat_gpu[num_inputs=30](
@@ -1170,6 +1195,7 @@ fn _concat_gpu_impl[
                     inputs[28],
                     inputs[29],
                 ),
+                ctx,
             )
         if num_inputs == 31:
             return _concat_gpu[num_inputs=31](
@@ -1208,6 +1234,7 @@ fn _concat_gpu_impl[
                     inputs[29],
                     inputs[30],
                 ),
+                ctx,
             )
         if num_inputs == 32:
             return _concat_gpu[num_inputs=32](
@@ -1247,6 +1274,7 @@ fn _concat_gpu_impl[
                     inputs[30],
                     inputs[31],
                 ),
+                ctx,
             )
 
         else:
@@ -1265,10 +1293,22 @@ fn concat[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     constrained[target == "cpu" or target == "cuda", "not a valid target"]()
-    alias func = _concat_cpu if target == "cpu" else _concat_gpu_impl
-    func[rank, type, single_thread_blocking_override](output, axis, inputs)
+
+    @parameter
+    if target == "cpu":
+        _concat_cpu[rank, type, single_thread_blocking_override](
+            output, axis, inputs
+        )
+    else:
+        _concat_gpu_impl[rank, type, single_thread_blocking_override](
+            output,
+            axis,
+            inputs,
+            context.get_cuda_device(),
+        )
 
 
 fn _concat_inner_most_single_dim[
@@ -1301,13 +1341,13 @@ fn _concat_gpu_elementwise[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
-    stream: Stream,
+    ctx: DeviceContext,
 ) raises:
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
     @parameter
     for i in range(rank):
         if i == axis:
-            return _concat_gpu_elementwise[axis=i](output, inputs, stream)
+            return _concat_gpu_elementwise[axis=i](output, inputs, ctx)
 
 
 @always_inline
@@ -1319,7 +1359,7 @@ fn _concat_gpu_elementwise[
 ](
     output: NDBuffer[type, rank],
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
-    stream: Stream,
+    ctx: DeviceContext,
 ) raises:
     @parameter
     @always_inline
@@ -1347,7 +1387,7 @@ fn _concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    _elementwise_impl_gpu[per_output_elem, 1](output.get_shape(), stream)
+    _elementwise_impl_gpu[per_output_elem, 1](output.get_shape(), ctx)
 
 
 @always_inline
@@ -1359,9 +1399,8 @@ fn _concat_gpu[
     output: NDBuffer[type, rank],
     axis: Int,
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
+    ctx: DeviceContext,
 ) raises:
-    var stream = Stream.get_current_stream()
-
     # Size of outer dims, if 1 we should memcpy to the output buffer.
     var outer_dims = 1
     for i in range(axis):
@@ -1377,12 +1416,21 @@ fn _concat_gpu[
         for i in range(num_inputs):
             # Skip empty inputs.
             if inputs[i].num_elements() > 0:
-                _copy_device_to_device_async(
+                # TODO: Owning = True or False?
+                var outp = DeviceBuffer(
+                    ctx,
                     output.data.offset(input_size),
-                    inputs[i].data,
                     inputs[i].num_elements(),
-                    stream,
+                    owning=False,
                 )
+                var inp = DeviceBuffer(
+                    ctx, inputs[i].data, inputs[i].num_elements(), owning=False
+                )
+                ctx.enqueue_copy_device_to_device(
+                    outp,
+                    inp,
+                )
+
                 input_size += inputs[i].num_elements()
 
     # If outer_dims are ones use device-to-device copies.
@@ -1398,18 +1446,18 @@ fn _concat_gpu[
 
         if inner_most_unit_dim:
             alias block_size = 32
-            var func = Function[
+            var func = ctx.compile_function[
                 _concat_inner_most_single_dim[
                     rank, type, num_inputs, block_size
                 ]
             ]()
 
-            return func(
+            return ctx.enqueue_function(
+                func,
                 output,
                 inputs,
                 grid_dim=(inputs[0].num_elements() // block_size),
                 block_dim=(block_size),
-                stream=stream,
             )
 
-    _concat_gpu_elementwise(output, axis, inputs, stream)
+    _concat_gpu_elementwise(output, axis, inputs, ctx)
