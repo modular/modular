@@ -645,3 +645,29 @@ fn mgp_device_context_destroy(
     dev_ctx: UnsafePointer[Tuple[StateContext, CudaInstance]]
 ):
     dev_ctx.destroy_pointee()
+
+
+@mogg_register("mgp.device.context.profile.start")
+@always_inline
+@export
+fn mgp_device_context_profile_start[
+    aDeviceRuntimeSlot: UInt64,
+    bDevice: StringLiteral,
+    cTag: StringLiteral,
+    dFilePath: StringLiteral,
+](ctx: StateContext, callCtx: MojoCallContextPtr):
+    # Call into device_context here....
+    print("mgp_device_context_profile_start", cTag)
+
+
+@mogg_register("mgp.device.context.profile.end")
+@always_inline
+@export
+fn mgp_device_context_profile_end[
+    aDeviceRuntimeSlot: UInt64,
+    bDevice: StringLiteral,
+    cTag: StringLiteral,
+    dFilePath: StringLiteral,
+](ctx: StateContext, callCtx: MojoCallContextPtr):
+    # Call into device_context here....
+    print("mgp_device_context_profile_end", cTag)
