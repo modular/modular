@@ -260,7 +260,7 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
       Value emtpyStruct = rewriter.create<LLVM::UndefOp>(func->getLoc(), type);
       sigConverter.remapInput(idx, emtpyStruct);
     }
-    rewriter.applySignatureConversion(&func.getBody(), sigConverter);
+    rewriter.applySignatureConversion(&func.getBody().front(), sigConverter);
   }
 
   // Update funcOp type.
