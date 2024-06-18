@@ -15,36 +15,30 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host import Context, Stream
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host.device_context import DeviceContext
 
 
 fn bench_add[
     unroll_by: Int, rank: Int
-](inout b: Bench, shape: StaticIntTuple[rank]) raises:
+](inout b: Bench, shape: StaticIntTuple[rank], ctx: DeviceContext) raises:
     alias type = DType.float32
     var size = shape.flattened_length()
-    var input0_ptr = _malloc[type](size)
-    var input1_ptr = _malloc[type](size)
-    var output_ptr = _malloc[type](size)
+    var input0_ptr = ctx.create_buffer[type](size)
+    var input1_ptr = ctx.create_buffer[type](size)
+    var output_ptr = ctx.create_buffer[type](size)
     var input0_ptr_host = DTypePointer[type].alloc(size)
     var input1_ptr_host = DTypePointer[type].alloc(size)
     var output_ptr_host = DTypePointer[type].alloc(size)
     randn(input0_ptr_host, size)
     randn(input1_ptr_host, size)
     randn(output_ptr_host, size)
-    _copy_host_to_device(input0_ptr, input0_ptr_host, size)
-    _copy_host_to_device(input1_ptr, input1_ptr_host, size)
-    _copy_host_to_device(output_ptr, output_ptr_host, size)
+    ctx.enqueue_copy_to_device(input0_ptr, input0_ptr_host)
+    ctx.enqueue_copy_to_device(input1_ptr, input1_ptr_host)
+    ctx.enqueue_copy_to_device(output_ptr, output_ptr_host)
 
-    var input0 = NDBuffer[type, rank](input0_ptr, shape)
-    var input1 = NDBuffer[type, rank](input1_ptr, shape)
-    var output = NDBuffer[type, rank](output_ptr, shape)
+    var input0 = NDBuffer[type, rank](input0_ptr.ptr, shape)
+    var input1 = NDBuffer[type, rank](input1_ptr.ptr, shape)
+    var output = NDBuffer[type, rank](output_ptr.ptr, shape)
 
     @parameter
     @always_inline
@@ -58,13 +52,20 @@ fn bench_add[
 
     @parameter
     @always_inline
+    fn ctx_time_async_cuda_kernel[
+        func: fn (DeviceContext) raises capturing -> None
+    ](num_iters: Int) raises -> Int:
+        return ctx.execution_time[func](num_iters)
+
+    @parameter
+    @always_inline
     fn bench_func(inout b: Bencher, shape: StaticIntTuple[rank]):
         @parameter
         @always_inline
-        fn kernel_launch(stream: Stream) raises:
-            _elementwise_impl_gpu[add, simd_width=unroll_by](shape, stream)
+        fn kernel_launch(ctx: DeviceContext) raises:
+            _elementwise_impl_gpu[add, simd_width=unroll_by](shape, ctx)
 
-        b.iter_custom[time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
 
     b.bench_with_input[__type_of(shape), bench_func](
         BenchId("add", str(shape)),
@@ -73,7 +74,7 @@ fn bench_add[
         ThroughputMeasure(BenchMetric.elements, size * sizeof[type]() * 3),
     )
 
-    _copy_device_to_host(output_ptr_host, output_ptr, size)
+    ctx.enqueue_copy_from_device(output_ptr_host, output_ptr)
 
     alias nelts = simdwidthof[type]()
     for i in range(0, size, nelts):
@@ -84,10 +85,15 @@ fn bench_add[
         ).reduce_and():
             raise Error("mismatch at flattened idx " + str(i))
 
+    _ = input0_ptr
+    _ = input1_ptr
+    _ = output_ptr
+
 
 fn main() raises:
     var b = Bench()
-    with Context() as ctx:
-        bench_add[unroll_by=4](b, StaticIntTuple[4](2, 4, 1024, 1024))
-        bench_add[unroll_by=1](b, StaticIntTuple[4](2, 4, 1024, 1024))
+    var ctx = DeviceContext()
+    bench_add[unroll_by=4](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
+    bench_add[unroll_by=1](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
     b.dump_report()
+    _ = ctx
