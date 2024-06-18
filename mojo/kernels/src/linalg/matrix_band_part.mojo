@@ -9,6 +9,7 @@ from algorithm.functional import _elementwise_impl, unswitch
 from buffer import NDBuffer
 from buffer.list import DimList
 from register import mogg_register
+from runtime.llcl import MojoCallContextPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
@@ -33,6 +34,7 @@ fn matrix_band_part[
     num_upper: NDBuffer[int_type, 1],
     exclude_buf: NDBuffer[cond_type, 1],
     output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
 ):
     var lower_diagonal_index = int(num_lower[0])
     var upper_diagonal_index = int(num_upper[0])
@@ -52,7 +54,7 @@ fn matrix_band_part[
             single_thread_blocking_override,
             exclude=exclude,
             target=target,
-        ](input_shape, lower_diagonal_index, upper_diagonal_index, output)
+        ](input_shape, lower_diagonal_index, upper_diagonal_index, output, ctx)
 
     unswitch[dispatch](exclude_buf[0] != 0)
 
@@ -75,6 +77,7 @@ fn _matrix_band_part_impl[
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
     output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
 ):
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
@@ -110,6 +113,4 @@ fn _matrix_band_part_impl[
         rank,
         use_blocking_impl=single_thread_blocking_override,
         target=target,
-    ](
-        input_shape,
-    )
+    ](input_shape, context=ctx)

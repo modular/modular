@@ -9,6 +9,7 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
 from testing import assert_equal
+from runtime.llcl import MojoCallContextPtr
 
 
 def matrix_band_part[
@@ -53,6 +54,7 @@ def matrix_band_part[
         num_upper_buf.make_dims_unknown(),
         exclude_buf.make_dims_unknown(),
         output,
+        MojoCallContextPtr(),
     )
 
 
