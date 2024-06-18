@@ -231,7 +231,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             A copy of the tensor held by the map.
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(
-            key._strref_dangerous().unsafe_ptr(), self._lib
+            key.unsafe_cstr_ptr(), self._lib
         )
         key._strref_keepalive()
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
@@ -268,7 +268,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             Buffer of the tensor pointed by the key.
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(
-            key._strref_dangerous().unsafe_ptr(), self._lib
+            key.unsafe_cstr_ptr(), self._lib
         )
         key._strref_keepalive()
         return EngineTensor(tensor_ptr, self._lib, self._session).buffer[type]()
@@ -284,8 +284,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(
-            # TODO: Remove cast when transition to UInt8 strings is complete.
-            key.unsafe_ptr().bitcast[UInt8](),
+            key.unsafe_cstr_ptr(),
             self._lib,
         )
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
@@ -302,7 +301,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             the key.
         """
         var value_ptr = self._ptr.get_value_by_name(
-            key._strref_dangerous().unsafe_ptr(), self._lib
+            key.unsafe_cstr_ptr(), self._lib
         )
         key._strref_keepalive()
         return Value(value_ptr, self._lib, self._session)

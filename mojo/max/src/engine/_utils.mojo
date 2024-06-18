@@ -19,14 +19,13 @@ struct CString:
 
     var ptr: UnsafePointer[C_char]
 
-    fn __init__(inout self, ptr: UnsafePointer[UInt8]):
+    fn __init__(inout self, ptr: UnsafePointer[C_char]):
         """
-        Construct a `CString` from a string data pointer.
+        Construct a `CString` from a C string data pointer.
 
         Args:
             ptr: The string data pointer to wrap.
         """
-
         self.ptr = ptr.bitcast[C_char]()
 
     fn get_as_string_ref(self) -> StringRef:
