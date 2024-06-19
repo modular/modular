@@ -24,7 +24,9 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
       options.globalCtorFnName, options.globalDtorFnName}));
   pm.addPass(createLowerRuntimeClosures());
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
-  pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
+  // NOTE: Disable this pass because it is not correct for fine-grained lifetime
+  // markers. It will be deleted soon anyways.
+  // pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
   pm.addPass(createLowerKGENCoroutinesAsync());
   pm.addPass(createLowerGlobalPOPToLLVM(LowerGlobalPOPToLLVMOptions{
       options.alignedAllocFnName, options.alignedFreeFnName}));
