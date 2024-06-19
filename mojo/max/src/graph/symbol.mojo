@@ -166,7 +166,6 @@ struct Symbol(CollectionElement, Stringable):
             return ops.reshape(self, shape)
         except e:
             raise error(self.graph(), e, __call_location())
-        raise "Unreachable"
 
     @always_inline
     fn reshape(self, *dims: Dim) raises -> Symbol:
@@ -191,7 +190,6 @@ struct Symbol(CollectionElement, Stringable):
             return ops.reshape(self, shape)
         except e:
             raise error(self.graph(), e, __call_location())
-        raise "Unreachable"
 
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.

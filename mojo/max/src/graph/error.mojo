@@ -11,7 +11,7 @@ from sys.ffi import external_call, C_char
 
 
 @always_inline
-def error[
+fn error[
     T: Stringable
 ](
     graph: Optional[Graph],
