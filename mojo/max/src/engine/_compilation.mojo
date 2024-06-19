@@ -27,6 +27,7 @@ struct FrameworkFormat:
     """Enum-like struct indicating the model framework."""
 
     alias MAXGraph = FrameworkFormat(0)
+    alias TorchscriptModule = FrameworkFormat(1)
 
     var value: UInt8
 
@@ -52,7 +53,7 @@ struct CCompileConfig:
     var ptr: DTypePointer[DType.invalid]
 
     alias FreeCompileConfigFnName = "M_freeCompileConfig"
-    alias SetModelSourceFnName = "M_setModelSource"
+    alias SetModelSourceFnName = "M_setModelSourceInternal"
     alias SetModelPathFnName = "M_setModelPath"
     alias ReplaceOpsFnName = "M_useKernelsFrom"
     alias SetDeviceFnName = "M_setDevice"
