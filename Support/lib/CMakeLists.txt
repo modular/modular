@@ -77,6 +77,7 @@ add_subdirectory(Globals)
 add_subdirectory(CUDA)
 add_subdirectory(Profiling)
 add_subdirectory(UI)
+add_subdirectory(Python)
 
 # HTTP requires UI
 add_subdirectory(HTTP)
