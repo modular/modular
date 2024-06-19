@@ -139,8 +139,8 @@ public:
   /// At this point, we've already applied implicit conversions and converted
   /// things to RValues or BValues as required by the argument convention, but
   /// things may still be in parameter space.
-  bool isSafeToUseValueDestForDirectResult(
-      ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+  bool isSafeToUseValueDestForDirectResult(ASTType destRValueType,
+                                           ArrayRef<Value> argumentValues);
 
 private:
   /// The (type-checked and resolved) callee we are emitting the call to.
@@ -679,10 +679,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 /// passing the value as an argument like 'x = foo(x)' or 'x = x + 1'.
 ///
 /// At this point, we've already applied implicit conversions and converted
-/// things to RValues or BValues as required by the argument convention, but
-/// things may still be in parameter space.
+/// things to RValues or BValues as required by the argument convention, formed
+/// variadic list/packs, and emitted to the final SSA values that will get
+/// passed.
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
-    ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
+    ASTType destRValueType, ArrayRef<Value> argValues) {
 
   // If the callee is returning a RefResult, don't do this.
   if (calleeSig.isRefResult())
@@ -716,60 +717,30 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   if (calleeSig.isThrows() && underlyingDest != destBuffer)
     return false;
 
-  // Check to see if the specified argument value pointer could alias with the
-  // destination buffer, returning true if it might.  We can only disambiguate
-  // this safely when we can prove that the pointer points to a different
-  // distinguishable object than the result slot.
-  // TODO: This will need to be extended to support lifetimes.
-  auto ptrGuaranteedNoAlias = [&](Value ptrVal) -> bool {
-    Value underlyingPtr =
-        LifetimeTrackable::findUnderlyingValueFromField(ptrVal);
-    return underlyingPtr && underlyingPtr != underlyingDest;
-  };
-
-  // If any of the arguments might alias, then we need to use a temporary
-  // buffer.
+  // Collect all of the types of all the arguments so we can collect the
+  // lifetimes they may reference.
+  SmallVector<Type> argTypes;
   for (auto [value, convention] :
-       llvm::zip(argumentValues, calleeSig.getArgConventions())) {
+       llvm::zip(argValues, calleeSig.getArgConventions())) {
     if (SignatureType::isResultSlot(convention) ||
-        convention == ArgConvention::InitSelf ||
-        !SignatureType::hasAddress(convention))
+        convention == ArgConvention::InitSelf)
       continue;
 
-    // Parameter values will never alias.
-    if (value.ir.getIfPValue())
-      continue;
-    if (value.ir.isMValue()) {
-      if (ptrGuaranteedNoAlias(value.ir.getMValueReference()))
-        continue;
+    argTypes.push_back(value.getType());
+  }
+
+  // TODO: Move to shared state.
+  CachedTypeLifetimeFinder finder;
+
+  TypedAttr destLifetime =
+      cast<RefType>(underlyingDest.getType()).getLifetime();
+
+  // Check to see if any of the the lifetimes they may be accessing are the
+  // lifetime in question.  If any of them is a possible reference to the
+  // destination slot, then we must fail.
+  for (TypedAttr lifetimes : finder.findLifetimesInTypes(argTypes)) {
+    if (lifetimes == destLifetime)
       return false;
-    }
-    // Dynamic variadic memory values are passed with a pop.variadic.create,
-    // check each field.
-    if (auto sr = value.ir.getIfSRValue()) {
-      if (auto variadic = sr.getDefiningOp<POP::VariadicCreateOp>()) {
-        for (auto operand : variadic.getOperands()) {
-          if (!ptrGuaranteedNoAlias(operand))
-            return false;
-        }
-        continue;
-      }
-      if (auto variadic = sr.getDefiningOp<POP::VariadicSplatOp>()) {
-        if (!ptrGuaranteedNoAlias(variadic.getOperand()))
-          return false;
-        continue;
-      }
-    }
-
-    // Otherwise, this may be a scalar value being passed through a borrowed
-    // convention (e.g. for trait-bound value).  These will get anonymous
-    // memory locations so they'll never alias.
-    if (value.ir.isSValue() || value.ir.getIfPValue() ||
-        // def argument slot.
-        value.ir.getIfDLValue())
-      continue;
-
-    llvm_unreachable("Unknown value kind for memory convention");
   }
 
   // If no problems are found, it is safe!
@@ -1288,8 +1259,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // With that done, we can know what type the inout result slot should have.
   // We see if we can emit directly into the ValueDest slot, and if not, we
   // create a VarDecl temporary and allow emitResult to copy it over to the
-  // destination. Calls to async functions, on the other hand, don't need a
-  // result slot provided.
+  // destination. Calls to async functions don't need a result slot provided.
   if ((calleeSig.hasMemoryOnlyResult() || needInitSelfSlot) &&
       !calleeSig.isAsync()) {
     Type refType = needInitSelfSlot ? expectedCalleeType.getInputs().front()
@@ -1307,7 +1277,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // that assessment in a correct way.
     Value resultSlotVal;
     if (needInitSelfSlot || callEmitter.isSafeToUseValueDestForDirectResult(
-                                resultRValueType, argumentValues)) {
+                                resultRValueType, callArgs)) {
       // Use the preferred location of the destination slot.
       resultSlotVal = dest.getMLValueForResult(
           callExpr->getLoc(), resultRValueType, callEmitter.emitter);

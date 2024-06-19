@@ -457,6 +457,8 @@ getCallOpEffects(Operation &op,
 
   // Look at the types accessible by the callee to see if there are any
   // lifetime accesses.
+  // FIXME: This appears wrong for things like `List[Reference[...]]` because
+  // the lifetime is buried in the type, not first order on the List.
   for (auto [num, argType] : llvm::enumerate(typesAccessibleByCallee)) {
     auto dre = dyn_cast<DeclRefType>(argType);
     if (!dre)
@@ -666,4 +668,84 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspention Points");
   return OverallOpValueEffect::unknownOp;
+}
+
+//===----------------------------------------------------------------------===//
+// CachedTypeLifetimeFinder
+//===----------------------------------------------------------------------===//
+
+/// Unpack the specified value of LifetimeType into a set of referenced
+/// lifetimes.
+static void handleLifetimeAttr(TypedAttr attr,
+                               SmallVector<TypedAttr> &results) {
+  // FIXME: Track mutability correctly.
+  attr = LifetimeMutCastAttr::strip(attr);
+
+  // Unpack lifetime unions.
+  if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(attr)) {
+    for (auto elt : unionAttr.getOperands())
+      if (auto sublifetime = LifetimeMutCastAttr::strip(elt))
+        results.push_back(sublifetime);
+  } else {
+    results.push_back(attr);
+  }
+}
+
+template <typename TypeOrAttr>
+static void
+scanForLifetimes(TypeOrAttr pvalue,
+                 llvm::DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
+                 llvm::DenseSet<const void *> &typesAndAttrsWithLifetimes,
+                 SmallVector<TypedAttr> &results) {
+  const void *pvaluePtr = pvalue.getAsOpaquePointer();
+
+  // Ignore types we have already scanned.
+  if (typesAndAttrsWithoutLifetimes.count(pvaluePtr) ||
+      typesAndAttrsWithLifetimes.count(pvaluePtr))
+    return;
+
+  size_t oldNumResults = results.size();
+
+  // If this has lifetime type, process it.
+  bool handled = false;
+  if constexpr (std::is_base_of_v<Attribute, TypeOrAttr>)
+    if (auto typedAttr = dyn_cast<TypedAttr>(pvalue))
+      if (isa<LifetimeType>(typedAttr.getType())) {
+        handleLifetimeAttr(typedAttr, results);
+        handled = true;
+      }
+
+  if (!handled) {
+    // Recursively check for any nested types, e.g. the input/outputs of a
+    // function type, types like !pop.scalar<ty> etc.
+    pvalue.walkImmediateSubElements(
+        [&](Attribute attr) {
+          scanForLifetimes(attr, typesAndAttrsWithoutLifetimes,
+                           typesAndAttrsWithLifetimes, results);
+        },
+        [&](Type type) {
+          scanForLifetimes(type, typesAndAttrsWithoutLifetimes,
+                           typesAndAttrsWithLifetimes, results);
+        });
+  }
+
+  // Make sure we don't revisit this type/attribute in the future.
+  if (oldNumResults == results.size())
+    typesAndAttrsWithoutLifetimes.insert(pvaluePtr);
+  else
+    typesAndAttrsWithLifetimes.insert(pvaluePtr);
+}
+
+SmallVector<TypedAttr>
+CachedTypeLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
+  SmallVector<TypedAttr> results;
+
+  // Scan each type, accumulating the results; the sets avoid revisiting notes
+  // that we know cannot have lifetimes or that we already have seen in this
+  // scan and have lifetimes.
+  llvm::DenseSet<const void *> typesAndAttrsWithLifetimes;
+  for (auto type : types)
+    scanForLifetimes(type, typesAndAttrsWithoutLifetimes,
+                     typesAndAttrsWithLifetimes, results);
+  return results;
 }

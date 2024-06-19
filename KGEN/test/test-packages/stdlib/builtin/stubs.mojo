@@ -180,6 +180,9 @@ struct StringLiteral:
 
 
 struct String(KeyElement):
+    fn __init__(inout self):
+        pass
+
     fn __init__(inout self, literal: StringLiteral):
         pass
 

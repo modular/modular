@@ -14,6 +14,22 @@
 namespace M::KGEN {
 namespace LIT {
 
+class CachedTypeLifetimeFinder {
+public:
+  /// This method finds all the lifetimes buried in the specified type,
+  /// returning them as a list.
+  SmallVector<TypedAttr> findLifetimesInType(Type type) {
+    return findLifetimesInTypes(type);
+  }
+
+  /// This finds all the lifetimes in the specified set of types, possibly
+  /// eliding duplicates.
+  SmallVector<TypedAttr> findLifetimesInTypes(ArrayRef<Type> types);
+
+private:
+  llvm::DenseSet<const void *> typesAndAttrsWithoutLifetimes;
+};
+
 /// This class provide an abstraction for analyzing lifetime-trackable values,
 /// e.g. variable definitions and owned arguments to functions.  This class can
 /// also be used to query whether something is lifetime trackable or not, by
