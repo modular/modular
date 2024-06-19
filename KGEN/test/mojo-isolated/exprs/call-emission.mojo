@@ -327,3 +327,29 @@ fn take_struct2(bar: Struct2):
 
 
 
+fn pack_it[*Ts: AnyType](*args: *Ts) -> String:
+    return String()
+
+fn also_broken(r: Reference[String]) -> String:
+    return r[]
+
+# MOCO-858: isSafeToUseValueDestForDirectResult doesn't handle aliasing through references
+# CHECK-LABEL: lit.func @"test_byref_slot_with_references
+fn test_byref_slot_with_references():
+    var f = String()
+    
+    # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
+    # CHECK-NEXT: lit.call {{.*}}pack_it{{.*}}({{.*}},  [[RESULTTMP]])
+    f = pack_it(f)
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
+
+    # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
+    # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
+    f = also_broken(f)
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
+
+    # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
+    # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
+    f = also_broken(Reference(f))
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
+
