@@ -25,16 +25,17 @@ def test_graph_execution():
     var input_dt = cpu.allocate(TensorSpec(DType.float32, 1))
     var input = input_dt^.get_tensor[DType.float32, 1]()
     input[0] = 1.0
-    var outputs = executable_graph.execute(input^)
+    var any = AnyMemory(input^)
+    var outputs = executable_graph.execute(any^)
     assert_equal(len(outputs), 1)
 
     def _assert_values(inout memory: AnyMemory):
         var new = AnyMemory()
         var tmp = memory^
         memory = new^
-        var tensor = tmp^.device_memory().get_tensor[DType.float32, 1]()
+        var tensor = tmp^.device_tensor().get_tensor[DType.float32, 1]()
         var val = tensor[0]
-        memory = tensor^.get_device_memory()
+        memory = tensor^.device_tensor()
         assert_equal(val, 1.0)
 
     for output in outputs:
@@ -100,13 +101,13 @@ def test_mnist():
         var new = AnyMemory()
         var tmp = memory^
         memory = new^
-        var tensor = tmp^.device_memory().get_tensor[DType.float32, 2]()
+        var tensor = tmp^.device_tensor().get_tensor[DType.float32, 2]()
         var rank = tensor.get_rank()
         var output_list = List[Float32]()
         output_list.reserve(10)
         for i in range(10):
             output_list.append(tensor[0, i])
-        memory = tensor^.get_device_memory()
+        memory = tensor^.device_tensor()
         assert_equal(rank, 2)
 
         var expected_outputs = List[Float32](

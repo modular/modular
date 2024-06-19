@@ -34,7 +34,7 @@ def test_copy_d2h():
             input[i, j] = val
             val += 1
 
-    input_cpu = input^.get_device_memory()
+    input_cpu = input^.device_tensor()
     var gpu_tensor = input_cpu.copy_to(gpu)
     var output_cpu = gpu_tensor.copy_to(cpu)
 
@@ -62,9 +62,9 @@ def test_copy_d2d():
             input[i, j] = val
             val += 1
 
-    input_cpu = input^.get_device_memory()
+    input_cpu = input^.device_tensor()
     var gpu_tensor1 = input_cpu.copy_to(gpu)
-    var gpu_tensor2 = gpu.allocate(gpu_tensor1.get_tensor_spec())
+    var gpu_tensor2 = gpu.allocate(gpu_tensor1.spec)
     gpu_tensor1.copy_into(gpu_tensor2)
     var output_cpu = gpu_tensor2.copy_to(cpu)
 

@@ -37,7 +37,7 @@ def test_from_tensor():
 
     assert_equal(anymemory.get_rank(), 2)
 
-    var dm_back = anymemory^.device_memory()
+    var dm_back = anymemory^.device_tensor()
     var tensor2 = dm_back^.get_tensor[DType.float32, 2]()
     assert_equal(tensor2[0, 0], 1)
 

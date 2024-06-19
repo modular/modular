@@ -43,7 +43,7 @@ def test_graph_execution():
     var input_cpu = input_dt^.get_tensor[DType.float32, 1]()
     for i in range(5):
         input_cpu[i] = i
-    var gpu_tensor = input_cpu^.get_device_memory().copy_to(gpu)
+    var gpu_tensor = input_cpu^.device_tensor().copy_to(gpu)
     var outputs = executable_graph.execute(gpu_tensor^)
     assert_equal(len(outputs), 1)
 
@@ -51,7 +51,7 @@ def test_graph_execution():
         var new = AnyMemory()
         var tmp = memory^
         memory = new^
-        var gpu_tensor = tmp^.device_memory()
+        var gpu_tensor = tmp^.device_tensor()
         var cpu_tensor = gpu_tensor.copy_to(device).get_tensor[
             DType.float32, 1
         ]()

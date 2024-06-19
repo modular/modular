@@ -175,10 +175,10 @@ def test_round_trip():
 
     assert_equal(tensor[1, 0], 3)
 
-    var dt2 = tensor^.get_device_memory()
+    var dt2 = tensor^.device_tensor()
     assert_equal(
         str(dt2),
-        "DeviceMemory(mytensor,Device(type=CPU),Spec(10x2xfloat32))",
+        "DeviceTensor(mytensor,Device(type=CPU),Spec(10x2xfloat32))",
     )
 
     var tensor2 = dt2^.get_tensor[DType.float32, 2]()
@@ -203,7 +203,7 @@ def test_copy():
             src[i, j] = val
             val += 1
 
-    src_dev_tensor = src^.get_device_memory()
+    src_dev_tensor = src^.device_tensor()
     src_dev_tensor.copy_into(dst_dev_tensor)
     var dst_dev_tensor2 = src_dev_tensor.copy_to(cpu2)
 
