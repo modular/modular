@@ -201,7 +201,8 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
   let dependentDialects = [
     "POPDialect",
     "KGENDialect",
-    "mlir::index::IndexDialect"
+    "mlir::index::IndexDialect",
+    "::mlir::LLVM::LLVMDialect"
   ];
 }
 
