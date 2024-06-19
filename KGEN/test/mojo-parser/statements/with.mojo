@@ -133,9 +133,11 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: [[ERROR:%.*]] = lit.load.consume %__with_error__
     # CHECK-NEXT: lit.ref.store [[ERROR]], %__error__
     # CHECK:    } finally {
-    # CHECK-NEXT: %[[EXC:.*]] = lit.ref.load %__with_exc__
-    # CHECK-NEXT: hlcf.if %[[EXC]]
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT: %__finally_error__ = lit.var.decl
+    # CHECK-NEXT: lit.try
+    # CHECK-NEXT:   %[[EXC:.*]] = lit.ref.load %__with_exc__
+    # CHECK-NEXT:   hlcf.if %[[EXC]]
+    # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT:   call {{.*}}__exit__{{.*}}([[IMMREF]])
 
 

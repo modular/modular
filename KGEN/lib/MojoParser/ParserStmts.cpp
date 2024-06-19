@@ -233,6 +233,9 @@ struct StmtParser : public ParserBase {
                             StringAttr target, SMLoc smLoc, SMLoc targetLoc);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
+  ParseResult
+  handleRaisingFinallyRegion(TryOp tryOp, ASTType errorType, SMLoc loc,
+                             function_ref<ParseResult()> populateFinallyBody);
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
@@ -1222,6 +1225,80 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   return success();
 }
 
+/// The finally block executes whenever control flow leaves any of the other
+/// regions of a `try`, whether through a yield, return, or raise. Its overall
+/// control flow effect takes precedence over how control flow left the other
+/// `try` regions originally.
+///
+/// This is conceptually implemented by branching before said exits to the
+/// finally region, and when yielding from the finally region, branch back to
+/// where control was before.
+///
+/// However, this means that the finally region can conditionally overwrite an
+/// error slot and then choose not to raise, causing this issue:
+///
+/// ```
+/// def raising_finally():
+///     try:
+///         raise Error() # initializes %__error__, then branch to 'finally'
+///     finally:
+///         # conservatively destroy %__error__ before the raising call
+///         might_raise()
+///         # if the call didn't raise, branch back to where we were in 'try',
+///         # but now we have an error return with an uninitialized %__error__!
+/// ```
+///
+/// Thus, the error slot in the finally region cannot alias the one used in the
+/// other regions, because it might conditionally overwrite it while it still
+/// needs to be used. Fix this by rewriting the above into:
+///
+/// ```
+/// def raising_finally():
+///     try:
+///         raise Error()
+///     finally:
+///         try:
+///             might_raise()
+///         except:
+///             raise
+/// ```
+ParseResult StmtParser::handleRaisingFinallyRegion(
+    TryOp tryOp, ASTType errorType, SMLoc loc,
+    function_ref<ParseResult()> populateFinallyBody) {
+  if (tryOp.hasTrivialFinally())
+    return success();
+
+  MLValue errSlot = getEmitter().findNearestErrorSlot();
+  if (!errSlot)
+    return populateFinallyBody();
+
+  VarDeclOp errDecl = getEmitter().emitVarDecl(
+      "__finally_error__", errorType, tryOp.getLoc(), VarDeclKind::Synthesized);
+  auto nestedTry =
+      builder.create<TryOp>(tryOp.getLoc(), errDecl, /*suppressWarnings=*/true);
+
+  // Stub out the else and finally regions of this try.
+  builder.createBlock(&nestedTry.getElseRegion());
+  builder.create<TryYieldOp>(tryOp.getLoc());
+  builder.createBlock(&nestedTry.getFinallyRegion());
+  builder.create<TryYieldOp>(tryOp.getLoc());
+
+  // Move the error into the overall error slot.
+  builder.createBlock(&nestedTry.getExceptRegion());
+  ValueDest moveDest(errSlot, EC_RaiseValue);
+  getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
+  builder.create<RaiseOp>(tryOp.getLoc());
+  builder.create<TryYieldOp>(tryOp.getLoc());
+
+  Block *tryBlock = builder.createBlock(&nestedTry.getTryRegion());
+  if (populateFinallyBody())
+    return failure();
+  builder.setInsertionPointToEnd(tryBlock);
+  builder.create<TryYieldOp>(tryOp.getLoc());
+  builder.setInsertionPointAfter(nestedTry);
+  return success();
+}
+
 /// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
 ///              ["else" suite]
 ParseResult StmtParser::parseTryStmt(size_t curIndent) {
@@ -1305,8 +1382,12 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   }
   builder.createBlock(&tryOp.getFinallyRegion());
   if (hasFinally) {
-    if (parseToken(Token::colon, "expected ':' after 'finally'") ||
-        parseLocalScopeSuite(curIndent))
+    if (handleRaisingFinallyRegion(tryOp, errorType, smLoc, [&] {
+          if (parseToken(Token::colon, "expected ':' after 'finally'") ||
+              parseLocalScopeSuite(curIndent))
+            return failure();
+          return mlir::success();
+        }))
       return failure();
   }
   builder.create<TryYieldOp>(loc);
@@ -1654,16 +1735,18 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
-
-  auto excIf =
-      builder.create<HLCF::IfOp>(loc, builder.create<RefLoadOp>(loc, excVar));
+  (void)handleRaisingFinallyRegion(tryOp, errorType, smLoc, [&] {
+    auto excIf =
+        builder.create<HLCF::IfOp>(loc, builder.create<RefLoadOp>(loc, excVar));
+    builder.createBlock(&excIf.getThenRegion());
+    emitNormalExitLogic();
+    builder.create<HLCF::YieldOp>(loc);
+    // Stub the 'else' region.
+    builder.createBlock(&excIf.getElseRegion());
+    builder.create<HLCF::YieldOp>(loc);
+    return success();
+  });
   builder.create<TryYieldOp>(loc);
-  builder.createBlock(&excIf.getThenRegion());
-  emitNormalExitLogic();
-  builder.create<HLCF::YieldOp>(loc);
-  // Stub the 'else' region.
-  builder.createBlock(&excIf.getElseRegion());
-  builder.create<HLCF::YieldOp>(loc);
   return success();
 }
 
