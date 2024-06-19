@@ -387,7 +387,7 @@ class InferenceSession:
 
     def load(
         self,
-        model_path: Union[str, Path],
+        model: Union[str, Path, Any],
         *,
         custom_ops_path: Optional[str] = None,
         input_specs: Optional[List["TorchInputSpec"]] = None,
@@ -398,8 +398,9 @@ class InferenceSession:
 
         Parameters
         ----------
-        model_path: Union[str, pathlib.Path]
-            Path to a model. May be a TorchScript model or an ONNX model.
+        model: Union[str, pathlib.Path, Any]
+            Path to a model, or a TorchScript model instance.
+            May be a TorchScript model or an ONNX model.
 
         custom_ops_path: str
             The path to your custom ops Mojo package.
@@ -452,8 +453,19 @@ class InferenceSession:
         if input_specs is not None:
             options_dict["input_specs"] = _unwrap_pybind_objects(input_specs)
 
-        model_path = Path(str(model_path))
-        _model = self._impl.compile(model_path, options_dict)
+        if isinstance(model, Path) or isinstance(model, str):
+            model_path = Path(str(model))
+            _model = self._impl.compile_from_path(model_path, options_dict)
+        else:
+            import torch
+
+            if not isinstance(model, torch.jit.ScriptModule):
+                raise RuntimeError(
+                    "The model is not a string path, Path object or valid"
+                    " torch.jit.ScriptModule"
+                )
+            _model = self._impl.compile_from_object(model._c, options_dict)
+
         _model.load()
         return Model._init(_model)
 
