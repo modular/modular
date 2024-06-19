@@ -10,9 +10,18 @@
 
 # Error Handling related CheckLifetimes tests.
 
-fn use(x: Int): pass
-fn use(x: String): pass
-def use_and_raise(x: Int): pass
+
+fn use(x: Int):
+    pass
+
+
+fn use(x: String):
+    pass
+
+
+def use_and_raise(x: Int):
+    pass
+
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}RegExample::@"__del__
@@ -21,7 +30,9 @@ struct RegExample:
     fn __init__(inout self):
         return
 
-    fn __copyinit__(inout self, existing: Self):  # CHECK: lit.func @"__copyinit__
+    fn __copyinit__(
+        inout self, existing: Self
+    ):  # CHECK: lit.func @"__copyinit__
         return
 
     # Test a raising constructor.
@@ -115,6 +126,79 @@ struct RaisingInit:
         # This can raise, but 'self' doesn't need to be initialized.
         _ = somethingThatRaises()
         self.stream = stream
+
+
+# CHECK-LABEL: lit.func @"finally_may_raise
+fn finally_may_raise() raises:
+    # CHECK: lit.try
+    try:
+        # CHECK-NEXT: call {{.*}}__init__{{.*}}(%__try_error__)
+        # CHECK-NEXT: lit.try.raise
+        raise Error()
+        # CHECK-NEXT: except
+        # CHECK-NEXT: [[MOVE:%.*]] = lit.load.consume %__try_error__
+        # CHECK-NEXT: lit.ref.store [[MOVE]], %__error__
+        # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+        # CHECK-NEXT: %__finally_error__ = lit.var.decl
+        # CHECK-NEXT: lit.try
+        # CHECK-NEXT:   [[RESULT:%.*]] = lit.var.decl
+        # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__finally_error__, [[RESULT]])
+        # CHECK-NEXT:   hlcf.if [[IS_ERR]]
+        # CHECK-NEXT:     [[ERR:%.*]] = lit.ref.load %__error__
+        # CHECK-NEXT:     call {{.*}}__del__{{.*}}([[ERR]])
+        # CHECK:      except
+        # CHECK-NEXT:   [[MOVE:%.*]] = lit.load.consume %__finally_error__
+        # CHECK-NEXT:   lit.ref.store [[MOVE]], %__error__
+        # CHECK:      else
+        # CHECK-NEXT:   lit.try.yield
+        # CHECK-NEXT: }
+        # CHECK-NEXT: lit.error_return [[TRUE]]
+    finally:
+        somethingThatRaises()
+
+
+@value
+struct ThrowingExit:
+    fn __enter__(self):
+        pass
+
+    fn __exit__(self) raises:
+        pass
+
+    fn __exit__(self, e: Error) raises -> Bool:
+        return False
+
+
+# CHECK-LABEL: lit.func @"context_mgr_exit_raises
+fn context_mgr_exit_raises() raises:
+    # CHECK:      [[MOVE:%.*]] = lit.load.consume %__with_error__
+    # CHECK-NEXT: lit.ref.store [[MOVE]], %__error__
+    # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT: %__finally_error__ = lit.var.decl
+    # CHECK-NEXT: lit.try
+    # CHECK-NEXT:   [[DID_ERR:%.*]] = lit.ref.load %__with_exc__
+    # CHECK-NEXT:   hlcf.if [[DID_ERR]]
+    # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT:     [[BOOL:%.*]] = lit.var.decl
+    # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], %__finally_error__, [[BOOL]])
+    # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT:     hlcf.if [[IS_ERR]]
+    # CHECK-NEXT:       [[ERR:%.*]] = lit.ref.load %__error__
+    # CHECK-NEXT:       call {{.*}}__del__{{.*}}([[ERR]])
+    # CHECK-NEXT:       lit.ownership.mark_initialized %__finally_error__
+    # CHECK:          else
+    # CHECK-NEXT:       lit.ownership.mark_initialized [[BOOL]]
+    # CHECK:        else
+    # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
+    # CHECK:      except
+    # CHECK-NEXT:   [[MOVE:%.*]] = lit.load.consume %__finally_error__
+    # CHECK-NEXT:   lit.ref.store [[MOVE]], %__error__
+    # CHECK:      else
+    # CHECK-NEXT:   lit.try.yield
+    # CHECK-NEXT: }
+    # CHECK-NEXT: lit.error_return [[TRUE]]
+    with ThrowingExit():
+        raise Error()
 
 
 fn may_throw() raises -> RegExample:
@@ -305,23 +389,25 @@ fn emplace_error() raises:
     __get_nearest_error_slot() = Error()
     __mlir_op.`lit.raise`()
 
-struct InitFieldsDestroyedInThrowingConstructor:
-  var x:MemExample
-  fn __init__(inout self):
-     self.x = MemExample()
 
-  # CHECK-LABEL: lit.func @"__init__({{.*}}::InitFieldsDestroyedInThrowingConstructor=&,__mlir_type.i1)"
-  fn __init__(inout self, cond: __mlir_type.`i1`) raises:
-     self = InitFieldsDestroyedInThrowingConstructor()
-     # CHECK:      hlcf.elif {
-     # CHECK-NEXT:   hlcf.elif.yield %cond : i1
-     # CHECK-NEXT: } then {
-     # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
-     # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
-     # CHECK-NEXT:   kgen.param.constant
-     # CHECK-NEXT:   lit.error_return
-     # CHECK-NEXT: } else {
-     # CHECK-NEXT:   hlcf.yield
-     # CHECK-NEXT: }
-     if cond:
-        raise Error()
+struct InitFieldsDestroyedInThrowingConstructor:
+    var x: MemExample
+
+    fn __init__(inout self):
+        self.x = MemExample()
+
+    # CHECK-LABEL: lit.func @"__init__({{.*}}::InitFieldsDestroyedInThrowingConstructor=&,__mlir_type.i1)"
+    fn __init__(inout self, cond: __mlir_type.`i1`) raises:
+        self = InitFieldsDestroyedInThrowingConstructor()
+        # CHECK:      hlcf.elif {
+        # CHECK-NEXT:   hlcf.elif.yield %cond : i1
+        # CHECK-NEXT: } then {
+        # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
+        # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
+        # CHECK-NEXT:   kgen.param.constant
+        # CHECK-NEXT:   lit.error_return
+        # CHECK-NEXT: } else {
+        # CHECK-NEXT:   hlcf.yield
+        # CHECK-NEXT: }
+        if cond:
+            raise Error()
