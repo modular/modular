@@ -556,3 +556,21 @@ kgen.func @dependent_ops_in_break_branch() {
   }
   kgen.return
 }
+
+// -----
+
+// COM: MOCO-718 fix test.
+// CHECK-LABEL: @donnot_crash_with_block_argument_cond()
+kgen.func @donnot_crash_with_block_argument_cond() {
+  %0 = kgen.param.constant: i1 = <0>
+  %1 = kgen.param.constant: i1 = <1>
+  hlcf.loop "_loop" (%arg2 = %1 : i1) {
+    hlcf.if %arg2 {
+      hlcf.yield
+    } else {
+      hlcf.break "_loop"
+    }
+    hlcf.continue %0 : i1
+  }
+  kgen.return
+}

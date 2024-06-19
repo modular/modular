@@ -176,7 +176,7 @@ public:
       : predicateTypes(predTypes) {}
 
   bool match(Operation *op) {
-    if (auto c = dyn_cast<mlir::index::CmpOp>(op))
+    if (auto c = dyn_cast_if_present<mlir::index::CmpOp>(op))
       if (llvm::is_contained(predicateTypes, c.getPred()))
         cmpOp = c;
     return cmpOp;
