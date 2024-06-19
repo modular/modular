@@ -9,7 +9,7 @@
 
 from max.graph import Graph, TensorType, Symbol, Type
 from tensor import TensorSpec
-from driver import compile_graph, cpu_device, CPUDescriptor, AnyMemory, Tensor
+from driver import compile_graph, cpu_device, CPUDescriptor, AnyTensor, Tensor
 from testing import assert_equal, assert_true, assert_raises
 import tensor
 
@@ -25,12 +25,12 @@ def test_graph_execution():
     var input_dt = cpu.allocate(TensorSpec(DType.float32, 1))
     var input = input_dt^.get_tensor[DType.float32, 1]()
     input[0] = 1.0
-    var any = AnyMemory(input^)
+    var any = AnyTensor(input^)
     var outputs = executable_graph.execute(any^)
     assert_equal(len(outputs), 1)
 
-    def _assert_values(inout memory: AnyMemory):
-        var new = AnyMemory()
+    def _assert_values(inout memory: AnyTensor):
+        var new = AnyTensor()
         var tmp = memory^
         memory = new^
         var tensor = tmp^.device_tensor().get_tensor[DType.float32, 1]()
@@ -97,8 +97,8 @@ def test_mnist():
     var outputs = executable_graph.execute(input^)
     assert_equal(len(outputs), 1)
 
-    def _assert_values(inout memory: AnyMemory):
-        var new = AnyMemory()
+    def _assert_values(inout memory: AnyTensor):
+        var new = AnyTensor()
         var tmp = memory^
         memory = new^
         var tensor = tmp^.device_tensor().get_tensor[DType.float32, 2]()

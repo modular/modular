@@ -19,7 +19,7 @@ from driver import (
     compile_graph,
     cuda_device,
     cpu_device,
-    AnyMemory,
+    AnyTensor,
     Tensor,
     Device,
 )
@@ -47,8 +47,8 @@ def test_graph_execution():
     var outputs = executable_graph.execute(gpu_tensor^)
     assert_equal(len(outputs), 1)
 
-    def _assert_values(inout memory: AnyMemory, device: Device):
-        var new = AnyMemory()
+    def _assert_values(inout memory: AnyTensor, device: Device):
+        var new = AnyTensor()
         var tmp = memory^
         memory = new^
         var gpu_tensor = tmp^.device_tensor()

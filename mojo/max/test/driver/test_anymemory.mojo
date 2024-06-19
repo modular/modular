@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
-from driver import AnyMemory, cpu_device
+from driver import AnyTensor, cpu_device
 from testing import assert_equal
 from tensor import TensorSpec
 
@@ -17,9 +17,9 @@ def test_from_device_memory():
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var anymemory = AnyMemory(dm^)
+    var anytensor = AnyTensor(dm^)
 
-    assert_equal(anymemory.get_rank(), 2)
+    assert_equal(anytensor.get_rank(), 2)
 
 
 def test_from_tensor():
@@ -33,16 +33,16 @@ def test_from_tensor():
 
     tensor[0, 0] = 1
 
-    var anymemory = AnyMemory(tensor^)
+    var anytensor = AnyTensor(tensor^)
 
-    assert_equal(anymemory.get_rank(), 2)
+    assert_equal(anytensor.get_rank(), 2)
 
-    var dm_back = anymemory^.device_tensor()
+    var dm_back = anytensor^.device_tensor()
     var tensor2 = dm_back^.get_tensor[DType.float32, 2]()
     assert_equal(tensor2[0, 0], 1)
 
 
-def _function_that_takes_anymemory(owned t1: AnyMemory, owned t2: AnyMemory):
+def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
     return t1.get_rank() + t2.get_rank()
 
 
@@ -60,7 +60,7 @@ def test_implicit_conversion():
     )
 
     # FIXME (40568) should remove str
-    assert_equal(str(_function_that_takes_anymemory(tensor^, dt2^)), str(4))
+    assert_equal(str(_function_that_takes_anytensor(tensor^, dt2^)), str(4))
 
 
 def main():
