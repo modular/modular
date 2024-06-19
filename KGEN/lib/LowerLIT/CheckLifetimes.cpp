@@ -1195,9 +1195,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
       case OperandEffect::memMarkDestroyed:
         checkMarkDestroyed(operand, op);
         break;
-      case OperandEffect::memStoreConditional:
-        // This should have been handled by `checkIfLikeOp` above.
-        break;
       }
     }
 
@@ -1763,9 +1760,6 @@ void DestructorInsertion::scanBlock(Block &block) {
         for (auto valueRef :
              valueSet.getValueRefsForAccess(operand, /*isDeref=*/true))
           consumedValues.set(valueRef.endBit - 1);
-        break;
-      case OperandEffect::memStoreConditional:
-        // This should have been handled by `checkIfLikeOp` above.
         break;
       }
     }

@@ -1505,6 +1505,27 @@ def LIT_OwnershipMarkInitializedOp : LITOp<"ownership.mark_initialized"> {
 }
 
 //===----------------------------------------------------------------------===//
+// OwnershipMarkConsumedOp
+//===----------------------------------------------------------------------===//
+
+def LIT_OwnershipMarkConsumedOp : LITOp<"ownership.mark_consumed"> {
+  let summary = "Mark a value as completely consumed.";
+  let description = [{
+    This op informs CheckLifetimes that the specified value has had its whole
+    value consumed, including all subfields.
+
+    ```mlir
+    lit.ownership.mark_consumed %0 : !somestring
+    ```
+
+    The argument must be an indirectly lifetime-tracked value.
+  }];
+
+  let arguments = (ins LIT_RefType:$value);
+  let assemblyFormat = "$value `:` type($value) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // OwnershipMarkDestroyedOp
 //===----------------------------------------------------------------------===//
 

@@ -96,13 +96,13 @@ fn somethingThatRaises() raises:
 fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<none,
     # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__error__, [[RESULT]])
-    # CHECK-NEXT: hlcf.if [[IS_ERR]] {
-    # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+    # CHECK-NEXT: hlcf.if [[IS_ERR]]
+    # CHECK-NEXT:   mark_consumed [[RESULT]]
     # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
     # CHECK-NEXT:   lit.error_return [[TRUE]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   lit.ownership.mark_initialized [[RESULT]]
-    # CHECK-NEXT:   hlcf.yield
+    # CHECK-NEXT:   mark_consumed %__error__
+    # CHECK-NEXT:   yield
     # CHECK-NEXT: }
     somethingThatRaises()
 
@@ -143,9 +143,10 @@ fn finally_may_raise() raises:
         # CHECK-NEXT: lit.try
         # CHECK-NEXT:   [[RESULT:%.*]] = lit.var.decl
         # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__finally_error__, [[RESULT]])
-        # CHECK-NEXT:   hlcf.if [[IS_ERR]]
+        # CHECK-NEXT:   if [[IS_ERR]]
         # CHECK-NEXT:     [[ERR:%.*]] = lit.ref.load %__error__
         # CHECK-NEXT:     call {{.*}}__del__{{.*}}([[ERR]])
+        # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      except
         # CHECK-NEXT:   [[MOVE:%.*]] = lit.load.consume %__finally_error__
         # CHECK-NEXT:   lit.ref.store [[MOVE]], %__error__
@@ -182,12 +183,13 @@ fn context_mgr_exit_raises() raises:
     # CHECK-NEXT:     [[BOOL:%.*]] = lit.var.decl
     # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], %__finally_error__, [[BOOL]])
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
-    # CHECK-NEXT:     hlcf.if [[IS_ERR]]
+    # CHECK-NEXT:     if [[IS_ERR]]
     # CHECK-NEXT:       [[ERR:%.*]] = lit.ref.load %__error__
     # CHECK-NEXT:       call {{.*}}__del__{{.*}}([[ERR]])
-    # CHECK-NEXT:       lit.ownership.mark_initialized %__finally_error__
+    # CHECK-NEXT:       mark_consumed [[BOOL]]
     # CHECK:          else
-    # CHECK-NEXT:       lit.ownership.mark_initialized [[BOOL]]
+    # CHECK-NEXT:       mark_consumed %__finally_error__
+    # CHECK-NEXT:       yield
     # CHECK:        else
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
     # CHECK:      except
@@ -209,14 +211,13 @@ fn may_throw() raises -> RegExample:
 fn propagate_reg_error() raises:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!RegExample,
     # CHECK-NEXT: %0 = lit.call {{.*}}may_throw{{.*}}(%__error__, [[RESULT]])
-    # CHECK-NEXT: hlcf.if %0 {
-    # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+    # CHECK-NEXT: if %0
     # CHECK:        lit.error_return
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   lit.ownership.mark_initialized [[RESULT]]
     # CHECK-NEXT:   [[VALUE:%.*]] = lit.ref.load [[RESULT]]
     # CHECK-NEXT:   lit.call {{.*}}@RegExample::@"__del__{{.*}}([[VALUE]])
-    # CHECK-NEXT:   hlcf.yield
+    # CHECK-NEXT:   mark_consumed %__error__
+    # CHECK-NEXT:   yield
     # CHECK-NEXT: }
     _ = may_throw()
     # CHECK-NEXT: %none = kgen.param.constant: none
@@ -286,9 +287,9 @@ struct DestructSome:
 
     # CHECK-LABEL: lit.func @"__init__
     fn __init__(inout self, a: Field, b: Field) raises:
-        # CHECK: call {{.*}}somethingThatRaises
-        # CHECK-NEXT: hlcf.if
-        # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+        # CHECK:      call {{.*}}somethingThatRaises
+        # CHECK-NEXT: if
+        # CHECK-NEXT:   mark_consumed
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         somethingThatRaises()
@@ -297,11 +298,11 @@ struct DestructSome:
         # CHECK-NEXT: __copyinit__{{.*}}([[FIELD]], %a)
         self.a = a
 
-        # CHECK: call {{.*}}somethingThatRaises
-        # CHECK-NEXT: hlcf.if
+        # CHECK:      call {{.*}}somethingThatRaises
+        # CHECK-NEXT: if
         # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
-        # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+        # CHECK-NEXT:   mark_consumed %anonymous
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         somethingThatRaises()
@@ -313,10 +314,10 @@ struct DestructSome:
         # At this point 'self' is fully initialized, so any exit out should
         # destroy the whole thing.
 
-        # CHECK: call {{.*}}somethingThatRaises
-        # CHECK-NEXT: hlcf.if
+        # CHECK:      call {{.*}}somethingThatRaises
+        # CHECK-NEXT: if
         # CHECK-NEXT:   __del__{{.*}}(%self)
-        # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+        # CHECK-NEXT:   mark_consumed %anonymous
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         somethingThatRaises()
@@ -337,14 +338,14 @@ fn raising_use(owned value: MemExample):
         # CHECK-NEXT: [[VAL:%.*]] = lit.var.decl "anonymous*"
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}borrow_and_return{{.*}}([[BORROW]], %__try_error__, [[VAL]])
         # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}(%value)
-        # CHECK-NEXT: hlcf.if [[IS_ERR]]
-        # CHECK-NEXT:   lit.ownership.mark_initialized %__try_error__
+        # CHECK-NEXT: if [[IS_ERR]]
         # CHECK-NEXT:   [[ERR:%.*]] = lit.ref.load %__try_error__
         # CHECK-NEXT:   call {{.*}}@Error::@"__del__{{.*}}([[ERR]])
+        # CHECK-NEXT:   mark_consumed [[VAL]]
         # CHECK-NEXT:   lit.try.raise
         # CHECK-NEXT: } else {
-        # CHECK-NEXT:   lit.ownership.mark_initialized [[VAL]]
         # CHECK-NEXT:   call {{.*}}@MemExample::@"__del__{{.*}}([[VAL]])
+        # CHECK-NEXT:   mark_consumed %__try_error__
         _ = borrow_and_return(value)
     except:
         pass
@@ -361,12 +362,12 @@ struct ThrowingSelfInit:
     # CHECK-LABEL: lit.func @"__init__
     fn __init__(inout self, x: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
-        # CHECK-NEXT: hlcf.if [[IS_ERR]]
-        # CHECK-NEXT:   mark_initialized %__error__
+        # CHECK-NEXT: if [[IS_ERR]]
+        # CHECK-NEXT:   mark_consumed %self
         # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant
         # CHECK-NEXT:   error_return [[TRUE]]
         # CHECK-NEXT: else
-        # CHECK-NEXT:   mark_initialized %self
+        # CHECK-NEXT:   mark_consumed %__error__
         # CHECK-NEXT:   yield
         self = ThrowingSelfInit()
 
@@ -374,8 +375,8 @@ struct ThrowingSelfInit:
     fn __init__(inout self, x: Int, y: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
         # CHECK:      else
-        # CHECK-NEXT:   mark_initialized %self
         # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
+        # CHECK-NEXT:   mark_consumed %__error__
         # CHECK-NEXT:   yield
         self = ThrowingSelfInit()
         # CHECK:      lit.call {{.*}}__init__{{.*}}(%self, %__error__)

@@ -789,31 +789,31 @@ lit.struct.decl @S attributes {
 lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant<@ThrowingSelfInit::@__del__> : !lit.signature<[1](!lit.ref<@ThrowingSelfInit, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field x : !S
   // CHECK-LABEL: lit.func @__init__
-  lit.func @__init__1[mut *"self`2x", mut *"__error__`2x1"](%self: !lit.ref<!ThrowingSelfInit, mut *"self`2x"> init_self, |, ?, %__error__: !lit.ref<!Error, mut *"__error__`2x1"> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
-    %0 = lit.ref.struct.ger %self[x] : <!S, mut *"self`2x"> from !ThrowingSelfInit
-    %1 = lit.call @S::@__init__[mut *"self`2x"](%0) : !lit.signature<[1](!lit.ref<!S, mut *[0,0]> init_self, |) -> !kgen.none>
+  lit.func @__init__1[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+    %0 = lit.ref.struct.ger %self[x] : <!S, mut self> from !ThrowingSelfInit
+    %1 = lit.call @S::@__init__[mut self](%0) : !lit.signature<[1](!lit.ref<!S, mut *[0,0]> init_self, |) -> !kgen.none>
     %2 = kgen.param.constant: i1 = <0>
     kgen.return %2 : i1
   }
 
   // Ensure that destructor is not inserted after calling other throwing initializer
   // CHECK-LABEL: lit.func @__init__2
-  lit.func @__init__2[mut *"self`2x", mut *"__error__`2x1"](%self: !lit.ref<!ThrowingSelfInit, mut *"self`2x"> init_self, |, %x: !S borrow, ?, %__error__: !lit.ref<!Error, mut *"__error__`2x1"> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
-    %0 = lit.call @throwing_init::@ThrowingSelfInit::@__init__1[mut *"self`2x", mut *"__error__`2x1"](%self, %__error__) : !lit.signature<[2]("self": !lit.ref<!ThrowingSelfInit, mut *[0,0]> init_self, |, ?, "__error__": !lit.ref<!Error, mut *[0,1]> byref_error) throws -> i1>
+  lit.func @__init__2[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, %x: !S borrow, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+    %0 = lit.call @throwing_init::@ThrowingSelfInit::@__init__1[mut self, mut err](%self, %__error__) : !lit.signature<[2]("self": !lit.ref<!ThrowingSelfInit, mut *[0,0]> init_self, |, ?, "__error__": !lit.ref<!Error, mut *[0,1]> byref_error) throws -> i1>
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}@ThrowingSelfInit::@__init__1{{.*}}(%self, %__error__)
-    // CHECK-NEXT: hlcf.if [[IS_ERR]]
-    // CHECK-NEXT:   mark_initialized %__error__
+    // CHECK-NEXT: if [[IS_ERR]]
+    // CHECK-NEXT:   mark_consumed %self
     // CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant
     // CHECK-NEXT:   lit.error_return [[TRUE]]
     // CHECK-NEXT: else
-    // CHECK-NEXT:   mark_initialized %self
+    // CHECK-NEXT:   mark_consumed %__error__
     // CHECK-NEXT:   yield
     hlcf.if %0 {
-      lit.ownership.mark_initialized %__error__ : <!Error, mut *"__error__`2x1">
+      lit.ownership.mark_consumed %self : <!ThrowingSelfInit, mut self>
       %2 = kgen.param.constant: i1 = <1>
       lit.error_return %2 : i1
     } else {
-      lit.ownership.mark_initialized %self : <!ThrowingSelfInit, mut *"self`2x">
+      lit.ownership.mark_consumed %__error__ : <!Error, mut err>
       hlcf.yield
     }
     %1 = kgen.param.constant: i1 = <0>
@@ -822,30 +822,22 @@ lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant
 
   // Ensure that destructor is not inserted after calling other throwing initializer
   // CHECK-LABEL: lit.func @__init__3
-  lit.func @__init__3[mut *"self`2x", mut *"__error__`2x1"](%self: !lit.ref<!ThrowingSelfInit, mut *"self`2x"> init_self, |, %cond: i1 borrow, %x: !S borrow, ?, %__error__: !lit.ref<!Error, mut *"__error__`2x1"> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
-    %0 = lit.call @throwing_init::@ThrowingSelfInit::@__init__1[mut *"self`2x", mut *"__error__`2x1"](%self, %__error__) : !lit.signature<[2]("self": !lit.ref<!ThrowingSelfInit, mut *[0,0]> init_self, |, ?, "__error__": !lit.ref<!Error, mut *[0,1]> byref_error) throws -> i1>
+  lit.func @__init__3[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, %cond: i1 borrow, %x: !S borrow, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+    %0 = lit.call @throwing_init::@ThrowingSelfInit::@__init__1[mut self, mut err](%self, %__error__) : !lit.signature<[2]("self": !lit.ref<!ThrowingSelfInit, mut *[0,0]> init_self, |, ?, "__error__": !lit.ref<!Error, mut *[0,1]> byref_error) throws -> i1>
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}@ThrowingSelfInit::@__init__1{{.*}}(%self, %__error__)
-    // CHECK-NEXT: hlcf.elif
-    // CHECK-NEXT:  hlcf.elif.yield [[IS_ERR]]
-    // CHECK-NEXT: } then {
-    // CHECK-NEXT:   mark_initialized %__error__
+    // CHECK-NEXT: if [[IS_ERR]]
+    // CHECK-NEXT:   mark_consumed %self
     // CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant
     // CHECK-NEXT:   lit.error_return [[TRUE]]
-    // CHECK-NEXT: } {
-    // CHECK-NEXT:   mark_initialized %self
-    // CHECK-NEXT:   hlcf.elif.yield
-    hlcf.elif {
-      hlcf.elif.yield %0 : i1
-    } then {
-      lit.ownership.mark_initialized %__error__ : <!Error, mut *"__error__`2x1">
+    // CHECK-NEXT: else
+    // CHECK-NEXT:   mark_consumed %__error__
+    // CHECK-NEXT:   yield
+    hlcf.if %0 {
+      lit.ownership.mark_consumed %self : <!ThrowingSelfInit, mut self>
       %2 = kgen.param.constant: i1 = <1>
       lit.error_return %2 : i1
-    } {
-      lit.ownership.mark_initialized %self : <!ThrowingSelfInit, mut *"self`2x">
-      hlcf.elif.yield %cond : i1
-    } then {
-      hlcf.yield
     } else {
+      lit.ownership.mark_consumed %__error__ : <!Error, mut err>
       hlcf.yield
     }
     %1 = kgen.param.constant: i1 = <0>
@@ -935,35 +927,35 @@ lit.struct.decl @DestructSome  attributes {destructor = #kgen.symbol.constant<@D
   lit.struct.field b : !Field
   lit.struct.field a : !Field
   // CHECK-LABEL: lit.func @__init__
-  lit.func @__init__[mut *"self`2x", imm *"a`2x1", imm *"b`2x2", mut *"__error__`2x3"](%self: !lit.ref<!DestructSome, mut *"self`2x"> init_self, |, %a: !lit.ref<!Field, imm *"a`2x1"> borrow_in_mem, %b: !lit.ref<!Field, imm *"b`2x2"> borrow_in_mem, ?, %__error__: !lit.ref<!Error, mut *"__error__`2x3"> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+  lit.func @__init__[mut self, imm a, imm b, mut err](%self: !lit.ref<!DestructSome, mut self> init_self, |, %a: !lit.ref<!Field, imm a> borrow_in_mem, %b: !lit.ref<!Field, imm b> borrow_in_mem, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
     // CHECK-NEXT:  [[V0:%.*]] = lit.ref.struct.ger %self[b]
     // CHECK-NEXT:  %1 = lit.call @Field::@__copyinit__{{.*}}([[V0]], %b)
-    // CHECK-NEXT:  %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<none, mut *"anonymous*`2x6">
-    // CHECK-NEXT:  %2 = lit.call @somethingThatRaises{{.*}}(%__error__, %anonymous2A)
-    // CHECK-NEXT:  hlcf.if %2 {
-    // CHECK-NEXT:    %[[V4:.*]] = lit.ref.struct.ger %self[b] : <@Field, mut *"self`2x"> from @DestructSome
-    // CHECK-NEXT:    lit.call @Field::@__del__[mut *"self`2x"](%[[V4]])
-    // CHECK-NEXT:    lit.ownership.mark_initialized %__error__
+    // CHECK-NEXT:  %tmp = lit.var.decl "tmp" synth : !lit.ref<none, mut tmp>
+    // CHECK-NEXT:  %2 = lit.call @somethingThatRaises{{.*}}(%__error__, %tmp)
+    // CHECK-NEXT:  if %2
+    // CHECK-NEXT:    %[[V4:.*]] = lit.ref.struct.ger %self[b] : <@Field, mut self> from @DestructSome
+    // CHECK-NEXT:    lit.call @Field::@__del__[mut self](%[[V4]])
+    // CHECK-NEXT:    mark_consumed %tmp
     // CHECK-NEXT:    kgen.param.constant
     // CHECK-NEXT:    lit.error_return
     // CHECK-NEXT:  } else {
-    // CHECK-NEXT:    lit.ownership.mark_initialized %anonymous2A
-    // CHECK-NEXT:    hlcf.yield
+    // CHECK-NEXT:    mark_consumed %__error__
+    // CHECK-NEXT:    yield
     // CHECK-NEXT:  }
-    %4 = lit.ref.struct.ger %self[b] : <!Field, mut *"self`2x"> from !DestructSome
-    %5 = lit.call @Field::@"__copyinit__"[mut *"self`2x", imm *"b`2x2"](%4, %b) : !lit.signature<[2]("self": !lit.ref<!Field, mut *[0,0]> init_self, |, "existing": !lit.ref<!Field, imm *[0,1]> borrow_in_mem) -> !kgen.none>
-    %anonymous2A_1 = lit.var.decl "anonymous*" synth : !lit.ref<none, mut *"anonymous*`2x6">
-    %6 = lit.call @somethingThatRaises[mut *"__error__`2x3", mut *"anonymous*`2x6"](%__error__, %anonymous2A_1) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+    %4 = lit.ref.struct.ger %self[b] : <!Field, mut self> from !DestructSome
+    %5 = lit.call @Field::@__copyinit__[mut self, imm b](%4, %b) : !lit.signature<[2]("self": !lit.ref<!Field, mut *[0,0]> init_self, |, "existing": !lit.ref<!Field, imm *[0,1]> borrow_in_mem) -> !kgen.none>
+    %tmp = lit.var.decl "tmp" synth : !lit.ref<none, mut tmp>
+    %6 = lit.call @somethingThatRaises[mut err, mut tmp](%__error__, %tmp) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
     hlcf.if %6 {
-      lit.ownership.mark_initialized %__error__ : <!Error, mut *"__error__`2x3">
+      lit.ownership.mark_consumed %tmp : <none, mut tmp>
       %8 = kgen.param.constant: i1 = <1>
       lit.error_return %8 : i1
     } else {
-      lit.ownership.mark_initialized %anonymous2A_1 : <none, mut *"anonymous*`2x6">
+      lit.ownership.mark_consumed %__error__ : <!Error, mut err>
       hlcf.yield
     }
-    %7 = lit.ref.struct.ger %self[a] : <!Field, mut *"self`2x"> from !DestructSome
-    %8 = lit.call @Field::@"__copyinit__"[mut *"self`2x", imm *"a`2x1"](%7, %a) : !lit.signature<[2]("self": !lit.ref<!Field, mut *[0,0]> init_self, |, "existing": !lit.ref<!Field, imm *[0,1]> borrow_in_mem) -> !kgen.none>
+    %7 = lit.ref.struct.ger %self[a] : <!Field, mut self> from !DestructSome
+    %8 = lit.call @Field::@"__copyinit__"[mut self, imm a](%7, %a) : !lit.signature<[2]("self": !lit.ref<!Field, mut *[0,0]> init_self, |, "existing": !lit.ref<!Field, imm *[0,1]> borrow_in_mem) -> !kgen.none>
     %9 = kgen.param.constant: i1 = <0>
     kgen.return %9 : i1
   }
@@ -1003,13 +995,13 @@ lit.struct.decl @GGUFFile
   lit.struct.field size : !Int
   lit.struct.field fp : !FileHandle
   // CHECK-LABEL: lit.func @__init__
-  lit.func @__init__[mut *"self`2x", imm *"model_path`2x1", mut *"__error__`2x2", mut *"$RANGE`2x5"](
-    %self: !lit.ref<!GGUFFile, mut *"self`2x"> init_self, |,
+  lit.func @__init__[mut self, imm *"model_path`2x1", mut *"__error__`2x2", mut *"$RANGE`2x5"](
+    %self: !lit.ref<!GGUFFile, mut self> init_self, |,
     %iter: !lit.ref<!iter, mut *"$RANGE`2x5"> borrow_in_mem, ?,
     %__error__: !lit.ref<!Error, mut *"__error__`2x2"> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
-    %0 = lit.ref.struct.ger %self[size] : <!Int, mut *"self`2x"> from !GGUFFile
+    %0 = lit.ref.struct.ger %self[size] : <!Int, mut self> from !GGUFFile
     %1 = kgen.param.constant: !Int = <{0}>
-    lit.ref.store %1, %0 : <!Int, mut *"self`2x">
+    lit.ref.store %1, %0 : <!Int, mut self>
 
     hlcf.loop "_loop_0" {
       %9 = lit.call @my_iter::@__len__[mut *"$RANGE`2x5"](%iter) : !lit.signature<[1]("self": !lit.ref<!iter, mut *[0,0]> inout) -> index>
@@ -1027,16 +1019,16 @@ lit.struct.decl @GGUFFile
         hlcf.break "_loop_0"
       }
       %12 = lit.call @my_iter::@__next__[mut *"$RANGE`2x5"](%iter) : !lit.signature<[1]("self": !lit.ref<!iter, mut *[0,0]> inout) -> !Int>
-      %13 = lit.ref.struct.ger %self[size] : <!Int, mut *"self`2x"> from !GGUFFile
+      %13 = lit.ref.struct.ger %self[size] : <!Int, mut self> from !GGUFFile
       %14 = kgen.param.constant: !Int = <{1}>
 
       // Results in self bits getting set but because its unreachable it should not affect the upward consume set of the if.
-      %15 = lit.call @Int::@__iadd__[mut *"self`2x"](%13, %14) : !lit.signature<[1]("self": !lit.ref<!Int, mut *[0,0]> inout, "rhs": !Int borrow) -> !kgen.none>
+      %15 = lit.call @Int::@__iadd__[mut self](%13, %14) : !lit.signature<[1]("self": !lit.ref<!Int, mut *[0,0]> inout, "rhs": !Int borrow) -> !kgen.none>
       hlcf.continue
     }
     // Causes bits in the self to be reset, which will trigger erroneous destructors if unreachable code is not ignored.
-    %6 = lit.ref.struct.ger %self[fp] : <!FileHandle, mut *"self`2x"> from !GGUFFile
-    %7 = lit.call @FileHandle::@__init__[mut *"self`2x"](%6) : !lit.signature<[1]("self": !lit.ref<!FileHandle, mut *[0,0]> init_self) -> !kgen.none>
+    %6 = lit.ref.struct.ger %self[fp] : <!FileHandle, mut self> from !GGUFFile
+    %7 = lit.call @FileHandle::@__init__[mut self](%6) : !lit.signature<[1]("self": !lit.ref<!FileHandle, mut *[0,0]> init_self) -> !kgen.none>
     %8 = kgen.param.constant: i1 = <0>
     kgen.return %8 : i1
   }
@@ -1202,8 +1194,8 @@ lit.struct.decl @Context attributes {destructor = #kgen.symbol.constant<@Context
 // CHECK-LABEL: lit.func @createConditionallyInitializedImmortalReferenceInRepl
 lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut localError, mut localResult](
   %__mojo_repl_arg : !lit.ref<!Context, mut topArg> inout,?,
-  %__error___1: !lit.ref<!Error, mut localError> byref_error,
-  %__result___2: !lit.ref<none, mut localResult> byref_result) throws|capturing -> i1 {
+  %__error__: !lit.ref<!Error, mut localError> byref_error,
+  %__result__: !lit.ref<none, mut localResult> byref_result) throws|capturing -> i1 {
 
   %2 = lit.ref.struct.ger %__mojo_repl_arg[__new_repl_var] : <pointer<pointer<!PythonObject>>, mut topArg> from !Context
   %3 = lit.ref.load %2 : <pointer<pointer<!PythonObject>>, mut topArg>
@@ -1216,24 +1208,24 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
 
   // CHECK:  kgen.param.declare LOCAL_LIFETIME2: lifetime<1> = <#lit.lifetime>
   // CHECK-NEXT:  %[[V3:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
-  // CHECK-NEXT:  [[V4:%*.]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error___1, %[[V3]])
-  // CHECK-NEXT:  hlcf.if [[V4]] {
-  // CHECK-NEXT:    lit.ownership.mark_initialized %__error___1
+  // CHECK-NEXT:  [[V4:%*.]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %[[V3]])
+  // CHECK-NEXT:  hlcf.if [[V4]]
+  // CHECK-NEXT:    mark_consumed %[[V3]]
   // CHECK-NEXT:    kgen.param.constant: i1 = <1>
   // CHECK-NEXT:    lit.error_return
   // CHECK-NEXT:  } else {
-  // CHECK-NEXT:    lit.ownership.mark_initialized %[[V3]]
-  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:    mark_consumed %__error__
+  // CHECK-NEXT:    yield
   // CHECK-NEXT:  }
   kgen.param.declare LOCAL_LIFETIME2: lifetime<1> = <#lit.lifetime>
   %5 = lit.ref.from_pointer.repl %4 : <!PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
-  %6 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error___1, %5) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
+  %6 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %5) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
   hlcf.if %6 {
-    lit.ownership.mark_initialized %__error___1 : <!Error, mut localError>
+    lit.ownership.mark_consumed %5 : <!PythonObject, mut LOCAL_LIFETIME2>
     %7 = kgen.param.constant: i1 = <1>
     lit.error_return %7 : i1
   } else {
-    lit.ownership.mark_initialized %5 : <!PythonObject, mut LOCAL_LIFETIME2>
+    lit.ownership.mark_consumed %__error__ : <!Error, mut localError>
     hlcf.yield
   }
 
@@ -1243,30 +1235,30 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   pop.store %14, %13 : !kgen.pointer<pointer<!PythonObject>>
   // CHECK:  kgen.param.declare LOCAL_LIFETIME3: lifetime<1> = <#lit.lifetime>
   // CHECK-NEXT:  %[[V8:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
-  // CHECK-NEXT:  %[[V9:.*]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error___1, %[[V8]])
-  // CHECK-NEXT:  hlcf.if %[[V9]] {
+  // CHECK-NEXT:  %[[V9:.*]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %[[V8]])
+  // CHECK-NEXT:  hlcf.if %[[V9]]
   // CHECK-NEXT:    lit.call @PythonObject::@__del__[mut LOCAL_LIFETIME2](%[[V3]])
-  // CHECK-NEXT:    lit.ownership.mark_initialized %__error___1
+  // CHECK-NEXT:    mark_consumed %[[V8]]
   // CHECK-NEXT:    kgen.param.constant: i1 = <1>
   // CHECK-NEXT:    lit.error_return
   // CHECK-NEXT:  } else {
-  // CHECK-NEXT:    lit.ownership.mark_initialized %[[V8]] : <@PythonObject, mut LOCAL_LIFETIME3>
-  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:    mark_consumed %__error__
+  // CHECK-NEXT:    yield
   // CHECK-NEXT:  }
   kgen.param.declare LOCAL_LIFETIME3: lifetime<1> = <#lit.lifetime>
   %15 = lit.ref.from_pointer.repl %14 : <!PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
-  %16 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error___1, %15) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
+  %16 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %15) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
   hlcf.if %16 {
-    lit.ownership.mark_initialized %__error___1 : <!Error, mut localError>
+    lit.ownership.mark_consumed %15 : <!PythonObject, mut LOCAL_LIFETIME3>
     %7 = kgen.param.constant: i1 = <1>
     lit.error_return %7 : i1
   } else {
-    lit.ownership.mark_initialized %15 : <!PythonObject, mut LOCAL_LIFETIME3>
+    lit.ownership.mark_consumed %__error__ : <!Error, mut localError>
     hlcf.yield
   }
 
   %none_5 = kgen.param.constant: none = <#kgen.none>
-  lit.ref.store %none_5, %__result___2 : <none, mut localResult>
+  lit.ref.store %none_5, %__result__ : <none, mut localResult>
   %17 = kgen.param.constant: i1 = <0>
   kgen.return %17 : i1
 }
@@ -1339,22 +1331,22 @@ lit.struct.decl @GGUFFile
       %23 = lit.call @LegacyPointer::@__refitem__[muttoimm iLife](%21, %22) : !lit.signature<[1]("self": !LegacyPointer borrow, "offset": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !lit.ref<!Int, mut #lit.lifetime>>
       %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!Int, mut resultLife>
       %24 = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__) : !lit.signature<[2]("__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) throws -> i1>
-      // CHECK: %[[V0:.*]] = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__) : !lit.signature<[2]("__error__": !lit.ref<@Error, mut *[0,0]> byref_error, "__result__": !lit.ref<@Int, mut *[0,1]> byref_result) throws -> i1>
-      // CHECK-NEXT:  hlcf.if %[[V0]] {
-      // CHECK-NEXT:      lit.ownership.mark_initialized %__error__ : <@Error, mut errorLife>
-      // CHECK-NEXT:      kgen.param.constant: i1 = <1>
-      // CHECK-NEXT:      lit.error_return
-      // CHECK-NEXT:    } else {
-      // CHECK-NEXT:      lit.ownership.mark_initialized %__call_result_tmp__ : <@Int, mut resultLife>
-      // CHECK-NEXT:      hlcf.yield
-      // CHECK-NEXT:    }
+      // CHECK: %[[V0:.*]] = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__)
+      // CHECK-NEXT:  if %[[V0]]
+      // CHECK-NEXT:    mark_consumed %__call_result_tmp__
+      // CHECK-NEXT:    kgen.param.constant: i1 = <1>
+      // CHECK-NEXT:    lit.error_return
+      // CHECK-NEXT:  } else {
+      // CHECK-NEXT:    mark_consumed %__error__
+      // CHECK-NEXT:    yield
+      // CHECK-NEXT:  }
       hlcf.if %24 {
-          lit.ownership.mark_initialized %__error__ : <!Error, mut errorLife>
-          %26 = kgen.param.constant: i1 = <1>
-          lit.error_return %26 : i1
+        lit.ownership.mark_consumed %__call_result_tmp__ : <!Int, mut resultLife>
+        %26 = kgen.param.constant: i1 = <1>
+        lit.error_return %26 : i1
       } else {
-          lit.ownership.mark_initialized %__call_result_tmp__ : <!Int, mut resultLife>
-          hlcf.yield
+        lit.ownership.mark_consumed %__error__ : <!Error, mut errorLife>
+        hlcf.yield
       }
       %25 = lit.load.consume %__call_result_tmp__ : !lit.ref<!Int, mut resultLife>
       lit.ref.store %25, %23 : <!Int, mut #lit.lifetime>

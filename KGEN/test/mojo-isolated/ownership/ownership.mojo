@@ -43,7 +43,7 @@ struct MemPair:
 @register_passable
 struct RegExample:
   fn __init__(inout self):
-    return 
+    return
   fn __copyinit__(inout self, existing: Self): # CHECK: lit.func @"__copyinit__
     return
 
@@ -94,7 +94,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
 
-  # CHECK-NEXT:  %mem3 = lit.var.decl "mem3"
+  # CHECK-NEXT: %mem3 = lit.var.decl "mem3"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem3)
   var mem3 = MemExample()
 
@@ -323,7 +323,7 @@ fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
 fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
   return a.f2
 
-fn use_inout_and_return(inout a: FieldSensitiveMemExample) -> FieldSensitiveMemExample: 
+fn use_inout_and_return(inout a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   return a
 
 fn return_ref(inout a: FieldSensitiveMemExample) -> ref [__lifetime_of(a)] FieldSensitiveMemExample:
@@ -823,18 +823,18 @@ struct HasMemExample:
       # Handle the error and other case.  The error isn't used, so delete it
       # here.
 
-      # CHECK-NEXT: hlcf.if
-      #   CHECK-NEXT: lit.ownership.mark_initialized %__try_error__
-      #   CHECK-NEXT: lit.ref.load %__try_error__
-      #   CHECK-NEXT: lit.call {{.*}}Error::@"__del__
-      #   CHECK-NEXT: lit.try.raise
+      # CHECK-NEXT: if
+      # CHECK-NEXT:   lit.ref.load %__try_error__
+      # CHECK-NEXT:   lit.call {{.*}}Error::@"__del__
+      # CHECK-NEXT:   mark_consumed %__call_result_tmp__
+      # CHECK-NEXT:   lit.try.raise
       # CHECK-NEXT: } else {
 
       # On success, we overwrite the field.
-      # CHECK-NEXT: [[FIELD2:%.*]] = lit.ref.struct.ger %self[fh]
-      # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[FIELD2]])
-      # CHECK-NEXT: lit.ownership.mark_initialized %__call_result_tmp__
-      # CHECK-NEXT: hlcf.yield
+      # CHECK-NEXT:   [[FIELD2:%.*]] = lit.ref.struct.ger %self[fh]
+      # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}([[FIELD2]])
+      # CHECK-NEXT:   mark_consumed %__try_error__
+      # CHECK-NEXT:   yield
       # CHECK-NEXT: }
 
       # On success we move the result value into the destination.
@@ -929,4 +929,3 @@ fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegEx
     # CHECK-NEXT:  }
     # CHECK-NEXT:  kgen.return [[RES]]
     return a if x else b
-
