@@ -847,6 +847,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       lowerCoroutineResumeAsync(b, cache, resume);
     } else if (auto destroy = dyn_cast<DestroyOp>(op)) {
       lowerCoroutineDestroyAsync(b, cache, destroy);
+    } else if (isa<LifetimeStartOp, LifetimeEndOp>(op)) {
+      op->erase();
     }
     return WalkResult::advance();
   });
