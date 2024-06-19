@@ -196,13 +196,13 @@ lit.func @throwing_calls(
   %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
 
   // CHECK:      [[IS_ERR:%.*]] = lit.call @throwing_func
-  // CHECK-NEXT: hlcf.if [[IS_ERR]] {
-  // CHECK-NEXT:   lit.ownership.mark_initialized %err
+  // CHECK-NEXT: hlcf.if [[IS_ERR]]
+  // CHECK-NEXT:   mark_consumed %result
   // CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
   // CHECK-NEXT:   lit.error_return [[TRUE]]
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   lit.ownership.mark_initialized %result
-  // CHECK-NEXT:   hlcf.yield
+  // CHECK-NEXT:   mark_consumed %err
+  // CHECK-NEXT:   yield
   // CHECK-NEXT: }
   lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
 
@@ -210,12 +210,12 @@ lit.func @throwing_calls(
   // CHECK: lit.try {
   lit.try %error : !lit.ref<@Error, mut tlt> {
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
-    // CHECK-NEXT: hlcf.if [[IS_ERR]] {
-    // CHECK-NEXT:   lit.ownership.mark_initialized %error
+    // CHECK-NEXT: hlcf.if [[IS_ERR]]
+    // CHECK-NEXT:   mark_consumed %result
     // CHECK-NEXT:   lit.try.raise
     // CHECK-NEXT: } else {
-    // CHECK-NEXT:   lit.ownership.mark_initialized %result
-    // CHECK-NEXT:   hlcf.yield
+    // CHECK-NEXT:   mark_consumed %error
+    // CHECK-NEXT:   yield
     // CHECK-NEXT: }
     lit.call_indirect %f[mut tlt, mut lt](%error, %result) :  !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
     lit.try.yield

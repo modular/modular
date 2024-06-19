@@ -333,9 +333,8 @@ getCallOpEffects(Operation &op,
   /// Argument conventions cause a direct use of the register of pointee, and
   /// handling them specifically allows us to be field sensitive in cases where
   /// the access is directly attributable to a Value.
-  auto getOperandEffectForConvention =
-      [throws = signature.isThrows()](ArgConvention conv,
-                                      Type argType) -> OperandEffect {
+  auto getOperandEffectForConvention = [](ArgConvention conv,
+                                          Type argType) -> OperandEffect {
     switch (conv) {
     case ArgConvention::OwnedInReg:
       return OperandEffect::regConsume;
@@ -352,11 +351,9 @@ getCallOpEffects(Operation &op,
       return isMut ? OperandEffect::memInOut : OperandEffect::memLoad;
     }
     case ArgConvention::ByRefError:
-      return OperandEffect::memStoreConditional;
     case ArgConvention::ByRefResult:
     case ArgConvention::InitSelf:
-      return throws ? OperandEffect::memStoreConditional
-                    : OperandEffect::memStoreOwned;
+      return OperandEffect::memStoreOwned;
     case ArgConvention::None:
       llvm_unreachable("none convention not permited in Mojo");
     }
@@ -624,6 +621,11 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   if (auto mark = dyn_cast<OwnershipMarkDestroyedOp>(op)) {
     operands.push_back({mark.getOperand(), OperandEffect::memMarkDestroyed});
+    return {};
+  }
+
+  if (auto mark = dyn_cast<OwnershipMarkConsumedOp>(op)) {
+    operands.push_back({mark.getOperand(), OperandEffect::memConsume});
     return {};
   }
 

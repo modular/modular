@@ -365,15 +365,16 @@ static void addErrorRegions(Operation &op, LIT::LITSignatureType sig,
   b.setInsertionPointAfter(&op);
   auto ifOp = b.create<HLCF::IfOp>(op.getResult(0));
 
-  // In the error region, initialize the error value, then raise.
+  // In the error region, mark the resut has known consumed, then raise.
   b.createBlock(&ifOp.getThenRegion());
-  b.create<LIT::OwnershipMarkInitializedOp>(
-      *std::prev(operands.end(), sig.getErrorSlotOffset()));
+  b.create<LIT::OwnershipMarkConsumedOp>(
+      sig.hasMemoryOnlyResult() ? operands.back() : operands.front());
   emitRaise(b);
 
+  // In the result region, mark the error as known consumed.
   b.createBlock(&ifOp.getElseRegion());
-  b.create<LIT::OwnershipMarkInitializedOp>(
-      sig.hasMemoryOnlyResult() ? operands.back() : operands.front());
+  b.create<LIT::OwnershipMarkConsumedOp>(
+      *std::prev(operands.end(), sig.getErrorSlotOffset()));
   b.create<HLCF::YieldOp>();
 }
 
