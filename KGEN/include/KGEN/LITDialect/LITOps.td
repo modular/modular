@@ -832,6 +832,24 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
 }
 
 //===----------------------------------------------------------------------===//
+// VarLifetimeStartOp
+//===----------------------------------------------------------------------===//
+
+def LIT_VarLifetimeStartOp : LITOp<"var.lifetime.start"> {
+  let arguments = (ins LIT_RefType:$arg);
+  let assemblyFormat = "$arg attr-dict `:` type($arg)";
+}
+
+//===----------------------------------------------------------------------===//
+// VarLifetimeEndOp
+//===----------------------------------------------------------------------===//
+
+def LIT_VarLifetimeEndOp : LITOp<"var.lifetime.end"> {
+  let arguments = (ins LIT_RefType:$arg);
+  let assemblyFormat = "$arg attr-dict `:` type($arg)";
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//
 

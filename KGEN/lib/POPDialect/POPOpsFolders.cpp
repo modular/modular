@@ -1101,6 +1101,26 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// StackAllocLifetimeStartOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+StackAllocLifetimeStartOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StackAllocLifetimeEndOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+StackAllocLifetimeEndOp::interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // AlignedAllocOp
 //===----------------------------------------------------------------------===//
 
