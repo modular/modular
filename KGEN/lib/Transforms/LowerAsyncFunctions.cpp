@@ -72,7 +72,7 @@ struct COTypes {
   Type typeForField(AsyncContinuationField field) {
     switch (field) {
     case State:
-      return IndexType::get(cxt);
+      return IntegerType::get(cxt, 32);
     case ResumeFunction:
       return resumeSignatureType;
     case CallbackFn:
@@ -407,6 +407,13 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
 
   Value continuation = builder.create<AlignedAllocOp>(
       PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
+
+  // Initialize state to 0.
+  Value zero =
+      builder.create<mlir::LLVM::ConstantOp>(coTypes.typeForField(State), 0);
+  Value stateSlot = builder.create<StructGEPOp>(continuation, State);
+  builder.create<StoreOp>(zero, stateSlot);
+
   // Store resume function.
   Value resumeFunctionSlot =
       builder.create<StructGEPOp>(continuation, ResumeFunction);
