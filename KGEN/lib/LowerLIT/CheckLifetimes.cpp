@@ -1530,8 +1530,6 @@ private:
                 Operation *opWithUse, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
-  void destroyValuesAtEntry(const BitVector &entries, Block &block,
-                            Location loc);
   void destroyValueIfNeeded(Value value, ValueRef valueRef,
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
@@ -2941,44 +2939,29 @@ void DestructorInsertion::emitDebugKillAndDestructorCallAt(
 void DestructorInsertion::destroyValuesAtEntryIfNeeded(
     const BitVector &currentConsumeSet, Block &block,
     const BitVector &fullSetToDestroy, Location loc) {
-  // If we are in a dry run or the two sets match, don't actually insert
-  // anything.
-  if (dryRun || currentConsumeSet == fullSetToDestroy)
+  // If we are in a dry run or the two sets match, or the block is unreachable,
+  // don't actually insert anything.
+  if (dryRun || currentConsumeSet == fullSetToDestroy ||
+      isa<UnreachableOp>(block.front()))
     return;
 
   // entriesToDestroy = fullSetToDestroy & ~currentConsumeSet.
   BitVector entriesToDestroy = fullSetToDestroy;
   entriesToDestroy.reset(currentConsumeSet);
 
-  // Move consumedValues out of the way so we don't break it.
+  // Move consumedValues out of the way so we don't break it.  We need to use
+  // destroyValueIfNeeded below, which is hard coded to mutate consumedValues.
   BitVector savedConsumedValues = std::move(consumedValues);
-  destroyValuesAtEntry(entriesToDestroy, block, loc);
-
-  // Restore consumedValues.
-  consumedValues = std::move(savedConsumedValues);
-}
-
-/// Destroy any values whose bits are indicated in the specified set.  Insert
-/// the destructor calls at the entry to the specified block.  This leaves the
-/// consumedValues set in an unpredictable state, and is not safe in dryRun
-/// mode.
-void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
-                                               Block &block, Location loc) {
-  assert(!dryRun && "shouldn't be called in a dry run");
-
-  // Don't bother destroying anything if the block is unreachable.
-  if (isa<UnreachableOp>(block.front()))
-    return;
 
   // Any dtor calls will be emitted at the start of the block.
   mlir::ImplicitLocOpBuilder builder(loc, &block, block.begin());
 
   // We *only* want to destroy the values in entries, not any other values that
   // may be partially overlapped, so mark all the other things as "already
-  // destroyed".
-  assert(&entries != &consumedValues &&
+  // destroyed".  This is to work with 'destroyValueIfNeeded'.
+  assert(&entriesToDestroy != &consumedValues &&
          "This logic doesn't work when passed 'consumedValues' directly");
-  consumedValues = entries;
+  consumedValues = entriesToDestroy;
   consumedValues.flip();
 
   // As we scan through bits, we walk through corresponding ValueInfos to know
@@ -2986,7 +2969,7 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
   MutableArrayRef<ValueInfo> valueInfos = valueSet.getValueInfos();
   size_t nextValueInfo = 0;
 
-  int nextToDestroy = entries.find_first();
+  int nextToDestroy = entriesToDestroy.find_first();
   while (nextToDestroy != -1) {
     // Figure out which valueInfo this is.
     while (!valueInfos[nextValueInfo].contains(nextToDestroy)) {
@@ -3005,8 +2988,11 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
                          /*opWithUse=*/nullptr);
 
     // Find the next object to destroy.
-    nextToDestroy = entries.find_next(fullValueRef.endBit - 1);
+    nextToDestroy = entriesToDestroy.find_next(fullValueRef.endBit - 1);
   }
+
+  // Restore consumedValues.
+  consumedValues = std::move(savedConsumedValues);
 }
 
 //===----------------------------------------------------------------------===//
