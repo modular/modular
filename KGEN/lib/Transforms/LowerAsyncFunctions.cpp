@@ -78,6 +78,7 @@ struct COTypes {
     case CallbackFn:
       return callbackSignature;
     case Promise:
+      return promiseType;
     case ClosureState:
     case ErrorSlot:
     case ResultSlot:
@@ -87,7 +88,7 @@ struct COTypes {
     }
     llvm_unreachable("invalid AsyncContinuationField value");
   }
-  COTypes(MLIRContext *cxt, FrameData &frameData);
+  COTypes(MLIRContext *cxt, FrameData &frameData, Type resultType);
   COTypes(const COTypes &) = delete;
   COTypes &operator=(const COTypes &) = delete;
 
@@ -104,6 +105,7 @@ private:
   StructType headerType;
   MLIRContext *cxt;
   FrameData &frameData;
+  Type promiseType;
 };
 
 struct LoweredAsyncFunction {
@@ -371,10 +373,7 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       // Replace ReturnOps with set result.
       builder.setInsertionPoint(returnOp);
       Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
-      Value promise = builder.create<LoadOp>(promiseSlot);
-      Value typedPromise = builder.create<PointerBitcastOp>(
-          PointerType::get(funcOp.getSignature().getResults()[0]), promise);
-      builder.create<StoreOp>(returnOp.getOperand(0), typedPromise);
+      builder.create<StoreOp>(returnOp.getOperand(0), promiseSlot);
       builder.create<ReturnOp>();
       returnOp->erase();
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
@@ -443,8 +442,8 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
 // CoTypes
 //===----------------------------------------------------------------------===//
 
-COTypes::COTypes(MLIRContext *cxt, FrameData &frameData)
-    : cxt(cxt), frameData(frameData) {
+COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, Type resultType)
+    : cxt(cxt), frameData(frameData), promiseType(resultType) {
   opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
   SmallVector<Type> inputs;
   SmallVector<Type> results;
@@ -456,18 +455,18 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData)
   callbackSignature = SignatureType::get(callbackFunctionType);
 
   // Build Continuation Type.
-  size_t size = Frame;
+  size_t size = Promise;
   SmallVector<Type> types(size);
   types[State] = typeForField(State);
   types[ResumeFunction] = typeForField(ResumeFunction);
   types[CallbackFn] = typeForField(CallbackFn);
   types[ClosureState] = typeForField(ClosureState);
-  types[Promise] = typeForField(Promise);
   types[ErrorSlot] = typeForField(ErrorSlot);
   types[ResultSlot] = typeForField(ResultSlot);
 
   // Header type omits the variable sized frame.
   headerType = StructType::get(types);
+  types.push_back(typeForField(Promise));
   for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
     types.push_back(frameVariableType);
   continuationType = StructType::get(types);
@@ -960,7 +959,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
             };
         FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
                             transform);
-        COTypes cotypes(module.getContext(), frameData);
+        Type resultType;
+        if (funcOp.getNumResults() > 0)
+          resultType = funcOp.getResultTypes().front();
+        assert(funcOp.getNumResults() < 2 && "TODO: support many result types");
+        COTypes cotypes(module.getContext(), frameData, resultType);
         buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
                                         memoryResultValue);
       }
@@ -971,7 +974,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   // Apply all other CO lowerings.
   mlir::IRRewriter rewriter(b);
   FrameData empty;
-  COTypes opaqueCoroutineTypes(module.getContext(), empty);
+  COTypes opaqueCoroutineTypes(module.getContext(), empty, Type());
   mlir::AttrTypeReplacer replacer;
   Type headerType = PointerType::get(opaqueCoroutineTypes.getHeaderType());
   replacer.addReplacement([&](CoroutineType type) { return headerType; });
