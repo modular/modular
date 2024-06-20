@@ -120,25 +120,27 @@ fn bench_concat[
 
 
 fn main() raises:
-    var b = Bench()
     try:
-        var ctx = DeviceContext()
-        bench_concat[num_inputs=2](
-            b,
-            List(StaticIntTuple[4](1, 1, 1, 1), StaticIntTuple[4](1, 1, 1, 1)),
-            ctx,
-            axis=0,
-        )
-        bench_concat[num_inputs=2](
-            b,
-            # llama kv cache
-            List(
-                StaticIntTuple[4](1, 8, 1024, 128),
-                StaticIntTuple[4](1, 8, 1, 128),
-            ),
-            ctx,
-            axis=2,
-        )
+        var b = Bench()
+        with DeviceContext() as ctx:
+            bench_concat[num_inputs=2](
+                b,
+                List(
+                    StaticIntTuple[4](1, 1, 1, 1), StaticIntTuple[4](1, 1, 1, 1)
+                ),
+                ctx,
+                axis=0,
+            )
+            bench_concat[num_inputs=2](
+                b,
+                # llama kv cache
+                List(
+                    StaticIntTuple[4](1, 8, 1024, 128),
+                    StaticIntTuple[4](1, 8, 1, 128),
+                ),
+                ctx,
+                axis=2,
+            )
+            b.dump_report()
     except e:
         print("CUDA_ERROR:", e)
-    b.dump_report()

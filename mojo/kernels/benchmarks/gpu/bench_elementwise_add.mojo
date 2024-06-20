@@ -92,8 +92,7 @@ fn bench_add[
 
 fn main() raises:
     var b = Bench()
-    var ctx = DeviceContext()
-    bench_add[unroll_by=4](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
-    bench_add[unroll_by=1](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
-    b.dump_report()
-    _ = ctx
+    with DeviceContext() as ctx:
+        bench_add[unroll_by=4](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
+        bench_add[unroll_by=1](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
+        b.dump_report()

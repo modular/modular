@@ -151,43 +151,40 @@ fn create_matmul_bench[
 
 
 fn main() raises:
-    var ctx = DeviceContext()
+    with DeviceContext() as ctx:
+        var b = Bench()
 
-    var b = Bench()
+        # Lama2 shapes CE.
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(256), static[22016](), static[4096]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(256), static[12288](), static[4096]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(256), static[4096](), static[11008]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(256), static[12288](), static[4096]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(1), static[32000](), static[4096]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(256), static[4096](), static[4096]()
+        )
+        # Lama2 shapes LPTG.
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(1), static[12288](), static[3072]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(1), static[3072](), static[12288]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(1), static[5120](), static[3072]()
+        )
+        create_matmul_bench[DType.float32](
+            ctx, b, dynamic(1), static[3072](), static[3072]()
+        )
 
-    # Lama2 shapes CE.
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(256), static[22016](), static[4096]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(256), static[12288](), static[4096]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(256), static[4096](), static[11008]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(256), static[12288](), static[4096]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(1), static[32000](), static[4096]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(256), static[4096](), static[4096]()
-    )
-    # Lama2 shapes LPTG.
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(1), static[12288](), static[3072]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(1), static[3072](), static[12288]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(1), static[5120](), static[3072]()
-    )
-    create_matmul_bench[DType.float32](
-        ctx, b, dynamic(1), static[3072](), static[3072]()
-    )
-
-    b.dump_report()
-
-    _ = ctx
+        b.dump_report()

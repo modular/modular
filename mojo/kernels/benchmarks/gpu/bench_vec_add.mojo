@@ -106,12 +106,11 @@ def main():
     var b = Bench()
 
     try:
-        var ctx = DeviceContext()
-        for block_dim in List[Int](32, 64, 128, 256, 512, 1024):
-            bench_vec_add(
-                b, block_dim=block_dim[], length=32 * 1024, context=ctx
-            )
-        _ = ctx
+        with DeviceContext() as ctx:
+            for block_dim in List[Int](32, 64, 128, 256, 512, 1024):
+                bench_vec_add(
+                    b, block_dim=block_dim[], length=32 * 1024, context=ctx
+                )
     except e:
         print("CUDA_ERROR:", e)
 
