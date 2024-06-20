@@ -12,7 +12,7 @@ kgen.func @coroutine1(%arg0: i1) async -> index {
 // CHECK-NEXT:   %idx64 = index.constant 64
 // CHECK-NEXT:   %idx8 = index.constant 8
 // CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %idx8, %idx64 : <struct<(i32, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, index, i1)>>
-// CHECK-NEXT:   [[ZERO:%.*]] = llvm.mlir.constant(0 : i32) : i32
+// CHECK-NEXT:   [[ZERO:%.*]] = kgen.param.constant: i32 = <0>
 // CHECK-NEXT:   [[STATESLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][0]
 // CHECK-NEXT:   pop.store [[ZERO]], [[STATESLOT]] : !kgen.pointer<i32>
 // CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][[[#FRAME1:]]]
