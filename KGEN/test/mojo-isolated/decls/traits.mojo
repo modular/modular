@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -verify-parameters --kgen-print-inline-type-values | FileCheck %s
 
 
 # CHECK-LABEL: lit.trait.decl @Trait
@@ -974,7 +974,10 @@ struct ParamType[x: int]:
 
 trait DependentParam:
     fn foo[x: int, y: ParamType[x]](self):
-        pass
+        ...
+
+    fn shadow[a: Int](self):
+        ...
 
 
 # CHECK-LABEL: lit.struct.decl @RegPassableParamTrait<a>
@@ -984,4 +987,10 @@ struct RegPassableParamTrait[a: int](DependentParam):
     # CHECK-SAME: <x, y: {{.*}}ParamType<x>>(%self: !lit.ref{{.*}}RegPassableParamTrait<a>
     fn foo[x: int, y: ParamType[x]](self):
         # CHECK: call {{.*}}<a, x, :{{.*}}ParamType<x> y>
+        pass
+
+    # CHECK: lit.func @"shadow{{.*}}_thunk"
+    # CHECK-SAME: <*"a`": !Int>
+    fn shadow[b: Int](self):
+        # CHECK: call {{.*}}<a, :!Int *"a`">
         pass

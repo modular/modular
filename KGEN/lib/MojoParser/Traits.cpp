@@ -151,7 +151,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     StringAttr name = memSig.getParamName(idx);
     // The parameter names are derived from the decl name.
     paramDecls.push_back(ParamDeclAttr::get(
-        name.empty() ? b.getStringAttr("i" + Twine(idx)) : name,
+        structDecl.mangleUserDefinedParamName(
+            name.empty() ? b.getStringAttr("i" + Twine(idx)) : name),
         evaluator.getReboundType(type)));
     paramValues.push_back(ParamDeclRefAttr::get(paramDecls.back()));
     evaluator.addInputValue(paramValues.back());
