@@ -10,7 +10,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-
+from builtin._location import __call_location
 from .result import Result as DriverResult
 
 # ===----------------------------------------------------------------------===#
@@ -21,7 +21,8 @@ from .result import Result as DriverResult
 @always_inline
 fn _check_error(err: DriverResult) raises:
     if err != DriverResult.SUCCESS:
-        raise Error(err.__str__())
+        var loc = __call_location()
+        raise Error(loc.prefix(str(err)))
 
 
 fn _human_memory(size: Int) -> String:
@@ -92,7 +93,7 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 @always_inline
 fn _get_dylib_function[
     func_name: StringLiteral, result_type: AnyTrivialRegType
-]() raises -> result_type:
+]() -> result_type:
     return _ffi_get_dylib_function[
         "CUDA_DRIVER_LIBRARY",
         func_name,
