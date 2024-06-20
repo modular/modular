@@ -150,6 +150,18 @@ fn create_index_async(
     )
 
 
+@mogg_register("builtin.create_chain_async")
+@always_inline
+@export
+fn create_chain_async(
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
+):
+    external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](
+        async_ptr, runtime
+    )
+
+
 @mogg_register("builtin.create_i1_async")
 @always_inline
 @export
@@ -316,8 +328,9 @@ fn mip_constant_index[value: Int64]() -> Int:
 @mogg_register("mip.print.index")
 @always_inline
 @export
-fn mip_print_index(x: Int):
+fn mip_print_index(x: Int, dummy_chain: Int) -> Int:
     print("index = ", x)
+    return x
 
 
 @mogg_register("mip.add")
@@ -451,9 +464,10 @@ fn mip_nary_mul[constInt: Int64](*vals: Int) -> Int:
 @mogg_register("mgp.assert")
 @always_inline
 @export
-fn mgp_assert[message: StringLiteral](cond: Bool) raises:
+fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
     if not cond:
         raise Error(message)
+    return 0
 
 
 @mogg_register("mgp.buffer.alloc.static")
@@ -464,9 +478,9 @@ fn mgp_buffer_alloc_static[
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-](stateCtx: StateContext, callCtx: MojoCallContextPtr) raises -> NDBuffer[
-    DType.int8, 1
-]:
+](
+    dummy_chain: Int, stateCtx: StateContext, callCtx: MojoCallContextPtr
+) raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(cRawAlign)
     if cRawAlign == UInt64.MAX:
         # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
@@ -482,7 +496,10 @@ fn mgp_buffer_alloc_dynamic[
     bRawAlign: UInt64,
     cDevice: StringLiteral,
 ](
-    ctx: StateContext, byte_size: Int, callCtx: MojoCallContextPtr
+    dummy_chain: Int,
+    ctx: StateContext,
+    byte_size: Int,
+    callCtx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(bRawAlign)
     if bRawAlign == UInt64.MAX:
@@ -620,7 +637,7 @@ fn mgp_buffer_set_with_index(
 @export
 fn mgp_device_context_create[
     aDeviceRuntimeSlot: UInt64, bDevice: StringLiteral
-](ctx: StateContext):
+](dummy_chain: Int, ctx: StateContext):
     @parameter
     if bDevice == "cuda":
         alias dev_ty = Tuple[CudaContext, CudaInstance]
