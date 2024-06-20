@@ -12,6 +12,7 @@ from typing import Any, Optional, Type, Union
 
 import numpy as np
 from max.engine.core import DType as _DType
+from max.engine.core import FrameworkFormat as _FrameworkFormat
 from max.engine.core import InferenceSession as _InferenceSession
 from max.engine.core import Model as _Model
 from max.engine.core import TensorSpec as _TensorSpec
@@ -343,6 +344,18 @@ def _unwrap_pybind_objects(value: Any) -> Any:
     return value
 
 
+def _is_torchscript_module(obj: Any) -> bool:
+    return type(obj).__name__ in [
+        "ScriptModule",
+        "RecursiveScriptModule",
+    ] and type(obj).__module__ in ["torch.jit.script", "torch.jit._script"]
+
+
+def _is_torch_mlir_module(obj: Any) -> bool:
+    # TODO: Check without importing.
+    return False
+
+
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -452,19 +465,28 @@ class InferenceSession:
             )
         if input_specs is not None:
             options_dict["input_specs"] = _unwrap_pybind_objects(input_specs)
+        if isinstance(model, (str, bytes)):
+            model = Path(str(model))
 
         if isinstance(model, Path) or isinstance(model, str):
             model_path = Path(str(model))
             _model = self._impl.compile_from_path(model_path, options_dict)
         else:
-            import torch
-
-            if not isinstance(model, torch.jit.ScriptModule):
-                raise RuntimeError(
-                    "The model is not a string path, Path object or valid"
-                    " torch.jit.ScriptModule"
+            if _is_torchscript_module(model):
+                _model = self._impl.compile_from_object(
+                    model._c, _FrameworkFormat.torchscript_module, options_dict
                 )
-            _model = self._impl.compile_from_object(model._c, options_dict)
+
+            elif _is_torch_mlir_module(model):
+                _model = self._impl.compile_from_object(
+                    model, _FrameworkFormat.torch_mlir, options_dict
+                )
+
+            else:
+                raise RuntimeError(
+                    "The model is not a valid string path, Path object, "
+                    " torch.jit.ScriptModule or MlirModule."
+                )
 
         _model.load()
         return Model._init(_model)
