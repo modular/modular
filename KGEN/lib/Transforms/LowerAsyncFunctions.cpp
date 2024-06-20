@@ -16,7 +16,6 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -407,8 +406,7 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
       PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
 
   // Initialize state to 0.
-  Value zero =
-      builder.create<mlir::LLVM::ConstantOp>(coTypes.typeForField(State), 0);
+  Value zero = builder.create<ParamConstantOp>(builder.getI32IntegerAttr(0));
   Value stateSlot = builder.create<StructGEPOp>(continuation, State);
   builder.create<StoreOp>(zero, stateSlot);
 

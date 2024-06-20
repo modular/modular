@@ -202,7 +202,6 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
     "POPDialect",
     "KGENDialect",
     "mlir::index::IndexDialect",
-    "::mlir::LLVM::LLVMDialect"
   ];
 }
 
