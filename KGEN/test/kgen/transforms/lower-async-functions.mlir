@@ -1484,4 +1484,13 @@ kgen.func @call_coroutine(%arg0:index) -> index {
   kgen.return %idx0 : index
 }
 
+// CHECK-LABEL: kgen.func @get_results
+kgen.func @get_results(%arg0: !co.routine) {
+  // CHECK-NEXT: [[PROMISE_HEADER:%.*]] = pop.pointer.bitcast %arg0
+  // CHECK-NEXT: [[PROMISE_PTR:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME6:]]]
+  // CHECK-NEXT: pop.load [[PROMISE_PTR]]
+  %0 = co.get_results %arg0 : index
+  kgen.return
+}
+
 }

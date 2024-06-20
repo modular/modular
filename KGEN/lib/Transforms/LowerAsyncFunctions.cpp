@@ -1034,6 +1034,23 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       Value continuation = destroyOp.getOperand();
       rewriter.create<AlignedFreeOp>(destroyOp->getLoc(), continuation);
       destroyOp->erase();
+    } else if (auto getResults = dyn_cast<GetResultsOp>(op)) {
+      rewriter.setInsertionPoint(op);
+      Value continuation = getResults.getOperand();
+      StructType headerType = opaqueCoroutineTypes.getHeaderType();
+      SmallVector<Type> headerPlusPromiseTypes(headerType.getElementTypes());
+      assert(getResults.getNumResults() == 1 &&
+             "TODO support multiple results");
+      headerPlusPromiseTypes.push_back(getResults.getType(0));
+      Value promiseContinuation = rewriter.create<PointerBitcastOp>(
+          op->getLoc(),
+          PointerType::get(StructType::get(headerPlusPromiseTypes)),
+          continuation);
+      Value promiseSlot = rewriter.create<StructGEPOp>(
+          op->getLoc(), promiseContinuation, Promise);
+      Value promise = rewriter.create<LoadOp>(op->getLoc(), promiseSlot);
+      rewriter.replaceAllUsesWith(getResults.getResult(0), promise);
+      getResults->erase();
     }
   });
 }
