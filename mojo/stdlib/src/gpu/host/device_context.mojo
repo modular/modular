@@ -93,9 +93,14 @@ struct DeviceBuffer[type: DType](Sized):
 
 
 @value
-struct DeviceFunction[func_type: AnyTrivialRegType, //, func: func_type]:
+struct DeviceFunction[
+    func_type: AnyTrivialRegType, //,
+    func: func_type,
+    *,
+    _is_failable: Bool = False,
+]:
     var ctx_ptr: UnsafePointer[DeviceContext]
-    var cuda_function: Function[func]
+    var cuda_function: Function[func, _is_failable=_is_failable]
 
     fn __init__(
         inout self,
@@ -110,7 +115,7 @@ struct DeviceFunction[func_type: AnyTrivialRegType, //, func: func_type]:
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
-        self.cuda_function = Function[func](
+        self.cuda_function = Function[func, _is_failable=_is_failable](
             self.ctx_ptr[].cuda_context,
             debug,
             verbose,
@@ -159,7 +164,10 @@ struct DeviceContext:
         return DeviceBuffer[type](self, size)
 
     fn compile_function[
-        func_type: AnyTrivialRegType, //, func: func_type
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *,
+        _is_failable: Bool = False,
     ](
         self,
         debug: Bool = False,
@@ -170,8 +178,8 @@ struct DeviceContext:
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-    ) raises -> DeviceFunction[func]:
-        return DeviceFunction[func](
+    ) raises -> DeviceFunction[func, _is_failable=_is_failable]:
+        return DeviceFunction[func, _is_failable=_is_failable](
             self,
             debug=debug,
             verbose=verbose,

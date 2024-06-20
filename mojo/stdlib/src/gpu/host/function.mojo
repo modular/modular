@@ -396,7 +396,9 @@ struct Function[
         try:
             var payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
-            alias _impl = _compile_code[func, emission_kind="asm"]()
+            alias _impl = _compile_code[
+                func, emission_kind="asm", is_failable=_is_failable
+            ]()
             alias fn_name = _impl.function_name
 
             var module = Module(
