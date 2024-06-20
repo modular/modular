@@ -42,7 +42,7 @@ fn test_if_decorator(a: Bool):
     pass
 
   @parameter
-  if 1 != 0:
+  if 1:
     pass
   elif a:  # expected-error {{cannot use a dynamic value in '@parameter if' condition}}
     pass
@@ -89,7 +89,7 @@ struct MyList_invalid_boxed_type:
     fn __iter__(self) -> my_iter_wrong_int: return my_iter_wrong_int()
 
 
-fn main():
+fn test():
     var my_list_no_len = MyList_range_no_len()
     var my_list_no_next = MyList_range_no_next()
     var my_list_no_iter = MyList_no_iter()

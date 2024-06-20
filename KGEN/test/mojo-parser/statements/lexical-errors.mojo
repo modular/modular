@@ -57,3 +57,13 @@ fn test_indentation2(p: Bool):
 # https://github.com/modularml/mojo/issues/1655
 @ : # expected-error {{unexpected token in expression}}
     fn a  # expected-error {{expected '(' for argument list}}
+
+# https://github.com/modularml/mojo/issues/1230
+# Parser crashes on incomplete decorator
+@ # expected-error {{missing decorator expression after '@'}}
+fn m # expected-error {{expected '(' for argument list}}
+
+# Issue #6909
+# expected-error @below {{expected name for 'alias' declaration}}
+# expected-note @below {{escape keyword 'True' with backticks to use it as an identifier}}
+alias True = 42

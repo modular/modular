@@ -119,8 +119,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %[[ERRVALCOPY:.*]] = lit.call {{.*}}@Error::@"__copyinit__
-    # CHECK-NEXT: lit.ref.store %[[ERRVALCOPY]], %__error__
+    # CHECK: lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%__error__, %err)
     # CHECK-NEXT: lit.raise
     raise err
 
@@ -129,8 +128,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.elif
     if cond:
-        # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__
-        # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
+        # CHECK: lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%__error__, %err)
         # CHECK-NEXT: lit.raise
         raise err
 
@@ -139,8 +137,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try %__try_error__
     try:
-        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
-        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
+        # CHECK-NEXT: lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%__try_error__, %err)
         # CHECK-NEXT: lit.raise
         raise err
     except:
@@ -181,7 +178,7 @@ struct S:
         self.v = existing.v
 
 
-fn fail(str: StringRef) raises -> S:
+fn fail() raises -> S:
     return 0
 
 
@@ -189,8 +186,8 @@ fn fail(str: StringRef) raises -> S:
 fn call_raising():
     # CHECK: lit.try %e
     try:
-        # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}, %e, %x)
-        var x = fail("hello world")
+        # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}(%e, %x)
+        var x = fail()
         # CHECK: %y = lit.var.decl "y"
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%y, %e)
         var y = S()
@@ -199,17 +196,17 @@ fn call_raising():
         pass
 
 
-fn fail_raises(str: StringRef) raises -> S:
-    return fail(str)
+fn fail_raises() raises -> S:
+    return fail()
 
 
-fn fail_register(str: StringRef) raises -> Int:
+fn fail_register() raises -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.func @"fail_register_raises
-fn fail_register_raises(str: StringRef) raises -> Int:
-    # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%str, %__error__, %__result__)
+fn fail_register_raises() raises -> Int:
+    # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__result__)
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return [[FALSE]]
-    return fail_register(str)
+    return fail_register()
