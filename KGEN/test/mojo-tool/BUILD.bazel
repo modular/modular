@@ -29,12 +29,6 @@ lit_tests(
         "test/inputs/**/*.mojo",
         "test/inputs/**/*.🔥",
     ]),
-    env = {
-        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
-        "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN/tools/mojo-build-server)",
-    },
     mojo_deps = [
         "//Kernels/mojo/layout",
         "//open-source/mojo/stdlib/stdlib:stdlib",

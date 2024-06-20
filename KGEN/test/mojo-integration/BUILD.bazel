@@ -15,13 +15,6 @@ lit_tests(
         "//KGEN:CompilerRT.distributable",
         "@llvm-project//compiler-rt:orc_rt",
     ],
-    env = {
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
-        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
-        "MODULAR_MOJO_PYTHON_LIB": "$(location //:libpython)",
-        "MOJO_PYTHON_LIBRARY": "$(location //:libpython)",
-    },
     mojo_deps = [
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/runtime",
@@ -50,9 +43,7 @@ lit_tests(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
-        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
     },
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib:stdlib",

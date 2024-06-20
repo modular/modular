@@ -21,16 +21,6 @@ lit_tests(
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
     ],
-    env = {
-        "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
-        "LLDB_ARGDUMPER_PATH": "$(location @llvm-project//lldb:lldb-argdumper)",
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
-        "MODULAR_MOJO_DRIVER_PATH": "$(location //KGEN/tools/mojo)",
-        "MODULAR_MOJO_LLDB_PATH": "$(location //KGEN:mojo-lldb)",
-        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB)",
-        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
-    },
     exec_properties = {
         "test.EstimatedComputeUnits": "10",
     },
