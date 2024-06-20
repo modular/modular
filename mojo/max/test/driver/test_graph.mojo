@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
 from max.graph import Graph, TensorType, Symbol, Type
