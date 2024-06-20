@@ -140,6 +140,14 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
       b.replaceOpWithNewOp<ParamDeclareOp>(
           alias, TypeRange(), alias.getParamDecl(), alias.getValue());
+    } else if (auto lifetimeStart = dyn_cast<VarLifetimeStartOp>(op)) {
+      auto arg = lifetimeStart.getArg();
+      b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(
+          op, arg.getDefiningOp()->getOperand(0));
+    } else if (auto lifetimeEnd = dyn_cast<VarLifetimeEndOp>(op)) {
+      auto arg = lifetimeEnd.getArg();
+      b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(
+          op, arg.getDefiningOp()->getOperand(0));
     } else if (isa<OwnershipUseOp, OwnershipUseLifetimeOp,
                    OwnershipMarkInitializedOp, OwnershipMarkDestroyedOp,
                    OwnershipMarkConsumedOp, OwnershipDefLValueOp,
@@ -193,7 +201,8 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
                                LifetimeAttr::get(varRegType.getLifetimeType()));
       // Lower a lit.varlet.decl to pop.stack_allocation.
       auto allocOp = b.create<POP::StackAllocationOp>(
-          varDecl.getLoc(), varRegType.getAsPointerType(), 1);
+          varDecl.getLoc(), varRegType.getAsPointerType(), 1,
+          /*markedLifetimes=*/true);
 
       // Replace !lit.ref result type with a cast from the pointer.  This will
       // get squashed by LowerLITTypes.

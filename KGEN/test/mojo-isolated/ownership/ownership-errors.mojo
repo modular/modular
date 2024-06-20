@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
 
+
 struct Empty:
     fn __init__(inout self):
         pass
@@ -214,6 +215,21 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     use(d)  # Ok
 
 
+fn may_raise() raises -> MemExample:
+    return MemExample()
+
+
+fn reassign_might_raise():
+    var value = MemExample()  # expected-note {{'value' declared here}}
+    try:
+        # 'value' is passed directly as the MLValue slot to the raising call,
+        # meaning the current value has to be destroyed before the call.
+        value = may_raise()
+    except:
+        # If the call raises, then the value is known to be uninitialized.
+        _ = value  # expected-error {{use of uninitialized value 'value'}}
+
+
 @__named_result(out)
 # expected-note @below {{'out' declared here}}
 fn uninitialized_result(c: Bool) -> MemExample:
@@ -296,7 +312,9 @@ fn disableDtor(owned x: MoreComplexExample):
 
 fn badMarkDestroyed(owned x: MoreComplexExample):
     # expected-error @+1 {{cannot mark subobjects destroyed}}
-    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](__get_mvalue_as_litref(x.mem))
+    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
+        __get_mvalue_as_litref(x.mem)
+    )
 
 
 # expected-error @+3 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
@@ -401,6 +419,7 @@ struct TrivialRange:
     fn __len__(self) -> Int:
         return 1
 
+
 fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
     for i in TrivialRange():
@@ -433,25 +452,28 @@ fn testConditionalMut(cond: __mlir_type.i1):
 
     Reference(__get_litref_as_mvalue(cref))[] = MemExample()
 
+
 # CheckLifetimes cannot call MemExample.__del__ because 'self' is in the default
 # address space.
-fn bad_addr_space[addr_space: AddressSpace](ptr: UnsafePointer[MemExample, addr_space]):
-  # expected-error @+1 {{cannot destroy value in non-default address space}}
-  _ = __get_address_as_owned_value(ptr.address)
+fn bad_addr_space[
+    addr_space: AddressSpace
+](ptr: UnsafePointer[MemExample, addr_space]):
+    # expected-error @+1 {{cannot destroy value in non-default address space}}
+    _ = __get_address_as_owned_value(ptr.address)
 
 
 # Returning a reference to the caller's stack.
 # https://github.com/modularml/modular/issues/38421
 # This is valid to declare...
-fn return_owned_arg_ref(owned x: String) -> Reference[
-  String, __lifetime_of(x)]:
-   return x
+fn return_owned_arg_ref(owned x: String) -> Reference[String, __lifetime_of(x)]:
+    return x
+
 
 fn test38421():
-   # this is getting a reference to the expression temporary for the string.
-   # expected-note @+1 {{'(expression temporary)' declared here}}
-   var reference = return_owned_arg_ref(String("abc"))
+    # this is getting a reference to the expression temporary for the string.
+    # expected-note @+1 {{'(expression temporary)' declared here}}
+    var reference = return_owned_arg_ref(String("abc"))
 
-   # This is an error since the rvalue temp slot is uninitialized here.
-   # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
-   _ = reference[].__len__()
+    # This is an error since the rvalue temp slot is uninitialized here.
+    # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
+    _ = reference[].__len__()

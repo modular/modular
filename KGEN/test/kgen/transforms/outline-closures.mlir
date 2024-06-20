@@ -308,3 +308,20 @@ kgen.generator @feras() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @lifetime_markers_hack_closure
+// CHECK: [[VAR:%.*]] = pop.stack_allocation
+// CHECK-NEXT: lifetime.start([[VAR]])
+// CHECK-NEXT: lifetime.end([[VAR]])
+
+// CHECK-LABEL: kgen.generator @lifetime_markers_hack
+kgen.generator @lifetime_markers_hack() {
+  %0 = pop.stack_allocation 1 x index marked
+  kgen.param.declare.region closure = () capturing {
+    %1 = pop.stack_allocation 1 x index marked
+    pop.stack_alloc.lifetime.start(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+    pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
+    kgen.return
+  }
+  kgen.return
+}

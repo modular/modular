@@ -20,6 +20,7 @@ fn use(lhs: Int, rhs: Int) -> Int:
 # COM: check inlined __init__
 # CHECK:  kgen.func @"{{.*}}::makeEscapingClosure
 # CHECK:         [[MY_CAPTURE_FIELD_ALLOC:%.*]] = pop.stack_allocation 1 x struct<(pointer<none>, index) memoryOnly>
+# CHECK:         lifetime.start([[MY_CAPTURE_FIELD_ALLOC]])
 # CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep [[MY_CAPTURE_FIELD_ALLOC]][0]
 # CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(index, index)>>
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(index, index)>>

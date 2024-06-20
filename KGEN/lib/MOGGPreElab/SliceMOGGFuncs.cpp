@@ -651,16 +651,29 @@ public:
         slicedComputeFunction.erase();
         continue;
       } else {
-        // clang-format-off
+        // Erase any lifetime markers on the temporary if it has them.
+        Value tmpTensor = constructor.getOperand(1);
+        auto alloc = tmpTensor.getDefiningOp<POP::StackAllocationOp>();
+        if (alloc && alloc.getMarkedLifetimes()) {
+          for (Operation *user :
+               llvm::make_early_inc_range(tmpTensor.getUsers())) {
+            if (isa<POP::StackAllocLifetimeStartOp,
+                    POP::StackAllocLifetimeEndOp>(user))
+              user->erase();
+          }
+        }
+
         // Functions with tensor allocation will follow the rough pattern.
+        //
+        // ```
         // fn (*tensor):
         //   tmp = allocate(...)
         //   ...
         //   copy_construct(tensor, tmp)
-        // clang-format-on
+        // ```
+        //
         // We can use this to identify the output tensor and the the tensor
         // which has been allocated. To us they are an alias.
-        Value tmpTensor = constructor.getOperand(1);
         tmpTensor.replaceAllUsesWith(outputTensor);
 
         // Remove the allocation and assignment from the sliced compute
