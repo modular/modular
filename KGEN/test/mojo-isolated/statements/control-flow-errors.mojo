@@ -147,6 +147,20 @@ def withWithNoColon(a: __mlir_type.index):
   # expected-error @below {{expected ':' after 'with' expression}}
   with a as b
 
+fn withNoRaise(owned mgr: ExampleCM): # expected-note {{or mark surrounding function as 'raises'}}
+  with mgr^:
+    # expected-error @below {{cannot raise error in this context}}
+    # expected-note @below {{try surrounding 'raise' in a 'try' block}}
+    raise Error()
+
+  # Allow try-finally, but in a non-raising region.
+  try:
+    # expected-error @below {{cannot raise error in this context}}
+    # expected-note @below {{try surrounding 'raise' in a 'try' block}}
+    raise Error()
+  finally:
+    pass
+
 # Issue #20143 https://github.com/modularml/modular/issues/20143
 struct HasBadContextManagerExit:
   var x: Int

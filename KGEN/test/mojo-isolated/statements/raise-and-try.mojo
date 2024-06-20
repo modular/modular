@@ -65,7 +65,7 @@ fn tryFinally():
         # CHECK-NEXT: lit.try.yield
         pass
     # CHECK-NEXT: except
-    # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: unreachable
     # CHECK: finally
     finally:
         # CHECK: lit.return
