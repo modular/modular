@@ -40,10 +40,10 @@ def test_graph_execution():
     var executable_graph = compiled_graph.load()
 
     var input_dt = cpu.allocate(TensorSpec(DType.float32, 5))
-    var input_cpu = input_dt^.get_tensor[DType.float32, 1]()
+    var input_cpu = input_dt^.to_tensor[DType.float32, 1]()
     for i in range(5):
         input_cpu[i] = i
-    var gpu_tensor = input_cpu^.device_tensor().copy_to(gpu)
+    var gpu_tensor = input_cpu^.to_device_tensor().copy_to(gpu)
     var outputs = executable_graph.execute(gpu_tensor^)
     assert_equal(len(outputs), 1)
 
@@ -51,8 +51,8 @@ def test_graph_execution():
         var new = AnyTensor()
         var tmp = memory^
         memory = new^
-        var gpu_tensor = tmp^.device_tensor()
-        var cpu_tensor = gpu_tensor.copy_to(device).get_tensor[
+        var gpu_tensor = tmp^.to_device_tensor()
+        var cpu_tensor = gpu_tensor.copy_to(device).to_tensor[
             DType.float32, 1
         ]()
         for i in range(5):

@@ -29,7 +29,7 @@ def test_from_tensor():
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var tensor = dm^.get_tensor[DType.float32, 2]()
+    var tensor = dm^.to_tensor[DType.float32, 2]()
 
     tensor[0, 0] = 1
 
@@ -37,8 +37,8 @@ def test_from_tensor():
 
     assert_equal(anytensor.get_rank(), 2)
 
-    var dm_back = anytensor^.device_tensor()
-    var tensor2 = dm_back^.get_tensor[DType.float32, 2]()
+    var dm_back = anytensor^.to_device_tensor()
+    var tensor2 = dm_back^.to_tensor[DType.float32, 2]()
     assert_equal(tensor2[0, 0], 1)
 
 
@@ -53,7 +53,7 @@ def test_implicit_conversion():
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var tensor = dt1^.get_tensor[DType.float32, 2]()
+    var tensor = dt1^.to_tensor[DType.float32, 2]()
 
     var dt2 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),

@@ -47,7 +47,7 @@ def test_device_memory():
 
     var dt5 = dev.allocate(TensorSpec(type, 2))
     var ptr = dt5.unsafe_ptr()
-    var t5 = dt5^.get_tensor[type, 1]()
+    var t5 = dt5^.to_tensor[type, 1]()
     t5[0] = 22
     assert_equal(Scalar.load(rebind[DTypePointer[type]](ptr)), t5[0])
 

@@ -22,7 +22,7 @@ def test_graph_execution():
     executable_graph = compiled_graph.load()
 
     var input_dt = cpu.allocate(TensorSpec(DType.float32, 1))
-    var input = input_dt^.get_tensor[DType.float32, 1]()
+    var input = input_dt^.to_tensor[DType.float32, 1]()
     input[0] = 1.0
     var any = AnyTensor(input^)
     var outputs = executable_graph.execute(any^)
@@ -32,9 +32,9 @@ def test_graph_execution():
         var new = AnyTensor()
         var tmp = memory^
         memory = new^
-        var tensor = tmp^.device_tensor().get_tensor[DType.float32, 1]()
+        var tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 1]()
         var val = tensor[0]
-        memory = tensor^.device_tensor()
+        memory = tensor^.to_device_tensor()
         assert_equal(val, 1.0)
 
     for output in outputs:
@@ -87,7 +87,7 @@ def test_mnist():
     var executable_graph = compiled_graph.load()
 
     var input_dt = cpu.allocate(TensorSpec(DType.float32, 1, 28, 28, 1))
-    var input = input_dt^.get_tensor[DType.float32, 4]()
+    var input = input_dt^.to_tensor[DType.float32, 4]()
     for i in range(1):
         for j in range(28):
             for k in range(28):
@@ -100,13 +100,13 @@ def test_mnist():
         var new = AnyTensor()
         var tmp = memory^
         memory = new^
-        var tensor = tmp^.device_tensor().get_tensor[DType.float32, 2]()
+        var tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 2]()
         var rank = tensor.get_rank()
         var output_list = List[Float32]()
         output_list.reserve(10)
         for i in range(10):
             output_list.append(tensor[0, i])
-        memory = tensor^.device_tensor()
+        memory = tensor^.to_device_tensor()
         assert_equal(rank, 2)
 
         var expected_outputs = List[Float32](

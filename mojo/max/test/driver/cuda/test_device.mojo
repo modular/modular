@@ -26,7 +26,7 @@ def test_copy_d2h():
         TensorSpec(DType.float32, 10, 2),
     )
 
-    var input = input_cpu^.get_tensor[DType.float32, 2]()
+    var input = input_cpu^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -34,12 +34,12 @@ def test_copy_d2h():
             input[i, j] = val
             val += 1
 
-    input_cpu = input^.device_tensor()
+    input_cpu = input^.to_device_tensor()
     var gpu_tensor = input_cpu.copy_to(gpu)
     var output_cpu = gpu_tensor.copy_to(cpu)
 
-    input = input_cpu^.get_tensor[DType.float32, 2]()
-    var output = output_cpu^.get_tensor[DType.float32, 2]()
+    input = input_cpu^.to_tensor[DType.float32, 2]()
+    var output = output_cpu^.to_tensor[DType.float32, 2]()
 
     for i in range(10):
         for j in range(2):
@@ -54,7 +54,7 @@ def test_copy_d2d():
         TensorSpec(DType.float32, 10, 2),
     )
 
-    var input = input_cpu^.get_tensor[DType.float32, 2]()
+    var input = input_cpu^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -62,14 +62,14 @@ def test_copy_d2d():
             input[i, j] = val
             val += 1
 
-    input_cpu = input^.device_tensor()
+    input_cpu = input^.to_device_tensor()
     var gpu_tensor1 = input_cpu.copy_to(gpu)
     var gpu_tensor2 = gpu.allocate(gpu_tensor1.spec)
     gpu_tensor1.copy_into(gpu_tensor2)
     var output_cpu = gpu_tensor2.copy_to(cpu)
 
-    input = input_cpu^.get_tensor[DType.float32, 2]()
-    var output = output_cpu^.get_tensor[DType.float32, 2]()
+    input = input_cpu^.to_tensor[DType.float32, 2]()
+    var output = output_cpu^.to_tensor[DType.float32, 2]()
 
     for i in range(10):
         for j in range(2):

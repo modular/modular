@@ -19,7 +19,7 @@ def test_tensor():
     var dt = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dt^.to_tensor[DType.float32, 2]()
 
     assert_equal(tensor.get_rank(), 2)
     assert_equal(tensor.get_dtype(), DType.float32)
@@ -39,7 +39,7 @@ def test_tensor_slice():
     var dt = dev.allocate(
         TensorSpec(DType.float32, 3, 3),
     )
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dt^.to_tensor[DType.float32, 2]()
 
     assert_equal(tensor.get_rank(), 2)
     assert_equal(tensor.get_dtype(), DType.float32)
@@ -88,7 +88,7 @@ def test_slice_with_step():
     var dt = dev.allocate(
         TensorSpec(DType.float32, 18),
     )
-    var tensor = dt^.get_tensor[DType.float32, 1]()
+    var tensor = dt^.to_tensor[DType.float32, 1]()
 
     var index = 0
     for _ in range(3):
@@ -108,7 +108,7 @@ def test_2dslice_with_step():
     var dt = dev.allocate(
         TensorSpec(DType.float32, 10, 2),
     )
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dt^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -128,7 +128,7 @@ def test_2dslice_with_step_row_column():
     var dt = dev.allocate(
         TensorSpec(DType.float32, 10, 10),
     )
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dt^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -165,7 +165,7 @@ def test_round_trip():
     var dev = cpu_device()
 
     var dt = dev.allocate(TensorSpec(DType.float32, 10, 2), str("mytensor"))
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dt^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -175,13 +175,13 @@ def test_round_trip():
 
     assert_equal(tensor[1, 0], 3)
 
-    var dt2 = tensor^.device_tensor()
+    var dt2 = tensor^.to_device_tensor()
     assert_equal(
         str(dt2),
         "DeviceTensor(mytensor,Device(type=CPU),Spec(10x2xfloat32))",
     )
 
-    var tensor2 = dt2^.get_tensor[DType.float32, 2]()
+    var tensor2 = dt2^.to_tensor[DType.float32, 2]()
     assert_equal(tensor2[1, 0], 3)
 
 
@@ -195,7 +195,7 @@ def test_copy():
     var dst_dev_tensor = cpu2.allocate(
         TensorSpec(DType.float32, 10, 2),
     )
-    var src = src_dev_tensor^.get_tensor[DType.float32, 2]()
+    var src = src_dev_tensor^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -203,17 +203,17 @@ def test_copy():
             src[i, j] = val
             val += 1
 
-    src_dev_tensor = src^.device_tensor()
+    src_dev_tensor = src^.to_device_tensor()
     src_dev_tensor.copy_into(dst_dev_tensor)
     var dst_dev_tensor2 = src_dev_tensor.copy_to(cpu2)
 
-    var dst = dst_dev_tensor^.get_tensor[DType.float32, 2]()
-    var dst2 = dst_dev_tensor2^.get_tensor[DType.float32, 2]()
+    var dst = dst_dev_tensor^.to_tensor[DType.float32, 2]()
+    var dst2 = dst_dev_tensor2^.to_tensor[DType.float32, 2]()
 
     with assert_raises(contains="already allocated on"):
         _ = src_dev_tensor.copy_to(cpu1)
 
-    src = src_dev_tensor^.get_tensor[DType.float32, 2]()
+    src = src_dev_tensor^.to_tensor[DType.float32, 2]()
     for i in range(10):
         for j in range(2):
             assert_equal(src[i, j], dst[i, j])
@@ -226,7 +226,7 @@ def test_set_through_slice():
     var dt = dev.allocate(
         TensorSpec(DType.float32, 10, 2),
     )
-    var tensor = dt^.get_tensor[DType.float32, 2]()
+    var tensor = dt^.to_tensor[DType.float32, 2]()
 
     var val = 1
     for i in range(10):
@@ -252,7 +252,7 @@ def test_kv_cache():
     var tensors = List[Tensor[type, len(shape)]]()
     for _ in range(2):
         var dt = cpu.allocate(TensorSpec(type, shape))
-        var tensor = dt.get_tensor[type, len(shape)]()
+        var tensor = dt.to_tensor[type, len(shape)]()
         tensor[0] = 1
         tensor[1] = 2
 
@@ -276,7 +276,7 @@ def test_raw_data():
         TensorSpec(type, shape),
     )
 
-    var t = dt^.get_tensor[DType.float32, len(shape)]()
+    var t = dt^.to_tensor[DType.float32, len(shape)]()
     var ptr = t.unsafe_ptr()
     t[0] = 22
     assert_equal(Scalar.load(ptr), t[0])
