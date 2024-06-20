@@ -10,12 +10,6 @@ lit_tests(
         "//KGEN:gdb-server",
         "//KGEN/tools/mojo-repl-entry-point",
     ],
-    env = {
-        "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
-        "MODULAR_CRASH_REPORTING_ENABLED": "false",
-        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB)",
-        "MODULAR_MOJO_REPL_ENTRY_POINT": "$(location //KGEN/tools/mojo-repl-entry-point)",
-    },
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib:stdlib",
     ],
