@@ -17,9 +17,9 @@ enum AsyncContinuationField {
   ResumeFunction = 1,
   CallbackFn = 2,
   ClosureState = 3,
-  Promise = 4,
-  ErrorSlot = 5,
-  ResultSlot = 6,
+  ErrorSlot = 4,
+  ResultSlot = 5,
+  Promise = 6,
   Frame = 7
 };
 
