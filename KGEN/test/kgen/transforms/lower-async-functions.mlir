@@ -1499,4 +1499,17 @@ kgen.func @no_results() async {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @use_of_suspend_resume
+kgen.func @use_of_suspend() async -> i32 {
+  // CHECK: [[HDL:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(i32, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+  // CHECK: co.suspend {
+  co.suspend (%hdl) {
+    %0 = pop.stack_allocation 1 x !co.routine
+    // CHECK: store [[HDL]], %{{.*}}
+    pop.store %hdl, %0 : !kgen.pointer<!co.routine>
+    co.suspend.end
+  }
+  kgen.unreachable
+}
+
 }
