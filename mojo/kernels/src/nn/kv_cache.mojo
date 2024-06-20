@@ -488,7 +488,7 @@ struct KVCacheManager[
                     head_size,
                 ),
             )
-        ).get_tensor[type, 5]()
+        ).to_tensor[type, 5]()
         self.unused_blocks = Set[Int]()
         self.seq_id_counter = 0
         self.seq_id_to_block = Dict[Int, Int]()
@@ -595,7 +595,7 @@ struct KVCacheManager[
             )
         var host_valid_lengths = self.this_device.allocate(
             TensorSpec(DType.int64, (batch_size,))
-        ).get_tensor[DType.int64, 1]()
+        ).to_tensor[DType.int64, 1]()
         for bs in range(batch_size):
             var seq_id = seq_ids.__get_ref(bs)
             if seq_id[] not in self.seq_id_to_block:
@@ -639,9 +639,9 @@ struct KVCacheManager[
 
             # copy valid lengths from CPU to other device
             device_valid_lengths = (
-                host_valid_lengths.get_device_memory()
+                host_valid_lengths.to_device_memory()
                 .copy_to(self.other_device)
-                .get_tensor[DType.int64, 1]()
+                .to_tensor[DType.int64, 1]()
             )
 
         return Self.CollectionType(
