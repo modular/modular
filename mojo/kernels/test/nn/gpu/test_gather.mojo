@@ -114,6 +114,5 @@ fn test_gather(ctx: DeviceContext) raises:
 
 
 fn main() raises:
-    var ctx = DeviceContext()
-    test_gather(ctx)
-    _ = ctx
+    with DeviceContext() as ctx:
+        test_gather(ctx)

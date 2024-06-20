@@ -176,10 +176,9 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
 
 def main():
     try:
-        var ctx = DeviceContext()
-        test_gpu_softmax(ctx)
-        test_gpu_softmax_half[DType.bfloat16](ctx)
-        test_gpu_softmax_half[DType.float16](ctx)
-        _ = ctx
+        with DeviceContext() as ctx:
+            test_gpu_softmax(ctx)
+            test_gpu_softmax_half[DType.bfloat16](ctx)
+            test_gpu_softmax_half[DType.float16](ctx)
     except e:
         print("CUDA_ERROR:", e)
