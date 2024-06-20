@@ -83,5 +83,5 @@ fn test(ctx: DeviceContext) raises:
 
 
 def main():
-    var ctx = DeviceContext()
-    test(ctx)
+    with DeviceContext() as ctx:
+        test(ctx)

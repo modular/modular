@@ -71,12 +71,10 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    var ctx = DeviceContext()
+    with DeviceContext() as ctx:
 
-    @parameter
-    if not has_neon():
-        run_elementwise[DType.float16](ctx)
+        @parameter
+        if not has_neon():
+            run_elementwise[DType.float16](ctx)
 
-    run_elementwise[DType.float32](ctx)
-
-    _ = ctx
+        run_elementwise[DType.float32](ctx)

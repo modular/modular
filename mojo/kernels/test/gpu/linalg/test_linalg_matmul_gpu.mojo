@@ -194,15 +194,13 @@ fn create_matmul_test_case[
 
 fn main():
     try:
-        var ctx = DeviceContext()
+        with DeviceContext() as ctx:
+            create_matmul_test_case[DType.float32](
+                ctx, dynamic(8), static[8](), static[4]()
+            )
+            create_matmul_test_case[DType.float32](
+                ctx, dynamic(16), static[16](), static[8]()
+            )
 
-        create_matmul_test_case[DType.float32](
-            ctx, dynamic(8), static[8](), static[4]()
-        )
-        create_matmul_test_case[DType.float32](
-            ctx, dynamic(16), static[16](), static[8]()
-        )
-
-        _ = ctx
     except e:
         print("CUDA err:", e)

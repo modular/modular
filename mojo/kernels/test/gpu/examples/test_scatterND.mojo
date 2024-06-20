@@ -283,9 +283,8 @@ fn test_case[
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
     try:
-        var ctx = DeviceContext()
-        scatter_nd(data, indices, updates, output, ctx)
-        _ = ctx
+        with DeviceContext() as ctx:
+            scatter_nd(data, indices, updates, output, ctx)
     except e:
         print("CUDA_ERROR:", e)
 

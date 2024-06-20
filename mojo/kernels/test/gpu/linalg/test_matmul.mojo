@@ -646,32 +646,32 @@ fn run_low_precision_test_with_epilogue[
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        var ctx = DeviceContext()
+        with DeviceContext() as ctx:
+            run_matmul(ctx)
+            test_gemm_transpose_b[DType.float32, 512, 512, 512](ctx)
+            test_gemm_transpose_b[DType.float32, 512, 1024, 3072](ctx)
+            run_matmul_from_mogg_interface[1024, 3072, 5120, DType.float32](ctx)
+            run_matmul_from_mogg_interface[1024, 12288, 3072, DType.float32](
+                ctx
+            )
+            run_matmul_from_mogg_interface_with_epilogue[
+                1024, 3072, 5120, DType.float32
+            ](ctx)
+            run_matmul_from_mogg_interface_with_epilogue[
+                1024, 3072, 5120, DType.bfloat16
+            ](ctx)
+            run_low_precision_test[
+                1024, 3072, 5120, DType.float32, DType.float32
+            ](ctx)
+            run_low_precision_test_with_epilogue[
+                1024, 3072, 5120, DType.float32, DType.float32
+            ](ctx)
+            run_low_precision_test[
+                1024, 3072, 5120, DType.bfloat16, DType.bfloat16
+            ](ctx)
+            run_low_precision_test_with_epilogue[
+                1024, 3072, 5120, DType.bfloat16, DType.bfloat16
+            ](ctx)
 
-        run_matmul(ctx)
-        test_gemm_transpose_b[DType.float32, 512, 512, 512](ctx)
-        test_gemm_transpose_b[DType.float32, 512, 1024, 3072](ctx)
-        run_matmul_from_mogg_interface[1024, 3072, 5120, DType.float32](ctx)
-        run_matmul_from_mogg_interface[1024, 12288, 3072, DType.float32](ctx)
-        run_matmul_from_mogg_interface_with_epilogue[
-            1024, 3072, 5120, DType.float32
-        ](ctx)
-        run_matmul_from_mogg_interface_with_epilogue[
-            1024, 3072, 5120, DType.bfloat16
-        ](ctx)
-        run_low_precision_test[1024, 3072, 5120, DType.float32, DType.float32](
-            ctx
-        )
-        run_low_precision_test_with_epilogue[
-            1024, 3072, 5120, DType.float32, DType.float32
-        ](ctx)
-        run_low_precision_test[
-            1024, 3072, 5120, DType.bfloat16, DType.bfloat16
-        ](ctx)
-        run_low_precision_test_with_epilogue[
-            1024, 3072, 5120, DType.bfloat16, DType.bfloat16
-        ](ctx)
-
-        _ = ctx
     except e:
         print("CUDA_ERROR:", e)

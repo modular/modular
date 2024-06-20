@@ -226,32 +226,34 @@ fn test(
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        var ctx = DeviceContext()
-        # Context encoding demo.
-        test(100, 100, ctx)
-        test(31, 31, ctx)
-        test(1024, 1024, ctx, is_benchmark())  # only benchmark a large shape
-        # Token generation demo.
-        test(1, 1, ctx)
-        test(1, 2, ctx)
-        test(1, 3, ctx)
-        test(1, 4, ctx)
-        test(1, 5, ctx)
-        test(1, 6, ctx)
-        test(1, 7, ctx)
-        test(1, 8, ctx)
-        test(1, 9, ctx)
-        test(1, 10, ctx)
-        test(1, 11, ctx)
-        test(1, 12, ctx)
-        test(1, 13, ctx)
-        test(1, 14, ctx)
-        test(1, 15, ctx)
-        test(1, 20, ctx)
-        test(1, 25, ctx)
-        test(1, 30, ctx)
-        test(1, 50, ctx)
-        test(1, 100, ctx)
-        test(1, 200, ctx)
+        with DeviceContext() as ctx:
+            # Context encoding demo.
+            test(100, 100, ctx)
+            test(31, 31, ctx)
+            test(
+                1024, 1024, ctx, is_benchmark()
+            )  # only benchmark a large shape
+            # Token generation demo.
+            test(1, 1, ctx)
+            test(1, 2, ctx)
+            test(1, 3, ctx)
+            test(1, 4, ctx)
+            test(1, 5, ctx)
+            test(1, 6, ctx)
+            test(1, 7, ctx)
+            test(1, 8, ctx)
+            test(1, 9, ctx)
+            test(1, 10, ctx)
+            test(1, 11, ctx)
+            test(1, 12, ctx)
+            test(1, 13, ctx)
+            test(1, 14, ctx)
+            test(1, 15, ctx)
+            test(1, 20, ctx)
+            test(1, 25, ctx)
+            test(1, 30, ctx)
+            test(1, 50, ctx)
+            test(1, 100, ctx)
+            test(1, 200, ctx)
     except e:
         print("CUDA_ERROR:", e)

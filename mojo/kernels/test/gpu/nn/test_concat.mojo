@@ -203,8 +203,7 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
 
 fn main() raises:
     try:
-        var ctx = DeviceContext()
-        test_concat_4_inputs_rank5(ctx)
-        _ = ctx
+        with DeviceContext() as ctx:
+            test_concat_4_inputs_rank5(ctx)
     except e:
         print("CUDA_ERROR:", e)

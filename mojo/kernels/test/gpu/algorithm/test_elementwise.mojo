@@ -249,14 +249,13 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
 
 
 fn main() raises:
-    var ctx = DeviceContext()
-    run_elementwise[DType.float32](ctx)
-    run_elementwise_uneven_simd[DType.float32](ctx)
-    run_elementwise_transpose_copy[DType.float32](ctx)
-    run_elementwise[DType.bfloat16](ctx)
-    run_elementwise_uneven_simd[DType.bfloat16](ctx)
-    run_elementwise_transpose_copy[DType.bfloat16](ctx)
-    run_elementwise[DType.float16](ctx)
-    run_elementwise_uneven_simd[DType.float16](ctx)
-    run_elementwise_transpose_copy[DType.float16](ctx)
-    _ = ctx
+    with DeviceContext() as ctx:
+        run_elementwise[DType.float32](ctx)
+        run_elementwise_uneven_simd[DType.float32](ctx)
+        run_elementwise_transpose_copy[DType.float32](ctx)
+        run_elementwise[DType.bfloat16](ctx)
+        run_elementwise_uneven_simd[DType.bfloat16](ctx)
+        run_elementwise_transpose_copy[DType.bfloat16](ctx)
+        run_elementwise[DType.float16](ctx)
+        run_elementwise_uneven_simd[DType.float16](ctx)
+        run_elementwise_transpose_copy[DType.float16](ctx)

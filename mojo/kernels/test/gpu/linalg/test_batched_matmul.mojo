@@ -96,7 +96,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
 # CHECK-NOT: CUDA_ERROR
 fn main():
     try:
-        var ctx = DeviceContext()
-        test_batched_matmul(ctx)
+        with DeviceContext() as ctx:
+            test_batched_matmul(ctx)
     except e:
         print("CUDA_ERROR:", e)

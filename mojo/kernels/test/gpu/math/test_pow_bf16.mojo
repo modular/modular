@@ -11,10 +11,6 @@ from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-)
 from testing import assert_almost_equal
 
 alias type = DType.float32
@@ -87,14 +83,13 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    var ctx = DeviceContext()
-    run_elementwise[False](-1, ctx)
-    run_elementwise[False](2, ctx)
-    run_elementwise[False](3, ctx)
-    run_elementwise[False](5, ctx)
-    run_elementwise[False](6, ctx)
-    run_elementwise[True](2, ctx)
-    run_elementwise[True](3, ctx)
-    run_elementwise[True](5, ctx)
-    run_elementwise[True](6, ctx)
-    _ = ctx
+    with DeviceContext() as ctx:
+        run_elementwise[False](-1, ctx)
+        run_elementwise[False](2, ctx)
+        run_elementwise[False](3, ctx)
+        run_elementwise[False](5, ctx)
+        run_elementwise[False](6, ctx)
+        run_elementwise[True](2, ctx)
+        run_elementwise[True](3, ctx)
+        run_elementwise[True](5, ctx)
+        run_elementwise[True](6, ctx)

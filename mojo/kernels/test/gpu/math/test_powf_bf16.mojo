@@ -75,6 +75,5 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
 def main():
     # NOTE: This is expected to fail. Keeping this around as a negative test
     # so we know when its fixed.
-    var ctx = DeviceContext()
-    run_elementwise(0.375, ctx)
-    _ = ctx
+    with DeviceContext() as ctx:
+        run_elementwise(0.375, ctx)

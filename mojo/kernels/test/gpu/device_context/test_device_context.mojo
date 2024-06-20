@@ -92,6 +92,6 @@ fn test(ctx: DeviceContext) raises:
 
 def main():
     # Create an instance of the DeviceContext
-    var ctx = DeviceContext()
-    # Execute our test with the context
-    test(ctx)
+    with DeviceContext() as ctx:
+        # Execute our test with the context
+        test(ctx)
