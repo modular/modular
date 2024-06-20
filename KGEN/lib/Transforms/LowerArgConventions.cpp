@@ -268,7 +268,6 @@ static void lowerCallIndirectOp(CallIndirectOp callOp) {
       [&oldSig](Operation *op, SignatureType newSig, ValueRange newOperands) {
         auto callOp = cast<CallIndirectOp>(op);
         callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
-        callOp.getCallee().setType(newSig);
       });
 }
 

@@ -326,3 +326,14 @@ kgen.func @initself_value(
 kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> borrow_in_mem, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async {
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @two_call_indirect
+kgen.func @two_call_indirect(%arg0: !kgen.signature<(!kgen.pointer<index> byref_result) -> !kgen.none>) {
+  %0 = pop.stack_allocation 1 x index
+  %1 = pop.stack_allocation 1 x index
+  // CHECK: kgen.call_indirect %arg0() : () -> index
+  kgen.call_indirect %arg0(%0) : (!kgen.pointer<index> byref_result) -> !kgen.none
+  // CHECK: kgen.call_indirect %arg0() : () -> index
+  kgen.call_indirect %arg0(%1) : (!kgen.pointer<index> byref_result) -> !kgen.none
+  kgen.return
+}
