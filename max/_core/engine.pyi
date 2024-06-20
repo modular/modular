@@ -3,10 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from enum import Enum
 from pathlib import Path
 from sys import version_info
-from enum import Enum
-from typing import Union, Optional
+from typing import Optional, Union
 
 import numpy as np
 
@@ -30,3 +30,4 @@ class TensorSpec:
     def shape(self) -> List[int]: ...
 
 class DType(Enum): ...
+class FrameworkFormat(Enum): ...
