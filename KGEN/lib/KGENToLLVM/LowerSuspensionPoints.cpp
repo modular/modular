@@ -194,6 +194,7 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
     Value parent = buildContext.getContinuationField(
         continuation, AsyncContinuationField::ClosureState);
     SmallVector<Type> params;
+    params.push_back(ptrType);
     b.create<CallOp>(LLVMFunctionType::get(b.getContext(), ptrType, params, 0),
                      ValueRange({callbackFnPtr, parent}));
   }
