@@ -157,12 +157,13 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     paramValues.push_back(ParamDeclRefAttr::get(paramDecls.back()));
     evaluator.addInputValue(paramValues.back());
   }
+  FunctionType types = memSig.getSpecializedSignature(paramValues).getValues();
 
   // Synthesize the method inside the struct.
   PogListAttr argListAttr = memSig.getArgListAttrs();
   auto [thunk, _] = StructEmitter(shared).synthesizeMethodInStruct(
-      name, paramDecls, memSig.getParamListAttrs(), memSig.getArguments(),
-      memSig.getArgConventions(), argListAttr, memSig.getResultType(),
+      name, paramDecls, memSig.getParamListAttrs(), types.getInputs(),
+      memSig.getArgConventions(), argListAttr, types.getResults().front(),
       structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
       "_thunk");
   if (!thunk)
