@@ -1493,4 +1493,10 @@ kgen.func @get_results(%arg0: !co.routine) {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @no_results_ramp
+// CHECK: aligned_alloc %idx8, %idx48
+kgen.func @no_results() async {
+  kgen.return
+}
+
 }

@@ -53,10 +53,9 @@ public:
 /// we can reuse loaded frame variables when legal.
 struct FrameData {
   /// Error value and result value are excluded from the frame
-  FrameData(
-      FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
-      Value resultValue,
-      std::function<void(DenseMap<Operation *, int> &, FuncOp)> &transform);
+  FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
+            Value errorValue, Value resultValue,
+            function_ref<void(DenseMap<Operation *, int> &, FuncOp)> transform);
   FrameData() {}
 
   /// Given a value, determine the state of its defining op or block argument.
@@ -466,7 +465,8 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, Type resultType)
 
   // Header type omits the variable sized frame.
   headerType = StructType::get(types);
-  types.push_back(typeForField(Promise));
+  if (promiseType)
+    types.push_back(typeForField(Promise));
   for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
     types.push_back(frameVariableType);
   continuationType = StructType::get(types);
@@ -569,7 +569,7 @@ int FrameData::getDefinitionStateForValue(Value operand) const {
 FrameData::FrameData(
     FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
     Value resultValue,
-    std::function<void(DenseMap<Operation *, int> &, FuncOp)> &transform) {
+    function_ref<void(DenseMap<Operation *, int> &, FuncOp)> transform) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -853,7 +853,13 @@ FrameData::FrameData(
 
 void LowerAsyncFunctionsPass::runOnOperation() {
   ModuleOp module = getOperation();
-  TargetInfoAttr targetInfoAttr = lookupTargetInfo(module);
+  TargetInfoAttr targetInfo = lookupTargetInfo(module);
+  if (!targetInfo) {
+    mlir::emitError(module.getLoc(),
+                    "could not find an enclosing target specification");
+    return signalPassFailure();
+  }
+
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   Shared<SymbolTable &> sharedTable(symtab);
@@ -862,113 +868,97 @@ void LowerAsyncFunctionsPass::runOnOperation() {
 
   // Convert async functions.
   ImplicitLocOpBuilder b(module->getLoc(), module);
-  Operation *op = &*module.getOps().begin();
   LowerAsyncBuildContext buildContext(sharedTable, asyncFuncToRampFunctions, b,
-                                      targetInfoAttr);
+                                      targetInfo);
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
-  while (op) {
-    Operation *next = op->getNextNode();
-    if (FuncOp funcOp = dyn_cast<FuncOp>(op)) {
-      if (funcOp.isAsync()) {
-        Value errorValue;
-        Value memoryResultValue;
-        if (funcOp.isThrows() || funcOp.getSignature().hasMemoryOnlyResult()) {
-          int errorIndex = -1, resultIndex = -1;
-          for (auto [i, convention] :
-               llvm::enumerate(funcOp.getSignature().getArgConventions())) {
-            if (convention == M::KGEN::ArgConvention::ByRefError)
-              errorIndex = i;
-            else if (convention == M::KGEN::ArgConvention::ByRefResult)
-              resultIndex = i;
-          }
-          if (errorIndex > -1)
-            errorValue = funcOp.getArgument(errorIndex);
-          if (resultIndex > -1)
-            memoryResultValue = funcOp.getArgument(resultIndex);
-        }
-        // Preprocess the function to move stack allocation ops as close to
-        // lifetime start as possible.
-        DenseMap<StackAllocationOp, Operation *> closestCommonParent;
-        funcOp.walk([&](StackAllocLifetimeStartOp startOp) {
-          for (Value value : startOp.getValues()) {
-            StackAllocationOp stackAlloc =
-                cast<StackAllocationOp>(value.getDefiningOp());
-            auto entry = closestCommonParent.find(stackAlloc);
-            if (entry == closestCommonParent.end()) {
-              closestCommonParent[stackAlloc] = startOp;
-            } else {
-              Operation *opInCommonRegion = entry->second;
-              Region *currentRegion = startOp->getParentRegion();
-              while (!opInCommonRegion->getParentRegion()->isProperAncestor(
-                         currentRegion) &&
-                     opInCommonRegion->getParentRegion() != currentRegion) {
-                opInCommonRegion = opInCommonRegion->getParentOp();
-              }
-              closestCommonParent[stackAlloc] = opInCommonRegion;
-            }
-          }
-        });
-        for (auto [stackAllocation, closestCommonParentOp] :
-             closestCommonParent)
-          stackAllocation->moveBefore(closestCommonParentOp);
-        std::function<void(DenseMap<Operation *, int> &, FuncOp)> transform =
-            [&](DenseMap<Operation *, int> &opToState, FuncOp target) {
-              // Now that we have a state label for every op, clone stack
-              // allocations that have multiple lifespans
-              SmallVector<Block *> blocks;
-              blocks.push_back(&target.getBodyRegion().front());
-              while (!blocks.empty()) {
-                Block *current = blocks.pop_back_val();
-                Operation *curr = &current->front();
-                while (curr) {
-                  Operation *operation = curr;
-                  curr = operation->getNextNode();
-                  int useState = opToState[operation];
-                  if (StackAllocLifetimeStartOp startOp =
-                          dyn_cast<StackAllocLifetimeStartOp>(operation)) {
-                    // Clone the original stack alloc and replace all uses of
-                    // the original that appear after this start lifetime
-                    // marker.
-                    auto oldPoint = b.saveInsertionPoint();
-                    b.setInsertionPoint(startOp);
-                    for (auto [index, value] :
-                         llvm::enumerate(startOp.getValues())) {
-                      auto stackAllocationOp =
-                          cast<StackAllocationOp>(value.getDefiningOp());
-                      int defState = opToState[stackAllocationOp];
-                      if (defState == useState)
-                        continue;
-                      // Otherwise, this is a second lifetime. We need a clone.
-                      auto clone =
-                          cast<StackAllocationOp>(b.clone(*stackAllocationOp));
-                      opToState[clone] = useState;
-                      startOp->setOperand(index, clone.getResult());
-                      stackAllocationOp->replaceUsesWithIf(
-                          clone, [&](OpOperand &operand) -> bool {
-                            bool willReplace =
-                                domInfo.dominates(startOp, operand.getOwner());
-                            return willReplace;
-                          });
-                    }
-                    b.restoreInsertionPoint(oldPoint);
-                  }
-                  for (Region &region : operation->getRegions())
-                    blocks.push_back(&region.front());
-                }
-              }
-            };
-        FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
-                            transform);
-        Type resultType;
-        if (funcOp.getNumResults() > 0)
-          resultType = funcOp.getResultTypes().front();
-        assert(funcOp.getNumResults() < 2 && "TODO: support many result types");
-        COTypes cotypes(module.getContext(), frameData, resultType);
-        buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
-                                        memoryResultValue);
+  for (auto funcOp : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
+    if (!funcOp.isAsync())
+      continue;
+    Value errorValue;
+    Value memoryResultValue;
+    if (funcOp.isThrows() || funcOp.getSignature().hasMemoryOnlyResult()) {
+      int errorIndex = -1, resultIndex = -1;
+      for (auto [i, convention] :
+           llvm::enumerate(funcOp.getSignature().getArgConventions())) {
+        if (convention == M::KGEN::ArgConvention::ByRefError)
+          errorIndex = i;
+        else if (convention == M::KGEN::ArgConvention::ByRefResult)
+          resultIndex = i;
       }
+      if (errorIndex > -1)
+        errorValue = funcOp.getArgument(errorIndex);
+      if (resultIndex > -1)
+        memoryResultValue = funcOp.getArgument(resultIndex);
     }
-    op = next;
+    // Preprocess the function to move stack allocation ops as close to
+    // lifetime start as possible.
+    DenseMap<StackAllocationOp, Operation *> closestCommonParent;
+    funcOp.walk([&](StackAllocLifetimeStartOp startOp) {
+      for (Value value : startOp.getValues()) {
+        StackAllocationOp stackAlloc =
+            cast<StackAllocationOp>(value.getDefiningOp());
+        auto entry = closestCommonParent.find(stackAlloc);
+        if (entry == closestCommonParent.end()) {
+          closestCommonParent[stackAlloc] = startOp;
+        } else {
+          Operation *opInCommonRegion = entry->second;
+          Region *currentRegion = startOp->getParentRegion();
+          while (!opInCommonRegion->getParentRegion()->isProperAncestor(
+                     currentRegion) &&
+                 opInCommonRegion->getParentRegion() != currentRegion) {
+            opInCommonRegion = opInCommonRegion->getParentOp();
+          }
+          closestCommonParent[stackAlloc] = opInCommonRegion;
+        }
+      }
+    });
+    for (auto [stackAllocation, closestCommonParentOp] : closestCommonParent)
+      stackAllocation->moveBefore(closestCommonParentOp);
+    auto transform = [&](DenseMap<Operation *, int> &opToState, FuncOp target) {
+      // Now that we have a state label for every op, clone stack allocations
+      // that have multiple lifespans
+      SmallVector<Block *> blocks;
+      blocks.push_back(&target.getBodyRegion().front());
+      while (!blocks.empty()) {
+        Block *current = blocks.pop_back_val();
+        for (Operation &op : llvm::make_early_inc_range(*current)) {
+          int useState = opToState[&op];
+          if (auto startOp = dyn_cast<StackAllocLifetimeStartOp>(op)) {
+            // Clone the original stack alloc and replace all uses of the
+            // original that appear after this start lifetime marker.
+            auto oldPoint = b.saveInsertionPoint();
+            b.setInsertionPoint(startOp);
+            for (auto [index, value] : llvm::enumerate(startOp.getValues())) {
+              auto stackAllocationOp =
+                  cast<StackAllocationOp>(value.getDefiningOp());
+              int defState = opToState[stackAllocationOp];
+              if (defState == useState)
+                continue;
+              // Otherwise, this is a second lifetime. We need a clone.
+              auto clone = cast<StackAllocationOp>(b.clone(*stackAllocationOp));
+              opToState[clone] = useState;
+              startOp->setOperand(index, clone.getResult());
+              stackAllocationOp->replaceUsesWithIf(
+                  clone, [&](OpOperand &operand) -> bool {
+                    return domInfo.dominates(startOp, operand.getOwner());
+                  });
+            }
+            b.restoreInsertionPoint(oldPoint);
+          }
+          for (Region &region : op.getRegions())
+            blocks.push_back(&region.front());
+        }
+      }
+    };
+    FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
+                        transform);
+    Type resultType;
+    if (funcOp.getNumResults() > 0)
+      resultType = funcOp.getResultTypes().front();
+    assert(funcOp.getNumResults() < 2 && "TODO: support many result types");
+    COTypes cotypes(module.getContext(), frameData, resultType);
+    buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
+                                    memoryResultValue);
   }
 
   // Apply all other CO lowerings.
