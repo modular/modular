@@ -647,6 +647,7 @@ lit.func @breakAndContinueInElif(
     %local = lit.var.decl "c" var : !lit.ref<@S, mut *"life">
     %0 = lit.call @S::@__init__[mut life](%local) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> init_self) -> !kgen.none>
     // CHECK: lit.call @S::@__del__[mut life](%c) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>
+    // CHECK-NEXT: lifetime.end %c
     // CHECK-NEXT: hlcf.continue
     hlcf.continue
   } {unrollLevel = #hlcf<unroll_level none>}
@@ -691,6 +692,7 @@ lit.func @breakAndContinueInElifParamFor(
     %local = lit.var.decl "c" var : !lit.ref<@S, mut *"life">
     %0 = lit.call @S::@__init__[mut life](%local) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> init_self) -> !kgen.none>
     // CHECK: lit.call @S::@__del__[mut life](%c) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>
+    // CHECK-NEXT: lifetime.end %c
     // CHECK-NEXT: kgen.param.for.continue
     kgen.param.for.continue
   // CHECK-NEXT: } else {
@@ -931,14 +933,17 @@ lit.struct.decl @DestructSome  attributes {destructor = #kgen.symbol.constant<@D
     // CHECK-NEXT:  [[V0:%.*]] = lit.ref.struct.ger %self[b]
     // CHECK-NEXT:  %1 = lit.call @Field::@__copyinit__{{.*}}([[V0]], %b)
     // CHECK-NEXT:  %tmp = lit.var.decl "tmp" synth : !lit.ref<none, mut tmp>
+    // CHECK-NEXT:  lifetime.start %tmp
     // CHECK-NEXT:  %2 = lit.call @somethingThatRaises{{.*}}(%__error__, %tmp)
     // CHECK-NEXT:  if %2
     // CHECK-NEXT:    %[[V4:.*]] = lit.ref.struct.ger %self[b] : <@Field, mut self> from @DestructSome
     // CHECK-NEXT:    lit.call @Field::@__del__[mut self](%[[V4]])
     // CHECK-NEXT:    mark_consumed %tmp
+    // CHECK-NEXT:    lifetime.end %tmp
     // CHECK-NEXT:    kgen.param.constant
     // CHECK-NEXT:    lit.error_return
     // CHECK-NEXT:  } else {
+    // CHECK-NEXT:    lifetime.end %tmp
     // CHECK-NEXT:    mark_consumed %__error__
     // CHECK-NEXT:    yield
     // CHECK-NEXT:  }
@@ -1152,6 +1157,7 @@ lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper
 // CHECK-LABEL: lit.func @respectLifetimes
 lit.func @respectLifetimes[mut mylife](%s2: i1 borrow) -> !kgen.none {
   // CHECK-NEXT: %v = lit.var.decl "v" var : !lit.ref<@Wrapper, mut *"v`5">
+  // CHECK-NEXT: lifetime.start %v
   // CHECK-NEXT: lit.call @Wrapper::@__init__[mut *"v`5"](%v)
   // CHECK-NEXT: %[[V1:.*]] = lit.call @Wrapper::@__get_ref[mut *"v`5"](%v)
   // CHECK-NEXT: %[[V2:.*]] = lit.call @Reference::@__get_ref[mut *"v`5"](%[[V1]])
@@ -1334,6 +1340,7 @@ lit.struct.decl @GGUFFile
       // CHECK: %[[V0:.*]] = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__)
       // CHECK-NEXT:  if %[[V0]]
       // CHECK-NEXT:    mark_consumed %__call_result_tmp__
+      // CHECK-NEXT:    lifetime.end %__call_result_tmp__
       // CHECK-NEXT:    kgen.param.constant: i1 = <1>
       // CHECK-NEXT:    lit.error_return
       // CHECK-NEXT:  } else {
@@ -1348,7 +1355,9 @@ lit.struct.decl @GGUFFile
         lit.ownership.mark_consumed %__error__ : <!Error, mut errorLife>
         hlcf.yield
       }
+      // CHECK: lit.load.consume %__call_result_tmp__
       %25 = lit.load.consume %__call_result_tmp__ : !lit.ref<!Int, mut resultLife>
+      // CHECK-NEXT: lifetime.end %__call_result_tmp__
       lit.ref.store %25, %23 : <!Int, mut #lit.lifetime>
       hlcf.continue
     }

@@ -138,9 +138,11 @@ struct RegMovableCopyable:
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
+    # CHECK-NEXT: lifetime.start %a_0
     # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
+    # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a_0
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
+    # CHECK-NEXT: lifetime.end %a_0
     # CHECK-NEXT: kgen.return [[AVAL]]
     return a^
 
@@ -148,8 +150,10 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
+    # CHECK-NEXT: lifetime.start %a_0
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
+    # CHECK-NEXT: lifetime.end %a_0
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
@@ -157,9 +161,11 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
+    # CHECK-NEXT: lifetime.start %a_0
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
+    # CHECK-NEXT: lifetime.end %a_0
     # CHECK-NEXT: kgen.return [[A]]
     return a^
 
@@ -167,16 +173,20 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
+    # CHECK-NEXT: lifetime.start %a_0
     # CHECK-NEXT: lit.ref.store %a, %a_0
 
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
+    # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
+    # CHECK-NEXT: lifetime.end %a_0
+    # CHECK-NEXT: lifetime.start %x
     # CHECK-NEXT: lit.ref.store [[A]], %x
     var x = a^
 
     # CHECK-NEXT: [[X:%.*]] = lit.transfer_mem_ownership %x
     # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[X]]
+    # CHECK-NEXT: lifetime.end %x
     # CHECK-NEXT: kgen.return [[RES]]
     return x^
 
@@ -216,19 +226,24 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 # CHECK-LABEL: lit.func @"optimizeCopyElision
 fn optimizeCopyElision():
     # CHECK: %a = lit.var.decl "a"
+    # CHECK-NEXT: lifetime.start %a
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%a)
     var a = RegExample()
 
     # We need one copy of 'a' here, not two + dtor.
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: lifetime.start [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[A]])
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: lifetime.end %a
     # CHECK-NEXT: [[ACOPY:%.*]] = lit.load.consume [[ANON]]
+    # CHECK-NEXT: lifetime.end [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], [[A]])
     takeTwo(a, a)
 
     # CHECK-NEXT: %x = lit.var.decl "x"
+    # CHECK-NEXT: lifetime.start %x
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
     var x = MemExample()
 
@@ -236,14 +251,31 @@ fn optimizeCopyElision():
 
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
+    # CHECK-NEXT: lifetime.start [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[IMMREF]])
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: kgen.param.declare
     # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind [[IMMREF]]
     # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[PTR]])
+    # CHECK-NEXT: lifetime.end %x
+    # CHECK-NEXT: lifetime.end [[ANON]]
     takeTwo(x, x)
 
     # CHECK-NEXT: kgen.param.constant: none
+
+
+fn consume(owned value: MemExample):
+    pass
+
+
+# CHECK-LABEL: lit.func @"copyElisionArgument
+fn copyElisionArgument(owned value: MemExample):
+    # CHECK-NEXT: %0 = lit.ref.immut %value
+    # CHECK-NEXT: kgen.param.declare
+    # CHECK-NEXT: %1 = kgen.rebind %0
+    # CHECK-NEXT: call {{.*}}consume{{.*}}(%1)
+    # CHECK-NEXT: %none =
+    consume(value)
 
 
 # CHECK-LABEL: lit.func @"optimizeCopyToMove
@@ -251,6 +283,7 @@ fn optimizeCopyToMove():
     # All the copy ctors should be eliminated in favor of moves.
 
     # CHECK: %m1 = lit.var.decl
+    # CHECK-NEXT: lifetime.start %m1
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
     var m1 = MemExample()  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
@@ -259,7 +292,9 @@ fn optimizeCopyToMove():
 
     # CHECK: %m2 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
+    # CHECK-NEXT: lifetime.start %m2
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
+    # CHECK-NEXT: lifetime.end %m1
     var m2 = m1  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
@@ -267,17 +302,21 @@ fn optimizeCopyToMove():
 
     # CHECK: %m3 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
+    # CHECK-NEXT: lifetime.start %m3
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
+    # CHECK-NEXT: lifetime.end %m2
     var m3 = m2  # expected-warning {{never mutated}}
 
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m3
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m3.noop()
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
+    # CHECK-NEXT: lifetime.end %m3
 
     # All the copyinit's should be removed.
 
     # CHECK-NEXT: %r1 = lit.var.decl "r1"
+    # CHECK-NEXT: lifetime.start %r1
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%r1)
     var r1 = RegExample()
     # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
@@ -286,6 +325,8 @@ fn optimizeCopyToMove():
 
     # CHECK-NEXT: %r2 = lit.var.decl "r2"
     # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
+    # CHECK-NEXT: lifetime.end %r1
+    # CHECK-NEXT: lifetime.start %r2
     # CHECK-NEXT: lit.ref.store [[R1]], %r2
     var r2 = r1
     # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
@@ -294,6 +335,8 @@ fn optimizeCopyToMove():
 
     # CHECK-NEXT: %r3 = lit.var.decl "r3"
     # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
+    # CHECK-NEXT: lifetime.end %r2
+    # CHECK-NEXT: lifetime.start %r3
     # CHECK-NEXT: lit.ref.store [[R2]], %r3
     var r3 = r2
     # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
@@ -301,8 +344,10 @@ fn optimizeCopyToMove():
     r3.noop()
     # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
+    # CHECK-NEXT: lifetime.end %r3
 
     # CHECK-NEXT: %v1 = lit.var.decl
+    # CHECK-NEXT: lifetime.start %v1
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%v1)
     var v1 = RegExample()  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
@@ -311,6 +356,8 @@ fn optimizeCopyToMove():
 
     # CHECK-NEXT: %v2 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
+    # CHECK-NEXT: lifetime.end %v1
+    # CHECK-NEXT: lifetime.start %v2
     # CHECK-NEXT: lit.ref.store [[TMP]], %v2
     var v2 = v1  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
@@ -319,6 +366,8 @@ fn optimizeCopyToMove():
 
     # CHECK-NEXT: %v3 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
+    # CHECK-NEXT: lifetime.end %v2
+    # CHECK-NEXT: lifetime.start %v3
     # CHECK-NEXT: lit.ref.store [[TMP]], %v3
     var v3 = v2  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
@@ -327,6 +376,7 @@ fn optimizeCopyToMove():
 
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
+    # CHECK-NEXT: lifetime.end %v3
     # CHECK-NEXT: kgen.param.constant: none
 
 

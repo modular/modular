@@ -96,13 +96,17 @@ fn testUseConditional(cond: __mlir_type.i1):
   Reference(__get_litref_as_mvalue(cref))[].noop()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
+  # CHECK-NEXT: lifetime.start [[REFREF]]
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
+  # CHECK-NEXT: lifetime.end [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call @{{.*}}noop
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lifetime.end %a
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lifetime.end %b
 
 # CHECK-LABEL: lit.func @"testDefConditional
 fn testDefConditional(cond: __mlir_type.i1):
@@ -123,8 +127,10 @@ fn testDefConditional(cond: __mlir_type.i1):
   Reference(__get_litref_as_mvalue(cref))[].mutate()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
+  # CHECK-NEXT: lifetime.start [[REFREF]]
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
+  # CHECK-NEXT: lifetime.end [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
 
@@ -133,8 +139,10 @@ fn testDefConditional(cond: __mlir_type.i1):
   Reference(__get_litref_as_mvalue(cref))[] = MemExample()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
+  # CHECK-NEXT: lifetime.start [[REFREF]]
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
+  # CHECK-NEXT: lifetime.end [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
@@ -145,17 +153,22 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
+  # CHECK-NEXT: lifetime.start [[REFREF]]
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
+  # CHECK-NEXT: lifetime.end [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}([[MREF]], %shouldBeMovedFrom)
+  # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
   # their lifetimes, but now we can say goodbye.
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lifetime.end %a
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lifetime.end %b
 
 # ===----------------------------------------------------------------------=== #
 # Tests of the Reference type.
@@ -170,6 +183,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   var a = MemExample()
 
   # CHECK-NEXT: %aref = lit.var.decl "aref"
+  # CHECK-NEXT: lifetime.start %aref
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}(%aref, %a)
   var aref = Reference(a)
   # CHECK-NEXT: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1">
@@ -190,16 +204,21 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # Ok, this was the last use of A so it can go away.
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lifetime.end %a
 
   # The reference being alive doesn't keep the underlying stuff alive, only
   # accesses
   # CHECK-NEXT: %aref2 = lit.var.decl "aref2"
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
+  # CHECK-NEXT: lifetime.end %aref
+  # CHECK-NEXT: lifetime.start %aref2
   # CHECK-NEXT: lit.ref.store [[AR]], %aref2
+  # CHECK-NEXT: lifetime.end %aref2
   var aref2 = aref
 
   # Reference can bind to immutable things as well, no problem.
   # CHECK-NEXT: %immref = lit.var.decl "immref"
+  # CHECK-NEXT: lifetime.start %immref
   # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%immref, %imm)
   var immref = Reference(imm)
   immref[].noop()
@@ -318,8 +337,10 @@ fn test_immortal_to_mortal(arg: Reference[Int, _])
 
   # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
   # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: lifetime.start [[ANON2]]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
-  # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
+  # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]] : !lit.ref
+  # CHECK-NEXT: lifetime.end [[ANON2]]
   # CHECK-NEXT: kgen.return [[RES]]
   return UnsafePointer.address_of(arg[])[]
 
@@ -371,6 +392,7 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
 
   # CHECK: %iter = lit.var.decl
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
+  # CHECK-NEXT: lifetime.start %iter
   # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %iter)
   var iter = mems.__iter__()
 
@@ -380,18 +402,20 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   ## FIXME: This destruction should be ordered after the destroy of the iterator
   ## Since the iterator can refer to the mems struct.
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
+  # CHECK-NEXT: lifetime.end %mems_0
 
   # Iterator is destroyed as soon as we're done with it.
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%iter)
+  # CHECK-NEXT: lifetime.end %iter
 
   # __next__ returns a Reference which needs to turn in to !lit.ref
   # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[ELTREF]])
   # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
+  # CHECK-NEXT: lifetime.start %x
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
   var x : MemExample = iter.__next__()[]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lifetime.end %x
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
-
-

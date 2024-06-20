@@ -1547,6 +1547,10 @@ private:
   /// Emit a debug kill marker for the value if it is tracked with debug info.
   void emitDebugKill(ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder);
 
+  /// Emit a lifetime end marker for a value that is being consumed.
+  void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder);
+  void emitLifetimeEndAfter(Value value, Operation *after);
+
   /// Emit both a debug kill & a destructor call.
   void emitDebugKillAndDestructorCallAt(Value value, ValueRef valueRef,
                                         mlir::ImplicitLocOpBuilder &builder,
@@ -2192,6 +2196,10 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
   if (!dryRun) {
     mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
     emitDebugKill(valueRef, builder);
+    // `lit.transfer_mem_ownership` may alias an underlying allocation. Don't
+    // emit a lifetime end marker when a value is consumed by it.
+    if (!isa<TransferMemOwnershipOp>(op))
+      emitLifetimeEndAfter(value, &op);
   }
 }
 
@@ -2292,6 +2300,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
     if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
       mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
       emitDebugInit(value, direct, builder);
+      builder.create<VarLifetimeStartOp>(value);
     }
 
     direct.markBits(consumedValues, false);
@@ -2532,6 +2541,10 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
     for (OpOperand &operand : checkVal.getUses()) {
       Operation *user = operand.getOwner();
 
+      // Ignore lifetime markers.
+      if (isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
+        continue;
+
       if (user->getBlock() != tmpBlock)
         return false; // We don't handle control flow.
 
@@ -2623,6 +2636,20 @@ static Value getMutableRefForPossiblyImmutValue(Value value,
   return builder.create<RebindOp>(destType, value);
 }
 
+/// Given a temporary used as the destination of a copyinit call, check if its
+/// only user (ignoring lifetime markers) is a `lit.load.consume`. This function
+/// returns the load op if it is the only user.
+static LoadConsumeOp getOnlyLoadConsumeUser(VarDeclOp var) {
+  LoadConsumeOp consumer;
+  for (Operation *user : var->getUsers()) {
+    if (auto load = dyn_cast<LoadConsumeOp>(user))
+      consumer = load;
+    else if (!isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
+      return {};
+  }
+  return consumer;
+}
+
 /// Given the need to destroy the specified value as a result of the specified
 /// operation using it, check to see if the use is a call to the copy ctor for
 /// the value.  If so, try to elide the copy+temporary.  This returns success
@@ -2648,10 +2675,11 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     // Make sure the destructor is for the source of the copyinit not the result
     // of the copyinit or something else weird.
     Value srcValue = copyInitCall.getOperand(0);
+    RefLoadOp load;
     if (srcValue != value) {
       // With var's we can have indirect operands.
       bool isOk = false;
-      if (auto load = srcValue.getDefiningOp<LIT::RefLoadOp>()) {
+      if ((load = srcValue.getDefiningOp<RefLoadOp>())) {
         if (load.getOperand() == value)
           isOk = true;
       }
@@ -2662,6 +2690,11 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     // Transform into:
     //   kgen.call user(%value)
     copyInitCall.getResult(0).replaceAllUsesWith(srcValue);
+
+    // This semantically turns the op into a `lit.load.consume` of the original
+    // value if it was indirect.
+    if (load)
+      emitLifetimeEndAfter(load.getRef(), copyInitCall);
 
     // We'll delete the copyInit but don't want to invalidate iterators so do it
     // later.  Remove the operand uses so we don't see them in later def-use
@@ -2712,15 +2745,19 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       // If the operation right after the call is a consuming load from a
       // varDecl, then we can squash the vardecl and the consuming load and
       // avoid emitting a store, tidying things right up.
-      if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>();
-          varDecl && copyInitDest.hasOneUse()) {
-        if (auto loadConsume =
-                dyn_cast<LoadConsumeOp>(*copyInitDest.user_begin())) {
-
+      if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>()) {
+        if (LoadConsumeOp loadConsume = getOnlyLoadConsumeUser(varDecl)) {
           // The loadConsume is dead and can be removed.
+          for (Operation *user :
+               llvm::make_early_inc_range(varDecl->getUsers()))
+            if (user != loadConsume)
+              user->erase();
           loadConsume.getResult().replaceAllUsesWith(loadOp);
           // We know the bottom-up scan won't revisit it, so directly remove.
           loadConsume.erase();
+          // This turns into a consume of the moved value. Emit an end marker if
+          // appropriate.
+          emitLifetimeEndAfter(loadOp.getRef(), loadOp);
 
           // The lit.var.decl had one use before so it is now dead, we can
           // remove it as well.
@@ -2731,6 +2768,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
 
       // Otherwise we need to insert a store.  Put the store after the call so
       // it isn't reprocessed by destructor insertion.
+      emitLifetimeEndAfter(loadOp.getRef(), loadOp);
       Operation *opAfterCall = &*++Block::iterator(copyInitCall);
       ImplicitLocOpBuilder builder(copyInitCall.getLoc(), opAfterCall);
       builder.create<RefStoreOp>(loadOp, copyInitDest);
@@ -2773,6 +2811,20 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),
                                                 copyInitCall.getOperand(1));
 
+      // Erase the lifetime start marker for the temporary. However, keep the
+      // lifetime end markers if the aliased value is a var decl, as they will
+      // get "inherited" by the aliased value.
+      Value value = LifetimeTrackable::findUnderlyingValueFromField(refCasted);
+      for (Operation *user : llvm::make_early_inc_range(tmpDecl->getUsers())) {
+        if (isa<VarLifetimeStartOp>(user)) {
+          user->erase();
+        } else if (auto end = dyn_cast<VarLifetimeEndOp>(user)) {
+          if (value.getDefiningOp<VarDeclOp>())
+            end.setOperand(value);
+          else
+            user->erase();
+        }
+      }
       tmpDecl.getResult().replaceAllUsesWith(refCasted);
 
       // We'll delete the copyInit but don't want to invalidate iterators so do
@@ -2823,6 +2875,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
+  emitLifetimeEndAfter(value, copyInitCall);
   // Since we changed the copy to a __moveinit__, we don't need a dtor call.
   return success();
 }
@@ -2841,7 +2894,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
       ValueRef::getDereferencedType(value.getType(), isIndirect);
   TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
   if (!dtor) // Trivial types don't have destructors, so nothing to do.
-    return;
+    return emitLifetimeEnd(value, builder);
 
   // Okay, if there is a destructor, we know that this is a non-trivial value.
   // Check to see if the operation that we are destroying this for is a
@@ -2889,6 +2942,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
   // Emit the call to the destructor.
   builder.create<LIT::CallOp>(signature.getResults()[0], dtor,
                               implicitLifetimes, valueToDestroy);
+  emitLifetimeEnd(value, builder);
 }
 
 void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
@@ -2918,6 +2972,22 @@ void DestructorInsertion::emitDebugKill(ValueRef valueRef,
       valueRef.endBit == info.endValueBit) {
     builder.create<DebugInfo::KillOp>(info.debugVariable);
   }
+}
+
+void DestructorInsertion::emitLifetimeEndAfter(Value value, Operation *after) {
+  ImplicitLocOpBuilder builder(after->getLoc(), after);
+  builder.setInsertionPointAfter(after);
+  emitLifetimeEnd(value, builder);
+}
+
+void DestructorInsertion::emitLifetimeEnd(Value value,
+                                          ImplicitLocOpBuilder &builder) {
+  // Memory transfers may alias a var decl. Make sure we insert the end marker
+  // of the memory backing the vardecl only when the transfer's lifetime ends.
+  if (auto transfer = value.getDefiningOp<TransferMemOwnershipOp>())
+    value = transfer.getValue();
+  if (value.getDefiningOp<VarDeclOp>())
+    builder.create<VarLifetimeEndOp>(value);
 }
 
 void DestructorInsertion::emitDebugKillAndDestructorCallAt(

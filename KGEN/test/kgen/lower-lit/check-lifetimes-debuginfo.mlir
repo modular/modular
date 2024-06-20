@@ -39,11 +39,12 @@ lit.struct.decl @S attributes {
 // CHECK-LABEL: lit.func @test_var
 lit.func @test_var() -> index {
   // Create `x`.
-  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
+  // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
-  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
-  // CHECK-NEXT: lit.call @S::@__init__
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x : ![[VAR_X_TYPE]]
+  // CHECK-NEXT: lifetime.start %x
+  // CHECK-NEXT: lit.call @S::@__init__{{.*}}(%x,
   lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
 
   // Use `x.a`.
@@ -54,7 +55,8 @@ lit.func @test_var() -> index {
 
   // `x` can be destroyed here.
   // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE]])
-  // CHECK-NEXT: lit.call @S::@__del__{{.*}}(%[[VAR_X]]) : {{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: lit.call @S::@__del__{{.*}}(%x) : {{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: lifetime.end %x
 
   // `y` is a synthetic variable. Should not have any debuginfo generated.
   %y = lit.var.decl "y"  synth : !lit.ref<@S, mut *"y`0"> loc(#locY)
@@ -73,15 +75,18 @@ lit.func @test_uninit_var() {
 // CHECK-LABEL: lit.func @test_def_in_loop
 lit.func @test_def_in_loop() {
   // Create `x`.
-  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
+  // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
   // CHECK: hlcf.loop "loop0"
   hlcf.loop "loop0" {
     %0 = kgen.param.constant: index = <42> loc(#locX)
-    // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
-    // CHECK-NEXT: lit.call @S::@__init__
+    // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x : ![[VAR_X_TYPE]]
+    // CHECK-NEXT: lifetime.start %x
+    // CHECK-NEXT: lit.call @S::@__init__{{.*}}(%x,
     lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
     // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
+    // CHECK-NEXT: call @S::@__del__
+    // CHECK-NEXT: lifetime.end %x
     hlcf.continue loc(#locX)
   } loc(#locX)
   kgen.return loc(#locRet)
@@ -90,16 +95,25 @@ lit.func @test_def_in_loop() {
 // CHECK-LABEL: lit.func @test_def_twice
 lit.func @test_def_twice() -> index {
   // Create `x`.
-  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
+  // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
-  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
+
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x : ![[VAR_X_TYPE]]
+  // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
   // CHECK: debuginfo.kill #[[DIVAR_X]]
-  // CHECK: debuginfo.value #[[DIVAR_X]]
+  // CHECK-NEXT: call @S::@__del__
+  // CHECK-NEXT: lifetime.end %x
+
+  // CHECK-NEXT: debuginfo.value #[[DIVAR_X]]
+  // CHECK-NEXT: lifetime.start %x
+  // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
-  // CHECK: debuginfo.kill #[[DIVAR_X]]
+  // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
+  // CHECK-NEXT: call @S::@__del__
+  // CHECK-NEXT: lifetime.end %x
 
   kgen.return %0 : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
@@ -107,10 +121,11 @@ lit.func @test_def_twice() -> index {
 // CHECK-LABEL: lit.func @test_consumed
 lit.func @test_consumed() -> index {
   // Create `x`.
-  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var
+  // CHECK-NEXT: %x = lit.var.decl "x" var
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
-  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]]
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x
+  // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__(%x, %0) : !lit.signature<("self": !lit.ref<@S, mut xlife> init_self, |, "num": index) -> !kgen.none> loc(#locX)
 
@@ -120,15 +135,20 @@ lit.func @test_consumed() -> index {
 
   // Move `x` into `y`.
   // CHECK: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE:.*]])
-  // CHECK-NEXT: lit.transfer_mem_ownership {{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: [[X_TRANSFER:%.*]] = lit.transfer_mem_ownership %x {{.*}} loc(#[[LOC_USE]])
   // CHECK-NEXT: debuginfo.value #[[DIVAR_Y]] #[[DIEXPR_DEREF]] = %[[VAR_Y]]
-  // CHECK-NEXT: lit.call @S::@__moveinit__{{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: lifetime.start %y
+  // CHECK-NEXT: lit.call @S::@__moveinit__{{.*}}(%y, [[X_TRANSFER]]) {{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: lifetime.end %x
   %x_moved = lit.transfer_mem_ownership %x : !lit.ref<@S, mut xlife> -> !lit.ref<@S, mut xlifetrans> {paramDecl = #kgen<param.decl xlifetrans : !lit.lifetime<1>>} loc(#locUse)
   lit.call @S::@__moveinit__(%y, %x_moved) : !lit.signature<(!lit.ref<@S, mut ylife> init_self, !lit.ref<@S, mut xlifetrans> owned_in_mem) -> !kgen.none> loc(#locUse)
 
   // Last use of `y`.
-  // CHECK: lit.ref.struct.ger {{.*}} loc(#[[LOC_RET:.*]])
-  // CHECK: debuginfo.kill #[[DIVAR_Y]] loc(#[[LOC_RET]])
+  // CHECK: [[Y_A:%.*]] = lit.ref.struct.ger {{.*}} loc(#[[LOC_RET:.*]])
+  // CHECK-NEXT: lit.ref.load [[Y_A]]
+  // CHECK-NEXT: debuginfo.kill #[[DIVAR_Y]] loc(#[[LOC_RET]])
+  // CHECK-NEXT: call @S::@__del__{{.*}}(%y)
+  // CHECK-NEXT: lifetime.end %y
   %y_a = lit.ref.struct.ger %y[a] : <index, mut ylife> from @S loc(#locRet)
   %y_a_val = lit.ref.load %y_a : <index, mut ylife> loc(#locRet)
   kgen.return %y_a_val : index loc(#locRet)

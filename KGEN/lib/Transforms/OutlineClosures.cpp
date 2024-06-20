@@ -177,7 +177,8 @@ void OutlineClosuresPass::runOnOperation() {
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);
 
       // Take the body from the param region.
-      liftedWrapper.getBodyRegion().takeBody(region);
+      Region &body = liftedWrapper.getBodyRegion();
+      body.takeBody(region);
 
       // Add the original arguments to the call after the captures. Since the
       // captures are the last N arguments, we can simply drop them.
@@ -189,8 +190,19 @@ void OutlineClosuresPass::runOnOperation() {
             capture.getType(),
             b.getStringAttr(generator.getName() + "_context_var_" +
                             Twine(varCounter + idx)));
-        mlir::replaceAllUsesInRegionWith(capture, load,
-                                         liftedWrapper.getBodyRegion());
+        // HACK: Because we don't track lifetimes of captured variables in
+        // parameter closures correctly, we might get erroneous lifetime markers
+        // of captured stack allocations. Just clear them out for now.
+        for (OpOperand &use : llvm::make_early_inc_range(capture.getUses())) {
+          Operation *user = use.getOwner();
+          if (body.isAncestor(user->getParentRegion())) {
+            if (isa<POP::StackAllocLifetimeStartOp,
+                    POP::StackAllocLifetimeEndOp>(user))
+              user->eraseOperand(use.getOperandNumber());
+            else
+              use.set(load);
+          }
+        }
       }
 
       // Since the lifted generator will have a new name, we need to update the
