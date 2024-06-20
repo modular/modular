@@ -377,7 +377,13 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
       // Replace uses of the suspend argument with the continuation.
       Region &body = suspend.getBody();
-      body.getArgument(0).replaceAllUsesWith(continuation);
+      if (!body.getArgument(0).use_empty()) {
+        builder.setInsertionPoint(suspend);
+        Value header = builder.create<PointerBitcastOp>(
+            PointerType::get(coTypes.getHeaderType()),
+            resumeFunction.getArgument(0));
+        body.getArgument(0).replaceAllUsesWith(header);
+      }
       body.eraseArgument(0);
     }
   });
