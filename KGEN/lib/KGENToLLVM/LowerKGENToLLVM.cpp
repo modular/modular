@@ -302,6 +302,12 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
                         b.getUnitAttr());
     }
 
+    if (func.getCoroutineType()) {
+      Type coroType =
+          typeConverter->convertType(func.getCoroutineType().value());
+      funcOp->setAttr(func.getCoroutineTypeAttrName(), TypeAttr::get(coroType));
+    }
+
     // Propagate InlineLevel as a passthrough LLVM attribute.
     convertInlineLevel(funcOp, func.getInlineLevel());
 

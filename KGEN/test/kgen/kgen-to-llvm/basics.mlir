@@ -443,3 +443,15 @@ kgen.func export @llvm_metadata() attributes {
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
+
+// CHECK-LABEL: llvm.func internal @coro
+// CHECK-SAME: coroutineType = !llvm.struct<(i64, ptr, ptr, ptr, ptr, ptr, ptr)>
+kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>} {
+  kgen.return
+}
+
+}
