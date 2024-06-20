@@ -706,11 +706,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
     # Scalar case.
     else:
-        # This @parameter for for some reason doesn't produce the same results.
-        # for i in range(num_elements * dst.element_size):
-        # MOCO-856
+
         @parameter
-        fn _copy_element[i: Int]():
+        for i in range(num_elements * dst.element_size):
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
             var src_idx = _get_element_idx(i, src, buff_element_layout)
 
@@ -721,7 +719,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
             var can_access = mask_val[0] and mask_val[1]
             if not can_access:
-                return
+                continue
 
             @parameter
             if is_async:
@@ -734,8 +732,6 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
-
-        unroll[_copy_element, num_elements * dst.element_size]()
 
 
 @always_inline("nodebug")
@@ -939,9 +935,9 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 
     # Scalar case.
     else:
-        # We do not use param for here because of MOCO-856
+
         @parameter
-        fn _copy_element[i: Int]():
+        for i in range(num_elements * src.element_size):
             # Evaluate the mask, skip OOB element copies
             alias dim_0_shape = to_int(src.layout.shape[0])
             var dim_0 = i % dim_0_shape
@@ -949,13 +945,11 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
             var can_access = mask_val[0] and mask_val[1]
             if not can_access:
-                return
+                continue
 
             alias src_idx = make_layout(tensor_element_layout, src.layout)(i)
             var dst_idx = _get_element_idx(i, dst, buff_element_layout)
             dst.data[dst_idx] = src.ptr[src_idx]
-
-        unroll[_copy_element, num_elements * src.element_size]()
 
 
 # Copies an nd-buffer fragment to `thread_id` thread local LayoutTensor element
