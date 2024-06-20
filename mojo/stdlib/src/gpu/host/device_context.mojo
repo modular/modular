@@ -10,6 +10,7 @@ from gpu.host.device import Device
 from gpu.host.event import Event
 from gpu.host.function import Function
 from gpu.host.stream import Stream
+from ._utils import _check_error, _StreamHandle
 
 
 @value
@@ -159,6 +160,16 @@ struct DeviceContext:
         self.cuda_instance = existing.cuda_instance
         self.cuda_context = existing.cuda_context
         self.cuda_stream = existing.cuda_stream
+
+    fn __enter__(self) -> Self:
+        return self
+
+    fn __exit__(inout self):
+        _ = self
+
+    def __exit__(inout self, error: Error) -> Bool:
+        self.__exit__()
+        return error
 
     fn create_buffer[type: DType](self, size: Int) raises -> DeviceBuffer[type]:
         return DeviceBuffer[type](self, size)
