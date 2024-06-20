@@ -112,3 +112,7 @@ struct Progress:
         print("")
         _hide_cursor()
         _show_cursor()
+
+    fn __exit__(self, err: Error) -> Bool:
+        self.__exit__()
+        return err
