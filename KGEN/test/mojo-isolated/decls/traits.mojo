@@ -979,6 +979,9 @@ trait DependentParam:
     fn shadow[a: Int](self):
         ...
 
+    fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
+        ...
+
 
 # CHECK-LABEL: lit.struct.decl @RegPassableParamTrait<a>
 @register_passable
@@ -993,4 +996,10 @@ struct RegPassableParamTrait[a: int](DependentParam):
     # CHECK-SAME: <*"a`": !Int>
     fn shadow[b: Int](self):
         # CHECK: call {{.*}}<a, :!Int *"a`">
+        pass
+
+    # CHECK: lit.func @"bar{{.*}}_thunk"
+    # CHECK-SAME: <x, y>(%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.declref<#ParamType <x>> borrow) -> !lit.declref<#ParamType <y>>
+    fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
+        # CHECK: call {{.*}}<a, x, y>
         pass
