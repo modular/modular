@@ -5,12 +5,17 @@
 ##===----------------------------------------------------------------------===##
 
 include(AddPython)
+
+modular_find_python3_development()
+
 include(RTTIExceptions)
 include(AddPyBind11)
 
 
-pybind11_add_module(MPython STATIC
+add_library(MPython STATIC
   Helpers.cpp
 )
+
+target_include_directories(MPython PRIVATE "${Python3_INCLUDE_DIRS}" "${pybind11_INCLUDE_DIRS}")
 
 set_rtti_exceptions(MPython)
