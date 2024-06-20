@@ -336,6 +336,19 @@ KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsync_chain(LLCLWrapper<AnyAsyncValueRef> async,
+                                  LLCLWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<Chain>();
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<Chain>(runtime);
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
                                      LLCLWrapper<AnyAsyncValueRef> async,
                                      LLCLWrapper<Runtime> runtimePtr) {
@@ -542,6 +555,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_CudaContextSetDevice});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
                    (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
+  funcs.push_back({"KGEN_CompilerRT_CreateAsync_chain",
+                   (void *)&KGEN_CompilerRT_CreateAsync_chain});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_bool",
                    (void *)&KGEN_CompilerRT_CreateAsync_bool});
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncBufferRef",
