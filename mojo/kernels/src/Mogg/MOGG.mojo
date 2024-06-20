@@ -3860,10 +3860,10 @@ fn reduce_min_and_max_shape_func[
 
 
 # MHA Kernels:
-@mogg_register("mo.gpu_multi_head_flash_attention")
+@mogg_register("masked_flash_attention_gpu")
 @always_inline
 @export
-fn gpu_multi_head_flash_attention[
+fn masked_flash_attention_gpu[
     rank: Int,
     input_0_static_shape: DimList,
     input_1_static_shape: DimList,
@@ -3884,6 +3884,41 @@ fn gpu_multi_head_flash_attention[
     output: NDBuffer[output_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
+    """`masked_flash_attention_gpu` is a hand-fused operator which does something
+    analogous to the following list of operations.
+
+      **Step 0:
+      Transpose:
+      query_processed = transpose(query) # BSHD --> BHSD
+      key_processed = transpose(key)     # BSHD --> BHDS
+      value_processed = transpose(value) # BSHD --> BHSD
+
+      **Step 1:
+      attentionMatrix = query_processed @ key_processed
+
+      **Step 2:
+      norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+
+      **Step 3:
+      # Normalize and apply masking
+      attentionMatrixNorm = attentionMatrix * scale
+
+      # Note attention_mask is HSS and auto-broadcasts
+      attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
+
+      **Step 4:
+      # Apply softmax and reproject result
+      attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
+      answer = attentionMatrixSoftMax @ value_processed
+      answer = transpose(answer) # BHSD --> BSHD
+
+    Compared to the CPU patterns the notable differences are:
+      1. The mask is rank 3 and is of shape BSS
+      2. The transposes are part of the kernel itself
+
+    The underlying fusion follows ideas taken from the 2022 FlashAttention paper
+    by Tri Dao et al.
+    """
     if _guard_against_gpu_target[target](ctx):
         return
 
