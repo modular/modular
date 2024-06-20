@@ -965,3 +965,23 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
     # CHECK-SAME: %a_value: !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> borrow_in_mem
     fn test[a_type: element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
+
+
+@register_passable("trivial")
+struct ParamType[x: int]:
+    pass
+
+
+trait DependentParam:
+    fn foo[x: int, y: ParamType[x]](self):
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @RegPassableParamTrait<a>
+@register_passable
+struct RegPassableParamTrait[a: int](DependentParam):
+    # CHECK: lit.func @"foo{{.*}}_thunk"
+    # CHECK-SAME: <x, y: {{.*}}ParamType<x>>(%self: !lit.ref{{.*}}RegPassableParamTrait<a>
+    fn foo[x: int, y: ParamType[x]](self):
+        # CHECK: call {{.*}}<a, x, :{{.*}}ParamType<x> y>
+        pass

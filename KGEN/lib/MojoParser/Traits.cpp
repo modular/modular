@@ -144,12 +144,17 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
                                         LITSignatureType memSig) {
   // Synthesize input and result parameter decls.
   SmallVector<ParamDeclAttr> paramDecls;
+  SmallVector<TypedAttr> paramValues;
+  ParameterEvaluator evaluator;
   Builder b(shared.getContext());
   for (auto [idx, type] : llvm::enumerate(memSig.getParamTypes())) {
     StringAttr name = memSig.getParamName(idx);
     // The parameter names are derived from the decl name.
     paramDecls.push_back(ParamDeclAttr::get(
-        name.empty() ? b.getStringAttr("i" + Twine(idx)) : name, type));
+        name.empty() ? b.getStringAttr("i" + Twine(idx)) : name,
+        evaluator.getReboundType(type)));
+    paramValues.push_back(ParamDeclRefAttr::get(paramDecls.back()));
+    evaluator.addInputValue(paramValues.back());
   }
 
   // Synthesize the method inside the struct.
@@ -176,8 +181,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // The callee is partially bound, containing only its parent struct
   // parameters. Bind the rest of them here.
   SmallVector<TypedAttr> bindSigInputs{callee};
-  for (ParamDeclAttr param : paramDecls)
-    bindSigInputs.push_back(ParamDeclRefAttr::get(param));
+  llvm::append_range(bindSigInputs, paramValues);
   callee = ParamOperatorAttr::get(POC::BindSignature, bindSigInputs);
 
   SignatureType calleeSig = cast<LITSignatureType>(callee.getType());
