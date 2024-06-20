@@ -1305,14 +1305,30 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   SMLoc smLoc = consumeToken(Token::kw_try).getLoc();
   Location loc = translateLocation(smLoc);
 
+  if (parseToken(Token::colon, "expected ':' after 'try'"))
+    return failure();
+
+  // If we see a 'try' block in a context that cannot raise, we need to check if
+  // the user explicitly provided an 'except' region, otherwise this is a
+  // try-finally block where the try block cannot raise.
+  bool inExceptRegion = !!getEmitter().findNearestErrorSlot();
+  if (!inExceptRegion) {
+    Lexer subLexer(shared.diags, lexer.getCursor());
+    ParserBase subParser(shared, subLexer);
+    subParser.skipUntilIndentation(curIndent);
+    inExceptRegion = subParser.consumeIf(Token::kw_except);
+  }
+
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
   ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
   VarDeclOp errDecl = getEmitter().emitVarDecl("__try_error__", errorType, loc,
                                                VarDeclKind::Synthesized);
   auto tryOp = builder.create<TryOp>(loc, errDecl);
-  if (parseToken(Token::colon, "expected ':' after 'try'"))
-    return failure();
+  if (!inExceptRegion) {
+    builder.createBlock(&tryOp.getExceptRegion());
+    builder.create<UnreachableOp>(loc);
+  }
 
   // Parse the try suite.
   builder.createBlock(&tryOp.getTryRegion());
@@ -1367,16 +1383,17 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     hasFinally = consumeIf(Token::kw_finally);
     if (!hasFinally)
       return emitTokenError("expected 'except' or 'finally' block");
-    // Stub out the 'except' and 'else' regions.
-    builder.createBlock(&tryOp.getExceptRegion());
-    // Propagate the error if it is possible in this context.
-    if (MLValue errSlot = getEmitter().findNearestErrorSlot()) {
+    // In a raising context, the default 'except' block just forwards the error.
+    if (inExceptRegion) {
+      builder.createBlock(&tryOp.getExceptRegion());
+      MLValue errSlot = getEmitter().findNearestErrorSlot();
       ValueDest dest(errSlot, EC_RaiseValue);
       getEmitter().emitResult(MRValue(errDecl), SyntheticNode(smLoc), dest);
       builder.create<LIT::RaiseOp>(loc);
+      builder.create<TryYieldOp>(loc);
     }
-    builder.create<TryYieldOp>(loc);
 
+    // Stub the 'else' region.
     builder.createBlock(&tryOp.getElseRegion());
     builder.create<TryYieldOp>(loc);
   }
