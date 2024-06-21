@@ -1177,6 +1177,10 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
 
         Returns:
             A new tensor containing the indices of the maximum elements along axis.
+
+        Raises:
+            Error if this Tensor's rank is larger than the maximum supported
+            rank for argmax.
         """
 
         alias ARGMAX_MAX_TENSOR_RANK = 8
