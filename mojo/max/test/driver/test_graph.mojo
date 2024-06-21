@@ -6,7 +6,7 @@
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from max.graph import Graph, TensorType, Symbol, Type
+from max.graph import Graph, TensorType, Symbol, Type, ops
 from tensor import TensorSpec
 from driver import compile_graph, cpu_device, CPUDescriptor, AnyTensor, Tensor
 from testing import assert_equal, assert_true, assert_raises
@@ -17,23 +17,22 @@ def test_graph_execution():
     graph = Graph(TensorType(DType.float32, 1))
     graph.output(graph[0])
 
-    var cpu = cpu_device()
+    cpu = cpu_device()
     compiled_graph = compile_graph(graph, cpu)
     executable_graph = compiled_graph.load()
 
-    var input_dt = cpu.allocate(TensorSpec(DType.float32, 1))
-    var input = input_dt^.to_tensor[DType.float32, 1]()
+    input_dt = cpu.allocate(TensorSpec(DType.float32, 1))
+    input = input_dt^.to_tensor[DType.float32, 1]()
     input[0] = 1.0
-    var any = AnyTensor(input^)
-    var outputs = executable_graph.execute(any^)
+    outputs = executable_graph.execute(input^)
     assert_equal(len(outputs), 1)
 
     def _assert_values(inout memory: AnyTensor):
-        var new = AnyTensor()
-        var tmp = memory^
+        new = AnyTensor()
+        tmp = memory^
         memory = new^
-        var tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 1]()
-        var val = tensor[0]
+        tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 1]()
+        val = tensor[0]
         memory = tensor^.to_device_tensor()
         assert_equal(val, 1.0)
 
@@ -41,16 +40,16 @@ def test_graph_execution():
         _assert_values(output[])
 
 
-def test_mnist():
-    var g = Graph(
+def build_graph() -> Graph:
+    g = Graph(
         "test_mnist_helpers",
         List[Type](TensorType(DType.float32, 1, 28, 28, 1)),
     )
-    var cst_data = tensor.Tensor[DType.float32](128, 10)
+    cst_data = tensor.Tensor[DType.float32](128, 10)
     cst_data._to_buffer().fill(0.5)
-    var cst = g.constant(cst_data)
+    cst = g.constant(cst_data)
 
-    var cst_0 = g.constant(
+    cst_0 = g.constant(
         tensor.Tensor[DType.float32](
             tensor.TensorShape(1, 10),
             -0.0675942451,
@@ -66,50 +65,55 @@ def test_mnist():
         )
     )
 
-    var cst_1_data = tensor.Tensor[DType.float32](784, 128)
+    cst_1_data = tensor.Tensor[DType.float32](784, 128)
     cst_1_data._to_buffer().fill(0.5)
-    var cst_1 = g.constant(cst_1_data)
+    cst_1 = g.constant(cst_1_data)
 
-    var cst_2_data = tensor.Tensor[DType.float32](1, 128)
+    cst_2_data = tensor.Tensor[DType.float32](1, 128)
     cst_2_data._to_buffer().fill(0.5)
-    var cst_2 = g.constant(cst_2_data)
+    cst_2 = g.constant(cst_2_data)
 
-    var p1 = g[0].reshape(1, 784)
-    var p2 = p1 @ cst_1
-    var p3 = p2 + cst_2
-    var p4 = g.op("mo.relu", p3, TensorType(DType.float32, 1, 128))
-    var p5 = p4 @ cst
-    var p6 = p5 + cst_0
+    p1 = g[0].reshape(1, 784)
+    p2 = p1 @ cst_1
+    p3 = p2 + cst_2
+    p4 = ops.relu(p3)
+    p5 = p4 @ cst
+    p6 = p5 + cst_0
     _ = g.output(p6)
 
-    var cpu = cpu_device()
-    compiled_graph = compile_graph(g, cpu)
-    var executable_graph = compiled_graph.load()
+    return g
 
-    var input_dt = cpu.allocate(TensorSpec(DType.float32, 1, 28, 28, 1))
-    var input = input_dt^.to_tensor[DType.float32, 4]()
+
+def test_mnist():
+    g = build_graph()
+    cpu = cpu_device()
+    compiled_graph = compile_graph(g, cpu)
+    executable_graph = compiled_graph.load()
+
+    input_dt = cpu.allocate(TensorSpec(DType.float32, 1, 28, 28, 1))
+    input = input_dt^.to_tensor[DType.float32, 4]()
     for i in range(1):
         for j in range(28):
             for k in range(28):
                 for l in range(1):
                     input[i, j, k, l] = 1.0
-    var outputs = executable_graph.execute(input^)
+    outputs = executable_graph.execute(input^)
     assert_equal(len(outputs), 1)
 
     def _assert_values(inout memory: AnyTensor):
-        var new = AnyTensor()
-        var tmp = memory^
+        new = AnyTensor()
+        tmp = memory^
         memory = new^
-        var tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 2]()
-        var rank = tensor.get_rank()
-        var output_list = List[Float32]()
+        tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 2]()
+        rank = tensor.get_rank()
+        output_list = List[Float32]()
         output_list.reserve(10)
         for i in range(10):
             output_list.append(tensor[0, i])
         memory = tensor^.to_device_tensor()
         assert_equal(rank, 2)
 
-        var expected_outputs = List[Float32](
+        expected_outputs = List[Float32](
             2.511993e04,
             2.512001e04,
             2.512000e04,

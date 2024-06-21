@@ -11,34 +11,34 @@ from tensor import TensorSpec
 
 
 def test_from_device_memory():
-    var dev = cpu_device()
+    dev = cpu_device()
 
-    var dm = dev.allocate(
+    dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var anytensor = AnyTensor(dm^)
+    anytensor = AnyTensor(dm^)
 
     assert_equal(anytensor.get_rank(), 2)
 
 
 def test_from_tensor():
-    var dev = cpu_device()
+    dev = cpu_device()
 
-    var dm = dev.allocate(
+    dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var tensor = dm^.to_tensor[DType.float32, 2]()
+    tensor = dm^.to_tensor[DType.float32, 2]()
 
     tensor[0, 0] = 1
 
-    var anytensor = AnyTensor(tensor^)
+    anytensor = AnyTensor(tensor^)
 
     assert_equal(anytensor.get_rank(), 2)
 
-    var dm_back = anytensor^.to_device_tensor()
-    var tensor2 = dm_back^.to_tensor[DType.float32, 2]()
+    dm_back = anytensor^.to_device_tensor()
+    tensor2 = dm_back^.to_tensor[DType.float32, 2]()
     assert_equal(tensor2[0, 0], 1)
 
 
@@ -47,15 +47,15 @@ def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
 
 
 def test_implicit_conversion():
-    var dev = cpu_device()
+    dev = cpu_device()
 
-    var dt1 = dev.allocate(
+    dt1 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
 
-    var tensor = dt1^.to_tensor[DType.float32, 2]()
+    tensor = dt1^.to_tensor[DType.float32, 2]()
 
-    var dt2 = dev.allocate(
+    dt2 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
     )
 

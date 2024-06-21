@@ -28,33 +28,31 @@ from sys import argv
 
 
 def test_graph_execution():
-    var args = argv()
+    args = argv()
     if len(args) < 2:
         print("Usage: program.exe <model_path>")
         raise "ArgumentError: Expected model path"
 
-    var graph_path = args[1]
-    var gpu = cuda_device()
-    var cpu = cpu_device()
+    graph_path = args[1]
+    gpu = cuda_device()
+    cpu = cpu_device()
     compiled_graph = compile_graph(graph_path, gpu)
-    var executable_graph = compiled_graph.load()
+    executable_graph = compiled_graph.load()
 
-    var input_dt = cpu.allocate(TensorSpec(DType.float32, 5))
-    var input_cpu = input_dt^.to_tensor[DType.float32, 1]()
+    input_dt = cpu.allocate(TensorSpec(DType.float32, 5))
+    input_cpu = input_dt^.to_tensor[DType.float32, 1]()
     for i in range(5):
         input_cpu[i] = i
-    var gpu_tensor = input_cpu^.to_device_tensor().copy_to(gpu)
-    var outputs = executable_graph.execute(gpu_tensor^)
+    gpu_tensor = input_cpu^.to_device_tensor().copy_to(gpu)
+    outputs = executable_graph.execute(gpu_tensor^)
     assert_equal(len(outputs), 1)
 
     def _assert_values(inout memory: AnyTensor, device: Device):
-        var new = AnyTensor()
-        var tmp = memory^
+        new = AnyTensor()
+        tmp = memory^
         memory = new^
-        var gpu_tensor = tmp^.to_device_tensor()
-        var cpu_tensor = gpu_tensor.copy_to(device).to_tensor[
-            DType.float32, 1
-        ]()
+        gpu_output = tmp^.to_device_tensor()
+        cpu_tensor = gpu_output.copy_to(device).to_tensor[DType.float32, 1]()
         for i in range(5):
             assert_equal(cpu_tensor[i], 2 * i)
 
