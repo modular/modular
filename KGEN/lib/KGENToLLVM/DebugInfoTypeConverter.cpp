@@ -208,14 +208,6 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(CO::CoroutineType type) {
       DIStructType::get(StringAttr::get(type.getContext(), "!co.routine")));
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
-  SmallVector<Type> types;
-  for (TypedAttr attr : type.getVariadicIfResolved().getValues())
-    types.push_back(cast<TypeConstantAttr>(attr).getMlirType());
-  return buildDebugStructTypeFromTypeAttrs(
-      types, StringAttr::get(type.getContext(), mlir::debugString(type)));
-}
-
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
   return buildPointerType(convertDebugType(type.getElementType()),
                           cast<IntegerAttr>(type.getAddressSpace()).getInt());
@@ -255,7 +247,6 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
   addConversion([&](CO::CoroutineType type) { return buildDebugType(type); });
-  addConversion([&](PackType type) { return buildDebugType(type); });
   addConversion([&](PointerType type) { return buildDebugType(type); });
   addConversion([&](POP::SIMDType type) { return buildDebugType(type); });
   addConversion([&](StructType type) { return buildDebugType(type); });

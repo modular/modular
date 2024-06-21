@@ -152,12 +152,6 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     if (isa<mlir::UnitAttr, IntegerAttr>(value)) {
       // Propagate unit and integer attribute.
       attrs.append(attr.getName(), value);
-    } else if (auto pack = dyn_cast<PackAttr>(value)) {
-      // Propagate pack attribute as array attributes, since they're also
-      // heterogenous lists.
-      attrs.append(attr.getName(),
-                   b.getArrayAttr(llvm::map_to_vector(
-                       pack.getValues(), [](Attribute attr) { return attr; })));
     } else if (auto str = dyn_cast<StringAttr>(value)) {
       // Strip the type from string attributes.
       attrs.append(attr.getName(), b.getStringAttr(str.getValue()));
@@ -579,152 +573,6 @@ struct ConvertKGENGlobalAddress
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENPackCreate
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENPackCreate : public ConvertPOPToLLVMPattern<PackCreateOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PackCreateOp op, PackCreateOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type packType = convertType(op.getType());
-    if (!packType)
-      return rewriter.notifyMatchFailure(op.getLoc(),
-                                         "failed to convert pack type");
-
-    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value container = materializeLLVMStruct(b, packType, adaptor.getOperands());
-    rewriter.replaceOp(op, container);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENPackExtract
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENPackExtract : public ConvertPOPToLLVMPattern<PackExtractOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PackExtractOp op, PackExtractOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Otherwise, extract the value at the specified index from the pack's
-    // underlying storage.
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getPack(), cast<IntegerAttr>(op.getIndex()).getInt());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENPackGEP
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENPackGEP : public ConvertPOPToLLVMPattern<PackGEPOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PackGEPOp op, PackGEPOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Otherwise, GEP to the value at the specified index from the pack's
-    // underlying storage.
-    auto index = cast<IntegerAttr>(op.getIndex()).getInt();
-
-    PointerType ptrType = cast<PointerType>(op.getPack().getType());
-    Type elementType = convertType(ptrType.getElementType());
-    if (!elementType)
-      return op.emitError("failed to convert pack type");
-    LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, opaquePtr, elementType, adaptor.getPack(),
-        ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(index)});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENPackSize
-//===----------------------------------------------------------------------===//
-
-/// Converts a `kgen.pack.size` into an LLVM constant representing the number of
-/// elements in the pack's underlying struct.
-struct ConvertKGENPackSize : public ConvertPOPToLLVMPattern<PackSizeOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PackSizeOp op, PackSizeOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Return the number of elements in the pack's underlying storage.
-    auto type = cast<LLVM::LLVMStructType>(adaptor.getOperand().getType());
-    rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-        op, rewriter.getIntegerAttr(getTypeConverter()->getIndexType(),
-                                    type.getBody().size()));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPPackLoad
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPPackLoad : ConvertPOPToLLVMPattern<PackLoadOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PackLoadOp op, PackLoadOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // The input pack will already be lowered to an LLVM struct, and the
-    // pointers within it are already lowered to LLVM pointers (erasing their
-    // element types).  We need to work in both worlds.
-    VariadicAttr origInputPack =
-        cast<PackType>(op.getOperand().getType()).getVariadicIfResolved();
-    if (!origInputPack)
-      return rewriter.notifyMatchFailure(op.getLoc(), "pack is not concrete");
-
-    auto inputStruct = adaptor.getPack();
-    // auto inputStructTy = cast<LLVM::LLVMStructType>(inputStruct.getType());
-
-    // The result will also be a pack.
-    auto resultType =
-        dyn_cast_or_null<LLVM::LLVMStructType>(convertType(op.getType()));
-    if (!resultType)
-      return rewriter.notifyMatchFailure(op.getLoc(),
-                                         "failed to convert result pack type");
-
-    // PackLoadOp gets lowered to a bunch of extracts + pop.load's for each elt.
-    SmallVector<Value> resultElts;
-    for (auto [idx, origTypeAttr, resultEltType] :
-         llvm::enumerate(origInputPack.getValues(), resultType.getBody())) {
-      Value elt =
-          rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), inputStruct, idx);
-      // Dig the original pointer type out of #kgen.type<!kgen.pointer<i32>>.
-      Type origPointerTy = cast<TypeConstantAttr>(origTypeAttr).getMlirType();
-      elt = rewriter
-                .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
-                                                          origPointerTy, elt)
-                .getResult(0);
-      elt = rewriter.create<POP::LoadOp>(op.getLoc(), elt);
-
-      // Cast the result back so we get LLVM types, not things like 'index'
-      if (elt.getType() != resultEltType)
-        elt = rewriter
-                  .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
-                                                            resultEltType, elt)
-                  .getResult(0);
-
-      resultElts.push_back(elt);
-    }
-
-    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value container = materializeLLVMStruct(b, resultType, resultElts);
-    rewriter.replaceOp(op, container);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENStructCreate
 //===----------------------------------------------------------------------===//
 
@@ -901,11 +749,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
-      ConvertKGENPackCreate,
-      ConvertKGENPackExtract,
-      ConvertKGENPackGEP,
-      ConvertKGENPackSize,
-      ConvertPOPPackLoad,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,
