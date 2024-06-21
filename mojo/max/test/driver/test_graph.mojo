@@ -104,9 +104,9 @@ def test_mnist():
         new = AnyTensor()
         tmp = memory^
         memory = new^
-        tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 2]()
-        rank = tensor.get_rank()
-        output_list = List[Float32]()
+        var tensor = tmp^.to_device_tensor().to_tensor[DType.float32, 2]()
+        var rank = tensor.rank
+        var output_list = List[Float32]()
         output_list.reserve(10)
         for i in range(10):
             output_list.append(tensor[0, i])

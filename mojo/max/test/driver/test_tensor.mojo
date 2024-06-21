@@ -21,8 +21,8 @@ def test_tensor():
     )
     tensor = dt^.to_tensor[DType.float32, 2]()
 
-    assert_equal(tensor.get_rank(), 2)
-    assert_equal(tensor.get_dtype(), DType.float32)
+    assert_equal(tensor.spec().rank(), 2)
+    assert_equal(tensor.spec().dtype(), DType.float32)
 
     tensor[0, 0] = 0
     tensor[0, 1] = 1
@@ -41,8 +41,8 @@ def test_tensor_slice():
     )
     tensor = dt^.to_tensor[DType.float32, 2]()
 
-    assert_equal(tensor.get_rank(), 2)
-    assert_equal(tensor.get_dtype(), DType.float32)
+    assert_equal(tensor.spec().rank(), 2)
+    assert_equal(tensor.spec().dtype(), DType.float32)
 
     for i in range(3):
         for j in range(3):
@@ -59,8 +59,8 @@ def test_tensor_slice():
     # 0 1 2
     # 1 2 3
 
-    slice_spec = slice.get_static_spec()
-    assert_equal(slice_spec.get_rank(), 2)
+    var slice_spec = slice.spec()
+    assert_equal(slice_spec.rank(), 2)
     assert_equal(slice_spec[0], 2)
     assert_equal(slice_spec[1], 3)
 
@@ -73,8 +73,8 @@ def test_tensor_slice():
     # 1
     # 2
 
-    inner_slice_spec = inner_slice.get_static_spec()
-    assert_equal(inner_slice_spec.get_rank(), 2)
+    var inner_slice_spec = inner_slice.spec()
+    assert_equal(inner_slice_spec.rank(), 2)
     assert_equal(inner_slice_spec[0], 2)
     assert_equal(inner_slice_spec[1], 1)
 
@@ -145,15 +145,15 @@ def test_2dslice_with_step_row_column():
     assert_equal(stepped_slice[0, 1], 14)
     assert_equal(stepped_slice[1, 1], 34)
 
-    slice_spec = stepped_slice.get_static_spec()
-    assert_equal(slice_spec.get_rank(), 2)
+    var slice_spec = stepped_slice.spec()
+    assert_equal(slice_spec.rank(), 2)
     assert_equal(slice_spec.dtype(), DType.float32)
     assert_equal(slice_spec[0], 5)
     assert_equal(slice_spec[1], 5)
 
-    inner_slice = tensor[1::3, 1::3]
-    inner_slice_spec = inner_slice.get_static_spec()
-    assert_equal(inner_slice_spec.get_rank(), 2)
+    var inner_slice = tensor[1::3, 1::3]
+    var inner_slice_spec = inner_slice.spec()
+    assert_equal(inner_slice_spec.rank(), 2)
     assert_equal(inner_slice_spec.dtype(), DType.float32)
     assert_equal(inner_slice_spec[0], 3)
     assert_equal(inner_slice_spec[1], 3)
