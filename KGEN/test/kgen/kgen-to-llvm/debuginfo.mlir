@@ -1,7 +1,6 @@
 // RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' -mlir-print-debuginfo %s | FileCheck %s
 
 // Test proper handling of debug types.
-!packTest = !kgen.pack<[index, index]>
 !pointerTest = !kgen.pointer<index>
 !voidPointerTest = !kgen.pointer<none>
 !structTest = !kgen.struct<(index, struct<(index)>)>
@@ -11,8 +10,6 @@
 // CHECK-DAG: ![[INDEX:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
 
 // CHECK-DAG: ![[MEMBER0:.*]] = !debuginfo.member<m0: ![[INDEX]]>
-// CHECK-DAG: ![[MEMBER1:.*]] = !debuginfo.member<m1: ![[INDEX]]>
-// CHECK-DAG: ![[PACK:.*]] = !debuginfo.struct<"!kgen.pack<[index, index]>"(![[MEMBER0]], ![[MEMBER1]])>
 
 // CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[INDEX]] {sizeInBits = 64, alignInBits = 64, addressSpace = 0}>
 
@@ -40,10 +37,9 @@
 // CHECK-DAG: ![[DATA_MEMBER:.*]] = !debuginfo.member<data: ![[CHAR_PTR]]>
 // CHECK-DAG: ![[STRING:.*]] = !debuginfo.struct<"!kgen.string"(![[DATA_MEMBER]], ![[SIZE_MEMBER]])>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[PACK]], ![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT_TYPE]], ![[SIGNATURE]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
+// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT_TYPE]], ![[SIGNATURE]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
-  !debuginfo.unresolved<!packTest>,
   !debuginfo.unresolved<!pointerTest>,
   !debuginfo.unresolved<!voidPointerTest>,
   !debuginfo.unresolved<!structTest>,

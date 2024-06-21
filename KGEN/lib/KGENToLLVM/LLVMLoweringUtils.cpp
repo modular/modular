@@ -219,22 +219,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert struct types to LLVM literal structs.
-  auto convertElementTypesToStruct =
-      [=](ArrayRef<TypedAttr> elements) -> std::optional<Type> {
-    SmallVector<Type> types;
-    types.reserve(elements.size());
-    for (TypedAttr elementType : elements) {
-      auto constant = dyn_cast<TypeConstantAttr>(elementType);
-      if (!constant)
-        return {};
-      Type converted = convertType(constant.getMlirType());
-      if (!converted)
-        return {};
-      types.push_back(converted);
-    }
-    return LLVM::LLVMStructType::getLiteral(&getContext(), types);
-  };
-
   addConversion([=](StructType structType) -> std::optional<Type> {
     SmallVector<Type> types;
     for (Type type : structType.getElementTypes()) {
@@ -243,14 +227,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
         return {};
     }
     return LLVM::LLVMStructType::getLiteral(&getContext(), types);
-  });
-
-  // Packs are essentially identical to structs.
-  addConversion([=](PackType type) -> std::optional<Type> {
-    VariadicAttr variadic = type.getVariadicIfResolved();
-    if (!variadic)
-      return {};
-    return convertElementTypesToStruct(variadic.getValues());
   });
 
   // Convert SIMD types to vector types.
@@ -968,14 +944,14 @@ Value KGEN::convertParameterToLLVM(
     return convertSIMDAttr(b, tc, simd);
 
   // Convert array, struct, or pack constants to LLVM array or struct constants.
-  if (isa<POP::ArrayAttr, StructAttr, PackAttr>(attr)) {
+  if (isa<POP::ArrayAttr, StructAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
       return {};
     Value aggregate = b.create<LLVM::UndefOp>(type);
     ArrayRef<TypedAttr> values =
         TypeSwitch<Attribute, ArrayRef<TypedAttr>>(attr)
-            .Case<POP::ArrayAttr, StructAttr, PackAttr>(
+            .Case<POP::ArrayAttr, StructAttr>(
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {

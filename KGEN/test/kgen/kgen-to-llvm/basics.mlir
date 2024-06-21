@@ -111,15 +111,6 @@ kgen.func @undef_op() -> i32 {
   kgen.return %0 : i32
 }
 
-// CHECK-LABEL: @pack_constant
-kgen.func @pack_constant() {
-  // CHECK-NEXT: %0 = llvm.mlir.undef : !llvm.struct<(i64)>
-  // CHECK-NEXT: %1 = llvm.mlir.constant(1 : i64)
-  // CHECK-NEXT: %2 = llvm.insertvalue %1, %0[0] : !llvm.struct<(i64)>
-  %0 = kgen.param.constant: !kgen.pack<[!pop.scalar<index>]> = <<1>>
-  kgen.return
-}
-
 // CHECK-LABEL: @variant_constant_0
 kgen.func @variant_constant_0() -> !kgen.variant<i32> {
   // CHECK: %0 = llvm.mlir.constant(1 : i32) : i32
@@ -240,35 +231,6 @@ kgen.func @used_func() {
   kgen.return
 }
 
-// CHECK: llvm.func internal @pop_pack_load
-kgen.func @pop_pack_load(%a: !kgen.pointer<i32>, %b: !kgen.pointer<f64>,
-                         %c: !kgen.pointer<f32>) -> !kgen.pack<[i32, f64, f32]> {
-  // CHECK-NEXT: %0 = llvm.mlir.undef : !llvm.struct<(ptr, ptr, ptr)>
-  // CHECK-NEXT: %1 = llvm.insertvalue %arg0, %0[0]
-  // CHECK-NEXT: %2 = llvm.insertvalue %arg1, %1[1]
-  // CHECK-NEXT: %3 = llvm.insertvalue %arg2, %2[2]
-  %0 = kgen.pack.create(%a, %b, %c) : !kgen.pack<[!kgen.pointer<i32>, !kgen.pointer<f64>, !kgen.pointer<f32>]>
-
-  // CHECK-NEXT: %4 = llvm.extractvalue %3[0]
-  // CHECK-NEXT: %5 = builtin.unrealized_conversion_cast %4 : !llvm.ptr to !kgen.pointer<i32>
-  // CHECK-NEXT: %6 = pop.load %5 : !kgen.pointer<i32>
-  // CHECK-NEXT: %7 = llvm.extractvalue %3[1] : !llvm.struct<(ptr, ptr, ptr)>
-  // CHECK-NEXT: %8 = builtin.unrealized_conversion_cast %7 : !llvm.ptr to !kgen.pointer<f64>
-  // CHECK-NEXT: %9 = pop.load %8 : !kgen.pointer<f64>
-  // CHECK-NEXT: %10 = llvm.extractvalue %3[2]
-  // CHECK-NEXT: %11 = builtin.unrealized_conversion_cast %10 : !llvm.ptr to !kgen.pointer<f32>
-  // CHECK-NEXT: %12 = pop.load %11
-
-  // CHECK-NEXT: %13 = llvm.mlir.undef
-  // CHECK-NEXT: %14 = llvm.insertvalue %6, %13[0]
-  // CHECK-NEXT: %15 = llvm.insertvalue %9, %14[1]
-  // CHECK-NEXT: %16 = llvm.insertvalue %12, %15[2]
-  %1 = kgen.pack.load %0 : !kgen.pack<[pointer<i32>, pointer<f64>, pointer<f32>]>
-
-  // CHECK-NEXT: llvm.return %16
-  kgen.return %1: !kgen.pack<[i32, f64, f32]>
-}
-
 // CHECK: llvm.func @used_package_func
 kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{
   kgen.unreachable
@@ -328,36 +290,6 @@ kgen.func export @kernel() {
 // -----
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-// CHECK-LABEL: @pack_create
-// CHECK-SAME: %[[A0:.*]]: i32
-// CHECK-SAME: %[[A1:.*]]: f64
-// CHECK-SAME: %[[A2:.*]]: f32
-kgen.func @pack_create(%a: i32, %b: f64, %c: f32) {
-  // CHECK: %[[P0:.*]] = llvm.mlir.undef : !llvm.struct<(i32, f64, f32)>
-  // CHECK: %[[P1:.*]] = llvm.insertvalue %[[A0]], %[[P0]][0] : !llvm.struct<(i32, f64, f32)>
-  // CHECK: %[[P2:.*]] = llvm.insertvalue %[[A1]], %[[P1]][1] : !llvm.struct<(i32, f64, f32)>
-  // CHECK: llvm.insertvalue %[[A2]], %[[P2]][2] : !llvm.struct<(i32, f64, f32)>
-  %0 = kgen.pack.create(%a, %b, %c) : !kgen.pack<[i32, f64, f32]>
-  kgen.return
-}
-
-// CHECK-LABEL: @pack_get
-kgen.func @pack_get(
-  %p0: !kgen.pack<[i1]>,
-  %p1: !kgen.pack<[i32, f32]>
-) -> (i1, f32) {
-  // CHECK: llvm.extractvalue %arg0[0] : !llvm.struct<(i1)>
-  %0 = kgen.pack.extract %p0[0] : <[i1]>
-  // CHECK: llvm.extractvalue %arg1[1] : !llvm.struct<(i32, f32)>
-  %1 = kgen.pack.extract %p1[1] : <[i32, f32]>
-
-  kgen.return %0, %1 : i1, f32
-}
-}
-
-// -----
-
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @struct_constant
 kgen.func @struct_constant() -> !kgen.struct<(array<1, i32>, struct<(i32, i32)>)> {
@@ -376,26 +308,6 @@ kgen.func @struct_constant() -> !kgen.struct<(array<1, i32>, struct<(i32, i32)>)
   %0 = kgen.param.constant: struct<(array<1, i32>, struct<(i32, i32)>)> =
     <{ [1], { 2, 3 } }>
   kgen.return %0 : !kgen.struct<(array<1, i32>, struct<(i32, i32)>)>
-}
-
-// CHECK-LABEL: @pack_constant_0
-kgen.func @pack_constant_0() -> !kgen.pack<[i32, i8]> {
-  // CHECK: %0 = llvm.mlir.undef : !llvm.struct<(i32, i8)>
-  // CHECK: %1 = llvm.mlir.constant(1 : i32) : i32
-  // CHECK: %2 = llvm.insertvalue %1, %0[0] : !llvm.struct<(i32, i8)>
-  // CHECK: %3 = llvm.mlir.constant(2 : i8) : i8
-  // CHECK: %4 = llvm.insertvalue %3, %2[1] : !llvm.struct<(i32, i8)>
-  // CHECK: llvm.return %4 : !llvm.struct<(i32, i8)>
-  %0 = kgen.param.constant: !kgen.pack<[i32, i8]> = <<1, 2>>
-  kgen.return %0 : !kgen.pack<[i32, i8]>
-}
-
-// CHECK-LABEL: @pack_constant_1
-kgen.func @pack_constant_1() -> !kgen.pack<[]> {
-  // CHECK: %0 = llvm.mlir.undef : !llvm.struct<()>
-  // CHECK: llvm.return %0 : !llvm.struct<()>
-  %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
-  kgen.return %0 : !kgen.pack<[]>
 }
 
 // CHECK-LABEL: @pointer_constant

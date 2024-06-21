@@ -62,12 +62,4 @@ kgen.func @struct_gep_one(%a: !kgen.pointer<struct<(i32)>>) -> !kgen.pointer<i32
   kgen.return %0 : !kgen.pointer<i32>
 }
 
-// CHECK-LABEL: @pack_ptr
-kgen.func @pack_ptr(%arg1: !kgen.pointer<!kgen.pack<[i32, f32]>>)  {
-  // CHECK: llvm.getelementptr %arg0[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, f32)>
-  %2 = kgen.pack.gep %arg1[0] : <!kgen.pack<[i32, f32]>>
-  // CHECK: llvm.getelementptr %arg0[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, f32)>
-  %3 = kgen.pack.gep %arg1[1] : <!kgen.pack<[i32, f32]>>
-  kgen.return
-}
 }

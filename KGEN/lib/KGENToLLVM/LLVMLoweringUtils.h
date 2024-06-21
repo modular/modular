@@ -23,7 +23,6 @@ class LLVMFuncOp;
 
 namespace M::KGEN {
 class KGENDType;
-class PackType;
 class PointerType;
 class VariantType;
 class NoneType;
@@ -327,7 +326,6 @@ private:
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
   DebugInfo::DIType buildDebugType(CO::CoroutineType type);
-  DebugInfo::DIType buildDebugType(PackType type);
   DebugInfo::DIType buildDebugType(PointerType type);
   DebugInfo::DIType buildDebugType(POP::SIMDType type);
   DebugInfo::DIType buildDebugType(StructType type);

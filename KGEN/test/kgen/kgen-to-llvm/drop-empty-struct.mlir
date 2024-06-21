@@ -23,7 +23,7 @@ kgen.func @none_type_func_caller(){
 // CHECK-LABEL: llvm.func internal @complex_empty_types
 //  CHECK-SAME: (%arg0: !llvm.struct<(i64)>)
 kgen.func @complex_empty_types(
-  %a0: !kgen.pack<[!kgen.none, !kgen.none]>,
+  %a0: !kgen.struct<(none, none)>,
   %a1: !pop.array<1, struct<(struct<()>)>>,
   %a2: !pop.array<0, struct<(index)>>,
   %a3: !kgen.struct<(index)>) {
