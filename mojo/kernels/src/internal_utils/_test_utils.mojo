@@ -11,6 +11,41 @@ from buffer import DimList, NDBuffer
 from testing import assert_equal, assert_true
 
 from utils import InlineArray
+from gpu.host.device_context import DeviceBuffer, DeviceContext
+
+
+struct HostNDBuffer[
+    type: DType,
+    rank: Int,
+    /,
+    shape: DimList = DimList.create_unknown[rank](),
+]:
+    var tensor: NDBuffer[type, rank, shape]
+
+    @always_inline
+    fn __init__(inout self):
+        self.tensor = NDBuffer[type, rank, shape](
+            DTypePointer[type].alloc(int(shape.product[2]()))
+        )
+
+    @always_inline
+    fn __del__(owned self):
+        self.tensor.data.free()
+
+
+struct DeviceNDBuffer[
+    type: DType,
+    rank: Int,
+    /,
+    shape: DimList = DimList.create_unknown[rank](),
+]:
+    var buffer: DeviceBuffer[type]
+    var tensor: NDBuffer[type, rank, shape]
+
+    @always_inline
+    fn __init__(inout self, ctx: DeviceContext) raises:
+        self.buffer = ctx.create_buffer[type](int(shape.product[2]()))
+        self.tensor = NDBuffer[type, rank, shape](self.buffer.ptr, Self.shape)
 
 
 fn get_minmax[dtype: DType](x: DTypePointer[dtype], N: Int) -> SIMD[dtype, 2]:
