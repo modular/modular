@@ -7,7 +7,7 @@
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
 from driver import CPUDescriptor, cpu_device
-from driver import Tensor, TensorSlice
+from driver import Tensor, TensorSlice, UnsafeTensorSlice
 from tensor import TensorSpec
 from utils import Index
 from testing import assert_equal, assert_raises
@@ -268,6 +268,64 @@ def test_set_through_slice():
     assert_equal(tensor[1, 0], 4)
 
 
+def test_unsafe_slice():
+    var dev = cpu_device()
+
+    var shape = Index(10, 2)
+    var dt = dev.allocate(TensorSpec(DType.float32, shape))
+    var tensor = dt^.to_tensor[DType.float32, shape.size]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(2):
+            tensor[i, j] = val
+            val += 1
+
+    assert_equal(tensor[1, 0], 3)
+
+    var unsafe_slice = UnsafeTensorSlice[DType.float32, 2](
+        tensor.unsafe_ptr(), shape
+    )
+
+    assert_equal(unsafe_slice[1, 1], 4)
+
+    _ = tensor^
+
+
+def test_unsafe_slice_from_tensor():
+    var dev = cpu_device()
+
+    var shape = Index(10, 1)
+    var dt = dev.allocate(TensorSpec(DType.float32, shape))
+    var tensor = dt^.to_tensor[DType.float32, shape.size]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(2):
+            tensor[i, j] = val
+            val += 1
+
+    assert_equal(tensor[1, 0], 3)
+
+    var unsafe_slice = tensor.unsafe_slice(
+        slice(1, None, 1), slice(None, None, None)
+    )
+
+    var slice = tensor[1::, ::]
+    assert_equal(unsafe_slice[0, 0], 3)
+    assert_equal(slice[0, 0], 3)
+
+    unsafe_slice[Index(0, 0)] = 4
+    slice[0, 1] = 5
+
+    assert_equal(unsafe_slice[0, 0], 4)
+    assert_equal(unsafe_slice[0, 1], 5)
+    assert_equal(slice[0, 0], 4)
+    assert_equal(slice[0, 1], 5)
+    assert_equal(tensor[1, 0], 4)
+    assert_equal(tensor[1, 1], 5)  # keeps slice alive
+
+
 def test_kv_cache():
     cpu = cpu_device()
     alias type = DType.float32
@@ -308,8 +366,11 @@ def test_raw_data():
 def main():
     test_tensor()
     test_tensor_slice()
+    test_unsafe_slice()
+    test_unsafe_slice_from_tensor()
     test_slice_with_step()
     test_2dslice_with_step()
+    test_4dslice_with_step()
     test_2dslice_with_step_row_column()
     test_4dslice_with_step()
     test_round_trip()
