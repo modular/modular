@@ -161,6 +161,29 @@ def test_2dslice_with_step_row_column():
     assert_equal(inner_slice[1, 1], 45)
 
 
+def test_4dslice_with_step():
+    var dev = cpu_device()
+
+    var shape = Index(7, 8, 13, 9)
+    var dt = dev.allocate(TensorSpec(DType.float32, shape))
+    var tensor = dt^.to_tensor[DType.float32, 4]()
+
+    # np.arange
+    var val = 0
+    for i in range(shape[0]):
+        for j in range(shape[1]):
+            for k in range(shape[2]):
+                for w in range(shape[3]):
+                    tensor[i, j, k, w] = val
+                    val += 1
+
+    assert_equal(tensor[3, 7, 12, 0], 3735)
+
+    var stepped_slice = tensor[3::2, 1::, 1::3, 0::2]
+    assert_equal(stepped_slice[0, 0, 0, 0], 2934)
+    assert_equal(stepped_slice[1, 5, 2, 1], 5447)
+
+
 def test_round_trip():
     dev = cpu_device()
 
@@ -288,6 +311,7 @@ def main():
     test_slice_with_step()
     test_2dslice_with_step()
     test_2dslice_with_step_row_column()
+    test_4dslice_with_step()
     test_round_trip()
     test_copy()
     test_set_through_slice()
