@@ -704,7 +704,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // they'll be less confusing.
   diags.resetDiags(std::move(noImplicitConversionDiags));
   return failure();
-};
+}
 
 void ParameterInferenceState::inferOneParam(
     const ParamBindings::Binding &binding, Type expectedType) {

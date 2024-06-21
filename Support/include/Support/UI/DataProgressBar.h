@@ -36,7 +36,7 @@ public:
   ~DataProgressBar() override {
     showRate = false;
     setSuffix(generateSuffix());
-  };
+  }
 
   /// Add new bytes that will be progressed. This will immediately update the
   /// progress bar. This should be called as soon as each chunk of data is

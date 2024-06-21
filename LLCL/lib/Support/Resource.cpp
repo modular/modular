@@ -95,7 +95,7 @@ bool ResourceSections::overlapsSection(const ResourceSection &section) const {
   return llvm::any_of(Ranges, [&section](const ResourceSection &existing) {
     return existing.intersects(section);
   });
-};
+}
 
 void ResourceSections::addSection(const ResourceSection &section) {
   if (section.size() == 0)

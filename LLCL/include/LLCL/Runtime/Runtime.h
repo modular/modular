@@ -161,7 +161,7 @@ struct RuntimeOptions {
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
   RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType wq =
                      LLCL::RuntimeOptions::WorkQueueType::kThreadPool)
-      : defaultWorkQueue(wq){};
+      : defaultWorkQueue(wq) {}
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime (for
   /// eg: ExternalFrameworks in benchmarking)

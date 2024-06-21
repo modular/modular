@@ -86,7 +86,7 @@ public:
         loc(emitter.translateLocation(callExpr->getLoc())),
         evaluator(emitter.getDeclResolver()), dest(dest),
         calleeSig(cast<SignatureType>(callee.getRValueType())),
-        afterCallActions(*this) {};
+        afterCallActions(*this) {}
 
   /// Emit IR for a single argument, according to its convention.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,

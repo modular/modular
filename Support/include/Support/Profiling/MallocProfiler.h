@@ -65,6 +65,6 @@ inline auto mallocTraceScope(StringRef name) {
       memoryStatistics);
 }
 
-}; // namespace M
+} // namespace M
 
 #endif // SUPPORT_PROFILING_MALLOCPROFILER_H

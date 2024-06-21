@@ -52,7 +52,7 @@ static LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
   }
   return func.emitError("unhandled dtype for header generation ")
          << dt.getAsString();
-};
+}
 
 /// Get the C type for an elementary scalar type.
 static ErrorOr<std::string> getCTypeForElementary(Type t) {

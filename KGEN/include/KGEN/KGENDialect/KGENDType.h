@@ -32,8 +32,8 @@ public:
     index
   };
 
-  KGENDType(DType dtype) : DType(dtype){};
-  KGENDType(ExtraCases type) : DType(type){};
+  KGENDType(DType dtype) : DType(dtype) {}
+  KGENDType(ExtraCases type) : DType(type) {}
 
   constexpr bool isAddress() const { return getValue() == ExtraCases::address; }
   constexpr bool isIndex() const { return getValue() == ExtraCases::index; }

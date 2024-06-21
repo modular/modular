@@ -33,7 +33,7 @@ class CertificateChain;
 class CertSubject {
 public:
   CertSubject(const std::string &userId, const std::string &accessTokenId)
-      : UserId(userId), AccessTokenId(accessTokenId){};
+      : UserId(userId), AccessTokenId(accessTokenId) {}
   std::string format() const {
     // Until 04/2024, we set O=Modular Inc
     // Do not repurose this field until O is flushed from our system.
@@ -139,11 +139,11 @@ public:
 
   static std::optional<std::string> getAuthTokenFromEnv() {
     return llvm::sys::Process::GetEnv("MODULAR_AUTH_TOKEN");
-  };
+  }
 
   static std::optional<std::string> getAccessTokenFromEnv() {
     return llvm::sys::Process::GetEnv("MODULAR_ACCESS_TOKEN");
-  };
+  }
 
   static ErrorOr<EntitlementStore> fromToken(const EntitlementToken &token);
 

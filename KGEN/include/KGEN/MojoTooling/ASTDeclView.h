@@ -148,7 +148,7 @@ public:
         passingKind(passingKind), variadicKind(variadicKind),
         defaultValue(std::move(defaultValue)) {}
 
-  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
+  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
 
   std::string getDeclarationSnippet() const override;
 
@@ -228,7 +228,7 @@ public:
   bool isInout() const { return convention == Convention::kInOut; }
   bool isOwned() const { return convention == Convention::kOwned; }
 
-  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
+  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
 
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }

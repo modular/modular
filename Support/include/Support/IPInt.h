@@ -31,13 +31,13 @@ class IPInt {
 public:
   /// The wrapped APInt is normalized to use the minimum number of bits so that
   /// equality testing works.
-  IPInt(const llvm::APInt val) : val(val.trunc(val.getSignificantBits())){};
-  IPInt(const IPInt &val) : val(val.val){};
+  IPInt(const llvm::APInt val) : val(val.trunc(val.getSignificantBits())) {}
+  IPInt(const IPInt &val) : val(val.val) {}
   IPInt(const uint64_t uintV) {
     llvm::APInt v = llvm::APInt(64, uintV, false);
     val = v.trunc(v.getSignificantBits());
-  };
-  IPInt() : val(){};
+  }
+  IPInt() : val() {}
 
   const llvm::APInt &getAPInt() const { return val; }
 

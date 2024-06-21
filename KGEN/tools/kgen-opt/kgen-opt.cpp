@@ -80,7 +80,7 @@ struct TestGeneratePreElaboratedBody
 
   StringRef getArgument() const override {
     return "test-generate-elaborated-body";
-  };
+  }
 
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
@@ -138,9 +138,7 @@ struct TestMaterializePackages
                                OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestMaterializePackages)
 
-  StringRef getArgument() const override {
-    return "test-materialize-packages";
-  };
+  StringRef getArgument() const override { return "test-materialize-packages"; }
 
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
@@ -208,7 +206,7 @@ struct TestAlwaysFailPass
     : public mlir::PassWrapper<TestAlwaysFailPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestAlwaysFailPass)
 
-  StringRef getArgument() const override { return "test-always-fail"; };
+  StringRef getArgument() const override { return "test-always-fail"; }
 
   void runOnOperation() override { return signalPassFailure(); }
 };

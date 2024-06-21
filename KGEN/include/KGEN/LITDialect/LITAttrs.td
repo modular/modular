@@ -85,7 +85,7 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
   ];
 
   let extraClassDeclaration = [{
-    bool isVariadic() const { return getIsVariadic(); };
+    bool isVariadic() const { return getIsVariadic(); }
   }];
 }
 
@@ -249,16 +249,16 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     size_t getNumArgs() const;
     ArrayRef<TypedAttr> getDefaultPosArgs() const {
       return getArgListAttrs().getDefaultPos();
-    };
+    }
     ArrayRef<TypedAttr> getDefaultKwOnlyArgs() const {
       return getArgListAttrs().getDefaultKwOnly();
-    };
+    }
     ArrayRef<TypedAttr> getDefaultPosParams() const {
       return getParamListAttrs().getDefaultPos();
-    };
+    }
     ArrayRef<TypedAttr> getDefaultKwOnlyParams() const {
       return getParamListAttrs().getDefaultKwOnly();
-    };
+    }
 
     /// Return true if the signature has a variadic argument.
     bool hasVarArgs() const;

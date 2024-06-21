@@ -19,7 +19,7 @@ namespace M {
 class ScopedThread {
 public:
   template <typename... ThreadArgs>
-  ScopedThread(ThreadArgs &&...args) : thread(args...){};
+  ScopedThread(ThreadArgs &&...args) : thread(args...) {}
 
   ~ScopedThread() {
     if (thread.joinable())

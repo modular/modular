@@ -275,7 +275,7 @@ public:
         numPositional(countNumInferredKinds(pogs) + countNumPositional(pogs)),
         defaultPosStart(numPositional - defaultsPos.size()),
         kwOnlyEnd(pogs.size() - countNumImplicitKinds(pogs)),
-        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()) {};
+        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()) {}
 
   DefaultValueHandler(PogListAttr pogListAttr);
 

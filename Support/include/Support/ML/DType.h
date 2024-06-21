@@ -356,7 +356,7 @@ struct CXXTypeForDType {
   template <>                                                                  \
   struct CXXTypeForDType<DType::ELTTYPE_KIND> {                                \
     using CXXType = CXXTYPE;                                                   \
-  };
+  }
 
 DECLARE_TYPE_MAPPING(kBool, bool);
 DECLARE_TYPE_MAPPING(si8, int8_t);

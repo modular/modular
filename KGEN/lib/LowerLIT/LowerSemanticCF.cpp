@@ -230,7 +230,7 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
   // Return a builder pointing to after "op".
   return ImplicitLocOpBuilder(op.getLoc(), op.getBlock(),
                               std::next(Block::iterator(&op)));
-};
+}
 
 void LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp, bool &doesRaise,
                                 bool &doesBreak, bool &doesFallThrough) {

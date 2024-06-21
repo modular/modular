@@ -154,7 +154,7 @@ private:
 class MojoASTTypeRef {
 public:
   MojoASTTypeRef() : MojoASTTypeRef(nullptr) {}
-  MojoASTTypeRef(KGEN::LIT::ASTType type) : type(type) {};
+  MojoASTTypeRef(KGEN::LIT::ASTType type) : type(type) {}
   MojoASTTypeRef(Type type) : type(type) {}
   MojoASTTypeRef(const void *impl) : type(Type::getFromOpaquePointer(impl)) {}
 

@@ -21,6 +21,6 @@ ErrorOrSuccess profileStart();
 /// Disables profile collection by the active profiling tool for the current
 /// context. If profiling is already disabled, then the function has no effect.
 ErrorOrSuccess profileStop();
-}; // namespace M::CUDA
+} // namespace M::CUDA
 
 #endif // SUPPORT_CUDA_PROFILER_H

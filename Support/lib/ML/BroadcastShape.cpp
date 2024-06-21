@@ -22,7 +22,7 @@ static constexpr int64_t kDynamicSize = std::numeric_limits<int64_t>::min();
 int64_t M::multiplySymDims(int64_t dim1, int64_t dim2) {
   const bool isDynamic = dim1 != 0 && dim2 != 0 && (dim1 < 0 || dim2 < 0);
   return isDynamic ? kDynamicSize : dim1 * dim2;
-};
+}
 
 ErrorOr<TensorShape> M::broadcastedShape(const TensorShape &a,
                                          const TensorShape &b) {

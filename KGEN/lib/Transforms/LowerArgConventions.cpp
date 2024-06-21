@@ -95,7 +95,7 @@ struct LoweredSignature {
 
   bool isBoth() { return abiLowering == Both; }
 };
-}; // namespace
+} // namespace
 
 /// Lowers the given signature if needed, and returns the non-result argument
 /// indices (on the input signature) that needed to be changed. A flag is also

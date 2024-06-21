@@ -722,7 +722,7 @@ static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
     return success();
   }
   return failure();
-};
+}
 
 static LogicalResult
 concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
