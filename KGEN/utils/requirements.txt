@@ -1,2 +1,0 @@
-attrs
-jinja2
