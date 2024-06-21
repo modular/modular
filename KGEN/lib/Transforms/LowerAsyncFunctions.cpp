@@ -71,12 +71,11 @@ struct COTypes {
     switch (field) {
     case State:
       return IntegerType::get(cxt, 32);
-    case ResumeFunction:
-      return resumeSignatureType;
     case CallbackFn:
       return callbackSignature;
     case Promise:
       return promiseType;
+    case ResumeFunction:
     case ClosureState:
     case ErrorSlot:
     case ResultSlot:
@@ -214,16 +213,12 @@ LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
   // Create resume function.
   StringAttr resumeName =
       builder.getStringAttr(funcOp.getSymName() + "_resume");
-  Type opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
-  SmallVector<Type> inputs;
-  SmallVector<Type> results;
-  inputs.push_back(opaquePointerType);
-  FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
-  auto resumeSignature = SignatureType::get(resumeFunctionType);
+  auto resumeSignature = SignatureType::get(
+      cxt, PointerType::get(coTypes.getContinuationType()), {});
   FuncOp resumeFunction = builder.create<FuncOp>(
       funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
   resumeFunction.setCoroutineTypeAttr(
-      mlir::TypeAttr::get(coTypes.getContinuationType()));
+      TypeAttr::get(coTypes.getContinuationType()));
   resumeName = sharedTable.modify(
       [resumeFunction, it = rampFunction->getIterator()](SymbolTable &symtab) {
         return symtab.insert(resumeFunction, it);
@@ -250,7 +245,6 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
                                                     COTypes &coTypes,
                                                     Value errorValue,
                                                     Value memoryResultValue) {
-  Type continuationType = coTypes.getContinuationType();
   FrameData &frameData = coTypes.getFrameData();
   // Take the body of the original function.
   resumeFunction.getBodyRegion().takeBody(funcOp.getBodyRegion());
@@ -259,8 +253,7 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       resumeFunction->getLoc());
   builder.setInsertionPointToStart(&resumeFunction.getBodyRegion().front());
   // Extract arguments from continuation's frame.
-  Value continuation = builder.create<PointerBitcastOp>(
-      PointerType::get(continuationType), resumeFunction.getArgument(0));
+  Value continuation = resumeFunction.getArgument(0);
 
   // For each new operand, extract operand from frame if it was defined in
   // previous state. For each op, store in frame if it is used downstream
@@ -381,7 +374,7 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       // Replace uses of the suspend argument with the continuation.
       Region &body = suspend.getBody();
       if (!body.getArgument(0).use_empty()) {
-        builder.setInsertionPoint(suspend);
+        builder.setInsertionPointToStart(&suspend.getBody().front());
         Value header = builder.create<PointerBitcastOp>(
             PointerType::get(coTypes.getHeaderType()),
             resumeFunction.getArgument(0));
@@ -426,6 +419,8 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
       builder.create<CreateClosureOp>(SymbolConstantAttr::get(
           SymbolRefAttr::get(builder.getContext(), resumeFunction.getSymName()),
           resumeFunction.getSignature()));
+  functionPointer = builder.create<PointerBitcastOp>(
+      coTypes.typeForField(ResumeFunction), functionPointer);
   builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
 
   // Store arguments in frame.
