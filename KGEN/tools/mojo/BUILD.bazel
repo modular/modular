@@ -4,9 +4,9 @@ load(
     "driver_option_tablegen",
     "modular_cc_binary",
     "modular_cc_library",
+    "rpath_shim",
     "td_library",
 )
-load("//utils/bazel/build/rules:rpath_shim.bzl", "rpath_shim")
 
 expand_template(
     name = "MojoDebugHeaderGen",
