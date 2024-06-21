@@ -6,6 +6,7 @@ load(
     "modular_cc_library",
     "td_library",
 )
+load("//utils/bazel/build/rules:rpath_shim.bzl", "rpath_shim")
 
 expand_template(
     name = "MojoDebugHeaderGen",
@@ -112,6 +113,7 @@ modular_cc_binary(
         ":REPL.inc_files",
         ":Run.inc_files",
         ":Test.inc_files",
+        ":rpaths",
         "//Config",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
@@ -139,5 +141,13 @@ modular_cc_binary(
         "//Support:MArchTarget",
         "//Support:MDialect",
         "//Support:Telemetry",
+    ],
+)
+
+rpath_shim(
+    name = "rpaths",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//ModularFramework/tools/mof",
     ],
 )
