@@ -86,7 +86,7 @@ struct COTypes {
     }
     llvm_unreachable("invalid AsyncContinuationField value");
   }
-  COTypes(MLIRContext *cxt, FrameData &frameData, Type resultType);
+  COTypes(MLIRContext *cxt, FrameData &frameData, StructType promiseType);
   COTypes(const COTypes &) = delete;
   COTypes &operator=(const COTypes &) = delete;
 
@@ -371,7 +371,10 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       // Replace ReturnOps with set result.
       builder.setInsertionPoint(returnOp);
       Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
-      builder.create<StoreOp>(returnOp.getOperand(0), promiseSlot);
+      for (auto [idx, value] : llvm::enumerate(returnOp.getOperands())) {
+        builder.create<StoreOp>(value,
+                                builder.create<StructGEPOp>(promiseSlot, idx));
+      }
       builder.create<ReturnOp>();
       returnOp->erase();
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
@@ -445,8 +448,8 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
 // CoTypes
 //===----------------------------------------------------------------------===//
 
-COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, Type resultType)
-    : cxt(cxt), frameData(frameData), promiseType(resultType) {
+COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, StructType promiseType)
+    : cxt(cxt), frameData(frameData), promiseType(promiseType) {
   opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
   SmallVector<Type> inputs;
   SmallVector<Type> results;
@@ -469,8 +472,7 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, Type resultType)
 
   // Header type omits the variable sized frame.
   headerType = StructType::get(types);
-  if (promiseType)
-    types.push_back(typeForField(Promise));
+  types.push_back(typeForField(Promise));
   for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
     types.push_back(frameVariableType);
   continuationType = StructType::get(types);
@@ -956,11 +958,9 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     };
     FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
                         transform);
-    Type resultType;
-    if (funcOp.getNumResults() > 0)
-      resultType = funcOp.getResultTypes().front();
-    assert(funcOp.getNumResults() < 2 && "TODO: support many result types");
-    COTypes cotypes(module.getContext(), frameData, resultType);
+    COTypes cotypes(
+        module.getContext(), frameData,
+        StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
     buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
                                     memoryResultValue);
   }
@@ -968,7 +968,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   // Apply all other CO lowerings.
   mlir::IRRewriter rewriter(b);
   FrameData empty;
-  COTypes opaqueCoroutineTypes(module.getContext(), empty, Type());
+  COTypes opaqueCoroutineTypes(module.getContext(), empty, /*promiseType=*/{});
   mlir::AttrTypeReplacer replacer;
   Type headerType = PointerType::get(opaqueCoroutineTypes.getHeaderType());
   replacer.addReplacement([&](CoroutineType type) { return headerType; });
@@ -1033,17 +1033,20 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       Value continuation = getResults.getOperand();
       StructType headerType = opaqueCoroutineTypes.getHeaderType();
       SmallVector<Type> headerPlusPromiseTypes(headerType.getElementTypes());
-      assert(getResults.getNumResults() == 1 &&
-             "TODO support multiple results");
-      headerPlusPromiseTypes.push_back(getResults.getType(0));
+      headerPlusPromiseTypes.push_back(StructType::get(
+          op->getContext(), llvm::to_vector(getResults.getResultTypes())));
       Value promiseContinuation = rewriter.create<PointerBitcastOp>(
           op->getLoc(),
           PointerType::get(StructType::get(headerPlusPromiseTypes)),
           continuation);
       Value promiseSlot = rewriter.create<StructGEPOp>(
           op->getLoc(), promiseContinuation, Promise);
-      Value promise = rewriter.create<LoadOp>(op->getLoc(), promiseSlot);
-      rewriter.replaceAllUsesWith(getResults.getResult(0), promise);
+      for (auto [idx, result] : llvm::enumerate(getResults.getResults())) {
+        rewriter.replaceAllUsesWith(
+            result, rewriter.create<LoadOp>(
+                        op->getLoc(), rewriter.create<StructGEPOp>(
+                                          op->getLoc(), promiseSlot, idx)));
+      }
       getResults->erase();
     }
   });
