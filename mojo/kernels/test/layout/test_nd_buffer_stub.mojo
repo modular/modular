@@ -113,10 +113,9 @@ fn and_all[rank: Int](mask: StaticTuple[Bool, rank]) -> Bool:
     var res = True
 
     @parameter
-    fn _and_mask[i: Int]():
+    for i in range(rank):
         res &= mask[i]
 
-    unroll[_and_mask, rank]()
     return res
 
 

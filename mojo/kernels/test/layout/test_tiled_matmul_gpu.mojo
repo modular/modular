@@ -156,9 +156,8 @@ fn sram_blocked_matmul[
 
         barrier()
 
-        @always_inline
         @parameter
-        fn accumulate[kk: Int]():
+        for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -168,8 +167,6 @@ fn sram_blocked_matmul[
                 ThreadIdx.x()
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
-
-        unroll[accumulate, BK]()
 
     # Move data from register tile to DRAM
     # FIXME: unrolled copy loop doesn't produce the correct results for some
@@ -412,9 +409,8 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
         barrier()
 
-        @always_inline
         @parameter
-        fn accumulate[kk: Int]():
+        for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -424,8 +420,6 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
                 ThreadIdx.x()
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
-
-        unroll[accumulate, BK]()
 
     # Move data from register tile to DRAM
     copy_to_nd_buffer[thread_layout=thread_layout](
