@@ -1,5 +1,13 @@
-load("@pybind11_bazel//:build_defs.bzl", "pybind_library")
-load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_shared_library", "td_library")
+load(
+    "//bazel:api.bzl",
+    "gentbl_cc_library",
+    "gentbl_mlir_dialect",
+    "gentbl_modular_passes",
+    "modular_cc_library",
+    "modular_pybind_library",
+    "modular_shared_library",
+    "td_library",
+)
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
@@ -886,11 +894,8 @@ modular_cc_library(
     ],
 )
 
-pybind_library(
+modular_pybind_library(
     name = "Python",
     srcs = ["lib/Python/Helpers.cpp"],
     hdrs = ["include/Support/Python/Helpers.h"],
-    copts = ["-frtti"],
-    strip_include_prefix = "include",
-    visibility = ["//visibility:public"],
 )
