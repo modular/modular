@@ -83,6 +83,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
             constraints="+m,~{memory}",
             has_side_effect=True,
         ](tmp_ptr, tmp_ptr)
+    _ = tmp
 
 
 @always_inline
