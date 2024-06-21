@@ -48,7 +48,7 @@ public:
   /// Compare two dtype values.
   bool operator==(const DTypeValue &rhs) const {
     return std::tie(dtype, data) == std::tie(rhs.dtype, rhs.data);
-  };
+  }
 
   /// Get the underlying data.
   const APInt &getData() const { return data; }

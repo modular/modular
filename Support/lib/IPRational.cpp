@@ -34,16 +34,16 @@ IPRational::IPRational(IPInt n, IPInt d) {
     numerator = numerator * -1;
     denominator = denominator * -1;
   }
-};
+}
 IPRational::IPRational(const IPInt &numerator)
-    : numerator(numerator), denominator(IPInt(1)){};
+    : numerator(numerator), denominator(IPInt(1)) {}
 IPRational::IPRational(const IPRational &val)
-    : numerator(val.numerator), denominator(val.denominator){};
+    : numerator(val.numerator), denominator(val.denominator) {}
 IPRational::IPRational(const llvm::APInt &val)
-    : numerator(IPInt(val)), denominator(IPInt(1)){};
+    : numerator(IPInt(val)), denominator(IPInt(1)) {}
 IPRational::IPRational(uint64_t val)
-    : numerator(IPInt(val)), denominator(IPInt(1)){};
-IPRational::IPRational() : numerator(IPInt(0)), denominator(IPInt(1)){};
+    : numerator(IPInt(val)), denominator(IPInt(1)) {}
+IPRational::IPRational() : numerator(IPInt(0)), denominator(IPInt(1)) {}
 
 const IPInt &IPRational::getNumerator() const { return numerator; }
 const IPInt &IPRational::getDenominator() const { return denominator; }

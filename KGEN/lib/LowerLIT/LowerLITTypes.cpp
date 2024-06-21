@@ -80,7 +80,7 @@ struct StructDecls {
   /// Map from struct name to the lowering info.
   llvm::MapVector<StringAttr, StructDecl> structDecls;
 };
-}; // namespace
+} // namespace
 
 void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
                                 MLIRContext *ctx) {

@@ -22,7 +22,7 @@ namespace M {
 struct FailedAssertion {
   LLVM_ATTRIBUTE_NOINLINE FailedAssertion(std::string line, int64_t lineno) {
     getStorage().os << line << ":" << lineno << ": ";
-  };
+  }
   [[noreturn]] ~FailedAssertion() {
     llvm::errs()
         << "=================================================================\n"
@@ -36,14 +36,14 @@ struct FailedAssertion {
   struct Storage {
     std::string message;
     llvm::raw_string_ostream os;
-    Storage() : message(), os(message) {};
+    Storage() : message(), os(message) {}
   };
   LLVM_ATTRIBUTE_NOINLINE static Storage &getStorage() {
     static thread_local Storage storage;
     return storage;
-  };
+  }
 };
-}; // namespace M
+} // namespace M
 
 /// Assert that a condition holds. Users can append addition information to the
 /// error message by using the << operator.

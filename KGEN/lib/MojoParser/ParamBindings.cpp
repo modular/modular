@@ -105,7 +105,7 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
                               expectedType);
   }
   return {};
-};
+}
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(

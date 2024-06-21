@@ -558,7 +558,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
   }
 
   llvm_unreachable("unknown case");
-};
+}
 
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   // We first compare the number of implicit conversions.

@@ -357,7 +357,7 @@ static LogicalResult writeTempModule(const std::string &phase,
   outFile->os() << module;
   outFile->keep();
   return success();
-};
+}
 
 LogicalResult KGEN::optimizeLLVMModule(llvm::Module &module,
                                        llvm::TargetMachine &targetMachine,

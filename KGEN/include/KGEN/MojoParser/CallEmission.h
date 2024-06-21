@@ -261,7 +261,7 @@ private:
   OverloadSet(const TypeCheckScopeInfo &scopeInfo, const ExprNode *expr,
               CallSyntax syntax, bool erroneous)
       : paramBindings(scopeInfo), expr(expr), syntax(syntax),
-        erroneous(erroneous){};
+        erroneous(erroneous) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

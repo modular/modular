@@ -392,7 +392,7 @@ DISubprogramAttr DISubprogramAttr::cloneWith(SourceNameAttr name,
   return DebugInfo::DISubprogramAttr::get(
       getCompileUnit(), getScope(), name, linkageName, getFile(), getLine(),
       getScopeLine(), getSubprogramFlags(), type ? type : getType());
-};
+}
 
 //===----------------------------------------------------------------------===//
 // DI Expression Support

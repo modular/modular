@@ -67,12 +67,12 @@ public:
       const lldb_private::plugin::dwarf::DWARFDIE &die) override {
     // Unimplemented.
     return {};
-  };
+  }
 
   void EnsureAllDIEsInDeclContextHaveBeenParsed(
       lldb_private::CompilerDeclContext declContext) override {
     // Unimplemented.
-  };
+  }
 
   /// Get the decl corresponding to a scoped die.
   lldb_private::CompilerDeclContext GetDeclContextForUIDFromDWARF(
@@ -82,7 +82,7 @@ public:
       const lldb_private::plugin::dwarf::DWARFDIE &die) override {
     // Unimplemented.
     return {};
-  };
+  }
 
   lldb_private::ConstString GetDIEClassTemplateParams(
       const lldb_private::plugin::dwarf::DWARFDIE &die) override {

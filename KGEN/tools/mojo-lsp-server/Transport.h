@@ -24,7 +24,7 @@ public:
                mlir::lsp::Callback<Result> replyCallback)
       : lspTelemetryCtx(lspTelemetryCtx), request(request),
         start(std::chrono::steady_clock::now()),
-        replyCallback(std::move(replyCallback)) {};
+        replyCallback(std::move(replyCallback)) {}
   LSPResponder(LSPResponder &&) = default;
 
   /// Used to reply to the client with the input data is invalid, e.g. the

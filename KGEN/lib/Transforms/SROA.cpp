@@ -150,7 +150,7 @@ private:
         DebugInfo::DIAggregatesIntoExprAttr::get(newIrValue, i, structType);
 
     return aggregateExpr;
-  };
+  }
 
   /// Attempt to wrap leaves of the DI expression with AggregatesInto.
   /// Expects leaves to be a pointer to a DIStructType.
@@ -188,7 +188,7 @@ private:
     auto refExpr = DebugInfo::DIRefOfExprAttr::get(aggregateExpr, irType);
 
     return refExpr;
-  };
+  }
 };
 
 /// The extra helper class for structures.

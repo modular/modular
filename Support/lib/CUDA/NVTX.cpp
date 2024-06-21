@@ -58,7 +58,7 @@ struct EventAttributes {
   /// Message assigned to this attribute structure.
   const char *asciiMessage = nullptr;
 };
-}; // namespace
+} // namespace
 
 #ifdef USE_NVTX_LIB
 static ErrorOr<llvm::sys::DynamicLibrary> getNVMLLibraryHandle() {

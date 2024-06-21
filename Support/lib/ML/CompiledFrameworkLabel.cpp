@@ -80,7 +80,7 @@ const char *CompiledFrameworkLabel::getAsString() const {
     return "compiled Modular model";
   }
   llvm::report_fatal_error("missing case");
-};
+}
 
 const char *
 CompiledFrameworkLabel::asLabelString(CompiledFrameworkLabel::Cases label) {

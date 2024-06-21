@@ -59,7 +59,7 @@ template <class F, class... TBoundArgs>
   return [=, f = std::forward<F>(fn)](auto &&...front_args) {
     return std::invoke(f, front_args..., back_args...);
   };
-};
+}
 
 } // namespace M
 

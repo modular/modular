@@ -54,8 +54,8 @@ public:
   EncodedDiagnostic takeError() { return std::move(std::get<0>(data)); }
   Value takeValue() { return std::move(std::get<1>(data)); }
 
-  ErrorDiagnosticOr(EncodedDiagnostic err) : data(std::move(err)){};
-  ErrorDiagnosticOr(Value val) : data(std::move(val)){};
+  ErrorDiagnosticOr(EncodedDiagnostic err) : data(std::move(err)) {}
+  ErrorDiagnosticOr(Value val) : data(std::move(val)) {}
 
 private:
   std::variant<EncodedDiagnostic, Value> data;

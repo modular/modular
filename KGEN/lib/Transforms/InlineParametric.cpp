@@ -177,7 +177,7 @@ private:
     name.substr(splitIdx).getAsInteger(/*Radix=*/10, id);
 
     return std::make_pair(key, id);
-  };
+  }
 
   /// Update the ids we are tracking with the declarations (including those
   /// nested) in the given scope.
