@@ -98,6 +98,7 @@ struct AsyncContext:
     fn complete(ch: Chain):
         var tmp = ch
         _async_complete(UnsafePointer[Chain].address_of(tmp))
+        _ = tmp
 
 
 # ===----------------------------------------------------------------------===#

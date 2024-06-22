@@ -45,6 +45,7 @@ fn test_basic_lock() raises:
             tg.wait()
 
     var time_ns = time_function[test_atomic]()
+    _ = lock^
     # print("Total time taken ", time_ns / (1_000_000_000), " s")
 
     # CHECK: POST::Atomic counter is 10000 , and raw counter, 10000
