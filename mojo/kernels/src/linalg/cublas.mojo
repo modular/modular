@@ -55,8 +55,9 @@ fn cublas_matmul(
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
+    var result: Result
     if c_row_major:
-        return cublasGemmEx(
+        result = cublasGemmEx(
             handle,
             _convert_to_cublas_transpose(transpose_b),
             _convert_to_cublas_transpose(transpose_a),
@@ -79,7 +80,7 @@ fn cublas_matmul(
         )
     # Default column-major.
     else:
-        return cublasGemmEx(
+        result = cublasGemmEx(
             handle,
             _convert_to_cublas_transpose(transpose_a),
             _convert_to_cublas_transpose(transpose_b),
@@ -100,3 +101,6 @@ fn cublas_matmul(
             compute_type,
             Algorithm.DEFAULT,
         )
+    _ = alpha
+    _ = beta
+    return result
