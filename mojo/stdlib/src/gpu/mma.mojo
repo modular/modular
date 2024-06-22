@@ -96,6 +96,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[2],
             c_ptr[3],
         )
+        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -149,6 +150,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[2],
             c_ptr[3],
         )
+        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -188,6 +190,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[2],
             c_ptr[3],
         )
+        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -227,6 +230,9 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[2],
             c_ptr[3],
         )
+        _ = a0
+        _ = b0
+        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -266,6 +272,9 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[2],
             c_ptr[3],
         )
+        _ = a0
+        _ = b0
+        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -317,11 +326,13 @@ fn ld_matrix[
         var r = llvm_intrinsic[ins, UInt32](ptr)
         var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
+        _ = r
     elif num_registers == 2:
         alias ins = base + ".x2" + get_suffix()
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
         var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
+        _ = r
     else:
         constrained[
             num_registers == 4,
@@ -333,4 +344,5 @@ fn ld_matrix[
         ](ptr)
         var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
+        _ = r
     return d

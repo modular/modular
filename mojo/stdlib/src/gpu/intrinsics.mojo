@@ -134,4 +134,6 @@ fn convert[
         SIMD[dst_type, width]
     ]()
 
-    return ptr[0]
+    var result = ptr[0]
+    _ = bf16x2_as_uint32
+    return result
