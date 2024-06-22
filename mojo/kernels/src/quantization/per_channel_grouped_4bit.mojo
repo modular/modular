@@ -459,6 +459,7 @@ struct Q4sym[
                     address_space = output_ptr.address_space
                 ]()
                 memcpy(output_ptr, src_ptr, 1)
+                _ = encoded_data^
 
     @staticmethod
     fn dequantize_and_write_to_tensor[
