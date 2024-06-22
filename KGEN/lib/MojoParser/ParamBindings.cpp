@@ -348,10 +348,8 @@ ParamBindings::verifyBindingsImpl(
       if (!fitness.lastExpectedType)
         fitness.lastExpectedType = expectedType;
 
-      if (diagEmitter) {
-        diagEmitter->emitParamCount(numPosBindings,
-                                    passingKind == PassingKind::PosOnly);
-      }
+      if (diagEmitter)
+        diagEmitter->emitDeductionFailure(idx);
       return {{}, fitness};
     }
 
