@@ -92,6 +92,7 @@ fn test_keep():
 
     var ptr = Pointer.address_of(val)
     keep(ptr)
+    _ = val
 
     var s0 = SomeStruct()
     keep(s0)

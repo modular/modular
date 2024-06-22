@@ -125,6 +125,7 @@ fn keep[type: AnyTrivialRegType](val: Pointer[type]):
         constraints="r,~{memory}",
         has_side_effect=True,
     ](tmp_ptr)
+    _ = tmp
 
 
 @always_inline
@@ -149,3 +150,4 @@ fn keep[type: AnyTrivialRegType](inout val: type):
         constraints="r,~{memory}",
         has_side_effect=True,
     ](tmp_ptr)
+    _ = tmp
