@@ -182,7 +182,7 @@ fn badCalls(arg: Int):
   exampleByRefVariadic(1.0, x, 1)
 
   # The user hasn't provided any arguments that could be used to infer `T`.
-  # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{could not deduce parameter 'T' of callee 'parameterizedVariadic'}}
   # expected-note @below {{failed to infer parameter 'T', parameter isn't used in any argument}}
   parameterizedVariadic()
   # expected-error @below {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
@@ -190,11 +190,11 @@ fn badCalls(arg: Int):
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
-  # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{invalid call to 'parameterizedVariadic': could not deduce parameter 'T' of callee 'parameterizedVariadic'}}
   # expected-note @below {{failed to infer parameter 'T', parameter inferred to two different values: 'Int' and 'FloatDyn'}}
   parameterizedVariadic(1, 2.0)
 
-  # expected-error @below {{callee expects 3 parameters, but 2 were specified}}
+  # expected-error @below {{invalid call to 'test': could not deduce parameter 'j' of callee 'test'}}
   # expected-note @below {{failed to infer parameter 'j', parameter isn't used in any argument}}
   TestTuple[Int, FloatLiteral]().test[1]()
 
@@ -260,7 +260,7 @@ fn badPackCalls(value: Int):
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 0 positional operands, but 1 was specified}}
   examplePack(packArgOverload)
-  # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 parameters, but 0 were specified}}
+  # expected-error @below {{invalid call to 'first_and_rest': could not deduce parameter 'T' of callee 'first_and_rest'}}
   # expected-note @below {{failed to infer parameter 'T', parameter isn't used in any argument}}
   first_and_rest(value)
 
@@ -412,7 +412,7 @@ fn test_param_deduction_failure[
     func[_](u)
 
     # TODO: This note is because we're not inferring signatures correctly
-    # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+    # expected-error @below {{invalid indirect call: could not deduce parameter 'y' of callee 'callee'}}
     # expected-note @below {{failed to infer parameter 'y', parameter isn't used in any argument}}
     func[_](u, v)
 
@@ -764,7 +764,7 @@ trait TraitWithParams[T: AnyTrivialRegType]: # expected-error {{TODO: trait decl
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  # expected-error @below {{invalid call to 'parametric': callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{invalid call to 'parametric': could not deduce parameter 'x' of callee 'parametric'}}
   # expected-note @below {{failed to infer parameter 'x', parameter isn't used in any argument}}
   x.parametric()
 
@@ -815,7 +815,7 @@ fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
 
 # expected-error @+1 {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
 fn dont_crash_pvalue_convert(x: CFMStructFail):
-    # expected-error @below {{invalid call to 'trait_fn_infer': callee expects 1 parameter, but 0 were specified}}
+    # expected-error @below {{invalid call to 'trait_fn_infer': could not deduce parameter 'T' of callee 'trait_fn_infer'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'CFMStructFail' does not conform to trait 'CFMTrait'}}
     trait_fn_infer(x)
 

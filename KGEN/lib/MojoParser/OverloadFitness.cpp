@@ -712,15 +712,20 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
             diag << nameForPosOnly(paramIdx, "parameter");
         };
 
+        // If this is a method on a struct and we couldn't infer something from
+        // its self parameters, complain about the struct.
         if (funcIfDirect) {
           if (auto structOp = dyn_cast<StructDeclOp>(
                   cast<LIT::FuncOp>(*funcIfDirect)->getParentOp())) {
-            emitMessage(structOp.getSignature());
-            diag << " of parent struct '" << structOp.getDeclName().getValue()
-                 << "'";
-            diag.attachNote(structOp.getLoc()) << " struct declared here";
-            inferenceDiags.attach(paramListAttr, diag);
-            return;
+            auto structSig = structOp.getSignature();
+            if (paramIdx < structSig.getNumParams()) {
+              emitMessage(structSig);
+              diag << " of parent struct '" << structOp.getDeclName().getValue()
+                   << "'";
+              diag.attachNote(structOp.getLoc()) << " struct declared here";
+              inferenceDiags.attach(paramListAttr, diag);
+              return;
+            }
           }
         }
         emitMessage(signature);

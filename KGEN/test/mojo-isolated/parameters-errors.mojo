@@ -6,7 +6,6 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-
 ##===----------------------------------------------------------------------===##
 # Input parameters
 ##===----------------------------------------------------------------------===##
@@ -61,6 +60,7 @@ fn testTestParamStruct(a: Parameterized[4]):
   var partial_var_type: Thing[1] # expected-error {{missing required parameter 'b'}}
 
 
+# expected-note @below {{struct declared here}}
 struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
   # expected-note @below {{function declared here}}
   fn __add__(self, rhs: MySIMD[size, type]):
@@ -71,7 +71,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   var x = a+a
   var y = b+b
   # TODO: {{failed to infer parameter #0, parameter inferred to two different values: '2' and '1'}}
-  # expected-error @below {{invalid call to '__add__': callee expects at least 2 positional parameters, but 0 were specified}}
+  # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD'}}
   var z = b+a
 
 fn badReboundType[type: __mlir_type.`!kgen.dtype`,
@@ -219,7 +219,7 @@ fn test_pos_only():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
-    # expected-error @below {{expects at least 2 positional parameters, but 1 was specified}}
+    # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b' of callee 'has_pos_only'}}
     # expected-note @below {{failed to infer parameter 'b', parameter isn't used in any argument}}
     has_pos_only[1, c=9]()
 
@@ -348,7 +348,7 @@ struct BindStructField:
     var value: InferredParam[Int]
 
 fn invalid_params[f: fn(ParamType) -> None]():
-  # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{invalid call to 'autoparams': could not deduce parameter 'a' of callee 'autoparams'}}
   # expected-note @below {{failed to infer parameter 'a', parameter isn't used in any argument}}
   autoparams[](ParamType[1]())
   # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
