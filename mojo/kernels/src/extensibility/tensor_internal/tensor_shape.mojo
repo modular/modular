@@ -509,6 +509,7 @@ struct _TensorShapeStorage:
         var rep = _Rep32()
         var rep_ptr = Pointer.address_of(rep)
         self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        _ = rep
 
     @always_inline
     fn __init__(inout self, rep: _Rep16):
@@ -520,6 +521,7 @@ struct _TensorShapeStorage:
         var rep_copy = rep
         var rep_ptr = Pointer.address_of(rep_copy)
         self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        _ = rep_copy
 
     @always_inline
     fn __init__(inout self, rep: _Rep32):
@@ -531,6 +533,7 @@ struct _TensorShapeStorage:
         var rep_copy = rep
         var rep_ptr = Pointer.address_of(rep_copy)
         self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        _ = rep_copy
 
     @always_inline
     fn __init__(inout self, rep: _RepOutOfLine):
@@ -544,6 +547,7 @@ struct _TensorShapeStorage:
         var rep_copy = rep
         var rep_ptr = Pointer.address_of(rep_copy)
         self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        _ = rep_copy
 
 
 @always_inline
@@ -558,7 +562,9 @@ fn _as_rep16(rep0: _TensorShapeStorage) -> _Rep16:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_Rep16]().load()
+    var result = rep_ptr.bitcast[_Rep16]().load()
+    _ = rep
+    return result
 
 
 @always_inline
@@ -587,7 +593,9 @@ fn _as_rep16(rep0: _Rep32) -> _Rep16:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_Rep16]().load()
+    var result = rep_ptr.bitcast[_Rep16]().load()
+    _ = rep
+    return result
 
 
 @always_inline
@@ -602,7 +610,9 @@ fn _as_rep32(rep0: _TensorShapeStorage) -> _Rep32:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_Rep32]().load()
+    var result = rep_ptr.bitcast[_Rep32]().load()
+    _ = rep
+    return result
 
 
 @always_inline
@@ -617,7 +627,9 @@ fn _as_rep32(rep0: _Rep16) -> _Rep32:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_Rep32]().load()
+    var result = rep_ptr.bitcast[_Rep32]().load()
+    _ = rep
+    return result
 
 
 @always_inline
@@ -646,7 +658,9 @@ fn _as_rep_out_of_line(rep0: _TensorShapeStorage) -> _RepOutOfLine:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_RepOutOfLine]().load()
+    var result = rep_ptr.bitcast[_RepOutOfLine]().load()
+    _ = rep
+    return result
 
 
 @always_inline
@@ -661,7 +675,9 @@ fn _as_rep_out_of_line(rep0: _Rep16) -> _RepOutOfLine:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_RepOutOfLine]().load()
+    var result = rep_ptr.bitcast[_RepOutOfLine]().load()
+    _ = rep
+    return result
 
 
 @always_inline
@@ -676,7 +692,9 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
     """
     var rep = rep0
     var rep_ptr = Pointer.address_of(rep)
-    return rep_ptr.bitcast[_RepOutOfLine]().load()
+    var result = rep_ptr.bitcast[_RepOutOfLine]().load()
+    _ = rep
+    return result
 
 
 # ===----------------------------------------------------------------------===#
