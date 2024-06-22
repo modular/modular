@@ -5,60 +5,124 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: cuda
-# RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s %S/Inputs/cuda-graph.mlir
+# TODO (MSDK-465): Remove env var
+# RUN: TMP_ALLOCATE_ON_DEVICE=1 mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-# COM: Test with mojo build
-# RUN: mkdir -p %t
-# RUN: rm -rf %t/driver-graph-test
-# RUN: mojo build %s -o %t/driver-graph-test
-# RUN: %t/driver-graph-test %S/Inputs/cuda-graph.mlir
-
-from max.graph import Graph, TensorType, Symbol, Type
+from max.graph import Graph, TensorType, Symbol, Type, ops
 from tensor import TensorSpec
 from driver import (
     compile_graph,
-    cuda_device,
     cpu_device,
+    CPUDescriptor,
     AnyTensor,
     Tensor,
+    cuda_device,
     Device,
 )
-from testing import assert_equal
-from sys import argv
+from testing import assert_equal, assert_true, assert_raises
+import tensor
 
 
-def test_graph_execution():
-    args = argv()
-    if len(args) < 2:
-        print("Usage: program.exe <model_path>")
-        raise "ArgumentError: Expected model path"
+def build_graph() -> Graph:
+    g = Graph(
+        "test_mnist_helpers",
+        List[Type](TensorType(DType.float32, 1, 28, 28, 1)),
+    )
+    cst_data = tensor.Tensor[DType.float32](128, 10)
+    cst_data._to_buffer().fill(0.5)
+    cst = g.constant(cst_data)
 
-    graph_path = args[1]
-    gpu = cuda_device()
+    cst_0 = g.constant(
+        tensor.Tensor[DType.float32](
+            tensor.TensorShape(1, 10),
+            -0.0675942451,
+            0.0063267909,
+            7.43086217e-4,
+            -0.0126994187,
+            0.0148473661,
+            0.108896509,
+            -0.0398316309,
+            0.0461452715,
+            -0.0281771384,
+            -0.0431172103,
+        )
+    )
+
+    cst_1_data = tensor.Tensor[DType.float32](784, 128)
+    cst_1_data._to_buffer().fill(0.5)
+    cst_1 = g.constant(cst_1_data)
+
+    cst_2_data = tensor.Tensor[DType.float32](1, 128)
+    cst_2_data._to_buffer().fill(0.5)
+    cst_2 = g.constant(cst_2_data)
+
+    p1 = g[0].reshape(1, 784)
+    p2 = p1 @ cst_1
+    p3 = p2 + cst_2
+    p4 = ops.relu(p3)
+    p5 = p4 @ cst
+    p6 = p5 + cst_0
+    _ = g.output(p6)
+
+    return g
+
+
+def test_mnist():
+    g = build_graph()
     cpu = cpu_device()
-    compiled_graph = compile_graph(graph_path, gpu)
+    cuda = cuda_device()
+    # compile graph for cuda => mo inputs should be on device
+    compiled_graph = compile_graph(g, cuda)
     executable_graph = compiled_graph.load()
 
-    input_dt = cpu.allocate(TensorSpec(DType.float32, 5))
-    input_cpu = input_dt^.to_tensor[DType.float32, 1]()
-    for i in range(5):
-        input_cpu[i] = i
-    gpu_tensor = input_cpu^.to_device_tensor().copy_to(gpu)
-    outputs = executable_graph.execute(gpu_tensor^)
-    assert_equal(len(outputs), 1)
+    # fill host tensor
+    input_host_dt = cpu.allocate(TensorSpec(DType.float32, 1, 28, 28, 1))
+    input_host = input_host_dt^.to_tensor[DType.float32, 4]()
+    for i in range(1):
+        for j in range(28):
+            for k in range(28):
+                for l in range(1):
+                    input_host[i, j, k, l] = 1.0
 
-    def _assert_values(inout memory: AnyTensor, device: Device):
+    # copy host to device
+    input_device_dt = input_host.to_device_tensor().copy_to(cuda)
+    # execute
+    outputs_device = executable_graph.execute(
+        input_device_dt.to_tensor[DType.float32, 4]()
+    )
+    assert_equal(len(outputs_device), 1)
+
+    def _assert_values(inout memory: AnyTensor, cpu: Device):
         new = AnyTensor()
         tmp = memory^
         memory = new^
-        gpu_output = tmp^.to_device_tensor()
-        cpu_tensor = gpu_output.copy_to(device).to_tensor[DType.float32, 1]()
-        for i in range(5):
-            assert_equal(cpu_tensor[i], 2 * i)
+        output_device = tmp^.to_device_tensor()
+        output_host = output_device.copy_to(cpu).to_tensor[DType.float32, 2]()
 
-    for output in outputs:
+        var output_list = List[Float32]()
+        output_list.reserve(10)
+        for i in range(10):
+            output_list.append(output_host[0, i])
+
+        expected_outputs = List[Float32](
+            2.511993e04,
+            2.512001e04,
+            2.512000e04,
+            2.511999e04,
+            2.512002e04,
+            2.512011e04,
+            2.511996e04,
+            2.512005e04,
+            2.511997e04,
+            2.511996e04,
+        )
+
+        for i in range(10):
+            assert_true(abs(output_list[i] - expected_outputs[i]) < 0.1)
+
+    for output in outputs_device:
         _assert_values(output[], cpu)
 
 
 def main():
-    test_graph_execution()
+    test_mnist()

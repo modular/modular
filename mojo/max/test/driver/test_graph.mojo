@@ -133,12 +133,6 @@ def test_mnist():
         _assert_values(output[])
 
 
-def test_error():
-    with assert_raises(contains="No such file or directory"):
-        _ = compile_graph("invalid/path", cpu_device())
-
-
 def main():
     test_graph_execution()
     test_mnist()
-    test_error()
