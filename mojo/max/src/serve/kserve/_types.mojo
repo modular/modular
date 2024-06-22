@@ -183,6 +183,7 @@ fn _set_tensors[
         call_dylib_func[NoneType](
             lib, add_tensor_fn, ptr, UnsafePointer.address_of(view)
         )
+        _ = view
         name._strref_keepalive()
         _ = shape^
 

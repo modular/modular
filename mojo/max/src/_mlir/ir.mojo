@@ -357,6 +357,7 @@ struct Operation(CollectionElement, Stringable):
         )
         name._strref_keepalive()
         self.c = _c.IR.mlirOperationCreate(Pointer.address_of(state))
+        _ = state
 
     fn __init__(
         inout self,
@@ -391,6 +392,7 @@ struct Operation(CollectionElement, Stringable):
             result = _c.IR.mlirOperationCreate(Pointer.address_of(state))
             if not result.ptr:
                 raise "operation create failed"
+        _ = state
 
         self.c = result
 
