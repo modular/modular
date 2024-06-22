@@ -14,6 +14,7 @@ from utils import InlineArray
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 
 
+@value
 struct HostNDBuffer[
     type: DType,
     rank: Int,
@@ -25,7 +26,7 @@ struct HostNDBuffer[
     @always_inline
     fn __init__(inout self):
         self.tensor = NDBuffer[type, rank, shape](
-            DTypePointer[type].alloc(int(shape.product[2]()))
+            DTypePointer[type].alloc(int(shape.product[len(shape)]()))
         )
 
     @always_inline
@@ -33,6 +34,7 @@ struct HostNDBuffer[
         self.tensor.data.free()
 
 
+@value
 struct DeviceNDBuffer[
     type: DType,
     rank: Int,
@@ -44,7 +46,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(inout self, ctx: DeviceContext) raises:
-        self.buffer = ctx.create_buffer[type](int(shape.product[2]()))
+        self.buffer = ctx.create_buffer[type](int(shape.product[len(shape)]()))
         self.tensor = NDBuffer[type, rank, shape](self.buffer.ptr, Self.shape)
 
 
