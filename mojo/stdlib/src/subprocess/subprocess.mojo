@@ -59,6 +59,7 @@ struct _POpenHandle:
             var read = external_call["getline", Int](
                 Pointer.address_of(line), Pointer.address_of(len), self._handle
             )
+            _ = len
             if read == -1:
                 break
             res += StringRef(line, read)
