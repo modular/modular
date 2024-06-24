@@ -62,7 +62,7 @@ struct CRuntimeConfig:
 
 @value
 @register_passable
-struct _Device(Stringable):
+struct _Device(Stringable, Formattable):
     var value: Int
 
     alias CPU = _Device(0)
@@ -75,9 +75,13 @@ struct _Device(Stringable):
         return not (self == other)
 
     fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
         if self == _Device.CPU:
-            return "cpu"
-        return "cuda"
+            writer.write_str["cpu"]()
+        else:
+            writer.write_str["cuda"]()
 
 
 struct RuntimeConfig:

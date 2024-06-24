@@ -37,7 +37,7 @@ struct DiagnosticSeverity:
 
 
 @value
-struct Diagnostic(Stringable):
+struct Diagnostic(Stringable, Formattable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
@@ -48,6 +48,9 @@ struct Diagnostic(Stringable):
         return _to_string[Self.cType, _c.Diagnostics.mlirDiagnosticPrint](
             self.c
         )
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write(str(self))
 
     fn get_severity(self) -> DiagnosticSeverity:
         return _c.Diagnostics.mlirDiagnosticGetSeverity(self.c)

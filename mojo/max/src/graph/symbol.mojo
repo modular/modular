@@ -33,7 +33,7 @@ from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 
 @value
-struct Symbol(CollectionElement, Stringable):
+struct Symbol(CollectionElement, Stringable, Formattable):
     """Represents a symbolic value within a `Graph`.
 
     A `Symbol` can represent the output of a node, the arguments of a `Graph`
@@ -100,7 +100,17 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             A textual representation of this `Symbol`.
         """
-        return str(self.handle)
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this symbol to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write(str(self.handle))
 
     # ===------------------------------------------------------------------=== #
     # Casting and reshaping operators.
