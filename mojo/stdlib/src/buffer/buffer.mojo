@@ -40,7 +40,7 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 
 # This type is "async safe" (see _async_parallelize).
 @value
-@register_passable
+@register_passable("trivial")
 struct Buffer[
     type: DType,
     /,
