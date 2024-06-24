@@ -7,7 +7,7 @@
 
 @value
 @register_passable("trivial")
-struct Result:
+struct Result(Formattable):
     var _value: Int32
     alias SUCCESS = Self(0)
     alias NOT_INITIALIZED = Self(1)
@@ -30,27 +30,31 @@ struct Result:
         return not (self == other)
 
     fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
         if self == Self.SUCCESS:
-            return "SUCCESS"
+            writer.write("SUCCESS")
         if self == Self.NOT_INITIALIZED:
-            return "NOT_INITIALIZED"
+            writer.write("NOT_INITIALIZED")
         if self == Self.ALLOC_FAILED:
-            return "ALLOC_FAILED"
+            writer.write("ALLOC_FAILED")
         if self == Self.INVALID_VALUE:
-            return "INVALID_VALUE"
+            writer.write("INVALID_VALUE")
         if self == Self.ARCH_MISMATCH:
-            return "ARCH_MISMATCH"
+            writer.write("ARCH_MISMATCH")
         if self == Self.MAPPING_ERROR:
-            return "MAPPING_ERROR"
+            writer.write("MAPPING_ERROR")
         if self == Self.EXECUTION_FAILED:
-            return "EXECUTION_FAILED"
+            writer.write("EXECUTION_FAILED")
         if self == Self.INTERNAL_ERROR:
-            return "INTERNAL_ERROR"
+            writer.write("INTERNAL_ERROR")
         if self == Self.NOT_SUPPORTED:
-            return "NOT_SUPPORTED"
+            writer.write("NOT_SUPPORTED")
         if self == Self.LICENSE_ERROR:
-            return "LICENSE_ERROR"
-        return abort[String]("invalid Result entry")
+            writer.write("LICENSE_ERROR")
+
+        return abort("unreachable: invalid Result entry")
 
     fn __int__(self) -> Int:
         return int(self._value)
