@@ -30,9 +30,6 @@ from extensibility import Tensor as ExtensibilityTensor
 from gpu.host._compile import _get_nvptx_target
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
-from linalg.bmm import (
-    get_trace_information as get_trace_information_batched_matmul,
-)
 from linalg.matmul import matmul as _matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
@@ -41,7 +38,7 @@ from linalg.packing import (
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from linalg.utils import GemmShape, get_trace_information
+from linalg.utils import GemmShape
 from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
@@ -108,7 +105,7 @@ from nn.topk import top_k as _top_k
 from nn.topk import top_k_shape
 from register import *
 from runtime.llcl import MojoCallContextPtr, Runtime
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
@@ -475,6 +472,12 @@ fn destruct_buffer_list[
     list._del_old()
 
 
+@always_inline
+fn trace_buf(name: String, buf: NDBuffer) -> String:
+    """Helper to stringify the type and shape of an NDBuffer for tracing."""
+    return trace_arg(name, buf.dynamic_shape, buf.type)
+
+
 # TODO(#27757): All calls with concrete body functions are as if annotated with
 #               @mogg_register("mo.original_op")
 @mogg_register("elementwise")
@@ -493,7 +496,7 @@ fn elementwise_wrapper[
     @parameter
     fn description_fn() -> String:
         var name_str = String("name=") + trace_description
-        var shape_str = String("shape=") + String("x").join(buffer.get_shape())
+        var shape_str = trace_buf("buffer", buffer)
 
         var vector_width_str = String("vector_width=") + str(simd_width)
 
@@ -1376,8 +1379,8 @@ fn mean[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            String("input_shape=") + String("x").join(input_shape),
-            String("output_shape=") + String("x").join(output_shape),
+            trace_arg("input", input_shape, type),
+            trace_arg("output", output_shape, type),
         )
 
     with Trace[TraceLevel.OP](
@@ -2031,18 +2034,10 @@ fn mogg_gather_sum[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        var output_shape_str = String("output_shape=") + String("x").join(
-            output.get_shape()
-        )
-        var input_shape_str = String("input_shape=") + String("x").join(
-            input.get_shape()
-        )
-        var indices_shape_str = String("indices_shape=") + String("x").join(
-            indices.get_shape()
-        )
-
         return String(";").join(
-            output_shape_str, input_shape_str, indices_shape_str
+            trace_buf("output", output),
+            trace_buf("input", input),
+            trace_buf("indices", indices),
         )
 
     with Trace[TraceLevel.OP](
@@ -2175,17 +2170,17 @@ fn matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        var info = get_trace_information(
+        var shape = GemmShape.get[transpose_b](c, a, b)
+        return String(";").join(
             "dynamic_tile",
-            GemmShape.get[transpose_b](c, a, b),
-            transpose_a,
-            transpose_b,
-            b_packed,
-        )
-        return (
-            info
-            + String(";single_thread_blocking_override=")
-            + str(single_thread_blocking_override)
+            trace_arg("A", StaticIntTuple[2](shape.M, shape.K), a_type),
+            trace_arg("B", StaticIntTuple[2](shape.K, shape.N), b_type),
+            trace_arg("C", StaticIntTuple[2](shape.M, shape.N), c_type),
+            "transpose_a=" + str(transpose_a),
+            "transpose_b=" + str(transpose_b),
+            "b_packed=" + str(b_packed),
+            "single_thread_blocking_override="
+            + str(single_thread_blocking_override),
         )
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
@@ -2257,18 +2252,15 @@ fn batched_matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        var info = get_trace_information_batched_matmul[rank](
+        return String(";").join(
             "dynamic_tile",
-            a.get_shape(),
-            b.get_shape(),
-            c.get_shape(),
-            transpose_a,
-            transpose_b,
-        )
-        return (
-            info
-            + String(";single_thread_blocking_override=")
-            + str(single_thread_blocking_override)
+            trace_buf("A", a),
+            trace_buf("B", b),
+            trace_buf("C", c),
+            "transpose_a=" + str(transpose_a),
+            "transpose_b=" + str(transpose_b),
+            "single_thread_blocking_override="
+            + str(single_thread_blocking_override),
         )
 
     with Trace[TraceLevel.OP](
@@ -3116,28 +3108,14 @@ fn conv[
     @__copy_capture(pad_h_tuple, pad_w_tuple)
     @parameter
     fn description_fn() -> String:
-        var input_shape_str = String("input=") + String("x").join(
-            input.dynamic_shape
-        )
-        var filter_shape_str = String("filter=") + String("x").join(
-            filter.dynamic_shape
-        )
-        var output_shape_str = String("output=") + String("x").join(
-            output.dynamic_shape
-        )
-        var group_str = String("group=") + str(int(num_groups[0]))
-        var stride_str = String("stride=") + String("x").join(stride_tuple)
-        var padding_h_str = String("padding_h=") + String("x").join(pad_h_tuple)
-        var padding_w_str = String("padding_w=") + String("x").join(pad_w_tuple)
-
         return String(";").join(
-            input_shape_str,
-            filter_shape_str,
-            output_shape_str,
-            group_str,
-            stride_str,
-            padding_h_str,
-            padding_w_str,
+            trace_buf("input", input),
+            trace_buf("filter", filter),
+            trace_buf("output", output),
+            "group=" + str(int(num_groups[0])),
+            "stride=" + String("x").join(stride_tuple),
+            "padding_h=" + String("x").join(pad_h_tuple),
+            "padding_w=" + String("x").join(pad_w_tuple),
         )
 
     with Trace[TraceLevel.OP](
@@ -3251,30 +3229,15 @@ fn conv_transpose[
     @__copy_capture(stride_tuple, pad_h, pad_w)
     @parameter
     fn description_fn() -> String:
-        var input_shape_str = String("input=") + String("x").join(
-            input.dynamic_shape
-        )
-        var filter_shape_str = String("filter=") + String("x").join(
-            filter.dynamic_shape
-        )
-        var output_shape_str = String("output=") + String("x").join(
-            output.dynamic_shape
-        )
-        var group_str = String("group=") + str(1)
-        var stride_str = String("stride=") + String("x").join(stride_tuple)
-        var padding_d_str = String("padding_d=") + String("x").join(Index(0, 0))
-        var padding_h_str = String("padding_h=") + String("x").join(pad_h)
-        var padding_w_str = String("padding_w=") + String("x").join(pad_w)
-
         return String(";").join(
-            input_shape_str,
-            filter_shape_str,
-            output_shape_str,
-            group_str,
-            stride_str,
-            padding_d_str,
-            padding_h_str,
-            padding_w_str,
+            trace_buf("input", input),
+            trace_buf("filter", filter),
+            trace_buf("output", output),
+            "group=" + str(1),
+            "stride=" + String("x").join(stride_tuple),
+            "padding_d=" + String("x").join(Index(0, 0)),
+            "padding_h=" + String("x").join(pad_h),
+            "padding_w=" + String("x").join(pad_w),
         )
 
     @parameter
@@ -3928,22 +3891,12 @@ fn masked_flash_attention_gpu[
     @__copy_capture(q, k, v, mask, output)
     @parameter
     fn description_fn() -> String:
-        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
-        var k_shape_str = String("k_shape=") + String("x").join(k.dynamic_shape)
-        var v_shape_str = String("v_shape=") + String("x").join(v.dynamic_shape)
-        var mask_shape_str = String("mask_shape=") + String("x").join(
-            mask.dynamic_shape
-        )
-        var out_shape_str = String("o_shape=") + String("x").join(
-            output.dynamic_shape
-        )
-
         return String(";").join(
-            q_shape_str,
-            k_shape_str,
-            v_shape_str,
-            mask_shape_str,
-            out_shape_str,
+            trace_buf("q", q),
+            trace_buf("k", k),
+            trace_buf("v", v),
+            trace_buf("mask", mask),
+            trace_buf("output", output),
         )
 
     with Trace[TraceLevel.OP](
@@ -4141,18 +4094,11 @@ fn no_mask_flash_attention_cpu[
     @__copy_capture(q, input_1_shape, input_2_shape, output)
     @parameter
     fn description_fn() -> String:
-        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
-        var k_shape_str = String("k_shape=") + String("x").join(input_1_shape)
-        var v_shape_str = String("v_shape=") + String("x").join(input_2_shape)
-        var out_shape_str = String("o_shape=") + String("x").join(
-            output.dynamic_shape
-        )
-
         return String(";").join(
-            q_shape_str,
-            k_shape_str,
-            v_shape_str,
-            out_shape_str,
+            trace_buf("q", q),
+            trace_arg("k", input_1_shape, type),
+            trace_arg("v", input_2_shape, type),
+            trace_buf("output", output),
         )
 
     with Trace[TraceLevel.OP](
@@ -4251,30 +4197,14 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     )
     @parameter
     fn description_fn() -> String:
-        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
-        var k_shape_str = String("k_shape=") + String("x").join(input_1_shape)
-        var v_shape_str = String("v_shape=") + String("x").join(input_2_shape)
-        var k_cache_shape_str = String("k_cache_shape=") + String("x").join(
-            input_3_shape
-        )
-        var v_cache_shape_str = String("v_cache_shape=") + String("x").join(
-            input_4_shape
-        )
-        var mask_shape_str = String("mask_shape=") + String("x").join(
-            input_5_shape
-        )
-        var out_shape_str = String("o_shape=") + String("x").join(
-            output.dynamic_shape
-        )
-
         return String(";").join(
-            q_shape_str,
-            k_shape_str,
-            v_shape_str,
-            k_cache_shape_str,
-            v_cache_shape_str,
-            mask_shape_str,
-            out_shape_str,
+            trace_buf("q", q),
+            trace_arg("k", input_1_shape, type),
+            trace_arg("v", input_2_shape, type),
+            trace_arg("k_cache", input_3_shape, type),
+            trace_arg("v_cache", input_4_shape, type),
+            trace_arg("mask", input_5_shape, type),
+            trace_buf("output", output),
         )
 
     with Trace[TraceLevel.OP](
@@ -4352,22 +4282,12 @@ fn with_mask_flash_attention_cpu[
     @__copy_capture(q, input_1_shape, input_2_shape, input_3_shape, output)
     @parameter
     fn description_fn() -> String:
-        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
-        var k_shape_str = String("k_shape=") + String("x").join(input_1_shape)
-        var v_shape_str = String("v_shape=") + String("x").join(input_2_shape)
-        var mask_shape_str = String("mask_shape=") + String("x").join(
-            input_3_shape
-        )
-        var out_shape_str = String("o_shape=") + String("x").join(
-            output.dynamic_shape
-        )
-
         return String(";").join(
-            q_shape_str,
-            k_shape_str,
-            v_shape_str,
-            mask_shape_str,
-            out_shape_str,
+            trace_buf("q", q),
+            trace_arg("k", input_1_shape, type),
+            trace_arg("v", input_2_shape, type),
+            trace_arg("mask", input_3_shape, type),
+            trace_buf("output", output),
         )
 
     with Trace[TraceLevel.OP](
