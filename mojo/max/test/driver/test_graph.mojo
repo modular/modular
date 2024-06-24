@@ -6,6 +6,12 @@
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
+# COM: Test with mojo build
+# RUN: mkdir -p %t
+# RUN: rm -rf %t/driver-graph-test
+# RUN: mojo build %s -o %t/driver-graph-test
+# RUN: %t/driver-graph-test
+
 from max.graph import Graph, TensorType, Symbol, Type, ops
 from max._driver import compile_graph
 from tensor import TensorSpec
