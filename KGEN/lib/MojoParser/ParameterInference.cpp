@@ -800,7 +800,7 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
       // Depth-1 because we're matching against the signature parameters,
       // and that pushes level of depth immediately.
       auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
-      if (!ref || ref.getDepth() != depth - 1 ||
+      if (!ref || ref.getDepth() != depth - signatureScoped ||
           ref.getIndex() >= bindingsSoFar.size())
         return {};
       auto result = bindingsSoFar[ref.getIndex()];
@@ -811,9 +811,14 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
 
     ArrayRef<TypedAttr> bindingsSoFar;
     ParserParamEvaluator &evaluator;
+    bool signatureScoped;
   } substitutor(bindingsSoFar, evaluator);
 
   auto refine = [&](auto arg) {
+    if constexpr (std::is_base_of_v<Type, decltype(arg)>)
+      substitutor.signatureScoped = isa<ParameterScopeTypeInterface>(arg);
+    else
+      substitutor.signatureScoped = false;
     auto newArg = substitutor.replace(arg);
     if (newArg == arg)
       return arg;

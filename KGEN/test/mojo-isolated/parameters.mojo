@@ -827,7 +827,22 @@ fn take_two[a_type: DType, c_type: DType, width: Int](
     c: SIMD[c_type, width], a: SIMD[a_type, width + 1],
 ) -> SIMD[c_type, width]: pass
 
+fn implicit_signature[
+    type: DType,
+    rank: Int, //,
+    func: fn[width: Int](Abstraction[rank]) -> SIMD[type, width],
+]():
+    pass
 
+# CHECK-LABEL: lit.func @"signature_inference
+fn signature_inference[dt: DType, rank: Int]():
+    fn func[width: Int](idx: Abstraction[rank]) -> SIMD[dt, width]:
+        pass
+
+    # CHECK: call {{.*}}implicit_signature{{.*}}<:!DType dt, :!Int rank,
+    # CHECK-SAME: :!lit.signature<<"width": !Int>(!lit.declref<#Abstraction <:!Int rank>
+    # CHECK-SAME: -> !lit.declref<#SIMD <:!DType dt, :!Int *(0,0)>>
+    implicit_signature[func]()
 
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
