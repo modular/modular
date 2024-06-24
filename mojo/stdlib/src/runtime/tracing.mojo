@@ -158,6 +158,17 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     return is_profiling_disabled[TraceType.MOJO, level]()
 
 
+@always_inline
+fn trace_arg(name: String, shape: StaticIntTuple, dtype: DType) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+    """
+    var s = name + "="
+    for i in range(len(shape)):
+        s += str(shape[i]) + "x"
+    s += str(dtype)
+    return s
+
+
 # ===----------------------------------------------------------------------===#
 # Trace
 # ===----------------------------------------------------------------------===#
