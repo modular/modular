@@ -19,17 +19,20 @@ from utils.index import Index, StaticIntTuple
 fn test_gather(ctx: DeviceContext) raises:
     print("== test_gather")
 
-    @always_inline
+    @no_inline
     @parameter
     fn _test_gather[indices_type: DType]() raises:
         alias num_rows = 16
         alias row_size = 4
 
+        var input_host_ptr = DTypePointer[DType.float32].alloc(
+            num_rows * row_size
+        )
         var input_host = NDBuffer[
             DType.float32,
             2,
             DimList(num_rows, row_size),
-        ].stack_allocation()
+        ](input_host_ptr)
         for i in range(num_rows):
             for j in range(row_size):
                 input_host[Index(i, j)] = Float32(i).value
@@ -44,11 +47,12 @@ fn test_gather(ctx: DeviceContext) raises:
         ](input_device_ptr.ptr)
 
         alias num_indices = 16
+        var indices_host_ptr = DTypePointer[indices_type].alloc(num_indices)
         var indices_host = NDBuffer[
             indices_type,
             1,
             DimList(num_indices),
-        ].stack_allocation()
+        ](indices_host_ptr)
         var indices_device_ptr = ctx.create_buffer[indices_type](
             indices_host.size() * sizeof[indices_type]()
         )
@@ -66,11 +70,14 @@ fn test_gather(ctx: DeviceContext) raises:
         ctx.enqueue_copy_to_device(indices_device_ptr, indices_host.data)
 
         # create output
+        var output_host_ptr = DTypePointer[DType.float32].alloc(
+            num_indices * row_size
+        )
         var output_host = NDBuffer[
             DType.float32,
             2,
             DimList(num_indices, row_size),
-        ].stack_allocation()
+        ](output_host_ptr)
         var output_device_ptr = ctx.create_buffer[DType.float32](
             output_host.size() * sizeof[DType.float32]()
         )
@@ -99,6 +106,10 @@ fn test_gather(ctx: DeviceContext) raises:
         print(output_host[Index(2, 0)])
         print(output_host[Index(6, 0)])
         print(output_host[Index(15, 0)])
+
+        input_host_ptr.free()
+        indices_host_ptr.free()
+        output_host_ptr.free()
 
     # CHECK: 15.0
     # CHECK: 0.0
