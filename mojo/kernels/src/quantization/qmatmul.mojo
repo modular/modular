@@ -986,8 +986,6 @@ fn _matmul_qint4_m_1[
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    var b_ptr = b.data.bitcast[DType.int8]()
-
     alias grain_size = 64
 
     var num_workers = ceildiv(N, grain_size)
@@ -997,6 +995,8 @@ fn _matmul_qint4_m_1[
     fn task_func(task_id: Int):
         var task_n_start = task_id * grain_size
         var task_n_count = min(N - task_n_start, grain_size)
+
+        var b_ptr = b.data.bitcast[DType.int8]()
 
         @parameter
         @always_inline
@@ -1054,7 +1054,7 @@ fn _matmul_qint4_m_any[
     var num_workers = ceildiv(N, grain_size)
 
     @parameter
-    @__copy_capture(M, N, K)
+    @__copy_capture(M, N, K, k_groups)
     fn task_func(task_id: Int):
         var task_n_start = task_id * grain_size
         var task_n_count = min(N - task_n_start, grain_size)
