@@ -327,6 +327,7 @@ fn reference_gemm[
     var total_work = M * N
     var num_workers = ceildiv(total_work, grain_size)
 
+    @__copy_capture(total_work, N, K)
     @parameter
     fn task_func(task_id: Int):
         var task_start = task_id * grain_size

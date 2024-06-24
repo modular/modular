@@ -96,6 +96,7 @@ struct _packed_int4_array[size: Int]:
             lo_ptr += simd_width
 
         vectorize[do_pack, simdwidthof[DType.uint8]()](size // 2)
+        _ = lo_ptr
 
     @always_inline
     fn unpack(self, owned dst_ptr: DTypePointer[DType.uint8]):
@@ -118,6 +119,7 @@ struct _packed_int4_array[size: Int]:
                 dst_ptr += simd_width
 
         vectorize[do_unpack, simdwidthof[DType.uint8]()](size // 2)
+        _ = lo_ptr
 
 
 struct _packed_int6_array[size: Int]:
@@ -158,6 +160,8 @@ struct _packed_int6_array[size: Int]:
             hi_ptr += simd_width
 
         vectorize[do_pack, simdwidthof[DType.uint8]()](size // 4)
+        _ = hi_ptr
+        _ = lo_ptr
 
     @always_inline
     fn unpack[
@@ -189,6 +193,8 @@ struct _packed_int6_array[size: Int]:
                     dst_ptr += simd_width
 
         vectorize[do_unpack, simdwidthof[DType.uint8]()](size // 4)
+        _ = hi_ptr
+        _ = lo_ptr
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
@@ -231,6 +237,7 @@ fn _quantize_a_Q8_K[
     for ko in range(0, K, quantized_k):
         var am_ptr = a.data + ko
 
+        @__copy_capture(packed_base_ptr, M, K)
         @parameter
         @always_inline
         fn process_rows[tile_m: Int](m: Int):
@@ -289,6 +296,8 @@ fn _quantize_a_Q8_K[
             packed_ptr += tile_m
 
         tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        _ = am_ptr
+    _ = packed_ptr
 
     return packed_base_ptr
 
@@ -807,6 +816,7 @@ fn _matmul_Q4_K[
     var b_q_scales_ptr = b_q_scales_and_mins_buf
     var b_q_mins_ptr = b_q_scales_and_mins_buf + group_count * block_n
 
+    @__copy_capture(b_q_mins_ptr, b_q_scales_ptr, b_tile_ptr, b_q_bits)
     @parameter
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
@@ -911,6 +921,7 @@ fn matmul_Q4_K(
 
     var num_workers = ceildiv(N, grain_size)
 
+    @__copy_capture(k_blocks, N, M)
     @parameter
     fn task_func(task_id: Int):
         var task_n_start = task_id * grain_size
@@ -926,6 +937,7 @@ fn matmul_Q4_K(
             var cn_ptr = c.data + task_n_start
             var accumulate = k_block > 0
 
+            @__copy_capture(accumulate)
             @parameter
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
@@ -941,6 +953,8 @@ fn matmul_Q4_K(
             tile[process_cols, VariadicList[Int](2, 1)](
                 0, ceildiv(task_n_count, simd_width)
             )
+            _ = bn_packed_ptr
+            _ = cn_ptr
 
             a_packed_ptr += M
             b_packed_ptr += N
@@ -982,6 +996,7 @@ fn _matmul_Q6_K[
     b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
 
     @parameter
+    @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
         var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
@@ -1095,6 +1110,7 @@ fn matmul_Q6_K(
     var num_workers = ceildiv(N, grain_size)
 
     @parameter
+    @__copy_capture(a_packed_base_ptr, k_blocks, M, N, K)
     fn task_func(task_id: Int):
         var task_n_start = task_id * grain_size
         var task_n_count = min(N - task_n_start, grain_size)
