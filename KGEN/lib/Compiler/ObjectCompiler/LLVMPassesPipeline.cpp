@@ -9,6 +9,10 @@
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
@@ -563,4 +567,74 @@ M::KGEN::buildLLVMOptimizationPipeline(const CompilationOptions &options) {
   if (optLevel == CodeGenOptLevel::None)
     return buildO0Pipeline(options);
   return buildO3Pipeline(options);
+}
+
+static TargetPassConfig *
+buildPassesToGenerateNVPTXCode(LLVMTargetMachine &tm, PassManagerBase &pm,
+                               bool disableVerify,
+                               MachineModuleInfoWrapperPass &mmiwp) {
+  // Targets may override createPassConfig to provide a target-specific
+  // subclass.
+  TargetPassConfig *passConfig = tm.createPassConfig(pm);
+  if (!passConfig)
+    return nullptr;
+
+  // Set PassConfig options provided by TargetMachine.
+  passConfig->setDisableVerify(disableVerify);
+  pm.add(passConfig);
+  pm.add(&mmiwp);
+
+  if (passConfig->addISelPasses())
+    return nullptr;
+
+  // Disable MachineSink pass which causes undesirable instruction reordering.
+  // This fixes MOCO-712, MOCO-790 and MOCO-803.
+  passConfig->disablePass(&MachineSinkingID);
+
+  passConfig->addMachinePasses();
+  passConfig->setInitialized();
+  return passConfig;
+}
+
+static bool buildNVPTXLLcPipeline(LLVMTargetMachine &targetMachine,
+                                  llvm::legacy::PassManagerBase &pm,
+                                  raw_pwrite_stream &out,
+                                  raw_pwrite_stream *dwoOut,
+                                  CodeGenFileType fileType, bool disableVerify,
+                                  MachineModuleInfoWrapperPass *mmiwp) {
+  TargetPassConfig *passConfig =
+      buildPassesToGenerateNVPTXCode(targetMachine, pm, disableVerify, *mmiwp);
+
+  if (!passConfig)
+    return true;
+
+  if (TargetPassConfig::willCompleteCodeGenPipeline()) {
+    if (targetMachine.addAsmPrinter(pm, out, dwoOut, fileType,
+                                    mmiwp->getMMI().getContext()))
+      return true;
+  } else {
+    // MIR printing is redundant with -filetype=null.
+    if (fileType != CodeGenFileType::Null)
+      pm.add(createPrintMIRPass(out));
+  }
+
+  pm.add(createFreeMachineFunctionPass());
+  return false;
+}
+
+bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
+                                  LLVMTargetMachine &targetMachine,
+                                  llvm::legacy::PassManagerBase &pm,
+                                  raw_pwrite_stream &out,
+                                  raw_pwrite_stream *dwoOut,
+                                  CodeGenFileType fileType, bool disableVerify,
+                                  MachineModuleInfoWrapperPass *mmiwp) {
+
+  if (isGPUBackend(options)) {
+    return buildNVPTXLLcPipeline(targetMachine, pm, out, dwoOut, fileType,
+                                 disableVerify, mmiwp);
+  }
+
+  return targetMachine.addPassesToEmitFile(pm, out, dwoOut, fileType,
+                                           disableVerify, mmiwp);
 }

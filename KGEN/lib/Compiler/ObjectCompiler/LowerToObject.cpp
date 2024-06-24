@@ -188,8 +188,9 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
 
 /// Run the default llc passes required to generate object code.
 static LogicalResult
-runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
-             llvm::raw_pwrite_stream &os, llvm::CodeGenFileType fileType,
+runLlcPasses(llvm::Module &module, CompilationOptions &options,
+             llvm::TargetMachine &targetMachine, llvm::raw_pwrite_stream &os,
+             llvm::CodeGenFileType fileType,
              M::Telemetry::TelemetryContext *telemetryCtx = nullptr) {
   CompilerTimeTraceScope traceScope("llvm-codegen", module.getName());
   std::optional<M::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
@@ -221,8 +222,8 @@ runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
 
   // Construct a custom pass pipeline that starts after instruction
   // selection.
-  if (targetMachine.addPassesToEmitFile(passMgr, os, nullptr, fileType, true,
-                                        machineModInfoPass))
+  if (KGEN::addPassesToEmitFile(options, llvmTargetMachine, passMgr, os,
+                                nullptr, fileType, true, machineModInfoPass))
     return failure();
 
   const_cast<TargetLoweringObjectFile *>(llvmTargetMachine.getObjFileLowering())
@@ -297,7 +298,7 @@ static LLCL::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
       // Run llc passes.
       if (failed(runLlcPasses(
-              *module, **machineOr, *buf,
+              *module, options, **machineOr, *buf,
               emitAssembly ? llvm::CodeGenFileType::AssemblyFile
                            : llvm::CodeGenFileType::ObjectFile,
               runtime.context->get<M::Telemetry::TelemetryContext>()))) {
@@ -319,7 +320,7 @@ static LLCL::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
               LLCL::getMLIRDiagnostic("failed open output asm file", loc));
         }
 
-        if (failed(runLlcPasses(*module, **machineOr, outFile->os(),
+        if (failed(runLlcPasses(*module, options, **machineOr, outFile->os(),
                                 llvm::CodeGenFileType::AssemblyFile)))
           return std::move(output).setToError(LLCL::getMLIRDiagnostic(
               "llc failed to codegen LLVM IR to object code", loc));
@@ -442,7 +443,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     return failure();
 
   if (failed(
-          runLlcPasses(module, targetMachine, objStream,
+          runLlcPasses(module, options, targetMachine, objStream,
                        emitAssembly ? llvm::CodeGenFileType::AssemblyFile
                                     : llvm::CodeGenFileType::ObjectFile,
                        runtime.context->get<M::Telemetry::TelemetryContext>())))
@@ -454,7 +455,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     if (!outFile)
       return failure();
 
-    if (failed(runLlcPasses(module, targetMachine, outFile->os(),
+    if (failed(runLlcPasses(module, options, targetMachine, outFile->os(),
                             llvm::CodeGenFileType::AssemblyFile)))
       return failure();
     outFile->keep();
