@@ -125,6 +125,8 @@ struct _Matmul[
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](simd_width, 1)](0, K)
+        _ = ak_ptr
+        _ = bk_ptr
 
     @staticmethod
     @always_inline
@@ -167,6 +169,8 @@ struct _Matmul[
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](2, 1)](0, K)
+        _ = ak_ptr
+        _ = bk_ptr
 
     @no_inline
     @staticmethod
@@ -216,11 +220,15 @@ struct _Matmul[
             tile[process_cols, Self._matmul_config.col_sizes](
                 0, ceildiv(N, simd_width)
             )
+            _ = bn_ptr
+            _ = cn_ptr
 
             am_ptr += tile_m * a_stride
             cm_ptr += tile_m * c_stride
 
         tile[process_rows, Self._matmul_config.row_sizes](0, M)
+        _ = am_ptr
+        _ = cm_ptr
 
     @no_inline
     @staticmethod
@@ -279,6 +287,7 @@ struct _Matmul[
                         )
 
         tile[process_tile, tile_sizes, tile_sizes](0, 0, N, K)
+        _ = transpose_buffer
 
         if aligned_n != N:
             for k in range(K):
@@ -301,6 +310,7 @@ struct _Matmul[
                 SIMD.store(output_ptr, idx, val)
 
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
+            _ = k
 
             if aligned_n != N:
                 memset_zero(output_ptr + N, aligned_n - N)
@@ -380,6 +390,8 @@ struct _Matmul[
             cn_ptr += tile_n
 
         tile[process_cols, VariadicList[Int](4, 1)](0, N)
+        _ = cn_ptr
+        _ = K
 
     @no_inline
     @staticmethod
@@ -410,6 +422,7 @@ struct _Matmul[
             cn_ptr += _simd_width
 
         tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
+        _ = cn_ptr
 
     @no_inline
     @staticmethod
@@ -617,6 +630,7 @@ struct _FlashAttention[
                 SIMD.store(o_row_ptr, idx, val * fixup_val)
 
             vectorize[do_correction, simd_width, unroll_factor=2](count_n)
+            _ = fixup_val
 
             qk_row_ptr += Self._config.qk_block_n
             o_row_ptr += Self._config.o_block_n
@@ -649,6 +663,18 @@ struct _FlashAttention[
 
         var num_threads = min(work_count, Runtime().parallelism_level())
 
+        @__copy_capture(
+            num_threads,
+            work_count,
+            num_blocks_n,
+            num_blocks_m,
+            packed_size,
+            kv_group_count,
+            kv_seq_len,
+            depth_dim,
+            seq_len,
+            num_heads,
+        )
         @parameter
         fn task_func(task_id: Int):
             var qk_block_ptr = stack_allocation[
@@ -689,6 +715,7 @@ struct _FlashAttention[
                 var kv_head = head // kv_group_count
 
                 @parameter
+                @__copy_capture(batch, batch_head, kv_head, head)
                 @always_inline
                 fn get_nd_index[
                     is_kv: Bool = False
@@ -785,7 +812,10 @@ struct _FlashAttention[
                         Self._config.o_block_n,
                         accumulate=(kv_seq_idx > 0),
                     )
+                    _ = kv_seq_idx
 
+                _ = m
+                _ = n
                 var oz_ptr = o_block_ptr
 
                 for m in range(count_m):
@@ -915,6 +945,7 @@ fn flash_attention_split_kv[
         return StaticIntTuple[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
 
     @always_inline
+    @__copy_capture(prev_seq_len)
     @parameter
     fn load_from_split_cache[
         curr_fn: fn[simd_width: Int, rank: Int] (

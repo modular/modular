@@ -528,6 +528,7 @@ fn logsoftmax[
                 return input_fn[_width, rank](indices)
 
             logsoftmax[simd_width, Dim(), type, input_fn_1d](output_buffer_view)
+            _ = indices
 
     sync_parallelize[task_func](num_workers)
 
@@ -623,6 +624,7 @@ fn _softmax_cpu[
                 softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
                     output_buffer_view
                 )
+                _ = indices
 
         sync_parallelize[task_func](num_workers)
 

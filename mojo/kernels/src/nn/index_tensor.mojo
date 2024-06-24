@@ -194,6 +194,7 @@ fn index_tensor_1d[
     )
     var work_per_thread = ceildiv(batch_volume, num_tasks)
 
+    @__copy_capture(work_per_thread, batch_volume, last_index_dim)
     @parameter
     fn calc_batch_dim(task_id: Int):
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
@@ -212,6 +213,7 @@ fn index_tensor_1d[
                 ]
 
     sync_parallelize[calc_batch_dim](num_tasks)
+    _ = reshaped_data
 
 
 fn index_tensor[
