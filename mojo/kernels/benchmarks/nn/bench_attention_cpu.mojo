@@ -157,6 +157,11 @@ def bench_attention[
         b.iter[iter_fn]()
 
     m.bench_function[fused_bench_fn](BenchId(" fused", input_id))
+    _ = q
+    _ = k
+    _ = v
+    _ = mask
+    _ = output
 
 
 def main():

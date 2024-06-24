@@ -10,6 +10,7 @@
 
 from random import randn
 
+from builtin._closure import __ownership_keepalive
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
@@ -114,9 +115,9 @@ fn bench_concat[
         elementwise[check, 1](input.get_shape())
         offset += input.get_shape()[axis]
 
-    _ = input0_ptr
-    _ = input1_ptr
-    _ = output_ptr
+    __ownership_keepalive(
+        input0_ptr, input1_ptr, output_ptr, output, axis, inputs, output_host
+    )
 
 
 fn main() raises:

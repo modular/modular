@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s -t
 
 from pathlib import Path
+from builtin._closure import __ownership_keepalive
 
 from gpu import *
 from gpu.host import Device, Dim, Function, Stream
@@ -52,7 +53,6 @@ fn bench_vec_add(
     var func = context.compile_function[vec_func]()
 
     @always_inline
-    @__copy_capture(block_dim, in0_device, in1_device, out_device, func)
     @parameter
     fn run_func() raises:
         context.enqueue_function(
@@ -92,9 +92,7 @@ fn bench_vec_add(
     for i in range(length):
         assert_equal(i + 2, out_host[i])
 
-    _ = in0_device
-    _ = in1_device
-    _ = out_device
+    __ownership_keepalive(in0_device, in1_device, out_device, func)
 
     in0_host.free()
     in1_host.free()

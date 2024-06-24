@@ -61,6 +61,7 @@ fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
     ]()
 
     @always_inline
+    @__copy_capture(M, N, K)
     @parameter
     fn bench_fn() raises:
         func_gemv(
@@ -121,6 +122,7 @@ fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
     ]()
 
     @always_inline
+    @__copy_capture(M, N, K)
     @parameter
     fn bench_fn() raises:
         func_gemv(
@@ -183,6 +185,7 @@ fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
     ]()
 
     @always_inline
+    @__copy_capture(M, N, K)
     @parameter
     fn bench_fn() raises:
         func_gemv(

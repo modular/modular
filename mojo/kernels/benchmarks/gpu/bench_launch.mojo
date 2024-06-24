@@ -27,6 +27,7 @@ fn bench_empty_launch(inout b: Bencher) raises:
 
     b.iter[launch]()
     stream.synchronize()
+    _ = func^
 
 
 @parameter
@@ -64,6 +65,7 @@ fn bench_empty_launch_many_params(inout b: Bencher) raises:
 
     b.iter[launch]()
     stream.synchronize()
+    _ = func^
 
 
 def main():

@@ -30,6 +30,7 @@ fn fused_reduce_inner_test[
     expected_vals1: List[Scalar[type]],
     ctx: DeviceContext,
 ) raises:
+    print("fused_reduce_inner_test", shape)
     alias axis = rank - 1
     var out_shape = shape
     out_shape[axis] = 1
@@ -147,6 +148,7 @@ fn reduce_inner_test[
     expected_vals: List[Float32],
     ctx: DeviceContext,
 ) raises:
+    print("reduce_inner_test", shape, init)
     var axis = rank - 1
     var out_shape = shape
     out_shape[axis] = 1
@@ -227,6 +229,7 @@ fn reduce_inner_test[
         BenchId("reduce_inner", input_id=str(type) + "/shape=" + str(shape)),
         ThroughputMeasure(BenchMetric.flops, shape.flattened_length()),
     )
+    _ = axis
 
     ctx.synchronize()
     ctx.enqueue_copy_from_device(res_host, res_device)
