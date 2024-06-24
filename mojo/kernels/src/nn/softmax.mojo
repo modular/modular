@@ -19,7 +19,7 @@ from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from runtime.llcl import MojoCallContextPtr, Runtime
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import product
 from utils.numerics import get_accum_type, min_or_neg_inf
@@ -583,7 +583,7 @@ fn _softmax_cpu[
     @always_inline
     @parameter
     fn trace_information() -> String:
-        return String("shape=") + String("x").join(shape)
+        return trace_arg("input", shape, type)
 
     with Trace[TraceLevel.OP](
         "mojo.softmax",

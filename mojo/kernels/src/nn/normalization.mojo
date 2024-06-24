@@ -17,7 +17,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from register import mogg_register
 from runtime.llcl import Runtime
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import StaticIntTuple
 
@@ -126,9 +126,7 @@ fn layer_norm[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
-            String("shape=") + String("x").join(shape),
-        )
+        return trace_arg("input", shape, type)
 
     with Trace[TraceLevel.OP](
         "mojo.layer_norm",
