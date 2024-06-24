@@ -20,7 +20,8 @@ namespace M {
 /// Structure holding information about a failed assertion. Allows user to
 /// append information to the error message.
 struct FailedAssertion {
-  LLVM_ATTRIBUTE_NOINLINE FailedAssertion(std::string line, int64_t lineno) {
+  LLVM_ATTRIBUTE_NOINLINE FailedAssertion(llvm::StringRef line,
+                                          int64_t lineno) {
     getStorage().os << line << ":" << lineno << ": ";
   }
   [[noreturn]] ~FailedAssertion() {
@@ -45,14 +46,20 @@ struct FailedAssertion {
 };
 } // namespace M
 
-/// Assert that a condition holds. Users can append addition information to the
-/// error message by using the << operator.
+/// Assert that a condition holds. Users can append additional information to
+/// the error message by using the << operator.
 /// ```
 ///   ASSERT_STREAM(false, << "This condition is always false!");
 /// ```
+/// Like `assert`, this does nothing if the NDEBUG symbol is defined.
+///
+#ifdef NDEBUG
+#define ASSERT_STREAM(condition, message)
+#else
 #define ASSERT_STREAM(condition, message)                                      \
   if (LLVM_UNLIKELY(!(condition)))                                             \
   ::M::FailedAssertion(__FILE__, __LINE__).getStorage().os                     \
       << #condition << " is false.\n" message
+#endif // NDEBUG
 
 #endif // SUPPORT_ASSERT_STREAM_H
