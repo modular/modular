@@ -161,6 +161,9 @@ fn _small_batched_matmul[
                 ](a_view.dynamic_shape, init=Scalar[c_type](0), reduce_dim=0)
             except e:
                 abort(e)
+            _ = indices
+            _ = a_view
+            _ = b_view
 
     else:
         for batch in range(B):
@@ -195,6 +198,7 @@ fn _small_batched_matmul[
                         )
 
                     vectorize[compute_fn, simd_width, unroll_factor=2](N)
+                    _ = a_val
 
             @parameter
             if elementwise_epilogue_fn:
@@ -210,6 +214,8 @@ fn _small_batched_matmul[
                         func[c_type, width, rank](indices, val)
 
                     vectorize[apply_epilogue, simd_width](N)
+            _ = indices
+            _ = b_buf_index
 
     return
 
@@ -433,6 +439,7 @@ fn _batched_matmul_cpu[
                 sub_matmul_config.offset,
             )
             a_packed_ptr.free()
+            _ = batch_coords
 
     sync_parallelize[task_func](num_tasks)
 
