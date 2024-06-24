@@ -4319,7 +4319,6 @@ from quantization import (
     block_Q4_K,
     block_Q6_K,
     block_QK_K,
-    ggml_q4_0_matmul_impl,
     q4_k_dequantize_impl,
     q6_k_dequantize_impl,
 )
@@ -4471,20 +4470,6 @@ fn dequantize_Q4sym_g32[
     )
 
 
-@mogg_register("qmatmul_Af32_BTQ4symG32_Cf32")
-@always_inline
-@export
-fn qmatmul_Af32_BTQ4symG32_Cf32[
-    type: DType
-](
-    a: NDBuffer[type, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[type, 2],
-    ctx: MojoCallContextPtr,
-) raises:
-    ggml_q4_0_matmul_impl[32](a, b, c)
-
-
 @mogg_register_shape_func("qmatmul_Af32_BTQ4symG32_Cf32")
 @always_inline
 @export
@@ -4595,44 +4580,6 @@ fn vroom_q4_0_repack_weights_shape_func[
     single_thread_blocking_override: Bool
 ](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
     return b.get_shape()
-
-
-@mogg_register_override("ggml_q4_0_matmul", 1)
-@always_inline
-@export
-fn ggml_q4_0_matmul[
-    float_dtype: DType
-](
-    a: NDBuffer[float_dtype, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[float_dtype, 2],
-    ctx: MojoCallContextPtr,
-) raises:
-    constrained[
-        (a.type == c.type) and a.type.is_floating_point(),
-        "expected float inputs and outputs",
-    ]()
-    constrained[b.type is DType.uint8, "expected uint8 input b"]()
-
-    with Trace[TraceLevel.OP]("mojo.ggml_q4_0_matmul"):
-        ggml_q4_0_matmul_impl[group_size=32, type=float_dtype](a, b, c)
-
-
-@mogg_register_shape_func("ggml_q4_0_matmul")
-@always_inline
-@export
-fn ggml_q4_0_matmul_shape_func[
-    float_dtype: DType, single_thread_blocking_override: Bool
-](a: NDBuffer[float_dtype, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
-    2
-]:
-    constrained[
-        a.type.is_floating_point(), "expected float inputs and outputs"
-    ]()
-    constrained[b.type is DType.uint8, "expected uint8 input b"]()
-    constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
-
-    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
 
 
 @mogg_register_override("ggml_q4_0_dequantize", 1)
