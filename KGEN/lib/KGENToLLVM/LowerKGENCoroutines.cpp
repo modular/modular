@@ -825,6 +825,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
   // Collect all the relevant ops.
   SmallVector<HandleOp> handles;
   SmallVector<SuspendOp> awaits;
+  SmallVector<Operation *> markers;
   WalkResult result = func.walk([&](Operation *op) {
     if (auto handle = dyn_cast<HandleOp>(op)) {
       handles.push_back(handle);
@@ -848,7 +849,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     } else if (auto destroy = dyn_cast<DestroyOp>(op)) {
       lowerCoroutineDestroyAsync(b, cache, destroy);
     } else if (isa<LifetimeStartOp, LifetimeEndOp>(op)) {
-      op->erase();
+      markers.push_back(op);
     }
     return WalkResult::advance();
   });
@@ -870,6 +871,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     }
     return success();
   }
+  for (Operation *marker : markers)
+    marker->erase();
 
   FailureOr<CoroutineInfo> coro =
       createAsyncCoroutine(symtab, func, handles.front().getTypes(), b, cache,
