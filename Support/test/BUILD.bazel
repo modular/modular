@@ -16,7 +16,6 @@ lit_tests(
     ],
     tools = [
         "//Support/tools/build-info",
-        "//Support/tools/crash-test-dummy",
         "//Support/tools/driver-tblgen",
         "//Support/tools/support-dialect-opt",
         "//Support/tools/system-info",

@@ -18,6 +18,7 @@ lit_tests(
     },
     tools = [
         "//LLCL/tools/crash-report-path-info",
+        "//LLCL/tools/crash-test-dummy",
         "//Support/tools/driver-tblgen",
         "@crashpad//:modular-crashpad-handler",
     ],

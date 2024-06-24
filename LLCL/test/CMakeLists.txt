@@ -13,4 +13,5 @@ configure_lit_site_cfg(
 
 add_modular_testsuite(check-llcl
   TOOLS
-  crash-report-path-info)
+  crash-report-path-info
+  crash-test-dummy)
