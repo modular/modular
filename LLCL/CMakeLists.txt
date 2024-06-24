@@ -17,5 +17,8 @@ add_subdirectory(lib/Support)
 add_subdirectory(lib/Runtime)
 add_subdirectory(lib/CompilerSupport)
 
+add_subdirectory(tools/crash-report-path-info EXCLUDE_FROM_ALL)
+
 add_subdirectory(unittests)
 add_subdirectory(benchmarks)
+add_subdirectory(test)

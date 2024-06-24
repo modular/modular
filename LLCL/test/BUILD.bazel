@@ -4,7 +4,6 @@ lit_tests(
     name = "test",
     srcs = glob([
         "**/*.mlir",
-        "**/*.td",
     ]),
     custom_substitutions = {
         "%driver-tblgen": "$(rlocationpath //Support/tools/driver-tblgen) -I $(dirname $(dirname $(dirname ../../../../$(location //Support:include/Support/Driver/DriverCommand.td)))) -I $(dirname $(dirname $(dirname ../../../../../$(rlocationpath @llvm-project//llvm:include/llvm/Option/OptParser.td))))",
@@ -14,12 +13,12 @@ lit_tests(
         "//Support:include/Support/Driver/DriverCommand.td",
         "@llvm-project//llvm:include/llvm/Option/OptParser.td",
     ],
+    env = {
+        "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(location @crashpad//:modular-crashpad-handler)",
+    },
     tools = [
-        "//Support/tools/build-info",
-        "//Support/tools/crash-test-dummy",
+        "//LLCL/tools/crash-report-path-info",
         "//Support/tools/driver-tblgen",
-        "//Support/tools/support-dialect-opt",
-        "//Support/tools/system-info",
         "@crashpad//:modular-crashpad-handler",
     ],
 )
