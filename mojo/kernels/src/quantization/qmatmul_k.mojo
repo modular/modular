@@ -14,6 +14,7 @@ from sys.info import (
 from sys.intrinsics import llvm_intrinsic
 
 from algorithm import sync_parallelize, tile, vectorize
+from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.list import DimList
 from linalg.accumulate import _Accumulator
@@ -560,46 +561,72 @@ def matmul_Q6_K_pack_b(
 
 
 @always_inline
-fn matmul_x86[
-    group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
+fn _matmul_group_stream_x86[
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    simd_width: Int, //,
+    group_size: Int,
+    stream_b_vals_fn: fn (
+        inout b_vals: InlineArray[
+            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        ]
+    ) capturing -> None,
 ](
-    a_ptr: DTypePointer[DType.int8],
-    b_ptr: DTypePointer[DType.uint8],
-    inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    a_q_bits_ptr: DTypePointer[DType.int8],
+    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    var b_offset = 0
+    var b_vals = InlineArray[
+        SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+    ](0)
 
     @parameter
-    for k in range(0, group_size, 4):
+    for k in range(0, group_size, tile_k * 4):
+        stream_b_vals_fn(b_vals)
 
         @parameter
-        for col in range(tile_n):
-            var b_val = bitcast[DType.int32, simd_width](
-                SIMD[size = simd_width * 4].load(b_ptr, b_offset)
-            )
-            b_offset += simd_width * 4
+        for tk in range(tile_k):
 
             @parameter
-            for row in range(tile_m):
-                var a_val = SIMD[DType.int32, simd_width](
-                    bitcast[DType.int32, 1](
-                        SIMD[size=4].load(a_ptr, row * group_size + k)
+            for col in range(tile_n):
+
+                @parameter
+                for row in range(tile_m):
+                    var a_val = SIMD[DType.int32, simd_width](
+                        bitcast[DType.int32, 1](
+                            SIMD[size=4].load(
+                                a_q_bits_ptr + row * group_size + k + tk * 4
+                            )
+                        )
                     )
-                )
-                c_int32[row, col] = dot_i8_to_i32_saturated_x86(
-                    c_int32[row, col], b_val, a_val
-                )
+                    c_int32_group[row, col] = dot_i8_to_i32_saturated_x86(
+                        c_int32_group[row, col],
+                        bitcast[DType.int32, simd_width](
+                            b_vals[col * tile_k + tk]
+                        ),
+                        a_val,
+                    )
 
 
 @always_inline
-fn matmul_neon_dotprod[
-    group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
+fn _matmul_group_stream_neon_dotprod[
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    simd_width: Int, //,
+    group_size: Int,
+    stream_b_vals_fn: fn (
+        inout b_vals: InlineArray[
+            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        ]
+    ) capturing -> None,
 ](
-    a_ptr: DTypePointer[DType.int8],
-    b_ptr: DTypePointer[DType.uint8],
-    inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    a_q_bits_ptr: DTypePointer[DType.int8],
+    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    var b_offset = 0
+    var b_vals = InlineArray[
+        SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+    ](0)
 
     @parameter
     for k in range(0, group_size, 16):
@@ -607,23 +634,85 @@ fn matmul_neon_dotprod[
 
         @parameter
         for row in range(tile_m):
-            a_tile[row] = SIMD[size=16].load(a_ptr, row * group_size + k)
+            a_tile[row] = SIMD[size=16].load(
+                a_q_bits_ptr + row * group_size + k
+            )
 
         @parameter
-        for lane in range(4):
+        for lane in range(0, 4, tile_k):
+            stream_b_vals_fn[](b_vals)
 
             @parameter
-            for col in range(tile_n):
-                var b_val = SIMD[size = simd_width * 4].load(
-                    b_ptr, b_offset
-                ).cast[DType.int8]()
-                b_offset += simd_width * 4
+            for tk in range(tile_k):
 
                 @parameter
-                for row in range(tile_m):
-                    c_int32[row, col] = _neon_dotprod_lane[lane](
-                        c_int32[row, col], b_val, a_tile[row]
-                    )
+                for col in range(tile_n):
+
+                    @parameter
+                    for row in range(tile_m):
+                        c_int32_group[row, col] = _neon_dotprod_lane[lane + tk](
+                            c_int32_group[row, col],
+                            b_vals[col * tile_k + tk].cast[DType.int8](),
+                            a_tile[row],
+                        )
+
+
+@always_inline
+fn _matmul_group_stream[
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    simd_width: Int, //,
+    group_size: Int,
+    stream_b_vals_fn: fn (
+        inout b_vals: InlineArray[
+            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        ]
+    ) capturing -> None,
+](
+    a_q_bits_ptr: DTypePointer[DType.int8],
+    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+):
+    constrained[is_power_of_two(tile_k) and tile_k <= 4]()
+
+    @parameter
+    if is_x86():
+        return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
+            a_q_bits_ptr, c_int32_group
+        )
+    elif has_neon():
+        return _matmul_group_stream_neon_dotprod[group_size, stream_b_vals_fn](
+            a_q_bits_ptr, c_int32_group
+        )
+    else:
+        constrained[False, "unsupported architecture"]()
+
+
+@always_inline
+fn _matmul_group_unpacked[
+    tile_m: Int,
+    tile_n: Int,
+    simd_width: Int, //,
+    group_size: Int,
+](
+    a_q_bits_ptr: DTypePointer[DType.int8],
+    inout b_q_bits_ptr: DTypePointer[DType.uint8],
+    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+):
+    """Streaming matrix multiplication where the B matrix has been unpacked to
+    local storage.
+    """
+
+    @parameter
+    fn stream_b_vals(
+        inout b_vals: InlineArray[SIMD[DType.uint8, simd_width * 4], tile_n * 1]
+    ):
+        @parameter
+        for col in range(tile_n):
+            b_vals[col] = SIMD[size = simd_width * 4].load(b_q_bits_ptr)
+            b_q_bits_ptr += simd_width * 4
+
+    _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
 
 
 @always_inline
@@ -839,18 +928,11 @@ fn _matmul_Q4_K[
             c_int32_group.init()
 
             # Matrix multiply a single group of the block.
-            @parameter
-            if is_x86():
-                matmul_x86[group_size](
-                    a_q_bits_ptr, b_q_bits_ptr, c_int32_group
-                )
-            else:
-                matmul_neon_dotprod[group_size](
-                    a_q_bits_ptr, b_q_bits_ptr, c_int32_group
-                )
+            _matmul_group_unpacked[group_size](
+                a_q_bits_ptr, b_q_bits_ptr, c_int32_group
+            )
 
             a_q_bits_ptr += tile_m * group_size
-            b_q_bits_ptr += block_n * group_size
 
             # Scale the accumulator for this group and add to the block level
             # accumulators.
@@ -1017,7 +1099,6 @@ fn _matmul_Q6_K[
 
             c_int32_group.init()
 
-            # Matrix multiply a single group of the block.
             @parameter
             if is_x86():
                 # Initialize the accumulators with the zero point correction
@@ -1036,16 +1117,12 @@ fn _matmul_Q6_K[
                     for col in range(tile_n):
                         c_int32_group[row, col] = correction_val
 
-                matmul_x86[group_size](
-                    a_q_bits_ptr, b_q_bits_ptr, c_int32_group
-                )
-            else:
-                matmul_neon_dotprod[group_size](
-                    a_q_bits_ptr, b_q_bits_ptr, c_int32_group
-                )
+            # Matrix multiply a single group of the block.
+            _matmul_group_unpacked[group_size](
+                a_q_bits_ptr, b_q_bits_ptr, c_int32_group
+            )
 
             a_q_bits_ptr += tile_m * group_size
-            b_q_bits_ptr += block_n * group_size
 
             var b_q_scales_ptr = _to_dtype_pointer(b_tile_ptr[].q_scales)
 
