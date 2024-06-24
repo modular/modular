@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from max_utils import call_dylib_func, exchange, CString
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 
 from ._compilation import CCompiledModel
 from ._status import Status
-from ._utils import call_dylib_func, exchange, CString
 
 
 @value

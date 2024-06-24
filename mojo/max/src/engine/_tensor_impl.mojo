@@ -9,12 +9,12 @@ from memory.unsafe import bitcast, DTypePointer
 from python import Python, PythonObject
 from sys.ffi import DLHandle
 from builtin.dtype import _get_runtime_dtype_size
+from max_utils import call_dylib_func, exchange
 
 from .session import InferenceSession
 from .tensor_spec import TensorSpec
 from ._dtypes import EngineDType
 from ._tensor_spec_impl import CTensorSpec
-from ._utils import call_dylib_func, exchange
 
 from tensor import Tensor
 

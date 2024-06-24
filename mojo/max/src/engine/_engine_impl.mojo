@@ -7,7 +7,7 @@
 from sys import external_call
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer
-from ._utils import call_dylib_func, exchange, CString, get_lib_path_from_cfg
+from max_utils import call_dylib_func, exchange, CString, get_lib_path_from_cfg
 from pathlib import Path
 
 

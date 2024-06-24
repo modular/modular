@@ -10,7 +10,7 @@ from runtime.llcl import Runtime, ChainPromise
 from utils.variant import Variant
 
 from max.engine import InferenceSession, TensorMap
-from max.engine._utils import handle_from_config
+from max_utils import handle_from_config
 
 from ._types import CInferenceResponse, CInferenceRequest
 from .types import InferenceResponse, InferenceRequest

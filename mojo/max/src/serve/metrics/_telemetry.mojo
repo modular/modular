@@ -11,10 +11,7 @@ from max.engine import InferenceSession
 from max.engine._status import Status
 from max.engine._context import RuntimeContext, CRuntimeContext
 from sys.param_env import is_defined
-from max.engine._utils import (
-    call_dylib_func,
-    handle_from_config,
-)
+from max_utils import call_dylib_func, handle_from_config
 
 
 struct Counter[T: DType]:

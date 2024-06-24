@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from ._utils import call_dylib_func, exchange, CString
+from max_utils import call_dylib_func, exchange, CString
 
 
 @value

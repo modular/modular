@@ -9,10 +9,7 @@ from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 
 from max.engine._compilation import CCompiledModel
-from max.engine._utils import (
-    call_dylib_func,
-    exchange,
-)
+from max_utils import call_dylib_func, exchange
 
 from .._batch import CBatch
 

@@ -14,6 +14,7 @@ from os.atomic import Atomic
 from pathlib import Path
 from sys.ffi import _get_global_or_null
 from memory import Arc
+from max_utils import call_dylib_func
 
 from ._compilation import (
     CCompiledModel,
@@ -26,7 +27,6 @@ from ._context import RuntimeConfig, RuntimeContext, _Device
 from ._engine_impl import _EngineImpl, _get_engine_path
 from ._model_impl import CModel
 from ._status import Status
-from ._utils import call_dylib_func
 
 from max.graph import Graph
 from tensor import Tensor, TensorSpec

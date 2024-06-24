@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.unsafe import DTypePointer
+from max_utils import call_dylib_func
 from sys.ffi import DLHandle
 from ._tensor_impl import CTensor
-from ._utils import call_dylib_func
 
 alias CMojoVal = UnsafePointer[UInt8]
 

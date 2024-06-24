@@ -10,11 +10,7 @@ from sys.ffi import DLHandle
 from tensor import TensorSpec
 
 from max.engine import InferenceSession, TensorMap
-from max.engine._utils import (
-    CString,
-    call_dylib_func,
-    exchange,
-)
+from max_utils import CString, call_dylib_func, exchange
 
 
 # ===----------------------------------------------------------------------=== #

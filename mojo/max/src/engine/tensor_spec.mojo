@@ -10,8 +10,8 @@ Defines `EngineTensorSpec` to define a model's input and output specs.
 from collections import List
 from collections.optional import Optional
 from sys.ffi import DLHandle
+from max_utils import call_dylib_func
 
-from ._utils import call_dylib_func
 from ._dtypes import EngineDType
 from .session import InferenceSession
 from ._tensor_spec_impl import CTensorSpec

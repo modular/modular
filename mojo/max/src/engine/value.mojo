@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Defines different value types you can be pass in and out of models."""
 
+from max_utils import call_dylib_func, exchange
 from sys.ffi import DLHandle
 
 from ._context import CRuntimeContext
 from ._tensor_impl import EngineTensor
-from ._utils import call_dylib_func, exchange
 from ._value_impl import CValue, CList
 
 from tensor import Tensor

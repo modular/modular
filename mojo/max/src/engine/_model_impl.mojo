@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.unsafe import DTypePointer
+from max_utils import call_dylib_func
 from sys.ffi import DLHandle
 from .session import InferenceSession
 from ._compilation import CCompiledModel
 from ._status import Status
-from ._utils import call_dylib_func
 
 
 @value

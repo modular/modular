@@ -9,10 +9,10 @@ Defines the `TensorMap` type that holds input and output tensors for a model.
 from buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
 from sys.ffi import DLHandle
+from max_utils import call_dylib_func, exchange, CString
 
 from .session import InferenceSession
 from ._context import CRuntimeContext
-from ._utils import call_dylib_func, exchange, CString
 from ._tensor_impl import EngineTensor
 from ._tensor_map_impl import CTensorMap
 from .value import Value

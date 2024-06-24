@@ -6,9 +6,9 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
+from max_utils import call_dylib_func, CString
 
 from ._status import Status
-from ._utils import call_dylib_func, CString
 from ._tensor_impl import CTensor
 from ._value_impl import CValue
 

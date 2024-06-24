@@ -12,7 +12,7 @@ from time import now
 
 from max.engine import InferenceSession, Model
 from max.engine._compilation import CCompiledModel
-from max.engine._utils import handle_from_config
+from max_utils import handle_from_config
 
 from ..util.callbacks import (
     ServerCallbacks,

@@ -10,7 +10,7 @@ from memory import UnsafePointer
 from memory.unsafe import DTypePointer
 from runtime.llcl import Chain
 
-from max.engine._utils import call_dylib_func, exchange, CString
+from max_utils import call_dylib_func, exchange, CString
 
 from ._types import CInferenceRequest, CInferenceResponse
 
