@@ -156,6 +156,7 @@ fn recursive_lambda_test_target(x: Tensor) -> Tensor[x.type, x.static_shape]:
         return inner(rebind[SIMD[out.type, width]](x.simd_load[width](i)))
 
     out.for_each[func]()
+    _ = simd1
     return out
 
 
@@ -740,6 +741,8 @@ fn mo_range[
         )
 
     out.for_each[func]()
+    _ = step_
+    _ = start_
     return out
 
 
