@@ -4,7 +4,6 @@ load(
     "gentbl_mlir_dialect",
     "gentbl_modular_passes",
     "modular_cc_library",
-    "modular_pybind_library",
     "modular_shared_library",
     "td_library",
 )
@@ -892,10 +891,4 @@ modular_cc_library(
         ":HTTP",
         ":Telemetry",
     ],
-)
-
-modular_pybind_library(
-    name = "Python",
-    srcs = ["lib/Python/Helpers.cpp"],
-    hdrs = ["include/Support/Python/Helpers.h"],
 )
