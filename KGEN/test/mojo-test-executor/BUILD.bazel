@@ -11,7 +11,7 @@ lit_tests(
         "//KGEN/tools/mojo-repl-entry-point",
     ],
     mojo_deps = [
-        "//open-source/mojo/stdlib/stdlib:stdlib",
+        "//open-source/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],

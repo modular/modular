@@ -22,7 +22,7 @@ lit_tests(
         "//Kernels/mojo/buffer",
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/runtime",
-        "//open-source/mojo/stdlib/stdlib:stdlib",
+        "//open-source/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],  # __jit_debug_descriptor exists in liblldb and libMojoLLDB
