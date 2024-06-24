@@ -471,14 +471,10 @@ fn gevm_kernel[
 
     # Every block computes warp size length of output values
     for i in range(ceildiv(k, warpsPerBlock)):
-        var val = SIMD[c_type, 1]()
         var row = i * warpsPerBlock + warpId
-        if lane_id() == 0:
-            val = Scalar.load(a, row).cast[c_type]()
-        val = shuffle_idx(val, 0)
-        accum += (
-            val.cast[s_type]() * Scalar.load(b, row * n + col).cast[s_type]()
-        )
+        var lhs = Scalar.load(a, row)
+        var rhs = Scalar.load(b, row * n + col)
+        accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
     x_shared[int(lane_id()) * WARP_SIZE + warpId] = accum
     barrier()
