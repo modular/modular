@@ -198,7 +198,6 @@ fn bench_matmuls(inout m: Bench) raises:
     @parameter
     fn bench_matmul_10(inout b: Bencher):
         @always_inline
-        @__copy_capture(func, a_buffer, b_buffer, c_buffer)
         @parameter
         fn run_func(stream: Stream) raises:
             func(
@@ -218,6 +217,9 @@ fn bench_matmuls(inout m: Bench) raises:
         BenchId("matmul_sgemm_10"),
         ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
+    _ = a_buffer
+    _ = b_buffer
+    _ = c_buffer
 
     _copy_device_to_host(c_host, c_device, M * N)
 
@@ -231,7 +233,6 @@ fn bench_matmuls(inout m: Bench) raises:
     @parameter
     fn bench_naive(inout b: Bencher):
         @always_inline
-        @__copy_capture(func_naive, a_device, b_device, c_device)
         @parameter
         fn run_func_naive(stream: Stream) raises:
             func_naive(
@@ -277,6 +278,7 @@ fn bench_matmuls(inout m: Bench) raises:
     _ = c_host_naive
 
     _ = func^
+    _ = func_naive^
     _ = stream^
 
 

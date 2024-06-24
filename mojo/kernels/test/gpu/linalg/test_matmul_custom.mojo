@@ -68,7 +68,6 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_gemm_bf16, c_device, a_device, b_device)
     @parameter
     fn run_func_bf16() raises:
         ctx.enqueue_function(
@@ -101,7 +100,6 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_gemm_fp32, c_device_n, a_device_n, b_device_n)
     @parameter
     fn run_func_fp32() raises:
         ctx.enqueue_function(
@@ -216,7 +214,6 @@ fn run_matmul[
     ]()
 
     @always_inline
-    @__copy_capture(func_gemm_naive, c_device_n, a_device_n, b_device_n)
     @parameter
     fn run_func_naive() raises:
         ctx.enqueue_function(
