@@ -871,8 +871,112 @@ fn _apply_a_scales[
                 c_float[row, col] *= a_scale
 
 
-fn _matmul_Q4_K[
-    tile_n: Int
+@always_inline
+fn _accumulate_and_store[
+    tile_m: Int, tile_n: Int, simd_width: Int
+](
+    c_ptr: DTypePointer[DType.float32],
+    N: Int,
+    accumulate: Bool,
+    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+):
+    if accumulate:
+        var c_existing = _Accumulator[
+            DType.float32, tile_m, tile_n, simd_width
+        ]()
+
+        c_existing.load(c_ptr, N)
+
+        @parameter
+        for col in range(tile_n):
+
+            @parameter
+            for row in range(tile_m):
+                c_float[row, col] += c_existing[row, col]
+
+    c_float.store(c_ptr, N)
+
+
+@always_inline
+fn _matmul_Q4_K_tile[
+    tile_m: Int,
+    tile_n: Int,
+    simd_width: Int, //,
+    matmul_group_fn: fn (
+        a_ptr: DTypePointer[DType.int8],
+        inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    ) capturing -> None,
+](
+    a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
+    b_ptr: UnsafePointer[_block_Q4_K_packed[]],
+    b_q_scales_and_mins_buf: DTypePointer[DType.uint8],
+    c_ptr: DTypePointer[DType.float32],
+    N: Int,
+    accumulate: Bool,
+):
+    alias group_size = _block_Q4_K.group_size
+    alias group_count = _block_Q4_K.group_count
+
+    alias block_n = tile_n * simd_width
+
+    var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
+    var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
+
+    var b_q_scales_ptr = b_q_scales_and_mins_buf
+    var b_q_mins_ptr = b_q_scales_and_mins_buf + group_count * block_n
+
+    var c_int32_block = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+
+    c_int32_block.init()
+
+    var a_q_bits_ptr = _to_dtype_pointer(a_tile_ptr[].q_bits)
+
+    for g in range(group_count):
+        var c_int32_group = _Accumulator[
+            DType.int32, tile_m, tile_n, simd_width
+        ]()
+
+        c_int32_group.init()
+
+        # Matrix multiply a single group of the block.
+        matmul_group_fn(a_q_bits_ptr, c_int32_group)
+
+        a_q_bits_ptr += tile_m * group_size
+
+        # Scale the accumulator for this group and add to the block level
+        # accumulators.
+        @parameter
+        for col in range(tile_n):
+            var b_q_scale_val = SIMD[size=simd_width].load(
+                b_q_scales_ptr, col * simd_width + g * block_n
+            ).cast[DType.int32]()
+
+            @parameter
+            for row in range(tile_m):
+                c_int32_block[row, col] += (
+                    c_int32_group[row, col] * b_q_scale_val
+                )
+
+    var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
+
+    _apply_base_scales(
+        _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+    )
+
+    _apply_zero_point_correction[group_count](
+        _to_dtype_pointer(a_tile_ptr[].group_sums),
+        b_q_mins_ptr,
+        _to_dtype_pointer(b_tile_ptr[].base_mins),
+        c_float,
+    )
+
+    _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
+
+    _accumulate_and_store(c_ptr, N, accumulate, c_float)
+
+
+fn _matmul_Q4_K_columns[
+    tile_n: Int, simd_width: Int
 ](
     owned a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
@@ -884,98 +988,44 @@ fn _matmul_Q4_K[
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
 
-    alias simd_width = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_width]]()
     alias block_n = tile_n * simd_width
 
-    var b_q_bits = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
-    ]()
+    var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
+
+    # Unpack the scales and minimums to uint8 values.
     var b_q_scales_and_mins_buf = stack_allocation[
         2 * group_count * block_n, DType.uint8, alignment=alignment
     ]()
-
-    var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
-
-    # Convert the packed bit arrays into local arrays that can be efficiently
-    # used by the inner kernel.
-    b_tile_ptr[].q_bits.unpack(b_q_bits)
     b_tile_ptr[].q_scales_and_mins.unpack(b_q_scales_and_mins_buf)
 
-    var b_q_scales_ptr = b_q_scales_and_mins_buf
-    var b_q_mins_ptr = b_q_scales_and_mins_buf + group_count * block_n
+    # Unpack the quantized bits to uint8 values.
+    var b_q_bits = stack_allocation[
+        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
+    ]()
+    b_tile_ptr[].q_bits.unpack(b_q_bits)
 
-    @__copy_capture(b_q_mins_ptr, b_q_scales_ptr, b_tile_ptr, b_q_bits)
     @parameter
+    @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
-
-        var c_int32_block = _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ]()
-
-        c_int32_block.init()
-
-        var a_q_bits_ptr = _to_dtype_pointer(a_tile_ptr[].q_bits)
         var b_q_bits_ptr = b_q_bits
 
-        for g in range(group_count):
-            var c_int32_group = _Accumulator[
+        @parameter
+        fn matmul_group_unpacked(
+            a_ptr: DTypePointer[DType.int8],
+            inout c_int32_group: _Accumulator[
                 DType.int32, tile_m, tile_n, simd_width
-            ]()
-
-            c_int32_group.init()
-
-            # Matrix multiply a single group of the block.
+            ],
+        ):
             _matmul_group_unpacked[group_size](
-                a_q_bits_ptr, b_q_bits_ptr, c_int32_group
+                a_ptr, b_q_bits_ptr, c_int32_group
             )
 
-            a_q_bits_ptr += tile_m * group_size
-
-            # Scale the accumulator for this group and add to the block level
-            # accumulators.
-            @parameter
-            for col in range(tile_n):
-                var b_q_scale_val = SIMD[size=simd_width].load(
-                    b_q_scales_ptr, col * simd_width + g * block_n
-                ).cast[DType.int32]()
-
-                @parameter
-                for row in range(tile_m):
-                    c_int32_block[row, col] += (
-                        c_int32_group[row, col] * b_q_scale_val
-                    )
-
-        var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
-
-        _apply_base_scales(
-            _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+        _matmul_Q4_K_tile[matmul_group_unpacked](
+            a_ptr, b_ptr, b_q_scales_and_mins_buf, c_ptr, N, accumulate
         )
-
-        _apply_zero_point_correction[group_count](
-            _to_dtype_pointer(a_tile_ptr[].group_sums),
-            b_q_mins_ptr,
-            _to_dtype_pointer(b_tile_ptr[].base_mins),
-            c_float,
-        )
-
-        _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
-
-        var c_float2 = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
-
-        if accumulate:
-            c_float2.load(c_ptr, N)
-
-            @parameter
-            for col in range(tile_n):
-
-                @parameter
-                for row in range(tile_m):
-                    c_float[row, col] += c_float2[row, col]
-
-        c_float.store(c_ptr, N)
+        _ = b_q_bits_ptr
 
         a_ptr += tile_m
         c_ptr += tile_m * N
@@ -1023,9 +1073,7 @@ fn matmul_Q4_K(
             @parameter
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
-                var n = task_n_start + n_idx * simd_width
-
-                _matmul_Q4_K[tile_n](
+                _matmul_Q4_K_columns[tile_n, simd_width](
                     a_packed_ptr, bn_packed_ptr, cn_ptr, M, N, accumulate
                 )
 
@@ -1046,8 +1094,97 @@ fn matmul_Q4_K(
     a_packed_base_ptr.free()
 
 
-fn _matmul_Q6_K[
-    tile_n: Int
+@always_inline
+fn _matmul_Q6_K_tile[
+    tile_m: Int,
+    tile_n: Int,
+    simd_width: Int, //,
+    matmul_group_fn: fn (
+        a_ptr: DTypePointer[DType.int8],
+        inout c_int32_group: _Accumulator[
+            DType.int32, tile_m, tile_n, simd_width
+        ],
+    ) capturing -> None,
+](
+    a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
+    b_ptr: UnsafePointer[_block_Q6_K_packed[]],
+    c_ptr: DTypePointer[DType.float32],
+    N: Int,
+    accumulate: Bool,
+):
+    alias group_size = _block_Q6_K.group_size
+    alias group_count = _block_Q6_K.group_count
+
+    alias block_n = tile_n * simd_width
+
+    var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
+    var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
+
+    var c_int32_block = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+
+    c_int32_block.init()
+
+    var a_q_bits_ptr = _to_dtype_pointer(a_tile_ptr[].q_bits)
+
+    for g in range(group_count):
+        var c_int32_group = _Accumulator[
+            DType.int32, tile_m, tile_n, simd_width
+        ]()
+
+        c_int32_group.init()
+
+        @parameter
+        if is_x86():
+            # Initialize the accumulators with the zero point correction
+            # values. This is necessary for x86 as there are no VNNI
+            # instructions for s8s8.
+            @parameter
+            for row in range(tile_m):
+                var group_sum = a_tile_ptr[].group_sums[g * tile_m + row].cast[
+                    DType.int32
+                ]()
+                var correction_val = SIMD[DType.int32, simd_width](
+                    -32 * group_sum
+                )
+
+                @parameter
+                for col in range(tile_n):
+                    c_int32_group[row, col] = correction_val
+
+        # Matrix multiply a single group of the block.
+        matmul_group_fn(a_q_bits_ptr, c_int32_group)
+
+        a_q_bits_ptr += tile_m * group_size
+
+        var b_q_scales_ptr = _to_dtype_pointer(b_tile_ptr[].q_scales)
+
+        # Scale the accumulator for this group and add to the block level
+        # accumulators.
+        @parameter
+        for col in range(tile_n):
+            var b_q_scale_val = SIMD[size=simd_width].load(
+                b_q_scales_ptr, col * simd_width + g * block_n
+            ).cast[DType.int32]()
+
+            @parameter
+            for row in range(tile_m):
+                c_int32_block[row, col] += (
+                    c_int32_group[row, col] * b_q_scale_val
+                )
+
+    var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
+
+    _apply_base_scales(
+        _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+    )
+
+    _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
+
+    _accumulate_and_store(c_ptr, N, accumulate, c_float)
+
+
+fn _matmul_Q6_K_columns[
+    tile_n: Int, simd_width: Int
 ](
     owned a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
@@ -1059,13 +1196,8 @@ fn _matmul_Q6_K[
     alias group_size = _block_Q6_K.group_size
     alias group_count = _block_Q6_K.group_count
 
-    alias simd_width = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_width]]()
     alias block_n = tile_n * simd_width
-
-    var b_q_bits = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
-    ]()
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
 
@@ -1073,94 +1205,33 @@ fn _matmul_Q6_K[
     # to avoid performing any zero point corrections.
     alias b_zero_point = 32 if has_neon() else 0
 
-    # Convert the packed bit arrays into local arrays that can be efficiently
-    # used by the inner kernel.
+    # Unpack the quantized bits to uint8 values.
+    var b_q_bits = stack_allocation[
+        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
+    ]()
     b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
 
     @parameter
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
-
-        var c_int32_block = _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ]()
-
-        c_int32_block.init()
-
-        var a_q_bits_ptr = _to_dtype_pointer(a_tile_ptr[].q_bits)
         var b_q_bits_ptr = b_q_bits
 
-        for g in range(group_count):
-            var c_int32_group = _Accumulator[
+        @parameter
+        fn matmul_group_unpacked(
+            a_ptr: DTypePointer[DType.int8],
+            inout c_int32_group: _Accumulator[
                 DType.int32, tile_m, tile_n, simd_width
-            ]()
-
-            c_int32_group.init()
-
-            @parameter
-            if is_x86():
-                # Initialize the accumulators with the zero point correction
-                # values. This is necessary for x86 as there are no VNNI
-                # instructions for s8s8.
-                @parameter
-                for row in range(tile_m):
-                    var group_sum = a_tile_ptr[].group_sums[
-                        g * tile_m + row
-                    ].cast[DType.int32]()
-                    var correction_val = SIMD[DType.int32, simd_width](
-                        -32 * group_sum
-                    )
-
-                    @parameter
-                    for col in range(tile_n):
-                        c_int32_group[row, col] = correction_val
-
-            # Matrix multiply a single group of the block.
+            ],
+        ):
             _matmul_group_unpacked[group_size](
-                a_q_bits_ptr, b_q_bits_ptr, c_int32_group
+                a_ptr, b_q_bits_ptr, c_int32_group
             )
 
-            a_q_bits_ptr += tile_m * group_size
-
-            var b_q_scales_ptr = _to_dtype_pointer(b_tile_ptr[].q_scales)
-
-            # Scale the accumulator for this group and add to the block level
-            # accumulators.
-            @parameter
-            for col in range(tile_n):
-                var b_q_scale_val = SIMD[size=simd_width].load(
-                    b_q_scales_ptr, col * simd_width + g * block_n
-                ).cast[DType.int32]()
-
-                @parameter
-                for row in range(tile_m):
-                    c_int32_block[row, col] += (
-                        c_int32_group[row, col] * b_q_scale_val
-                    )
-
-        var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
-
-        _apply_base_scales(
-            _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+        _matmul_Q6_K_tile[matmul_group_unpacked](
+            a_ptr, b_ptr, c_ptr, N, accumulate
         )
-
-        _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
-
-        var c_float2 = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
-
-        if accumulate:
-            c_float2.load(c_ptr, N)
-
-            @parameter
-            for col in range(tile_n):
-
-                @parameter
-                for row in range(tile_m):
-                    c_float[row, col] += c_float2[row, col]
-
-        c_float.store(c_ptr, N)
+        _ = b_q_bits_ptr
 
         a_ptr += tile_m
         c_ptr += tile_m * N
@@ -1205,9 +1276,7 @@ fn matmul_Q6_K(
             @parameter
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
-                var n = task_n_start + n_idx * simd_width
-
-                _matmul_Q6_K[tile_n](
+                _matmul_Q6_K_columns[tile_n, simd_width](
                     a_packed_ptr, bn_packed_ptr, cn_ptr, M, N, accumulate
                 )
 
