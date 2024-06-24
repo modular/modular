@@ -493,3 +493,34 @@ fn scale_with_my_custom_scalar[
 
     out.for_each[func]()
     return out^
+
+
+@mogg_register("tensor_to_my_custom_scalar_ndbuff")
+@export
+fn tensor_to_my_custom_scalar_ndbuff[
+    type: DType
+](x: NDBuffer[type, 1]) -> MyCustomScalar[type]:
+    var val = x.data[0]
+    return MyCustomScalar(val)
+
+
+@mogg_register("scale_with_my_custom_scalar_ndbuff")
+@export
+fn scale_with_my_custom_scalar_ndbuff[
+    type: DType, rank: Int
+](
+    x: NDBuffer[type, rank],
+    scale: MyCustomScalar[type],
+    out: NDBuffer[type, rank],
+):
+    @parameter
+    @always_inline
+    fn func[simd_width: Int, fn_rank: Int](idx: StaticIntTuple[fn_rank]):
+        var val = x.load[width=simd_width](
+            rebind[StaticIntTuple[rank]](idx)
+        ) * scale.val
+        out.store[width=simd_width](rebind[StaticIntTuple[rank]](idx), val)
+
+    _elementwise_impl[func, 1, rank, use_blocking_impl=True, target="cpu",](
+        x.get_shape(),
+    )
