@@ -32,7 +32,7 @@ def shape_of(v: Symbol) -> Symbol:
     """
     var g = v.graph()
     return g.op(
-        "mo.shape_of", v, TensorType(DType.int64, v.tensor_type().rank())
+        "rmo.mo.shape_of", v, TensorType(DType.int64, v.tensor_type().rank())
     )
 
 
@@ -52,7 +52,7 @@ def cast(v: Symbol, dtype: DType) -> Symbol:
         A new symbolic tensor with the same shape as the input and the
         specified dtype.
     """
-    return v.graph().op("mo.cast", v, v.tensor_type().cast(dtype))
+    return v.graph().op("rmo.mo.cast", v, v.tensor_type().cast(dtype))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -125,7 +125,7 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
         axis += rank
 
     var new_shape = g.op(
-        "mo.squeeze_shape",
+        "rmo.mo.squeeze_shape",
         List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
         TensorType(DType.int64, rank - 1),
     )
@@ -172,7 +172,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
 
     # TODO: Bug - passing v_type.rank() + 1 into a variadic Int64 corrupts it.
     var new_shape = g.op(
-        "mo.unsqueeze_shape",
+        "rmo.mo.unsqueeze_shape",
         List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
         TensorType(DType.int64, rank + 1),
     )
@@ -257,7 +257,7 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     if shape.tensor_type().rank() != 1:
         raise error(g, "reshape shape must be rank 1")
     return g.op(
-        "mo.reshape",
+        "rmo.mo.reshape",
         List[Symbol](v, shape),
         TensorType(v.tensor_type().dtype, out_dims),
     )
@@ -405,7 +405,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     )
 
     return g.op(
-        "mo.transpose",
+        "rmo.mo.transpose",
         List[Symbol](input, transpose_indices),
         TensorType(input_type.dtype, dims),
     )

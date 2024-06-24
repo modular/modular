@@ -535,7 +535,7 @@ def abs(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.abs"](value)
+    return _unary_op["rmo.mo.abs"](value)
 
 
 def exp(value: Symbol) -> Symbol:
@@ -558,7 +558,7 @@ def exp(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.exp"](value)
+    return _unary_op["rmo.mo.exp"](value)
 
 
 def erf(value: Symbol) -> Symbol:
@@ -583,7 +583,7 @@ def erf(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.erf"](value)
+    return _unary_op["rmo.mo.erf"](value)
 
 
 def gelu(value: Symbol) -> Symbol:
@@ -607,7 +607,7 @@ def gelu(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.gelu"](value)
+    return _unary_op["rmo.mo.gelu"](value)
 
 
 def log(value: Symbol) -> Symbol:
@@ -635,7 +635,7 @@ def log(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.log"](value)
+    return _unary_op["rmo.mo.log"](value)
 
 
 def log1p(value: Symbol) -> Symbol:
@@ -664,7 +664,7 @@ def log1p(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.log1p"](value)
+    return _unary_op["rmo.mo.log1p"](value)
 
 
 def logsoftmax(value: Symbol) -> Symbol:
@@ -684,7 +684,7 @@ def logsoftmax(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.logsoftmax"](value)
+    return _unary_op["rmo.mo.logsoftmax"](value)
 
 
 def relu(value: Symbol) -> Symbol:
@@ -704,7 +704,7 @@ def relu(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.relu"](value)
+    return _unary_op["rmo.mo.relu"](value)
 
 
 def sigmoid(value: Symbol) -> Symbol:
@@ -766,7 +766,7 @@ def softmax(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.softmax"](value)
+    return _unary_op["rmo.mo.softmax"](value)
 
 
 def cos(value: Symbol) -> Symbol:
@@ -786,7 +786,7 @@ def cos(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.cos"](value)
+    return _unary_float_op["rmo.mo.cos"](value)
 
 
 def floor(value: Symbol) -> Symbol:
@@ -806,7 +806,7 @@ def floor(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.floor"](value)
+    return _unary_float_op["rmo.mo.floor"](value)
 
 
 def round(value: Symbol) -> Symbol:
@@ -826,7 +826,7 @@ def round(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.round"](value)
+    return _unary_float_op["rmo.mo.round"](value)
 
 
 def roundeven(value: Symbol) -> Symbol:
@@ -846,7 +846,7 @@ def roundeven(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.roundeven"](value)
+    return _unary_float_op["rmo.mo.roundeven"](value)
 
 
 def rsqrt(value: Symbol) -> Symbol:
@@ -866,7 +866,7 @@ def rsqrt(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.rsqrt"](value)
+    return _unary_float_op["rmo.mo.rsqrt"](value)
 
 
 def sqrt(value: Symbol) -> Symbol:
@@ -886,7 +886,7 @@ def sqrt(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.sqrt"](value)
+    return _unary_float_op["rmo.mo.sqrt"](value)
 
 
 def sin(value: Symbol) -> Symbol:
@@ -906,7 +906,7 @@ def sin(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.sin"](value)
+    return _unary_float_op["rmo.mo.sin"](value)
 
 
 def tanh(value: Symbol) -> Symbol:
@@ -926,7 +926,7 @@ def tanh(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.tanh"](value)
+    return _unary_float_op["rmo.mo.tanh"](value)
 
 
 def trunc(value: Symbol) -> Symbol:
@@ -946,7 +946,7 @@ def trunc(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["mo.trunc"](value)
+    return _unary_float_op["rmo.mo.trunc"](value)
 
 
 def is_nan(value: Symbol) -> Symbol:
@@ -968,7 +968,7 @@ def is_nan(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_comparison_op["mo.is_nan"](value)
+    return _unary_comparison_op["rmo.mo.is_nan"](value)
 
 
 def is_inf(value: Symbol) -> Symbol:
@@ -990,4 +990,4 @@ def is_inf(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_comparison_op["mo.is_inf"](value)
+    return _unary_comparison_op["rmo.mo.is_inf"](value)
