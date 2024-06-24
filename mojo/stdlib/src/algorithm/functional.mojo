@@ -1359,6 +1359,7 @@ fn _elementwise_impl_cpu_nd[
             vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
                 shape[rank - 1]
             )
+            _ = indices
 
         map[blocking_task_fn](total_size // shape[rank - 1])
 
@@ -1398,6 +1399,7 @@ fn _elementwise_impl_cpu_nd[
             vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
                 shape[rank - 1]
             )
+            _ = indices
 
     sync_parallelize[task_func](num_workers)
 

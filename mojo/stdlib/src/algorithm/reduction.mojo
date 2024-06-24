@@ -1001,6 +1001,7 @@ fn _reduce_along_outer_dimension[
         reduce_slices(0)
     else:
         sync_parallelize[reduce_slices](num_workers)
+    _ = reduce_dim_size
 
 
 # ===----------------------------------------------------------------------===#
@@ -1632,7 +1633,6 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
     var axis_size = input.dim(canonical_axis)
     var input_stride: Int
     var output_stride: Int
-    var num_workers: Int
     var chunk_size: Int
     var parallel_size = 1
 
@@ -1640,7 +1640,6 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
     if rank == 1:
         input_stride = input.num_elements()
         output_stride = output.num_elements()
-        num_workers = 1
         chunk_size = 1
     else:
         input_stride = input.dynamic_stride[canonical_axis - 1]
@@ -1650,13 +1649,15 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
             parallel_size *= input.dim(i)
 
         # don't over-schedule if parallel_size < _get_num_workers output
-        num_workers = _min(
+        var num_workers = _min(
             _get_num_workers(input.dynamic_shape.flattened_length()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
 
-    @__copy_capture(axis_size, chunk_size, output_stride, input_stride)
+    @__copy_capture(
+        axis_size, chunk_size, output_stride, input_stride, parallel_size
+    )
     @parameter
     fn task_func(task_id: Int):
         @parameter
