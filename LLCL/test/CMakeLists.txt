@@ -11,11 +11,6 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py
 )
 
-add_modular_testsuite(check-support
+add_modular_testsuite(check-llcl
   TOOLS
-  build-info
-  crash-test-dummy
-  driver-tblgen
-  modular-crashpad-handler
-  support-dialect-opt
-  system-info)
+  crash-report-path-info)
