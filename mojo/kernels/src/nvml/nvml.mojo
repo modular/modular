@@ -348,7 +348,7 @@ struct _DeviceImpl:
         return self.handle.__bool__()
 
 
-struct Device:
+struct Device(Formattable):
     var idx: Int
     var device: _DeviceImpl
 
@@ -552,8 +552,11 @@ struct Device:
     fn __str__(self) -> String:
         return self.__repr__()
 
+    fn format_to(self, inout writer: Formatter):
+        writer.write("Device(", self.idx, ")")
+
     fn __repr__(self) -> String:
-        return "Device(" + str(self.idx) + ")"
+        return String.format_sequence(self)
 
 
 @value
