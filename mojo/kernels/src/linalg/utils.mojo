@@ -632,38 +632,6 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
         return False
 
 
-@always_inline
-fn get_trace_information(
-    name: StringRef,
-    shape: GemmShape,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
-) -> String:
-    var a_description = String("A=") + str(shape.M) + "x" + str(shape.K)
-    var b_description = String("B=") + str(shape.K) + "x" + str(shape.N)
-    var c_description = String("C=") + str(shape.M) + "x" + str(shape.N)
-    var transpose_a_description = String("transpose_a=") + str(transpose_a)
-    var transpose_b_description = String("transpose_b=") + str(transpose_b)
-    var b_packed_description = String("b_packed=") + str(b_packed)
-
-    return (
-        String(name)
-        + ";"
-        + a_description
-        + ";"
-        + b_description
-        + ";"
-        + c_description
-        + ";"
-        + transpose_a_description
-        + ";"
-        + transpose_b_description
-        + ";"
-        + b_packed_description
-    )
-
-
 fn dispatch_get_kernel_type[
     func: fn[x: Bool] () capturing -> None,
 ](m: Int, n: Int, k: Int):

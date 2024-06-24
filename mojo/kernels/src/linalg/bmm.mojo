@@ -636,39 +636,3 @@ fn batched_matmul_shape[
     output_shape[rank - 1] = b_buff.dim(rank - 1)
 
     return output_shape
-
-
-@always_inline
-fn get_trace_information[
-    rank: Int
-](
-    name: StringRef,
-    a_matrix_shape: StaticIntTuple[rank],
-    b_matrix_shape: StaticIntTuple[rank],
-    c_matrix_shape: StaticIntTuple[rank],
-    transpose_a: Bool,
-    transpose_b: Bool,
-) -> String:
-    var a_shape: String
-    var b_shape: String
-    var c_shape: String
-    a_shape = String("x").join(a_matrix_shape)
-    b_shape = String("x").join(b_matrix_shape)
-    c_shape = String("x").join(c_matrix_shape)
-
-    var a_description = String("A=") + a_shape
-    var b_description = String("B=") + b_shape
-    var c_description = String("C=") + c_shape
-    var transpose_a_description = String("transpose_a=") + str(transpose_a)
-    var transpose_b_description = String("transpose_b=") + str(transpose_b)
-
-    return String(";").join(
-        String(name),
-        a_description,
-        b_description,
-        c_description
-        + ";"
-        + transpose_a_description
-        + ";"
-        + transpose_b_description,
-    )
