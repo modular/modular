@@ -1154,6 +1154,25 @@ fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
     # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> F, x, ?))>
     alias H: fn[u: T] () -> None = F[x]
 
+@value
+struct StructWithSpecificSelfInitTypes[size: Int]:
+   fn __init__(inout self: StructWithSpecificSelfInitTypes[0]): pass
+   fn __init__(inout self: StructWithSpecificSelfInitTypes[1], a: Int): pass
+   fn __init__(inout self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
+
+# CHECK-LABEL: lit.func @"test_inference_from_Self_type
+fn test_inference_from_Self_type(x: Int):
+   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {0}>([[TMP]])
+   _ = StructWithSpecificSelfInitTypes()
+   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>([[TMP]], %x)
+   _ = StructWithSpecificSelfInitTypes(x)
+   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>([[TMP]], %x, %x)
+   _ = StructWithSpecificSelfInitTypes(x, x)
+
+
 
 ##===----------------------------------------------------------------------===##
 # Lifetime Parameters

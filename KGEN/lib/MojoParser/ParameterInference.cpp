@@ -473,6 +473,71 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
   return matchParams(actual, expected);
 }
 
+/// When inferring an 'initself' argument, try to infer parameters of Self from
+/// the initializer if specialized.
+///
+/// Consider:
+///    struct S[a: Int]:
+///      fn __init__(inout self): ...
+///      fn __init__(inout self: S[1], x: Int): ...
+///
+/// When constructed with no arguments, the first constructor must be used and
+/// it is impossible to infer the value of 'a', so you must use `S[1]()`.  This
+/// is the usual case.
+///
+/// However the second initializer is more specialized due to its custom Self -
+/// it only applies when 'a' is 1, so we can infer that would be the value to
+/// use if it is selected because one arg is passed to the initializer `S(42)`.
+///
+/// This function helps to infer the 'a' parameter when more specialized.  This
+/// custom logic is required because often (eg in this case) the "actual" type
+/// will have UnboundAttr parameters, instead of fully bound ones like a normal
+/// argument.
+LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
+                                                          Type expectedType) {
+  // Perform standard inference, if this fails, then give up.
+  if (failed(matchTypes(actualType, expectedType)))
+    return failure();
+
+  // We can only support struct inference right now.
+  auto actualDRT = dyn_cast<DeclRefType>(actualType);
+  auto expectedDRT = dyn_cast<DeclRefType>(expectedType);
+  if (!actualDRT)
+    return success();
+
+  // We know the inference succeeded, so these must have matching symbols and
+  // matching numbers of parameters.
+  assert(actualDRT.getSymbol() == expectedDRT.getSymbol() &&
+         actualDRT.getParamValues().size() ==
+             expectedDRT.getParamValues().size());
+
+  // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
+  // the expected has something more specific than a reference to the contextual
+  // parameter.
+  for (auto [idx, actual, expected] : llvm::enumerate(
+           actualDRT.getParamValues(), expectedDRT.getParamValues())) {
+    // If this was already bound, then parameter inference would have handled
+    // it.
+    if (!isa<UnboundAttr>(actual))
+      continue;
+    // If this is simply a reference to the enclosing parameter (as in a normal
+    // Self) init, then we can't infer anything from it.
+    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(expected))
+      if (indexRef.getDepth() == 0 && indexRef.getIndex() == idx)
+        continue;
+
+    // Otherwise, this is a more specialized parameter bound on Self for this
+    // method.  Form the parameter that we need to infer.
+    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, /*isResult*/ false, idx,
+                                          expected.getType());
+    // Try to infer this parameter from the expected (declared) type.
+    if (failed(matchParams(expected, toInfer)))
+      return failure();
+  }
+
+  return success();
+}
+
 /// Infer parameters from an operand being passed into this function. This is
 /// only called on the top level function operands being matched up, not
 /// anything in recursive functiontype positions.
@@ -509,9 +574,9 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // checking, match up the types, but otherwise let it pass.
     if (PValue pValue = value.getIfPValue())
       if (isa<UnknownAttr>(pValue.get())) {
-        ASTType argType(pValue.get().getType());
-        return matchTypes(argType.getReferenceElementType(),
-                          expectedType.getReferenceElementType());
+        ASTType argType = pValue.get().getType();
+        return inferInitSelfTypes(argType.getReferenceElementType(),
+                                  expectedType.getReferenceElementType());
       }
     [[fallthrough]];
   case ArgConvention::InOut:

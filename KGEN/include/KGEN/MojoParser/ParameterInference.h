@@ -115,6 +115,7 @@ private:
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
                                      TypedAttr expectedAddrSpace);
+  LogicalResult inferInitSelfTypes(Type actualType, Type expectedType);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
