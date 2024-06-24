@@ -18,7 +18,7 @@ lit_tests(
     mojo_deps = [
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/runtime",
-        "//open-source/mojo/stdlib/stdlib:stdlib",
+        "//open-source/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
@@ -46,7 +46,7 @@ lit_tests(
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
     },
     mojo_deps = [
-        "//open-source/mojo/stdlib/stdlib:stdlib",
+        "//open-source/mojo/stdlib/stdlib",
     ],
     tools = [
         "//KGEN/tools/kgen",
