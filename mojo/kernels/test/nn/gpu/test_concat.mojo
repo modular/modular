@@ -105,6 +105,13 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
     ]()
 
     @always_inline
+    @__copy_capture(
+        output_device_ref,
+        input_0_device_ref,
+        input_1_device_ref,
+        input_2_device_ref,
+        input_3_device_ref,
+    )
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function(
@@ -121,6 +128,7 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
         )
 
     var nstime_kernel = ctx.execution_time[run_concat_inner_most_single_dim](1)
+    _ = func^
     print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
     print(
         "transfer rate = ",
@@ -166,6 +174,13 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
     validate_results()
 
     @always_inline
+    @__copy_capture(
+        output_device_ref,
+        input_0_device_ref,
+        input_1_device_ref,
+        input_2_device_ref,
+        input_3_device_ref,
+    )
     @parameter
     fn run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream

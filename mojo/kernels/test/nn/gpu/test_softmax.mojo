@@ -37,8 +37,8 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     rand[type](in_host_ptr, shape.flattened_length())
     ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
 
-    @__copy_capture(in_device)
     @parameter
+    @__copy_capture(in_device)
     fn input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
@@ -47,6 +47,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
         )
 
     @parameter
+    @__copy_capture(in_host)
     fn input_fn_host[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
@@ -83,6 +84,8 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     out_host_ptr.free()
     out_ref_ptr.free()
 
+    _ = in_device
+    _ = in_host
     _ = in_device_ptr
     _ = out_device_ptr
 
@@ -131,15 +134,15 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     ctx.enqueue_copy_to_device(in_device_test_ptr, in_host_test_ptr)
     ctx.enqueue_copy_to_device(in_device_ref_ptr, in_host_ref_ptr)
 
-    @__copy_capture(in_device_ref)
     @parameter
+    @__copy_capture(in_device_ref)
     fn input_fn_ref[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[ref_type, _simd_width]:
         return in_device_ref[rebind[StaticIntTuple[rank]](coords)]
 
-    @__copy_capture(in_device_test)
     @parameter
+    @__copy_capture(in_device_test)
     fn input_fn_test[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[test_type, _simd_width]:
@@ -172,6 +175,8 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
 
     _ = in_device_ref_ptr
     _ = in_device_test_ptr
+    _ = in_device_test
+    _ = in_device_ref
 
 
 def main():
