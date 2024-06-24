@@ -647,6 +647,14 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
       // For a copy capture, just emit the value reference as an RValue, which
       // will make sure to copy it.
       captureRVal = emitter.emitExprRValue(declRef, EC_Capture);
+      if (!captureRVal)
+        return;
+      // HACK: This only has the intended effect of "immortalizing" a
+      // register-passable value by creating an SRValue.
+      if (!captureRVal.getType().isTrivial(node.getLoc(), shared)) {
+        emitError(node.getLoc(), "TODO: @__copy_capture only works as intended "
+                                 "with trivial register-passable types");
+      }
     } else {
       // For a move capture, we emit this with an implicit transfer.
       // HACK(#16110): This transfers ownership without an explicit `^` from
