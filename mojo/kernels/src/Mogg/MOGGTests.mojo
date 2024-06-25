@@ -533,3 +533,32 @@ fn invalid_kernel_owned_arg(
     owned x: MyCustomScalar[DType.int64],
 ) -> MyCustomScalar[DType.int64]:
     return MyCustomScalar(x.val)
+
+
+@value
+@register_passable
+struct MyCustomScalarReg[type: DType]:
+    var val: Scalar[type]
+
+    fn __init__(inout self, val: Scalar[type]):
+        print("MyCustomScalarReg.__init__", val)
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyCustomScalarReg.__del__", self.val)
+
+
+@mogg_register("buff_to_my_custom_scalar_reg")
+@export
+fn buff_to_my_custom_scalar_reg[
+    type: DType
+](x: NDBuffer[type, 1]) -> MyCustomScalarReg[type]:
+    return MyCustomScalarReg(x.data[0])
+
+
+@mogg_register("my_custom_scalar_reg_to_buff")
+@export
+fn my_custom_scalar_reg_to_buff[
+    type: DType
+](x: MyCustomScalar[type], out: NDBuffer[type, 1]):
+    out.data[0] = x.val
