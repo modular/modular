@@ -6,7 +6,7 @@
 
 from collections import OptionalReg
 from collections.vector import InlinedFixedVector
-from math import ceildiv, cos, erf, exp, fma, log, log1p, rsqrt, sin, sqrt
+from math import cos, erf, exp, fma, log, log1p, rsqrt, sin, sqrt
 from random import randn, seed
 from sys import external_call
 from sys.info import simdwidthof, sizeof
@@ -103,6 +103,21 @@ from nn.split import split as _split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_shape
+from quantization import (
+    Q4sym,
+    block_Q4_K,
+    block_Q6_K,
+    block_QK_K,
+    q4_k_dequantize_impl,
+    q6_k_dequantize_impl,
+)
+from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
+from quantization.qmatmul_k import (
+    matmul_Q4_K,
+    matmul_Q4_K_pack_b,
+    matmul_Q6_K,
+    matmul_Q6_K_pack_b,
+)
 from register import *
 from runtime.llcl import MojoCallContextPtr, Runtime
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -4309,176 +4324,6 @@ fn with_mask_flash_attention_cpu[
             output,
             scale[0].cast[DType.float32](),
         )
-
-
-# # ===----------------------------------------------------------------------===#
-# # INT4/5/6 packing format and op implementations
-# # ===----------------------------------------------------------------------===#
-
-from quantization import (
-    Q4sym,
-    block_Q4_K,
-    block_Q6_K,
-    block_QK_K,
-    q4_k_dequantize_impl,
-    q6_k_dequantize_impl,
-)
-from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
-from quantization.qmatmul_k import (
-    matmul_Q4_K,
-    matmul_Q4_K_pack_b,
-    matmul_Q6_K,
-    matmul_Q6_K_pack_b,
-)
-
-
-# TODO: closures to make this simpler
-######
-# Q4 -- group size 8
-######
-@mogg_register("quantize_Q4symG8")
-@always_inline
-@export
-fn quantize_Q4sym_g8[
-    input_type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    input: NDBuffer[input_type, rank],
-    output: NDBuffer[DType.uint8, rank],
-    ctx: MojoCallContextPtr,
-):
-    Q4sym[8, input_type].quantize_and_write_to_tensor(
-        input, output, input.dynamic_shape
-    )
-
-
-@mogg_register_shape_func("quantize_Q4symG8")
-@always_inline
-@export
-fn quantize_Q4sym_g8_shape_func[
-    type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
-    var new_shape = data.get_shape()
-    new_shape[rank - 1] = (
-        ceildiv(new_shape[rank - 1], 8) * sizeof[Q4sym[8, type]]()
-    )
-    return new_shape
-
-
-@mogg_register("dequantize_Q4symG8")
-@always_inline
-@export
-fn dequantize_Q4sym_g8[
-    output_type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    input: NDBuffer[DType.uint8, rank],
-    output: NDBuffer[output_type, rank],
-    ctx: MojoCallContextPtr,
-):
-    Q4sym[8, output_type].dequantize_and_write_to_tensor(
-        input, output, output.dynamic_shape
-    )
-
-
-######
-# Q4 -- group size 16
-######
-@mogg_register("quantize_Q4symG16")
-@always_inline
-@export
-fn quantize_Q4sym_g16[
-    input_type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    input: NDBuffer[input_type, rank],
-    output: NDBuffer[DType.uint8, rank],
-    ctx: MojoCallContextPtr,
-):
-    Q4sym[16, input_type].quantize_and_write_to_tensor(
-        input, output, input.dynamic_shape
-    )
-
-
-@mogg_register_shape_func("quantize_Q4symG16")
-@always_inline
-@export
-fn quantize_Q4sym_g16_shape_func[
-    type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
-    var new_shape = data.get_shape()
-    new_shape[rank - 1] = (
-        ceildiv(new_shape[rank - 1], 16) * sizeof[Q4sym[16, type]]()
-    )
-    return new_shape
-
-
-@mogg_register("dequantize_Q4symG16")
-@always_inline
-@export
-fn dequantize_Q4sym_g16[
-    output_type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    input: NDBuffer[DType.uint8, rank],
-    output: NDBuffer[output_type, rank],
-    ctx: MojoCallContextPtr,
-):
-    Q4sym[16, output_type].dequantize_and_write_to_tensor(
-        input, output, output.dynamic_shape
-    )
-
-
-######
-# Q4 -- group size 32
-######
-@mogg_register("quantize_Q4symG32")
-@always_inline
-@export
-fn quantize_Q4sym_g32[
-    input_type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    input: NDBuffer[input_type, rank],
-    output: NDBuffer[DType.uint8, rank],
-    ctx: MojoCallContextPtr,
-):
-    Q4sym[32, input_type].quantize_and_write_to_tensor(
-        input, output, input.dynamic_shape
-    )
-
-
-@mogg_register_shape_func("quantize_Q4symG32")
-@always_inline
-@export
-fn quantize_Q4sym_g32_shape_func[
-    type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
-    var new_shape = data.get_shape()
-    new_shape[rank - 1] = (
-        ceildiv(new_shape[rank - 1], 32) * sizeof[Q4sym[32, type]]()
-    )
-    return new_shape
-
-
-@mogg_register("dequantize_Q4symG32")
-@always_inline
-@export
-fn dequantize_Q4sym_g32[
-    output_type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    input: NDBuffer[DType.uint8, rank],
-    output: NDBuffer[output_type, rank],
-    ctx: MojoCallContextPtr,
-):
-    Q4sym[32, output_type].dequantize_and_write_to_tensor(
-        input, output, output.dynamic_shape
-    )
-
-
-@mogg_register_shape_func("qmatmul_Af32_BTQ4symG32_Cf32")
-@always_inline
-@export
-fn qmatmul_Af32_BTQ4symG32_Cf32_shape_func[
-    type: DType,
-    single_thread_blocking_override: Bool,
-](a: NDBuffer[type, 2], b: NDBuffer[DType.uint8, 2],) -> StaticIntTuple[2]:
-    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
 
 
 @mogg_register("mo.linalg.solve")
