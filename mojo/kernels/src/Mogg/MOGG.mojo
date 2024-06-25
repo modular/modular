@@ -3803,6 +3803,7 @@ fn reduce_min_and_max[
             single_thread_blocking_override=single_thread_blocking_override,
             target=target,
         ](input_shape, init=init, reduce_dim=axis, context=ctx)
+    _ = axis
 
 
 @mogg_register_shape_func("reduce_min_and_max")
