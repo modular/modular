@@ -363,6 +363,25 @@ def test_raw_data():
     assert_equal(Scalar.load(ptr), t[0])
 
 
+def test_take():
+    cpu = cpu_device()
+    alias type = DType.float32
+    alias shape = (1,)
+    alias TensorType = Tensor[type, len(shape)]
+    tensors = List[TensorType]()
+    for i in range(2):
+        tensors.append(
+            cpu.allocate(TensorSpec(type, shape)).to_tensor[type, len(shape)]()
+        )
+        tensors[i][0] = 2
+
+    def consume_and_check(owned tensor: TensorType):
+        assert_equal(tensor[0], 2)
+
+    for tensor in tensors:
+        consume_and_check(tensor[].take())
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -378,3 +397,4 @@ def main():
     test_set_through_slice()
     test_kv_cache()
     test_raw_data()
+    test_take()

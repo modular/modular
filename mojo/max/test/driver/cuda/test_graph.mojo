@@ -19,7 +19,12 @@ from driver import (
     cuda_device,
     Device,
 )
-from testing import assert_equal, assert_true, assert_raises
+from testing import (
+    assert_equal,
+    assert_true,
+    assert_raises,
+    assert_almost_equal,
+)
 import tensor
 
 
@@ -92,36 +97,19 @@ def test_mnist():
     )
     assert_equal(len(outputs_device), 1)
 
-    def _assert_values(inout memory: AnyTensor, cpu: Device):
-        new = AnyTensor()
-        tmp = memory^
-        memory = new^
-        output_device = tmp^.to_device_tensor()
-        output_host = output_device.copy_to(cpu).to_tensor[DType.float32, 2]()
-
-        var output_list = List[Float32]()
-        output_list.reserve(10)
-        for i in range(10):
-            output_list.append(output_host[0, i])
-
-        expected_outputs = List[Float32](
-            2.511993e04,
-            2.512001e04,
-            2.512000e04,
-            2.511999e04,
-            2.512002e04,
-            2.512011e04,
-            2.511996e04,
-            2.512005e04,
-            2.511997e04,
-            2.511996e04,
+    for output in outputs_device:
+        tensor = (
+            output[]
+            .take()
+            .to_device_tensor()
+            .copy_to(cpu)
+            .to_tensor[DType.float32, 2]()
         )
 
+        expected_output = 2.511993e04
         for i in range(10):
-            assert_true(abs(output_list[i] - expected_outputs[i]) < 0.1)
-
-    for output in outputs_device:
-        _assert_values(output[], cpu)
+            assert_almost_equal(tensor[0, i], expected_output, atol=0.1)
+        assert_equal(tensor.rank, 2)
 
 
 def main():

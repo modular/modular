@@ -52,6 +52,19 @@ def test_device_memory():
     assert_equal(Scalar.load(rebind[DTypePointer[type]](ptr)), t5[0])
 
 
+def test_take():
+    var tensors = List[DeviceTensor]()
+    var cpu = cpu_device()
+    for _ in range(2):
+        tensors.append(cpu.allocate(TensorSpec(DType.float32, 2, 2)))
+
+    def consume_and_check(owned t: DeviceTensor):
+        assert_equal(str(t), "DeviceTensor(Device(type=CPU),Spec(2x2xfloat32))")
+
+    for tensor in tensors:
+        consume_and_check(tensor[].take())
+
+
 def test_kv_cache():
     cpu = cpu_device()
     alias type = DType.float32
@@ -71,3 +84,4 @@ def main():
     test_device()
     test_device_memory()
     test_kv_cache()
+    test_take()

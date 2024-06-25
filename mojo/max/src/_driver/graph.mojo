@@ -45,17 +45,12 @@ struct ExecutableGraph:
         """This takes `memory` as inout and not owned because it is called on
         References owned by a List (returned by List.__getitem__()).
         """
-        # the List still owns `memory` so fill it with default values
-        # so that it doesn't get free'd twice when `tmp` goes out of scope
-        var new = AnyTensor()
-        var tmp = memory^
-        memory = new^
+        var taken_memory = memory.take()
 
-        var tmp_dt = tmp^.to_device_tensor()
-        var tmp_dm = tmp_dt._storage^
-        tmp_dt._storage = DeviceMemory()
+        var tmp_device_tensor = taken_memory^.to_device_tensor()
+        var taken_device_memory = tmp_device_tensor._storage.take()
 
-        var ptr = tmp_dm^._steal_impl_ptr()
+        var ptr = taken_device_memory^._steal_impl_ptr()
         return ptr
 
     fn _add_to_output_list(
