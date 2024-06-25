@@ -169,7 +169,7 @@ private:
     /// This is a list of values that we need to keep alive across the duration
     /// of the call.  They will get lit.ownership.use operations at the end of
     /// the call.
-    SmallVector<Value> valuesToKeepAlive;
+    SmallVector<std::pair<Value, Value>> valuesToKeepAlive;
 
     AfterCallActions(CallEmitter &callEmitter) : callEmitter(callEmitter) {}
 
@@ -203,8 +203,11 @@ void CallEmitter::AfterCallActions::emit() {
   }
 
   // Emit all the lit.ownership.use ops.
-  for (Value value : valuesToKeepAlive)
-    callEmitter.emitter.builder->create<OwnershipUseOp>(callEmitter.loc, value);
+  OpBuilder &b = *callEmitter.emitter.builder;
+  for (auto [value, alloc] : valuesToKeepAlive) {
+    b.create<OwnershipUseOp>(callEmitter.loc, value);
+    b.create<POP::StackAllocLifetimeEndOp>(callEmitter.loc, alloc);
+  }
 }
 
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
@@ -799,7 +802,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
       Value ptr = emitter.builder->create<POP::StackAllocationOp>(
-          argLoc, PointerType::get(sbValue.getType()), 1);
+          argLoc, PointerType::get(sbValue.getType()), 1,
+          /*markedLifetimes=*/true);
+      emitter.builder->create<POP::StackAllocLifetimeStartOp>(argLoc, ptr);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
       auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/false);
       auto ref =
@@ -809,7 +814,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
-      afterCallActions.valuesToKeepAlive.push_back(sbValue);
+      afterCallActions.valuesToKeepAlive.emplace_back(sbValue, ptr);
       return MBValue(ref);
     }
     // Promote PValue's if needed.
