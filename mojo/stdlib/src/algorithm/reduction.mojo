@@ -742,7 +742,6 @@ fn _reduce_along_inner_dimension[
     var simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
     @always_inline
-    @__copy_capture(unrolled_simd_compatible_size, simd_compatible_size)
     @parameter
     fn simd_reduce_helper_fn[
         in_width: Int,
@@ -773,9 +772,6 @@ fn _reduce_along_inner_dimension[
         return out_acc_tup
 
     @always_inline
-    @__copy_capture(
-        unrolled_simd_compatible_size, simd_compatible_size, reduce_dim_size
-    )
     @parameter
     fn reduce_rows_unrolled(start_row: Int, end_row: Int):
         # Iterate over the non reduced dimensions.
@@ -861,7 +857,6 @@ fn _reduce_along_inner_dimension[
             output_0_fn[init_type, 1, shape.size](indices, acc_scalar_tup)
 
     @always_inline
-    @__copy_capture(chunk_size, parallelism_size)
     @parameter
     fn reduce_rows(i: Int):
         var start_parallel_offset = i * chunk_size
@@ -878,6 +873,11 @@ fn _reduce_along_inner_dimension[
         reduce_rows_unrolled(0, parallelism_size)
     else:
         sync_parallelize[reduce_rows](num_workers)
+    _ = reduce_dim_size
+    _ = parallelism_size
+    _ = chunk_size
+    _ = unrolled_simd_compatible_size
+    _ = simd_compatible_size
 
 
 fn _reduce_along_outer_dimension[
