@@ -96,6 +96,11 @@ public:
   /// Lookup a symbolic memory slot.
   ErrorOr<TypedAttr &> getSymbolicMemory(uint64_t slot);
 
+  /// Read an attribute value of a given type from either a SymbolicPointerAttr
+  /// or a PointerAttr.
+  ErrorOr<Attribute> readAttributeFromPointer(Attribute pointer,
+                                              Type elementType);
+
   /// Exchange memory references for interpreter memory references upon entering
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
