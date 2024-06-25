@@ -3,19 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, ceil, ceildiv
-from sys.info import has_avx2, has_neon_int8_dotprod, sizeof
+from math import ceil, ceildiv
+from sys.info import sizeof
 
-from algorithm import sync_parallelize
 from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
-from buffer.list import DimList
-from linalg.neon_intrinsics import _neon_dotprod
-from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
 from memory.unsafe import bitcast
 
-from utils import Index, StaticIntTuple, StaticTuple, unroll
+from utils import Index, StaticIntTuple, StaticTuple
 
 
 @always_inline
