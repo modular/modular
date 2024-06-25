@@ -20,7 +20,9 @@ struct Element[dtype: DType, layout: Layout](Stringable):
         self.element_data = element_data
 
     @staticmethod
-    fn load(ptr: DTypePointer[dtype, _]) -> Self:
+    fn load[
+        address_space: AddressSpace
+    ](ptr: DTypePointer[dtype, address_space]) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -92,7 +94,9 @@ struct Element[dtype: DType, layout: Layout](Stringable):
 
                 return element_data
 
-    fn store(self, ptr: DTypePointer[dtype, _]):
+    fn store[
+        address_space: AddressSpace
+    ](self, ptr: DTypePointer[dtype, address_space]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter

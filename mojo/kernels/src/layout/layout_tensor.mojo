@@ -898,21 +898,10 @@ struct LayoutTensor[
         return (int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
 
     @always_inline
-    fn copy_from[
-        other_layout: Layout,
-        other_addr_space: AddressSpace,
-        other_element_layout: Layout,
-        other_mask: Bool,
-    ](
-        self,
-        other: LayoutTensor[
-            dtype,
-            other_layout,
-            address_space=other_addr_space,
-            element_layout=other_element_layout,
-            masked=other_mask,
-        ],
-    ):
+    fn copy_from(self, other: LayoutTensor):
+        alias other_mask = other.masked
+        alias other_layout = other.layout
+
         alias dst_size = layout.size()
         alias src_size = other_layout.size()
 
@@ -945,8 +934,12 @@ struct LayoutTensor[
             alias dst_idx = make_layout(self.element_layout, self.layout)(
                 i * dst_element_size
             )
-            var src_element = Element[dtype, other.element_layout].load(
-                other.ptr.offset(src_idx)
+            var src_element = Element[dtype, other.element_layout].load[
+                other.address_space
+            ](
+                rebind[DTypePointer[dtype, other.address_space]](
+                    other.ptr
+                ).offset(src_idx)
             )
             alias dst_element_type = Element[dtype, self.element_layout]
             dst_element_type(
