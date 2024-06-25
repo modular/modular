@@ -6,8 +6,13 @@
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from driver import CPUDescriptor, cpu_device
-from driver import Tensor, TensorSlice, UnsafeTensorSlice
+from max._driver import (
+    CPUDescriptor,
+    cpu_device,
+    Tensor,
+    TensorSlice,
+    UnsafeTensorSlice,
+)
 from tensor import TensorSpec
 from utils import Index
 from testing import assert_equal, assert_raises

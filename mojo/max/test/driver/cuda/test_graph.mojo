@@ -9,9 +9,8 @@
 # RUN: TMP_ALLOCATE_ON_DEVICE=1 mojo -D MOJO_ENABLE_ASSERTIONS %s
 
 from max.graph import Graph, TensorType, Symbol, Type, ops
-from max._driver import compile_graph
-from tensor import TensorSpec
-from driver import (
+from max._driver import (
+    compile_graph,
     cpu_device,
     CPUDescriptor,
     AnyTensor,
@@ -19,6 +18,7 @@ from driver import (
     cuda_device,
     Device,
 )
+from tensor import TensorSpec
 from testing import (
     assert_equal,
     assert_true,

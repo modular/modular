@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
-from driver import AnyTensor, cpu_device
+from max._driver import AnyTensor, cpu_device
 from testing import assert_equal
 from tensor import TensorSpec
 

@@ -5,16 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 from max.graph import Graph
 from max_utils import call_dylib_func
-from driver import (
-    AnyTensor,
-    Device,
-    DeviceMemory,
-    DeviceTensor,
-    Status,
-    _CStatus,
-)
 from sys.ffi import _get_global_or_null
 from tensor import TensorSpec
+
+from .anytensor import AnyTensor
+from .device import Device
+from .device_memory import DeviceMemory, DeviceTensor
+from ._status import Status, _CStatus
 
 
 @value

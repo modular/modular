@@ -15,8 +15,13 @@
 from max.graph import Graph, TensorType, Symbol, Type, ops
 from tensor import TensorSpec
 from testing import assert_equal, assert_true, assert_raises
-from max._driver import compile_graph
-from driver import cpu_device, CPUDescriptor, AnyTensor, Tensor
+from max._driver import (
+    compile_graph,
+    cpu_device,
+    CPUDescriptor,
+    AnyTensor,
+    Tensor,
+)
 from testing import (
     assert_equal,
     assert_true,
