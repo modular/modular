@@ -408,7 +408,7 @@ struct SessionOptions:
 
     fn __init__(inout self, device: Device):
         """Creates a new SessionOptions object with a device set."""
-        self = Self(device)
+        self._device = device
 
     fn _set_device(inout self, device: Device):
         self._device = device
