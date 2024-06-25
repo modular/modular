@@ -7,6 +7,7 @@
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from collections.optional import Optional
+from max._driver import Device
 from max._utils import call_dylib_func, exchange
 from ._status import Status
 from sys.param_env import is_defined
@@ -34,17 +35,15 @@ struct CRuntimeConfig:
 
     alias FreeRuntimeConfigFnName = "M_freeRuntimeConfig"
     alias SetAllocatorTypeFnName = "M_setAllocatorType"
-    alias SetDeviceFnName = "M_setDevice"
+    alias SetDriverDeviceFnName = "M_setDriverDevice"
     alias SetMaxContextFnName = "M_setMaxContext"
     alias SetAPILanguageFnName = "M_setAPILanguage"
 
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
-    fn set_device(self, lib: DLHandle, device: String):
-        var device_ref = device._strref_dangerous()
-        call_dylib_func(lib, Self.SetDeviceFnName, self, device_ref.data, 0)
-        device._strref_keepalive()
+    fn set_device(self, lib: DLHandle, device: Device):
+        call_dylib_func(lib, Self.SetDriverDeviceFnName, self, device._cdev)
 
     fn set_api_language(self, lib: DLHandle, source: String):
         call_dylib_func(
@@ -60,30 +59,6 @@ struct CRuntimeConfig:
         call_dylib_func(lib, Self.SetMaxContextFnName, self, max_context)
 
 
-@value
-@register_passable
-struct _Device(Stringable, Formattable):
-    var value: Int
-
-    alias CPU = _Device(0)
-    alias CUDA = _Device(1)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self.value == other.value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    fn __str__(self) -> String:
-        return String.format_sequence(self)
-
-    fn format_to(self, inout writer: Formatter):
-        if self == _Device.CPU:
-            writer.write_str["cpu"]()
-        else:
-            writer.write_str["cuda"]()
-
-
 struct RuntimeConfig:
     var ptr: CRuntimeConfig
     var lib: DLHandle
@@ -93,7 +68,7 @@ struct RuntimeConfig:
     fn __init__(
         inout self,
         lib: DLHandle,
-        device: _Device,
+        device: Device,
         allocator_type: AllocatorType = AllocatorType.CACHING,
         max_context: Pointer[NoneType] = Pointer[NoneType](),
     ):
@@ -112,18 +87,7 @@ struct RuntimeConfig:
         if allocator_type != AllocatorType.CACHING:
             self.ptr.set_allocator_type(self.lib, allocator_type)
 
-        @parameter
-        if MODULAR_PRODUCTION:
-            if device != _Device.CPU:
-                print(
-                    "The device",
-                    device,
-                    "is not valid. The device must be set to 'cpu'.",
-                )
-            return
-        else:
-            if device == _Device.CUDA:
-                self.ptr.set_device(self.lib, str(device))
+        self.ptr.set_device(self.lib, device)
 
         self.ptr.set_api_language(self.lib, "mojo")
 

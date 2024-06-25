@@ -15,6 +15,7 @@ from pathlib import Path
 from sys.ffi import _get_global_or_null
 from memory import Arc
 from max._utils import call_dylib_func
+from max._driver import cpu_device, Device
 
 from ._compilation import (
     CCompiledModel,
@@ -23,7 +24,7 @@ from ._compilation import (
     FrameworkFormat,
     ModelSource,
 )
-from ._context import RuntimeConfig, RuntimeContext, _Device
+from ._context import RuntimeConfig, RuntimeContext
 from ._engine_impl import _EngineImpl, _get_engine_path
 from ._model_impl import CModel
 from ._status import Status
@@ -36,11 +37,7 @@ struct _InferenceSessionImpl(Movable):
     var engine: _EngineImpl
     var context: RuntimeContext
 
-    fn __init__(
-        inout self,
-        lib_path: String,
-        device: _Device,
-    ):
+    fn __init__(inout self, lib_path: String, device: Device):
         self.engine = _EngineImpl(lib_path)
         var config = RuntimeConfig(
             self.engine.lib,
@@ -403,13 +400,17 @@ struct SessionOptions:
     Configuration options for InferenceSession.
     """
 
-    var _device: _Device
+    var _device: Optional[Device]
 
     fn __init__(inout self):
         """Creates a new SessionOptions object."""
-        self = Self(_Device.CPU)
+        self._device = None
 
-    fn _set_device(inout self, device: _Device):
+    fn __init__(inout self, device: Device):
+        """Creates a new SessionOptions object with a device set."""
+        self = Self(device)
+
+    fn _set_device(inout self, device: Device):
         self._device = device
 
 
@@ -435,8 +436,9 @@ struct InferenceSession:
             options: Session options to configure how session is created.
 
         """
+        var device = options._device.or_else(cpu_device())
         var path = _get_engine_path()
-        self._ptr = Arc(_InferenceSessionImpl(path, options._device))
+        self._ptr = Arc(_InferenceSessionImpl(path, device))
 
     fn load(
         self,
