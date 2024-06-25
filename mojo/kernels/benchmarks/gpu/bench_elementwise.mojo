@@ -16,7 +16,7 @@ from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from testing import assert_equal
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from closed_source_utils._test_utils import DeviceNDBuffer
+from internal_utils import DeviceNDBuffer
 from utils.index import Index, product
 
 
