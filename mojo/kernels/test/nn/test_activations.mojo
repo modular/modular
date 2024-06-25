@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux
-# RUN: %mojo  -I%S/.. %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from math import iota
 from random import randn, seed

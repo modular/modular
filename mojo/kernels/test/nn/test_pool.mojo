@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -I %S/../ %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 import builtin
 from buffer import Buffer, NDBuffer
