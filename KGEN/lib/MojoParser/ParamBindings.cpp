@@ -720,14 +720,15 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
 }
 
 void ParamBindings::dump() const {
-  llvm::dbgs() << "Positional bindings:\n";
+  auto &os = llvm::errs();
+  os << "Positional bindings:\n";
   for (auto [i, binding] : llvm::enumerate(posBindings)) {
-    llvm::dbgs() << "  " << i << "[" << binding.typeChecked
-                 << "]: " << binding.value << "\n";
+    os << "  " << i << "[" << binding.typeChecked << "]: " << binding.value
+       << "\n";
   }
-  llvm::dbgs() << "Kewword bindings:\n";
+  os << "Keyword bindings:\n";
   for (auto [name, binding] : kwBindings) {
-    llvm::dbgs() << "  " << name.getValue() << "[" << binding.typeChecked
-                 << "]: " << binding.value << "\n";
+    os << "  " << name.getValue() << "[" << binding.typeChecked
+       << "]: " << binding.value << "\n";
   }
 }
