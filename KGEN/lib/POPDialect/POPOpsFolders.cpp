@@ -360,20 +360,8 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(operands[0])) {
-    ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
-    if (mem.isError())
-      return ErrorTree(getLoc(), mem.takeError());
-    state.mapResults(*mem);
-    return success();
-  }
-
-  auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
-  if (!ptr)
-    return ErrorTree(getLoc(), Error("non-constant inputs"));
-
-  ErrorOr<TypedAttr> result =
-      state.readAttributeFromMemory(ptr.getAddr(), getType());
+  ErrorOr<Attribute> result =
+      state.readAttributeFromPointer(operands[0], getType());
   if (result.isError())
     return ErrorTree(getLoc(), result.takeError());
   state.mapResults(result.takeValue());

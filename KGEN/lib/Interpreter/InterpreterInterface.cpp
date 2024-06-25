@@ -342,6 +342,16 @@ ErrorOr<TypedAttr &> InterpreterState::getSymbolicMemory(uint64_t slot) {
   return symbolicMemory[slot];
 }
 
+ErrorOr<Attribute>
+InterpreterState::readAttributeFromPointer(Attribute pointer,
+                                           Type elementType) {
+  if (auto sym = dyn_cast_or_null<SymbolicPointerAttr>(pointer))
+    return getSymbolicMemory(sym.getSlot());
+  if (auto ptr = dyn_cast_or_null<PointerAttr>(pointer))
+    return readAttributeFromMemory(ptr.getAddr(), elementType);
+  return Error("not a pointer constant");
+}
+
 ErrorOrSuccess
 InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
   // Lazily materialize interpreter memory.
