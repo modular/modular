@@ -28,6 +28,8 @@ struct FrameworkFormat:
 
     alias MAXGraph = FrameworkFormat(0)
     alias TorchscriptModule = FrameworkFormat(1)
+    alias TorchscriptFunction = FrameworkFormat(2)
+    alias TorchMLIR = FrameworkFormat(3)
 
     var value: UInt8
 
