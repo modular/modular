@@ -460,3 +460,24 @@ kgen.generator export @constexpr_elif() -> index {
   %1 = kgen.param.constant = <apply(:(index) -> index @elifManyRegionsWithArgs, 4)>
   kgen.return %0 : index
 }
+
+// -----
+
+kgen.func @pack_load() -> !kgen.pack<[si4, ui8]> {
+  %i0 = kgen.param.constant: si4 = <-5>
+  %i1 = kgen.param.constant: ui8 = <42>
+  %p0 = pop.stack_allocation 1 x si4
+  %p1 = pop.stack_allocation 1 x ui8
+  pop.store %i0, %p0 : !kgen.pointer<si4>
+  pop.store %i1, %p1 : !kgen.pointer<ui8>
+  %pack = kgen.pack.create(%p0, %p1) : !kgen.pack<[pointer<si4>, pointer<ui8>]>
+  %loaded_pack = kgen.pack.load %pack : !kgen.pack<[pointer<si4>, pointer<ui8>]>
+  kgen.return %loaded_pack : !kgen.pack<[si4, ui8]>
+}
+
+// CHECK-LABEL: kgen.func export @interpret_pack_load
+kgen.generator export @interpret_pack_load() -> !kgen.pack<[si4, ui8]> {
+  // CHECK-NEXT: !kgen.pack<[si4, ui8]> = <<-5, 42>>
+  %0 = kgen.param.constant: !kgen.pack<[si4, ui8]> = <apply(:() -> !kgen.pack<[si4, ui8]> @pack_load)>
+  kgen.return %0 : !kgen.pack<[si4, ui8]>
+}

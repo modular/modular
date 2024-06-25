@@ -1593,7 +1593,9 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_PackLoadOp : KGENOp<"pack.load",
-                     [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+                      [Pure,
+                       DeclareOpInterfaceMethods<InferTypeOpInterface>,
+                       DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "load all pack elements";
   let description = [{
     The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
