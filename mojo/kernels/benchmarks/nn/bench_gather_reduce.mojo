@@ -15,7 +15,6 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from buffer import NDBuffer
 from nn.gather_scatter import gather_reduce
 from nn.math import add
-from runtime.llcl import Runtime
 
 from utils import Index, StaticIntTuple
 
