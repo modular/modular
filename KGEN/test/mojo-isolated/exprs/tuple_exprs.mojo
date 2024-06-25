@@ -20,15 +20,21 @@ fn tuples_rv(a: Int, b: FloatDyn):
     _ = ()
 
     # CHECK-NEXT: [[APTR:%.*]] = pop.stack_allocation 1 x !Int
+    # CHECK-NEXT: lifetime.start([[APTR]])
     # CHECK-NEXT: pop.store %a, [[APTR]] : !kgen.pointer<!Int>
     # CHECK-NEXT: [[AREF:%.*]] = lit.ref.from_pointer [[APTR]] : <!Int, imm #lit.lifetime>
     # CHECK-NEXT: [[BPTR:%.*]] = pop.stack_allocation 1 x !FloatDyn
+    # CHECK-NEXT: lifetime.start([[BPTR]])
     # CHECK-NEXT: pop.store %b, [[BPTR]] : !kgen.pointer<!FloatDyn>
     # CHECK-NEXT: [[BREF:%.*]] = lit.ref.from_pointer [[BPTR]]
     # CHECK-NEXT: = lit.ref.pack.create([[AREF]], [[BREF]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = (a, b)
+    # CHECK-NEXT: ownership.use %a
+    # CHECK-NEXT: lifetime.end([[APTR]])
+    # CHECK-NEXT: ownership.use %b
+    # CHECK-NEXT: lifetime.end([[BPTR]])
 
     # CHECK: = lit.ref.pack.create({{%[0-9]+}}, {{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
