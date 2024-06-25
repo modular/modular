@@ -16,7 +16,7 @@ from algorithm import parallel_memcpy
 from math import ceildiv
 
 from memory import memcpy
-from runtime.llcl import Runtime
+from runtime.llcl import parallelism_level
 
 
 fn parallel_memcpy[
@@ -85,7 +85,7 @@ fn parallel_memcpy[
         memcpy(dest, src, count)
     else:
         var work_units = ceildiv(count, min_work_per_task)
-        var num_tasks = min(work_units, Runtime().parallelism_level())
+        var num_tasks = min(work_units, parallelism_level())
         var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(

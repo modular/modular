@@ -20,7 +20,12 @@ from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, DeviceContext
 from runtime import tracing
-from runtime.llcl import Runtime, TaskGroup, MojoCallContextPtr
+from runtime.llcl import (
+    Runtime,
+    TaskGroup,
+    MojoCallContextPtr,
+    parallelism_level,
+)
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, StaticIntTuple
@@ -348,7 +353,7 @@ fn sync_parallelize[
     # default runtime will be that established by the engine. Otherwise a
     # suitable runtime will be created if it does not already exist.
     var rt = Runtime()
-    var num_threads = rt.parallelism_level()
+    var num_threads = parallelism_level()
     var num_per_lq_tasks = num_work_items // num_threads
     var num_global_queue_tasks = num_work_items % num_threads
     var tg = TaskGroup[__lifetime_of()](rt)
@@ -377,8 +382,7 @@ fn parallelize[func: fn (Int) capturing -> None]():
         func: The function to invoke.
     """
     var num_work_items = num_physical_cores()
-    with Runtime() as rt:
-        _parallelize_impl[func](rt, num_work_items, num_work_items)
+    _parallelize_impl[func](num_work_items, num_work_items)
 
 
 @always_inline
@@ -395,8 +399,7 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
         num_work_items: Number of parallel tasks.
     """
 
-    with Runtime() as rt:
-        _parallelize_impl[func](rt, num_work_items)
+    _parallelize_impl[func](num_work_items)
 
 
 @always_inline
@@ -414,14 +417,11 @@ fn parallelize[
         num_workers: The number of workers to use for execution.
     """
 
-    with Runtime() as rt:
-        _parallelize_impl[func](rt, num_work_items, num_workers)
+    _parallelize_impl[func](num_work_items, num_workers)
 
 
 @always_inline
-fn _parallelize_impl[
-    func: fn (Int) capturing -> None
-](rt: Runtime, num_work_items: Int):
+fn _parallelize_impl[func: fn (Int) capturing -> None](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
@@ -429,16 +429,15 @@ fn _parallelize_impl[
         func: The function to invoke.
 
     Args:
-        rt: The runtime.
         num_work_items: Number of parallel tasks.
     """
-    _parallelize_impl[func](rt, num_work_items, rt.parallelism_level())
+    _parallelize_impl[func](num_work_items, parallelism_level())
 
 
 @always_inline
 fn _parallelize_impl[
     func: fn (Int) capturing -> None
-](rt: Runtime, num_work_items: Int, num_workers: Int):
+](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1), distributed over
     num_workers parallel sub-tasks, and returns when all are complete.
 
@@ -446,7 +445,6 @@ fn _parallelize_impl[
         func: The function to invoke.
 
     Args:
-        rt: The runtime.
         num_work_items: Number of parallel tasks.
         num_workers: The number of works to use for execution.
     """
@@ -1033,10 +1031,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
     """
     # default grain_size copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # Ensure at least one worker is always returned to avoid division by zero.
-    var rt = Runtime()
-    return max(
-        1, min(rt.parallelism_level(), ceildiv(problem_size, grain_size))
-    )
+    return max(1, min(parallelism_level(), ceildiv(problem_size, grain_size)))
 
 
 # ===----------------------------------------------------------------------===#
