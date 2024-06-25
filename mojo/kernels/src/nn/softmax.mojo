@@ -18,7 +18,7 @@ from buffer.list import Dim, DimList
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
-from runtime.llcl import MojoCallContextPtr, Runtime
+from runtime.llcl import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import product
@@ -500,7 +500,7 @@ fn logsoftmax[
 
     var inner_dim = output.dim[rank - 1]()
     var outer_dim = product[rank](shape, rank - 1)
-    var num_workers = min(Runtime().parallelism_level(), outer_dim)
+    var num_workers = min(parallelism_level(), outer_dim)
     var chunk_size = ceildiv(outer_dim, num_workers)
 
     @parameter
@@ -594,7 +594,7 @@ fn _softmax_cpu[
 
         var inner_dim = output.dim[rank - 1]()
         var outer_dim = product[rank](shape, rank - 1)
-        var num_workers = min(Runtime().parallelism_level(), outer_dim)
+        var num_workers = min(parallelism_level(), outer_dim)
         var chunk_size = ceildiv(outer_dim, num_workers)
 
         @__copy_capture(chunk_size, inner_dim, outer_dim)

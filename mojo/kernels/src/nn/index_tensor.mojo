@@ -10,7 +10,7 @@ from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.list import DimList
 from nn.gather_scatter import normalize_neg_index
-from runtime.llcl import Runtime
+from runtime.llcl import parallelism_level
 
 
 @always_inline
@@ -184,7 +184,7 @@ fn index_tensor_1d[
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.
     alias MIN_LINES = 32
-    var num_threads = Runtime().parallelism_level()
+    var num_threads = parallelism_level()
     var num_tasks = min(
         ceildiv(
             batch_volume,

@@ -16,7 +16,7 @@ from buffer.list import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import memset_zero, stack_allocation
 from register import mogg_register
-from runtime.llcl import Runtime, MojoCallContextPtr
+from runtime.llcl import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils import StaticIntTuple, StaticTuple, unroll
@@ -116,7 +116,7 @@ fn gather_reduce[
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
     alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
-    var num_threads = Runtime().parallelism_level()
+    var num_threads = parallelism_level()
     var num_tasks = min(
         ceildiv(
             indices.dim[0]()

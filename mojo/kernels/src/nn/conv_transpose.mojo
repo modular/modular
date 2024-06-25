@@ -20,7 +20,7 @@ from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory.unsafe import DTypePointer
 from register import mogg_register
-from runtime.llcl import Runtime
+from runtime.llcl import parallelism_level
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -406,7 +406,7 @@ struct ConvTransposedPacked[
             ]()
 
         # Number of partitions in n, ho_wo, c, f dimensions.
-        var num_threads = Runtime().parallelism_level()
+        var num_threads = parallelism_level()
         var num_partitions = get_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)

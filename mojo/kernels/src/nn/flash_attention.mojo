@@ -23,7 +23,7 @@ from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
+from runtime.llcl import parallelism_level
 
 from utils import Index, InlineArray
 
@@ -661,7 +661,7 @@ struct _FlashAttention[
         var num_blocks_n = ceildiv(depth_dim, Self._config.o_block_n)
         var work_count = num_batches * num_heads * num_blocks_m * num_blocks_n
 
-        var num_threads = min(work_count, Runtime().parallelism_level())
+        var num_threads = min(work_count, parallelism_level())
 
         @__copy_capture(
             num_threads,

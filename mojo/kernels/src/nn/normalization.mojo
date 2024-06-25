@@ -16,7 +16,7 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from register import mogg_register
-from runtime.llcl import Runtime
+from runtime.llcl import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import StaticIntTuple
@@ -142,9 +142,7 @@ fn layer_norm[
 
         var output_buf = reshape[rank, 2, type, True](output, flat_shape)
 
-        var num_workers = min(
-            Runtime().parallelism_level(), prod_all_but_last_dim
-        )
+        var num_workers = min(parallelism_level(), prod_all_but_last_dim)
         var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
         @__copy_capture(
