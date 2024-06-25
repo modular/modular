@@ -131,3 +131,24 @@ kgen.generator @call_it() {
 }
 
 }
+
+// -----
+
+module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+
+// expected-note @below {{failed to interpret function @parameter_closure}}
+kgen.generator @parameter_closure() -> index {
+  // expected-note @below {{failed to interpret operation pop.compiler.global_load{name: "named_global"}()}}
+  // expected-note @below {{cannot evaluate standalone capturing closure at compile time}}
+  %0 = pop.compiler.global_load "named_global" : index
+  kgen.return %0 : index
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_it() {
+  // expected-note @below {{failed to evaluate 'apply'}}
+  kgen.param.constant = <apply(:() -> index @parameter_closure)>
+  kgen.return
+}
+
+}
