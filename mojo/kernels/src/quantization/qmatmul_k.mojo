@@ -69,148 +69,203 @@ struct _block_Q6_K:
     var base_scale: Float16
 
 
-struct _packed_int4_array[size: Int]:
-    """Packed storage for an array of uint4 data."""
+struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
+    """Packed storage for an array of bit data."""
 
-    var lo: InlineArray[UInt8, size // 2]
+    """
+    Logically, the array has a size of block_m by block_n. Physically, block_m
+    is a multiple of the tuple width (corresponding to VNNI or equivalent
+    instructions) and the tuple width is projected into the N dimension.
+    This allows the SIMD width extracted from this array to be consistent with
+    the native SIMD width for int32/float32 types without needing to play games
+    with this array's dimensions.
+    """
+    alias _size = block_m * block_n
+    alias _simd_width = simdwidthof[DType.uint8]()
+    alias _tuple_width = 4
+    alias _packed_stride = block_n * Self._tuple_width
+    alias _tile_n = Self._packed_stride // Self._simd_width
 
-    @always_inline
-    fn pack(self, owned src_ptr: DTypePointer[DType.uint8]):
-        """Packs the supplied external buffer to local storage."""
-        constrained[(self.size % 4) == 0, "size should be multiple of 2"]()
+    var bits: InlineArray[UInt8, Self._size * bit_width // 8]
 
-        var lo_ptr = _to_dtype_pointer(self.lo)
-
-        @parameter
-        @always_inline
-        fn do_pack[simd_width: Int](idx: Int):
-            var packed_lo_bits = SIMD[DType.uint8, simd_width](0)
-
-            @parameter
-            for i in range(2):
-                var bytes = SIMD[size=simd_width].load(src_ptr)
-                src_ptr += simd_width
-
-                packed_lo_bits |= (bytes & 15) << (i * 4)
-
-            SIMD.store(lo_ptr, packed_lo_bits)
-            lo_ptr += simd_width
-
-        vectorize[do_pack, simdwidthof[DType.uint8]()](size // 2)
-        _ = lo_ptr
+    """
+    For the 4-bit encoding, the following encoding is used (one lane of the
+    SIMD register is depicted) where two rows of M are bundled together:
+        [ b3 b2 b1 b0 a3 a2 a1 a0 ]
+    """
 
     @always_inline
-    fn unpack(self, owned dst_ptr: DTypePointer[DType.uint8]):
-        """Unpacks the local storage to the supplied external buffer."""
-        constrained[(self.size % 2) == 0, "size should be multiple of 2"]()
+    fn _pack_int4(self, owned src_ptr: DTypePointer[DType.uint8]):
+        constrained[bit_width == 4]()
+        constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
-        var lo_ptr = _to_dtype_pointer(self.lo)
+        var bits_ptr = _to_dtype_pointer(self.bits)
 
-        @parameter
-        @always_inline
-        fn do_unpack[simd_width: Int](idx: Int):
-            var packed_lo_bits = SIMD[size=simd_width].load(lo_ptr)
-            lo_ptr += simd_width
+        for m in range(0, block_m, 2 * Self._tuple_width):
 
             @parameter
-            for i in range(2):
-                var lo_bits = (packed_lo_bits >> (i * 4)) & 15
-
-                SIMD.store(dst_ptr, lo_bits)
-                dst_ptr += simd_width
-
-        vectorize[do_unpack, simdwidthof[DType.uint8]()](size // 2)
-        _ = lo_ptr
-
-
-struct _packed_int6_array[size: Int]:
-    """Packed storage for an array of uint6 data."""
-
-    var lo: InlineArray[UInt8, size // 2]
-    var hi: InlineArray[UInt8, size // 4]
-
-    @always_inline
-    fn pack(self, owned src_ptr: DTypePointer[DType.uint8]):
-        """Packs the supplied external buffer to local storage."""
-        constrained[(self.size % 4) == 0, "size should be multiple of 4"]()
-
-        var hi_ptr = _to_dtype_pointer(self.hi)
-        var lo_ptr = _to_dtype_pointer(self.lo)
-
-        @parameter
-        @always_inline
-        fn do_pack[simd_width: Int](idx: Int):
-            var packed_hi_bits = SIMD[DType.uint8, simd_width](0)
-
-            @parameter
-            for i in range(0, 4, 2):
-                var packed_lo_bits = SIMD[DType.uint8, simd_width](0)
+            for col in range(Self._tile_n):
+                var packed_bits = SIMD[DType.uint8, Self._simd_width](0)
 
                 @parameter
                 for j in range(2):
-                    var bytes = SIMD[size=simd_width].load(src_ptr)
-                    src_ptr += simd_width
+                    var bytes = SIMD[size = Self._simd_width].load(
+                        src_ptr + j * Self._packed_stride
+                    )
+                    packed_bits |= bytes << (j * 4)
 
-                    packed_lo_bits |= (bytes & 15) << (j * 4)
-                    packed_hi_bits |= (bytes >> 4) << ((i + j) * 2)
+                src_ptr += Self._simd_width
 
-                SIMD.store(lo_ptr, packed_lo_bits)
-                lo_ptr += simd_width
+                SIMD.store(bits_ptr, packed_bits)
+                bits_ptr += Self._simd_width
 
-            SIMD.store(hi_ptr, packed_hi_bits)
-            hi_ptr += simd_width
+            src_ptr += Self._packed_stride
 
-        vectorize[do_pack, simdwidthof[DType.uint8]()](size // 4)
-        _ = hi_ptr
-        _ = lo_ptr
+    @always_inline
+    fn _unpack_int4(self, owned dst_ptr: DTypePointer[DType.uint8]):
+        constrained[bit_width == 4]()
+        constrained[(block_m % (2 * Self._tuple_width)) == 0]()
+
+        var bits_ptr = _to_dtype_pointer(self.bits)
+
+        for m in range(0, block_m, 2 * Self._tuple_width):
+
+            @parameter
+            for col in range(Self._tile_n):
+                var packed_bits = SIMD[size = Self._simd_width].load(bits_ptr)
+                bits_ptr += Self._simd_width
+
+                var dst_row_ptr = dst_ptr
+
+                @parameter
+                for j in range(2):
+                    var bytes = (packed_bits >> (j * 4)) & 15
+                    SIMD.store(dst_ptr + j * Self._packed_stride, bytes)
+
+                dst_ptr += Self._simd_width
+
+            dst_ptr += Self._packed_stride
+
+    """
+    For the 6-bit encoding, the following encoding is used (one lane of the
+    SIMD register is depicted) where four rows of M are bundled together:
+        [ d1 d0 a5 a4 a3 a2 a1 a0 ]
+        [ d3 d2 b5 b4 b3 b2 b1 b0 ]
+        [ d5 d6 c5 c4 c3 c2 c1 c0 ]
+    """
+
+    @always_inline
+    fn _pack_int6(self, owned src_ptr: DTypePointer[DType.uint8]):
+        constrained[bit_width == 6]()
+        constrained[(block_m % (4 * Self._tuple_width)) == 0]()
+
+        var bits_ptr = _to_dtype_pointer(self.bits)
+
+        for m in range(0, block_m, 4 * Self._tuple_width):
+            var src_col_ptr = src_ptr
+
+            @parameter
+            for col in range(Self._tile_n):
+                var hi_bytes = SIMD[size = Self._simd_width].load(
+                    src_col_ptr + 3 * Self._packed_stride
+                )
+
+                @parameter
+                for i in range(3):
+                    var bytes = SIMD[size = Self._simd_width].load(
+                        src_col_ptr + i * Self._packed_stride
+                    )
+                    var packed_bits = bytes | (((hi_bytes >> (i * 2)) & 3) << 6)
+
+                    SIMD.store(bits_ptr, packed_bits)
+                    bits_ptr += Self._simd_width
+
+                src_col_ptr += Self._simd_width
+
+            src_ptr += Self._packed_stride * 4
+
+    @always_inline
+    fn _unpack_int6[
+        zero_point: UInt8
+    ](self, owned dst_ptr: DTypePointer[DType.uint8]):
+        constrained[bit_width == 6]()
+        constrained[(block_m % (4 * Self._tuple_width)) == 0]()
+
+        var bits_ptr = _to_dtype_pointer(self.bits)
+
+        for m in range(0, block_m, 4 * Self._tuple_width):
+            var dst_col_ptr = dst_ptr
+
+            @parameter
+            for col in range(Self._tile_n):
+                var hi_bytes = SIMD[DType.uint8, size = Self._simd_width](0)
+
+                @parameter
+                for i in range(3):
+                    var packed_bits = SIMD[size = Self._simd_width].load(
+                        bits_ptr
+                    )
+                    bits_ptr += Self._simd_width
+
+                    SIMD.store(
+                        dst_col_ptr + i * Self._packed_stride,
+                        (packed_bits & 63) - zero_point,
+                    )
+
+                    hi_bytes |= (packed_bits >> 6) << (i * 2)
+
+                SIMD.store(
+                    dst_col_ptr + 3 * Self._packed_stride,
+                    hi_bytes - zero_point,
+                )
+
+                dst_col_ptr += Self._simd_width
+
+            dst_ptr += Self._packed_stride * 4
+
+    @always_inline
+    fn pack(self, owned src_ptr: DTypePointer[DType.uint8]):
+        """Packs the supplied external buffer to local storage."""
+        constrained[(Self._packed_stride % Self._simd_width) == 0]()
+
+        @parameter
+        if bit_width == 4:
+            return self._pack_int4(src_ptr)
+        elif bit_width == 6:
+            return self._pack_int6(src_ptr)
+        else:
+            constrained[False, "unsupported bit width"]()
 
     @always_inline
     fn unpack[
         *, zero_point: UInt8 = 0
     ](self, owned dst_ptr: DTypePointer[DType.uint8]):
         """Unpacks the local storage to the supplied external buffer."""
-        constrained[(self.size % 4) == 0, "size should be multiple of 4"]()
-
-        var hi_ptr = _to_dtype_pointer(self.hi)
-        var lo_ptr = _to_dtype_pointer(self.lo)
+        constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
         @parameter
-        @always_inline
-        fn do_unpack[simd_width: Int](idx: Int):
-            var packed_hi_bits = SIMD[size=simd_width].load(hi_ptr)
-            hi_ptr += simd_width
-
-            @parameter
-            for i in range(0, 4, 2):
-                var packed_lo_bits = SIMD[size=simd_width].load(lo_ptr)
-                lo_ptr += simd_width
-
-                @parameter
-                for j in range(2):
-                    var hi_bits = ((packed_hi_bits >> ((i + j) * 2)) & 3) << 4
-                    var lo_bits = (packed_lo_bits >> (j * 4)) & 15
-
-                    SIMD.store(dst_ptr, (hi_bits | lo_bits) - zero_point)
-                    dst_ptr += simd_width
-
-        vectorize[do_unpack, simdwidthof[DType.uint8]()](size // 4)
-        _ = hi_ptr
-        _ = lo_ptr
+        if bit_width == 4:
+            constrained[zero_point == 0, "zero point not implemented"]()
+            return self._unpack_int4(dst_ptr)
+        elif bit_width == 6:
+            return self._unpack_int6[zero_point](dst_ptr)
+        else:
+            constrained[False, "unsupported bit width"]()
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
     var base_scales: InlineArray[Float16, block_n]
     var base_mins: InlineArray[Float16, block_n]
-    var q_scales_and_mins: _packed_int6_array[
-        2 * _block_Q4_K.group_count * block_n
+    var q_scales_and_mins: _packed_bit_array[
+        6, 2 * _block_Q4_K.group_count, block_n
     ]
-    var q_bits: _packed_int4_array[_block_QK_K.quantized_k * block_n]
+    var q_bits: _packed_bit_array[4, _block_QK_K.quantized_k, block_n]
 
 
 struct _block_Q6_K_packed[block_n: Int = 1]:
     var base_scales: InlineArray[Float16, block_n]
     var q_scales: InlineArray[Int8, _block_Q6_K.group_count * block_n]
-    var q_bits: _packed_int6_array[_block_QK_K.quantized_k * block_n]
+    var q_bits: _packed_bit_array[6, _block_QK_K.quantized_k, block_n]
 
 
 struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
