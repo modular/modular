@@ -524,3 +524,12 @@ fn scale_with_my_custom_scalar_ndbuff[
     _elementwise_impl[func, 1, rank, use_blocking_impl=True, target="cpu",](
         x.get_shape(),
     )
+
+
+# Invalid kernel: owned custom types not supported
+@mogg_register("invalid_kernel_owned_arg")
+@export
+fn invalid_kernel_owned_arg(
+    owned x: MyCustomScalar[DType.int64],
+) -> MyCustomScalar[DType.int64]:
+    return MyCustomScalar(x.val)
