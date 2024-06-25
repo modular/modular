@@ -101,7 +101,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     # function set on the cpp side.
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
 
-    fn __init__(inout self):
+    fn __init__(inout self) raises:
         self._ptr = DTypePointer[type]()
         self._spec = StaticTensorSpec[type, rank](StaticIntTuple[rank]())
         self._strides = StaticIntTuple[rank]()
@@ -274,7 +274,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         return rebind[DTypePointer[__type]](self._ptr)
 
-    fn take(inout self) -> Self:
+    fn take(inout self) raises -> Self:
         """The returned value takes self's resources and replaces them with default
         initialized values."""
         var tmp = Self()

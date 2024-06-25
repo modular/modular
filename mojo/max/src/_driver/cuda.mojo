@@ -28,7 +28,7 @@ fn alloc_device_buffer(
         var buf = ctx[].create_buffer[DType.uint8](bytes)
         return Pointer[UInt8](address=int(buf^.take_ptr()))
     except e:
-        return abort[Pointer[UInt8]](e)
+        return abort[Pointer[UInt8]]()
 
 
 fn copy_device_to_host(
