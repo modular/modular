@@ -11,12 +11,12 @@ from random import random_float64
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from memory.reference import _GPUAddressSpace as GPUAddressSpace
-from testing import assert_almost_equal, assert_true
+from testing import assert_equal, assert_almost_equal
 
 from utils.index import Index
 from closed_source_utils._test_utils import HostNDBuffer, DeviceNDBuffer
@@ -118,6 +118,10 @@ struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:
         self.b_host = HostNDBuffer[DType.float32, 2, DimList(k, m)]()
         self.c_host = HostNDBuffer[DType.float32, 2, DimList(m, n)]()
 
+        self.a_device = ctx.create_buffer[DType.float32](m * k)
+        self.b_device = ctx.create_buffer[DType.float32](k * n)
+        self.c_device = ctx.create_buffer[DType.float32](m * n)
+
         for i in range(m):
             for j in range(k):
                 self.a_host.tensor[Index(i, j)] = 1
@@ -130,12 +134,8 @@ struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:
             for j in range(n):
                 self.c_host.tensor[Index(i, j)] = 0
 
-        self.a_device = ctx.create_buffer[DType.float32](m * k)
-        self.b_device = ctx.create_buffer[DType.float32](k * n)
-        self.c_device = ctx.create_buffer[DType.float32](m * n)
-
     # CHECK-LABEL: run_matmul
-    fn __call__(self) raises:
+    fn run_test(self) raises:
         print("== run_matmul")
 
         var ctx = self.ctx
@@ -172,7 +172,9 @@ struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:
                 )
 
 
-struct gemm_transpose_b_test[type: DType, M: Int, N: Int, K: Int]:
+struct test_matmul[
+    M: Int, K: Int, N: Int, type: DType, low_precision: Bool = False
+]:
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
@@ -197,16 +199,35 @@ struct gemm_transpose_b_test[type: DType, M: Int, N: Int, K: Int]:
         self.c_host = HostNDBuffer[type, 2, Self.c_shape]()
         self.c_host_ref = HostNDBuffer[type, 2, Self.c_shape]()
 
-        self.a_host.tensor.fill(1)
-        self.b_host.tensor.fill(1)
-        self.c_host.tensor.fill(0)
-
         self.a_device = DeviceNDBuffer[type, 2, Self.a_shape](ctx)
         self.b_device = DeviceNDBuffer[type, 2, Self.b_shape](ctx)
         self.c_device = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
         self.c_device_ref = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
 
-    fn __call__(self) raises:
+        for m in range(M):
+            for k in range(K):
+
+                @parameter
+                if low_precision:
+                    self.a_host.tensor[Index(m, k)] = m * K + k
+                else:
+                    self.a_host.tensor[Index(m, k)] = random_float64(-10, 10)
+
+        for k in range(K):
+            for n in range(N):
+
+                @parameter
+                if low_precision:
+                    self.b_host.tensor[Index(k, n)] = k * N + n
+                else:
+                    self.b_host.tensor[Index(k, n)] = random_float64(-10, 10)
+
+        for i in range(M):
+            for j in range(N):
+                self.c_host.tensor[Index(i, j)] = 0
+                self.c_host_ref.tensor[Index(i, j)] = 0
+
+    fn run_test[test_function: fn (Self) raises capturing -> None](self) raises:
         var ctx = self.ctx
 
         ctx.enqueue_copy_to_device(
@@ -222,33 +243,11 @@ struct gemm_transpose_b_test[type: DType, M: Int, N: Int, K: Int]:
             self.c_device_ref.buffer, self.c_host_ref.tensor.data
         )
 
-        _matmul_gpu[use_tensor_core=False](
-            self.c_device.tensor,
-            self.a_device.tensor,
-            self.b_device.tensor,
-            ctx,
-        )
+        test_function(self)
+
         ctx.enqueue_copy_from_device(
             self.c_host.tensor.data, self.c_device.buffer
         )
-
-        alias BLOCK_DIM = 16
-        var func_naive = ctx.compile_function[
-            matmul_kernel_naive[type, type, type, BLOCK_DIM, True]
-        ]()
-
-        ctx.enqueue_function(
-            func_naive,
-            self.c_device_ref.buffer,
-            self.a_device.buffer,
-            self.b_device.buffer,
-            M,
-            N,
-            K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
-
         ctx.enqueue_copy_from_device(
             self.c_host_ref.tensor.data, self.c_device_ref.buffer
         )
@@ -256,487 +255,150 @@ struct gemm_transpose_b_test[type: DType, M: Int, N: Int, K: Int]:
 
         for i in range(M):
             for j in range(N):
-                assert_almost_equal(
-                    self.c_host_ref.tensor[i, j], self.c_host.tensor[i, j]
-                )
 
-
-struct run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]:
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
-    alias c_shape = DimList(M, N)
-
-    var ctx: DeviceContext
-
-    var a_host: HostNDBuffer[type, 2, Self.a_shape]
-    var b_host: HostNDBuffer[type, 2, Self.b_shape]
-    var c_host: HostNDBuffer[type, 2, Self.c_shape]
-    var c_host_ref: HostNDBuffer[type, 2, Self.c_shape]
-
-    var a_device: DeviceNDBuffer[type, 2, Self.a_shape]
-    var b_device: DeviceNDBuffer[type, 2, Self.b_shape]
-    var c_device: DeviceNDBuffer[type, 2, Self.c_shape]
-    var c_device_ref: DeviceBuffer[type]
-
-    fn __init__(inout self, ctx: DeviceContext) raises:
-        self.ctx = ctx
-
-        self.a_host = HostNDBuffer[type, 2, Self.a_shape]()
-        self.b_host = HostNDBuffer[type, 2, Self.b_shape]()
-        self.c_host = HostNDBuffer[type, 2, Self.c_shape]()
-        self.c_host_ref = HostNDBuffer[type, 2, Self.c_shape]()
-
-        for i in range(M):
-            for j in range(K):
-                self.a_host.tensor[Index(i, j)] = 1
-
-        for i in range(K):
-            for j in range(N):
-                self.b_host.tensor[Index(i, j)] = 1
-
-        for i in range(M):
-            for j in range(N):
-                self.c_host.tensor[Index(i, j)] = 0
-                self.c_host_ref.tensor[Index(i, j)] = 0
-
-        self.c_device_ref = ctx.create_buffer[type](M * N)
-
-        self.a_device = DeviceNDBuffer[type, 2, Self.a_shape](ctx)
-        self.b_device = DeviceNDBuffer[type, 2, Self.b_shape](ctx)
-        self.c_device = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
-
-    fn __call__(self) raises:
-        var ctx = self.ctx
-
-        ctx.enqueue_copy_to_device(
-            self.a_device.buffer, self.a_host.tensor.data
-        )
-        ctx.enqueue_copy_to_device(
-            self.b_device.buffer, self.b_host.tensor.data
-        )
-        ctx.enqueue_copy_to_device(
-            self.c_device.buffer, self.c_host.tensor.data
-        )
-        ctx.enqueue_copy_to_device(
-            self.c_device_ref, self.c_host_ref.tensor.data
-        )
-
-        _matmul_gpu[use_tensor_core=False](
-            self.c_device.tensor,
-            self.a_device.tensor,
-            self.b_device.tensor,
-            ctx,
-        )
-        ctx.enqueue_copy_from_device(
-            self.c_host.tensor.data, self.c_device.buffer
-        )
-
-        alias BLOCK_DIM = 16
-        var func_naive = ctx.compile_function[
-            matmul_kernel_naive[type, type, type, BLOCK_DIM]
-        ]()
-
-        ctx.enqueue_function(
-            func_naive,
-            self.c_device_ref,
-            self.a_device.buffer,
-            self.b_device.buffer,
-            M,
-            N,
-            K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
-
-        ctx.enqueue_copy_from_device(
-            self.c_host_ref.tensor.data, self.c_device_ref
-        )
-        ctx.synchronize()
-
-        for i in range(M):
-            for j in range(N):
-                assert_true(
-                    isclose(
+                @parameter
+                if low_precision:
+                    assert_almost_equal(
+                        self.c_host_ref.tensor[i, j],
+                        self.c_host.tensor[i, j],
+                        rtol=0.01,
+                    )
+                else:
+                    assert_equal(
                         self.c_host_ref.tensor[i, j], self.c_host.tensor[i, j]
                     )
-                )
-
-
-struct run_matmul_from_mogg_interface_with_epilogue[
-    M: Int, K: Int, N: Int, type: DType
-]:
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
-    alias c_shape = DimList(M, N)
-
-    var ctx: DeviceContext
-
-    var a_host: HostNDBuffer[type, 2, Self.a_shape]
-    var b_host: HostNDBuffer[type, 2, Self.b_shape]
-    var c_host: HostNDBuffer[type, 2, Self.c_shape]
-    var c_host_ref: HostNDBuffer[type, 2, Self.c_shape]
-
-    var a_device_nd: DeviceNDBuffer[type, 2, Self.a_shape]
-    var b_device_nd: DeviceNDBuffer[type, 2, Self.b_shape]
-    var c_device_nd: DeviceNDBuffer[type, 2, Self.c_shape]
-    var c_device_ref_nd: DeviceNDBuffer[type, 2, Self.c_shape]
-
-    fn __init__(inout self, ctx: DeviceContext) raises:
-        self.ctx = ctx
-
-        self.a_host = HostNDBuffer[type, 2, Self.a_shape]()
-        self.b_host = HostNDBuffer[type, 2, Self.b_shape]()
-        self.c_host = HostNDBuffer[type, 2, Self.c_shape]()
-        self.c_host_ref = HostNDBuffer[type, 2, Self.c_shape]()
-
-        for i in range(M):
-            for j in range(K):
-                self.a_host.tensor[Index(i, j)] = random_float64(-10, 10)
-
-        for i in range(K):
-            for j in range(N):
-                self.b_host.tensor[Index(i, j)] = random_float64(-10, 10)
-
-        for i in range(M):
-            for j in range(N):
-                self.c_host.tensor[Index(i, j)] = 0
-                self.c_host_ref.tensor[Index(i, j)] = 0
-
-        self.a_device_nd = DeviceNDBuffer[type, 2, Self.a_shape](ctx)
-        self.b_device_nd = DeviceNDBuffer[type, 2, Self.b_shape](ctx)
-        self.c_device_nd = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
-        self.c_device_ref_nd = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
-
-    fn __call__(self) raises:
-        var ctx = self.ctx
-
-        ctx.enqueue_copy_to_device(
-            self.a_device_nd.buffer, self.a_host.tensor.data
-        )
-        ctx.enqueue_copy_to_device(
-            self.b_device_nd.buffer, self.b_host.tensor.data
-        )
-        ctx.enqueue_copy_to_device(
-            self.c_device_nd.buffer, self.c_host.tensor.data
-        )
-        ctx.enqueue_copy_to_device(
-            self.c_device_ref_nd.buffer, self.c_host_ref.tensor.data
-        )
-
-        alias some_constant = 20
-
-        var c_tensor = self.c_device_nd.tensor
-
-        @parameter
-        @always_inline
-        @__copy_capture(c_tensor)
-        fn epilogue_fn[
-            _type: DType, width: Int
-        ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
-            c_tensor.store(idx, rebind[SIMD[type, width]](val + some_constant))
-
-        var c_ref_tensor = self.c_device_ref_nd.tensor
-
-        @parameter
-        @always_inline
-        @__copy_capture(c_ref_tensor)
-        fn naive_epilogue_fn[
-            _type: DType, width: Int
-        ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
-            c_ref_tensor.store(
-                idx, rebind[SIMD[type, width]](val + some_constant)
-            )
-
-        _matmul_gpu[
-            use_tensor_core=False,
-            transpose_b=False,
-            elementwise_lambda_fn=epilogue_fn,
-        ](
-            self.c_device_nd.tensor,
-            self.a_device_nd.tensor,
-            self.b_device_nd.tensor,
-            ctx,
-        )
-        ctx.enqueue_copy_from_device(
-            self.c_host.tensor.data, self.c_device_nd.buffer
-        )
-
-        alias BLOCK_DIM = 16
-        var func_naive = ctx.compile_function[
-            matmul_kernel_naive[
-                type,
-                type,
-                type,
-                BLOCK_DIM,
-                elementwise_lambda_fn=naive_epilogue_fn,
-            ]
-        ]()
-
-        ctx.enqueue_function(
-            func_naive,
-            self.c_device_ref_nd.buffer,
-            self.a_device_nd.buffer,
-            self.b_device_nd.buffer,
-            M,
-            N,
-            K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
-
-        ctx.enqueue_copy_from_device(
-            self.c_host_ref.tensor.data, self.c_device_ref_nd.buffer
-        )
-        ctx.synchronize()
-
-        for i in range(M):
-            for j in range(N):
-                assert_true(
-                    isclose(
-                        self.c_host_ref.tensor[i, j], self.c_host.tensor[i, j]
-                    )
-                )
-
-
-fn run_low_precision_test[
-    M: Int,
-    N: Int,
-    K: Int,
-    type: DType,
-    accum_type: DType,
-    transpose_b: Bool = False,
-](ctx: DeviceContext) raises:
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var b_trans_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[accum_type].alloc(M * N)
-    var c_host_ref = DTypePointer[accum_type].alloc(M * N)
-
-    for m in range(M):
-        for k in range(K):
-            a_host[m * K + k] = m * K + k
-
-    for k in range(K):
-        for n in range(N):
-            b_host[k * N + n] = k * N + n
-
-            @parameter
-            if transpose_b:
-                b_trans_host[n * K + k] = k * N + n
-            else:
-                b_trans_host[k * N + n] = k * N + n
-
-    var a_device = ctx.create_buffer[type](M * K)
-    var b_device = ctx.create_buffer[type](K * N)
-    var c_device = ctx.create_buffer[accum_type](M * N)
-    var c_device_ref = ctx.create_buffer[accum_type](M * N)
-
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_trans_host)
-
-    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
-    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
-    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device.ptr)
-
-    _matmul_gpu[
-        use_tensor_core=True,
-        transpose_b=False,
-    ](c_buffer, a_buffer, b_buffer, ctx)
-
-    ctx.enqueue_copy_from_device(c_host, c_device)
-    ctx.enqueue_copy_to_device(b_device, b_host)
-
-    # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[accum_type, type, type, BLOCK_DIM]
-    var func_naive = ctx.compile_function[gemm_naive](threads_per_block=256)
-    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref.ptr)
-    ctx.enqueue_function(
-        func_naive,
-        c_buffer_ref,
-        a_buffer,
-        b_buffer,
-        M,
-        N,
-        K,
-        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
-        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
-    )
-
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
-    ctx.synchronize()
-
-    for i in range(M * N):
-        if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
-            print(i, c_host[i], c_host_ref[i])
-        assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
-
-    _ = c_device
-    _ = c_device_ref
-    _ = a_device
-    _ = b_device
-
-    c_host.free()
-    c_host_ref.free()
-    a_host.free()
-    b_host.free()
-    b_trans_host.free()
-
-    _ = func_naive^
-
-
-fn run_low_precision_test_with_epilogue[
-    M: Int,
-    N: Int,
-    K: Int,
-    type: DType,
-    accum_type: DType,
-    transpose_b: Bool = False,
-](ctx: DeviceContext) raises:
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var b_trans_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[accum_type].alloc(M * N)
-    var c_host_ref = DTypePointer[accum_type].alloc(M * N)
-
-    for m in range(M):
-        for k in range(K):
-            a_host[m * K + k] = m * K + k
-
-    for k in range(K):
-        for n in range(N):
-            b_host[k * N + n] = k * N + n
-
-            @parameter
-            if transpose_b:
-                b_trans_host[n * K + k] = k * N + n
-            else:
-                b_trans_host[k * N + n] = k * N + n
-
-    var a_device = ctx.create_buffer[type](M * K)
-    var b_device = ctx.create_buffer[type](K * N)
-    var c_device = ctx.create_buffer[accum_type](M * N)
-    var c_device_ref = ctx.create_buffer[accum_type](M * N)
-
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_trans_host)
-
-    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
-    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
-    var c_buffer = NDBuffer[accum_type, 2, DimList(M, N)](c_device.ptr)
-    var c_buffer_ref = NDBuffer[accum_type, 2, DimList(M, N)](c_device_ref.ptr)
-
-    alias some_constant = 20
-
-    @parameter
-    @always_inline
-    @__copy_capture(c_buffer)
-    fn epilogue_fn[
-        _type: DType, width: Int
-    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
-        c_buffer.store(
-            idx, rebind[SIMD[accum_type, width]](val + some_constant)
-        )
-
-    @parameter
-    @always_inline
-    @__copy_capture(c_buffer_ref)
-    fn naive_epilogue_fn[
-        _type: DType, width: Int
-    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
-        c_buffer_ref.store(
-            idx, rebind[SIMD[accum_type, width]](val + some_constant)
-        )
-
-    _matmul_gpu[
-        use_tensor_core=True,
-        transpose_b=False,
-        elementwise_lambda_fn=epilogue_fn,
-    ](c_buffer, a_buffer, b_buffer, ctx)
-
-    ctx.enqueue_copy_from_device(c_host, c_device)
-    ctx.enqueue_copy_to_device(b_device, b_host)
-
-    # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
-        accum_type,
-        type,
-        type,
-        BLOCK_DIM,
-        elementwise_lambda_fn=naive_epilogue_fn,
-    ]
-    var func_naive = ctx.compile_function[gemm_naive](threads_per_block=256)
-    ctx.enqueue_function(
-        func_naive,
-        c_buffer_ref,
-        a_buffer,
-        b_buffer,
-        M,
-        N,
-        K,
-        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
-        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
-    )
-
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
-    ctx.synchronize()
-
-    for i in range(M * N):
-        if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
-            print(i, c_host[i], c_host_ref[i])
-        assert_almost_equal(c_host[i], c_host_ref[i], rtol=0.01)
-
-    _ = c_device
-    _ = c_device_ref
-    _ = a_device
-    _ = b_device
-
-    c_host.free()
-    c_host_ref.free()
-    a_host.free()
-    b_host.free()
-    b_trans_host.free()
-
-    _ = func_naive^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
         with DeviceContext() as ctx:
-            run_matmul(ctx)()
+            run_matmul(ctx).run_test()
 
-            gemm_transpose_b_test[DType.float32, 512, 512, 512](ctx)()
+            @parameter
+            fn basic_test[
+                M: Int, K: Int, N: Int, type: DType, low_precision: Bool = False
+            ](test_ctx: test_matmul[M, K, N, type, low_precision]) raises:
+                _matmul_gpu[use_tensor_core=low_precision](
+                    test_ctx.c_device.tensor,
+                    test_ctx.a_device.tensor,
+                    test_ctx.b_device.tensor,
+                    ctx,
+                )
 
-            gemm_transpose_b_test[DType.float32, 512, 1024, 3072](ctx)()
+                alias BLOCK_DIM = 16
+                var gemm_naive = ctx.compile_function[
+                    matmul_kernel_naive[type, type, type, BLOCK_DIM]
+                ](threads_per_block=256)
 
-            run_matmul_from_mogg_interface[1024, 3072, 5120, DType.float32](
-                ctx
-            )()
-            run_matmul_from_mogg_interface[1024, 12288, 3072, DType.float32](
-                ctx
-            )()
+                ctx.enqueue_function(
+                    gemm_naive,
+                    test_ctx.c_device_ref.buffer,
+                    test_ctx.a_device.buffer,
+                    test_ctx.b_device.buffer,
+                    M,
+                    N,
+                    K,
+                    grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+                    block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+                )
 
-            run_matmul_from_mogg_interface_with_epilogue[
-                1024, 3072, 5120, DType.float32
-            ](ctx)()
+            test_matmul[1024, 3072, 5120, DType.float32](ctx).run_test[
+                basic_test[1024, 3072, 5120, DType.float32]
+            ]()
+            test_matmul[1024, 12288, 3072, DType.float32](ctx).run_test[
+                basic_test[1024, 12288, 3072, DType.float32]
+            ]()
 
-            run_matmul_from_mogg_interface_with_epilogue[
-                1024, 3072, 5120, DType.bfloat16
-            ](ctx)()
+            # Low precision test (use_tensor_core)
+            test_matmul[1024, 3072, 5120, DType.float32, True](ctx).run_test[
+                basic_test[1024, 3072, 5120, DType.float32, True]
+            ]()
+            test_matmul[1024, 3072, 5120, DType.bfloat16, True](ctx).run_test[
+                basic_test[1024, 3072, 5120, DType.bfloat16, True]
+            ]()
 
-            run_low_precision_test[
-                1024, 3072, 5120, DType.float32, DType.float32
-            ](ctx)
-            run_low_precision_test_with_epilogue[
-                1024, 3072, 5120, DType.float32, DType.float32
-            ](ctx)
-            run_low_precision_test[
-                1024, 3072, 5120, DType.bfloat16, DType.bfloat16
-            ](ctx)
-            run_low_precision_test_with_epilogue[
-                1024, 3072, 5120, DType.bfloat16, DType.bfloat16
-            ](ctx)
+            @parameter
+            fn epilogue_test[
+                M: Int, K: Int, N: Int, type: DType, low_precision: Bool = False
+            ](test_ctx: test_matmul[M, K, N, type, low_precision]) raises:
+                alias some_constant = 20
+
+                var c_tensor = test_ctx.c_device.tensor
+
+                @parameter
+                @always_inline
+                @__copy_capture(c_tensor)
+                fn epilogue_fn[
+                    _type: DType, width: Int
+                ](
+                    idx: StaticIntTuple[2], val: SIMD[_type, width]
+                ) capturing -> None:
+                    c_tensor.store(
+                        idx, rebind[SIMD[type, width]](val + some_constant)
+                    )
+
+                var c_ref_tensor = test_ctx.c_device_ref.tensor
+
+                @parameter
+                @always_inline
+                @__copy_capture(c_ref_tensor)
+                fn naive_epilogue_fn[
+                    _type: DType, width: Int
+                ](
+                    idx: StaticIntTuple[2], val: SIMD[_type, width]
+                ) capturing -> None:
+                    c_ref_tensor.store(
+                        idx, rebind[SIMD[type, width]](val + some_constant)
+                    )
+
+                _matmul_gpu[
+                    use_tensor_core=low_precision,
+                    transpose_b=False,
+                    elementwise_lambda_fn=epilogue_fn,
+                ](
+                    test_ctx.c_device.tensor,
+                    test_ctx.a_device.tensor,
+                    test_ctx.b_device.tensor,
+                    ctx,
+                )
+
+                alias BLOCK_DIM = 16
+                var gemm_naive = ctx.compile_function[
+                    matmul_kernel_naive[
+                        type,
+                        type,
+                        type,
+                        BLOCK_DIM,
+                        elementwise_lambda_fn=naive_epilogue_fn,
+                    ]
+                ]()
+
+                ctx.enqueue_function(
+                    gemm_naive,
+                    test_ctx.c_device_ref.buffer,
+                    test_ctx.a_device.buffer,
+                    test_ctx.b_device.buffer,
+                    M,
+                    N,
+                    K,
+                    grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                )
+
+            test_matmul[1024, 3072, 5120, DType.float32](ctx).run_test[
+                epilogue_test[1024, 3072, 5120, DType.float32]
+            ]()
+            test_matmul[1024, 12288, 3072, DType.float32](ctx).run_test[
+                epilogue_test[1024, 12288, 3072, DType.float32]
+            ]()
+
+            # Low precision test (use_tensor_core)
+            test_matmul[1024, 3072, 5120, DType.float32, True](ctx).run_test[
+                epilogue_test[1024, 3072, 5120, DType.float32, True]
+            ]()
+            test_matmul[1024, 3072, 5120, DType.bfloat16, True](ctx).run_test[
+                epilogue_test[1024, 3072, 5120, DType.bfloat16, True]
+            ]()
     except e:
         print("CUDA_ERROR:", e)
