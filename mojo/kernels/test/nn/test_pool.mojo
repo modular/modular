@@ -8,7 +8,7 @@
 import builtin
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
-from closed_source_utils._test_utils import TestTensor, array_equal
+from internal_utils import TestTensor, array_equal
 from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl

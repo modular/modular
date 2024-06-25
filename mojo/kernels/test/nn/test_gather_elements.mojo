@@ -7,7 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from closed_source_utils._test_utils import TestTensor, array_equal
+from internal_utils import TestTensor, array_equal
 from nn.gather_scatter import gather_elements
 
 

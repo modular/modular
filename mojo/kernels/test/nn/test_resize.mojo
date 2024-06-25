@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo  -I %S/.. %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from buffer import DimList
-from closed_source_utils._test_utils import TestTensor
+from internal_utils import TestTensor
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
