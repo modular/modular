@@ -78,10 +78,6 @@ if generated_onnx_models_path.exists():
     config.available_features.add("GENERATED_ONNX_TESTS")
 
 
-framework_lib_cfg = Path(config.test_exec_root) / "framework-lib-path.cfg"
-modular_framework_lib_path = framework_lib_cfg.read_text().strip()
-config.environment["MODULAR_AI_ENGINE_LIB_PATH"] = modular_framework_lib_path
-
 # Enable MEF caching in tests if not given a value via env vars.
 mef_cache_config = os.environ.get("MODULAR_MAX_ENABLE_MODEL_IR_CACHE", "true")
 config.environment["MODULAR_MAX_ENABLE_MODEL_IR_CACHE"] = mef_cache_config

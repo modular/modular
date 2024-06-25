@@ -25,11 +25,6 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py
 )
 
-file(GENERATE
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/framework-lib-path.cfg
-  CONTENT $<TARGET_FILE:modular-framework-common>
-)
-
 add_modular_testsuite(check-max-engine-integration-tests
   TOOLS
   c-api-validator
