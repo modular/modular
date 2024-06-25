@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -import-mojo -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 
 ##===----------------------------------------------------------------------===##
 # With
