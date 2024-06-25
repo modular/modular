@@ -7,7 +7,7 @@
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from collections.optional import Optional
-from max_utils import call_dylib_func, exchange
+from max._utils import call_dylib_func, exchange
 from ._status import Status
 from sys.param_env import is_defined
 

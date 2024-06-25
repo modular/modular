@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from max.graph import Graph
-from max_utils import call_dylib_func
+from max._utils import call_dylib_func
 from sys.ffi import _get_global_or_null
 from tensor import TensorSpec
 

@@ -10,7 +10,7 @@ from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from runtime.llcl import Runtime
 
-from max_utils import call_dylib_func, exchange
+from max._utils import call_dylib_func, exchange
 
 
 # ===----------------------------------------------------------------------=== #

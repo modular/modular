@@ -22,7 +22,7 @@ from python.python import _get_global_python_itf
 from runtime.llcl import Runtime, TaskGroup
 from time import now
 
-from max_utils import handle_from_config
+from max._utils import handle_from_config
 
 from ..util.callbacks import (
     ServerCallbacks,

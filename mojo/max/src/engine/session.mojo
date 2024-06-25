@@ -14,7 +14,7 @@ from os.atomic import Atomic
 from pathlib import Path
 from sys.ffi import _get_global_or_null
 from memory import Arc
-from max_utils import call_dylib_func
+from max._utils import call_dylib_func
 
 from ._compilation import (
     CCompiledModel,

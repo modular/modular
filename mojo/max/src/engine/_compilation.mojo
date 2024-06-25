@@ -10,7 +10,7 @@ from sys.ffi import DLHandle, C_char
 from sys import external_call
 from collections import List
 from pathlib import Path
-from max_utils import call_dylib_func, exchange, OwningVector
+from max._utils import call_dylib_func, exchange, OwningVector
 
 from .session import InferenceSession
 from ._model_specs import InputTensorNames, OutputTensorNames
