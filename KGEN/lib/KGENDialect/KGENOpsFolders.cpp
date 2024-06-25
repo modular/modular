@@ -1421,6 +1421,32 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// PackLoadOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  if (auto pack = dyn_cast<PackAttr>(operands[0])) {
+    auto variadic = getType().getVariadicIfResolved();
+    if (!variadic)
+      return ErrorTree(getLoc(), "unknown type list");
+    ArrayRef<TypedAttr> typeElts = variadic.getValues();
+
+    SmallVector<TypedAttr> values;
+    for (auto [ptr, type] : llvm::zip(pack.getValues(), typeElts)) {
+      ErrorOr<Attribute> result = state.readAttributeFromPointer(
+          ptr, cast<TypeConstantAttr>(type).getMlirType());
+      if (result.isError())
+        return ErrorTree(getLoc(), result.takeError());
+      values.push_back(cast<TypedAttr>(result.takeValue()));
+    }
+    state.mapResults(PackAttr::get(values, getType()));
+    return success();
+  }
+  return ErrorTree(getLoc(), "non-constant inputs");
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
