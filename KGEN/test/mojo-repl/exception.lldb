@@ -8,5 +8,6 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# CHECK: Error: oopsy woopsy
-raise Error("oopsy woopsy")
+# CHECK: oopsy woopsy
+var message = "oopsy" + " woopsy"
+raise Error(message)
