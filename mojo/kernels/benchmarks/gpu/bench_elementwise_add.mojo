@@ -12,7 +12,6 @@ from random import randn
 
 from algorithm.functional import _elementwise_impl_gpu
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from benchmark._cuda import time_async_cuda_kernel
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu.host.device_context import DeviceContext
@@ -52,20 +51,13 @@ fn bench_add[
 
     @parameter
     @always_inline
-    fn ctx_time_async_cuda_kernel[
-        func: fn (DeviceContext) raises capturing -> None
-    ](num_iters: Int) raises -> Int:
-        return ctx.execution_time[func](num_iters)
-
-    @parameter
-    @always_inline
     fn bench_func(inout b: Bencher, shape: StaticIntTuple[rank]):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _elementwise_impl_gpu[add, simd_width=unroll_by](shape, ctx)
 
-        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[kernel_launch](ctx)
 
     b.bench_with_input[__type_of(shape), bench_func](
         BenchId("add", str(shape)),

@@ -93,13 +93,6 @@ fn fused_reduce_inner_test[
 
     @parameter
     @always_inline
-    fn ctx_time_async_cuda_kernel[
-        func: fn (DeviceContext) raises capturing -> None,
-    ](num_iters: Int) raises -> Int:
-        return ctx.execution_time[func](num_iters)
-
-    @parameter
-    @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
         @always_inline
@@ -108,7 +101,7 @@ fn fused_reduce_inner_test[
                 num_reductions, input_fn, output_fn, reduce_fn, rank, type
             ](shape, axis, init, ctx)
 
-        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
         BenchId("fused_reduce", input_id=str(type) + "/shape=" + str(shape)),
@@ -208,13 +201,6 @@ fn reduce_inner_test[
 
     @parameter
     @always_inline
-    fn ctx_time_async_cuda_kernel[
-        func: fn (DeviceContext) raises capturing -> None,
-    ](num_iters: Int) raises -> Int:
-        return ctx.execution_time[func](num_iters)
-
-    @parameter
-    @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
         @always_inline
@@ -223,7 +209,7 @@ fn reduce_inner_test[
                 num_reductions, input_fn, output_fn, reduce_wrapper, rank, type
             ](shape, axis, init, ctx)
 
-        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
         BenchId("reduce_inner", input_id=str(type) + "/shape=" + str(shape)),

@@ -81,20 +81,13 @@ fn bench_matmul[
 
     @parameter
     @always_inline
-    fn ctx_time_async_cuda_kernel[
-        func: fn (DeviceContext) raises capturing -> None
-    ](num_iters: Int) raises -> Int:
-        return ctx.execution_time[func](num_iters)
-
-    @parameter
-    @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu(mat_c[1], mat_a[1], mat_b[1], ctx)
 
-        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[kernel_launch](ctx)
 
     b.bench_function[bench_func](
         BenchId(

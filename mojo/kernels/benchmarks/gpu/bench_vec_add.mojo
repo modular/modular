@@ -14,7 +14,6 @@ from gpu.host import Device, Dim, Function, Stream
 from gpu.host.device_context import DeviceContext
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from benchmark._cuda import time_async_cuda_kernel
 from testing import assert_equal
 
 
@@ -67,20 +66,13 @@ fn bench_vec_add(
 
     @parameter
     @always_inline
-    fn ctx_time_async_cuda_kernel[
-        func: fn (DeviceContext) raises capturing -> None
-    ](num_iters: Int) raises -> Int:
-        return context.execution_time[func](num_iters)
-
-    @parameter
-    @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
-        b.iter_custom[ctx_time_async_cuda_kernel[kernel_launch]]()
+        b.iter_custom[kernel_launch](context)
 
     b.bench_function[bench_func](
         BenchId("vec_add", input_id="block_dim=" + str(block_dim)),
