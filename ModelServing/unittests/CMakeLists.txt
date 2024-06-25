@@ -21,23 +21,22 @@ add_custom_command(PRE_BUILD
 
 include_directories(PRIVATE ${CMAKE_SOURCE_DIR}/ModelServing/include/)
 
-# add_modular_unittest(
-#   SUITE_NAME
-#   ServeRTUnitTests
+add_modular_unittest(
+  SUITE_NAME
+  ServeRTUnitTests
 
-#   TEST_NAME
-#   ServeRTTests
+  TEST_NAME
+  ServeRTTests
 
-#   test_server_async.cpp
+  test_server_async.cpp
 
-#   LINK_LIBS PRIVATE
-#   ServeRTLib
-#   tf
-# )
+  LINK_LIBS PRIVATE
+  ServeRTLib
+)
 
-# target_compile_definitions(ServeRTTests
-#   PRIVATE
-#   MODULAR_MODEL_DIR="${CMAKE_BINARY_DIR}/GeneratedTests/BINARIES/models"
-# )
+target_compile_definitions(ServeRTTests
+  PRIVATE
+  MODULAR_MODEL_DIR="${CMAKE_BINARY_DIR}/GeneratedTests/BINARIES/models"
+)
 
-# add_dependencies(ServeRTTests ExtractGenModels)
+add_dependencies(ServeRTTests ExtractGenModels)
