@@ -274,9 +274,9 @@ def band_part(
     )
 
 
-def layer_norm(
-    input: Symbol, gamma: Symbol, beta: Symbol, epsilon: Float32
-) -> Symbol:
+def layer_norm[
+    dtype: DType
+](input: Symbol, gamma: Symbol, beta: Symbol, epsilon: Scalar[dtype]) -> Symbol:
     """Performs layer normalization.
 
     Args:
@@ -289,9 +289,7 @@ def layer_norm(
         A symbolic tensor value with the normalization applied.
     """
     g = input.graph()
-    epsilon_constant = g.constant(
-        Tensor[DType.float32](TensorShape(1), epsilon)
-    )
+    epsilon_constant = g.constant(Tensor[dtype](TensorShape(1), epsilon))
 
     return g.op(
         "mo.layer_norm",
