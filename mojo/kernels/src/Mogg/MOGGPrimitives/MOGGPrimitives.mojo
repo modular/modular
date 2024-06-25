@@ -457,7 +457,7 @@ fn mip_nary_mul[constInt: Int64](*vals: Int) -> Int:
 
 
 # ===----------------------------------------------------------------------===#
-# MGP Primitives
+# MGP Common Primitives
 # ===----------------------------------------------------------------------===#
 
 
@@ -468,6 +468,11 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
     if not cond:
         raise Error(message)
     return 0
+
+
+# ===----------------------------------------------------------------------===#
+# MGP Buffer Primitives
+# ===----------------------------------------------------------------------===#
 
 
 @mogg_register("mgp.buffer.alloc.static")
@@ -520,6 +525,44 @@ fn get_mgp_buffer[
     return bufferRef
 
 
+@always_inline
+fn fillBuffer[
+    type: DType
+](buf: NDBuffer[DType.uint8, 1], vals: VariadicList[Int]):
+    var ptr = buf.data.bitcast[type]()
+    var offset: Int = 0
+    for val in vals:
+        Scalar.store(ptr, offset, val)
+        offset += 1
+
+
+@mogg_register("mgp.buffer.set_with_index")
+@always_inline
+@export
+fn mgp_buffer_set_with_index(
+    ctx: StateContext, buffer: NDBuffer[DType.uint8, 1], *vals: Int
+):
+    var bufSize = buffer.num_elements()
+    var numArgs = len(vals)
+    debug_assert(
+        bufSize % numArgs == 0,
+        "buffer size not divisible by number of index args",
+    )
+
+    var elSize = bufSize / numArgs
+    if elSize == 4:
+        fillBuffer[DType.int32](buffer, vals)
+    elif elSize == 8:
+        fillBuffer[DType.int64](buffer, vals)
+    else:
+        debug_assert(False, "unsupported element size")
+
+
+# ===----------------------------------------------------------------------===#
+# MGP Tensor Spec Primitives
+# ===----------------------------------------------------------------------===#
+
+
 @mogg_register("mgp.tensor_spec.create")
 @always_inline
 @export
@@ -568,6 +611,10 @@ fn mgp_tensor_spec_equal_static[
     return True
 
 
+# ===----------------------------------------------------------------------===#
+# MGP Chain Primitives
+# ===----------------------------------------------------------------------===#
+
 # TODO: Enable MGP chain primitives once either fusion is enabled or perf issues
 # are resolved
 # See https://github.com/modularml/modular/issues/38548
@@ -599,39 +646,6 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
     return
 
 
-@always_inline
-fn fillBuffer[
-    type: DType
-](buf: NDBuffer[DType.uint8, 1], vals: VariadicList[Int]):
-    var ptr = buf.data.bitcast[type]()
-    var offset: Int = 0
-    for val in vals:
-        Scalar.store(ptr, offset, val)
-        offset += 1
-
-
-@mogg_register("mgp.buffer.set_with_index")
-@always_inline
-@export
-fn mgp_buffer_set_with_index(
-    ctx: StateContext, buffer: NDBuffer[DType.uint8, 1], *vals: Int
-):
-    var bufSize = buffer.num_elements()
-    var numArgs = len(vals)
-    debug_assert(
-        bufSize % numArgs == 0,
-        "buffer size not divisible by number of index args",
-    )
-
-    var elSize = bufSize / numArgs
-    if elSize == 4:
-        fillBuffer[DType.int32](buffer, vals)
-    elif elSize == 8:
-        fillBuffer[DType.int64](buffer, vals)
-    else:
-        debug_assert(False, "unsupported element size")
-
-
 @mogg_register("mgp.device.context.create")
 @always_inline
 @export
@@ -655,6 +669,11 @@ fn mgp_device_context_create[
             mgp_device_context_destroy,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
         )
+
+
+# ===----------------------------------------------------------------------===#
+# MGP Device Context Primitives
+# ===----------------------------------------------------------------------===#
 
 
 @export
