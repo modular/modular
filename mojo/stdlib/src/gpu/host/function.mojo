@@ -34,16 +34,16 @@ from .stream import Stream
 struct CacheConfig(CollectionElement, EqualityComparable):
     var code: Int32
 
-    alias PREFER_NONE = CacheConfig(0)
+    alias PREFER_NONE = Self(0)
     """No preference for shared memory or L1 (default)."""
 
-    alias PREFER_SHARED = CacheConfig(1)
+    alias PREFER_SHARED = Self(1)
     """Prefer larger shared memory and smaller L1 cache."""
 
-    alias PREFER_L1 = CacheConfig(2)
+    alias PREFER_L1 = Self(2)
     """Prefer larger L1 cache and smaller shared memory."""
 
-    alias PREFER_EQUAL = CacheConfig(3)
+    alias PREFER_EQUAL = Self(3)
     """Prefer equal sized L1 cache and shared memory."""
 
     @always_inline("nodebug")

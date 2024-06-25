@@ -26,13 +26,13 @@ from ._utils import _check_error, _FunctionHandle, _ModuleHandle
 struct JitOptions:
     var _value: Int32
 
-    alias MAX_REGISTERS: JitOptions = 0
+    alias MAX_REGISTERS: Self = 0
     """Max number of registers that a thread may use.
       Option type: unsigned int
       Applies to: compiler only
     """
 
-    alias THREADS_PER_BLOCK: JitOptions = 1
+    alias THREADS_PER_BLOCK: Self = 1
     """IN: Specifies minimum number of threads per block to target compilation
     for
     OUT: Returns the number of threads the compiler actually targeted.
@@ -45,95 +45,95 @@ struct JitOptions:
     Option type: unsigned int
     Applies to: compiler only
     """
-    alias WALL_TIME: JitOptions = 2
+    alias WALL_TIME: Self = 2
     """Overwrites the option value with the total wall clock time, in
       milliseconds, spent in the compiler and linker
       Option type: float
       Applies to: compiler and linker
     """
-    alias INFO_LOG_BUFFER: JitOptions = 3
+    alias INFO_LOG_BUFFER: Self = 3
     """Pointer to a buffer in which to print any log messages
       that are informational in nature (the buffer size is specified via
       option ::CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES)
       Option type: char *
       Applies to: compiler and linker
     """
-    alias INFO_LOG_BUFFER_SIZE_BYTES: JitOptions = 4
+    alias INFO_LOG_BUFFER_SIZE_BYTES: Self = 4
     """IN: Log buffer size in bytes.  Log messages will be capped at this size
       (including null terminator)
       OUT: Amount of log buffer filled with messages
       Option type: unsigned int
       Applies to: compiler and linker
     """
-    alias ERROR_LOG_BUFFER: JitOptions = 5
+    alias ERROR_LOG_BUFFER: Self = 5
     """Pointer to a buffer in which to print any log messages that
       reflect errors (the buffer size is specified via option
       ::CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES)
       Option type: char *
       Applies to: compiler and linker
     """
-    alias ERROR_LOG_BUFFER_SIZE_BYTES: JitOptions = 6
+    alias ERROR_LOG_BUFFER_SIZE_BYTES: Self = 6
     """IN: Log buffer size in bytes.  Log messages will be capped at this size
       (including null terminator)
       OUT: Amount of log buffer filled with messages
       Option type: unsigned int
       Applies to: compiler and linker
     """
-    alias OPTIMIZATION_LEVEL: JitOptions = 7
+    alias OPTIMIZATION_LEVEL: Self = 7
     """Level of optimizations to apply to generated code (0 - 4), with 4
       being the default and highest level of optimizations.
       Option type: unsigned int
       Applies to: compiler only
     """
-    alias TARGET_FROM_CUCONTEXT: JitOptions = 8
+    alias TARGET_FROM_CUCONTEXT: Self = 8
     """No option value required. Determines the target based on the current
       attached context (default)
       Option type: No option value needed
       Applies to: compiler and linker
     """
-    alias TARGET: JitOptions = 9
+    alias TARGET: Self = 9
     """Target is chosen based on supplied ::CUjit_target.  Cannot be
       combined with ::CU_JIT_THREADS_PER_BLOCK.
       Option type: unsigned int for enumerated type ::CUjit_target
       Applies to: compiler and linker
     """
-    alias FALLBACK_STRATEGY: JitOptions = 10
+    alias FALLBACK_STRATEGY: Self = 10
     """Specifies choice of fallback strategy if matching cubin is not found.
       Choice is based on supplied ::CUjit_fallback.  This option cannot be
       used with cuLink* APIs as the linker requires exact matches.
       Option type: unsigned int for enumerated type ::CUjit_fallback
       Applies to: compiler only
     """
-    alias GENERATE_DEBUG_INFO: JitOptions = 11
+    alias GENERATE_DEBUG_INFO: Self = 11
     """Specifies whether to create debug information in output (-g)
       (0: false, default)
       Option type: int
       Applies to: compiler and linker
     """
-    alias LOG_VERBOSE: JitOptions = 12
+    alias LOG_VERBOSE: Self = 12
     """Generate verbose log messages (0: false, default)
       Option type: int
       Applies to: compiler and linker
     """
-    alias GENERATE_LINE_INFO: JitOptions = 13
+    alias GENERATE_LINE_INFO: Self = 13
     """Generate line number information (-lineinfo) (0: false, default)
       Option type: int
       Applies to: compiler only
     """
-    alias CACHE_MODE: JitOptions = 14
+    alias CACHE_MODE: Self = 14
     """Specifies whether to enable caching explicitly (-dlcm)
       Choice is based on supplied ::CUjit_cacheMode_enum.
       Option type: unsigned int for enumerated type ::CUjit_cacheMode_enum
       Applies to: compiler only
     """
-    alias NEW_SM3X_OPT: JitOptions = 15
+    alias NEW_SM3X_OPT: Self = 15
     """[[depricated]]
       This jit option is deprecated and should not be used.
     """
-    alias FAST_COMPILE: JitOptions = 16
+    alias FAST_COMPILE: Self = 16
     """This jit option is used for internal purpose only.
     """
-    alias GLOBAL_SYMBOL_NAMES: JitOptions = 17
+    alias GLOBAL_SYMBOL_NAMES: Self = 17
     """Array of device symbol names that will be relocated to the corresponding
       host addresses stored in ::CU_JIT_GLOBAL_SYMBOL_ADDRESSES.
       Must contain ::CU_JIT_GLOBAL_SYMBOL_COUNT entries.
@@ -145,20 +145,20 @@ struct JitOptions:
       Option type: const char **
       Applies to: dynamic linker only
     """
-    alias GLOBAL_SYMBOL_ADDRESSES: JitOptions = 18
+    alias GLOBAL_SYMBOL_ADDRESSES: Self = 18
     """Array of host addresses that will be used to relocate corresponding
       device symbols stored in ::CU_JIT_GLOBAL_SYMBOL_NAMES.
       Must contain ::CU_JIT_GLOBAL_SYMBOL_COUNT entries.
       Option type: void **
       Applies to: dynamic linker only
     """
-    alias GLOBAL_SYMBOL_COUNT: JitOptions = 19
+    alias GLOBAL_SYMBOL_COUNT: Self = 19
     """Number of entries in ::CU_JIT_GLOBAL_SYMBOL_NAMES and
       ::CU_JIT_GLOBAL_SYMBOL_ADDRESSES arrays.
       Option type: unsigned int
       Applies to: dynamic linker only
     """
-    alias LTO: JitOptions = 20
+    alias LTO: Self = 20
     """[[depricated]]
       Enable link-time optimization (-dlto) for device code (Disabled by default).
       This option is not supported on 32-bit platforms.
@@ -167,7 +167,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias FTZ: JitOptions = 21
+    alias FTZ: Self = 21
     """[[depricated]]
       Control single-precision denormals (-ftz) support (0: false, default).
       1 : flushes denormal values to zero
@@ -177,7 +177,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias PREC_DIV: JitOptions = 22
+    alias PREC_DIV: Self = 22
     """[[depricated]]
       Control single-precision floating-point division and reciprocals
       (-prec-div) support (1: true, default).
@@ -188,7 +188,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias PREC_SQRT: JitOptions = 23
+    alias PREC_SQRT: Self = 23
     """[[depricated]]
       Control single-precision floating-point square root
       (-prec-sqrt) support (1: true, default).
@@ -199,7 +199,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias FMA: JitOptions = 24
+    alias FMA: Self = 24
     """[[depricated]]
       Enable/Disable the contraction of floating-point multiplies
       and adds/subtracts into floating-point multiply-add (-fma)
@@ -209,7 +209,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias REFERENCED_KERNEL_NAMES: JitOptions = 25
+    alias REFERENCED_KERNEL_NAMES: Self = 25
     """[[depricated]]
       Array of kernel names that should be preserved at link time while others
       can be removed.
@@ -227,7 +227,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias REFERENCED_KERNEL_COUNT: JitOptions = 26
+    alias REFERENCED_KERNEL_COUNT: Self = 26
     """[[depricated]]
       Number of entries in ::CU_JIT_REFERENCED_KERNEL_NAMES array.
       Option type: unsigned int
@@ -235,7 +235,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias REFERENCED_VARIABLE_NAMES: JitOptions = 27
+    alias REFERENCED_VARIABLE_NAMES: Self = 27
     """[[depricated]]
       Array of variable names (__device__ and/or __constant__) that should be
       preserved at link time while others can be removed.
@@ -253,7 +253,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias REFERENCED_VARIABLE_COUNT: JitOptions = 28
+    alias REFERENCED_VARIABLE_COUNT: Self = 28
     """[[depricated]]
       Number of entries in ::CU_JIT_REFERENCED_VARIABLE_NAMES array.
       Option type: unsigned int
@@ -261,7 +261,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias OPTIMIZE_UNUSED_DEVICE_VARIABLES: JitOptions = 29
+    alias OPTIMIZE_UNUSED_DEVICE_VARIABLES: Self = 29
     """[[depricated]]
       This option serves as a hint to enable the JIT compiler/linker
       to remove constant (__constant__) and device (__device__) variables
@@ -274,7 +274,7 @@ struct JitOptions:
       *
       Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
     """
-    alias POSITION_INDEPENDENT_CODE: JitOptions = 30
+    alias POSITION_INDEPENDENT_CODE: Self = 30
     """Generate position independent code (0: false)
       Option type: int
       Applies to: compiler only

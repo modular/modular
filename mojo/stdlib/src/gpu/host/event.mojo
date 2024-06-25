@@ -24,16 +24,16 @@ from .stream import Stream
 struct Flag:
     var _value: UInt32
 
-    alias DEFAULT = Flag(0)
+    alias DEFAULT = Self(0)
     """Default event creation flag."""
 
-    alias BLOCKING_SYNC = Flag(1)
+    alias BLOCKING_SYNC = Self(1)
     """Specifies that the created event should use blocking synchronization."""
 
-    alias DISABLE_TIMING = Flag(2)
+    alias DISABLE_TIMING = Self(2)
     """Event will not record timing data."""
 
-    alias INTERPROCESS = Flag(4)
+    alias INTERPROCESS = Self(4)
     """Event is suitable for interprocess use. Flag.DISABLE_TIMING must be
     set."""
 
@@ -42,7 +42,7 @@ struct Flag:
         self._value = value
 
     @always_inline("nodebug")
-    fn __or__(self, rhs: Flag) -> Flag:
+    fn __or__(self, rhs: Self) -> Self:
         """Returns `self | rhs`.
 
         Args:

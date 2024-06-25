@@ -15,86 +15,86 @@
 struct Result(Stringable, EqualityComparable):
     var code: Int32
 
-    alias SUCCESS = Result(0)
+    alias SUCCESS = Self(0)
     """The API call returned with no errors. In the case of query calls, this
     also means that the operation being queried is complete (see
     ::cuEventQuery() and ::cuStreamQuery()).
     """
 
-    alias INVALID_VALUE = Result(1)
+    alias INVALID_VALUE = Self(1)
     """This indicates that one or more of the parameters passed to the API call
     is not within an acceptable range of values.
     """
 
-    alias OUT_OF_MEMORY = Result(2)
+    alias OUT_OF_MEMORY = Self(2)
     """The API call failed because it was unable to allocate enough memory to
     perform the requested operation.
     """
 
-    alias NOT_INITIALIZED = Result(3)
+    alias NOT_INITIALIZED = Self(3)
     """This indicates that the CUDA driver has not been initialized with
     ::cuInit() or that initialization has failed.
     """
 
-    alias DEINITIALIZED = Result(4)
+    alias DEINITIALIZED = Self(4)
     """This indicates that the CUDA driver is in the process of shutting down.
     """
 
-    alias PROFILER_DISABLED = Result(5)
+    alias PROFILER_DISABLED = Self(5)
     """This indicates profiler is not initialized for this run. This can
     happen when the application is running with external profiling tools
     like visual profiler.
     """
 
-    alias PROFILER_NOT_INITIALIZED = Result(6)
+    alias PROFILER_NOT_INITIALIZED = Self(6)
     """This error return is deprecated as of CUDA 5.0. It is no longer an error
     to attempt to enable/disable the profiling via ::cuProfilerStart or
     ::cuProfilerStop without initialization.
     """
 
-    alias PROFILER_ALREADY_STARTED = Result(7)
+    alias PROFILER_ALREADY_STARTED = Self(7)
     """This error return is deprecated as of CUDA 5.0. It is no longer an error
     to call cuProfilerStart() when profiling is already enabled.
     """
 
-    alias PROFILER_ALREADY_STOPPED = Result(8)
+    alias PROFILER_ALREADY_STOPPED = Self(8)
     """This error return is deprecated as of CUDA 5.0. It is no longer an error
     to call cuProfilerStop() when profiling is already disabled.
     """
 
-    alias STUB_LIBRARY = Result(34)
+    alias STUB_LIBRARY = Self(34)
     """This indicates that the CUDA driver that the application has loaded is a
     stub library. Applications that run with the stub rather than a real
     driver loaded will result in CUDA API returning this error.
     """
 
-    alias DEVICE_UNAVAILABLE = Result(46)
+    alias DEVICE_UNAVAILABLE = Self(46)
     """This indicates that requested CUDA device is unavailable at the current
     time. Devices are often unavailable due to use of
     ::CU_COMPUTEMODE_EXCLUSIVE_PROCESS or ::CU_COMPUTEMODE_PROHIBITED.
     """
 
-    alias NO_DEVICE = Result(100)
+    alias NO_DEVICE = Self(100)
     """This indicates that no CUDA-capable devices were detected by the
     installed CUDA driver.
     """
 
-    alias INVALID_DEVICE = Result(101)
+    alias INVALID_DEVICE = Self(101)
     """This indicates that the device ordinal supplied by the user does not
     correspond to a valid CUDA device or that the action requested is
     invalid for the specified device.
     """
 
-    alias DEVICE_NOT_LICENSED = Result(102)
+    alias DEVICE_NOT_LICENSED = Self(102)
     """This error indicates that the Grid license is not applied.
     """
 
-    alias INVALID_IMAGE = Result(200)
+    alias INVALID_IMAGE = Self(200)
     """This indicates that the device kernel image is invalid. This can also
     indicate an invalid CUDA module.
     """
 
-    alias INVALID_CONTEXT = Result(201)
+    alias INVALID_CONTEXT = Self(201)
     """This most frequently indicates that there is no context bound to the
     current thread. This can also be returned if the context passed to an
     API call is not a valid handle (such as a context that has had
@@ -103,7 +103,7 @@ struct Result(Stringable, EqualityComparable):
     See ::cuCtxGetApiVersion() for more details.
     """
 
-    alias CONTEXT_ALREADY_CURRENT = Result(202)
+    alias CONTEXT_ALREADY_CURRENT = Self(202)
     """This indicated that the context being supplied as a parameter to the
     API call was already the active context.
     [[depricated]]
@@ -111,150 +111,150 @@ struct Result(Stringable, EqualityComparable):
     error to attempt to push the active context via ::cuCtxPushCurrent().
     """
 
-    alias MAP_FAILED = Result(205)
+    alias MAP_FAILED = Self(205)
     """This indicates that a map or register operation has failed.
     """
 
-    alias UNMAP_FAILED = Result(206)
+    alias UNMAP_FAILED = Self(206)
     """This indicates that an unmap or unregister operation has failed.
     """
 
-    alias ARRAY_IS_MAPPED = Result(207)
+    alias ARRAY_IS_MAPPED = Self(207)
     """This indicates that the specified array is currently mapped and thus
     cannot be destroyed.
     """
 
-    alias ALREADY_MAPPED = Result(208)
+    alias ALREADY_MAPPED = Self(208)
     """This indicates that the resource is already mapped.
     """
 
-    alias NO_BINARY_FOR_GPU = Result(209)
+    alias NO_BINARY_FOR_GPU = Self(209)
     """This indicates that there is no kernel image available that is suitable
     for the device. This can occur when a user specifies code generation
     options for a particular CUDA source file that do not include the
     corresponding device configuration.
     """
 
-    alias ALREADY_ACQUIRED = Result(210)
+    alias ALREADY_ACQUIRED = Self(210)
     """This indicates that a resource has already been acquired.
     """
 
-    alias NOT_MAPPED = Result(211)
+    alias NOT_MAPPED = Self(211)
     """This indicates that a resource is not mapped.
     """
 
-    alias NOT_MAPPED_AS_ARRAY = Result(212)
+    alias NOT_MAPPED_AS_ARRAY = Self(212)
     """This indicates that a mapped resource is not available for access as an
     array.
     """
 
-    alias NOT_MAPPED_AS_POINTER = Result(213)
+    alias NOT_MAPPED_AS_POINTER = Self(213)
     """This indicates that a mapped resource is not available for access as a
     pointer.
     """
 
-    alias ECC_UNCORRECTABLE = Result(214)
+    alias ECC_UNCORRECTABLE = Self(214)
     """This indicates that an uncorrectable ECC error was detected during
     execution.
     """
 
-    alias UNSUPPORTED_LIMIT = Result(215)
+    alias UNSUPPORTED_LIMIT = Self(215)
     """This indicates that the ::CUlimit passed to the API call is not
     supported by the active device.
     """
 
-    alias CONTEXT_ALREADY_IN_USE = Result(216)
+    alias CONTEXT_ALREADY_IN_USE = Self(216)
     """This indicates that the ::CUcontext passed to the API call can
     only be bound to a single CPU thread at a time but is already
     bound to a CPU thread.
     """
 
-    alias PEER_ACCESS_UNSUPPORTED = Result(217)
+    alias PEER_ACCESS_UNSUPPORTED = Self(217)
     """This indicates that peer access is not supported across the given
     devices.
     """
 
-    alias INVALID_PTX = Result(218)
+    alias INVALID_PTX = Self(218)
     """This indicates that a PTX JIT compilation failed.
     """
 
-    alias INVALID_GRAPHICS_CONTEXT = Result(219)
+    alias INVALID_GRAPHICS_CONTEXT = Self(219)
     """This indicates an error with OpenGL or DirectX context.
     """
 
-    alias NVLINK_UNCORRECTABLE = Result(220)
+    alias NVLINK_UNCORRECTABLE = Self(220)
     """This indicates that an uncorrectable NVLink error was detected during the
     execution.
     """
 
-    alias JIT_COMPILER_NOT_FOUND = Result(221)
+    alias JIT_COMPILER_NOT_FOUND = Self(221)
     """This indicates that the PTX JIT compiler library was not found.
     """
 
-    alias UNSUPPORTED_PTX_VERSION = Result(222)
+    alias UNSUPPORTED_PTX_VERSION = Self(222)
     """This indicates that the provided PTX was compiled with an unsupported
     toolchain.
     """
 
-    alias JIT_COMPILATION_DISABLED = Result(223)
+    alias JIT_COMPILATION_DISABLED = Self(223)
     """This indicates that the PTX JIT compilation was disabled.
     """
 
-    alias UNSUPPORTED_EXEC_AFFINITY = Result(224)
+    alias UNSUPPORTED_EXEC_AFFINITY = Self(224)
     """This indicates that the ::CUexecAffinityType passed to the API call is
     not supported by the active device.
     """
 
-    alias UNSUPPORTED_DEVSIDE_SYNC = Result(225)
+    alias UNSUPPORTED_DEVSIDE_SYNC = Self(225)
     """This indicates that the code to be compiled by the PTX JIT contains
     unsupported call to cudaDeviceSynchronize.
     """
 
-    alias INVALID_SOURCE = Result(300)
+    alias INVALID_SOURCE = Self(300)
     """This indicates that the device kernel source is invalid. This includes
     compilation/linker errors encountered in device code or user error.
     """
 
-    alias FILE_NOT_FOUND = Result(301)
+    alias FILE_NOT_FOUND = Self(301)
     """This indicates that the file specified was not found.
     """
 
-    alias SHARED_OBJECT_SYMBOL_NOT_FOUND = Result(302)
+    alias SHARED_OBJECT_SYMBOL_NOT_FOUND = Self(302)
     """This indicates that a link to a shared object failed to resolve.
     """
 
-    alias SHARED_OBJECT_INIT_FAILED = Result(303)
+    alias SHARED_OBJECT_INIT_FAILED = Self(303)
     """This indicates that initialization of a shared object failed.
     """
 
-    alias OPERATING_SYSTEM = Result(304)
+    alias OPERATING_SYSTEM = Self(304)
     """This indicates that an OS call failed.
     """
 
-    alias INVALID_HANDLE = Result(400)
+    alias INVALID_HANDLE = Self(400)
     """This indicates that a resource handle passed to the API call was not
     valid. Resource handles are opaque types like ::CUstream and ::CUevent.
     """
 
-    alias ILLEGAL_STATE = Result(401)
+    alias ILLEGAL_STATE = Self(401)
     """This indicates that a resource required by the API call is not in a
     valid state to perform the requested operation.
     """
 
-    alias NOT_FOUND = Result(500)
+    alias NOT_FOUND = Self(500)
     """This indicates that a named symbol was not found. Examples of symbols
     are global/constant variable names, driver function names, texture names,
     and surface names.
     """
 
-    alias NOT_READY = Result(600)
+    alias NOT_READY = Self(600)
     """This indicates that asynchronous operations issued previously have not
     completed yet. This result is not actually an error, but must be indicated
     differently than ::SUCCESS (which indicates completion). Calls that
     may return this value include ::cuEventQuery() and ::cuStreamQuery().
     """
 
-    alias ILLEGAL_ADDRESS = Result(700)
+    alias ILLEGAL_ADDRESS = Self(700)
     """While executing a kernel, the device encountered a
     load or store instruction on an invalid memory address.
     This leaves the process in an inconsistent state and any further CUDA work
@@ -262,7 +262,7 @@ struct Result(Stringable, EqualityComparable):
     terminated and relaunched.
     """
 
-    alias LAUNCH_OUT_OF_RESOURCES = Result(701)
+    alias LAUNCH_OUT_OF_RESOURCES = Self(701)
     """This indicates that a launch did not occur because it did not have
     appropriate resources. This error usually indicates that the user has
     attempted to pass too many arguments to the device kernel, or the
@@ -272,7 +272,7 @@ struct Result(Stringable, EqualityComparable):
     arguments and can also result in this error.
     """
 
-    alias LAUNCH_TIMEOUT = Result(702)
+    alias LAUNCH_TIMEOUT = Self(702)
     """This indicates that the device kernel took too long to execute. This can
     only occur if timeouts are enabled - see the device attribute
     ::CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT for more information.
@@ -281,58 +281,58 @@ struct Result(Stringable, EqualityComparable):
     terminated and relaunched.
     """
 
-    alias LAUNCH_INCOMPATIBLE_TEXTURING = Result(703)
+    alias LAUNCH_INCOMPATIBLE_TEXTURING = Self(703)
     """This error indicates a kernel launch that uses an incompatible texturing
     mode.
     """
 
-    alias PEER_ACCESS_ALREADY_ENABLED = Result(704)
+    alias PEER_ACCESS_ALREADY_ENABLED = Self(704)
     """This error indicates that a call to ::cuCtxEnablePeerAccess() is
     trying to re-enable peer access to a context which has already
     had peer access to it enabled.
     """
 
-    alias PEER_ACCESS_NOT_ENABLED = Result(705)
+    alias PEER_ACCESS_NOT_ENABLED = Self(705)
     """This error indicates that ::cuCtxDisablePeerAccess() is
     trying to disable peer access which has not been enabled yet
     via ::cuCtxEnablePeerAccess().
     """
 
-    alias PRIMARY_CONTEXT_ACTIVE = Result(708)
+    alias PRIMARY_CONTEXT_ACTIVE = Self(708)
     """This error indicates that the primary context for the specified device
     has already been initialized.
     """
 
-    alias CONTEXT_IS_DESTROYED = Result(709)
+    alias CONTEXT_IS_DESTROYED = Self(709)
     """This error indicates that the context current to the calling thread
     has been destroyed using ::cuCtxDestroy, or is a primary context which
     has not yet been initialized.
     """
 
-    alias ASSERT = Result(710)
+    alias ASSERT = Self(710)
     """A device-side assert triggered during kernel execution. The context
     cannot be used anymore, and must be destroyed. All existing device
     memory allocations from this context are invalid and must be
     reconstructed if the program is to continue using CUDA.
     """
 
-    alias TOO_MANY_PEERS = Result(711)
+    alias TOO_MANY_PEERS = Self(711)
     """This error indicates that the hardware resources required to enable
     peer access have been exhausted for one or more of the devices
     passed to ::cuCtxEnablePeerAccess().
     """
 
-    alias HOST_MEMORY_ALREADY_REGISTERED = Result(712)
+    alias HOST_MEMORY_ALREADY_REGISTERED = Self(712)
     """This error indicates that the memory range passed to ::cuMemHostRegister
     has already been registered.
     """
 
-    alias HOST_MEMORY_NOT_REGISTERED = Result(713)
+    alias HOST_MEMORY_NOT_REGISTERED = Self(713)
     """This error indicates that the pointer passed to ::cuMemHostUnregister()
     does not correspond to any currently registered memory region.
     """
 
-    alias HARDWARE_STACK_ERROR = Result(714)
+    alias HARDWARE_STACK_ERROR = Self(714)
     """While executing a kernel, the device encountered a stack error.
     This can be due to stack corruption or exceeding the stack size limit.
     This leaves the process in an inconsistent state and any further CUDA work
@@ -340,14 +340,14 @@ struct Result(Stringable, EqualityComparable):
     terminated and relaunched.
     """
 
-    alias ILLEGAL_INSTRUCTION = Result(715)
+    alias ILLEGAL_INSTRUCTION = Self(715)
     """While executing a kernel, the device encountered an illegal instruction.
     This leaves the process in an inconsistent state and any further CUDA work
     will return the same error. To continue using CUDA, the process must be
     terminated and relaunched.
     """
 
-    alias MISALIGNED_ADDRESS = Result(716)
+    alias MISALIGNED_ADDRESS = Self(716)
     """While executing a kernel, the device encountered a load or store
     instruction on a memory address which is not aligned.
     This leaves the process in an inconsistent state and any further CUDA work
@@ -355,7 +355,7 @@ struct Result(Stringable, EqualityComparable):
     terminated and relaunched.
     """
 
-    alias INVALID_ADDRESS_SPACE = Result(717)
+    alias INVALID_ADDRESS_SPACE = Self(717)
     """While executing a kernel, the device encountered an instruction
     which can only operate on memory locations in certain address spaces
     (global, shared, or local), but was supplied a memory address not belonging
@@ -365,14 +365,14 @@ struct Result(Stringable, EqualityComparable):
     terminated and relaunched.
     """
 
-    alias INVALID_PC = Result(718)
+    alias INVALID_PC = Self(718)
     """While executing a kernel, the device program counter wrapped its address
     space. This leaves the process in an inconsistent state and any further CUDA
     work will return the same error. To continue using CUDA, the process must be
     terminated and relaunched.
     """
 
-    alias LAUNCH_FAILED = Result(719)
+    alias LAUNCH_FAILED = Self(719)
     """An exception occurred on the device while executing a kernel. Common
     causes include dereferencing an invalid device pointer and accessing
     out of bounds shared memory. Less common cases can be system specific - more
@@ -382,7 +382,7 @@ struct Result(Stringable, EqualityComparable):
     terminated and relaunched.
     """
 
-    alias COOPERATIVE_LAUNCH_TOO_LARGE = Result(720)
+    alias COOPERATIVE_LAUNCH_TOO_LARGE = Self(720)
     """This error indicates that the number of blocks launched per grid for a
     kernel that was launched via either ::cuLaunchCooperativeKernel or
     ::cuLaunchCooperativeKernelMultiDevice exceeds the maximum number of blocks
@@ -392,16 +392,16 @@ struct Result(Stringable, EqualityComparable):
     ::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT.
     """
 
-    alias NOT_PERMITTED = Result(800)
+    alias NOT_PERMITTED = Self(800)
     """This error indicates that the attempted operation is not permitted.
     """
 
-    alias NOT_SUPPORTED = Result(801)
+    alias NOT_SUPPORTED = Self(801)
     """This error indicates that the attempted operation is not supported
     on the current system or device.
     """
 
-    alias SYSTEM_NOT_READY = Result(802)
+    alias SYSTEM_NOT_READY = Self(802)
     """This error indicates that the system is not yet ready to start any CUDA
     work.  To continue using CUDA, verify the system configuration is in a
     valid state and all required driver daemons are actively running.
@@ -409,13 +409,13 @@ struct Result(Stringable, EqualityComparable):
     user guide.
     """
 
-    alias SYSTEM_DRIVER_MISMATCH = Result(803)
+    alias SYSTEM_DRIVER_MISMATCH = Self(803)
     """This error indicates that there is a mismatch between the versions of
     the display driver and the CUDA driver. Refer to the compatibility
     documentation for supported versions.
     """
 
-    alias COMPAT_NOT_SUPPORTED_ON_DEVICE = Result(804)
+    alias COMPAT_NOT_SUPPORTED_ON_DEVICE = Self(804)
     """This error indicates that the system was upgraded to run with forward
     compatibility ut the visible hardware detected by CUDA does not support this
     configuration. Refer to the compatibility documentation for the supported
@@ -423,106 +423,106 @@ struct Result(Stringable, EqualityComparable):
     initialization via the CUDA_VISIBLE_DEVICES environment variable.
     """
 
-    alias MPS_CONNECTION_FAILED = Result(805)
+    alias MPS_CONNECTION_FAILED = Self(805)
     """This error indicates that the MPS client failed to connect to the MPS
     control daemon or the MPS server.
     """
 
-    alias MPS_RPC_FAILURE = Result(806)
+    alias MPS_RPC_FAILURE = Self(806)
     """This error indicates that the remote procedural call between the MPS
     server and the MPS client failed.
     """
 
-    alias MPS_SERVER_NOT_READY = Result(807)
+    alias MPS_SERVER_NOT_READY = Self(807)
     """This error indicates that the MPS server is not ready to accept new MPS
     client requests. This error can be returned when the MPS server is in the
     process of recovering from a fatal failure.
     """
 
-    alias MPS_MAX_CLIENTS_REACHED = Result(808)
+    alias MPS_MAX_CLIENTS_REACHED = Self(808)
     """This error indicates that the hardware resources required to create MPS
     client have been exhausted.
     """
 
-    alias MPS_MAX_CONNECTIONS_REACHED = Result(809)
+    alias MPS_MAX_CONNECTIONS_REACHED = Self(809)
     """This error indicates the the hardware resources required to support
     device connections have been exhausted.
     """
 
-    alias MPS_CLIENT_TERMINATED = Result(810)
+    alias MPS_CLIENT_TERMINATED = Self(810)
     """This error indicates that the MPS client has been terminated by the
     server. To continue using CUDA, the process must be terminated and
     relaunched.
     """
 
-    alias CDP_NOT_SUPPORTED = Result(811)
+    alias CDP_NOT_SUPPORTED = Self(811)
     """This error indicates that the module is using CUDA Dynamic Parallelism,
     but the current configuration, like MPS, does not support it.
     """
 
-    alias CDP_VERSION_MISMATCH = Result(812)
+    alias CDP_VERSION_MISMATCH = Self(812)
     """This error indicates that a module contains an unsupported interaction
     between different versions of CUDA Dynamic Parallelism.
     """
 
-    alias STREAM_CAPTURE_UNSUPPORTED = Result(900)
+    alias STREAM_CAPTURE_UNSUPPORTED = Self(900)
     """This error indicates that the operation is not permitted when
     the stream is capturing.
     """
 
-    alias STREAM_CAPTURE_INVALIDATED = Result(901)
+    alias STREAM_CAPTURE_INVALIDATED = Self(901)
     """This error indicates that the current capture sequence on the stream
     has been invalidated due to a previous error.
     """
 
-    alias STREAM_CAPTURE_MERGE = Result(902)
+    alias STREAM_CAPTURE_MERGE = Self(902)
     """This error indicates that the operation would have resulted in a merge
     of two independent capture sequences.
     """
 
-    alias STREAM_CAPTURE_UNMATCHED = Result(903)
+    alias STREAM_CAPTURE_UNMATCHED = Self(903)
     """This error indicates that the capture was not initiated in this stream.
     """
 
-    alias STREAM_CAPTURE_UNJOINED = Result(904)
+    alias STREAM_CAPTURE_UNJOINED = Self(904)
     """This error indicates that the capture sequence contains a fork that was
     not joined to the primary stream.
     """
 
-    alias STREAM_CAPTURE_ISOLATION = Result(905)
+    alias STREAM_CAPTURE_ISOLATION = Self(905)
     """This error indicates that a dependency would have been created which
     crosses the capture sequence boundary. Only implicit in-stream ordering
     dependencies are allowed to cross the boundary.
     """
 
-    alias STREAM_CAPTURE_IMPLICIT = Result(906)
+    alias STREAM_CAPTURE_IMPLICIT = Self(906)
     """This error indicates a disallowed implicit dependency on a current
     capture sequence from cudaStreamLegacy.
     """
 
-    alias CAPTURED_EVENT = Result(907)
+    alias CAPTURED_EVENT = Self(907)
     """This error indicates that the operation is not permitted on an event
     which was last recorded in a capturing stream.
     """
 
-    alias STREAM_CAPTURE_WRONG_THREAD = Result(908)
+    alias STREAM_CAPTURE_WRONG_THREAD = Self(908)
     """A stream capture sequence not initiated with the
     ::CU_STREAM_CAPTURE_MODE_RELAXED argument to ::cuStreamBeginCapture was
     passed to ::cuStreamEndCapture in a different thread.
     """
 
-    alias TIMEOUT = Result(909)
+    alias TIMEOUT = Self(909)
     """This error indicates that the timeout specified for the wait operation
     has lapsed.
     """
 
-    alias GRAPH_EXEC_UPDATE_FAILURE = Result(910)
+    alias GRAPH_EXEC_UPDATE_FAILURE = Self(910)
     """This error indicates that the graph update was not performed because it
     included changes which violated constraints specific to instantiated graph
     update.
     """
 
-    alias EXTERNAL_DEVICE = Result(911)
+    alias EXTERNAL_DEVICE = Self(911)
     """This indicates that an async error has occurred in a device outside of
     CUDA. If CUDA was waiting for an external device's signal before consuming
     shared data, the external device signaled an error indicating that the data
@@ -531,11 +531,11 @@ struct Result(Stringable, EqualityComparable):
     using CUDA, the process must be terminated and relaunched.
     """
 
-    alias INVALID_CLUSTER_SIZE = Result(912)
+    alias INVALID_CLUSTER_SIZE = Self(912)
     """Indicates a kernel launch error due to cluster misconfiguration.
     """
 
-    alias UNKNOWN = Result(999)
+    alias UNKNOWN = Self(999)
     """This indicates that an unknown internal error has occurred.
     """
 
