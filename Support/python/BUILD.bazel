@@ -9,6 +9,7 @@ py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        requirement("find_libpython"),
         requirement("numpy"),
         requirement("ruamel.yaml"),
     ],
