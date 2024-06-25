@@ -19,7 +19,7 @@ from memory.reference import _GPUAddressSpace as GPUAddressSpace
 from testing import assert_equal, assert_almost_equal
 
 from utils.index import Index
-from closed_source_utils._test_utils import HostNDBuffer, DeviceNDBuffer
+from internal_utils import HostNDBuffer, DeviceNDBuffer
 
 alias TILE_SZ_A = 128
 alias TILE_SZ_B = 16
