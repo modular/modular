@@ -51,3 +51,8 @@ struct ManagedLayoutTensor[
     @always_inline
     fn __del__(owned self):
         free_fn[dtype](self.tensor.ptr)
+
+
+alias ManagedLayoutGPUTensor = ManagedLayoutTensor[
+    alloc_fn=gpu_managed_alloc, free_fn=gpu_free
+]
