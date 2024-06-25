@@ -47,6 +47,18 @@ struct MutatingCM:
         pass  # normal
 
 
+@value
+struct NoExitCMReg:
+    fn __enter__(inout self) -> Int:
+        pass
+
+
+@value
+struct NoExitCMMem:
+    fn __enter__(inout self) -> Self:
+        pass
+
+
 fn noop(a: Int):
     pass
 
@@ -92,6 +104,18 @@ fn testWithNonRaising(a: ExampleCM):
         # CHECK: lit.call {{.*}}noop
         noop(val)
     # CHECK: lit.call {{.*}}__exit__{{.*}}([[MGR]])
+
+    # CHECK: [[REG:%.*]] = lit.call {{.*}}NoExitCMReg::@"__enter__
+    with NoExitCMReg():
+        pass
+    # CHECK: finally
+    # CHECK-NEXT: ownership.use [[REG]]
+
+    # CHECK: call {{.*}}NoExitCMMem::@"__enter__{{.*}}(%{{.*}}, [[MEM:%.*]]) : !lit.signature
+    with NoExitCMMem():
+        pass
+    # CHECK: finally
+    # CHECK-NEXT: ownership.use [[MEM]]
 
 
 # CHECK-LABEL: lit.func @"testWithRaising

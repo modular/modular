@@ -1638,7 +1638,11 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       // We don't care about extending PValues if one ever happened.
       if (auto scalar = enterResult.getIfSBValue())
         ptrOrScalar = scalar;
-      if (auto scalar = enterResult.getIfMBValue())
+      else if (auto scalar = enterResult.getIfSRValue())
+        ptrOrScalar = scalar;
+      else if (auto scalar = enterResult.getIfMBValue())
+        ptrOrScalar = scalar;
+      else if (auto scalar = enterResult.getIfMRValue())
         ptrOrScalar = scalar;
       if (ptrOrScalar)
         builder.create<OwnershipUseOp>(loc, ptrOrScalar);
