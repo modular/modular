@@ -12,7 +12,7 @@ from testing import assert_equal, assert_true
 from pathlib import Path
 
 from max.engine import InferenceSession, SessionOptions
-from max.engine._context import _Device
+from max._driver import cuda_device
 from tensor import Tensor, TensorShape
 
 
@@ -25,7 +25,7 @@ fn test_model_metadata() raises:
 
     var model_path = args[1]
     var options = SessionOptions()
-    options._set_device(_Device.CUDA)
+    options._set_device(cuda_device())
     var session = InferenceSession(options)
     var compiled_model = session.load(Path(model_path))
     assert_equal(compiled_model.num_model_inputs(), 1)
@@ -55,7 +55,7 @@ fn test_model() raises:
     var model_path = args[1]
 
     var options = SessionOptions()
-    options._set_device(_Device.CUDA)
+    options._set_device(cuda_device())
     var session = InferenceSession(options)
     var model = session.load(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
