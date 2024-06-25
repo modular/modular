@@ -351,6 +351,12 @@ def _is_torchscript_module(obj: Any) -> bool:
     ] and type(obj).__module__ in ["torch.jit.script", "torch.jit._script"]
 
 
+def _is_torchscript_function(obj: Any) -> bool:
+    return type(obj).__name__ in ["ScriptFunction"] and type(
+        obj
+    ).__module__ in ["torch.jit"]
+
+
 def _is_torch_mlir_module(obj: Any) -> bool:
     # TODO: Check without importing.
     return False
@@ -476,7 +482,10 @@ class InferenceSession:
                 _model = self._impl.compile_from_object(
                     model._c, _FrameworkFormat.torchscript_module, options_dict
                 )
-
+            elif _is_torchscript_function(model):
+                _model = self._impl.compile_from_object(
+                    model, _FrameworkFormat.torchscript_function, options_dict
+                )
             elif _is_torch_mlir_module(model):
                 _model = self._impl.compile_from_object(
                     model, _FrameworkFormat.torch_mlir, options_dict
