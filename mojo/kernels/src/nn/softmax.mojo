@@ -15,13 +15,17 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from gpu import BlockIdx, GridDim, ThreadIdx, barrier
+from gpu import BlockIdx, GridDim, ThreadIdx, barrier, WARP_SIZE, lane_id
 from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
+from gpu.shuffle import shuffle_xor, shuffle_up
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
+from layout.tensor_core import get_fragment_size
 from runtime.llcl import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import product
+from utils.index import product, Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
@@ -824,3 +828,375 @@ fn softmax[
             axis,
             context.get_cuda_device(),
         )
+
+
+fn _online_softmax_kernel[
+    WM: Int,
+    WN: Int,
+    type: DType,
+    layout: Layout,
+](input: LayoutTensor[type, layout], output: LayoutTensor[type, layout]):
+    """This is only for online softmax validation, NOT a general kernel."""
+
+    alias mma_shape = StaticIntTuple[3](16, 8, 8)
+    alias num_seqs = input.dim[0]()
+    alias seqlen = input.dim[1]()
+
+    constrained[
+        WM == num_seqs, "Only consider WM equal to number of rows in test."
+    ]()
+
+    alias num_m_mmas = WM // mma_shape[0]
+    alias num_n_mmas = WN // mma_shape[1]
+
+    # Only consider 2 iterations in this test. The number of warps is based on
+    # half sequence length.
+    alias num_rowwise_warps = seqlen // 2 // WN
+
+    alias frag_size = get_fragment_size[mma_shape]()[2]
+
+    var warp_id = ThreadIdx.x() // WARP_SIZE
+    var lane = int(lane_id())
+
+    # If we do more than 2 iterations, the first N - 2 iterations won't be
+    # corrected with the right rowmax.
+    var input_warp_tile0 = input.tile[WM, WN](0, warp_id)
+    var input_warp_tile1 = input.tile[WM, WN](0, warp_id + num_rowwise_warps)
+
+    var output_warp_tile0 = output.tile[WM, WN](0, warp_id)
+    var output_warp_tile1 = output.tile[WM, WN](0, warp_id + num_rowwise_warps)
+
+    var p = LayoutTensor[
+        type, Layout.row_major(num_m_mmas * num_n_mmas, frag_size)
+    ].stack_allocation()
+    p.vectorize[1, 2]().transpose().copy_from(
+        input_warp_tile0.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+            lane
+        )
+    )
+
+    var o = LayoutTensor[
+        type, Layout.row_major(num_m_mmas * num_n_mmas, frag_size)
+    ].stack_allocation()
+    o.fill(0.0)
+
+    var rowmax = stack_allocation[num_m_mmas * 2, type]()
+    var rowsum = stack_allocation[num_m_mmas * 2, type]()
+
+    var warp_scratch = LayoutTensor[
+        type,
+        Layout.row_major(num_rowwise_warps, WM),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    @parameter
+    for i in range(num_m_mmas * 2):
+        rowmax[i] = min_or_neg_inf[type]()
+        rowsum[i] = 0.0
+
+    _online_softmax_iter_for_mma_output[
+        num_m_mmas, num_n_mmas, num_rowwise_warps, mma_shape, type
+    ](o, p, warp_scratch, rowmax, rowsum)
+
+    # P has the softmax numerator for the first half, save it in q.
+    o.copy_from(p)
+    p.vectorize[1, 2]().transpose().copy_from(
+        input_warp_tile1.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+            lane
+        )
+    )
+
+    _online_softmax_iter_for_mma_output[
+        num_m_mmas, num_n_mmas, num_rowwise_warps, mma_shape, type
+    ](o, p, warp_scratch, rowmax, rowsum)
+
+    # o, p has the correct softmax numerator for the 1st and 2nd half.
+    # rowsum has the correct sum. Ready for correction.
+    @parameter
+    for m_mma in range(num_m_mmas):
+
+        @parameter
+        for n_mma in range(num_n_mmas):
+
+            @parameter
+            for i in range(frag_size // 2):
+                p[n_mma * num_m_mmas + m_mma, i] /= rowsum[2 * m_mma]
+                p[n_mma * num_m_mmas + m_mma, i + frag_size // 2] /= rowsum[
+                    2 * m_mma + 1
+                ]
+                o[n_mma * num_m_mmas + m_mma, i] /= rowsum[2 * m_mma]
+                o[n_mma * num_m_mmas + m_mma, i + frag_size // 2] /= rowsum[
+                    2 * m_mma + 1
+                ]
+
+    output_warp_tile0.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+        lane
+    ).copy_from(o.vectorize[1, 2]().transpose())
+    output_warp_tile1.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+        lane
+    ).copy_from(p.vectorize[1, 2]().transpose())
+
+
+@always_inline
+fn _online_softmax_iter_for_mma_output[
+    num_m_mmas: Int,
+    num_n_mmas: Int,
+    num_rowwise_warps: Int,
+    mma_shape: StaticIntTuple[3],
+    type: DType,
+    # not used but to work around weird parameter deduction
+    _layout0: Layout,
+    _layout1: Layout,
+    _layout2: Layout,
+](
+    output_reg_tile: LayoutTensor[type, _layout0],
+    p_reg_tile: LayoutTensor[type, _layout1],
+    warp_scratch: LayoutTensor[
+        type, _layout2, address_space = AddressSpace.SHARED, masked=_
+    ],
+    rowmax: DTypePointer[type],
+    rowsum: DTypePointer[type],
+):
+    constrained[num_m_mmas * num_n_mmas == p_reg_tile.dim[0]()]()
+
+    var tid = ThreadIdx.x()
+    var lane = lane_id()
+    var warp_x = (tid // WARP_SIZE) % num_rowwise_warps
+
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias p_frag_simdwidth = 2
+    alias p_frag_size = p_reg_tile.dim[1]()
+
+    # Sum of fragment elements in the same row.
+    # MMA output has two sub-matrices. Each thread's fragments are on two rows.
+    var p_frag_rowmax = stack_allocation[num_m_mmas * 2, type]()
+    var p_frag_rowsum = stack_allocation[num_m_mmas * 2, type]()
+    var correction = stack_allocation[num_m_mmas * 2, type]()
+
+    @parameter
+    for i in range(2 * num_m_mmas):
+        p_frag_rowmax[i] = min_or_neg_inf[type]()
+        p_frag_rowsum[i] = 0.0
+
+    # Online softmax
+    @parameter
+    for m_mma in range(num_m_mmas):
+
+        @parameter
+        for n_mma in range(num_n_mmas):
+
+            @parameter
+            for i in range(p_frag_size // 2):
+                p_frag_rowmax[2 * m_mma] = max(
+                    p_frag_rowmax[2 * m_mma],
+                    rebind[Scalar[type]](
+                        p_reg_tile[n_mma * num_m_mmas + m_mma, i]
+                    ),
+                )
+                p_frag_rowmax[2 * m_mma + 1] = max(
+                    p_frag_rowmax[2 * m_mma + 1],
+                    rebind[Scalar[type]](
+                        p_reg_tile[
+                            n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
+                        ]
+                    ),
+                )
+
+        # Every four threads have elements on the same row.
+        # Reduce max for T0-T3, T4-T7, etc
+        # TODO: Consider using 2 registers instead of 2 * m_mma.
+        p_frag_rowmax[2 * m_mma] = max(
+            p_frag_rowmax[2 * m_mma], shuffle_xor(p_frag_rowmax[2 * m_mma], 2)
+        )
+        p_frag_rowmax[2 * m_mma] = max(
+            p_frag_rowmax[2 * m_mma], shuffle_xor(p_frag_rowmax[2 * m_mma], 1)
+        )
+        p_frag_rowmax[2 * m_mma + 1] = max(
+            p_frag_rowmax[2 * m_mma + 1],
+            shuffle_xor(p_frag_rowmax[2 * m_mma + 1], 2),
+        )
+        p_frag_rowmax[2 * m_mma + 1] = max(
+            p_frag_rowmax[2 * m_mma + 1],
+            shuffle_xor(p_frag_rowmax[2 * m_mma + 1], 1),
+        )
+
+    # Write per warp rowmax to shared memory.
+    if lane % 4 == 0:
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+            # Each thread handle two rows in the mma output.
+            var row0 = m_mma * MMA_M + int(lane) // (MMA_N // p_frag_simdwidth)
+            var row1 = row0 + MMA_M // 2
+            warp_scratch[warp_x, row0] = p_frag_rowmax[2 * m_mma]
+            warp_scratch[warp_x, row1] = p_frag_rowmax[2 * m_mma + 1]
+
+    barrier()
+
+    # Reduce the warpwise rowmax.
+    if lane % 4 == 0:
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+            var row0 = m_mma * MMA_M + int(lane) // (MMA_N // p_frag_simdwidth)
+            var row1 = row0 + MMA_M // 2
+
+            # Reduce rowmax. Warps in the same row do the samea reduction.
+            @parameter
+            for w in range(num_rowwise_warps):
+                p_frag_rowmax[2 * m_mma] = max(
+                    p_frag_rowmax[2 * m_mma],
+                    rebind[Scalar[type]](warp_scratch[w, row0]),
+                )
+                p_frag_rowmax[2 * m_mma + 1] = max(
+                    p_frag_rowmax[2 * m_mma + 1],
+                    rebind[Scalar[type]](warp_scratch[w, row1]),
+                )
+
+    @parameter
+    for m_mma in range(num_m_mmas):
+        # Broadcast to 4 threads in the same row.
+        @parameter
+        for shift in range(1, 3):
+            p_frag_rowmax[2 * m_mma] = max(
+                p_frag_rowmax[2 * m_mma],
+                shuffle_xor(p_frag_rowmax[2 * m_mma], shift),
+            )
+            p_frag_rowmax[2 * m_mma + 1] = max(
+                p_frag_rowmax[2 * m_mma + 1],
+                shuffle_xor(p_frag_rowmax[2 * m_mma + 1], shift),
+            )
+
+        # Corrention since previous max may be updated.
+        correction[2 * m_mma] = exp(
+            rowmax[2 * m_mma] - p_frag_rowmax[2 * m_mma]
+        )
+        correction[2 * m_mma + 1] = exp(
+            rowmax[2 * m_mma + 1] - p_frag_rowmax[2 * m_mma + 1]
+        )
+
+        # Softmax numerator based on mma results.
+        @parameter
+        for n_mma in range(num_n_mmas):
+
+            @parameter
+            for i in range(p_frag_size // 2):
+                p_reg_tile[n_mma * num_m_mmas + m_mma, i] = exp(
+                    p_reg_tile[n_mma * num_m_mmas + m_mma, i]
+                    - p_frag_rowmax[2 * m_mma]
+                )
+                p_reg_tile[
+                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
+                ] = exp(
+                    p_reg_tile[n_mma * num_m_mmas + m_mma, i + p_frag_size // 2]
+                    - p_frag_rowmax[2 * m_mma + 1]
+                )
+
+        p_frag_rowsum[2 * m_mma] = 0.0
+        p_frag_rowsum[2 * m_mma + 1] = 0.0
+
+        # Sum softmax numerator from a thread's fragments.
+        @parameter
+        for n_mma in range(num_n_mmas):
+
+            @parameter
+            for i in range(p_frag_size // 2):
+                p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
+                    p_reg_tile[n_mma * num_m_mmas + m_mma, i]
+                )
+                p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
+                    p_reg_tile[n_mma * num_m_mmas + m_mma, i + p_frag_size // 2]
+                )
+
+        # Sum numerator within a warp.
+        @parameter
+        for shift in range(1, 3):
+            p_frag_rowsum[2 * m_mma] += shuffle_xor(
+                p_frag_rowsum[2 * m_mma], shift
+            )
+            p_frag_rowsum[2 * m_mma + 1] += shuffle_xor(
+                p_frag_rowsum[2 * m_mma + 1], shift
+            )
+
+    barrier()
+    # Write per warp rowmax to shared memory.
+    if lane % 4 == 0:
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+            # Each thread handle two rows in the mma output.
+            var row0 = m_mma * MMA_M + int(lane // (MMA_N // p_frag_simdwidth))
+            var row1 = row0 + MMA_M // 2
+            warp_scratch[warp_x, row0] = p_frag_rowsum[2 * m_mma]
+            warp_scratch[warp_x, row1] = p_frag_rowsum[2 * m_mma + 1]
+    # Guard writing warp_scratch
+    barrier()
+
+    # Reduce the warpwise rowsum.
+    if lane % 4 == 0:
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+            var row0 = m_mma * MMA_M + int(lane // (MMA_N // p_frag_simdwidth))
+            var row1 = row0 + MMA_M // 2
+            p_frag_rowsum[2 * m_mma] = 0.0
+            p_frag_rowsum[2 * m_mma + 1] = 0.0
+
+            # Reduce rowmax. Warps in the same row do the samea reduction.
+            @parameter
+            for w in range(num_rowwise_warps):
+                p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
+                    warp_scratch[w, row0]
+                )
+
+                p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
+                    warp_scratch[w, row1]
+                )
+
+    # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
+    # TODO: Use Shuffle up
+    @parameter
+    for m_mma in range(num_m_mmas):
+        # Broadcast to 4 threads in the same row.
+        @parameter
+        for shift in range(1, 3):
+            p_frag_rowsum[2 * m_mma] = max(
+                p_frag_rowsum[2 * m_mma],
+                shuffle_xor(p_frag_rowsum[2 * m_mma], shift),
+            )
+            p_frag_rowsum[2 * m_mma + 1] = max(
+                p_frag_rowsum[2 * m_mma + 1],
+                shuffle_xor(p_frag_rowsum[2 * m_mma + 1], shift),
+            )
+
+    # Correct previous result
+    @parameter
+    for m_mma in range(num_m_mmas):
+
+        @parameter
+        for n_mma in range(num_n_mmas):
+
+            @parameter
+            for i in range(p_frag_size // 2):
+                output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= correction[
+                    2 * m_mma
+                ]
+                output_reg_tile[
+                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
+                ] *= correction[2 * m_mma + 1]
+
+    # Save current rowmax and rowsum
+    @parameter
+    for m_mma in range(num_m_mmas):
+        rowmax[2 * m_mma] = p_frag_rowmax[2 * m_mma]
+        rowmax[2 * m_mma + 1] = p_frag_rowmax[2 * m_mma + 1]
+        rowsum[2 * m_mma] = (
+            rowsum[2 * m_mma] * correction[2 * m_mma] + p_frag_rowsum[2 * m_mma]
+        )
+        rowsum[2 * m_mma + 1] = (
+            rowsum[2 * m_mma + 1] * correction[2 * m_mma + 1]
+            + p_frag_rowsum[2 * m_mma + 1]
+        )
+
+    barrier()

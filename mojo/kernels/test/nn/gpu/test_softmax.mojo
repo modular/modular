@@ -12,8 +12,10 @@ from random import rand, random_float64, seed
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu.host.device_context import DeviceContext
-from nn.softmax import _softmax_cpu, _softmax_gpu
-from testing import assert_true
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
+from nn.softmax import _softmax_cpu, _softmax_gpu, _online_softmax_kernel
+from testing import assert_almost_equal
 
 
 # CHECK-LABEL: test_gpu_softmax
@@ -171,12 +173,87 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     for i in range(length):
         var ref_val = out_host_ref_ptr[i]
         var test_val = out_host_test_ptr[i].cast[ref_type]()
-        assert_true(isclose(ref_val, test_val, atol=1e-2))
+        assert_almost_equal(ref_val, test_val, atol=1e-2)
 
     _ = in_device_ref_ptr
     _ = in_device_test_ptr
     _ = in_device_test
     _ = in_device_ref
+
+
+fn test_gpu_online_softmax(ctx: DeviceContext) raises:
+    print("== test_online_softmax")
+
+    alias type = DType.float32
+    alias rank = 3
+    alias WM = 32
+    alias seqlen = 256
+    alias shape = StaticIntTuple[rank](1, 32, 256)
+
+    var in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var out_ref_ptr = DTypePointer[type].alloc(shape.flattened_length())
+
+    var in_host = NDBuffer[type, rank](in_host_ptr, shape)
+    var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
+
+    var in_device_ptr = ctx.create_buffer[type](shape.flattened_length())
+    var out_device_ptr = ctx.create_buffer[type](shape.flattened_length())
+
+    var in_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
+        in_device_ptr.ptr
+    )
+    var out_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
+        out_device_ptr.ptr
+    )
+
+    rand[type](in_host_ptr, shape.flattened_length())
+    ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
+
+    var online_softmax_gpu = ctx.compile_function[
+        _online_softmax_kernel[
+            32, 32, DType.float32, Layout.row_major(shape[1], shape[2])
+        ]
+    ]()
+    ctx.enqueue_function(
+        online_softmax_gpu,
+        in_device,
+        out_device,
+        grid_dim=(1,),
+        block_dim=(128,),
+    )
+
+    @parameter
+    @__copy_capture(in_host)
+    fn input_fn_host[
+        _simd_width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
+        return in_host.load[width=_simd_width](
+            rebind[StaticIntTuple[rank]](coords)
+        )
+
+    _softmax_cpu[
+        type,
+        1,
+        rank,
+        DimList.create_unknown[rank](),
+        input_fn_host,
+    ](shape, out_ref, rank - 1)
+
+    ctx.synchronize()
+    ctx.enqueue_copy_from_device(out_host_ptr, out_device_ptr)
+
+    for i in range(shape.flattened_length()):
+        assert_almost_equal(
+            out_host_ptr[i], out_ref_ptr[i], atol=1e-4, rtol=1e-5
+        )
+
+    in_host_ptr.free()
+    out_host_ptr.free()
+    out_ref_ptr.free()
+
+    _ = in_device_ptr
+    _ = out_device_ptr
 
 
 def main():
@@ -185,5 +262,6 @@ def main():
             test_gpu_softmax(ctx)
             test_gpu_softmax_half[DType.bfloat16](ctx)
             test_gpu_softmax_half[DType.float16](ctx)
+            test_gpu_online_softmax(ctx)
     except e:
         print("CUDA_ERROR:", e)
