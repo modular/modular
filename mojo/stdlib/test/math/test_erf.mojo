@@ -11,7 +11,7 @@ from math import erf
 from random import randn, seed
 from testing import assert_almost_equal
 
-from closed_source_utils import compare
+from internal_utils import compare
 from test_utils import libm_call
 
 from utils import InlineArray

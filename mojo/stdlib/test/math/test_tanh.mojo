@@ -10,7 +10,7 @@ from math import tanh
 from random import randn, seed
 
 from buffer import Buffer
-from closed_source_utils import compare
+from internal_utils import compare
 from test_utils import libm_call
 from testing import assert_almost_equal
 
