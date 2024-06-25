@@ -29,6 +29,7 @@ add_modular_unittest(
   ServeRTTests
 
   test_server_async.cpp
+  test_serving.cpp
 
   LINK_LIBS PRIVATE
   ServeRTLib
