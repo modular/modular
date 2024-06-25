@@ -60,8 +60,8 @@ static LogicalResult verifyParamValueOp(OpT op) {
   // Forbid the materialization of parameter capturing closures.
   if (auto sig = dyn_cast<SignatureType>(op.getType())) {
     if (sig.isCapturing())
-      return op.emitOpError("cannot be used to materialize capturing closures; "
-                            "use `kgen.create_closure` instead");
+      return op.emitOpError(
+          "TODO: capturing closures cannot be materialized as runtime values");
   }
 
   if (op.getValue().getType() == op.getType())
