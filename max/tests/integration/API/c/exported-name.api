@@ -1,8 +1,0 @@
-// REQUIRES: MODEL
-// REQUIRES: tf
-// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %api_executor_models_dir
-// RUN: modular-api-executor --model-specification=%modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --input-specs=1x224x224x3xf32 --input-names input --output-names output --model-inputs=zeros  --num-threads=0 --num-runs=1 --result-output-style=compact --exported-name serving_default %api_executor_models_dir/resnet50-v1.5 | FileCheck %s --check-prefix=CHECK-EXPORTED
-// RUN: modular-api-executor --input-specs=1x224x224x3xf32 --model-inputs=zeros  --num-threads=0 --num-runs=1 --result-output-style=compact --exported-name serving_default %api_executor_models_dir/resnet50-v1.5 | FileCheck %s --check-prefix=CHECK-EXPORTED-NO-SPEC
-
-// CHECK-EXPORTED: 'benchmark' returned tensor{{.*}}
-// CHECK-EXPORTED-NO-SPEC: 'benchmark' returned tensor{{.*}}

@@ -1,6 +1,8 @@
 // REQUIRES: disabled
 // REQUIRES: MODEL
 // REQUIRES: tf
+// (TODO: MSDK-481)
+// REQUIRES: disabled
 // UNSUPPORTED: windows
 // RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %multi_tenancy_api_models_dir
 // RUN: python3 -m %modeltool download --format tflite %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %multi_tenancy_api_models_dir

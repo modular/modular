@@ -42,11 +42,6 @@ def sdk_test_inputs_path(modular_path: Path) -> Path:
 
 
 @pytest.fixture
-def relu_tf_model_path(sdk_test_inputs_path: Path) -> Path:
-    return sdk_test_inputs_path / "relu3x100x100-tf"
-
-
-@pytest.fixture
 def relu_onnx_model_path(sdk_test_inputs_path: Path) -> Path:
     return sdk_test_inputs_path / "relu3x100x100.onnx"
 
@@ -86,20 +81,16 @@ def test_execute_success(mo_model_path: Path):
 
 
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
-# Skip this test if we don't have all three framework libs available.
+# Skip this test if we don't have onnx and torch framework libs available.
 @pytest.mark.skip(reason="#36814")
 @pytest.mark.skipif(
-    not os.path.exists(modular_lib_path() / f"libtf.{DYLIB_FILE_EXTENSION}")
-    or not os.path.exists(
-        modular_lib_path() / f"libmonnx.{DYLIB_FILE_EXTENSION}"
-    )
+    not os.path.exists(modular_lib_path() / f"libmonnx.{DYLIB_FILE_EXTENSION}")
     or not os.path.exists(
         modular_lib_path() / f"libmtorch.{DYLIB_FILE_EXTENSION}"
     ),
     reason="One or more missing framework libs",
 )
 def test_execute_multi_framework(
-    relu_tf_model_path: Path,
     relu_onnx_model_path: Path,
     relu_torchscript_model_path: Path,
 ):
@@ -107,17 +98,14 @@ def test_execute_multi_framework(
     trch_input_specs = [
         me.TorchInputSpec(shape=[1, 3, 100, 100], dtype=me.DType.float32)
     ]
-    tf_model = session.load(relu_tf_model_path)
     onnx_model = session.load(relu_onnx_model_path)
     trch_model = session.load(
         relu_torchscript_model_path, input_specs=trch_input_specs
     )
     np_input = np.ones((1, 3, 100, 100))
     np_input[:, 1, :, :] *= -1
-    tf_output = tf_model.execute(inputs=np_input)["output_0"]
     onnx_output = onnx_model.execute(x=np_input)["result0"]
     trch_output = trch_model.execute(x=np_input)["result0"]
-    assert np.allclose(onnx_output, tf_output)
     assert np.allclose(onnx_output, trch_output)
 
 

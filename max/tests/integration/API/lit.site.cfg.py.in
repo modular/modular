@@ -9,4 +9,3 @@ lit_config.load_config(
 )
 
 config.available_features.add("@TORCH_LIB@")
-config.available_features.add("@TF_LIB@")

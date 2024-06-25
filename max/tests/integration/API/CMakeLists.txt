@@ -13,11 +13,6 @@ if(TARGET mtorch)
   list(APPEND FRAMEWORK_TEST_DEPS pytorch-generated-tests)
 endif()
 
-if(TARGET tf)
-  set(TF_LIB "tf")
-  list(APPEND FRAMEWORK_DYLIB_DEPS tf)
-endif()
-
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py

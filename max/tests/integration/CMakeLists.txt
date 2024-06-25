@@ -22,8 +22,7 @@ add_modular_testsuite(check-sdk-integration
 
   DEPENDS
   mtorch
-  tf
-  
+
   TAGS
   asan-red
 )

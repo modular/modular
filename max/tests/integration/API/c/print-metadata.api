@@ -1,5 +1,7 @@
 // REQUIRES: GENERATED_TESTS
 // REQUIRES: tf
+// (TODO: MSDK-482)
+// REQUIRES: disabled
 // RUN: modular-api-executor --print-metadata %test_models_dir/BasicMLP_float32_25x5/0/model.savedmodel | FileCheck %s
 
 
