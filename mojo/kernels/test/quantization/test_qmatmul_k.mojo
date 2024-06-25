@@ -11,6 +11,10 @@ from random import rand, random_float64
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.list import DimList
+from quantization.qmatmul import (
+    matmul_qint4,
+    matmul_qint4_pack_b,
+)
 from quantization.qmatmul_k import (
     _block_Q4_K,
     _block_Q6_K,
@@ -45,10 +49,10 @@ fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
     )
 
 
-fn quantize_a_Q8_K(
-    a: DTypePointer[DType.float32], a_quant: DTypePointer[DType.int8]
-) -> Float32:
-    var fp_data = SIMD[size = _block_QK_K.quantized_k].load(a)
+fn quantize_a_Q8[
+    group_size: Int
+](a: DTypePointer[DType.float32], a_quant: DTypePointer[DType.int8]) -> Float32:
+    var fp_data = SIMD[size=group_size].load(a)
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
     var scale = (max_value / 127.0).cast[DType.float32]()
@@ -80,6 +84,10 @@ fn dot_product_QK_K[
 
 trait QuantizedGemm:
     @staticmethod
+    fn k_group_size() -> Int:
+        ...
+
+    @staticmethod
     fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
         ...
 
@@ -108,10 +116,108 @@ trait QuantizedGemm:
         ...
 
 
-struct qgemm_Q4_K(QuantizedGemm):
+struct _block_Q4_0:
+    alias group_size = 32
+
+    var base_scale: Float16
+    var q_bits: InlineArray[UInt8, Self.group_size // 2]
+
+
+struct qgemm_Q4_0(QuantizedGemm):
+    @staticmethod
+    fn k_group_size() -> Int:
+        return _block_Q4_0.group_size
+
     @staticmethod
     fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
-        var k_groups = ceildiv(K, _block_QK_K.quantized_k)
+        var k_groups = ceildiv(K, Self.k_group_size())
+        var b_ptr = DTypePointer[DType.uint8].alloc(
+            N * k_groups * sizeof[_block_Q4_0]()
+        )
+        var block_ptr = UnsafePointer[_block_Q4_0](address=int(b_ptr.address))
+
+        for n in range(N):
+            for k in range(k_groups):
+                block_ptr[].base_scale = random_float16(max=0.001)
+                fill_random(block_ptr[].q_bits)
+                block_ptr += 1
+
+        return NDBuffer[DType.uint8, 2](
+            b_ptr, Index(N, k_groups * sizeof[_block_Q4_0]())
+        )
+
+    @staticmethod
+    def pack_b_buffer(
+        b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+    ):
+        matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
+
+    @staticmethod
+    fn kernel(
+        a: NDBuffer[DType.float32, 2],
+        b: NDBuffer[DType.uint8, 2],
+        c: NDBuffer[DType.float32, 2],
+    ):
+        matmul_qint4[_block_Q4_0.group_size](a, b, c)
+
+    @staticmethod
+    fn dot_product(
+        a: NDBuffer[DType.float32, 2],
+        b: NDBuffer[DType.uint8, 2],
+        m: Int,
+        n: Int,
+        k: Int,
+    ) -> Float32:
+        var block_ptr = UnsafePointer[_block_Q4_0](
+            address=int(b._offset(Index(n, 0)))
+        ) + (k // Self.k_group_size())
+
+        var a_quant_data = stack_allocation[
+            _block_Q4_0.group_size, DType.int8
+        ]()
+
+        var a_scale = quantize_a_Q8[_block_Q4_0.group_size](
+            a._offset(Index(m, k)), a_quant_data
+        )
+
+        var b_quant_data = stack_allocation[
+            _block_Q4_0.group_size, DType.uint8
+        ]()
+
+        # Decode the bits of the weight data.
+        var q_packed_bits = SIMD[size = _block_Q4_0.group_size // 2].load(
+            _to_dtype_pointer(block_ptr[].q_bits)
+        )
+
+        for j in range(2):
+            var idx = j * _block_Q4_0.group_size // 2
+            var q_bits = ((q_packed_bits >> (j * 4)) & 15)
+            SIMD.store(b_quant_data, idx, q_bits)
+
+        var sum: Int32 = 0
+
+        alias b_zero_point = 8
+
+        for i in range(_block_Q4_0.group_size):
+            sum += a_quant_data[i].cast[DType.int32]() * (
+                (b_quant_data[i].cast[DType.int32]() - b_zero_point)
+            )
+
+        var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
+            DType.float32
+        ]()
+
+        return sumf * a_scale
+
+
+struct qgemm_Q4_K(QuantizedGemm):
+    @staticmethod
+    fn k_group_size() -> Int:
+        return _block_QK_K.quantized_k
+
+    @staticmethod
+    fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
+        var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = DTypePointer[DType.uint8].alloc(
             N * k_groups * sizeof[_block_Q4_K]()
         )
@@ -153,13 +259,15 @@ struct qgemm_Q4_K(QuantizedGemm):
     ) -> Float32:
         var block_ptr = UnsafePointer[_block_Q4_K](
             address=int(b._offset(Index(n, 0)))
-        ) + (k // _block_QK_K.quantized_k)
+        ) + (k // Self.k_group_size())
 
         var a_quant_data = stack_allocation[
             _block_QK_K.quantized_k, DType.int8
         ]()
 
-        var a_scale = quantize_a_Q8_K(a._offset(Index(m, k)), a_quant_data)
+        var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
+            a._offset(Index(m, k)), a_quant_data
+        )
 
         var a_block_sums = stack_allocation[
             _block_Q4_K.group_count, DType.int32
@@ -224,8 +332,12 @@ struct qgemm_Q4_K(QuantizedGemm):
 
 struct qgemm_Q6_K(QuantizedGemm):
     @staticmethod
+    fn k_group_size() -> Int:
+        return _block_QK_K.quantized_k
+
+    @staticmethod
     fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
-        var k_groups = ceildiv(K, _block_QK_K.quantized_k)
+        var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = DTypePointer[DType.uint8].alloc(
             N * k_groups * sizeof[_block_Q6_K]()
         )
@@ -267,13 +379,15 @@ struct qgemm_Q6_K(QuantizedGemm):
     ) -> Float32:
         var block_ptr = UnsafePointer[_block_Q6_K](
             address=int(b._offset(Index(n, 0)))
-        ) + (k // _block_QK_K.quantized_k)
+        ) + (k // Self.k_group_size())
 
         var a_quant_data = stack_allocation[
             _block_QK_K.quantized_k, DType.int8
         ]()
 
-        var a_scale = quantize_a_Q8_K(a._offset(Index(m, k)), a_quant_data)
+        var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
+            a._offset(Index(m, k)), a_quant_data
+        )
 
         var b_quant_data = stack_allocation[
             _block_QK_K.quantized_k, DType.uint8
@@ -339,7 +453,7 @@ fn reference_gemm[
 
             var result: Float32 = 0
 
-            for k in range(0, K, _block_QK_K.quantized_k):
+            for k in range(0, K, qgemm.k_group_size()):
                 result += qgemm.dot_product(a, b, m, n, k)
 
             c.store(Index(m, n), result)
@@ -390,8 +504,8 @@ struct GemmContext[qgemm: QuantizedGemm]:
 def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int):
     var ctx = GemmContext[qgemm](M, N, K)
 
-    if K % _block_QK_K.quantized_k != 0:
-        raise ("K must be a multiple of 256")
+    if K % qgemm.k_group_size() != 0:
+        raise ("K must be a multiple of qgemm.k_group_size()")
 
     reference_gemm[qgemm](ctx.a, ctx.b, ctx.c_golden)
     qgemm.kernel(ctx.a, ctx.b_packed, ctx.c)
@@ -420,10 +534,16 @@ def test_cases[qgemm: QuantizedGemm]():
         test_case[qgemm](m, 128, 256)
         test_case[qgemm](m, 128, 1024)
 
+        @parameter
+        if qgemm.k_group_size() == 32:
+            test_case[qgemm](m, 256, 32)
+
     # Typical LLM use case.
+    test_case[qgemm](1, 4096, 4096)
     test_case[qgemm](160, 4096, 4096)
 
 
 def main():
+    test_cases[qgemm_Q4_0]()
     test_cases[qgemm_Q4_K]()
     test_cases[qgemm_Q6_K]()
