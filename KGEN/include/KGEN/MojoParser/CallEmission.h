@@ -109,6 +109,9 @@ enum class CallSyntax : uint8_t {
   kMethodCallSynthetic //< Call to a method for synthetic checks.
 };
 
+StringRef stringifyCallSyntax(CallSyntax val);
+raw_ostream &operator<<(raw_ostream &os, CallSyntax val);
+
 //===----------------------------------------------------------------------===//
 // OverloadSet
 //===----------------------------------------------------------------------===//
@@ -256,6 +259,8 @@ public:
   PValue filterOverloadSetForValueType(
       ASTType functionType,
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
+
+  LLVM_DUMP_METHOD void dump() const;
 
 private:
   OverloadSet(const TypeCheckScopeInfo &scopeInfo, const ExprNode *expr,
