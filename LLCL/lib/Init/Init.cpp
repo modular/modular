@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Init/Init.h"
+#include "LLCL/Init/Init.h"
 #include "Config/Version.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Configuration.h"

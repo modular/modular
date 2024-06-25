@@ -10,9 +10,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "LLCL/Init/Init.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
-#include "Support/Init/Init.h"
 #include "Support/LLVMForwardDecls.h"
 
 #include "mlir/IR/DialectRegistry.h"

@@ -13,7 +13,7 @@ add_modular_tool(kgen-translate
   LLCLCompilerSupport
   LLCLRuntimeGlobals
   MSupportGlobals
-  MSupportInit
+  MLLCLInit
   MSupport
   MArchTarget
   MProfiling

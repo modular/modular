@@ -846,22 +846,6 @@ td_library(
 )
 
 modular_cc_library(
-    name = "Init",
-    srcs = [
-        "lib/Init/Init.cpp",
-    ],
-    hdrs = [
-        "include/Support/Init/Init.h",
-    ],
-    deps = [
-        ":CrashReporting",
-        ":Settings",
-        ":Telemetry",
-        "//LLCL:Runtime",
-    ],
-)
-
-modular_cc_library(
     name = "FrameworkSupport",
     srcs = glob(["lib/Frameworks/*.cpp"]),
     hdrs = glob(["include/Support/Frameworks/*.h"]),

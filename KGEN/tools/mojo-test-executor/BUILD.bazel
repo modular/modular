@@ -11,8 +11,8 @@ modular_cc_binary(
         "//KGEN:MojoTesting",
         "//KGEN:ObjectCompiler",
         "//KGEN:liblldb.wrapper",
+        "//LLCL:Init",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
-        "//Support:Init",
     ],
 )
