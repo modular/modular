@@ -11,8 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
+#include "LLCL/Init/Init.h"
 #include "Support/Context.h"
-#include "Support/Init/Init.h"
 #include "llvm/Support/raw_ostream.h"
 
 #if defined(_WIN32)

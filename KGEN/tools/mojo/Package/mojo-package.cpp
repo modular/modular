@@ -16,12 +16,12 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/CompilerSupport/Context.h"
+#include "LLCL/Init/Init.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
-#include "Support/Init/Init.h"
 
 #include "Support/Filesystem/Paths.h"
 #include "mlir/IR/MLIRContext.h"

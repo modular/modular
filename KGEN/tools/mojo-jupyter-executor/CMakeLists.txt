@@ -15,6 +15,6 @@ add_modular_tool(mojo-jupyter-executor
   KGENSupport
   LLCLRuntimeGlobals
   MSupportGlobals
-  MSupportInit
+  MLLCLInit
   MojoJupyter
 )

@@ -8,8 +8,8 @@
 #include "../../common/Telemetry.h"
 #include "../Common/LLDB.h"
 #include "KGEN/Support/Configuration.h"
+#include "LLCL/Init/Init.h"
 #include "RPCServer.h"
-#include "Support/Init/Init.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Path.h"
 

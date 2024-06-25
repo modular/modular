@@ -9,9 +9,9 @@
 
 #include "KGEN/MojoBuild/BSPClient.h"
 #include "KGEN/Support/Configuration.h"
+#include "LLCL/Init/Init.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
-#include "Support/Init/Init.h"
 #include "Support/MDialect/MDialect.h"
 
 #include "mlir/Tools/lsp-server-support/Logging.h"

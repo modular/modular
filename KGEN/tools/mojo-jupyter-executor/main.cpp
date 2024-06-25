@@ -12,7 +12,7 @@
 
 #include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/Support/Configuration.h"
-#include "Support/Init/Init.h"
+#include "LLCL/Init/Init.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CommandLine.h"

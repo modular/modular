@@ -25,7 +25,7 @@ add_modular_tool(kgen-opt
   LLCLCompilerSupport
   LLCLRuntimeGlobals
   MSupportGlobals
-  MSupportInit
+  MLLCLInit
   MDialect
 
   MLIRIR

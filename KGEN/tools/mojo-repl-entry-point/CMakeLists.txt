@@ -13,7 +13,7 @@ add_modular_tool(mojo-repl-entry-point
   LLCLRuntimeGlobals
   MSupportGlobals
   MSupport
-  MSupportInit
+  MLLCLInit
 )
 
 # The entry point is a win32 executable, and uses WinMain instead of main. This

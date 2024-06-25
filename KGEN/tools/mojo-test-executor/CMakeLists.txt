@@ -14,7 +14,7 @@ add_modular_tool(mojo-test-executor
   LLCLCompilerSupport
   LLCLRuntimeGlobals
   MSupportGlobals
-  MSupportInit
+  MLLCLInit
   MojoJupyter
   MojoParser
   MojoTesting

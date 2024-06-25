@@ -6,12 +6,12 @@
 
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
+#include "LLCL/Init/Init.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Context.h"
-#include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringExtras.h"

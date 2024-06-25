@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_INIT_INIT_H
-#define SUPPORT_INIT_INIT_H
+#ifndef LLCL_INIT_INIT_H
+#define LLCL_INIT_INIT_H
 
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Context.h"
@@ -67,4 +67,4 @@ ErrorOr<ContextRef> createContext(StringRef programName,
 } // namespace Init
 } // namespace M
 
-#endif // SUPPORT_INIT_INIT_H
+#endif // LLCL_INIT_INIT_H

@@ -8,7 +8,7 @@ add_modular_library(MojoToolsCommon
   Telemetry.cpp
 
   LINK_LIBS PRIVATE
-  MSupportInit
+  MLLCLInit
   MSupport
   LLVMOption
 )

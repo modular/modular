@@ -8,9 +8,9 @@
 
 #include "../../common/Telemetry.h"
 #include "KGEN/Support/Configuration.h"
+#include "LLCL/Init/Init.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
-#include "Support/Init/Init.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"

@@ -41,7 +41,7 @@ add_modular_library(MojoLLDB SHARED
   LLCLRuntimeGlobals
   MCrashReporting
   MSupportGlobals
-  MSupportInit
+  MLLCLInit
   MVersion
   MojoTooling
 

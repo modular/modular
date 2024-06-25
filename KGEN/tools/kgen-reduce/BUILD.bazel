@@ -17,10 +17,10 @@ modular_cc_binary(
         "//KGEN:Pipeline",
         "//KGEN:ToolCommon",
         "//KGEN:TransformUtils",
+        "//LLCL:Init",
         "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:Globals",
-        "//Support:Init",
         "@llvm-project//mlir:MlirOptLib",
     ],
 )

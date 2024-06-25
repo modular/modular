@@ -5,10 +5,10 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     visibility = ["//visibility:public"],
     deps = [
+        "//LLCL:Init",
         "//LLCL:RuntimeGlobals.static",
         "//Support:Base",
         "//Support:CrashReporting",
         "//Support:Globals.static",
-        "//Support:Init",
     ],
 )

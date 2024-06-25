@@ -17,7 +17,7 @@ add_modular_tool(mojo-lsp-server
   LSPProtocol
   MArchTarget
   MSupportGlobals
-  MSupportInit
+  MLLCLInit
   MojoParser
   MojoTooling
   MLIRLspServerSupportLib

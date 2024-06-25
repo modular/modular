@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MSupportInit
+add_modular_library(MLLCLInit
   Init.cpp
 
   LINK_LIBS PUBLIC

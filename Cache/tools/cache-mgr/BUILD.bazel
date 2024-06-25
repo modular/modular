@@ -5,10 +5,10 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     deps = [
         "//Cache",
+        "//LLCL:Init",
         "//LLCL:RuntimeGlobals",
         "//Support:CommonCLOptions",
         "//Support:Globals",
-        "//Support:Init",
         "@llvm-project//mlir:Support",
     ],
 )
