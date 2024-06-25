@@ -14,7 +14,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
+from runtime.llcl import parallelism_level
 
 from utils.index import StaticIntTuple, StaticTuple
 from utils.loop import unroll
@@ -694,7 +694,7 @@ fn _transpose_2d_parallel_tiled[
 
     var work = ceildiv(n_tiles, rows_per_worker)
 
-    var num_threads = Runtime().parallelism_level()
+    var num_threads = parallelism_level()
 
     var num_tasks = min(work, num_threads)
 
@@ -802,7 +802,7 @@ fn _transpose_4d_swap_middle_helper[
                     memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
         return
     else:
-        var num_threads = Runtime().parallelism_level()
+        var num_threads = parallelism_level()
 
         var num_tasks = min(work, num_threads)
 
@@ -938,7 +938,7 @@ fn transpose_trivial_memcpy[
 
     else:
         var work_units = ceildiv(total_size, min_work_per_task)
-        var num_tasks = min(work_units, Runtime().parallelism_level())
+        var num_tasks = min(work_units, parallelism_level())
         var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
@@ -1034,7 +1034,7 @@ fn _copy_with_strides[
             next_output_offset += output_axis_stride
 
     else:
-        var num_threads = Runtime().parallelism_level()
+        var num_threads = parallelism_level()
         var num_tasks = min(
             ceildiv(output.bytecount(), min_work_per_task), num_threads
         )

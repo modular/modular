@@ -17,7 +17,7 @@ from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
 from memory import memset_zero
 from register import mogg_register
-from runtime.llcl import MojoCallContextPtr, Runtime
+from runtime.llcl import MojoCallContextPtr, parallelism_level
 
 from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type
@@ -298,7 +298,7 @@ fn _batched_matmul_cpu[
     var m = c.dim[1]()
     var n = c.dim[2]()
     var k = a.dim[2]()
-    var num_threads = Runtime().parallelism_level()
+    var num_threads = parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
         ceildiv(m * n * k * batch_size, get_min_task_size()), batch_size
