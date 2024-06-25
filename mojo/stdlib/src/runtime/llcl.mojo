@@ -187,6 +187,17 @@ fn _get_current_runtime() -> Pointer[NoneType]:
     ]()
 
 
+@always_inline
+fn parallelism_level() -> Int:
+    """Gets the parallelism level of the Runtime."""
+    return int(
+        external_call[
+            "KGEN_CompilerRT_LLCL_ParallelismLevel",
+            Int32,
+        ](_get_current_runtime())
+    )
+
+
 # ===----------------------------------------------------------------------===#
 # Runtime
 # ===----------------------------------------------------------------------===#
@@ -256,15 +267,6 @@ struct Runtime:
             external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](
                 self.ptr
             )
-
-    fn parallelism_level(self) -> Int:
-        """Gets the parallelism level of the Runtime."""
-        return int(
-            external_call[
-                "KGEN_CompilerRT_LLCL_ParallelismLevel",
-                Int32,
-            ](self.ptr)
-        )
 
     @__named_result(task)
     fn create_task(
