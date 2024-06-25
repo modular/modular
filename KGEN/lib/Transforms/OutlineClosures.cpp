@@ -138,11 +138,9 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Add additional uses to the captures set.
       for (ParamDeclRefAttr capturedUse : capturedUses) {
-        auto declOpIter =
-            regionDeclUses->second.decls.find(capturedUse.getName());
-        if (declOpIter == regionDeclUses->second.decls.end())
-          continue;
-        Operation *declOp = declOpIter->second.declOp;
+        Operation *declOp =
+            regionDeclUses->second.decls.find(capturedUse.getName())
+                ->second.declOp;
         if (!regionDecl->isAncestor(declOp))
           regionDeclUses->second.usesFromAbove.insert(capturedUse);
       }
