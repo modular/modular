@@ -49,6 +49,15 @@ struct DeviceNDBuffer[
         self.buffer = ctx.create_buffer[type](int(shape.product[len(shape)]()))
         self.tensor = NDBuffer[type, rank, shape](self.buffer.ptr, Self.shape)
 
+    @always_inline
+    fn __init__(
+        inout self, ctx: DeviceContext, dynamic_stride: StaticIntTuple[rank]
+    ) raises:
+        self.buffer = ctx.create_buffer[type](int(shape.product[len(shape)]()))
+        self.tensor = NDBuffer[type, rank, shape](
+            self.buffer.ptr, Self.shape, dynamic_stride
+        )
+
 
 fn get_minmax[dtype: DType](x: DTypePointer[dtype], N: Int) -> SIMD[dtype, 2]:
     var max_val = x[0]
