@@ -931,6 +931,11 @@ Value KGEN::convertParameterToLLVM(
   }
 
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr)) {
+    if (cst.getType().isCapturing()) {
+      b.emitError("TODO: capturing closures cannot be materialized as runtime "
+                  "values");
+      return {};
+    }
     return b.create<LLVM::AddressOfOp>(
         tc.convertType(cst.getType()),
         cast<FlatSymbolRefAttr>(cst.getSymbol()));
