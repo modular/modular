@@ -13,7 +13,7 @@
 #include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "lldb/Core/Debugger.h"

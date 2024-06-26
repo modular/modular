@@ -7,7 +7,7 @@
 #include "LLCL/Init/Init.h"
 #include "Support/CommandLine.h"
 #include "Support/Configuration.h"
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Support/raw_ostream.h"
 

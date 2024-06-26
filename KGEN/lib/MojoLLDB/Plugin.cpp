@@ -16,7 +16,7 @@
 #include "LLCL/Init/Init.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "REPL/MojoREPL.h"
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 #include "Support/SymbolExport.h"
 #include "TypeSystem/MojoTypeSystem.h"
 #include "lldb/API/SBCommandInterpreter.h"

@@ -17,7 +17,7 @@
 
 #include "Config/Version.h"
 #include "KGEN/Support/Configuration.h"
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LogicalResult.h"
 #include "Support/Process.h"
