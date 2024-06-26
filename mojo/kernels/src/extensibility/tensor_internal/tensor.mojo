@@ -9,7 +9,7 @@ Implements the `Tensor` type.
 Example:
 
 ```mojo
-from tensor import Tensor, TensorSpec, TensorShape
+from max.tensor import Tensor, TensorSpec, TensorShape
 from utils.index import Index
 
 var height = 256

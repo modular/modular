@@ -6,10 +6,10 @@
 """
 Implements the `TensorSpec` type.
 
-You can import these APIs from the `tensor` package. For example:
+You can import these APIs from the `max.tensor` package. For example:
 
 ```mojo
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 ```
 """
 
