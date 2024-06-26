@@ -19,7 +19,7 @@ purpose. The current libraries are:
 
 - [ADT](ADT.md)
 - [ASN1](ASN1.md)
-- Compiler
+- [Compiler](Compiler.md)
 - [CrashReporting](CrashReporting.md)
 - [Cryptography](Cryptography.md)
 - [CUDA](CUDA.md)
