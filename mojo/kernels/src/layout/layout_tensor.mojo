@@ -454,7 +454,8 @@ struct LayoutTensor[
 
             @parameter
             for i in range(Self.rank):
-                res.max_dim[i] = to_int(Self.layout.shape[i])
+                alias shape_i = to_int(Self.layout.shape[i])
+                res.max_dim[i] = shape_i
                 alias tile_size_i = tile_sizes[i]
                 res.dim_offset[i] = tile_size_i * tile_coords[i]
 
