@@ -37,7 +37,7 @@ purpose. The current libraries are:
 - [Profiling](Profiling.md)
 - [Settings](Settings.md)
 - [Telemetry](Telemetry.md)
-- Threading
+- [Threading](Threading.md)
 - [UI](UI.md)
 
 The `Support/` directory also includes a number of stand-alone libraries that
