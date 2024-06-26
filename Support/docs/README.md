@@ -21,7 +21,7 @@ purpose. The current libraries are:
 - [ASN1](ASN1.md)
 - Compiler
 - [CrashReporting](CrashReporting.md)
-- Cryptography
+- [Cryptography](Cryptography.md)
 - [CUDA](CUDA.md)
 - DebugInfoDialect
 - [Driver](Driver.md)
