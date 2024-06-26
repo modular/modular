@@ -24,7 +24,7 @@ from utils import StaticIntTuple, StaticTuple, unroll
 
 @value
 @register_passable("trivial")
-struct Dim(Intable, Stringable, ImplicitlyBoolable):
+struct Dim(Intable, Stringable, Boolable):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
@@ -79,15 +79,6 @@ struct Dim(Intable, Stringable, ImplicitlyBoolable):
             Whether the dimension has a static value.
         """
         return self.value.__bool__()
-
-    @always_inline("nodebug")
-    fn __as_bool__(self) -> Bool:
-        """Returns True if the dimension has a static value.
-
-        Returns:
-            Whether the dimension has a static value.
-        """
-        return self.__bool__()
 
     @always_inline("nodebug")
     fn has_value(self) -> Bool:
