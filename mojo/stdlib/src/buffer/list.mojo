@@ -170,6 +170,11 @@ struct Dim(Intable, Stringable, Formattable, Boolable):
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
+        """Gets the static dimension value.
+
+        Returns:
+            The static dimension value.
+        """
         return self.value.value()
 
     @always_inline("nodebug")
