@@ -28,7 +28,7 @@ purpose. The current libraries are:
 - Entitlements
 - Filesystem
 - Frameworks
-- Globals
+- [Globals](Globals.md)
 - HTTP
 - [MArchTarget](MArchTarget.md)
 - MDialect
