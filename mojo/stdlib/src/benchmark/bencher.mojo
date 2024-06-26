@@ -40,10 +40,10 @@ struct BenchMetric(CollectionElement):
     """Default set of benchmark metrics."""
 
     fn __str__(self) -> String:
-        """Converts BenchMetric to String
+        """Gets a string representation of this metric.
 
         Returns:
-            The string representation of the metric."""
+            The string representation."""
         return self.name + " (" + self.unit + ")"
 
     fn __eq__(self, other: Self) -> Bool:
@@ -69,7 +69,7 @@ struct BenchMetric(CollectionElement):
         return self.code != other.code
 
     fn check_name(self, alt_name: String) -> Bool:
-        """Check whether a string contains the metric's name.
+        """Checks whether a string contains the metric's name.
 
         Args:
             alt_name: Alternative name of a metric.
@@ -83,14 +83,14 @@ struct BenchMetric(CollectionElement):
     fn get_metric_from_list(
         name: String, metric_list: List[BenchMetric]
     ) raises -> BenchMetric:
-        """Return a metric from a given list by only using metric's name.
+        """Gets a metric from a given list using only the metric's name.
 
         Args:
-            name: Metric's name (String).
+            name: Metric's name.
             metric_list: List of metrics to search.
 
         Returns:
-            Return a metric from a given list by only using metric's name.
+            The selected metric.
         """
         for m in metric_list:
             if m[].check_name(name):
@@ -124,7 +124,7 @@ struct ThroughputMeasure(CollectionElement):
         value: Int,
         reference: List[BenchMetric] = BenchMetric.DEFAULTS,
     ) raises:
-        """Create a ThroughputMeasure based on metric's name (String).
+        """Creates a `ThroughputMeasure` based on metric's name.
 
         Args:
             name: The name of BenchMetric in its corresponding reference.
@@ -143,10 +143,15 @@ struct ThroughputMeasure(CollectionElement):
         self.value = value
 
     fn __str__(self) -> String:
+        """Gets a string representation of this `ThroughputMeasure`.
+
+        Returns:
+            The string represntation.
+        """
         return str(self.metric)
 
     fn compute(self, elapsed_sec: Float64) -> Float64:
-        """Compute throughput rate for this metric per unit of time (second).
+        """Computes throughput rate for this metric per unit of time (second).
 
         Args:
             elapsed_sec: Elapsed time measured in seconds.
@@ -325,7 +330,8 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
         verbose_timing: Bool = False,
     ):
-        """Constructs a Benchmark Info object to return Benchmark report and Stats.
+        """Constructs a `BenchmarkInfo` object to return benchmark report and
+        statistics.
 
         Args:
             name: The name of the benchmark.
@@ -340,7 +346,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         self.verbose_timing = verbose_timing
 
     fn __str__(self) -> String:
-        """Formats Benchmark Statistical Info.
+        """Gets a string representation of this `BenchmarkInfo` value.
 
         Returns:
             A string representing benchmark statistics.
