@@ -206,9 +206,7 @@ modular_cc_library(
 modular_cc_library(
     name = "CrashReporting",
     srcs = glob(["lib/CrashReporting/*.cpp"]),
-    hdrs = [
-        "include/Support/CrashReporting.h",
-    ],
+    hdrs = glob(["include/Support/CrashReporting/*.h"]),
     deps = [
         ":Base",
         ":Configuration",
