@@ -12,7 +12,6 @@ from internal_utils import TestTensor, array_equal
 from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
-from tensor import Tensor
 
 from utils.index import StaticIntTuple
 

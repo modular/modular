@@ -6,7 +6,7 @@
 from buffer import NDBuffer
 from buffer.list import DimList
 from driver import Device, DeviceMemory, Tensor, TensorSlice
-from tensor import TensorShape, TensorSpec
+from max.tensor import TensorShape, TensorSpec
 
 from .util import (
     ndbuffer_view_from_tensor,
