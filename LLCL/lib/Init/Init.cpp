@@ -9,7 +9,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Configuration.h"
 #include "Support/Context.h"
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Telemetry.h"

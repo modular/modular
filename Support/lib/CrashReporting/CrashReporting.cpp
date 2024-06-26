@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 
 #include "Config/Version.h"
 #include "Support/ErrorOr.h"

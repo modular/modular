@@ -6,7 +6,7 @@
 
 #include "LLCL/Init/Init.h"
 #include "Support/CommandLine.h"
-#include "Support/CrashReporting.h"
+#include "Support/CrashReporting/CrashReporting.h"
 
 using namespace M;
 
