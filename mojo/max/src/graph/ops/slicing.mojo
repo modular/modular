@@ -417,7 +417,10 @@ def split[
 # ===----------------------------------------------------------------------=== #
 
 
-def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
+@always_inline
+def concat(
+    values: List[Symbol], axis: Int = 0, out_dim: Optional[Dim] = None
+) -> Symbol:
     """Concatenates a list of symbolic tensors along an axis.
 
     Args:
@@ -427,6 +430,8 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
         axis: The axis to concatenate along. If negative, indexes relative
             to the end of the tensor shape. For instance, `concat(vs, -1)`
             will concat along the last dimension.
+        out_dim: The expected output dimension of the concat `axis`.
+          This will be assert at graph execution time to be correct.
 
     Returns:
         A new symbolic tensor representing the concatenation result. It will
@@ -441,12 +446,41 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
     var ctx = g._context()
     var axisAttr = Attribute.parse(ctx, str(axis))
     var namedAxisAttr = NamedAttribute(Identifier(ctx, "axis"), axisAttr)
-    return g.nvop(
-        "rmo.concat",
-        values,
-        attrs=List[NamedAttribute](namedAxisAttr),
-        enable_result_type_inference=True,
-    )[0]
+    var attrs = List[NamedAttribute](namedAxisAttr)
+    if out_dim:
+        attrs.append(
+            NamedAttribute(
+                Identifier(ctx, "out_dim"), out_dim.value().to_mlir(ctx)
+            )
+        )
+
+    var out: Symbol
+    try:
+        out = g.nvop(
+            "rmo.concat",
+            values,
+            attrs=attrs,
+            enable_result_type_inference=True,
+        )[0]
+    except e:
+        # The graph api does not currently support algebraic expressions in dimensions.
+        # There is a chance that concat was unable to simplify the expression and returned an invalid shape.
+        # If this happens, the users must set `out_dim` to give the output dim a new value.
+        # We explicitly match that error and rewrite it with something with more context.
+        if "Unsupported dim type" in str(e):
+            raise error(
+                g,
+                (
+                    "Concat does not support outputting algebraic expressions,"
+                    " but the axis dimension could not be simplified. Please"
+                    " set out_dim."
+                ),
+                __call_location(),
+            )
+
+        raise error(g, e, __call_location())
+
+    return out
 
 
 def stack(values: List[Symbol], axis: Int = 0) -> Symbol:

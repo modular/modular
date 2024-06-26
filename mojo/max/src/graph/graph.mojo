@@ -395,14 +395,6 @@ struct Graph(CollectionElement, Stringable):
             enable_result_type_inference=enable_result_type_inference,
         )
 
-        var all_dims = List[Dim]()
-        for out_type in out_types:
-            all_dims += out_type[].dims()
-
-        var out_param_attr = self._new_parameters(all_dims)
-        if out_param_attr:
-            op.set_inherent_attr("outputParamDecls", out_param_attr.take())
-
         var layer = self._graph[].current_layer()
         if layer:
             op.set_discardable_attr("layer", StringAttr(ctx, layer^))
@@ -416,6 +408,15 @@ struct Graph(CollectionElement, Stringable):
         var results = List[Symbol]()
         for i in range(op.num_results()):
             results.append(Symbol(self._graph, op.result(i)))
+
+        var all_dims = List[Dim]()
+        for res in results:
+            all_dims += res[].type().dims()
+
+        var out_param_attr = self._new_parameters(all_dims)
+        if out_param_attr:
+            op.set_inherent_attr("outputParamDecls", out_param_attr.take())
+
         return results
 
     # ===------------------------------------------------------------------=== #
