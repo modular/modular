@@ -33,7 +33,7 @@ purpose. The current libraries are:
 - [MArchTarget](MArchTarget.md)
 - [MDialect](MDialect.md)
 - [Metering](Metering.md)
-- ML
+- [ML](ML.md)
 - [Profiling](Profiling.md)
 - Settings
 - [Telemetry](Telemetry.md)
