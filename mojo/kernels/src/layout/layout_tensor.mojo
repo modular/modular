@@ -312,14 +312,7 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn stack_allocation() -> Self:
-        return stack_allocation[
-            layout.size(), dtype, address_space=address_space
-        ]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn aligned_stack_allocation[alignment: Int]() -> Self:
+    fn stack_allocation[*, alignment: Int = alignof[dtype]()]() -> Self:
         return stack_allocation[
             layout.size(),
             dtype,

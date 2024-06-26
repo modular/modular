@@ -15,7 +15,7 @@ fn test_element_load():
     print("== test_element_load")
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].aligned_stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+    ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
     tensor_8x8.linspace()
 
     # CHECK: vector_1x4
@@ -72,7 +72,7 @@ fn test_element_store():
     print("== test_element_store")
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].aligned_stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+    ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
     tensor_8x8.linspace()
 
     # CHECK: vector_1x4
