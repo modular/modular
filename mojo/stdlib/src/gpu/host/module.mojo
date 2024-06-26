@@ -463,17 +463,13 @@ struct Module:
         """
 
         var func = _FunctionHandle()
-        var name_cstr = name
-
         var cuModuleGetFunction = self.cuda_dll.value().cuModuleGetFunction if self.cuda_dll else cuModuleGetFunction.load()
         _check_error(
             cuModuleGetFunction(
                 Pointer.address_of(func),
                 self.module,
-                name_cstr.unsafe_cstr_ptr(),
+                name.unsafe_cstr_ptr(),
             )
         )
-
-        _ = name_cstr
 
         return func
