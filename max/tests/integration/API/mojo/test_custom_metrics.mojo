@@ -14,7 +14,7 @@ from time import sleep
 
 
 from max.engine import InferenceSession, InputSpec
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 from max.serve.metrics import TelemetryContext, PrometheusMetricsEndPoint
 
 

@@ -12,7 +12,7 @@ from testing import assert_equal
 from pathlib import Path
 
 from max.engine import InferenceSession
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_metadata() raises:

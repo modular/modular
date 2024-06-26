@@ -17,7 +17,7 @@ from max.engine import (
     InferenceSession,
     EngineNumpyView,
 )
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_numpy_input() raises:

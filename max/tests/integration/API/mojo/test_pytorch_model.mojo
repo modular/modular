@@ -17,7 +17,7 @@ from max.engine import (
     InputSpec,
     ShapeElement,
 )
-from tensor import Tensor, TensorSpec
+from max.tensor import Tensor, TensorSpec
 
 
 fn test_pytorch_model() raises:

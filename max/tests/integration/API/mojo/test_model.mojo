@@ -14,7 +14,7 @@ from pathlib import Path
 from python import Python
 
 from max.engine import InferenceSession, NamedTensor
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_num_io_and_names() raises:
