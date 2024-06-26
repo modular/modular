@@ -70,8 +70,8 @@ fn kernel(
     var b = Buffer[dtype](b_ptr, k * NR)
     var c = Buffer[dtype](c_ptr, MR * n)
 
-    var c_local = Buffer[dtype, size = MR * NR]().aligned_stack_allocation[
-        alignment
+    var c_local = Buffer[dtype, size = MR * NR]().stack_allocation[
+        alignment=alignment
     ]()
 
     alias NR2 = NR // simd_size
