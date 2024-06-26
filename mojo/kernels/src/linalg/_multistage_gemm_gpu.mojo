@@ -73,65 +73,240 @@ fn distance(arg0: DTypePointer, arg1: DTypePointer) -> Int:
 
 
 @always_inline
-fn ld_mma[
-    num_matrices: Int,
-    # Refactor the three parameters with ComposedLayout
-    thread_layout: Layout,
-    swizzle: OptionalReg[_swizzle_signature] = None,
-    transposed: Bool = False,
+fn multistage_mma[
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    num_threads: Int,
+    num_pipeline_stages: Int,
+    transpose_b: Bool,
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    a_smem_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    b_smem_layout: Layout,
+    # Hack:
     *,
-    # work around parameter deduction
-    __layout: Layout,
-    __element_layout: Layout,
-    __index_type: DType,
-    __masked: Bool,
-    __dtype: DType,
-    # Nvidia GPU register is 4B.
-    __register_width: Int = 4,
-    __output_width: Int = num_matrices * __register_width // sizeof[__dtype](),
+    swizzle_a: Bool = True,
 ](
-    mat: LayoutTensor[
-        __dtype,
-        __layout,
-        address_space = AddressSpace.SHARED,
-        element_layout=__element_layout,
-        index_type=__index_type,
-        masked=__masked,
+    c: LayoutTensor[c_type, c_layout],
+    a_iter_arg: LayoutTensorIter[a_type, a_layout, address_space=_, circular=_],
+    b_iter_arg: LayoutTensorIter[b_type, b_layout],
+    a_smem_iter: LayoutTensorIter[
+        a_type, a_smem_layout, address_space = AddressSpace.SHARED, circular=_
     ],
-    offset: Int,
-) -> SIMD[mat.dtype, __output_width]:
-    constrained[num_matrices == 4, "Only support loading 4 matrices."]()
+    b_smem_iter: LayoutTensorIter[
+        b_type, b_smem_layout, address_space = AddressSpace.SHARED, circular=_
+    ],
+    num_iters: Int,
+):
+    alias simd_size = simdwidthof[a_type]()
 
-    # TODO: Either optimize signed int division or restrict this to uint32.
-    var ln_id = lane_id()
+    var tid: UInt32 = ThreadIdx.x()
+    var warp_id = tid // WARP_SIZE
 
-    alias stride = thread_layout.stride[0].value()
-    alias simd_size = simdwidthof[mat.dtype]()
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+    var warp_x = warp_id % num_warps_n
+    var warp_y = warp_id // num_warps_n
 
-    # TODO: the index calculation can be refactored when layout(i) works on GPU.
-    # var row_offset = thread_layout(lane_id)
-    var row_offset = ln_id % 16 * stride + ln_id // 16
-    row_offset += offset
+    var a_iter = a_iter_arg
+    var b_iter = b_iter_arg
 
-    @parameter
-    if swizzle:
-        alias swizzle_fn = swizzle.value()
-        row_offset = swizzle_fn(row_offset)
-
-    row_offset = row_offset * simd_size
-
-    return ld_matrix[mat.dtype, __output_width, transposed](
-        mat.ptr + row_offset
+    alias async_copy_a_layout = Layout.row_major(
+        num_threads * simd_size // BK, BK // simd_size
+    )
+    alias async_copy_a_swizzle = None if not swizzle_a else OptionalReg[
+        _swizzle_signature
+    ](xor_2bits_per8T)
+    alias async_copy_b_layout = Layout.row_major(
+        num_threads * simd_size // b_smem_layout.stride[0].value(),
+        b_smem_layout.stride[0].value() // simd_size,
+    )
+    alias async_copy_b_swizzle = OptionalReg[_swizzle_signature](
+        xor_2bits_per8T
+    ) if transpose_b else (
+        None if a_type
+        == DType.float32 else OptionalReg[_swizzle_signature](xor_3bits_per16T)
     )
 
-
-@always_inline
-fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
+    # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
-    if swap:
-        return (arg_1, arg_0)
-    else:
-        return (arg_0, arg_1)
+    for stage in range(num_pipeline_stages - 1):
+
+        @parameter
+        if a_iter.address_space == AddressSpace.GENERIC:
+            var a_smem_tile = a_smem_iter.next(stage).get()
+
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_a_layout,
+                swizzle=async_copy_a_swizzle,
+            ](
+                a_smem_tile.vectorize[1, simd_size](),
+                a_iter.get()
+                .bitcast[a_type, address_space = AddressSpace.GENERIC]()
+                .vectorize[1, simd_size](),
+            )
+
+            a_iter += 1
+
+        @parameter
+        if b_iter.address_space == AddressSpace.GENERIC:
+            var b_smem_tile = b_smem_iter.next(stage).get()
+
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
+            ](
+                b_smem_tile.vectorize[1, simd_size](),
+                b_iter.get()
+                .bitcast[b_type, address_space = AddressSpace.GENERIC]()
+                .vectorize[1, simd_size](),
+            )
+
+            b_iter += 1
+
+        async_copy_commit_group()
+
+    # Guard stage 0.
+    async_copy_wait_group(num_pipeline_stages - 2)
+    barrier()
+
+    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
+    alias num_k_mmas = BK // MMA_K
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+
+    alias accum_type = get_accum_type[a_type]()
+    alias frag_size = get_fragment_size[mma_shape]()
+    alias a_frag_size = frag_size[0]
+    alias b_frag_size = frag_size[1]
+    alias c_frag_size = frag_size[2]
+
+    # Register tiles.
+    # TODO: parameterize fragment size based on data type.
+    var a_reg_tiles = LayoutTensor[
+        a_type, Layout.row_major(2 * num_m_mmas, a_frag_size)
+    ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
+    var b_reg_tiles = LayoutTensor[
+        b_type, Layout.row_major(2 * num_n_mmas, b_frag_size)
+    ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
+
+    var a_warp_tile = a_smem_iter.get().tile[WM, BK](int(warp_y), 0)
+
+    alias b_wtile_dim0 = WN if transpose_b else BK
+    alias b_wtile_dim1 = BK if transpose_b else WN
+    var b_wtile_coord0 = int(warp_x) if transpose_b else 0
+    var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
+    var b_warp_tile = b_smem_iter.get().tile[b_wtile_dim0, b_wtile_dim1](
+        b_wtile_coord0, b_wtile_coord1
+    )
+
+    var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
+
+    mma_op.load_a[swizzle_a](a_warp_tile, a_reg_tiles[0])
+    mma_op.load_b(b_warp_tile, b_reg_tiles[0])
+
+    for k_tile_id in range(num_iters):
+        var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
+        var b_smem_iter_tmp = b_smem_iter.next(k_tile_id)
+
+        var a_warp_tile = a_smem_iter_tmp.get().tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_smem_iter_tmp.get().tile[
+            b_wtile_dim0, b_wtile_dim1
+        ](
+            b_wtile_coord0,
+            b_wtile_coord1,
+        )
+
+        # Perform prefetch registers and mma until current shared memory tile's
+        # data has all been loaded to registers.
+        @parameter
+        for k_mma in range(num_k_mmas):
+            var current = k_mma % 2
+            var next = (k_mma + 1) % 2
+
+            if k_mma == num_k_mmas - 1:
+                var a_smem_next_tile = a_smem_iter_tmp.next().get()
+                var b_smem_next_tile = b_smem_iter_tmp.next().get()
+
+                a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
+                b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
+                    b_wtile_coord0, b_wtile_coord1
+                )
+
+            mma_op.load_a[swizzle_a](
+                a_warp_tile, a_reg_tiles[next], (k_mma + 1) % num_k_mmas
+            )
+            mma_op.load_b(
+                b_warp_tile, b_reg_tiles[next], (k_mma + 1) % num_k_mmas
+            )
+
+            mma_op.mma(
+                a_reg_tiles[current],
+                b_reg_tiles[current],
+                c.vectorize[1, c_frag_size](),
+            )
+
+            if k_mma + 2 == num_k_mmas:
+                var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
+
+                # Prefetch one k tile (if valid) from global memory to current
+                # shared memory buffer.
+                if prefetch_tile_id < num_iters:
+
+                    @parameter
+                    if a_iter.address_space == AddressSpace.GENERIC:
+                        var a_smem_prefetch_tile = a_smem_iter_tmp.next(
+                            num_pipeline_stages - 1
+                        ).get()
+
+                        copy_dram_to_sram_async[
+                            thread_layout=async_copy_a_layout,
+                            swizzle=async_copy_a_swizzle,
+                        ](
+                            a_smem_prefetch_tile.vectorize[1, simd_size](),
+                            a_iter.get()
+                            .bitcast[
+                                a_type, address_space = AddressSpace.GENERIC
+                            ]()
+                            .vectorize[1, simd_size](),
+                        )
+
+                        a_iter += 1
+
+                    @parameter
+                    if b_iter.address_space == AddressSpace.GENERIC:
+                        var b_smem_prefetch_tile = b_smem_iter_tmp.next(
+                            num_pipeline_stages - 1
+                        ).get()
+
+                        copy_dram_to_sram_async[
+                            thread_layout=async_copy_b_layout,
+                            swizzle=async_copy_b_swizzle,
+                        ](
+                            b_smem_prefetch_tile.vectorize[1, simd_size](),
+                            b_iter.get()
+                            .bitcast[
+                                b_type, address_space = AddressSpace.GENERIC
+                            ]()
+                            .vectorize[1, simd_size](),
+                        )
+
+                        b_iter += 1
+
+                async_copy_commit_group()
+
+                # Guard the next k tile's shared memory buffer.
+                async_copy_wait_group(num_pipeline_stages - 2)
+                barrier()
 
 
 # fmt: off
