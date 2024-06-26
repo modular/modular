@@ -23,7 +23,7 @@ purpose. The current libraries are:
 - [CrashReporting](CrashReporting.md)
 - [Cryptography](Cryptography.md)
 - [CUDA](CUDA.md)
-- DebugInfoDialect
+- [DebugInfoDialect](DebugInfoDialect.md)
 - [Driver](Driver.md)
 - Entitlements
 - [Filesystem](Filesystem.md)
