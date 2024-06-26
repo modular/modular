@@ -558,7 +558,7 @@ struct NDBuffer[
     shape: DimList = DimList.create_unknown[rank](),
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Sized, Stringable):
+](Sized, Stringable, Formattable):
     """An N-dimensional Buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
@@ -881,11 +881,20 @@ struct NDBuffer[
         Returns:
           A compact string of the buffer.
         """
-        var res = String("NDBuffer(")
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this buffer to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+        writer.write("NDBuffer(")
 
         @parameter
-        fn serialize[T: Stringable](val: T):
-            res += str(val)
+        fn serialize[T: Formattable](val: T):
+            writer.write(val)
 
         var shape = List[Int]()
         for i in range(rank):
@@ -895,7 +904,7 @@ struct NDBuffer[
             self.data, shape
         )
 
-        return res + ")"
+        writer.write(")")
 
     @no_inline
     fn __repr__(self) -> String:

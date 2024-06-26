@@ -24,7 +24,7 @@ from utils import StaticIntTuple, StaticTuple, unroll
 
 @value
 @register_passable("trivial")
-struct Dim(Intable, Stringable, Boolable):
+struct Dim(Intable, Stringable, Formattable, Boolable):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
@@ -205,9 +205,20 @@ struct Dim(Intable, Stringable, Boolable):
         Returns:
             The string representation of the type.
         """
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this DimList to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
         if self.is_dynamic():
-            return "?"
-        return str(int(self))
+            return writer.write_str["?"]()
+        else:
+            return writer.write(int(self))
 
 
 # ===----------------------------------------------------------------------===#
@@ -216,7 +227,7 @@ struct Dim(Intable, Stringable, Boolable):
 
 
 @register_passable("trivial")
-struct DimList(Sized, Stringable):
+struct DimList(Sized, Stringable, Formattable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -433,12 +444,24 @@ struct DimList(Sized, Stringable):
         Returns:
             The string representation of the type.
         """
-        var res = String("[")
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this DimList to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write_str["["]()
+
         for i in range(len(self)):
             if i:
-                res += ", "
-            res += str(self.value[i])
-        return res + "]"
+                writer.write_str[", "]()
+            writer.write(self.value[i])
+
+        writer.write_str["]"]()
 
 
 @always_inline
