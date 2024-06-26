@@ -46,7 +46,7 @@ struct _Accumulator[
         alias alignment = alignof[SIMD[type, simd_width]]()
         self._storage = Buffer[
             type, num_rows * num_cols * simd_width
-        ].aligned_stack_allocation[alignment=alignment]()
+        ].stack_allocation[alignment=alignment]()
 
     @always_inline
     fn __init__(

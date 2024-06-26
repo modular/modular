@@ -226,7 +226,7 @@ struct PackMatrixRows[
             type,
             2,
             DimList(simd_size, simd_size),
-        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        ].stack_allocation[alignment = alignof[SIMD[type, simd_size]]()]()
 
         var valid_tile_simd_dim = Index(
             min(

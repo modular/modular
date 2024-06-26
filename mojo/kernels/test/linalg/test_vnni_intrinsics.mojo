@@ -26,12 +26,12 @@ from testing import assert_equal
 
 
 def test_i8_to_i32():
-    var a = Buffer[DType.uint8, 16 * 64].aligned_stack_allocation[64]()
-    var asat = Buffer[DType.uint8, 16 * 64].aligned_stack_allocation[64]()
-    var b = Buffer[DType.int8, 64 * 16].aligned_stack_allocation[64]()
+    var a = Buffer[DType.uint8, 16 * 64].stack_allocation[alignment=64]()
+    var asat = Buffer[DType.uint8, 16 * 64].stack_allocation[alignment=64]()
+    var b = Buffer[DType.int8, 64 * 16].stack_allocation[alignment=64]()
 
-    var c = Buffer[DType.int32, 16 * 16].aligned_stack_allocation[64]()
-    var csat = Buffer[DType.int32, 16 * 16].aligned_stack_allocation[64]()
+    var c = Buffer[DType.int32, 16 * 16].stack_allocation[alignment=64]()
+    var csat = Buffer[DType.int32, 16 * 16].stack_allocation[alignment=64]()
 
     for i in range(16 * 64):
         a[i] = i & 255

@@ -49,9 +49,9 @@ fn pack_b(
 fn test_pack_b():
     var packed_b = NDBuffer[
         type, 3, DimList(width // kernel_cols, K, kernel_cols)
-    ].aligned_stack_allocation[64]()
+    ].stack_allocation[alignment=64]()
     packed_b.fill(1)
-    var b = NDBuffer[type, 2, DimList(K, N)].aligned_stack_allocation[64]()
+    var b = NDBuffer[type, 2, DimList(K, N)].stack_allocation[alignment=64]()
     b.fill(1)
     pack_b(packed_b, b)
 
