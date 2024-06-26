@@ -323,7 +323,7 @@ struct Buffer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn aligned_stack_allocation[alignment: Int]() -> Self:
+    fn stack_allocation[*, alignment: Int = alignof[type]()]() -> Self:
         """Constructs a buffer instance backed by stack allocated memory space.
 
         Parameters:
@@ -337,16 +337,6 @@ struct Buffer[
             size.get(), type, alignment=alignment, address_space=address_space
         ]()
         return Self(data_pointer)
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn stack_allocation() -> Self:
-        """Constructs a buffer instance backed by stack allocated memory space.
-
-        Returns:
-            Constructed buffer with the allocated space.
-        """
-        return Self.aligned_stack_allocation[alignof[type]()]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1328,7 +1318,7 @@ struct NDBuffer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn aligned_stack_allocation[alignment: Int]() -> Self:
+    fn stack_allocation[*, alignment: Int = alignof[type]()]() -> Self:
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Parameters:
@@ -1351,16 +1341,6 @@ struct NDBuffer[
             address_space=address_space,
         ]()
         return Self(data_pointer)
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn stack_allocation() -> Self:
-        """Constructs an NDBuffer instance backed by stack allocated memory space.
-
-        Returns:
-            Constructed NDBuffer with the allocated space.
-        """
-        return Self.aligned_stack_allocation[alignof[type]()]()
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, *idx: Int):

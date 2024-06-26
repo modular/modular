@@ -20,7 +20,7 @@ fn strsv[
     var n: Int = size
     var x_solved = Buffer[
         DType.float32, simd_width * simd_width
-    ].aligned_stack_allocation[64]()
+    ].stack_allocation[alignment=64]()
 
     while True:
         for j in range(simd_width):

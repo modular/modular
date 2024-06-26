@@ -231,7 +231,7 @@ fn test_aligned_load_store():
         DType.index,
         2,
         DimList(4, 4),
-    ].aligned_stack_allocation[128]()
+    ].stack_allocation[alignment=128]()
 
     # Set values
     for i1 in range(4):
