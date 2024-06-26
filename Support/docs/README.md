@@ -36,7 +36,7 @@ purpose. The current libraries are:
 - ML
 - Profiling
 - Settings
-- Telemetry
+- [Telemetry](Telemetry.md)
 - Threading
 - [UI](UI.md)
 
