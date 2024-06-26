@@ -6,19 +6,20 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import ceildiv, rsqrt
+from math import ceildiv, rsqrt, isclose
 from random import rand
 from sys import argv
 
 from buffer import NDBuffer
 from gpu import *
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function
 from memory.unsafe import DTypePointer
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention_kernel,
     flash_attention_kernel_flexible_seqlen,
+    mha,
 )
 
 from utils.index import Index
@@ -35,7 +36,11 @@ fn is_benchmark() -> Bool:
 
 # CHECK-LABEL: test_flash_attention
 fn test(
-    seq_len: Int, num_keys: Int, ctx: DeviceContext, is_benchmark: Bool = False
+    seq_len: Int,
+    num_keys: Int,
+    ctx: DeviceContext,
+    is_benchmark: Bool = False,
+    use_tensor_core: Bool = False,
 ) raises:
     print("test_flash_attention")
 
@@ -43,7 +48,7 @@ fn test(
     alias batch_size = 1
     alias num_heads = 32
     alias depth = 128
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    alias scale = Float32(0.0125)  # rsqrt[type, 1](Float32(depth))
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -103,42 +108,86 @@ fn test(
     ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
 
     alias q_tile_num_rows = 32
+    alias k_tile_num_rows = 128
 
     if seq_len == num_keys and seq_len % 128 == 0:
 
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            var func = ctx.compile_function[
-                flash_attention_kernel[
-                    BM=32,  # q_tile_num_rows,
-                    BN=128,  # kv_tile_num_rows,
-                    BK=16,
-                    depth=128,
-                    num_heads=num_heads,
-                    TM=8,
-                    TN=4,
-                    num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
-                ]
-            ]()
+            if use_tensor_core:
+                var func = ctx.compile_function[
+                    mha[
+                        DType.float32,
+                        DType.float32,
+                        DType.float32,
+                        DType.float32,
+                        DType.float32,
+                        BM=q_tile_num_rows,
+                        BN=k_tile_num_rows,
+                        BK=16,
+                        WM=q_tile_num_rows,
+                        WN=32,
+                        depth=depth,
+                        num_heads=num_heads,
+                        num_threads=128,
+                        num_pipeline_stages=4,
+                    ]
+                ](
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        80 * 1024
+                    )
+                )
 
-            ctx.enqueue_function(
-                func,
-                q_device_ptr,
-                k_device_ptr,
-                v_device_ptr,
-                mask_device_ptr,
-                output_device_ptr,
-                scale,
-                batch_size,
-                seq_len,
-                grid_dim=(
-                    ceildiv(seq_len, q_tile_num_rows),
-                    num_heads,
+                ctx.enqueue_function(
+                    func,
+                    q_device_ptr,
+                    k_device_ptr,
+                    v_device_ptr,
+                    mask_device_ptr,
+                    output_device_ptr,
+                    scale,
                     batch_size,
-                ),
-                block_dim=(128, 1, 1),
-            )
+                    seq_len,
+                    grid_dim=(
+                        ceildiv(seq_len, q_tile_num_rows),
+                        num_heads,
+                        batch_size,
+                    ),
+                    block_dim=(128, 1, 1),
+                    shared_mem_bytes=80 * 1024,
+                )
+            else:
+                var func = ctx.compile_function[
+                    flash_attention_kernel[
+                        BM=32,  # q_tile_num_rows,
+                        BN=128,  # kv_tile_num_rows,
+                        BK=16,
+                        depth=128,
+                        num_heads=num_heads,
+                        TM=8,
+                        TN=4,
+                        num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
+                    ]
+                ]()
+
+                ctx.enqueue_function(
+                    func,
+                    q_device_ptr,
+                    k_device_ptr,
+                    v_device_ptr,
+                    mask_device_ptr,
+                    output_device_ptr,
+                    scale,
+                    batch_size,
+                    seq_len,
+                    grid_dim=(
+                        ceildiv(seq_len, q_tile_num_rows),
+                        num_heads,
+                        batch_size,
+                    ),
+                    block_dim=(128, 1, 1),
+                )
 
         if is_benchmark:
             alias nrun = 1000
@@ -200,8 +249,10 @@ fn test(
                 var actual = Scalar.load(
                     flash_output_ptr, d + depth * (h + s * num_heads)
                 )
-                if abs(expect - actual) > 1e-4 * abs(expect):
-                    print(d, expect, actual)
+                if not isclose(expect, actual, atol=1e-4, rtol=2e-3):
+                    print(
+                        h, s, d, actual, expect, abs((actual - expect) / expect)
+                    )
                     succeed = False
                     break
 
@@ -230,9 +281,8 @@ def main():
             # Context encoding demo.
             test(100, 100, ctx)
             test(31, 31, ctx)
-            test(
-                1024, 1024, ctx, is_benchmark()
-            )  # only benchmark a large shape
+            test(1024, 1024, ctx, is_benchmark())
+            test(1024, 1024, ctx, is_benchmark(), use_tensor_core=True)
             # Token generation demo.
             test(1, 1, ctx)
             test(1, 2, ctx)
