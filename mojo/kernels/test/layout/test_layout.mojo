@@ -437,7 +437,7 @@ fn test_zipped_divide() raises:
 
 
 # CHECK-LABEL: test_sublayout
-fn test_sublayout() raises:
+def test_sublayout():
     print("== test_sublayout")
     alias layout_2x3x4 = Layout(IntTuple(2, 3, 4), IntTuple(12, 4, 1))
     assert_equal(str(sublayout(layout_2x3x4, 0, 2)), "((2, 4):(12, 1))")
@@ -447,6 +447,31 @@ fn test_sublayout() raises:
     assert_equal(
         str(sublayout(layout_2x3x4_rank_2, 0, 1)), "(((2, 3), 2):((12, 4), 4))"
     )
+
+
+# CEHCK-LABEL: test_crd2idx
+def test_crd2idx():
+    print("== test_crd2idx")
+    alias l_4x4_row_major = Layout.row_major(4, 4)
+    alias l_4x4_col_major = Layout.col_major(4, 4)
+    # CHECK: 0 (0, 0) (0, 0)
+    # CHECK: 1 (0, 1) (1, 0)
+    # CHECK: 2 (0, 2) (2, 0)
+    # CHECK: 3 (0, 3) (3, 0)
+    # CHECK: 4 (1, 0) (0, 1)
+    # CHECK: 5 (1, 1) (1, 1)
+    # CHECK: 6 (1, 2) (2, 1)
+    # CHECK: 7 (1, 3) (3, 1)
+    # CHECK: 8 (2, 0) (0, 2)
+    # CHECK: 9 (2, 1) (1, 2)
+    # CHECK: 10 (2, 2) (2, 2)
+    # CHECK: 11 (2, 3) (3, 2)
+    # CHECK: 12 (3, 0) (0, 3)
+    # CHECK: 13 (3, 1) (1, 3)
+    # CHECK: 14 (3, 2) (2, 3)
+    # CHECK: 15 (3, 3) (3, 3)
+    for i in range(16):
+        print(i, l_4x4_row_major.idx2crd(i), l_4x4_col_major.idx2crd(i))
 
 
 def main():
@@ -460,3 +485,4 @@ def main():
     test_print_layout()
     test_zipped_divide()
     test_sublayout()
+    test_crd2idx()

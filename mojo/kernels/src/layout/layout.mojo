@@ -16,6 +16,7 @@ from .int_tuple import (
     crd2idx,
     flatten,
     inner_product,
+    idx2crd,
     is_int,
     is_tuple,
     mul,
@@ -127,6 +128,10 @@ struct Layout(
             self.stride = prefix_product(self.shape)
         else:
             self.stride = stride
+
+    @always_inline
+    fn idx2crd(self, idx: IntTuple) -> IntTuple:
+        return idx2crd(idx, self.shape, self.stride)
 
     @staticmethod
     fn col_major(*dims: Int) -> Layout:
