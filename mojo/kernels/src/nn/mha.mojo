@@ -19,24 +19,38 @@ from gpu import (
     shuffle_xor,
     warp_reduce,
 )
-from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.memory import AddressSpace, dynamic_shared_memory
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor, copy_dram_to_sram
+from layout.layout_tensor import (
+    LayoutTensor,
+    LayoutTensorIter,
+    copy_dram_to_sram,
+    copy_local_to_sram,
+    copy_local_to_dram,
+)
+from layout.tensor_core import (
+    get_accum_type,
+    get_fragment_size,
+    get_mma_shape,
+)
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.transpose import transpose
+from linalg._multistage_gemm_gpu import multistage_mma
 from memory import stack_allocation
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
 from runtime.llcl import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
-from utils.numerics import neg_inf
+from utils.numerics import neg_inf, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
-from .softmax import softmax
+from .softmax import softmax, _online_softmax_iter_for_mma_output
+
+from builtin.io import _printf
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -211,6 +225,7 @@ fn flash_attention[
     # llama 2 has attention mask but not causal mask.
     add_attn_mask: Bool = True,
     target: StringLiteral = "cpu",
+    use_tensor_core: Bool = False,
 ](
     output: NDBuffer[output_type, rank, output_shape],
     q: NDBuffer[q_type, rank, q_shape],
@@ -279,36 +294,83 @@ fn flash_attention[
     try:
         # Use fast kernel for context encoding benchmark.
         if seq_len == num_keys and seq_len % 128 == 0:
-            var func = ctx.compile_function[
-                flash_attention_kernel[
-                    BM=qtile_num_rows,
-                    BN=ktile_num_rows,
-                    BK=16,
-                    depth=depth,
-                    num_heads=num_heads,
-                    TM=8,
-                    TN=4,
-                    num_threads=128,
-                ]
-            ]()
 
-            ctx.enqueue_function(
-                func,
-                q.data,
-                k.data,
-                v.data,
-                mask.data,
-                output.data,
-                scale,
-                batch_size,
-                seq_len,
-                grid_dim=(
-                    ceildiv(seq_len, 32),
-                    num_heads,
+            @parameter
+            if use_tensor_core:
+                var func = ctx.compile_function[
+                    mha[
+                        q_type,
+                        k_type,
+                        v_type,
+                        mask_type,
+                        output_type,
+                        BM=qtile_num_rows,
+                        BN=ktile_num_rows,
+                        BK = 16 if q_type == DType.float32 else 32,
+                        WM=qtile_num_rows,
+                        WN=32,
+                        depth=depth,
+                        num_heads=num_heads,
+                        num_threads=128,
+                        num_pipeline_stages=4,
+                    ]
+                ](
+                    # TODO: Avoid hard coding shared memory needed.
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        80 * 1024
+                    )
+                )
+
+                ctx.enqueue_function(
+                    func,
+                    q.data,
+                    k.data,
+                    v.data,
+                    mask.data,
+                    output.data,
+                    scale,
                     batch_size,
-                ),
-                block_dim=(128, 1, 1),
-            )
+                    seq_len,
+                    grid_dim=(
+                        ceildiv(seq_len, qtile_num_rows),
+                        num_heads,
+                        batch_size,
+                    ),
+                    block_dim=(128, 1, 1),
+                    shared_mem_bytes=80 * 1024,
+                )
+
+            else:
+                var func = ctx.compile_function[
+                    flash_attention_kernel[
+                        BM=qtile_num_rows,
+                        BN=ktile_num_rows,
+                        BK=16,
+                        depth=depth,
+                        num_heads=num_heads,
+                        TM=8,
+                        TN=4,
+                        num_threads=128,
+                    ]
+                ]()
+
+                ctx.enqueue_function(
+                    func,
+                    q.data,
+                    k.data,
+                    v.data,
+                    mask.data,
+                    output.data,
+                    scale,
+                    batch_size,
+                    seq_len,
+                    grid_dim=(
+                        ceildiv(seq_len, 32),
+                        num_heads,
+                        batch_size,
+                    ),
+                    block_dim=(128, 1, 1),
+                )
         # Slow path for token generation for now and context encoding with
         # seq_len % 128 != 0.
         else:
@@ -1326,3 +1388,305 @@ fn _naive_attention[
     batched_matmul[4, type, type, type, transpose_b=False](output, score, v)
 
     score_ptr.free()
+
+
+# ===----------------------------------------------------------------------===#
+# Flash attention for tensor core
+# ===----------------------------------------------------------------------===#
+
+
+fn mha[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    BM: Int,  # number of queries per block
+    BN: Int,  # number of keys per block
+    BK: Int,  # tile size in depth dimension
+    WM: Int,
+    WN: Int,
+    depth: Int,
+    num_heads: Int,
+    num_threads: Int,
+    num_pipeline_stages: Int,
+](
+    q_ptr: DTypePointer[q_type],
+    k_ptr: DTypePointer[k_type],
+    v_ptr: DTypePointer[v_type],
+    mask_ptr: DTypePointer[mask_type],
+    output_ptr: DTypePointer[output_type],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+):
+    """Flash attention v2 algorithm."""
+    constrained[q_type == k_type and k_type == v_type]()
+
+    alias simd_size = simdwidthof[q_type]()
+
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+
+    constrained[
+        num_warps_m * num_warps_n == num_threads // WARP_SIZE,
+        "Number of warps doesn't match warp tile sizes.",
+    ]()
+
+    var tid: UInt32 = ThreadIdx.x()
+    var warp_id = tid // WARP_SIZE
+    var lane = lane_id()
+
+    # Coordinates of the current warp.
+    var warp_x = warp_id % num_warps_n
+    var warp_y = warp_id // num_warps_n
+
+    # The entire query block (BM x depth) is tiled in shared memory.
+    alias q_smem_size = BM * depth
+    var q_smem = dynamic_shared_memory[
+        Scalar[q_type], alignment = alignof[SIMD[q_type, simd_size]]()
+    ]()
+    var q_smem_iter = LayoutTensorIter[
+        q_type, Layout.row_major(BM, BK), AddressSpace.SHARED
+    ](q_smem, q_smem_size)
+
+    # There is one pre-allocated dynamic shared buffer.
+    # Need to explicitly offset key after at query's end.
+    alias k_smem_size = num_pipeline_stages * BN * BK
+    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    var k_smem_iter = LayoutTensorIter[
+        k_type, Layout.row_major(BN, BK), AddressSpace.SHARED, circular=True
+    ](k_smem, k_smem_size)
+
+    var batch_idx = BlockIdx.z()
+    var head_idx = BlockIdx.y()
+    var q_tile_idx = BlockIdx.x()
+
+    # Query global memory iterator
+    var q_offset = depth * (
+        head_idx + num_heads * (q_tile_idx * BM + seq_len * batch_idx)
+    )
+    var q_gmem_block = LayoutTensor[
+        q_type, Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1))
+    ](q_ptr + q_offset)
+    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+
+    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+
+    alias accum_type = get_accum_type[q_type]()
+    alias frag_size = get_fragment_size[mma_shape]()
+    alias p_frag_size = frag_size[2]
+    alias p_frag_simdwidth = p_frag_size // 2
+
+    var p_reg_tile = LayoutTensor[
+        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size)
+    ].stack_allocation()
+
+    var output_reg_tile = LayoutTensor[
+        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size)
+    ].stack_allocation()
+    output_reg_tile.fill(0.0)
+
+    # Rowwise max and sum for online softmax
+    var rowmax = stack_allocation[WM, accum_type]()
+    var rowsum = stack_allocation[WM, accum_type]()
+
+    @parameter
+    for i in range(WM):
+        rowmax[i] = min_or_neg_inf[accum_type]()
+        rowsum[i] = 0.0
+
+    # Scratch shared memory for reduction across warps.
+    var warp_scratch = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_warps_n, BM),
+        address_space = AddressSpace.SHARED,
+    ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
+
+    # Shared memory for P = Q * K^t
+    # This overlaps key tile but are used at the same time i.e. no race condition.
+    var p_smem = (q_smem + q_smem_size).bitcast[Scalar[accum_type]]()
+    alias p_smem_size = BM * BN
+    var p_smem_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(BM, BN),
+        address_space = AddressSpace.SHARED,
+    ](p_smem)
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](int(warp_y), int(warp_x))
+    var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
+
+    # Share memory tile for Value.
+    alias v_smem_size = num_pipeline_stages * BN * BK
+    var v_smem = (p_smem + p_smem_size).bitcast[Scalar[v_type]]()
+    var v_smem_iter = LayoutTensorIter[
+        v_type, Layout.row_major(BK, BN), AddressSpace.SHARED, circular=True
+    ](v_smem, v_smem_size)
+
+    # Mask global memory iterator.
+    var mask_offset = batch_idx * seq_len * seq_len + q_tile_idx * BM * seq_len
+    var warp_offset = warp_y * WM * seq_len + warp_x * WN
+    var mask_warp_ptr = mask_ptr + mask_offset + warp_offset
+
+    # Key global memory iterator
+    var kv_offset = depth * (head_idx + num_heads * seq_len * batch_idx)
+
+    for kv_tile_start_row in range(0, seq_len, BN):
+        var k_gmem_block = LayoutTensor[
+            k_type, Layout(IntTuple(BN, depth), IntTuple(num_heads * depth, 1))
+        ](k_ptr + kv_offset + kv_tile_start_row * num_heads * depth)
+        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+
+        p_reg_tile.fill(0)
+
+        # First iteration load q from global memory to shared memory.
+        if kv_tile_start_row == 0:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                True,  # transpose_b
+            ](
+                p_reg_tile,
+                q_gmem_iter,
+                k_gmem_iter,
+                q_smem_iter,
+                k_smem_iter,
+                depth // BK,
+            )
+        # Subsequent iterations just use q in share memory.
+        # TODO: Figure out a better function interface instead of passing in
+        # shared memory iterator twice.
+        else:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                True,  # transpose_b
+            ](
+                p_reg_tile,
+                # Pass shared memory iterator to hint not loading from global memory.
+                q_smem_iter,
+                k_gmem_iter,
+                q_smem_iter,
+                k_smem_iter,
+                depth // BK,
+            )
+
+        # Vectorize by 2.
+        var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
+
+        # TODO: check if this can be avoided.
+        # The dimension of mask are assumed dynamic here so still using index calculation.
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                var frag_offset = m_mma * MMA_M * seq_len + n_mma * MMA_N
+                var mask_frag_ptr = mask_warp_ptr + frag_offset
+
+                var frag_lane_row = int(lane // (MMA_N // p_frag_simdwidth))
+                var frag_lane_col = int(lane * p_frag_simdwidth % MMA_N)
+
+                alias mask_align = alignof[SIMD[mask_type, p_frag_simdwidth]]()
+
+                @parameter
+                for i in range(2):
+                    var mask_vec = SIMD[size=p_frag_simdwidth].load[
+                        alignment=mask_align
+                    ](
+                        mask_frag_ptr
+                        + (frag_lane_row + i * MMA_M // 2) * seq_len
+                        + frag_lane_col
+                    )
+
+                    p_reg_vec2[n_mma * num_m_mmas + m_mma, i] = p_reg_vec2[
+                        n_mma * num_m_mmas + m_mma, i
+                    ] * scale.cast[accum_type]() + rebind[
+                        p_reg_vec2.element_type
+                    ](
+                        mask_vec.cast[accum_type]()
+                    )
+        # Increment mask to next BM x BN block.
+        mask_warp_ptr += BN
+
+        _online_softmax_iter_for_mma_output[
+            num_m_mmas, num_n_mmas, num_warps_n, mma_shape
+        ](
+            output_reg_tile,
+            p_reg_tile,
+            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
+            rowmax,
+            rowsum,
+        )
+
+        # Write p register tiles into shared memory.
+        # TODO: support bypass shared memory.
+        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+            p_smem_warp_tile.vectorize[1, 2](),
+            p_reg_tile.vectorize[1, 2]().transpose(),
+        )
+        barrier()
+
+        var v_gmem_block = LayoutTensor[
+            v_type, Layout(IntTuple(BN, depth), IntTuple(num_heads * depth, 1))
+        ](v_ptr + kv_offset + kv_tile_start_row * num_heads * depth)
+        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+
+        multistage_mma[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            num_threads,
+            num_pipeline_stages,
+            False,  # transpose_b
+            swizzle_a=False,
+        ](
+            output_reg_tile,
+            p_smem_iter,
+            v_gmem_iter,
+            p_smem_iter,
+            v_smem_iter,
+            BN // BK,
+        )
+
+    # Apply softmax denumerator.
+    @parameter
+    for m_mma in range(num_m_mmas):
+
+        @parameter
+        for n_mma in range(num_n_mmas):
+
+            @parameter
+            for i in range(p_frag_size // 2):
+                output_reg_tile[n_mma * num_m_mmas + m_mma, i] /= rowsum[
+                    2 * m_mma
+                ]
+                output_reg_tile[
+                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
+                ] /= rowsum[2 * m_mma + 1]
+
+    var output_gmem_warp_tile = LayoutTensor[
+        output_type,
+        Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1)),
+    ](output_ptr + q_offset).tile[WM, WN](int(warp_y), int(warp_x))
+
+    # Write to global memory.
+    copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+        output_gmem_warp_tile.vectorize[1, 2](),
+        output_reg_tile.bitcast[output_type]().vectorize[1, 2]().transpose(),
+    )
