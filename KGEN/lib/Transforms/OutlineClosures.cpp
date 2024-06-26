@@ -138,9 +138,15 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Add additional uses to the captures set.
       for (ParamDeclRefAttr capturedUse : capturedUses) {
-        Operation *declOp =
-            regionDeclUses->second.decls.find(capturedUse.getName())
-                ->second.declOp;
+        auto declOpIter =
+            regionDeclUses->second.decls.find(capturedUse.getName());
+        // If a parameter was defined in a nested scope like kgen.param.for,
+        // it is not at or above the current region scope.
+        // Hence, parameter will not be in the map, and it is safe to ignore it.
+        if (declOpIter == regionDeclUses->second.decls.end())
+          continue;
+
+        Operation *declOp = declOpIter->second.declOp;
         if (!regionDecl->isAncestor(declOp))
           regionDeclUses->second.usesFromAbove.insert(capturedUse);
       }
