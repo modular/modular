@@ -36,8 +36,12 @@ static bool hasDocPrivateDecorator(ArrayRef<TypedAttr> decorators) {
 /// it is a "special function," also known as a "dunder method"
 /// (double-underscore method).
 static bool isPublicSpecialFunction(StringRef name) {
-  return SpecialFunctionInfo::getKind(name) != SpecialFunctionKind::kNormal &&
-         !name.starts_with("__mlir");
+  // If this is a normal function, treat it as a dunder if it's a __.
+  if (SpecialFunctionInfo::getKind(name) == SpecialFunctionKind::kNormal)
+    return name.starts_with("__");
+
+  // Otherwise, for non-normal special functions, ignore mlir methods.
+  return !name.starts_with("__mlir");
 }
 
 /// Return if a decl should be hidden given its name.
