@@ -123,6 +123,7 @@ struct RuntimeContext:
     var lib: DLHandle
 
     alias NewRuntimeContextFnName = "M_newRuntimeContext"
+    alias SetDebugPrintOptionsFnName = "M_setDebugPrintOptions"
 
     fn __init__(inout self, owned config: RuntimeConfig, lib: DLHandle):
         var status = Status(lib)
@@ -150,3 +151,29 @@ struct RuntimeContext:
     fn __del__(owned self):
         self.ptr.free(self.lib)
         _ = self.lib
+
+    fn set_debug_print_options(
+        inout self,
+        style: PrintStyle,
+        precision: UInt,
+        output_directory: String,
+    ):
+        _ = call_dylib_func[CRuntimeContext](
+            self.lib,
+            Self.SetDebugPrintOptionsFnName,
+            self.ptr,
+            style.style,
+            precision,
+            output_directory.unsafe_ptr(),
+        )
+
+
+@value
+@register_passable("trivial")
+struct PrintStyle:
+    var style: Int32
+
+    alias COMPACT = PrintStyle(0)
+    alias FULL = PrintStyle(1)
+    alias BINARY = PrintStyle(2)
+    alias NONE = PrintStyle(3)

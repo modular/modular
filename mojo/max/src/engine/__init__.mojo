@@ -30,6 +30,7 @@ For details, see how to [run inference with Mojo](/max/mojo/get-started).
 from .info import get_version
 from .model import Model
 from .session import InferenceSession, InputSpec, SessionOptions
+from ._context import PrintStyle
 from .shape_element import ShapeElement
 from .tensor_spec import EngineTensorSpec
 from .tensor_map import TensorMap

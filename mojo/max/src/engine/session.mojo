@@ -24,7 +24,7 @@ from ._compilation import (
     FrameworkFormat,
     ModelSource,
 )
-from ._context import RuntimeConfig, RuntimeContext
+from ._context import RuntimeConfig, RuntimeContext, PrintStyle
 from ._engine_impl import _EngineImpl, _get_engine_path
 from ._model_impl import CModel
 from ._status import Status
@@ -591,3 +591,25 @@ struct InferenceSession:
             A new value containing an empty list.
         """
         return self._ptr[].new_list_value(self)
+
+    fn set_debug_print_options(
+        inout self,
+        style: PrintStyle = PrintStyle.COMPACT,
+        precision: UInt = 6,
+        output_directory: String = "",
+    ):
+        """Sets the debug print options on the context.
+
+        This affects debug printing across all model execution using the same InferenceSession.
+
+        Warning: Even with style set to `NONE`, debug print ops in the graph can stop optimizations.
+        If you see performance issues, try fully removing debug print ops.
+
+        Args:
+            style: How the values will be printed.
+            precision: If the style is `FULL`, the digits of precision in the output.
+            output_directory: If the style is `BINARY`, the directory to store output tensors.
+        """
+        self._ptr[].context.set_debug_print_options(
+            style, precision, output_directory
+        )
