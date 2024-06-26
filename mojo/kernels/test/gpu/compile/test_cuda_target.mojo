@@ -138,8 +138,7 @@ fn erf_elementwise(
     )
 
 
-@always_inline
-fn _verify_erf_elementwise(asm: String) raises -> None:
+def _verify_erf_elementwise(asm: String):
     assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
@@ -355,23 +354,20 @@ fn gemm(
             set_c(row, col + out_idx, Scalar.load(c_reg, out_idx))
 
 
-@always_inline
-fn _verify_gemm(asm: String) raises -> None:
+def _verify_gemm(asm: String):
     assert_true("gemm" in asm)
-    assert_true(".shared .align 1 .b8" in asm)
+    assert_true(".shared .align 4 .b8" in asm)
     assert_true("st.shared.f32" in asm)
     assert_true("ld.shared.f32" in asm)
 
 
 def test_gemm_sm80():
-    alias asm = str(_compile_code[gemm, target = _get_nvptx_target()]().asm)
+    alias asm = _compile_code[gemm, target = _get_nvptx_target()]().asm
     _verify_gemm(asm)
 
 
 def test_gemm_sm90():
-    alias asm = str(
-        _compile_code[gemm, target = _get_nvptx_target_sm90()]().asm
-    )
+    alias asm = _compile_code[gemm, target = _get_nvptx_target_sm90()]().asm
     _verify_gemm(asm)
 
 
