@@ -35,7 +35,7 @@ purpose. The current libraries are:
 - [Metering](Metering.md)
 - [ML](ML.md)
 - [Profiling](Profiling.md)
-- Settings
+- [Settings](Settings.md)
 - [Telemetry](Telemetry.md)
 - Threading
 - [UI](UI.md)
