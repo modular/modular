@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from builtin.io import _print_fmt, _printf
+from builtin.io import _printf
 from gpu.host import Context, Function
 from layout import Layout
 
@@ -40,7 +40,7 @@ fn test_gpu_print_formattable() raises:
         #
 
         # CHECK: Hello I got 42 7.2
-        _print_fmt("Hello I got", x, y)
+        print("Hello I got", x, y)
 
         #
         # Test printing SIMD values
@@ -50,7 +50,7 @@ fn test_gpu_print_formattable() raises:
             0.0, -1.0, Float64.MIN, Float64.MAX_FINITE
         )
         # CHECK: [0, -1, -inf, 1.79769e+308]
-        _print_fmt("SIMD values are:", simd)
+        print("SIMD values are:", simd)
 
         #
         # Test printing some non-primitive types
@@ -61,7 +61,7 @@ fn test_gpu_print_formattable() raises:
         )
 
         # CHECK: layout from GPU: ((2, 3):(3, 1))
-        _print_fmt("layout from GPU: ", layout_str)
+        print("layout from GPU: ", layout_str)
 
     with Context() as ctx:
         var func = Function[do_print]()
