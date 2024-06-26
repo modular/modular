@@ -526,6 +526,19 @@ fn scale_with_my_custom_scalar_ndbuff[
     )
 
 
+@mogg_register_shape_func("scale_with_my_custom_scalar_ndbuff")
+@export
+fn scale_with_my_custom_scalar_ndbuff_shape_func[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    x: NDBuffer[type, rank],
+    scale: MyCustomScalar[type],
+) -> StaticIntTuple[
+    rank
+]:
+    return x.dynamic_shape
+
+
 # Invalid kernel: owned custom types not supported
 @mogg_register("invalid_kernel_owned_arg")
 @export
