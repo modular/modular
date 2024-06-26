@@ -108,11 +108,11 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                 var packed_bits = SIMD[DType.uint8, Self._simd_width](0)
 
                 @parameter
-                for j in range(2):
+                for i in range(2):
                     var bytes = SIMD[size = Self._simd_width].load(
-                        src_ptr + j * Self._packed_stride
+                        src_ptr + i * Self._packed_stride
                     )
-                    packed_bits |= bytes << (j * 4)
+                    packed_bits |= bytes << (i * 4)
 
                 src_ptr += Self._simd_width
 
@@ -138,9 +138,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                 var dst_row_ptr = dst_ptr
 
                 @parameter
-                for j in range(2):
-                    var bytes = (packed_bits >> (j * 4)) & 15
-                    SIMD.store(dst_ptr + j * Self._packed_stride, bytes)
+                for i in range(2):
+                    var bytes = (packed_bits >> (i * 4)) & 15
+                    SIMD.store(dst_ptr + i * Self._packed_stride, bytes)
 
                 dst_ptr += Self._simd_width
 
@@ -953,6 +953,38 @@ fn _accumulate_and_store[
 
 
 @always_inline
+fn _matmul_group_packed_Q4_K[
+    tile_m: Int,
+    tile_n: Int,
+    simd_width: Int, //,
+](
+    a_q_bits_ptr: DTypePointer[DType.int8],
+    inout b_q_bits_ptr: DTypePointer[DType.uint8],
+    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+):
+    alias group_size = _block_Q4_K.group_size
+    alias tile_k = 2
+
+    @parameter
+    fn stream_b_vals(
+        inout b_vals: InlineArray[
+            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        ]
+    ):
+        @parameter
+        for col in range(tile_n):
+            var packed_bits = SIMD[size = simd_width * 4].load(b_q_bits_ptr)
+            b_q_bits_ptr += simd_width * 4
+
+            @parameter
+            for i in range(2):
+                var bytes = (packed_bits >> (i * 4)) & 15
+                b_vals[col * tile_k + i] = bytes
+
+    _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
+
+
+@always_inline
 fn _matmul_Q4_K_tile[
     tile_m: Int,
     tile_n: Int,
@@ -1054,6 +1086,26 @@ fn _matmul_Q4_K_columns[
     ]()
     b_tile_ptr[].q_scales_and_mins.unpack(b_q_scales_and_mins_buf)
 
+    # Fast path for M=1 that avoids materializing the unpacked weights.
+    if M == 1:
+        var b_q_bits_ptr = _to_dtype_pointer(b_tile_ptr[].q_bits.bits)
+
+        @parameter
+        fn matmul_group_packed(
+            a_q_bits_ptr: DTypePointer[DType.int8],
+            inout c_int32_group: _Accumulator[
+                DType.int32, 1, tile_n, simd_width
+            ],
+        ):
+            _matmul_group_packed_Q4_K(a_q_bits_ptr, b_q_bits_ptr, c_int32_group)
+
+        _matmul_Q4_K_tile[matmul_group_packed](
+            a_ptr, b_ptr, b_q_scales_and_mins_buf, c_ptr, N, accumulate
+        )
+        _ = b_q_bits_ptr
+
+        return
+
     # Unpack the quantized bits to uint8 values.
     var b_q_bits = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
@@ -1147,6 +1199,46 @@ fn matmul_Q4_K(
     sync_parallelize[task_func](num_workers)
 
     a_packed_base_ptr.free()
+
+
+@always_inline
+fn _matmul_group_packed_Q6_K[
+    tile_m: Int,
+    tile_n: Int,
+    simd_width: Int, //,
+    *,
+    zero_point: UInt8,
+](
+    a_q_bits_ptr: DTypePointer[DType.int8],
+    inout b_q_bits_ptr: DTypePointer[DType.uint8],
+    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+):
+    alias group_size = _block_Q6_K.group_size
+    alias tile_k = 4
+
+    @parameter
+    fn stream_b_vals(
+        inout b_vals: InlineArray[
+            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        ]
+    ):
+        @parameter
+        for col in range(tile_n):
+            var hi_bytes = SIMD[DType.uint8, size = simd_width * 4](0)
+
+            @parameter
+            for i in range(3):
+                var packed_bits = SIMD[size = simd_width * 4].load(b_q_bits_ptr)
+                b_q_bits_ptr += simd_width * 4
+
+                var bytes = packed_bits & 63
+                b_vals[col * tile_k + i] = bytes - zero_point
+
+                hi_bytes |= (packed_bits >> 6) << (i * 2)
+
+            b_vals[col * tile_k + 3] = hi_bytes - zero_point
+
+    _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
 
 
 @always_inline
@@ -1259,6 +1351,28 @@ fn _matmul_Q6_K_columns[
     # NEON has support for s8s8 dot products, so shift the quantized bits down
     # to avoid performing any zero point corrections.
     alias b_zero_point = 32 if has_neon() else 0
+
+    # Fast path for M=1 that avoids materializing the unpacked weights.
+    if M == 1:
+        var b_q_bits_ptr = _to_dtype_pointer(b_tile_ptr[].q_bits.bits)
+
+        @parameter
+        fn matmul_group_packed(
+            a_q_bits_ptr: DTypePointer[DType.int8],
+            inout c_int32_group: _Accumulator[
+                DType.int32, 1, tile_n, simd_width
+            ],
+        ):
+            _matmul_group_packed_Q6_K[zero_point=b_zero_point](
+                a_q_bits_ptr, b_q_bits_ptr, c_int32_group
+            )
+
+        _matmul_Q6_K_tile[matmul_group_packed](
+            a_ptr, b_ptr, c_ptr, N, accumulate
+        )
+        _ = b_q_bits_ptr
+
+        return
 
     # Unpack the quantized bits to uint8 values.
     var b_q_bits = stack_allocation[
