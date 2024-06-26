@@ -445,7 +445,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT:   %anonymous2A_0 = lit.var.decl "anonymous*"
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}(%anonymous2A_0, [[REF]])
   # CHECK-NEXT:   lit.ownership.use %b
-  # CHEC::        [[TMP:%.*]] = lit.load.consume %anonymous2A_0
+  # CHECK:        [[TMP:%.*]] = lit.load.consume %anonymous2A_0
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK: } else {
   # CHECK-NEXT: hlcf.yield %c : !Bool
