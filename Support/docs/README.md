@@ -34,7 +34,7 @@ purpose. The current libraries are:
 - MDialect
 - Metering
 - ML
-- Profiling
+- [Profiling](Profiling.md)
 - Settings
 - [Telemetry](Telemetry.md)
 - Threading
