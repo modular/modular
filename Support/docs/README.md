@@ -17,7 +17,7 @@ anywhere else in the repository.
 Each library should have an associated documentation file to indicate its
 purpose. The current libraries are:
 
-- ADT
+- [ADT](ADT.md)
 - ASN1
 - Compiler
 - CrashReporting
