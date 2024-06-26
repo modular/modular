@@ -20,7 +20,7 @@ purpose. The current libraries are:
 - [ADT](ADT.md)
 - ASN1
 - Compiler
-- CrashReporting
+- [CrashReporting](CrashReporting.md)
 - Cryptography
 - [CUDA](CUDA.md)
 - DebugInfoDialect
