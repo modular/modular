@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
-# RUN: mojo build %mojo_args %s -o %t
+# RUN: %mojo build %s -o %t
 # RUN: %t | FileCheck %s
 
 
