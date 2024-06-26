@@ -6,7 +6,7 @@
 """This module provides abstractions for using Tensor Cores do to arithmetic and matrix operations
 """
 
-from gpu import WARP_SIZE, ThreadIdx, lane_id
+from gpu import WARP_SIZE, ThreadIdx, lane_id, BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
@@ -307,6 +307,7 @@ struct TensorCore[
 
     @always_inline
     fn load_a[
+        swizzle: Bool = True,
         *,
         type0: DType,
         layout0: Layout,
@@ -339,7 +340,7 @@ struct TensorCore[
         for i in range(num_frags):
             var mma_tile = warp_tile.tile[shape[0], warp_tile.dim[1]()](i, 0)
             fragments[i, 0] = rebind[frag_type](
-                _load_matrix_frag(mma_tile, swizzle_offset)
+                _load_matrix_frag[swizzle](mma_tile, swizzle_offset)
             )
 
     @always_inline
@@ -451,12 +452,17 @@ struct TensorCore[
                     b_frag[n_mma, 0],
                     c_frag[n_mma * num_m_mmas + m_mma, 0],
                 )
+        # if BlockIdx.x() == 0 and ThreadIdx.x() == 32:
+        #     _printf["a_frag %f\n"](a_frag[0, 0][0].cast[DType.float64]())
+        #     _printf["b_frag %f\n"](b_frag[0, 0][0].cast[DType.float64]())
+        #     _printf["c_frag %f %f\n"](c_frag[0, 0][0].cast[DType.float64]())
 
 
 @always_inline
 fn _load_matrix_frag[
     # Refactor the three parameters with ComposedLayout
     # swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Bool = True,
     transposed: Bool = False,
     *,
     # Work around parameter deduction MOCO-854.
@@ -498,7 +504,9 @@ fn _load_matrix_frag[
 
     alias ldmatrix_layout = ComposedLayout(
         composition(smem_layout, ldmatrix_threadmap),
-        make_ldmatrix_swizzleex[mma_tile.dtype, row_size](),
+        make_ldmatrix_swizzleex[
+            mma_tile.dtype, row_size
+        ]() if swizzle else SwizzleEx(0, 0, 1),
     )
 
     var lane_offset = eval_composed[ldmatrix_layout](
