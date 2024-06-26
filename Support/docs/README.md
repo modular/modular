@@ -32,7 +32,7 @@ purpose. The current libraries are:
 - HTTP
 - MArchTarget
 - MDialect
-- Metering
+- [Metering](Metering.md)
 - ML
 - [Profiling](Profiling.md)
 - Settings
