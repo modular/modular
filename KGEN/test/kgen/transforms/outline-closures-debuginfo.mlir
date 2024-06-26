@@ -107,3 +107,24 @@ kgen.generator @outline_closures_ref<a>() {
 }
 
 // CHECK: [[LOC]] = loc(fused<#kgen.param.decl.ref<"a"> : index>[
+
+// -----
+
+// COM: Fix for MOCO-869:
+// COM: decl is defined in the nested scope of `kgen.param.for` which is not at or above current
+// COM: `param.declare.region`. It is safe to ignore and should not crash the compiler.
+// CHECK-LABEL: @ignore_param_defined_in_nested_non_decl_region_scope()
+kgen.generator @ignore_param_defined_in_nested_non_decl_region_scope() {
+  kgen.param.declare.region closure = () {
+    kgen.param.for decl: index in :index 2 iter :(index) -> !kgen.none @wrapper {
+      kgen.param.for.continue loc(fused<#kgen.param.decl.ref<"decl"> : index>["x:0"])
+    } else {
+      kgen.param.yield
+    }
+    kgen.return
+  }
+  kgen.return
+}
+
+// CHECK: #[[LOC_X:.*]] = loc("x:0")
+// CHECK: #[[LOC_CONTINUE:.*]] = loc(fused<#kgen.param.decl.ref<"decl"> : index>[#[[LOC_X]]])
