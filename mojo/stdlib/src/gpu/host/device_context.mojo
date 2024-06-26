@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from ._compile import _get_nvptx_fn_name
+from collections import List
 from gpu.host.context import Context
 from gpu.host.cuda_instance import CudaInstance
 from gpu.host.device import Device
@@ -11,6 +13,71 @@ from gpu.host.event import Event
 from gpu.host.function import Function
 from gpu.host.stream import Stream
 from ._utils import _check_error, _StreamHandle
+
+
+@value
+struct KernelProfilingInfo:
+    """Struct that incorporates a list of KernelProfilingInfoElement's and a
+    pointer to it.
+
+    This is passed to DeviceContext and through the pointer and list append
+    operation the list of KernelProfilingInfoElements is constructed and
+    operated upon.
+    """
+
+    var kernelProfilingList: List[KernelProfilingInfoElement]
+    var KernelProfilingListPtr: UnsafePointer[List[KernelProfilingInfoElement]]
+
+    fn __init__(inout self):
+        self.kernelProfilingList = List[KernelProfilingInfoElement]()
+        self.KernelProfilingListPtr = UnsafePointer[
+            List[KernelProfilingInfoElement]
+        ].address_of(self.kernelProfilingList)
+
+
+@value
+struct KernelProfilingInfoElement(CollectionElement):
+    """Struct to handle kernel profiling info for a single kernel.
+    Objects of this type form a list that belongs to the KernelProfilingInfo
+    object along with a pointer to it.
+
+    Supported operations include: initialization, printing all elements of a
+    list, clearing all elements of a list.
+
+    This struct can be extended with further information down the road (e.g.,
+    record host-to-device, device-to-host copies timing info).
+    """
+
+    var name: String
+    var time: Int
+
+    fn __init__(inout self, name: String, time: Int):
+        self.name = name
+        self.time = time
+
+    @staticmethod
+    fn print(kernelInfoList: List[KernelProfilingInfoElement]):
+        for m in kernelInfoList:
+            print(
+                "Function: ",
+                m[].name,
+                " Time (nsec): ",
+                m[].time,
+            )
+
+    @staticmethod
+    fn get_kernel_from_list(
+        name: String,
+        kernelInfoList: UnsafePointer[List[KernelProfilingInfoElement]],
+    ) -> Optional[UnsafePointer[KernelProfilingInfoElement]]:
+        for i in range(len(kernelInfoList[])):
+            if (kernelInfoList[])[i].name == name:
+                return UnsafePointer.address_of((kernelInfoList[])[i])
+        return None
+
+    @staticmethod
+    fn clear(kernelInfoList: UnsafePointer[List[KernelProfilingInfoElement]]):
+        kernelInfoList[].clear()
 
 
 @value
@@ -102,6 +169,7 @@ struct DeviceFunction[
 ]:
     var ctx_ptr: UnsafePointer[DeviceContext]
     var cuda_function: Function[func, _is_failable=_is_failable]
+    alias fn_name = _get_nvptx_fn_name[func]()
 
     fn __init__(
         inout self,
@@ -135,31 +203,48 @@ struct DeviceContext:
     var cuda_stream: Stream
     var cuda_context: Context
     var cuda_instance: CudaInstance
+    var profiling_enabled: Bool
+    var profiling_info: KernelProfilingInfo
 
-    fn __init__(inout self) raises:
+    fn __init__(
+        inout self,
+        *,
+        profiling_enabled: Bool = False,
+        profiling_info: KernelProfilingInfo = KernelProfilingInfo(),
+    ) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance))
         self.cuda_stream = Stream(self.cuda_context)
+        self.profiling_enabled = profiling_enabled
+        self.profiling_info = profiling_info
 
     fn __init__(
         inout self,
         cuda_instance: CudaInstance,
         cuda_context: Context,
         cuda_stream: Stream,
+        *,
+        profiling_enabled: Bool = False,
+        profiling_info: KernelProfilingInfo = KernelProfilingInfo(),
     ):
         self.cuda_instance = cuda_instance
         self.cuda_context = cuda_context
         self.cuda_stream = cuda_stream
+        self.profiling_enabled = profiling_enabled
+        self.profiling_info = profiling_info
 
-    fn __init__(inout self, cuda_stream: Stream) raises:
+    fn __init__(
+        inout self,
+        cuda_stream: Stream,
+        *,
+        profiling_enabled: Bool = False,
+        profiling_info: KernelProfilingInfo = KernelProfilingInfo(),
+    ) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance))
         self.cuda_stream = cuda_stream
-
-    fn __copyinit__(inout self, existing: Self):
-        self.cuda_instance = existing.cuda_instance
-        self.cuda_context = existing.cuda_context
-        self.cuda_stream = existing.cuda_stream
+        self.profiling_enabled = profiling_enabled
+        self.profiling_info = profiling_info
 
     fn __enter__(owned self) -> Self:
         return self^
@@ -206,6 +291,13 @@ struct DeviceContext:
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
     ) raises:
+        var kernel_time: Int
+        var stream = self.cuda_stream
+        var start = Event(self.cuda_context)
+        var end = Event(self.cuda_context)
+        if self.profiling_enabled:
+            kernel_time = 0
+            start.record(stream)
         f.cuda_function._call_pack(
             args,
             grid_dim=grid_dim,
@@ -213,11 +305,26 @@ struct DeviceContext:
             shared_mem_bytes=shared_mem_bytes,
             stream=self.cuda_stream,
         )
+        if self.profiling_enabled:
+            end.record(stream)
+            end.sync()
+            kernel_time = int(start.elapsed(end) * 1e6)
+            var listItem = KernelProfilingInfoElement.get_kernel_from_list(
+                f.fn_name, self.profiling_info.KernelProfilingListPtr
+            )
+            # If kernel (as found by name) exists in the list, add the timing
+            # info in the existing entry. Otherwise, create a new entry.
+            if listItem:
+                (listItem.value())[].time += kernel_time
+            else:
+                self.profiling_info.KernelProfilingListPtr[].append(
+                    KernelProfilingInfoElement(f.fn_name, kernel_time)
+                )
 
     fn execution_time[
         func: fn (DeviceContext) raises capturing -> None
     ](self, num_iters: Int) raises -> Int:
-        var ret: Int = 0
+        var kernel_time: Int = 0
         try:
             var stream = self.cuda_stream
             var start = Event(self.cuda_context)
@@ -227,10 +334,10 @@ struct DeviceContext:
                 func(self)
             end.record(stream)
             end.sync()
-            ret = int(start.elapsed(end) * 1e6)
+            kernel_time = int(start.elapsed(end) * 1e6)
         except e:
             abort(e)
-        return ret
+        return kernel_time
 
     fn enqueue_copy_to_device[
         type: DType
@@ -273,3 +380,17 @@ struct DeviceContext:
 
     fn synchronize(self) raises:
         self.cuda_stream.synchronize()
+
+    fn print_kernel_timing_info(self):
+        """Print profiling info associated with this DeviceContext."""
+
+        KernelProfilingInfoElement.print(
+            self.profiling_info.KernelProfilingListPtr[]
+        )
+
+    fn clear_kernel_timing_info(self):
+        """Clear profiling info associated with this DeviceContext."""
+
+        KernelProfilingInfoElement.clear(
+            self.profiling_info.KernelProfilingListPtr
+        )
