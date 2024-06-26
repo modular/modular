@@ -8,7 +8,7 @@ from .device import Device, _get_driver_path, _CDevice
 from max._utils import call_dylib_func
 from sys.ffi import DLHandle
 from ._driver_library import DriverLibrary, ManagedDLHandle
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext
 
 
 fn alloc_device_context() -> UnsafePointer[DeviceContext]:
@@ -22,60 +22,70 @@ fn alloc_device_context() -> UnsafePointer[DeviceContext]:
 
 fn alloc_device_buffer(
     ctx: UnsafePointer[DeviceContext], bytes: Int
-) -> Pointer[UInt8]:
+) -> DTypePointer[DType.uint8]:
     try:
-        # FIXME: create_buffer returns DType now, we need to update things downstream
-        var buf = ctx[].create_buffer[DType.uint8](bytes)
-        return Pointer[UInt8](address=int(buf^.take_ptr()))
+        var ret = ctx[].cuda_context.malloc_async[DType.uint8](
+            bytes, ctx[].cuda_stream
+        )
+        ctx[].cuda_stream.synchronize()
+        return ret
     except e:
         return abort[Pointer[UInt8]]()
 
 
 fn copy_device_to_host(
     ctx: UnsafePointer[DeviceContext],
-    dev_buf: Pointer[UInt8],
-    host_buf: Pointer[UInt8],
+    dev_ptr: DTypePointer[DType.uint8],
+    host_ptr: DTypePointer[DType.uint8],
     size: Int,
 ):
     try:
-        ctx[].copy_from_device_sync(
-            host_buf, DeviceBuffer(ctx[], dev_buf, size, owning=False)
+        ctx[].cuda_context.copy_device_to_host_async(
+            host_ptr, dev_ptr, size, ctx[].cuda_stream
         )
+        ctx[].cuda_stream.synchronize()
     except e:
         abort(e)
 
 
 fn copy_host_to_device(
     ctx: UnsafePointer[DeviceContext],
-    dev_buf: Pointer[UInt8],
-    host_buf: Pointer[UInt8],
+    dev_ptr: DTypePointer[DType.uint8],
+    host_ptr: DTypePointer[DType.uint8],
     size: Int,
 ):
     try:
-        ctx[].copy_to_device_sync(
-            DeviceBuffer(ctx[], dev_buf, size, owning=False), host_buf
+        ctx[].cuda_context.copy_host_to_device_async(
+            dev_ptr, host_ptr, size, ctx[].cuda_stream
         )
+        ctx[].cuda_stream.synchronize()
     except e:
         abort(e)
 
 
 fn copy_device_to_device(
     ctx: UnsafePointer[DeviceContext],
-    dst_buf: Pointer[UInt8],
-    src_buf: Pointer[UInt8],
+    dst_ptr: DTypePointer[DType.uint8],
+    src_ptr: DTypePointer[DType.uint8],
     size: Int,
 ):
     try:
-        ctx[].copy_device_to_device_sync(
-            DeviceBuffer(ctx[], dst_buf, size, owning=False),
-            DeviceBuffer(ctx[], src_buf, size, owning=False),
+        ctx[].cuda_context.copy_device_to_device_async(
+            dst_ptr, src_ptr, size, ctx[].cuda_stream
         )
+        ctx[].cuda_stream.synchronize()
     except e:
         abort(e)
 
 
-fn free_buffer(ctx: UnsafePointer[DeviceContext], ptr: Pointer[UInt8]):
-    _ = DeviceBuffer[DType.uint8](ctx[], ptr, 0, owning=True)
+fn free_buffer(
+    ctx: UnsafePointer[DeviceContext], ptr: DTypePointer[DType.uint8]
+):
+    try:
+        ctx[].cuda_context.free_async(ptr, ctx[].cuda_stream)
+        ctx[].cuda_stream.synchronize()
+    except e:
+        abort(e)
 
 
 fn free_context(ctx: UnsafePointer[DeviceContext]):
@@ -86,30 +96,30 @@ fn free_context(ctx: UnsafePointer[DeviceContext]):
 @register_passable("trivial")
 struct ContextAPIFuncPtrs:
     var alloc_device_context: fn () -> UnsafePointer[DeviceContext]
-    var alloc_device_buffer: fn (UnsafePointer[DeviceContext], Int) -> Pointer[
-        UInt8
-    ]
+    var alloc_device_buffer: fn (
+        UnsafePointer[DeviceContext], Int
+    ) -> DTypePointer[DType.uint8]
     var copy_device_to_host: fn (
         UnsafePointer[DeviceContext],
-        Pointer[UInt8],
-        Pointer[UInt8],
+        DTypePointer[DType.uint8],
+        DTypePointer[DType.uint8],
         Int,
     ) -> None
     var copy_host_to_device: fn (
         UnsafePointer[DeviceContext],
-        Pointer[UInt8],
-        Pointer[UInt8],
+        DTypePointer[DType.uint8],
+        DTypePointer[DType.uint8],
         Int,
     ) -> None
     var copy_device_to_device: fn (
         UnsafePointer[DeviceContext],
-        Pointer[UInt8],
-        Pointer[UInt8],
+        DTypePointer[DType.uint8],
+        DTypePointer[DType.uint8],
         Int,
     ) -> None
     var free_buffer: fn (
         UnsafePointer[DeviceContext],
-        Pointer[UInt8],
+        DTypePointer[DType.uint8],
     ) -> None
     var free_context: fn (UnsafePointer[DeviceContext],) -> None
 

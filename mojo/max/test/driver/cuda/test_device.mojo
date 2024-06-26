@@ -46,6 +46,23 @@ def test_copy_d2h():
             assert_equal(input[i, j], output[i, j])
 
 
+def test_copy_empty():
+    cpu = cpu_device()
+    gpu = cuda_device()
+
+    input_cpu = cpu.allocate(
+        TensorSpec(DType.float32, 0, 2),
+    )
+    assert_equal(input_cpu.bytecount(), 0)
+
+    input = input_cpu^.to_tensor[DType.float32, 2]()
+
+    input_cpu = input^.to_device_tensor()
+    gpu_tensor = input_cpu.copy_to(gpu)
+
+    assert_equal(gpu_tensor.bytecount(), 0)
+
+
 def test_copy_d2d():
     cpu = cpu_device()
     gpu = cuda_device()
@@ -79,4 +96,5 @@ def test_copy_d2d():
 def main():
     test_cuda_device()
     test_copy_d2h()
+    test_copy_empty()
     test_copy_d2d()
