@@ -93,7 +93,7 @@ struct _GraphLayerContext:
 
 
 @value
-struct Graph(CollectionElement, Stringable):
+struct Graph(CollectionElement, Stringable, Formattable):
     """Represents a single MAX graph.
 
     A `Graph` is a callable routine in [MAX Engine](/max/engine), similar to a
@@ -225,7 +225,10 @@ struct Graph(CollectionElement, Stringable):
         Returns:
             A human-readable string representation of the graph.
         """
-        return str(self._module())
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write(self._module())
 
     @always_inline
     fn verify(self) raises:
