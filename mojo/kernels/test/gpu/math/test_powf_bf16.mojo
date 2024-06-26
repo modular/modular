@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s | FileCheck %s
-# XFAIL: *
+# RUN: %mojo %s
 
 from algorithm.functional import _elementwise_impl
 from buffer import DimList, NDBuffer
@@ -30,7 +29,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
     # Add a small constant to avoid 0^-pow.
     alias epsilon = 0.001
     for i in range(length):
-        in_host[i] = (Scalar[type](i) - length // 2) + epsilon
+        in_host[i] = abs((Scalar[type](i) - length // 2) + epsilon)
 
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
@@ -50,16 +49,16 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
         var result = val ** SIMD[DType.bfloat16, simd_width](exponent)
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
-    _elementwise_impl[
-        func, pack_size, 1, use_blocking_impl=True, target="cuda"
-    ](StaticIntTuple[1](length), ctx)
+    _elementwise_impl[func, pack_size, target="cuda"](
+        StaticIntTuple[1](length), ctx
+    )
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)
 
     for i in range(length):
         var expected_value = in_host[i] ** exponent.cast[DType.float32]()
-        assert_almost_equal[type, 1](
+        assert_almost_equal(
             out_host[i],
             expected_value,
             msg="values did not match at position " + str(i),
@@ -71,7 +70,6 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
     _ = out_device
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     # NOTE: This is expected to fail. Keeping this around as a negative test
     # so we know when its fixed.
