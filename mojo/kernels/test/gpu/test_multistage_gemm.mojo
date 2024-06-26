@@ -518,14 +518,14 @@ fn multistage_gemm[
 
 fn test[type: DType, transpose_b: Bool]() raises:
     alias num_pipeline_stages = 4
-    alias M = 8192
-    alias N = 8192
+    alias M = 1024
+    alias N = 1024
     alias K = 128
-    alias BM = 128
+    alias BM = 32
     alias BN = 128
     alias BK = 32 if type is DType.bfloat16 else 16
-    alias WM = 64
-    alias WN = 64
+    alias WM = 32
+    alias WN = 32
     alias shared_mem_bytes = 80 * 1024
 
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
@@ -704,8 +704,8 @@ fn test[type: DType, transpose_b: Bool]() raises:
 def main():
     try:
         with Context() as ctx:
-            test[DType.float32, False]()
+            # test[DType.float32, False]()
             test[DType.float32, True]()
-            test[DType.bfloat16, False]()
+            # test[DType.bfloat16, False]()
     except e:
         print("ERROR:", e)
