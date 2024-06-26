@@ -31,7 +31,7 @@ purpose. The current libraries are:
 - [Globals](Globals.md)
 - [HTTP](HTTP.md)
 - [MArchTarget](MArchTarget.md)
-- MDialect
+- [MDialect](MDialect.md)
 - [Metering](Metering.md)
 - ML
 - [Profiling](Profiling.md)
