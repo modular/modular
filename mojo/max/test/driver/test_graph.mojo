@@ -12,23 +12,11 @@
 # RUN: mojo build %s -o %t/driver-graph-test
 # RUN: %t/driver-graph-test
 
-from max.graph import Graph, TensorType, Symbol, Type, ops
-from tensor import TensorSpec
-from testing import assert_equal, assert_true, assert_raises
-from max._driver import (
-    compile_graph,
-    cpu_device,
-    CPUDescriptor,
-    AnyTensor,
-    Tensor,
-)
-from testing import (
-    assert_equal,
-    assert_true,
-    assert_raises,
-    assert_almost_equal,
-)
-import tensor
+from max import tensor
+from max.graph import Graph, TensorType, Type, ops
+from max._driver import compile_graph, cpu_device
+
+from testing import assert_equal, assert_almost_equal
 
 
 def test_graph_execution():
@@ -39,7 +27,7 @@ def test_graph_execution():
     compiled_graph = compile_graph(graph, cpu)
     executable_graph = compiled_graph.load()
 
-    input_dt = cpu.allocate(TensorSpec(DType.float32, 1))
+    input_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1))
     input = input_dt^.to_tensor[DType.float32, 1]()
     input[0] = 1.0
     outputs = executable_graph.execute(input^)
@@ -105,7 +93,7 @@ def test_mnist():
     compiled_graph = compile_graph(g, cpu)
     executable_graph = compiled_graph.load()
 
-    input_dt = cpu.allocate(TensorSpec(DType.float32, 1, 28, 28, 1))
+    input_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1, 28, 28, 1))
     input = input_dt^.to_tensor[DType.float32, 4]()
     for i in range(1):
         for j in range(28):

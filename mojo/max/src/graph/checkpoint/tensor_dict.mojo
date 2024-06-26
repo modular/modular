@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Structs used for maintaining a collection of tensors."""
-from tensor import Tensor, TensorSpec
+from max.tensor import Tensor, TensorSpec
 from collections.dict import _DictKeyIter, _DictEntryIter
 
 
@@ -66,7 +66,7 @@ struct TensorDict(Sized):
 
     ```mojo
     from max.graph.checkpoint import load, save, TensorDict
-    from tensor import Tensor, TensorShape
+    from max.tensor import Tensor, TensorShape
 
     def write_to_disk():
         tensors = TensorDict()

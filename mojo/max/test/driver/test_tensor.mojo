@@ -13,7 +13,7 @@ from max._driver import (
     TensorSlice,
     UnsafeTensorSlice,
 )
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 from utils import Index
 from testing import assert_equal, assert_raises
 

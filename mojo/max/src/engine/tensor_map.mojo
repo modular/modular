@@ -17,7 +17,7 @@ from ._tensor_impl import EngineTensor
 from ._tensor_map_impl import CTensorMap
 from .value import Value
 
-from tensor import Tensor, TensorSpec
+from max.tensor import Tensor, TensorSpec
 
 
 struct TensorMap(CollectionElement, SizedRaising, Stringable):

@@ -11,7 +11,7 @@ import _mlir
 
 import ._c
 
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 
 fn _dyn() -> Int64:

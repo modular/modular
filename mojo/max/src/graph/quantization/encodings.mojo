@@ -6,7 +6,7 @@
 
 """Implementations of quantization encodings."""
 
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 from utils import InlineArray
 
 from .quantization_encoding import QuantizationEncoding

@@ -19,7 +19,7 @@ and its corresponding quantized buffer shape.
 For example, this code quantizes a tensor with the Q4_0 encoding:
 
 ```mojo
-from tensor import Tensor
+from max.tensor import Tensor
 from max.graph.quantization import Q4_0Encoding
 
 var tensor: Tensor[DType.float32]

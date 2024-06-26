@@ -18,7 +18,7 @@ from .symbol import Symbol
 from .type import Dim, ListType, TensorType, Type
 
 from max.graph.quantization import QuantizationEncoding
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 
 
 # TODO: Add examples throughout.
@@ -111,7 +111,7 @@ struct Graph(CollectionElement, Stringable):
 
     ```mojo
     from max.graph import Type, Graph, TensorType, ops
-    from tensor import Tensor, TensorShape
+    from max.tensor import Tensor, TensorShape
 
     def build_model() -> Graph:
         var graph = Graph(TensorType(DType.float32, 2, 6))

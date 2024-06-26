@@ -7,7 +7,7 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 from max.engine import InferenceSession, TensorMap
 from max._utils import CString, call_dylib_func, exchange

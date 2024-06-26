@@ -11,7 +11,7 @@ from .._attributes import _shape_attr
 from ..error import error
 from ..type import Dim
 
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
 

@@ -16,7 +16,7 @@ from ._context import CRuntimeContext
 from ._status import Status
 from .tensor_map import CTensorMap
 
-from tensor import Tensor
+from max.tensor import Tensor
 
 
 @value

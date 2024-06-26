@@ -6,7 +6,7 @@
 from max.graph import Graph
 from max._utils import call_dylib_func
 from sys.ffi import _get_global_or_null
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 from .anytensor import AnyTensor
 from .device import Device

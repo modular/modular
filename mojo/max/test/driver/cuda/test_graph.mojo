@@ -8,24 +8,11 @@
 # TODO (MSDK-465): Remove env var
 # RUN: TMP_ALLOCATE_ON_DEVICE=1 mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from max.graph import Graph, TensorType, Symbol, Type, ops
-from max._driver import (
-    compile_graph,
-    cpu_device,
-    CPUDescriptor,
-    AnyTensor,
-    Tensor,
-    cuda_device,
-    Device,
-)
-from tensor import TensorSpec
-from testing import (
-    assert_equal,
-    assert_true,
-    assert_raises,
-    assert_almost_equal,
-)
-import tensor
+from max import tensor
+from max.graph import Graph, TensorType, Type, ops
+from max._driver import compile_graph, cpu_device, cuda_device
+
+from testing import assert_equal, assert_almost_equal
 
 
 def build_graph() -> Graph:
@@ -81,7 +68,7 @@ def test_mnist():
     executable_graph = compiled_graph.load()
 
     # fill host tensor
-    input_host_dt = cpu.allocate(TensorSpec(DType.float32, 1, 28, 28, 1))
+    input_host_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1, 28, 28, 1))
     input_host = input_host_dt^.to_tensor[DType.float32, 4]()
     for i in range(1):
         for j in range(28):

@@ -13,7 +13,7 @@ from .tensor import (
 )
 from utils import StaticTuple
 from math import ceil
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 
 @value

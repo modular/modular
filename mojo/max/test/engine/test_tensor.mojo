@@ -10,7 +10,7 @@ from testing import assert_equal
 from utils.index import Index
 
 from max.engine import EngineTensorView, InferenceSession
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 
 
 fn test_tensor_view() raises:

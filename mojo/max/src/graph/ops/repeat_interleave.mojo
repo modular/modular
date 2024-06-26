@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor import Tensor, TensorShape
+from max.tensor import Tensor, TensorShape
 from ..type import StaticDim
 
 
@@ -21,8 +21,8 @@ def repeat_interleave(
     For example, given `repeats=2` and the following input:
 
     ```mojo
-    input = tensor.Tensor[DType.float32](
-        tensor.TensorShape(2, 2),
+    input = max.tensor.Tensor[DType.float32](
+        max.tensor.TensorShape(2, 2),
         1.0, 2.0,
         3.0, 4.0,
     )
@@ -31,8 +31,8 @@ def repeat_interleave(
     `repeat_interleave` with `dim=0`:
 
     ```mojo
-    output = tensor.Tensor[DType.float32](
-        tensor.TensorShape(4, 2),
+    output = max.tensor.Tensor[DType.float32](
+        max.tensor.TensorShape(4, 2),
         1.0, 2.0,
         1.0, 2.0,
         3.0, 4.0,
@@ -43,8 +43,8 @@ def repeat_interleave(
     `repeat_interleave` with `dim=1`:
 
     ```mojo
-    output = tensor.Tensor[DType.float32](
-        tensor.TensorShape(2, 4),
+    output = max.tensor.Tensor[DType.float32](
+        max.tensor.TensorShape(2, 4),
         1.0, 1.0, 2.0, 2.0,
         3.0, 3.0, 4.0, 4.0,
     )
@@ -53,8 +53,8 @@ def repeat_interleave(
     `repeat_interleave` with `dim=None` (the default):
 
     ```mojo
-    output = tensor.Tensor[DType.float32](
-        tensor.TensorShape(8),
+    output = max.tensor.Tensor[DType.float32](
+        max.tensor.TensorShape(8),
         1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0,
     )
     ```

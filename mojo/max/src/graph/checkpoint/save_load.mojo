@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Defines functions to save/load tensors from a checkpoint file."""
-from tensor import Tensor, TensorShape, TensorSpec
+from max.tensor import Tensor, TensorShape, TensorSpec
 from max.engine import TensorMap
 from pathlib import Path
 
@@ -38,7 +38,7 @@ def save(tensor_dict: TensorDict, path: Path):
 
     ```mojo
     from max.graph.checkpoint import save, TensorDict
-    from tensor import Tensor, TensorShape
+    from max.tensor import Tensor, TensorShape
 
     def write_to_disk():
         tensors = TensorDict()
@@ -184,7 +184,7 @@ def load(path: Path) -> TensorDict:
 
     ```mojo
     from max.graph.checkpoint import load, TensorDict
-    from tensor import Tensor, TensorShape
+    from max.tensor import Tensor, TensorShape
 
     def read_from_disk():
         tensors = load("/path/to/checkpoint.maxckpt")

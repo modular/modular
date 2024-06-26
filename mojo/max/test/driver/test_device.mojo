@@ -14,7 +14,7 @@ from max._driver import (
     Tensor,
 )
 from testing import assert_equal
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 
 def test_device():

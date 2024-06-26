@@ -6,7 +6,7 @@
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice, UnsafeTensorSlice
 from utils import StaticTuple
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 
 @always_inline

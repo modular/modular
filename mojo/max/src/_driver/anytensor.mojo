@@ -6,7 +6,7 @@
 from .device_memory import DeviceMemory
 from .tensor import Tensor
 from .device import Device
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 
 struct AnyTensor:

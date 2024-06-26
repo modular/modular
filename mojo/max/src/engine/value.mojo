@@ -12,7 +12,7 @@ from ._context import CRuntimeContext
 from ._tensor_impl import EngineTensor
 from ._value_impl import CValue, CList
 
-from tensor import Tensor
+from max.tensor import Tensor
 
 
 struct Value:

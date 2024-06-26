@@ -16,7 +16,7 @@ from .tensor_spec import TensorSpec
 from ._dtypes import EngineDType
 from ._tensor_spec_impl import CTensorSpec
 
-from tensor import Tensor
+from max.tensor import Tensor
 
 
 @value

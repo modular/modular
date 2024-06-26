@@ -18,7 +18,7 @@ from ._status import Status
 from ._tensor_spec_impl import CTensorSpec
 from ._dtypes import EngineDType
 
-from tensor import TensorSpec
+from max.tensor import TensorSpec
 
 
 @value

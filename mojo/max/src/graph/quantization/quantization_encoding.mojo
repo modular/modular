@@ -6,7 +6,7 @@
 
 """Defines the interface for quantized types."""
 
-from tensor import Tensor
+from max.tensor import Tensor
 
 
 trait QuantizationEncoding:

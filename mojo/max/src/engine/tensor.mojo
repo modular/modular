@@ -18,7 +18,7 @@ from python import Python, PythonObject
 from .tensor_spec import TensorSpec
 from ._tensor_impl import _Numpy, CTensor
 
-from tensor import Tensor
+from max.tensor import Tensor
 
 
 struct _OwningPointer(Movable):
