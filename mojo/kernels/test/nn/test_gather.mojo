@@ -34,7 +34,7 @@ fn test_gather() raises:
             DType.float32,
             2,
             DimList(num_rows, row_size),
-        ].aligned_stack_allocation[64]()
+        ].stack_allocation[alignment=64]()
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -46,7 +46,7 @@ fn test_gather() raises:
             indices_type,
             1,
             DimList(num_indices),
-        ].aligned_stack_allocation[64]()
+        ].stack_allocation[alignment=64]()
 
         for i in range(num_indices):
             indices[StaticIntTuple[1](i)] = i // 2
@@ -58,7 +58,7 @@ fn test_gather() raises:
             DType.float32,
             2,
             DimList(num_indices, row_size),
-        ].aligned_stack_allocation[64]()
+        ].stack_allocation[alignment=64]()
 
         # Test gather
         alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
@@ -102,7 +102,7 @@ fn test_gather_3d() raises:
             DType.float32,
             3,
             DimList(num_rows, row_size, 1),
-        ].aligned_stack_allocation[64]()
+        ].stack_allocation[alignment=64]()
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -114,7 +114,7 @@ fn test_gather_3d() raises:
             indices_type,
             2,
             DimList(num_indices, 1),
-        ].aligned_stack_allocation[64]()
+        ].stack_allocation[alignment=64]()
 
         for i in range(num_indices):
             indices[StaticIntTuple[2](i, 0)] = i // 2
@@ -124,10 +124,10 @@ fn test_gather_3d() raises:
             DType.float32,
             4,
             DimList(num_indices, 1, row_size, 1),
-        ].aligned_stack_allocation[64]()
+        ].stack_allocation[alignment=64]()
 
         # Test gather
-        alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
+        alias simd_width = simdwidthof[DType.float32]()
 
         gather[axis=0](
             output.make_dims_unknown(),
@@ -171,7 +171,7 @@ fn test_gather_empty_indices() raises:
             DType.float32,
             2,
             DimList(num_rows, row_size),
-        ].aligned_stack_allocation[input_size]()
+        ].stack_allocation()
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -182,7 +182,7 @@ fn test_gather_empty_indices() raises:
             indices_type,
             1,
             DimList(num_indices),
-        ].aligned_stack_allocation[indices_size]()
+        ].stack_allocation()
 
         for i in range(num_indices):
             indices[StaticIntTuple[1](i)] = i // 2
@@ -192,10 +192,10 @@ fn test_gather_empty_indices() raises:
             DType.float32,
             2,
             DimList(num_indices, row_size),
-        ].aligned_stack_allocation[output_size]()
+        ].stack_allocation()
 
         # Test gather
-        alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
+        alias simd_width = simdwidthof[DType.float32]()
 
         gather[axis=0](
             output.make_dims_unknown(),
