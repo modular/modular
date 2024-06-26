@@ -23,7 +23,7 @@ from .function import _FunctionHandle
 @register_passable("trivial")
 struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
     @staticmethod
-    fn load() raises -> type:
+    fn load() -> type:
         return _get_dylib_function[fn_name, type]()
 
 
@@ -280,7 +280,7 @@ struct CudaDLL:
     var cuModuleUnload: cuModuleUnload.type
     var cuModuleGetFunction: cuModuleGetFunction.type
 
-    fn __init__(inout self) raises:
+    fn __init__(inout self):
         self.cuDeviceGetCount = cuDeviceGetCount.load()
         self.cuDeviceGetAttribute = cuDeviceGetAttribute.load()
         self.cuDeviceGetName = cuDeviceGetName.load()
