@@ -11,11 +11,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/Debug.h"
 
 #include <mutex>
-
-#define DEBUG_TYPE "mojo-globals"
 
 template <>
 struct llvm::DenseMapInfo<std::string> {
@@ -67,19 +64,13 @@ KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
   {
     std::lock_guard<std::mutex> l(getGlobalTableMutex());
     auto it = globalTable.find(name.str());
-    if (it != globalTable.end()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << (llvm::Twine("GetGlobalOr(") + name + ") hit\n").str());
+    if (it != globalTable.end())
       return it->second.value;
-    }
   }
 
   if (!initFn)
     return nullptr;
 
-  LLVM_DEBUG(
-      llvm::dbgs()
-      << (llvm::Twine("GetGlobalOr(") + name + ") initializing\n").str());
   GlobalEntry entry(initFn(payload), destroyFn);
 
   GlobalTable::iterator itr;
@@ -90,9 +81,6 @@ KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
   }
 
   if (!inserted) {
-    LLVM_DEBUG(
-        llvm::dbgs()
-        << (llvm::Twine("GetGlobalOr(") + name + ") discarding\n").str());
     entry.destroy();
     return itr->second.value;
   }
