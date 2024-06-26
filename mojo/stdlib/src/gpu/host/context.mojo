@@ -387,6 +387,12 @@ struct Context:
         )
 
     fn malloc_async[
+        type: DType
+    ](self, count: Int, stream: Stream) raises -> DTypePointer[type]:
+        """Allocates memory with stream ordered semantics."""
+        return self.malloc_async[Scalar[type]](count, stream)
+
+    fn malloc_async[
         type: AnyTrivialRegType
     ](self, count: Int, stream: Stream) raises -> Pointer[type]:
         """Allocates memory with stream ordered semantics."""
@@ -407,3 +413,9 @@ struct Context:
 
         var cuMemFreeAsync = self.cuda_dll.value().cuMemFreeAsync if self.cuda_dll else cuMemFreeAsync.load()
         _check_error(cuMemFreeAsync(ptr.bitcast[Int](), stream.stream))
+
+    fn free_async[
+        type: DType
+    ](self, ptr: DTypePointer[type], stream: Stream) raises:
+        """Frees memory with stream ordered semantics."""
+        self.free_async[Scalar[type]](ptr._as_scalar_pointer(), stream)
