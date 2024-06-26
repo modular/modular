@@ -11,7 +11,11 @@ from utils.variant import Variant
 from collections import List
 
 
-struct MTuple[T: CollectionElement](CollectionElement, Stringable):
+struct MTuple[T: CollectionElement](
+    CollectionElement,
+    Stringable,
+    Formattable,
+):
     alias Element = Variant[T, Self]
     var elts: List[Self.Element]
 
@@ -49,19 +53,24 @@ struct MTuple[T: CollectionElement](CollectionElement, Stringable):
         return new
 
     fn __str__(self) -> String:
-        var result = String("(")
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write("(")
+
         for i in range(len(self.elts)):
             if self.elts[i].isa[Int]():
                 var value = self.elts[i]
-                result += str(value[Int])
+                writer.write(value[Int])
             elif self.elts[i].isa[MTuple[T]]():
                 var value = self.elts[i]
-                result += str(value[MTuple[T]])
+                writer.write(value[MTuple[T]])
             else:
-                result += "?"
+                writer.write("?")
             if i < len(self.elts) - 1:
-                result += ", "
-        return result + ")"
+                writer.write(", ")
+
+        writer.write(")")
 
 
 alias IntTuple = MTuple[Int]

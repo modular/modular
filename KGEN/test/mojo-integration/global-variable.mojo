@@ -8,10 +8,6 @@
 # RUN: mojo build %mojo_args %s -o %t
 # RUN: %t | FileCheck %s
 
-# XFAIL: *
-# TODO(#25031): Re-enable when global variables are fully supported with
-# packages.
-
 
 @register_passable("trivial")
 struct ThreeInts:

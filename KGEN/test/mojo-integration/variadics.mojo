@@ -8,7 +8,7 @@
 
 
 # This isn't copyable or movable, but it is talkative!
-struct TalkativeMem(Stringable):
+struct TalkativeMem(Stringable, Formattable):
     var state: Int
 
     fn __init__(inout self, state: Int):
@@ -19,12 +19,15 @@ struct TalkativeMem(Stringable):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return "talkative " + self.state.__str__()
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write("talkative ", self.state)
 
 
 # This isn't copyable or movable, but it is talkative!
 @register_passable
-struct TalkativeReg(Stringable):
+struct TalkativeReg(Stringable, Formattable):
     var state: Int
 
     fn __init__(inout self, state: Int):
@@ -35,12 +38,15 @@ struct TalkativeReg(Stringable):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return "talkative " + self.state.__str__()
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write("talkative ", self.state)
 
 
 # This is copyable, movable, and talkative!  It doesn't print on move.
 @register_passable
-struct TalkativeCopableReg(Stringable):
+struct TalkativeCopableReg(Stringable, Formattable):
     var state: Int
 
     fn __init__(inout self, state: Int):
@@ -55,11 +61,14 @@ struct TalkativeCopableReg(Stringable):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return "talkative " + self.state.__str__()
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write("talkative ", self.state)
 
 
 # This is copyable, movable, and talkative!  It prints on move.
-struct TalkativeCopableMovableMem(Stringable, CollectionElement):
+struct TalkativeCopableMovableMem(Stringable, Formattable, CollectionElement):
     var state: Int
 
     fn __init__(inout self, state: Int):
@@ -78,7 +87,10 @@ struct TalkativeCopableMovableMem(Stringable, CollectionElement):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return "talkative " + self.state.__str__()
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write("talkative ", self.state)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -213,12 +225,12 @@ fn test_non_trivial_reg_varargs():
 # ===----------------------------------------------------------------------=== #
 
 
-fn owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
+fn owned_variadic_pack[*Ts: Formattable](owned *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
     @parameter
-    fn process[T: Stringable](a: T):
+    fn process[T: Formattable](a: T):
         print("hello", a)
 
     pack.each[process]()
@@ -258,12 +270,12 @@ fn test_owned_variadic_pack():
     print("done three")
 
 
-fn inout_variadic_pack[*Ts: Stringable](inout *pack: *Ts):
+fn inout_variadic_pack[*Ts: Formattable](inout *pack: *Ts):
     print("-- testing inout variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
     @parameter
-    fn process[T: Stringable](a: T):
+    fn process[T: Formattable](a: T):
         print("hello", a)
 
     pack.each[process]()
@@ -294,11 +306,11 @@ fn test_inout_variadic_pack():
     print("")
 
 
-fn borrowed_variadic_pack[*Ts: Stringable](*pack: *Ts):
+fn borrowed_variadic_pack[*Ts: Formattable](*pack: *Ts):
     print("-- testing borrowed variadic pack with", len(pack), "elements")
 
     @parameter
-    fn process[T: Stringable](a: T):
+    fn process[T: Formattable](a: T):
         print("hello", a)
 
     pack.each[process]()
