@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_mlir_dialect(M M -dialect=M)
-add_modular_doc(M -gen-dialect-doc MDialect Support/docs -dialect=M)
+add_modular_doc(M -gen-dialect-doc MDialect Support/docs/ -dialect=M)
 
 set(LLVM_TARGET_DEFINITIONS M.td)
 mlir_tablegen(MAttrs.h.inc -gen-attrdef-decls -dialect=M)
