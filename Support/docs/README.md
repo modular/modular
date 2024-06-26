@@ -26,7 +26,7 @@ purpose. The current libraries are:
 - DebugInfoDialect
 - Driver
 - Entitlements
-- Filesystem
+- [Filesystem](Filesystem.md)
 - Frameworks
 - [Globals](Globals.md)
 - HTTP
