@@ -67,6 +67,8 @@ Given two input tensor shapes, broadcasting works as following:
 3. All other dimensions will be asserted to be equivalent. If they are not, an exception will be raised.
 """
 
+from builtin._location import __call_location, _SourceLocation
+
 from ..error import error
 
 
@@ -84,7 +86,10 @@ def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
     )[0]
 
 
-def add(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def add(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Adds two symbolic tensors.
 
     Creates a new op node to compute the addition of two symbol tensor values
@@ -102,6 +107,7 @@ def add(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the addition.
         rhs: The symbol to use as right side of the addition.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the addition.
@@ -115,10 +121,16 @@ def add(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.add"](lhs, rhs)
+    try:
+        return _binary_op["rmo.add"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def div(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def div(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Divides two symbolic tensors.
 
     Creates a new op node to compute the division of two symbol tensor values
@@ -136,6 +148,7 @@ def div(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the division.
         rhs: The symbol to use as right side of the division.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the division.
@@ -149,10 +162,16 @@ def div(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.div"](lhs, rhs)
+    try:
+        return _binary_op["rmo.div"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def max(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def max(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise maximum of two symbolic tensors.
 
     Creates a new op node to compute the maximum of two symbol tensor values
@@ -170,6 +189,7 @@ def max(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the maximum.
         rhs: The symbol to use as right side of the maximum.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the maximum.
@@ -183,10 +203,16 @@ def max(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.max"](lhs, rhs)
+    try:
+        return _binary_op["rmo.max"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def min(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def min(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise minimum of two symbolic tensors.
 
     Creates a new op node to compute the minimum of two symbol tensor values
@@ -204,6 +230,7 @@ def min(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the minimum.
         rhs: The symbol to use as right side of the minimum.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the minimum.
@@ -217,10 +244,16 @@ def min(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.min"](lhs, rhs)
+    try:
+        return _binary_op["rmo.min"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def mod(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise maximum of two symbolic tensors.
 
     Creates a new op node to compute the maximum of two symbol tensor values
@@ -238,6 +271,7 @@ def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the maximum.
         rhs: The symbol to use as right side of the maximum.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the maximum.
@@ -251,10 +285,16 @@ def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.mod"](lhs, rhs)
+    try:
+        return _binary_op["rmo.mod"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def mul(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise multiplication of two symbolic tensors.
 
     Creates a new op node to compute the multiplication of two symbol tensor values
@@ -272,6 +312,7 @@ def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the multiplication.
         rhs: The symbol to use as right side of the multiplication.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the multiplication.
@@ -285,10 +326,16 @@ def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.mul"](lhs, rhs)
+    try:
+        return _binary_op["rmo.mul"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def pow(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise exponentiation of two symbolic tensors.
 
     Creates a new op node to compute the exponentiation of two symbol tensor values
@@ -306,6 +353,7 @@ def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the exponentiation.
         rhs: The symbol to use as right side of the exponentiation.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the exponentiation.
@@ -319,10 +367,16 @@ def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.pow"](lhs, rhs)
+    try:
+        return _binary_op["rmo.pow"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def sub(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise subtraction of two symbolic tensors.
 
     Creates a new op node to compute the subtraction of two symbol tensor values
@@ -340,6 +394,7 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the subtraction.
         rhs: The symbol to use as right side of the subtraction.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the subtraction.
@@ -353,10 +408,16 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.sub"](lhs, rhs)
+    try:
+        return _binary_op["rmo.sub"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def equal(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise equality comparison between two symbolic tensors.
 
     Creates a new op node to compute the equality comparison of two symbol
@@ -371,6 +432,7 @@ def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the equality comparison.
         rhs: The symbol to use as right side of the equality comparison.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the equality
@@ -387,10 +449,16 @@ def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.equal"](lhs, rhs)
+    try:
+        return _binary_op["rmo.equal"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def greater(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise greater than comparison between two symbolic tensors.
 
     Creates a new op node to compute the greater than comparison of two symbol
@@ -405,6 +473,7 @@ def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the greater than comparison.
         rhs: The symbol to use as right side of the greater than comparison.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the greater than
@@ -421,10 +490,16 @@ def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.greater"](lhs, rhs)
+    try:
+        return _binary_op["rmo.greater"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def greater_equal(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise greater-or-equal comparison between two symbolic tensors.
 
     Creates a new op node to compute the equality comparison of two symbol
@@ -439,6 +514,7 @@ def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the equality comparison.
         rhs: The symbol to use as right side of the equality comparison.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the equality
@@ -455,10 +531,16 @@ def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.greater_equal"](lhs, rhs)
+    try:
+        return _binary_op["rmo.greater_equal"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
-def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+@always_inline
+def not_equal(
+    lhs: Symbol, rhs: Symbol, location: Optional[_SourceLocation] = None
+) -> Symbol:
     """Computes the elementwise inequality comparison between two symbolic tensors.
 
     Creates a new op node to compute the inequality comparison of two symbol
@@ -473,6 +555,7 @@ def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
     Args:
         lhs: The symbol to use as left side of the inequality comparison.
         rhs: The symbol to use as right side of the inequality comparison.
+        location: An optional location for a more specific error message.
 
     Returns:
         A symbolic tensor value representing the output of the inequality
@@ -488,7 +571,10 @@ def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    return _binary_op["rmo.not_equal"](lhs, rhs)
+    try:
+        return _binary_op["rmo.not_equal"](lhs, rhs)
+    except e:
+        raise error(lhs.graph(), e, location or __call_location())
 
 
 # ===----------------------------------------------------------------------=== #

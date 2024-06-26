@@ -332,6 +332,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
     fn _consistent_scalar(self, value: Float64) raises -> Symbol:
         return self.graph().scalar(value, self.type().tensor().dtype)
 
+    @always_inline
     fn __add__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise addition.
 
@@ -341,8 +342,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return add(self, rhs)
+        return add(self, rhs, __call_location())
 
+    @always_inline
     fn __add__(self, rhs: Int) raises -> Symbol:
         """Element-wise addition by an `Int` literal.
 
@@ -352,8 +354,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return add(self, self._consistent_scalar(rhs))
+        return add(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __add__(self, rhs: Float64) raises -> Symbol:
         """Element-wise addition by a `Float64`.
 
@@ -363,7 +366,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return add(self, self._consistent_scalar(rhs))
+        return add(self, self._consistent_scalar(rhs), __call_location())
 
     fn __matmul__(self, rhs: Symbol) raises -> Symbol:
         """Matrix multiplication.
@@ -376,6 +379,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         """
         return matmul(self, rhs)
 
+    @always_inline
     fn __mul__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise multiplication.
 
@@ -385,8 +389,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return mul(self, rhs)
+        return mul(self, rhs, __call_location())
 
+    @always_inline
     fn __mul__(self, rhs: Int) raises -> Symbol:
         """Element-wise multiplication by an `Int` literal.
 
@@ -396,8 +401,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return mul(self, self._consistent_scalar(rhs))
+        return mul(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __mul__(self, rhs: Float64) raises -> Symbol:
         """Element-wise multiplication by a `Float64`.
 
@@ -407,7 +413,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return mul(self, self._consistent_scalar(rhs))
+        return mul(self, self._consistent_scalar(rhs), __call_location())
 
     fn __neg__(self) raises -> Symbol:
         """Numerical negative, element-wise.
@@ -417,6 +423,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         """
         return self.graph().op("rmo.mo.negative", self, self.tensor_type())
 
+    @always_inline
     fn __pow__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise raise to power.
 
@@ -426,8 +433,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return pow(self, rhs)
+        return pow(self, rhs, __call_location())
 
+    @always_inline
     fn __pow__(self, rhs: Int) raises -> Symbol:
         """Element-wise raise to power by an `Int` literal.
 
@@ -437,8 +445,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return pow(self, self._consistent_scalar(rhs))
+        return pow(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __pow__(self, rhs: Float64) raises -> Symbol:
         """Element-wise raise to power by a `Float64`.
 
@@ -448,8 +457,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return pow(self, self._consistent_scalar(rhs))
+        return pow(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __radd__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise addition.
 
@@ -459,8 +469,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return add(rhs, self)
+        return add(rhs, self, __call_location())
 
+    @always_inline
     fn __radd__(self, rhs: Int) raises -> Symbol:
         """Element-wise addition by an `Int` literal.
 
@@ -470,8 +481,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return add(self._consistent_scalar(rhs), self)
+        return add(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __radd__(self, rhs: Float64) raises -> Symbol:
         """Element-wise addition by a `Float64`.
 
@@ -481,8 +493,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return add(self._consistent_scalar(rhs), self)
+        return add(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rmul__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise multiplication.
 
@@ -492,8 +505,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return mul(rhs, self)
+        return mul(rhs, self, __call_location())
 
+    @always_inline
     fn __rmul__(self, rhs: Int) raises -> Symbol:
         """Element-wise multiplication by an `Int` literal.
 
@@ -503,8 +517,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return mul(self._consistent_scalar(rhs), self)
+        return mul(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rmul__(self, rhs: Float64) raises -> Symbol:
         """Element-wise multiplication by a `Float64`.
 
@@ -514,8 +529,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return mul(self._consistent_scalar(rhs), self)
+        return mul(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rpow__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise raise to power.
 
@@ -525,8 +541,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return pow(rhs, self)
+        return pow(rhs, self, __call_location())
 
+    @always_inline
     fn __rpow__(self, rhs: Int) raises -> Symbol:
         """Element-wise raise to power by an `Int` literal.
 
@@ -536,8 +553,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return pow(self._consistent_scalar(rhs), self)
+        return pow(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rpow__(self, rhs: Float64) raises -> Symbol:
         """Element-wise raise to power by a `Float64`.
 
@@ -547,8 +565,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return pow(self._consistent_scalar(rhs), self)
+        return pow(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rsub__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise subtraction.
 
@@ -558,8 +577,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return sub(rhs, self)
+        return sub(rhs, self, __call_location())
 
+    @always_inline
     fn __rsub__(self, rhs: Int) raises -> Symbol:
         """Element-wise subtraction by an `Int` literal.
 
@@ -569,8 +589,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return sub(self._consistent_scalar(rhs), self)
+        return sub(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rsub__(self, rhs: Float64) raises -> Symbol:
         """Element-wise subtraction by a `Float64`.
 
@@ -580,8 +601,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return sub(self._consistent_scalar(rhs), self)
+        return sub(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rtruediv__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise division.
 
@@ -591,8 +613,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return div(rhs, self)
+        return div(rhs, self, __call_location())
 
+    @always_inline
     fn __rtruediv__(self, rhs: Int) raises -> Symbol:
         """Element-wise division by an `Int` literal.
 
@@ -602,8 +625,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return div(self._consistent_scalar(rhs), self)
+        return div(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __rtruediv__(self, rhs: Float64) raises -> Symbol:
         """Element-wise division by a `Float64`.
 
@@ -613,8 +637,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return div(self._consistent_scalar(rhs), self)
+        return div(self._consistent_scalar(rhs), self, __call_location())
 
+    @always_inline
     fn __sub__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise subtraction.
 
@@ -624,8 +649,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return sub(self, rhs)
+        return sub(self, rhs, __call_location())
 
+    @always_inline
     fn __sub__(self, rhs: Int) raises -> Symbol:
         """Element-wise subtraction by an `Int` literal.
 
@@ -635,8 +661,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return sub(self, self._consistent_scalar(rhs))
+        return sub(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __sub__(self, rhs: Float64) raises -> Symbol:
         """Element-wise subtraction by a `Float64`.
 
@@ -646,8 +673,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return sub(self, self._consistent_scalar(rhs))
+        return sub(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __truediv__(self, rhs: Symbol) raises -> Symbol:
         """Element-wise division.
 
@@ -657,8 +685,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return div(self, rhs)
+        return div(self, rhs, __call_location())
 
+    @always_inline
     fn __truediv__(self, rhs: Int) raises -> Symbol:
         """Element-wise division by an `Int` literal.
 
@@ -668,8 +697,9 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return div(self, self._consistent_scalar(rhs))
+        return div(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __truediv__(self, rhs: Float64) raises -> Symbol:
         """Element-wise division by a `Float64`.
 
@@ -679,7 +709,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return div(self, self._consistent_scalar(rhs))
+        return div(self, self._consistent_scalar(rhs), __call_location())
 
     # ===------------------------------------------------------------------=== #
     # Other ops
