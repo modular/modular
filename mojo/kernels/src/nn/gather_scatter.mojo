@@ -58,8 +58,8 @@ struct Axis(Intable, Indexer):
     @always_inline
     fn __init__[
         type: DType
-    ](axis_unnormalized: Scalar[type], rank: Int) -> Self:
-        return Self {axis: int(normalize_neg_index(axis_unnormalized, rank))}
+    ](inout self, axis_unnormalized: Scalar[type], rank: Int):
+        self.axis = int(normalize_neg_index(axis_unnormalized, rank))
 
     @always_inline
     fn __int__(self) -> Int:
