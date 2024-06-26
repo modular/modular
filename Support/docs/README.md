@@ -27,7 +27,7 @@ purpose. The current libraries are:
 - [Driver](Driver.md)
 - [Entitlements](Entitlments.md)
 - [Filesystem](Filesystem.md)
-- Frameworks
+- [Frameworks](Frameworks.md)
 - [Globals](Globals.md)
 - [HTTP](HTTP.md)
 - [MArchTarget](MArchTarget.md)
