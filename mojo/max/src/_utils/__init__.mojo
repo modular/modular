@@ -442,5 +442,5 @@ fn get_lib_path_from_cfg(
     var lib_path = String._from_bytes(lib_path_str_ptr)
 
     if not Path(lib_path).exists():
-        raise "AI engine library not found at " + lib_path
+        raise String(err_name) + " not found at " + lib_path
     return lib_path
