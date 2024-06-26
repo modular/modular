@@ -24,7 +24,12 @@ from .tensor_shape import TensorShape, _as_rep16
 # ===----------------------------------------------------------------------===#
 
 
-struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
+struct TensorSpec(
+    Stringable,
+    Formattable,
+    CollectionElement,
+    EqualityComparable,
+):
     """A space efficient representation of a tensor shape and dtype. This struct
     implements value semantics and owns its underlying data."""
 
@@ -206,7 +211,17 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
         Returns:
           The string representation of the spec.
         """
-        return str(self.shape) + "x" + str(self.dtype())
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this TensorSpec to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write(self.shape, "x", self.dtype())
 
     @staticmethod
     fn from_bytes(data: DTypePointer[DType.uint8]) -> TensorSpec:

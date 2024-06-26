@@ -188,7 +188,12 @@ fn _sub(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
     return x - y
 
 
-struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
+struct Tensor[type: DType](
+    Stringable,
+    Formattable,
+    CollectionElement,
+    EqualityComparable,
+):
     """A tensor type which owns its underlying data and is parameterized on
     DType.
 
@@ -851,11 +856,22 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
           A compact string of the tensor.
         """
-        var res = String("Tensor(")
+
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this Tensor to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write("Tensor(")
 
         @parameter
-        fn serialize[T: Stringable](val: T):
-            res += str(val)
+        fn serialize[T: Formattable](val: T):
+            writer.write(val)
 
         var shape = List[Int]()
         for i in range(self.rank()):
@@ -865,7 +881,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             self.unsafe_ptr(), shape
         )
 
-        return res + ")"
+        writer.write(")")
 
     @no_inline
     fn __repr__(self) -> String:

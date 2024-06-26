@@ -51,7 +51,7 @@ fn empty_tensor[
     return Tensor[type, rank](ptr, shape)
 
 
-struct Tensor[type: DType, static_rank: Int](Stringable):
+struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
     """A tensor type designed to extend MAX Engine with custom ops.
 
     Beware that this `Tensor` is completely different from the `Tensor` type
@@ -353,11 +353,22 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         Returns:
             A compact string of the tensor.
         """
-        var res = String("Tensor(")
+
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this Tensor to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write("Tensor(")
 
         @parameter
-        fn serialize[T: Stringable](val: T):
-            res += str(val)
+        fn serialize[T: Formattable](val: T):
+            writer.write(val)
 
         var shape = List[Int]()
         for i in range(self.rank()):
@@ -367,4 +378,4 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
             self.data, shape
         )
 
-        return res + ")"
+        writer.write(")")
