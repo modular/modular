@@ -22,7 +22,7 @@ purpose. The current libraries are:
 - Compiler
 - CrashReporting
 - Cryptography
-- CUDA
+- [CUDA](CUDA.md)
 - DebugInfoDialect
 - [Driver](Driver.md)
 - Entitlements
