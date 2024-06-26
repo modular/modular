@@ -38,7 +38,7 @@ purpose. The current libraries are:
 - Settings
 - Telemetry
 - Threading
-- UI
+- [UI](UI.md)
 
 The `Support/` directory also includes a number of stand-alone libraries that
 are not in subdirectories.
