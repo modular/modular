@@ -525,6 +525,8 @@ fn deprecated_function():
 # CHECK: "overloads":
 # CHECK:      "signature": "__add__(self: Self, other: Self) -> Self"
 
+# CHECK:  "name": "__len__",
+
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_by_conventions",
 # CHECK:  "overloads"
