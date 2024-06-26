@@ -29,7 +29,7 @@ purpose. The current libraries are:
 - [Filesystem](Filesystem.md)
 - Frameworks
 - [Globals](Globals.md)
-- HTTP
+- [HTTP](HTTP.md)
 - [MArchTarget](MArchTarget.md)
 - MDialect
 - [Metering](Metering.md)
