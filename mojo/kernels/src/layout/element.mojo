@@ -11,7 +11,7 @@ from .layout import coalesce, to_int
 # Element is a wrapper around SIMD type, it extends the SIMD type to define
 # a vectorized load / store that is driven by the layout of the element.
 #
-struct Element[dtype: DType, layout: Layout](Stringable):
+struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
     alias element_data_type = SIMD[dtype, size = layout.size()]
 
     var element_data: Self.element_data_type
@@ -162,4 +162,8 @@ struct Element[dtype: DType, layout: Layout](Stringable):
                         self.element_data[i + j * dim_1].store(ptr, offset)
 
     fn __str__(self) -> String:
-        return self.element_data.__str__()
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        # TODO: Avoid intermediate string allocation.
+        writer.write(self.element_data.__str__())

@@ -312,7 +312,9 @@ fn __to_static_tuple[*sizes: Int, rank: Int]() -> StaticIntTuple[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
-    CollectionElement, Stringable
+    CollectionElement,
+    Stringable,
+    Formattable,
 ):
     var stride: StaticIntTuple[rank]
 
@@ -326,7 +328,10 @@ struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
         self.stride = exisiting.stride
 
     fn __str__(self) -> String:
-        return str(shape) + ":" + str(self.stride)
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write(shape, ":", self.stride)
 
 
 # Returns the linear index of an element, this is equivalent to concat
