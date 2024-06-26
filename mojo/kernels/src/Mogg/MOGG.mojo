@@ -1066,7 +1066,7 @@ fn concat_from_list[
     with Trace[TraceLevel.OP]("mojo.concat_from_list") as t:
         _concat[input_rank, input_type, single_thread_blocking_override](
             output,
-            int(normalize_neg_index(axis[0], input_rank)),
+            int(normalize_neg_index(axis, input_rank)),
             inputs,
             context=ctx,
         )
@@ -1093,7 +1093,7 @@ fn concat[
     with Trace[TraceLevel.OP]("mojo.concat") as t:
         var ins = variadic_list_to_vector(variadic_ins)
         _concat[rank, type, single_thread_blocking_override, target](
-            output, int(normalize_neg_index(axis[0], rank)), ins, context=ctx
+            output, int(normalize_neg_index(axis, rank)), ins, context=ctx
         )
         ins._del_old()
 
@@ -1106,7 +1106,7 @@ fn concat_shape[
     simd_width: Int,
     single_thread_blocking_override: Bool,
 ](
-    axis_buf: Scalar,
+    axis0: Scalar,
     *input_bufs: NDBuffer[input_type, input_rank],
 ) raises -> StaticIntTuple[input_rank]:
     # TODO we should refactor this with `concat_from_list_shape`, but this
@@ -1118,9 +1118,7 @@ fn concat_shape[
     # 2. either optimize away the conversion from variadic list to
     # InlinedFixedVector, or generalize `concat_from_list_shape` with some List
     # Trait so we can pass in variadic list directly.
-    var axis = int(axis_buf[0])
-    if axis < 0:
-        axis += input_rank
+    var axis = int(normalize_neg_index(axis0, input_rank))
     if axis < 0 or input_rank <= axis:
         raise ("[concat] normalized axis must be within range [0, input_rank)")
 
@@ -1136,7 +1134,7 @@ fn concat_shape[
 
     var concat_axis_dim_sum = 0
 
-    for i in range(input_bufs.__len__()):
+    for i in range(len(input_bufs)):
         concat_axis_dim_sum += input_bufs[i].dim(axis)
         if not shape_equal_ignore_axis(
             input_bufs[0].get_shape(), input_bufs[i].get_shape()
@@ -1263,7 +1261,7 @@ fn cumsum[
     ctx: MojoCallContextPtr,
 ):
     _cumsum[rank, type, exclusive == 1, reverse == 1](
-        output, input, int(normalize_neg_index(axis[0], rank))
+        output, input, int(normalize_neg_index(axis, rank))
     )
 
 
@@ -1290,7 +1288,7 @@ fn split[
 ) raises:
     # NOTE: Synchronous, so stack allocated variadic list is safe
     _split[type, rank](
-        input, int(normalize_neg_index(axis[0], rank)), variadic_outs
+        input, int(normalize_neg_index(axis, rank)), variadic_outs
     )
 
 
@@ -1381,14 +1379,12 @@ fn mean[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: Scalar,
+    axis: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     if _guard_against_gpu_target[target](ctx):
         return
-
-    var axis = axis_buffer[0]
 
     @always_inline
     @parameter
@@ -1513,7 +1509,7 @@ fn reduce_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[input_type, input_rank],
-    axis_buf: Scalar,
+    axis0: Scalar,
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -1527,16 +1523,13 @@ fn reduce_shape[
 
     Args:
         input_buf: The input tensor.
-        axis_buf: The axis tensor.
+        axis0: The axis tensor.
 
     Returns:
         The output shape.
     """
 
-    # extract hyper parameter
-    var axis = int(axis_buf[0])
-    if axis < 0:
-        axis += input_rank
+    var axis = int(normalize_neg_index(axis0, input_rank))
 
     if axis < 0 or input_rank <= axis:
         raise Error(
@@ -1565,7 +1558,7 @@ fn reduce_add[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: Scalar,
+    axis: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1593,7 +1586,6 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    var axis = axis_buffer[0]
     with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
         _reduce_generator[
             input_0_fn_wrapper,
@@ -1620,7 +1612,7 @@ fn reduce_max[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: Scalar,
+    axis: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1648,7 +1640,6 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
-    var axis = axis_buffer[0]
     with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
         _reduce_generator[
             input_0_fn_wrapper,
@@ -1675,7 +1666,7 @@ fn reduce_min[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: Scalar,
+    axis: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1703,8 +1694,6 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
-    var axis = axis_buffer[0]
-
     with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
         _reduce_generator[
             input_0_fn_wrapper,
@@ -1731,7 +1720,7 @@ fn reduce_mul[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: Scalar,
+    axis: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1758,8 +1747,6 @@ fn reduce_mul[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
-
-    var axis = axis_buffer[0]
 
     with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
         _reduce_generator[
@@ -2085,7 +2072,7 @@ fn gather[
 ](
     input_shape: StaticIntTuple[in_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    axis_buffer: Scalar,
+    axis: Scalar,
     output_shape: StaticIntTuple[output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2113,7 +2100,7 @@ fn gather[
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
     ](
-        Axis(axis_buffer[0], in_rank),
+        Axis(axis, in_rank),
         input_shape,
         indices.dynamic_shape,
         output_shape,
@@ -2329,7 +2316,7 @@ fn scatter[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis[0], rank)),
+        int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2360,7 +2347,7 @@ fn scatter_add[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis[0], rank)),
+        int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2391,7 +2378,7 @@ fn scatter_max[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis[0], rank)),
+        int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2422,7 +2409,7 @@ fn scatter_min[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis[0], rank)),
+        int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -2453,7 +2440,7 @@ fn scatter_mul[
         input,
         indices,
         updates,
-        int(normalize_neg_index(axis[0], rank)),
+        int(normalize_neg_index(axis, rank)),
         output,
     )
 
@@ -3352,7 +3339,7 @@ fn bottom_k[
 ](
     input: NDBuffer[type, rank],
     k_buf: Scalar,
-    axis_buf: Scalar,
+    axis: Scalar,
     sorted: NDBuffer[DType.bool, 1],
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[DType.int64, rank],
@@ -3361,7 +3348,7 @@ fn bottom_k[
     _top_k[rank, type](
         input,
         int(k_buf[0]),
-        int(axis_buf[0]),
+        int(axis),
         False,
         rebind[NDBuffer[type, rank]](out_vals),
         out_idxs,
@@ -3378,7 +3365,7 @@ fn top_k[
 ](
     input: NDBuffer[type, rank],
     k_buf: Scalar,
-    axis_buf: Scalar,
+    axis: Scalar,
     sorted: NDBuffer[DType.bool, 1],
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[DType.int64, rank],
@@ -3387,7 +3374,7 @@ fn top_k[
     _top_k[rank, type](
         input,
         int(k_buf[0]),
-        int(axis_buf[0]),
+        int(axis),
         True,
         rebind[NDBuffer[type, rank]](out_vals),
         out_idxs,
@@ -3750,7 +3737,7 @@ fn reduce_min_and_max[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: Scalar,
+    axis0: Scalar,
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -3762,7 +3749,7 @@ fn reduce_min_and_max[
         return
 
     alias num_reductions = 2
-    var axis = int(normalize_neg_index(axis_buffer[0], rank))
+    var axis = int(normalize_neg_index(axis0, rank))
 
     @always_inline
     @parameter
@@ -3830,10 +3817,10 @@ fn reduce_min_and_max_shape_func[
     single_thread_blocking_override: Bool,
 ](
     data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    axis_buffer: Scalar,
+    axis0: Scalar,
 ) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
-    var axis = int(normalize_neg_index(axis_buffer[0], rank))
+    var axis = int(normalize_neg_index(axis0, rank))
     new_shape[axis] = 2
     return new_shape
 
