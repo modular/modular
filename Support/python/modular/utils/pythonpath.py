@@ -63,7 +63,16 @@ def get_libtorchvision_path() -> Optional[Path]:
     return get_lib_path(torchvision_path, "_C")
 
 
-def get_libpython():
+def get_libpython() -> Optional[Path]:
+    """
+    Get the path of libpython shared library.
+
+    The function tries to locate libpython in several possible locations and
+    returns `None` if it couldn't find libpython in any of them.
+
+    Returns:
+        Path to the libpython shared library or None if it wasn't found.
+    """
     is_windows = os.name == "nt"
     if is_windows:
         ext = "dll"
@@ -84,4 +93,4 @@ def get_libpython():
     for path in paths:
         if path.exists() and path.is_file() and path.suffix == f".{ext}":
             return path
-    return "LIBPYTHON NOT FOUND"
+    return None
