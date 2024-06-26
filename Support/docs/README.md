@@ -18,7 +18,7 @@ Each library should have an associated documentation file to indicate its
 purpose. The current libraries are:
 
 - [ADT](ADT.md)
-- ASN1
+- [ASN1](ASN1.md)
 - Compiler
 - [CrashReporting](CrashReporting.md)
 - Cryptography
