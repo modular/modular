@@ -1669,6 +1669,14 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     return success();
   }
 
+  // Check if the context manager provides an `__exit__` overload that accepts
+  // an error. If it doesn't, then we know the exit is unconditional.
+  PValue conditionalExit = OverloadSet::lookupAndResolve(
+      getScopeInfo(), contextRVType, "__exit__",
+      CallOperands({{contextVal, contextExp},
+                    {PValue(UnknownAttr::get(errorType)), contextExp}}),
+      contextExp, CallSyntax::kMethodCall);
+
   // Otherwise, we have to emit a conditional finally. PEP343 states that the
   // general 'with' statement corresponds to:
   //   contextMgr = EXPRESSION
@@ -1685,86 +1693,96 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   //     if exc:
   //       contextMgr.__exit__()
   Value excVar;
-  {
+  TryOp nestedTryOp;
+  VarDeclOp nestedErrDecl;
+  if (conditionalExit) {
     // Insert the flag and initialize it to 'True'.
-    OpBuilder::InsertionGuard g(builder);
+    OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
     builder.setInsertionPoint(tryOp);
     excVar = getEmitter().emitVarDecl("__with_exc__", builder.getI1Type(), loc,
                                       VarDeclKind::Synthesized);
     builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
+    builder.restoreInsertionPoint(ip);
+
+    // Generate the nested try. Stub the 'else' and 'finally' regions.
+    nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType, loc,
+                                             VarDeclKind::Synthesized);
+    nestedTryOp =
+        builder.create<TryOp>(loc, nestedErrDecl, /*suppressWarnings=*/true);
+    builder.create<TryYieldOp>(loc);
+    builder.createBlock(&nestedTryOp.getElseRegion());
+    builder.create<TryYieldOp>(loc);
+    builder.createBlock(&nestedTryOp.getFinallyRegion());
+    builder.create<TryYieldOp>(loc);
+
+    // Parse the body into the try region.
+    builder.createBlock(&nestedTryOp.getTryRegion());
   }
-
-  // Generate the nested try. Stub the 'else' and 'finally' regions.
-  VarDeclOp nestedErrDecl = getEmitter().emitVarDecl(
-      "__inner_error__", errorType, loc, VarDeclKind::Synthesized);
-  auto nestedTryOp =
-      builder.create<TryOp>(loc, nestedErrDecl, /*suppressWarnings=*/true);
-  builder.create<TryYieldOp>(loc);
-  builder.createBlock(&nestedTryOp.getElseRegion());
-  builder.create<TryYieldOp>(loc);
-  builder.createBlock(&nestedTryOp.getFinallyRegion());
-  builder.create<TryYieldOp>(loc);
-
-  // Parse the body into the try region.
-  builder.createBlock(&nestedTryOp.getTryRegion());
   if (parseLocalScopeSuite(curIndent))
     return failure();
   builder.create<TryYieldOp>(loc);
 
-  // Set up the except region.  Pseudo code:
-  //  except(%val : Error) {
-  //    hlcf.if (
+  if (conditionalExit) {
+    // Set up the except region.  Pseudo code:
+    //  except(%val : Error) {
+    //    hlcf.if (
 
-  builder.createBlock(&nestedTryOp.getExceptRegion());
+    builder.createBlock(&nestedTryOp.getExceptRegion());
 
-  // Set the flag to 'False'.
-  builder.create<RefStoreOp>(
-      loc, builder.create<mlir::index::BoolConstantOp>(loc, false), excVar);
+    // Set the flag to 'False'.
+    builder.create<RefStoreOp>(
+        loc, builder.create<mlir::index::BoolConstantOp>(loc, false), excVar);
 
-  // Pass the error value to the __exit__ method.
-  // TODO: this isn't using the same convention that Python does.  We support
-  // overloading though and this is going to be way better for anything real
-  // that wants to implement this. We can support both styles when we need to.
-  ValueDest exitResultDest(EC_WithExitResult);
-  CValue exitResult = getEmitter().emitNamedMethodCall(
-      "__exit__",
-      CallOperands({{MLValue(contextMgrDecl), contextExp},
-                    {MBValue(nestedErrDecl), contextExp}}),
-      exitResultDest, CallSyntax::kMethodCall, contextExp);
-  RValue exitI1RVal =
-      getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
-  SRValue exitI1Val =
-      getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
-  if (!exitI1Val)
-    // Fail, but non-fatal so return success to keep parsing.
-    return success();
-  // If __exit__ returns false, then re-raise the error.
-  auto ifOp = builder.create<HLCF::IfOp>(loc, exitI1Val);
-  builder.create<TryYieldOp>(loc);
+    // Pass the error value to the __exit__ method.
+    // TODO: this isn't using the same convention that Python does.  We support
+    // overloading though and this is going to be way better for anything real
+    // that wants to implement this. We can support both styles when we need to.
+    ValueDest exitResultDest(EC_WithExitResult);
+    CValue exitResult = getEmitter().emitIndirectCall(
+        conditionalExit,
+        CallOperands({{MLValue(contextMgrDecl), contextExp},
+                      {MBValue(nestedErrDecl), contextExp}}),
+        exitResultDest, contextExp);
+    RValue exitI1RVal =
+        getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
+    SRValue exitI1Val =
+        getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
+    if (!exitI1Val)
+      // Fail, but non-fatal so return success to keep parsing.
+      return success();
+    // If __exit__ returns false, then re-raise the error.
+    auto ifOp = builder.create<HLCF::IfOp>(loc, exitI1Val);
+    builder.create<TryYieldOp>(loc);
 
-  builder.createBlock(&ifOp.getThenRegion());
-  // On true, nothing is to be done.
-  builder.create<HLCF::YieldOp>(loc);
+    builder.createBlock(&ifOp.getThenRegion());
+    // On true, nothing is to be done.
+    builder.create<HLCF::YieldOp>(loc);
 
-  // On false, we re-raise the error.
-  builder.createBlock(&ifOp.getElseRegion());
-  ValueDest dest(MLValue(tryOp.getErr()), EC_RaiseValue);
-  getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
-  builder.create<LIT::RaiseOp>(loc);
-  builder.create<HLCF::YieldOp>(loc);
+    // On false, we re-raise the error.
+    builder.createBlock(&ifOp.getElseRegion());
+    ValueDest dest(MLValue(tryOp.getErr()), EC_RaiseValue);
+    getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
+    builder.create<LIT::RaiseOp>(loc);
+    builder.create<HLCF::YieldOp>(loc);
+  }
 
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
   (void)handleRaisingFinallyRegion(tryOp, errorType, smLoc, [&] {
-    auto excIf =
-        builder.create<HLCF::IfOp>(loc, builder.create<RefLoadOp>(loc, excVar));
-    builder.createBlock(&excIf.getThenRegion());
+    HLCF::IfOp excIf;
+    if (conditionalExit) {
+      excIf = builder.create<HLCF::IfOp>(
+          loc, builder.create<RefLoadOp>(loc, excVar));
+      builder.createBlock(&excIf.getThenRegion());
+    }
     emitNormalExitLogic();
-    builder.create<HLCF::YieldOp>(loc);
-    // Stub the 'else' region.
-    builder.createBlock(&excIf.getElseRegion());
-    builder.create<HLCF::YieldOp>(loc);
+    if (conditionalExit) {
+      builder.create<HLCF::YieldOp>(loc);
+      // Stub the 'else' region.
+      builder.createBlock(&excIf.getElseRegion());
+      builder.create<HLCF::YieldOp>(loc);
+    }
     return success();
   });
   builder.create<TryYieldOp>(loc);

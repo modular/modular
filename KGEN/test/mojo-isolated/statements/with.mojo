@@ -317,3 +317,28 @@ fn testCMWithoutExitEarlyReturn():
     with CMWithoutExit() as a:
         a.method()
         return
+
+
+@value
+struct CMUnconditionalExit:
+    fn __enter__(self):
+        pass
+
+    fn __exit__(inout self):
+        pass
+
+
+# CHECK-LABEL: lit.func @"unconditional_exit
+fn unconditional_exit() raises:
+    # CHECK: lit.try %__with_error__
+    with CMUnconditionalExit():
+        # CHECK: call {{.*}}noop
+        noop(42)
+    # CHECK: except
+    # CHECK:   lit.raise
+    # CHECK:   lit.try.yield
+    # CHECK: else
+    # CHECK:   lit.try.yield
+    # CHECK: finally
+    # CHECK:   lit.try %__finally_error__
+    # CHECK:     call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
