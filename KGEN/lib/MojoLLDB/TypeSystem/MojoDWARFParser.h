@@ -84,7 +84,7 @@ public:
     return {};
   }
 
-  lldb_private::ConstString GetDIEClassTemplateParams(
+  std::string GetDIEClassTemplateParams(
       const lldb_private::plugin::dwarf::DWARFDIE &die) override {
     // Unimplemented.
     return {};

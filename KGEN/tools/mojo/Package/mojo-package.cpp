@@ -41,6 +41,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 #include <filesystem>
+#include <stack>
 #include <tuple>
 #include <utility>
 

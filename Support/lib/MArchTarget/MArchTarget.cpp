@@ -22,7 +22,8 @@ using namespace M;
 /// Returns the feature set according to clang for the given options, which
 /// should include the Triple and CPU.
 static ErrorOr<std::vector<std::string>>
-getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts) {
+getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
+                     StringRef cpu) {
   // Intercept diagnostics from Clang and then bundle them up in an `Error` if
   // something bad happens.
   struct DiagInterceptor : public clang::DiagnosticConsumer {
@@ -54,12 +55,32 @@ getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts) {
   if (!targetInfo)
     return Error("failed to create target info: " + interceptor.msg);
 
-  // Concat the features together, only keeping included '+' features.
   std::vector<std::string> features;
+
+  // AARCH64 CPU features are not parsed by `CreateTargetInfo`. We have to query
+  // them and add them here manually.
+  if (std::optional<llvm::AArch64::CpuInfo> cpuInfo =
+          llvm::AArch64::parseCpu(cpu)) {
+    std::vector<std::string> UpdatedFeaturesVec;
+    auto exts = cpuInfo->getImpliedExtensions();
+    std::vector<StringRef> cpuFeats;
+    llvm::AArch64::getExtensionFeatures(exts, cpuFeats);
+    for (StringRef f : cpuFeats) {
+      assert((f[0] == '+' || f[0] == '-') && "Expected +/- in target feature!");
+      UpdatedFeaturesVec.push_back(f.str());
+    }
+    llvm::StringMap<bool> featureMap;
+    targetInfo->initFeatureMap(featureMap, diags, cpu, UpdatedFeaturesVec);
+    for (const auto &f : featureMap)
+      opts->Features.push_back((f.getValue() ? "+" : "-") + f.getKey().str());
+  }
+
+  // Concat the features together, only keeping included '+' features.
   for (StringRef feature : opts->Features) {
     if (feature.front() == '+')
       features.emplace_back(feature.drop_front());
   }
+
   llvm::sort(features);
 
   return features;
@@ -72,7 +93,7 @@ static ErrorOr<std::vector<std::string>> getHostFeatures(StringRef triple,
   auto opts = std::make_shared<clang::TargetOptions>();
   opts->Triple = triple;
   opts->CPU = cpu;
-  return getFeaturesFromClang(opts);
+  return getFeaturesFromClang(opts, cpu);
 }
 
 ErrorOr<TargetInfo> M::getHostTargetInfo() {
@@ -223,7 +244,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
   opts->Triple = triple.str();
 
   // Gather features from clang.
-  auto featuresOr = getFeaturesFromClang(opts);
+  auto featuresOr = getFeaturesFromClang(opts, mcpu);
   if (featuresOr)
     return featuresOr.takeError();
 

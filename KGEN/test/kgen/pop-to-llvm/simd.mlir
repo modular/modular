@@ -249,22 +249,26 @@ kgen.func @bitcast(%a: !pop.scalar<si32>,
                    %b: !pop.scalar<ui64>,
                    %c: !pop.simd<4, f64>,
                    %d: !pop.simd<2, f64>) {
-  // CHECK: llvm.bitcast %0 : i32 to f32
+  // CHECK-DAG: %[[ARG0:.+]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: %[[ARG1:.+]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK-DAG: %[[ARG2:.+]] = builtin.unrealized_conversion_cast %arg2
+  // CHECK-DAG: %[[ARG3:.+]] = builtin.unrealized_conversion_cast %arg3
+  // CHECK: llvm.bitcast %[[ARG0]] : i32 to f32
   %0 = pop.bitcast %a: !pop.scalar<si32> to !pop.scalar<f32>
 
-  // CHECK: llvm.bitcast %1 : i64 to i64
+  // CHECK: llvm.bitcast %[[ARG1]] : i64 to i64
   %1 = pop.bitcast %b: !pop.scalar<ui64> to !pop.scalar<si64>
 
-  // CHECK: llvm.bitcast %2 : vector<4xf64> to vector<4xi64>
+  // CHECK: llvm.bitcast %[[ARG2]] : vector<4xf64> to vector<4xi64>
   %2 = pop.bitcast %c: !pop.simd<4, f64> to !pop.simd<4, si64>
 
-  // CHECK: llvm.bitcast %3 : vector<2xf64> to vector<4xf32>
+  // CHECK: llvm.bitcast %[[ARG3]] : vector<2xf64> to vector<4xf32>
   %3 = pop.bitcast %d: !pop.simd<2, f64> to !pop.simd<4, f32>
 
-  // CHECK: llvm.bitcast %1 : i64 to vector<2xf32>
+  // CHECK: llvm.bitcast %[[ARG1]] : i64 to vector<2xf32>
   %4 = pop.bitcast %b: !pop.scalar<ui64> to !pop.simd<2, f32>
 
-  // CHECK: %[[B0:.*]] = llvm.bitcast %1 : i64 to vector<64xi1>
+  // CHECK: %[[B0:.*]] = llvm.bitcast %[[ARG1]] : i64 to vector<64xi1>
   %5 = pop.bitcast %b: !pop.scalar<ui64> to !pop.simd<64, bool>
 
   // CHECK: llvm.bitcast %[[B0]] : vector<64xi1> to f64
@@ -286,8 +290,8 @@ kgen.func @simd_splat_scalar_to_2xf32(%a: !pop.scalar<f32>) -> !pop.simd<2, f32>
 
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement(%vec: !pop.simd<4, f32>, %idx: index) -> !pop.scalar<f32> {
-  // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
-  // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
+  // CHECK-DAG: %[[VEC:.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: %[[IDX:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: %[[SCALAR:.*]] = llvm.extractelement %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
   // CHECK: unrealized_conversion_cast %[[SCALAR]]
   %0 = pop.simd.extractelement %vec[%idx] : !pop.simd<4, f32>
@@ -296,9 +300,9 @@ kgen.func @simd_extractelement(%vec: !pop.simd<4, f32>, %idx: index) -> !pop.sca
 
 // CHECK-LABEL: @simd_insertelement
 kgen.func @simd_insertelement(%val: !pop.scalar<f32>, %vec: !pop.simd<4, f32>, %idx: index) -> !pop.simd<4, f32> {
-  // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
-  // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast
-  // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
+  // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: %[[VEC:.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK-DAG: %[[IDX:.*]] = builtin.unrealized_conversion_cast %arg2
   // CHECK: %[[RES:.*]] = llvm.insertelement %[[VAL]], %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
   // CHECK: unrealized_conversion_cast %[[RES]]
   %0 = pop.simd.insertelement %val, %vec[%idx] : !pop.simd<4, f32>
@@ -321,9 +325,11 @@ kgen.func @simd_shuffle(%a: !pop.simd<2, f32>, %b: !pop.simd<2, f32>) -> !pop.si
 }
 
 // CHECK-LABEL: @simd_shuffle_1xf32
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
 kgen.func @simd_shuffle_1xf32(%a: !pop.scalar<f32>, %b: !pop.scalar<f32>) -> (!pop.simd<2, f32>, !pop.scalar<f32>) {
-  // CHECK: %[[F32VAL0:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.scalar<f32> to f32
-  // CHECK: %[[F32VAL1:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.scalar<f32> to f32
+  // CHECK-DAG: %[[F32VAL0:.*]] = builtin.unrealized_conversion_cast %[[ARG0]] : !pop.scalar<f32> to f32
+  // CHECK-DAG: %[[F32VAL1:.*]] = builtin.unrealized_conversion_cast %[[ARG1]] : !pop.scalar<f32> to f32
   // CHECK: %[[VECVAL0_0:.*]] = llvm.mlir.undef : vector<2xf32>
   // CHECK: %[[CONST0_0:.*]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK: %[[VECVAL0_1:.*]] = llvm.insertelement %[[F32VAL1]], %[[VECVAL0_0]][%[[CONST0_0]] : i32]

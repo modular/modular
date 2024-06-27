@@ -76,7 +76,9 @@ kgen.func @sub_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.
 
 // CHECK-LABEL: @sub_f32
 kgen.func @sub_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.fsub %0, %1 {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK-DAG: [[ARG0:%.+]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.+]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: llvm.fsub [[ARG0]], [[ARG1]] {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.sub %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -126,7 +128,9 @@ kgen.func @max_ui32(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) -> !pop.
 
 // CHECK-LABEL: @max_f32
 kgen.func @max_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.intr.maxnum(%0, %1) {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK-DAG: [[ARG0:%.+]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.+]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: llvm.intr.maxnum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.max %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -148,7 +152,9 @@ kgen.func @min_ui32(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) -> !pop.
 
 // CHECK-LABEL: @min_f32
 kgen.func @min_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.intr.minnum(%0, %1) {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK-DAG: [[ARG0:%.+]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.+]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: llvm.intr.minnum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.min %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -201,8 +207,8 @@ kgen.func @fma_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
 kgen.func @fma_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: %[[MUL:.*]] = llvm.mul %[[LHS]], %[[LHS]]
   // CHECK: %[[FMA:.*]] = llvm.add %[[MUL]], %[[RHS]]
   // CHECK: builtin.unrealized_conversion_cast %[[FMA]]
@@ -212,7 +218,10 @@ kgen.func @fma_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.
 
 // CHECK-LABEL: @simd_select
 kgen.func @simd_select(%arg0: !pop.simd<4, bool>, %arg1: !pop.simd<4, f32>, %arg2: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-  // CHECK: llvm.select %0, %1, %2 {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK-DAG: [[ARG0:%.+]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.+]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK-DAG: [[ARG2:%.+]] = builtin.unrealized_conversion_cast %arg2
+  // CHECK: llvm.select [[ARG0]], [[ARG1]], [[ARG2]] {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.simd<4, f32>
   kgen.return %0 : !pop.simd<4, f32>
 }
@@ -346,8 +355,12 @@ kgen.func @cmp_sint(%lhs: !pop.scalar<si32>, %rhs: !pop.scalar<si32>) {
 }
 
 // CHECK-LABEL: @cmp_fp
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
 kgen.func @cmp_fp(%lhs: !pop.scalar<f32>, %rhs: !pop.scalar<f32>) {
-  // CHECK: llvm.fcmp "oeq" %0, %1 {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK-DAG: [[LHS:%.+]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK-DAG: [[RHS:%.+]] = builtin.unrealized_conversion_cast %[[ARG1]]
+  // CHECK: llvm.fcmp "oeq" [[LHS]], [[RHS]] {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.cmp eq(%lhs, %rhs) : !pop.scalar<f32>
   // CHECK: llvm.fcmp "one"
   %1 = pop.cmp ne(%lhs, %rhs) : !pop.scalar<f32>
@@ -384,8 +397,8 @@ kgen.func @cmp_index(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) {
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
 kgen.func @and_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.scalar<bool> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]] : i1
   %0 = pop.and %lhs, %rhs : !pop.scalar<bool>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -397,8 +410,8 @@ kgen.func @and_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.sc
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<si8>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<si8>
 kgen.func @and_si8(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar<si8> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]] : i8
   %0 = pop.and %lhs, %rhs : !pop.scalar<si8>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -410,8 +423,8 @@ kgen.func @and_si8(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scala
 // CHECK-SAME: %[[LHS0:.*]]: !pop.simd<4, si32>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.simd<4, si32>
 kgen.func @and_simd(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]] : vector<4xi32>
   %0 = pop.and %lhs, %rhs : !pop.simd<4, si32>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -423,8 +436,8 @@ kgen.func @and_simd(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<index>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<index>
 kgen.func @and_index(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar<index> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]]
   %0 = pop.and %lhs, %rhs : !pop.scalar<index>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -436,8 +449,8 @@ kgen.func @and_index(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
 kgen.func @or_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.scalar<bool> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]] : i1
   %0 = pop.or %lhs, %rhs : !pop.scalar<bool>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -449,8 +462,8 @@ kgen.func @or_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.sca
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<si8>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<si8>
 kgen.func @or_si8(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar<si8> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]] : i8
   %0 = pop.or %lhs, %rhs : !pop.scalar<si8>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -462,8 +475,8 @@ kgen.func @or_si8(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar
 // CHECK-SAME: %[[LHS0:.*]]: !pop.simd<4, si32>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.simd<4, si32>
 kgen.func @or_simd(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]] : vector<4xi32>
   %0 = pop.or %lhs, %rhs : !pop.simd<4, si32>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -475,8 +488,8 @@ kgen.func @or_simd(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.s
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<index>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<index>
 kgen.func @or(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar<index> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]]
   %0 = pop.or %lhs, %rhs : !pop.scalar<index>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -488,8 +501,8 @@ kgen.func @or(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
 kgen.func @xor_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.scalar<bool> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]] : i1
   %0 = pop.xor %lhs, %rhs : !pop.scalar<bool>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -501,8 +514,8 @@ kgen.func @xor_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.sc
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<si8>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<si8>
 kgen.func @xor_si8(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar<si8> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]] : i8
   %0 = pop.xor %lhs, %rhs : !pop.scalar<si8>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -514,8 +527,8 @@ kgen.func @xor_si8(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scala
 // CHECK-SAME: %[[LHS0:.*]]: !pop.simd<4, si32>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.simd<4, si32>
 kgen.func @xor_simd(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]] : vector<4xi32>
   %0 = pop.xor %lhs, %rhs : !pop.simd<4, si32>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -527,8 +540,8 @@ kgen.func @xor_simd(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<index>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<index>
 kgen.func @xor_index(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar<index> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK-DAG: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK-DAG: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
   // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]]
   %0 = pop.xor %lhs, %rhs : !pop.scalar<index>
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
@@ -671,8 +684,8 @@ kgen.func @call_intrinsic(%inp: !pop.scalar<f32>) -> (!pop.scalar<f32>, !pop.sca
 // CHECK-LABEL: @call_void_intrinsic
 kgen.func @call_void_intrinsic(%arg0: !pop.scalar<si64>,
                                %arg1: !kgen.pointer<si8>) {
-  // CHECK: %[[ARG0_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
-  // CHECK: %[[ARG1_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK-DAG: %[[ARG0_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: %[[ARG1_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: llvm.call_intrinsic "llvm.lifetime.start"(%[[ARG0_CAST]], %[[ARG1_CAST]]) : (i64, !llvm.ptr) -> ()
   pop.call_llvm_intrinsic "llvm.lifetime.start", (%arg0, %arg1) :
     (!pop.scalar<si64>, !kgen.pointer<si8>) -> ()
@@ -690,22 +703,24 @@ kgen.generator @parametric_inline_asm<asm: string, constraints: string>() {
 kgen.func @inline_asm(
     %arg0: !pop.scalar<si32>,
     %arg1: !pop.scalar<si64>) {
-  // CHECK: llvm.inline_asm asm_dialect = att "bswap $0", "=r,r" %0 : (i32) -> i8
+  // CHECK-DAG: %[[ARG0:.+]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: %[[ARG1:.+]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: llvm.inline_asm asm_dialect = att "bswap $0", "=r,r" %[[ARG0]] : (i32) -> i8
   %0 = pop.inline_asm "bswap $0", "=r,r", (%arg0) : (!pop.scalar<si32>) -> i8
-  // CHECK: llvm.inline_asm asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
+  // CHECK: llvm.inline_asm asm_dialect = att "something", "anotherthing" %[[ARG0]], %[[ARG1]] : (i32, i64) -> i8
   %1 = pop.inline_asm "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
-  // CHECK: llvm.inline_asm has_side_effects asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
+  // CHECK: llvm.inline_asm has_side_effects asm_dialect = att "something", "anotherthing" %[[ARG0]], %[[ARG1]] : (i32, i64) -> i8
   %2 = pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
-  // CHECK: llvm.inline_asm is_align_stack asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
+  // CHECK: llvm.inline_asm is_align_stack asm_dialect = att "something", "anotherthing" %[[ARG0]], %[[ARG1]] : (i32, i64) -> i8
   %3 = pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
-  // CHECK: [[R:%.*]] = llvm.inline_asm asm_dialect = att "two_results", "two_results" %0 : (i32) -> !llvm.struct<(i32, i32)>
+  // CHECK: [[R:%.*]] = llvm.inline_asm asm_dialect = att "two_results", "two_results" %[[ARG0]] : (i32) -> !llvm.struct<(i32, i32)>
   // CHECK: llvm.extractvalue [[R]][0] : !llvm.struct<(i32, i32)>
   // CHECK: llvm.extractvalue [[R]][1] : !llvm.struct<(i32, i32)>
   %4:2 = pop.inline_asm "two_results", "two_results", (%arg0) : (!pop.scalar<si32>) -> (!pop.scalar<si32>, !pop.scalar<si32>)
-  // CHECK: llvm.inline_asm asm_dialect = att "no_results", "no_results" %0 : (i32) -> ()
+  // CHECK: llvm.inline_asm asm_dialect = att "no_results", "no_results" %[[ARG0]] : (i32) -> ()
   pop.inline_asm "no_results", "no_results", (%arg0) : (!pop.scalar<si32>) -> ()
   kgen.return
 }
