@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug %s
 
 from math import ceildiv, rsqrt, isclose
 from random import rand
@@ -17,14 +17,12 @@ from gpu.host.event import time_function
 from memory.unsafe import DTypePointer
 from nn.mha import (
     _naive_attention_with_transpose,
-    flash_attention_kernel,
-    flash_attention_kernel_flexible_seqlen,
-    mha,
+    flash_attention_impl,
+    mha_gpu_naive,
 )
 
 from utils.index import Index
-
-alias type = DType.float32
+from testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:
@@ -34,20 +32,23 @@ fn is_benchmark() -> Bool:
     return False
 
 
-# CHECK-LABEL: test_flash_attention
-fn test(
+fn test[
+    type: DType,
+    depth: Int,
+    num_heads: Int,
+    group: Int = 1,
+    against_gpu_naive: Bool = False,
+    use_tensor_core: Bool = False,
+](
     seq_len: Int,
     num_keys: Int,
     ctx: DeviceContext,
     is_benchmark: Bool = False,
-    use_tensor_core: Bool = False,
 ) raises:
     print("test_flash_attention")
 
     # Query, key, value dimensions.
     alias batch_size = 1
-    alias num_heads = 32
-    alias depth = 128
     alias scale = Float32(0.0125)  # rsqrt[type, 1](Float32(depth))
 
     # Q, K, V shapes.
@@ -85,14 +86,16 @@ fn test(
         output_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
 
-    _naive_attention_with_transpose[type](
-        rebind[NDBuffer[type, 4]](output),
-        rebind[NDBuffer[type, 4]](q),
-        rebind[NDBuffer[type, 4]](k),
-        rebind[NDBuffer[type, 4]](v),
-        rebind[NDBuffer[type, 2]](mask),
-        scale,
-    )
+    @parameter
+    if not against_gpu_naive:
+        _naive_attention_with_transpose[type](
+            rebind[NDBuffer[type, 4]](output),
+            rebind[NDBuffer[type, 4]](q),
+            rebind[NDBuffer[type, 4]](k),
+            rebind[NDBuffer[type, 4]](v),
+            rebind[NDBuffer[type, 2]](mask),
+            scale,
+        )
 
     # Device pointers
     var q_device_ptr = ctx.create_buffer[type](q_size)
@@ -110,134 +113,72 @@ fn test(
     alias q_tile_num_rows = 32
     alias k_tile_num_rows = 128
 
-    if seq_len == num_keys and seq_len % 128 == 0:
-
-        @parameter
-        @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
-            if use_tensor_core:
-                var func = ctx.compile_function[
-                    mha[
-                        DType.float32,
-                        DType.float32,
-                        DType.float32,
-                        DType.float32,
-                        DType.float32,
-                        BM=q_tile_num_rows,
-                        BN=k_tile_num_rows,
-                        BK=16,
-                        WM=q_tile_num_rows,
-                        WN=32,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=128,
-                        num_pipeline_stages=4,
-                    ]
-                ](
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
-                    )
-                )
-
-                ctx.enqueue_function(
-                    func,
-                    q_device_ptr,
-                    k_device_ptr,
-                    v_device_ptr,
-                    mask_device_ptr,
-                    output_device_ptr,
-                    scale,
-                    batch_size,
-                    seq_len,
-                    grid_dim=(
-                        ceildiv(seq_len, q_tile_num_rows),
-                        num_heads,
-                        batch_size,
-                    ),
-                    block_dim=(128, 1, 1),
-                    shared_mem_bytes=80 * 1024,
-                )
-            else:
-                var func = ctx.compile_function[
-                    flash_attention_kernel[
-                        BM=32,  # q_tile_num_rows,
-                        BN=128,  # kv_tile_num_rows,
-                        BK=16,
-                        depth=128,
-                        num_heads=num_heads,
-                        TM=8,
-                        TN=4,
-                        num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
-                    ]
-                ]()
-
-                ctx.enqueue_function(
-                    func,
-                    q_device_ptr,
-                    k_device_ptr,
-                    v_device_ptr,
-                    mask_device_ptr,
-                    output_device_ptr,
-                    scale,
-                    batch_size,
-                    seq_len,
-                    grid_dim=(
-                        ceildiv(seq_len, q_tile_num_rows),
-                        num_heads,
-                        batch_size,
-                    ),
-                    block_dim=(128, 1, 1),
-                )
-
-        if is_benchmark:
-            alias nrun = 1000
-
-            # Warmup
-            kernel_launch(ctx)
-
-            var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
-            var sectime = nstime / 1000000
-            print(nrun, "runs avg", sectime, "ms")
-
-        else:
-            kernel_launch(ctx)
-
-    else:
-        var func = ctx.compile_function[
-            flash_attention_kernel_flexible_seqlen[
-                BM=32,  # q_tile_num_rows,
-                BN=128,  # kv_tile_num_rows,
-                BK=16,
-                depth=128,
-                num_heads=num_heads,
-                TM=8,
-                TN=4,
-                num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
-            ]
-        ]()
-
-        ctx.enqueue_function(
-            func,
-            q_device_ptr,
-            k_device_ptr,
-            v_device_ptr,
-            mask_device_ptr,
-            output_device_ptr,
+    @parameter
+    @always_inline
+    fn kernel_launch(ctx: DeviceContext) raises:
+        flash_attention_impl[
+            4,
+            type,
+            type,
+            type,
+            type,
+            type,
+            depth,
+            num_heads,
+            group=1,
+            add_attn_mask=True,
+            target="gpu",
+            use_tensor_core=use_tensor_core,
+        ](
+            output_device_ptr.ptr,
+            q_device_ptr.ptr,
+            k_device_ptr.ptr,
+            v_device_ptr.ptr,
+            mask_device_ptr.ptr,
             scale,
             batch_size,
             seq_len,
             num_keys,
-            grid_dim=(
-                ceildiv(seq_len, q_tile_num_rows),
-                num_heads,
-                batch_size,
-            ),
-            block_dim=(128, 1, 1),
+            ctx,
         )
+
+    if is_benchmark:
+        alias nrun = 1000
+
+        # Warmup
+        kernel_launch(ctx)
+
+        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var sectime = nstime / 1000000
+        print(nrun, "runs avg", sectime, "ms")
+
+    else:
+        kernel_launch(ctx)
 
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
+
+    @parameter
+    if against_gpu_naive:
+        var output_ref_device_ptr = ctx.create_buffer[type](o_size)
+        ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
+
+        mha_gpu_naive[depth=depth, num_heads=num_heads, group=group](
+            q_device_ptr.ptr,
+            k_device_ptr.ptr,
+            v_device_ptr.ptr,
+            mask_device_ptr.ptr,
+            output_ref_device_ptr.ptr,
+            scale,
+            batch_size,
+            seq_len,
+            num_keys,
+            ctx,
+        )
+
+        ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
+        _ = output_ref_device_ptr
 
     var succeed = True
     for h in range(num_heads):
@@ -249,12 +190,12 @@ fn test(
                 var actual = Scalar.load(
                     flash_output_ptr, d + depth * (h + s * num_heads)
                 )
-                if not isclose(expect, actual, atol=1e-4, rtol=2e-3):
-                    print(
-                        h, s, d, actual, expect, abs((actual - expect) / expect)
-                    )
-                    succeed = False
-                    break
+                assert_almost_equal(
+                    expect,
+                    actual,
+                    atol=1e-5,
+                    rtol=2e-3 if use_tensor_core else 1e-4,
+                )
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -269,41 +210,45 @@ fn test(
     output_ptr.free()
     flash_output_ptr.free()
 
-    # CHECK: Succeed
-    if succeed:
-        print("Succeed")
 
-
-# CHECK-NOT: CUDA_ERROR
 def main():
     try:
         with DeviceContext() as ctx:
-            # Context encoding demo.
-            test(100, 100, ctx)
-            test(31, 31, ctx)
-            test(1024, 1024, ctx, is_benchmark())
-            test(1024, 1024, ctx, is_benchmark(), use_tensor_core=True)
-            # Token generation demo.
-            test(1, 1, ctx)
-            test(1, 2, ctx)
-            test(1, 3, ctx)
-            test(1, 4, ctx)
-            test(1, 5, ctx)
-            test(1, 6, ctx)
-            test(1, 7, ctx)
-            test(1, 8, ctx)
-            test(1, 9, ctx)
-            test(1, 10, ctx)
-            test(1, 11, ctx)
-            test(1, 12, ctx)
-            test(1, 13, ctx)
-            test(1, 14, ctx)
-            test(1, 15, ctx)
-            test(1, 20, ctx)
-            test(1, 25, ctx)
-            test(1, 30, ctx)
-            test(1, 50, ctx)
-            test(1, 100, ctx)
-            test(1, 200, ctx)
+            # fp32 depth = 128, legacy impl. llama2 shape.
+            test[DType.float32, 128, 32](1024, 1024, ctx, is_benchmark())
+
+            # fp32 depth = 128, seqlen % 128 != 0, legacy impl
+            test[DType.float32, 128, 1](100, 100, ctx)
+            test[DType.float32, 128, 1](1, 1, ctx)
+            test[DType.float32, 128, 1](1, 7, ctx)
+            test[DType.float32, 128, 1](1, 13, ctx)
+            test[DType.float32, 128, 1](1, 200, ctx)
+
+            # fp32 arbitrary depth and num_heads, baseline impl.
+            test[DType.float32, 127, 2](111, 121, ctx)
+            test[DType.float32, 25, 3](1, 1, ctx)
+            test[DType.float32, 200, 4](1, 20, ctx)
+            test[DType.float32, 97, 5](1, 17, ctx)
+            test[DType.float32, 13, 6](1, 100, ctx)
+
+            # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
+            test[
+                DType.float32,
+                128,
+                32,
+                against_gpu_naive=True,
+                use_tensor_core=True,
+            ](1024, 1024, ctx, is_benchmark())
+
+            # TODO: uncomment this once support transpose_b with bf16
+            # bf16 depth == 128, bf16-fp32 mma
+            # test[
+            #     DType.bfloat16,
+            #     128,
+            #     1,
+            #     against_gpu_naive=True,
+            #     use_tensor_core=True,
+            # ](128, 128, ctx, is_benchmark())
+
     except e:
         print("CUDA_ERROR:", e)
