@@ -6,7 +6,6 @@ modular_cc_binary(
     deps = [
         "//Config",
         "//KGEN:Compiler",
-        "//KGEN:CompilerRT",
         "//KGEN:ExecutionEngine",
         "//KGEN:KGENDialect",
         "//KGEN:MojoParser",

@@ -116,7 +116,6 @@ modular_cc_binary(
         ":rpaths",
         "//Config",
         "//KGEN:Compiler",
-        "//KGEN:CompilerRT",
         "//KGEN:ExecutionEngine",
         "//KGEN:KGENDialect",
         "//KGEN:LITDialect",
