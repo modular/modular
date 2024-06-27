@@ -89,7 +89,7 @@ fn kernel(
         @parameter
         @always_inline
         fn prefetch[idx0: Int]():
-            SIMD.prefetch[
+            prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](b_ptr.offset(NR * pr + simd_size * (idx0 + 16)))
 

@@ -183,7 +183,7 @@ fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
 
 
 fn alloc_aligned_tile[M: Int, N: Int, dtype: DType]() -> DTypePointer[dtype]:
-    alias alignment = alignof[SIMD[dtype]]()
+    alias alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     alias cache_width = ((N + alignment - 1) // alignment) * alignment
     return DTypePointer[dtype].alloc(M * cache_width, alignment=alignment)
 
