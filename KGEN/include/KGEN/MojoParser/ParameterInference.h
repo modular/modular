@@ -155,6 +155,11 @@ private:
 
   /// The expression of the current argument being used for parameter inference.
   const ExprNode *curArgExpr = nullptr;
+
+  /// These are parameters that were inferred from a more specific Self type
+  /// argument in an initializer call. These parameters can forward reference
+  /// non-Self parameters. We need to refine them again at the end of inference.
+  SmallVector<unsigned> initSelfParams;
 };
 
 } // namespace M::KGEN::LIT
