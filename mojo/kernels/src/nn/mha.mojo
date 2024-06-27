@@ -29,6 +29,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
     copy_local_to_sram,
     copy_local_to_dram,
+    copy_sram_to_dram,
 )
 from layout.tensor_core import (
     get_accum_type,
@@ -49,8 +50,6 @@ from utils.numerics import neg_inf, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import softmax, _online_softmax_iter_for_mma_output
-
-from builtin.io import _printf
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -270,14 +269,17 @@ fn flash_attention[
         "Only support static head (H) and depth (D) dimensions",
     ]()
 
+    alias num_heads = q_shape.get[2]()
+    alias depth = q_shape.get[3]()
+    alias k_num_heads = k_shape.get[2]()
+    alias group = num_heads // k_num_heads
+
     var ctx = context.get_cuda_device()
 
     # q shape [batch_size, seq_len, # heads, depth]
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
-    alias num_heads = q_shape.get[2]()
-    alias depth = q_shape.get[3]()
 
     # TODO: this restriction will be lifted soon.
     constrained[depth == 128, "Only support depth (D) = 128."]()
@@ -313,6 +315,7 @@ fn flash_attention[
                         num_heads=num_heads,
                         num_threads=128,
                         num_pipeline_stages=4,
+                        group=group,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed.
@@ -1410,6 +1413,7 @@ fn mha[
     num_heads: Int,
     num_threads: Int,
     num_pipeline_stages: Int,
+    group: Int = 1,
 ](
     q_ptr: DTypePointer[q_type],
     k_ptr: DTypePointer[k_type],
@@ -1509,10 +1513,10 @@ fn mha[
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (q_smem + q_smem_size).bitcast[Scalar[accum_type]]()
+    var p_smem = (q_smem + q_smem_size).bitcast[Scalar[v_type]]()
     alias p_smem_size = BM * BN
     var p_smem_tile = LayoutTensor[
-        accum_type,
+        v_type,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem)
@@ -1532,7 +1536,10 @@ fn mha[
     var mask_warp_ptr = mask_ptr + mask_offset + warp_offset
 
     # Key global memory iterator
-    var kv_offset = depth * (head_idx + num_heads * seq_len * batch_idx)
+    # For group query
+    var kv_offset = depth * (
+        head_idx // group + (num_heads // group) * seq_len * batch_idx
+    )
 
     for kv_tile_start_row in range(0, seq_len, BN):
         var k_gmem_block = LayoutTensor[
@@ -1680,13 +1687,49 @@ fn mha[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
                 ] /= rowsum[2 * m_mma + 1]
 
-    var output_gmem_warp_tile = LayoutTensor[
+    var output_gmem_tile = LayoutTensor[
         output_type,
         Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1)),
-    ](output_ptr + q_offset).tile[WM, WN](int(warp_y), int(warp_x))
+    ](output_ptr + q_offset)
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+        int(warp_y), int(warp_x)
+    )
 
     # Write to global memory.
-    copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-        output_gmem_warp_tile.vectorize[1, 2](),
-        output_reg_tile.bitcast[output_type]().vectorize[1, 2]().transpose(),
-    )
+    @parameter
+    if output_type.is_half_float():
+        # Reuse a_smem for c tile in smem
+        var accum_smem_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(BM, depth),
+            address_space = AddressSpace.SHARED,
+        ](q_smem.bitcast[Scalar[accum_type]]())
+        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
+            int(warp_y), int(warp_x)
+        )
+        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+            accum_smem_warp_tile.vectorize[1, 2](),
+            output_reg_tile.vectorize[1, 2]().transpose(),
+        )
+
+        # Guard writing to shared memory.
+        barrier()
+
+        # Vectorized copy from shared to global memory, during which every 2 FP32
+        # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
+        # vector and stored using 16B store instruction.
+        copy_sram_to_dram[
+            thread_layout = Layout.row_major(
+                num_threads * simd_size // depth, depth // simd_size
+            )
+        ](
+            output_gmem_tile.vectorize[1, simd_size](),
+            accum_smem_tile.vectorize[1, simd_size](),
+        )
+    else:
+        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+            output_gmem_warp_tile.vectorize[1, 2](),
+            output_reg_tile.bitcast[output_type]()
+            .vectorize[1, 2]()
+            .transpose(),
+        )
