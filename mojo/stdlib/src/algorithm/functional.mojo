@@ -20,12 +20,7 @@ from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, DeviceContext
 from runtime import tracing
-from runtime.llcl import (
-    Runtime,
-    TaskGroup,
-    MojoCallContextPtr,
-    parallelism_level,
-)
+from runtime.llcl import TaskGroup, MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, StaticIntTuple
@@ -352,11 +347,10 @@ fn sync_parallelize[
     # Mojo kernel executing within the Modular Inference Engine then the
     # default runtime will be that established by the engine. Otherwise a
     # suitable runtime will be created if it does not already exist.
-    var rt = Runtime()
     var num_threads = parallelism_level()
     var num_per_lq_tasks = num_work_items // num_threads
     var num_global_queue_tasks = num_work_items % num_threads
-    var tg = TaskGroup[__lifetime_of()](rt)
+    var tg = TaskGroup[__lifetime_of()]()
     var count = 0
     for i in range(num_per_lq_tasks):
         for j in range(num_threads):
