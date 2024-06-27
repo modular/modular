@@ -15,7 +15,7 @@ def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "mlir::ModuleOp"> {
   let description = [{
     A mogg domain specific pass which performs KGEN to KGEN transforms that
     the graph compiler can understand. The KGEN will be legal regardless.
-    
+
     This description to expand as the functionality is added to the pass.
   }];
 }
@@ -49,7 +49,7 @@ def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
       kgen.param.region.declare InLambda(...) {
 
       }
-      
+
       kgen.param.region.declare BODY (...) {
         kgen.call "MY_KERNEL_OUTLINED"<...InLambda...>(...)
       }
@@ -64,7 +64,7 @@ def MOGGAnnotate : Pass<"mogg-annotate", "mlir::ModuleOp"> {
   let description = [{
     A mogg domain specific pass which will annotate each kernel at the lit
     level allowing subsequent passes to use the information parsed in a
-    sanitized way. 
+    sanitized way.
   }];
 }
 
