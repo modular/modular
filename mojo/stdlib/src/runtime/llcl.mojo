@@ -417,12 +417,12 @@ struct TaskGroup[lifetimes: LifetimeSet]:
     var rt: Runtime
     var tasks: List[_TaskGroupBox]
 
-    fn __init__(inout self, rt: Runtime):
+    fn __init__(inout self):
         var chain = Chain()
-        _init_llcl_chain(rt, UnsafePointer[Chain].address_of(chain))
+        self.rt = Runtime()
+        _init_llcl_chain(self.rt, UnsafePointer[Chain].address_of(chain))
         self.counter = 1
         self.chain = chain
-        self.rt = rt
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(owned self):

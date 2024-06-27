@@ -10,7 +10,7 @@ from os import Atomic
 from time import now, sleep, time_function
 
 from runtime import BlockingScopedLock, BlockingSpinLock
-from runtime.llcl import Runtime, TaskGroup
+from runtime.llcl import TaskGroup
 from testing import assert_equal
 
 
@@ -37,12 +37,11 @@ fn test_basic_lock() raises:
 
     @parameter
     fn test_atomic() capturing -> None:
-        with Runtime() as rt:
-            var tg = TaskGroup[__lifetime_of()](rt)
-            for i in range(0, maxI):
-                for j in range(0, maxJ):
-                    tg.create_task(inc())
-            tg.wait()
+        var tg = TaskGroup[__lifetime_of()]()
+        for i in range(0, maxI):
+            for j in range(0, maxJ):
+                tg.create_task(inc())
+        tg.wait()
 
     var time_ns = time_function[test_atomic]()
     _ = lock^
