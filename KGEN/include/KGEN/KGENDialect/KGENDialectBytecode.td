@@ -17,6 +17,10 @@ def WrappedParamRefType : DialectType<(type
   TypedAttr:$param
 )>;
 
+def WrappedTypeValueType : DialectType<(type
+  TypedAttr:$typeValue
+)>;
+
 def TypeType : DialectType<(type)>;
 
 def DTypeType : DialectType<(type)>;
@@ -68,6 +72,7 @@ def FloatLiteralType : DialectType<(type)>;
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     WrappedParamRefType,
+    WrappedTypeValueType,
     TypeType,
     DTypeType,
     StringType,
