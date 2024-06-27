@@ -570,8 +570,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // We'll bind the next provided value.
   switch (expectedConvention) {
   case ArgConvention::InitSelf:
-    // If this is an UnknownAttr, then it is a placeholder for type
-    // checking, match up the types, but otherwise let it pass.
+    // If this is an UnknownAttr, then it is a placeholder for type checking,
+    // match up the types, but otherwise let it pass.
     if (PValue pValue = value.getIfPValue())
       if (isa<UnknownAttr>(pValue.get())) {
         ASTType argType = pValue.get().getType();

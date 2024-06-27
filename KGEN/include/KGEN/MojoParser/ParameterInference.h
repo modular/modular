@@ -134,18 +134,26 @@ private:
   /// to infer parameters from other parameter values.
   OperandContainer<ParamBindings::Binding> givenBindings;
 
+  /// This is the evaluator instance parameter inference uses to progressively
+  /// refine dependent types as we infer parameters.
   ParserParamEvaluator evaluator;
 
   /// One entry for each parameter from the original binding list.  If
   /// non-null, we've already inferred a value for that parameter.
   SmallVector<TypedAttr> inferredParams;
 
+  /// The signature type of parameter infernece. This is how many signature
+  /// types deep inference is inside parameter expressions and determines which
+  /// index references we match against.
   size_t paramIndexRefDepth = 0;
+
+  /// The current set of parameter inference diagnostics.
   ParameterInferenceDiagnostics &diags;
 
-  // True if implicit conversions in argument lists are permitted.
+  /// True if implicit conversions in argument lists are permitted.
   bool allowImplicitConversions;
 
+  /// The expression of the current argument being used for parameter inference.
   const ExprNode *curArgExpr = nullptr;
 };
 
