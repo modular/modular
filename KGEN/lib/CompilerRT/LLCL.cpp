@@ -283,11 +283,7 @@ KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_LLCL_MojoCallContext_GetCudaDevice(
     LLCLMojoCallContextRef callContext) {
-  auto runtime = unwrap(callContext).deviceRuntime;
-  auto &deviceContext =
-      reinterpret_cast<CUDA::CUDARuntime *>(runtime)->deviceContext;
-  assert(deviceContext.has_value());
-  return deviceContext.value().getData();
+  return unwrap(callContext).deviceContext;
 }
 
 //===----------------------------------------------------------------------===//
