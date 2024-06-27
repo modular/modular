@@ -1494,6 +1494,63 @@ fn mha[
     batch_size: Int,
     seq_len: Int,
 ):
+    var batch_idx = BlockIdx.z()
+    var q_batch_offset = depth * num_heads * seq_len * batch_idx
+    var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
+    var mask_batch_offset = batch_idx * seq_len * seq_len
+
+    mha_single_batch[
+        q_type,
+        k_type,
+        v_type,
+        mask_type,
+        output_type,
+        BM,
+        BN,
+        BK,
+        WM,
+        WN,
+        depth,
+        num_heads,
+        num_threads,
+        num_pipeline_stages,
+        group,
+    ](
+        q_ptr.offset(q_batch_offset),
+        k_ptr.offset(kv_batch_offset),
+        v_ptr.offset(kv_batch_offset),
+        mask_ptr.offset(mask_batch_offset),
+        output_ptr.offset(q_batch_offset),
+        scale,
+        seq_len,
+    )
+
+
+fn mha_single_batch[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    BM: Int,  # number of queries per block
+    BN: Int,  # number of keys per block
+    BK: Int,  # tile size in depth dimension
+    WM: Int,
+    WN: Int,
+    depth: Int,
+    num_heads: Int,
+    num_threads: Int,
+    num_pipeline_stages: Int,
+    group: Int = 1,
+](
+    q_ptr: DTypePointer[q_type],
+    k_ptr: DTypePointer[k_type],
+    v_ptr: DTypePointer[v_type],
+    mask_ptr: DTypePointer[mask_type],
+    output_ptr: DTypePointer[output_type],
+    scale: Float32,
+    seq_len: Int,
+):
     """Flash attention v2 algorithm."""
     constrained[q_type == k_type and k_type == v_type]()
 
@@ -1533,14 +1590,11 @@ fn mha[
         k_type, Layout.row_major(BN, BK), AddressSpace.SHARED, circular=True
     ](k_smem, k_smem_size)
 
-    var batch_idx = BlockIdx.z()
     var head_idx = BlockIdx.y()
     var q_tile_idx = BlockIdx.x()
 
     # Query global memory iterator
-    var q_offset = depth * (
-        head_idx + num_heads * (q_tile_idx * BM + seq_len * batch_idx)
-    )
+    var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var q_gmem_block = LayoutTensor[
         q_type, Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1))
     ](q_ptr + q_offset)
@@ -1602,15 +1656,13 @@ fn mha[
     ](v_smem, v_smem_size)
 
     # Mask global memory iterator.
-    var mask_offset = batch_idx * seq_len * seq_len + q_tile_idx * BM * seq_len
+    var mask_offset = q_tile_idx * BM * seq_len
     var warp_offset = warp_y * WM * seq_len + warp_x * WN
     var mask_warp_ptr = mask_ptr + mask_offset + warp_offset
 
     # Key global memory iterator
     # For group query
-    var kv_offset = depth * (
-        head_idx // group + (num_heads // group) * seq_len * batch_idx
-    )
+    var kv_offset = depth * head_idx // group
 
     for kv_tile_start_row in range(0, seq_len, BN):
         var k_gmem_block = LayoutTensor[
