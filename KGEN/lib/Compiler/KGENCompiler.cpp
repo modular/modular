@@ -49,21 +49,37 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
+  SignatureType sig = symbol.getType();
 
   // Build debuginfo for the stub if requested.
-  if (auto scope = func.getSubprogramScope()) {
-    scope = scope.cloneWith(
-        DebugInfo::SourceNameAttr::get("asm_stub", scope.getName()), stubName);
+  if (auto sp = func.getSubprogramScope()) {
+    // The original DISubroutineType for the subprogram may contain parameter
+    // references that are no longer in scope in the stub. Re-create a
+    // DISubroutineType from the concretized signature of the stub (this is ok
+    // since the stub is a compiler-synthesized function).
+    auto stubSourceName =
+        DebugInfo::SourceNameAttr::get("asm_stub", sp.getName());
+    FunctionType stubFuncType = sig.getValues();
+    DebugInfo::DIUnresolvedMLIRType (*mapToDIUnresolvedType)(Type) =
+        &DebugInfo::DIUnresolvedMLIRType::get;
+    auto stubSp = DebugInfo::DISubprogramAttr::get(
+        sp.getCompileUnit(), sp.getScope(), stubSourceName, stubName,
+        sp.getFile(), sp.getLine(), sp.getScopeLine(), sp.getSubprogramFlags(),
+        DebugInfo::DISubroutineType::get(
+            func.getContext(),
+            SmallVector<DebugInfo::DIType>(
+                map_range(stubFuncType.getInputs(), mapToDIUnresolvedType)),
+            SmallVector<DebugInfo::DIType>(
+                map_range(stubFuncType.getResults(), mapToDIUnresolvedType))));
     DebugInfo::DIAttrTypeReplacer replacer;
     replacer.addReplacement(
-        [scope](DebugInfo::DISubprogramAttr) { return scope; });
+        [stubSp](DebugInfo::DISubprogramAttr) { return stubSp; });
     b.setLoc(cast<LocationAttr>(replacer.replace(b.getLoc())));
   }
 
   sliced.setNotExported();
   sliced.setInlineLevel(InlineLevel::Always);
   sliced.setSymNameAttr(stubName);
-  SignatureType sig = symbol.getType();
   auto wrapper = b.create<GeneratorOp>(name, sig);
   wrapper.setExported();
   wrapper.setLLVMMetadataAttr(sliced.getLLVMMetadataAttr());
