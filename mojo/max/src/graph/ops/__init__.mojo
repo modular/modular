@@ -73,11 +73,8 @@ from .elementwise import (
 )
 from .linalg import (
     band_part,
-    batch_matmul,
     layer_norm,
     matmul,
-    matmul_by_matrix,
-    matmul_broadcast,
     outer,
     range_fill,
     tile,

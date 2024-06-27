@@ -89,6 +89,17 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         """
         return self.type().tensor()
 
+    fn shape(self) raises -> List[Dim]:
+        """Returns this `Symbol`'s tensor shape, as `List[Dim]`.
+
+        Implicitly asserts that the type is indeed `TensorType`, and raises an
+        error otherwise.
+
+        Returns:
+            The tensor shape of this `Symbol`.
+        """
+        return self.type().tensor().dims
+
     fn __str__(self) -> String:
         """Returns a `String` representation of this `Symbol`.
 
@@ -368,6 +379,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         """
         return add(self, self._consistent_scalar(rhs), __call_location())
 
+    @always_inline
     fn __matmul__(self, rhs: Symbol) raises -> Symbol:
         """Matrix multiplication.
 
@@ -377,7 +389,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The operation result.
         """
-        return matmul(self, rhs)
+        return matmul(self, rhs, __call_location())
 
     @always_inline
     fn __mul__(self, rhs: Symbol) raises -> Symbol:
