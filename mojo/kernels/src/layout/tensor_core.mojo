@@ -452,10 +452,6 @@ struct TensorCore[
                     b_frag[n_mma, 0],
                     c_frag[n_mma * num_m_mmas + m_mma, 0],
                 )
-        # if BlockIdx.x() == 0 and ThreadIdx.x() == 32:
-        #     _printf["a_frag %f\n"](a_frag[0, 0][0].cast[DType.float64]())
-        #     _printf["b_frag %f\n"](b_frag[0, 0][0].cast[DType.float64]())
-        #     _printf["c_frag %f %f\n"](c_frag[0, 0][0].cast[DType.float64]())
 
 
 @always_inline
