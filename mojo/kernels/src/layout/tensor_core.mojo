@@ -372,24 +372,41 @@ struct TensorCore[
 
         @parameter
         if transpose_b:
-            constrained[
-                self.supported_fp32, "only support fp32 for transposed B."
-            ]()
-
-            var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
 
             @parameter
-            for i in range(0, num_frags, 2):
-                var mma_tile = warp_tile.tile[2 * shape[1], warp_tile.dim[1]()](
-                    i // 2, 0
-                )
-                var vec = _load_matrix_frag(mma_tile, swizzle_offset)
-                fragments[i, 0] = rebind[frag_type](
-                    SIMD[type0, 2](vec[0], vec[2])
-                )
-                fragments[i + 1, 0] = rebind[frag_type](
-                    SIMD[type0, 2](vec[1], vec[3])
-                )
+            if in_type == DType.float32:
+                var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
+
+                @parameter
+                for i in range(0, num_frags, 2):
+                    var mma_tile = warp_tile.tile[
+                        2 * shape[1], warp_tile.dim[1]()
+                    ](i // 2, 0)
+                    var vec = _load_matrix_frag(mma_tile, swizzle_offset)
+                    fragments[i, 0] = rebind[frag_type](
+                        SIMD[type0, 2](vec[0], vec[2])
+                    )
+                    fragments[i + 1, 0] = rebind[frag_type](
+                        SIMD[type0, 2](vec[1], vec[3])
+                    )
+            else:
+                constrained[self.supported_half]()
+
+                var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
+
+                @parameter
+                for i in range(0, num_frags, 2):
+                    var mma_tile = warp_tile.tile[
+                        2 * shape[1], warp_tile.dim[1]()
+                    ](i // 2, 0)
+                    var vec = _load_matrix_frag(mma_tile, swizzle_offset)
+                    fragments[i, 0] = rebind[frag_type](
+                        SIMD[type0, 4](vec[0], vec[1], vec[4], vec[5])
+                    )
+                    fragments[i + 1, 0] = rebind[frag_type](
+                        SIMD[type0, 4](vec[2], vec[3], vec[6], vec[7])
+                    )
+
         else:
 
             @parameter
