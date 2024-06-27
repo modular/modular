@@ -199,10 +199,10 @@ struct test_matmul[
         self.c_host = HostNDBuffer[type, 2, Self.c_shape]()
         self.c_host_ref = HostNDBuffer[type, 2, Self.c_shape]()
 
-        self.a_device = DeviceNDBuffer[type, 2, Self.a_shape](ctx)
-        self.b_device = DeviceNDBuffer[type, 2, Self.b_shape](ctx)
-        self.c_device = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
-        self.c_device_ref = DeviceNDBuffer[type, 2, Self.c_shape](ctx)
+        self.a_device = DeviceNDBuffer[type, 2, Self.a_shape](ctx=ctx)
+        self.b_device = DeviceNDBuffer[type, 2, Self.b_shape](ctx=ctx)
+        self.c_device = DeviceNDBuffer[type, 2, Self.c_shape](ctx=ctx)
+        self.c_device_ref = DeviceNDBuffer[type, 2, Self.c_shape](ctx=ctx)
 
         for m in range(M):
             for k in range(K):
