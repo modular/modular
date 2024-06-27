@@ -40,8 +40,10 @@ void annotateTypes(LIT::FuncOp func) {
   // Anything taking a tensor needs the annotation.
   bool takesTensor = false;
   for (Type litType : func.getArgumentTypes()) {
-    if (LIT::DeclRefType asDeclRef = getAsDeclRefOrNull(litType))
+    if (LIT::DeclRefType asDeclRef = getAsDeclRefOrNull(litType)) {
       takesTensor |= isMOGGTensor(asDeclRef);
+      takesTensor |= isExtensibilityTensor(asDeclRef);
+    }
   }
 
   if (!(isKernel(func) || isV1ShapeFunc(func) || takesTensor))
@@ -49,7 +51,7 @@ void annotateTypes(LIT::FuncOp func) {
 
   OpBuilder builder{func.getContext()};
 
-  SmallVector<Attribute> observedParams, typeNames;
+  SmallVector<Attribute> observedParams, typeNames, sourceName;
   observedParams.reserve(func.getNumArguments());
 
   Attribute emptyAttr = builder.getUnitAttr();
@@ -84,9 +86,11 @@ void annotateTypes(LIT::FuncOp func) {
     return builder.getArrayAttr(attrs);
   };
 
-  for (Type litType : func.getArgumentTypes()) {
+  for (auto [i, litType] : llvm::enumerate(func.getArgumentTypes())) {
     observedParams.push_back(litTypeToParams(litType));
     typeNames.push_back(litTypeToSourceName(litType));
+
+    sourceName.push_back(func.getSignature().getArgName(i));
   }
 
   // Attach the parameter mapping infomation to the kernel.
@@ -105,6 +109,11 @@ void annotateTypes(LIT::FuncOp func) {
   if (!typeNames.empty()) {
     func->setDiscardableAttr(MOGG_ARG_TYPE_NAMES,
                              builder.getArrayAttr(typeNames));
+  }
+
+  if (!sourceName.empty()) {
+    func->setDiscardableAttr(MOGG_ARG_SRC_NAMES,
+                             builder.getArrayAttr(sourceName));
   }
 }
 

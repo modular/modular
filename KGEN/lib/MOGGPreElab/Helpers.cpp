@@ -7,6 +7,7 @@
 #include "Helpers.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 
 namespace M::KGEN::MOGGPreElab {
@@ -164,6 +165,12 @@ bool stripDecorators(LIT::FuncOp func) {
       kernelRegistrations.push_back(builder.getI64IntegerAttr(-1));
       decoratorsToCopy.pop_back();
       areAnyKernels = true;
+    } else if (decoratorName.starts_with(Decorators::REGISTER_MOGG_INTRINSIC)) {
+      TypedAttr str = std::get<1>(
+          cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues()[0]);
+      newAttrs.push_back(
+          NamedAttribute{cast<StringAttr>(str), builder.getUnitAttr()});
+      decoratorsToCopy.pop_back();
     }
   }
 

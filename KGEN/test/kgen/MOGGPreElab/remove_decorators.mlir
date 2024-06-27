@@ -37,4 +37,4 @@ lit.func @argument_names_and_params[imm *"x`", mut *"__result__`1"]<type: @stdli
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
-// CHECK: lit.func @argument_names_and_params{{.*}} attributes {mogg.arg_params = {{\[\[}}#kgen.param.decl.ref<"type"> : !DType, #kgen.param.decl.ref<"rank"> : !Int], [#kgen.param.decl.ref<"type"> : !DType, #kgen.param.decl.ref<"rank"> : !Int{{\]\]}}, mogg.arg_type_names = ["MOGGTensor::Tensor", "MOGGTensor::Tensor"]}
+// CHECK: lit.func @argument_names_and_params{{.*}} attributes {mogg.arg_params = {{\[\[}}#kgen.param.decl.ref<"type"> : !DType, #kgen.param.decl.ref<"rank"> : !Int], [#kgen.param.decl.ref<"type"> : !DType, #kgen.param.decl.ref<"rank"> : !Int{{\]\]}}, mogg.arg_src_names = ["x", "__result__"], mogg.arg_type_names = ["MOGGTensor::Tensor", "MOGGTensor::Tensor"]}
