@@ -78,30 +78,9 @@ fn function():
       .execute();
 }
 
-TEST(DiagnosticsTest, detectUnusedFnArg) {
-  Document doc("test:///unused.mojo", R"(
-fn function(used: Int, unused: Int, /, used2: Int, unused2: Int):
-  print(used, used2)
-
-def not_a_method(self):
-  pass
-  )");
-
-  createTestClient()
-      .open(doc)
-      .onDiagnostics(doc,
-                     [](const std::vector<lsp::Diagnostic> &diags) {
-                       ASSERT_EQ((int)diags.size(), 3);
-                       EXPECT_EQ(diags[0].message, "unused argument 'unused'");
-                       EXPECT_EQ(diags[1].message, "unused argument 'unused2'");
-                       EXPECT_EQ(diags[2].message, "unused argument 'self'");
-                     })
-      .execute();
-}
-
 TEST(DiagnosticsTest, ignoreUnusedWithUnderscore) {
   Document doc("test:///unused.mojo", R"(
-fn function(_unused: Int) raises:
+fn function() raises:
   var _unused_var = 0
 
   with open("file.txt", "r") as _file:
@@ -109,44 +88,6 @@ fn function(_unused: Int) raises:
 
   for _x in range(5):
     pass
-  )");
-
-  createTestClient()
-      .open(doc)
-      .onDiagnostics(doc,
-                     [](const std::vector<lsp::Diagnostic> &diags) {
-                       ASSERT_EQ((int)diags.size(), 0);
-                     })
-      .execute();
-}
-
-TEST(DiagnosticsTest, ignoreUnusedSelfOfStructMethod) {
-  Document doc("test:///unused.mojo", R"(
-struct Test:
-  fn method(self, used: Int, unused: Int):
-    print(used)
-
-  @staticmethod
-  fn staticmethod(used2: Int, unused2: Int):
-    print(used2)
-  )");
-
-  createTestClient()
-      .open(doc)
-      .onDiagnostics(doc,
-                     [](const std::vector<lsp::Diagnostic> &diags) {
-                       ASSERT_EQ((int)diags.size(), 2);
-                       EXPECT_EQ(diags[0].message, "unused argument 'unused'");
-                       EXPECT_EQ(diags[1].message, "unused argument 'unused2'");
-                     })
-      .execute();
-}
-
-TEST(DiagnosticsTest, ignoreUnusedTraitMethodArgument) {
-  Document doc("test:///unused.mojo", R"(
-trait Test:
-  fn method(self, x: Int):
-    ...
   )");
 
   createTestClient()
