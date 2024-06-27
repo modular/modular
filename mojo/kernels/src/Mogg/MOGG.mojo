@@ -119,7 +119,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from register import *
-from runtime.llcl import MojoCallContextPtr, Runtime
+from runtime.llcl import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import StaticTuple
