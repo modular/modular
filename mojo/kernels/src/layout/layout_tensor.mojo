@@ -288,9 +288,9 @@ struct LayoutTensor[
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
-        SIMD.prefetch[
-            PrefetchOptions().for_read().high_locality().to_data_cache()
-        ](self.ptr.offset(self._offset(m, n)))
+        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
+            self.ptr.offset(self._offset(m, n))
+        )
 
     @always_inline
     fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
