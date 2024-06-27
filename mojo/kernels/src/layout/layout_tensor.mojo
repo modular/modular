@@ -1446,7 +1446,8 @@ fn copy_local_to_dram[
 fn copy_local_to_sram[
     src_layout: Layout,
     dst_layout: Layout,
-    dtype: DType,
+    src_type: DType,
+    dst_type: DType,
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
@@ -1454,22 +1455,53 @@ fn copy_local_to_sram[
     dst_mask: Bool,
 ](
     dst: LayoutTensor[
-        dtype,
+        dst_type,
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
         masked=dst_mask,
     ],
     src: LayoutTensor[
-        dtype,
+        src_type,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
         masked=src_mask,
     ],
 ):
-    var dst_framgents = dst.distribute[thread_layout](ThreadIdx.x())
-    dst_framgents.copy_from(src)
+    var dst_frag = dst.distribute[thread_layout](ThreadIdx.x())
+
+    @parameter
+    if src_type == dst_type:
+        dst_frag.copy_from(src)
+    else:
+        constrained[
+            src_type == DType.float32 and dst_type.is_half_float(),
+            "Only support FP32 -> half precision downcast during copy.",
+        ]()
+
+        constrained[
+            src.element_size == dst.element_size,
+            "src and dst element size mismatch.",
+        ]()
+
+        alias num_stores_per_thread = dst_frag.layout.size()
+        alias elem_size = src.element_size
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            var src_vec = src.aligned_load[elem_size](i, 0)
+            var dst_vec: SIMD[dst_type, elem_size] = 0
+
+            @parameter
+            for j in range(0, elem_size, 2):
+                var vec_converted = convert[src_type, dst_type, 2](
+                    SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
+                )
+                dst_vec[j] = vec_converted[0]
+                dst_vec[j + 1] = vec_converted[1]
+
+            dst_frag.aligned_store[elem_size](i, 0, dst_vec)
 
 
 # ===-----------------------------------------------------------------------===#
