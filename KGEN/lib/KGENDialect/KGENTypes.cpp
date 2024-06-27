@@ -55,6 +55,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<TargetType>();
   registerMnemonicType<BuildInfoType>();
   registerMnemonicType<StructType>();
+  registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
 }
 
@@ -74,6 +75,25 @@ Type ParamRefType::get(TypedAttr param) {
 
 ParamRefType ParamRefType::getFromBytecode(TypedAttr param) {
   return Base::get(param.getContext(), param);
+}
+
+//===----------------------------------------------------------------------===//
+// TypeValueType
+//===----------------------------------------------------------------------===//
+
+Type TypeValueType::get(TypedAttr typeValue) {
+  // If the type-value is already resolved to a type constant, and it is
+  // trivially a mlir Type, fold this to the indicated type.
+  if (auto constant = llvm::dyn_cast<TypeConstantAttr>(typeValue))
+    if (constant.hasIdenticalRepresentation())
+      return constant.getMlirType();
+
+  // Otherwise, form the TypeValueType like normal.
+  return Base::get(typeValue.getContext(), typeValue);
+}
+
+TypeValueType TypeValueType::getFromBytecode(TypedAttr typeValue) {
+  return Base::get(typeValue.getContext(), typeValue);
 }
 
 //===----------------------------------------------------------------------===//

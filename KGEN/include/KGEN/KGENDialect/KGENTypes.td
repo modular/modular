@@ -28,11 +28,12 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
-  let summary = "Type specified by a parameter expression";
+  let summary = "Type specified by a parameter expression (type domain)";
   let description = [{
     This is a symbolic type represented with a parameter expression that is
-    resolved by the KGEN elaborator.  Once this parameter is substituted, the
-    type disappears.
+    resolved by the KGEN elaborator.  Once this parameter is substituted with a
+    type constant, this ParamRefType is folded away and the MlirType inside
+    the type constant is returned.
   }];
 
   let parameters = (ins "TypedAttr":$param);
@@ -53,6 +54,40 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
     /// A specific builder used to build the type from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static ParamRefType getFromBytecode(TypedAttr param);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// TypeValueType
+//===----------------------------------------------------------------------===//
+
+def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue"> {
+  let summary = "Type specified by a parameter expression (value domain)";
+  let description = [{
+    This is the value domain counterpart to KGEN ParamRefType. It allows
+    losslessly using a parameter expression as a MLIR Type: Even when its
+    type value parameter is substituted with a type constant, it does not fold
+    into the MlirType itself (unless the type constant is a trivial mlir type).
+  }];
+
+  let parameters = (ins "TypedAttr":$typeValue);
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
+
+  // Our builders create TypeValueType but fold to the base type if not
+  // parameterized.
+  let skipDefaultBuilders = 1;
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue), [{}], "Type">,
+     // This is needed for ODS generated uses.
+    TypeBuilderWithInferredContext<(ins "MLIRContext *":$context,
+                                        "TypedAttr":$typeValue),
+                                   [{ return get(typeValue); }], "Type">,
+  ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the type from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static TypeValueType getFromBytecode(TypedAttr typeValue);
   }];
 }
 

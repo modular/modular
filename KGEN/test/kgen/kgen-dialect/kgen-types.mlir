@@ -56,3 +56,12 @@ kgen.generator @type_printing() {
 kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[values]>, %arg1: !kgen.variant<[[]]>) {
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @type_value
+kgen.func @type_value() {
+  // CHECK: type = <struct<()>>
+  kgen.param.declare atype: type = <[typevalue<[struct<()>]>]>
+  // CHECK: type = <[struct<(typevalue<[struct<()>, {"method" : () -> () = @method}]>)>, struct<(struct<()>)>, {"method2" : () -> () = @method2}]>
+  kgen.param.declare atype: type = <[struct<(typevalue<[struct<()>, {"method" : () -> () = @method}]>)>, struct<(struct<()>)>, {"method2" : () -> () = @method2}]>
+  kgen.return
+}
