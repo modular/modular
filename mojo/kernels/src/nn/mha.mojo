@@ -13,6 +13,7 @@ from buffer.list import DimList
 from gpu import (
     WARP_SIZE,
     BlockIdx,
+    BlockDim,
     ThreadIdx,
     barrier,
     lane_id,
@@ -49,7 +50,7 @@ from utils.index import Index, StaticIntTuple
 from utils.numerics import neg_inf, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
-from .softmax import softmax, _online_softmax_iter_for_mma_output
+from .softmax import softmax, _online_softmax_iter_for_mma_output, _softmax_gpu
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -256,34 +257,81 @@ fn flash_attention[
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
     constrained[rank == 4, "only support rank 4 used in llama 2."]()
     constrained[
-        q_type is DType.float32
-        and k_type is DType.float32
-        and v_type is DType.float32
-        and mask_type is DType.float32
-        and output_type is DType.float32,
-        "only support float32 in llama 2.",
+        q_type == k_type == v_type == output_type,
+        "Q, K, V, output should have same type.",
     ]()
-
+    constrained[
+        q_type == DType.float32 or q_type.is_half_float(),
+        "Only support single and half precision.",
+    ]()
     constrained[
         q_shape.all_known[2, 4](),
         "Only support static head (H) and depth (D) dimensions",
     ]()
+
+    var ctx = context.get_cuda_device()
 
     alias num_heads = q_shape.get[2]()
     alias depth = q_shape.get[3]()
     alias k_num_heads = k_shape.get[2]()
     alias group = num_heads // k_num_heads
 
-    var ctx = context.get_cuda_device()
-
-    # q shape [batch_size, seq_len, # heads, depth]
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
 
-    # TODO: this restriction will be lifted soon.
-    constrained[depth == 128, "Only support depth (D) = 128."]()
+    flash_attention_impl[
+        rank,
+        q_type,
+        k_type,
+        v_type,
+        mask_type,
+        output_type,
+        depth,
+        num_heads,
+        group,
+        add_attn_mask,
+        target,
+        use_tensor_core,
+    ](
+        output.data,
+        q.data,
+        k.data,
+        v.data,
+        mask.data,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        ctx,
+    )
 
+
+fn flash_attention_impl[
+    rank: Int,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    depth: Int,
+    num_heads: Int,
+    group: Int = 1,
+    add_attn_mask: Bool = True,
+    target: StringLiteral = "cpu",
+    use_tensor_core: Bool = False,
+](
+    output: DTypePointer[output_type],
+    q: DTypePointer[q_type],
+    k: DTypePointer[k_type],
+    v: DTypePointer[v_type],
+    mask: DTypePointer[mask_type],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+    num_keys: Int,
+    ctx: DeviceContext,
+) raises:
     alias qtile_num_rows = 32
     alias ktile_num_rows = 128
     # TODO: #25898, use max_finite
@@ -294,56 +342,10 @@ fn flash_attention[
         raise Error("32bits index overflow.")
 
     try:
-        # Use fast kernel for context encoding benchmark.
-        if seq_len == num_keys and seq_len % 128 == 0:
-
-            @parameter
-            if use_tensor_core:
-                var func = ctx.compile_function[
-                    mha[
-                        q_type,
-                        k_type,
-                        v_type,
-                        mask_type,
-                        output_type,
-                        BM=qtile_num_rows,
-                        BN=ktile_num_rows,
-                        BK = 16 if q_type == DType.float32 else 32,
-                        WM=qtile_num_rows,
-                        WN=32,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=128,
-                        num_pipeline_stages=4,
-                        group=group,
-                    ]
-                ](
-                    # TODO: Avoid hard coding shared memory needed.
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
-                    )
-                )
-
-                ctx.enqueue_function(
-                    func,
-                    q.data,
-                    k.data,
-                    v.data,
-                    mask.data,
-                    output.data,
-                    scale,
-                    batch_size,
-                    seq_len,
-                    grid_dim=(
-                        ceildiv(seq_len, qtile_num_rows),
-                        num_heads,
-                        batch_size,
-                    ),
-                    block_dim=(128, 1, 1),
-                    shared_mem_bytes=80 * 1024,
-                )
-
-            else:
+        # Legacy impl for FP32
+        @parameter
+        if q_type == DType.float32 and depth == 128 and not use_tensor_core:
+            if seq_len == num_keys and seq_len % 128 == 0:
                 var func = ctx.compile_function[
                     flash_attention_kernel[
                         BM=qtile_num_rows,
@@ -359,11 +361,11 @@ fn flash_attention[
 
                 ctx.enqueue_function(
                     func,
-                    q.data,
-                    k.data,
-                    v.data,
-                    mask.data,
-                    output.data,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    output,
                     scale,
                     batch_size,
                     seq_len,
@@ -374,40 +376,108 @@ fn flash_attention[
                     ),
                     block_dim=(128, 1, 1),
                 )
-        # Slow path for token generation for now and context encoding with
-        # seq_len % 128 != 0.
-        else:
-            var func = ctx.compile_function[
-                flash_attention_kernel_flexible_seqlen[
-                    BM=qtile_num_rows,
-                    BN=ktile_num_rows,
-                    BK=16,
-                    depth=depth,
-                    num_heads=num_heads,
-                    TM=8,
-                    TN=4,
-                    num_threads=128,
-                ]
-            ]()
 
-            ctx.enqueue_function(
-                func,
-                q.data,
-                k.data,
-                v.data,
-                mask.data,
-                output.data,
-                scale,
-                batch_size,
-                seq_len,
-                num_keys,
-                grid_dim=(
-                    ceildiv(seq_len, 32),
-                    num_heads,
+                return
+
+            else:
+                var func = ctx.compile_function[
+                    flash_attention_kernel_flexible_seqlen[
+                        BM=qtile_num_rows,
+                        BN=ktile_num_rows,
+                        BK=16,
+                        depth=depth,
+                        num_heads=num_heads,
+                        TM=8,
+                        TN=4,
+                        num_threads=128,
+                    ]
+                ]()
+
+                ctx.enqueue_function(
+                    func,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    output,
+                    scale,
                     batch_size,
-                ),
-                block_dim=(128, 1, 1),
-            )
+                    seq_len,
+                    num_keys,
+                    grid_dim=(
+                        ceildiv(seq_len, 32),
+                        num_heads,
+                        batch_size,
+                    ),
+                    block_dim=(128, 1, 1),
+                )
+
+                return
+
+        @parameter
+        if use_tensor_core:
+            if seq_len == num_keys and seq_len % 128 == 0 and depth % 32 == 0:
+                # alias WN = 32  # from cutlass, TODO: tune this parameter
+
+                var func = ctx.compile_function[
+                    mha[
+                        q_type,
+                        k_type,
+                        v_type,
+                        mask_type,
+                        output_type,
+                        BM=qtile_num_rows,
+                        BN=ktile_num_rows,
+                        BK = 16 if q_type == DType.float32 else 32,
+                        WM=qtile_num_rows,
+                        WN=32,  # WN,
+                        depth=depth,
+                        num_heads=num_heads,
+                        num_threads=128,  # (depth // WN) * WARP_SIZE,
+                        num_pipeline_stages=4,
+                        group=group,
+                    ]
+                ](
+                    # TODO: Avoid hard coding shared memory needed.
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        80 * 1024
+                    )
+                )
+
+                ctx.enqueue_function(
+                    func,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    output,
+                    scale,
+                    batch_size,
+                    seq_len,
+                    grid_dim=(
+                        ceildiv(seq_len, qtile_num_rows),
+                        num_heads,
+                        batch_size,
+                    ),
+                    # block_dim=(depth // WN * WARP_SIZE, 1, 1),
+                    block_dim=(128, 1, 1),
+                    shared_mem_bytes=80 * 1024,
+                )
+
+                return
+
+        mha_gpu_naive[depth=depth, num_heads=num_heads, group=group,](
+            q,
+            k,
+            v,
+            mask,
+            output,
+            scale,
+            batch_size,
+            seq_len,
+            num_keys,
+            ctx,
+        )
 
     except e:
         abort(e)
@@ -1442,8 +1512,9 @@ fn mha[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x: Int
+    var warp_y: Int
+    warp_y, warp_x = divmod(int(warp_id), num_warps_n)
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
@@ -1594,8 +1665,8 @@ fn mha[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        # TODO: check if this can be avoided.
         # The dimension of mask are assumed dynamic here so still using index calculation.
+        # TODO: check if the explicit index calculation can be avoided.
         @parameter
         for m_mma in range(num_m_mmas):
 
@@ -1733,3 +1804,208 @@ fn mha[
             .vectorize[1, 2]()
             .transpose(),
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Naive GPU multihead attention supporting flexible dimensions.
+# ===----------------------------------------------------------------------===#
+
+
+fn mha_gpu_naive[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    depth: Int,
+    num_heads: Int,
+    group: Int = 1,
+](
+    q_ptr: DTypePointer[q_type],
+    k_ptr: DTypePointer[k_type],
+    v_ptr: DTypePointer[v_type],
+    mask_ptr: DTypePointer[mask_type],
+    output_ptr: DTypePointer[output_type],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+    num_keys: Int,
+    ctx: DeviceContext,
+) raises:
+    alias p_type = get_accum_type[q_type]()
+    var p_device = ctx.create_buffer[p_type](
+        batch_size * num_heads * seq_len * num_keys
+    )
+    var p_ptr = p_device.ptr
+    var p_buffer = NDBuffer[p_type, 3](
+        p_ptr, Index(batch_size * num_heads, seq_len, num_keys)
+    )
+
+    var bmm0_func = ctx.compile_function[
+        _bmm0[q_type, k_type, p_type, mask_type, num_heads, depth, group]
+    ]()
+    ctx.enqueue_function(
+        bmm0_func,
+        p_ptr,
+        q_ptr,
+        k_ptr,
+        mask_ptr,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        grid_dim=(
+            ceildiv(num_keys, 32),
+            ceildiv(seq_len, 16),
+            num_heads * batch_size,
+        ),
+        block_dim=(32, 16, 1),
+    )
+
+    @parameter
+    @__copy_capture(p_buffer)
+    fn input_fn_device[
+        _simd_width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[p_type, _simd_width]:
+        return p_buffer.load[width=_simd_width](
+            rebind[StaticIntTuple[3]](coords)
+        )
+
+    _softmax_gpu[p_type, 1, 3, DimList.create_unknown[3](), input_fn_device](
+        Index(batch_size * num_heads, seq_len, num_keys),
+        p_buffer,
+        2,
+        ctx,
+    )
+
+    var bmm1_func = ctx.compile_function[
+        _bmm1[p_type, v_type, output_type, num_heads, depth, group]
+    ]()
+    ctx.enqueue_function(
+        bmm1_func,
+        output_ptr,
+        p_ptr,
+        v_ptr,
+        seq_len,
+        num_keys,
+        grid_dim=(
+            ceildiv(depth, 32),
+            ceildiv(seq_len, 16),
+            num_heads * batch_size,
+        ),
+        block_dim=(32, 16, 1),
+    )
+
+    _ = p_device
+
+
+@always_inline
+fn _bmm0[
+    q_type: DType,
+    k_type: DType,
+    p_type: DType,
+    mask_type: DType,
+    num_heads: Int,
+    depth: Int,
+    group: Int = 1,
+](
+    p_ptr: DTypePointer[p_type],
+    q_ptr: DTypePointer[q_type],
+    k_ptr: DTypePointer[k_type],
+    mask_ptr: DTypePointer[mask_type],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+    num_keys: Int,
+):
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    if x >= num_keys or y >= seq_len:
+        return
+
+    var batch_head = BlockIdx.z()
+    var batch: Int
+    var head: Int
+    batch, head = divmod(batch_head, num_heads)
+
+    var q_offset = depth * (head + num_heads * seq_len * batch)
+    var q = q_ptr + q_offset
+
+    var kv_offset = depth * (
+        head // group + (num_heads // group) * num_keys * batch
+    )
+    var k = k_ptr + kv_offset
+
+    var p_offset = batch_head * seq_len * num_keys
+    var p = p_ptr + p_offset
+
+    var mask_offset = batch * seq_len * num_keys
+    var mask = mask_ptr + mask_offset
+
+    var accum = SIMD[p_type, 1](0.0)
+
+    for d in range(depth):
+        accum += (
+            q[y * num_heads * depth + d].cast[p_type]()
+            * k[x * num_heads * depth + d].cast[p_type]()
+        )
+
+    p[y * num_keys + x] = (
+        accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
+    )
+
+    # if y == 1 and x == 0:
+    #     _printf["bmm0 accum %f\n"](accum.cast[DType.float64]())
+    #     _printf["bmm0 p %f\n"](p[0].cast[DType.float64]())
+
+
+@always_inline
+fn _bmm1[
+    p_type: DType,
+    v_type: DType,
+    output_type: DType,
+    num_heads: Int,
+    depth: Int,
+    group: Int = 1,
+](
+    output_ptr: DTypePointer[output_type],
+    p_ptr: DTypePointer[p_type],
+    v_ptr: DTypePointer[v_type],
+    seq_len: Int,
+    num_keys: Int,
+):
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    if x >= depth or y >= seq_len:
+        return
+
+    var batch_head = BlockIdx.z()
+    var batch: Int
+    var head: Int
+    batch, head = divmod(batch_head, num_heads)
+
+    var p_offset = batch_head * seq_len * num_keys
+    var p = p_ptr + p_offset
+
+    var kv_offset = depth * (
+        head // group + (num_heads // group) * num_keys * batch
+    )
+    var v = v_ptr + kv_offset
+
+    var output_offset = depth * (head + num_heads * seq_len * batch)
+    var output = output_ptr + output_offset
+
+    var accum = SIMD[output_type, 1](0.0)
+
+    for i in range(num_keys):
+        accum += (
+            p[y * num_keys + i].cast[output_type]()
+            * v[i * num_heads * depth + x].cast[output_type]()
+        )
+
+    # if x == 0 and y == 1:
+    #     _printf["bmm1 p %f\n"](p[0].cast[DType.float64]())
+    #     _printf["bmm1 v %f\n"](v[0].cast[DType.float64]())
+    #     _printf["bmm1 accum %f\n"](accum.cast[DType.float64]())
+
+    output[y * num_heads * depth + x] = accum
