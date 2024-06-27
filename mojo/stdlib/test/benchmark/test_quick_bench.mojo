@@ -315,19 +315,19 @@ fn test_custom() raises:
 
 fn main() raises:
     # CHECK: Benchmark results
-    # CHECK: name, met (ms)    , iters   , Bytes (GB/s)
+    # CHECK: name, met (ms)    , iters   , DataMovement (GB/s)
     # CHECKL exp ,
     # CHECKL tanh,
     test_mojo_math()
 
     # CHECK: Benchmark results
-    # CHECK: name      , met (ms)    , iters   , FLOPS (GFLOPS/s)
+    # CHECK: name      , met (ms)    , iters   , Arithmetic (GFLOPS/s)
     # CHECK: vec_reduce,
     # CHECK: vec_add   ,
     test_custom()
 
     # CHECK: Benchmark results
-    # CHECK: name      , met (ms)    , iters    , FLOPS (GFLOPS/s)
+    # CHECK: name      , met (ms)    , iters    , Arithmetic (GFLOPS/s)
     # CHECK: dummy_none,
     # CHECK: dummy_1   ,
     # CHECK: dummy_2   ,

@@ -33,8 +33,8 @@ struct BenchMetric(CollectionElement):
     """Metric's throughput rate unit (count/second)."""
 
     alias elements = BenchMetric(0, "throughput", "GElems/s")
-    alias bytes = BenchMetric(1, "Bytes", "GB/s")
-    alias flops = BenchMetric(2, "FLOPS", "GFLOPS/s")
+    alias bytes = BenchMetric(1, "DataMovement", "GB/s")
+    alias flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
 
     alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
     """Default set of benchmark metrics."""
