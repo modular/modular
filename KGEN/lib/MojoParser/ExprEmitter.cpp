@@ -964,13 +964,12 @@ std::pair<PValue, bool> ExprEmitter::canConstructType(
     auto inferType = requiredType.getWithUnknownParametersReplaced(shared);
     auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
     posOperands.insert(posOperands.begin(), {PValue(attr), expr});
-  } else {
-    // For a deprecated '-> Self' initializer, we need to put the parameters
-    // from the Self target into the parameter bindings set because they cannot
-    // be inferred.
-    callee.paramBindings =
-        ParamBindings::getForDeclaredType(getScopeInfo(), requiredType);
   }
+  // Install the Self type parameters on the callee directly, since they cannot
+  // always be inferred. This can happen if a constructor has more specific Self
+  // type parameters or for the deprecated `-> Self` form of initializers.
+  callee.paramBindings =
+      ParamBindings::getForDeclaredType(getScopeInfo(), requiredType);
 
   CallOperands adjOperands(posOperands, operands.kwOperands);
   adjOperands.hasSelfOperand = hasInitSelf;

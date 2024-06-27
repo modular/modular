@@ -41,8 +41,7 @@ ParamBindings
 ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
                                   ASTType type) {
   ParamBindings paramBindings(scopeInfo);
-  ArrayRef<Type> params = type.getParameters();
-  paramBindings.numCtadParams = params.size();
+  paramBindings.numCtadParams = type.getParamBindings().size();
   paramBindings.defaultTypeParams = type.getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
