@@ -8,10 +8,12 @@ from math import isclose
 from sys.info import alignof
 
 from buffer import DimList, NDBuffer
+from buffer.list import _make_tuple
 from testing import assert_equal, assert_true
 
 from utils import InlineArray
 from gpu.host.device_context import DeviceBuffer, DeviceContext
+from utils.index import product
 
 
 @value
@@ -45,17 +47,28 @@ struct DeviceNDBuffer[
     var tensor: NDBuffer[type, rank, shape]
 
     @always_inline
-    fn __init__(inout self, ctx: DeviceContext) raises:
-        self.buffer = ctx.create_buffer[type](int(shape.product[len(shape)]()))
-        self.tensor = NDBuffer[type, rank, shape](self.buffer.ptr, Self.shape)
+    fn __init__(
+        inout self,
+        dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
+        *,
+        ctx: DeviceContext,
+    ) raises:
+        self.buffer = ctx.create_buffer[type](product(dynamic_shape, rank))
+        self.tensor = NDBuffer[type, rank, shape](
+            self.buffer.ptr, dynamic_shape
+        )
 
     @always_inline
     fn __init__(
-        inout self, ctx: DeviceContext, dynamic_stride: StaticIntTuple[rank]
+        inout self,
+        dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
+        *,
+        stride: StaticIntTuple[rank],
+        ctx: DeviceContext,
     ) raises:
-        self.buffer = ctx.create_buffer[type](int(shape.product[len(shape)]()))
+        self.buffer = ctx.create_buffer[type](product(dynamic_shape, rank))
         self.tensor = NDBuffer[type, rank, shape](
-            self.buffer.ptr, Self.shape, dynamic_stride
+            self.buffer.ptr, dynamic_shape, stride
         )
 
 
