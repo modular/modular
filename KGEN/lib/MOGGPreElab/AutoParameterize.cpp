@@ -38,12 +38,11 @@ static constexpr llvm::StringLiteral SPEC_PREFIX_STR = "__MOGG_SPEC";
 static constexpr llvm::StringLiteral TENSOR_TYPE = "extensibility::Tensor";
 static constexpr llvm::StringLiteral TENSOR_SPEC_NONE = "TENSOR_SPEC_NONE";
 
-namespace {
-
-bool isTensor(Attribute typeName) {
+static bool isTensor(Attribute typeName) {
   return cast<StringAttr>(typeName).strref() == TENSOR_TYPE;
 }
 
+namespace {
 /// Information pertaining to the the tensor spec as represented in KGEN.
 struct TensorSpecKGEN {
   void pullMetadataFromFunc(GeneratorOp);
@@ -90,9 +89,10 @@ struct CallGraphNode
   /// If we've already evaluated this node
   bool hasBeenProcessed = false;
 };
+} // namespace
 
-// Find the intrinsic functions which are used to access the spec.
-void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
+/// Find the intrinsic functions which are used to access the spec.
+static void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
   mlir::AttrTypeWalker walker;
   GeneratorOp gen = node->func;
   ArrayAttr argNames = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_SRC_NAMES);
@@ -145,6 +145,7 @@ void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
   });
 }
 
+namespace {
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   explicit CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
 
@@ -163,11 +164,12 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   const SymbolTable &symtab;
   llvm::sys::SmartRWMutex<true> mutex;
 };
+} // namespace
 
-// Create a specialzied version of the function now accepting a tensor spec
-// parameter.
-GeneratorOp specializeOnSpec(CallGraphNode *node,
-                             TensorSpecKGEN &specTemplate) {
+/// Create a specialzied version of the function now accepting a tensor spec
+/// parameter.
+static GeneratorOp specializeOnSpec(CallGraphNode *node,
+                                    TensorSpecKGEN &specTemplate) {
   GeneratorOp gen = node->func;
   ArrayAttr argNames = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_SRC_NAMES);
   llvm::BitVector &argsToSpec = node->argsNeedingSpec;
@@ -232,6 +234,7 @@ GeneratorOp specializeOnSpec(CallGraphNode *node,
   return cloned;
 }
 
+namespace {
 class MOGGAutoparameterizePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAutoparameterizeBase<
           MOGGAutoparameterizePass> {
