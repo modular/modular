@@ -9,6 +9,20 @@
 
 using namespace M;
 
+TEST(DocumentSymbolTest, testImportSelf) {
+  Document doc("test:///foo.mojo", R"(
+import .foo
+  )");
+
+  createTestClient()
+      .open(doc)
+      .documentSymbol(doc,
+                      [](const std::vector<lsp::DocumentSymbol> &symbols) {
+                        // Nothing at all! We just need to not crash.
+                      })
+      .execute();
+}
+
 TEST(DocumentSymbolTest, testDocumentSymbols) {
   Document doc("test:///foo.mojo",
                R"(
