@@ -260,7 +260,7 @@ struct Buffer[
         Args:
             idx: The index of the prefetched location.
         """
-        SIMD.prefetch[params](self.data.offset(idx))
+        prefetch[params](self.data.offset(idx))
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -1361,7 +1361,7 @@ struct NDBuffer[
         Args:
             idx: The N-D index of the prefetched location.
         """
-        SIMD.prefetch[params](self._offset(idx))
+        prefetch[params](self._offset(idx))
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
@@ -1373,7 +1373,7 @@ struct NDBuffer[
         Args:
             indices: The N-D index of the prefetched location.
         """
-        SIMD.prefetch[params](self._offset(indices))
+        prefetch[params](self._offset(indices))
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: Float32):
