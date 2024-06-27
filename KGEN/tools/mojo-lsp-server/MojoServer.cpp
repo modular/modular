@@ -600,53 +600,6 @@ struct MojoDocument::Context {
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
-static bool
-shouldSkipArgument(DenseMap<const ASTDecl *, std::unique_ptr<DeclView>> &views,
-                   MojoASTDeclRef decl) {
-  assert(decl.getParentDecl() && "Arguments must always have a parent decl");
-  MojoASTDeclRef grandparent = decl.getParentDecl().getParentDecl();
-
-  // If there's not a parent of this decl, it's a normal function, which does
-  // not have a self argument.
-  if (!grandparent)
-    return false;
-
-  std::optional<DeclViewKind> grandparentKind =
-      grandparent.getApproximateViewKind();
-
-  // All arguments to trait methods/functions are, by definition, unused.
-  if (grandparentKind == DeclViewKind::DK_TraitDeclView)
-    return true;
-
-  // We want to ignore an unused first argument for struct methods, as this
-  // may be the `self` variable.
-  if (grandparentKind == DeclViewKind::DK_StructDeclView) {
-    MojoASTDeclRef parent = decl.getParentDecl();
-
-    DeclView *parentView;
-    if (auto it = views.find(&*parent); it != views.end()) {
-      parentView = it->getSecond().get();
-    } else {
-      std::unique_ptr<DeclView> view = parent.getView();
-      parentView = view.get();
-      views[&*parent] = std::move(view);
-    }
-
-    if (const auto *parentFnView = dyn_cast<FunctionDeclView>(parentView)) {
-      // The first argument of a non-static method is the `self` variable,
-      // but it may not be named that. Since argument names must be unique,
-      // if the first argument's name is the symbol in question, then we're
-      // looking at the `self` variable.
-      if (parentFnView->isMethod() &&
-          parentFnView->getArguments().front().getName() == decl.getName()) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 static std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
                                                          MojoDocument &doc) {
   std::vector<lsp::Diagnostic> diags;
@@ -670,21 +623,14 @@ static std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
     std::optional<DeclViewKind> declKind =
         symbol.declRef.getApproximateViewKind();
 
-    if (declKind != DeclViewKind::DK_VariableDeclView &&
-        declKind != DeclViewKind::DK_ArgumentDeclView)
+    if (declKind != DeclViewKind::DK_VariableDeclView)
       return;
-
-    if (declKind == DeclViewKind::DK_ArgumentDeclView &&
-        shouldSkipArgument(parentViews, symbol.declRef))
-      return;
-
-    StringRef kind = DeclView::getKindAsString(*declKind);
 
     lsp::Diagnostic lspDiag;
     lspDiag.source = "mojo";
     lspDiag.severity = lsp::DiagnosticSeverity::Warning;
     lspDiag.message =
-        llvm::formatv("unused {0} '{1}'", kind, symbol.identifier).str();
+        llvm::formatv("unused variable '{0}'", symbol.identifier).str();
     lspDiag.range = lsp::Range(doc.getSourceMgr(), symbol.range);
     lspDiag.tags.push_back(lsp::DiagnosticTag::Unnecessary);
 
