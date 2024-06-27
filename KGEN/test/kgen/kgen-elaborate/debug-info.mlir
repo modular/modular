@@ -75,3 +75,33 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 kgen.generator @entry() {
   kgen.return loc(#loc)
 } loc(#loc)
+
+// -----
+
+#file = #debuginfo.file<"test.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_Mojo,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+#kernelSP = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  file = #file,
+  name = <"kernel">,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<(!pop.simd<4, dtype>) -> (!pop.simd<4, dtype>): DW_CC_normal>
+#locKernel = loc(fused<#kernelSP>["test.mlir":0:0])
+
+kgen.generator @kernel<dtype: dtype>(%arg0: !pop.simd<4, dtype>) -> !pop.simd<4, dtype> {
+  kgen.return %arg0 : !pop.simd<4, dtype> loc(#locKernel)
+} loc(#locKernel)
+
+// CHECK-LABEL: kgen.func export @top
+kgen.generator export @top() {
+  // CHECK-NEXT: kgen.param.constant{{.*}}!DICompositeType(tag: DW_TAG_array_type, name: \22!pop.simd<4, ui32>\22
+  kgen.param.constant: struct<(string, index, (!kgen.pointer<pointer<none>> borrow) capturing -> !kgen.none)> = <compile_assembly(current_target(), llvm, 0, :(!pop.simd<4, ui32>) -> (!pop.simd<4, ui32>) @kernel<:dtype ui32>)>
+  kgen.return
+}
