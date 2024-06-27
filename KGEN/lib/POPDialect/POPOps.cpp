@@ -396,8 +396,8 @@ LogicalResult StackAllocLifetimeStartOp::verify() {
 void StackAllocLifetimeStartOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   // This op allocates all its operands.
-  for (Value value : getValues())
-    effects.emplace_back(mlir::MemoryEffects::Allocate::get(), value);
+  for (OpOperand &value : getValuesMutable())
+    effects.emplace_back(mlir::MemoryEffects::Allocate::get(), &value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -411,8 +411,8 @@ LogicalResult StackAllocLifetimeEndOp::verify() {
 void StackAllocLifetimeEndOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   // This op frees all its operands.
-  for (Value value : getValues())
-    effects.emplace_back(mlir::MemoryEffects::Free::get(), value);
+  for (OpOperand &value : getValuesMutable())
+    effects.emplace_back(mlir::MemoryEffects::Free::get(), &value);
 }
 
 //===----------------------------------------------------------------------===//

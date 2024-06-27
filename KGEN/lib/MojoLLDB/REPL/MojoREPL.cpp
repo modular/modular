@@ -628,7 +628,8 @@ bool MojoREPL::PrintOneVariable(Debugger &debugger, lldb::StreamFileSP &output,
   if (useColor)
     fprintf(output->GetFile().GetStream(), ANSI_ESCAPE1(ANSI_FG_COLOR_CYAN));
 
-  valobj->Dump(*output, options);
+  if (llvm::Error error = valobj->Dump(*output, options))
+    *output << "error: " << llvm::toString(std::move(error));
 
   if (useColor)
     fprintf(output->GetFile().GetStream(), ANSI_ESCAPE1(ANSI_CTRL_NORMAL));
