@@ -143,7 +143,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
         self.shape = shape
         self.strides = strides
 
-    @no_inline
+    @always_inline
     fn __moveinit__(inout self, owned existing: Self):
         self.data = existing.data
         self.shape = existing.shape
