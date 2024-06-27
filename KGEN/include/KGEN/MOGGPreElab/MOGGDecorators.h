@@ -35,6 +35,10 @@ constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
 constexpr StringLiteral MOGG_ARG_RESULT_PARAMS = "mogg.result_params";
 constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 
+// The names as they appear in the lit source.
+constexpr StringLiteral MOGG_ARG_SRC_NAMES = "mogg.arg_src_names";
+
+constexpr StringLiteral REGISTER_TENSOR_SPEC_HOOK = "mogg.tensor_spec_hook";
 /// Tracks the mojo trait conformances of each argument and result type.
 constexpr StringLiteral MOGG_ARGUMENT_CONFORMANCES = "mogg.arg_conformances";
 constexpr StringLiteral MOGG_RESULT_CONFORMANCES = "mogg.result_conformances";
@@ -58,6 +62,9 @@ constexpr StringLiteral REGISTER_OVERRIDE = "mogg_register_override";
 constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 
 constexpr StringLiteral REGISTER_SHAPE_FUNC = "mogg_register_shape_func";
+
+// Allow new attrs to be added without needing explicit decorator.
+constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "mogg_intrinsic_attr";
 
 // MOGG API V1 hooks.
 constexpr MOGGDecorator ELEMENTWISE{"mogg_elementwise", "mogg.elementwise"};

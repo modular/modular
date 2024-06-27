@@ -78,3 +78,12 @@ def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "mlir::ModuleOp"> {
            "True when the build is a debug build. Will disable some passes">
   ];
 }
+
+def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "mlir::ModuleOp"> {
+  let summary = "Add a spec parameter to each tensor on kernels and propagate them";
+  let description = [{
+    This pass clones kernel functions and makes them take a spec parameter for each
+    input and rewrites the call graph so that every function called by those tensors
+    also takes a spec and gets the right spec.
+  }];
+}
