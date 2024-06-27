@@ -180,6 +180,7 @@ fn test_unary_kernel[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank],):
     print("World!")
 
@@ -203,6 +204,7 @@ fn test_unary_kernel_params[
     rank: Int,
     extra_param: Int,
     extra_param2: StringLiteral,
+    target: StringLiteral = "cpu",
 ](tensor1: NDBuffer[type, rank], output: NDBuffer[type, rank],):
     print(extra_param)
     print(extra_param2)
@@ -575,3 +577,11 @@ fn my_custom_scalar_reg_to_buff[
     type: DType
 ](x: MyCustomScalar[type], out: NDBuffer[type, 1]):
     out.data[0] = x.val
+
+
+@mogg_register("kernel_with_no_target")
+@export
+fn kernel_with_no_target[
+    type: DType, rank: Int
+](x: NDBuffer[type, rank], out: NDBuffer[type, rank]):
+    print("hello from kernel with no target")
