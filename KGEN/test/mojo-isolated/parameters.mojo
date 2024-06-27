@@ -1179,21 +1179,41 @@ struct DependentSpecificInitSelf[T: AnyType]:
     fn __init__[U: Movable](inout self: DependentSpecificInitSelf[U], owned value: U):
         pass
 
+fn implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):
+    pass
+
 # CHECK-LABEL: lit.func @"test_inference_from_Self_type
 fn test_inference_from_Self_type(x: Int):
-   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {0}>([[TMP]])
-   _ = StructWithSpecificSelfInitTypes()
-   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>([[TMP]], %x)
-   _ = StructWithSpecificSelfInitTypes(x)
-   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>([[TMP]], %x, %x)
-   _ = StructWithSpecificSelfInitTypes(x, x)
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {0}>([[TMP]])
+  _ = StructWithSpecificSelfInitTypes()
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>([[TMP]], %x)
+  _ = StructWithSpecificSelfInitTypes(x)
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>([[TMP]], %x, %x)
+  _ = StructWithSpecificSelfInitTypes(x, x)
 
-   # CHECK:      [[TMP:%.*]] = lit.var.decl "anonymous
-   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>([[TMP]], %__mem_tmp__)
-   _ = DependentSpecificInitSelf(x)
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>([[TMP]], %x)
+  # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
+  # CHECK-NEXT: call {{.*}}implicit_convert_specific_Self{{.*}}([[IMM]])
+  implicit_convert_specific_Self(x)
+
+  # CHECK:      [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>([[TMP]], %__mem_tmp__)
+  _ = DependentSpecificInitSelf(x)
+
+struct AutoParamDefault[value: int, param: int, default: int = param]:
+    fn __init__(inout self, ptr: ParamType[value]): pass
+    fn __init__(inout self, *, other: Self): pass
+    fn method(self, other: ParamType[value]): pass
+    fn method(self, other: AutoParamDefault[value, *_]): pass
+
+# CHECK-LABEL: lit.func @"implicit_conversion_overload
+fn implicit_conversion_overload(x: AutoParamDefault[`1`], ptr: ParamType[`1`]):
+    # CHECK: call {{.*}}method{{.*}}(%x, %ptr)
+    x.method(ptr)
 
 ##===----------------------------------------------------------------------===##
 # Lifetime Parameters
