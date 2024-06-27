@@ -1121,6 +1121,10 @@ void MojoDocument::getDocumentSymbols(
       getSourceMgr().FindBufferContainingLoc(decl.getLoc()));
   StringRef declBufferRef = declBuffer->getBuffer();
   getDocumentSymbols(decl, symbols, [declBufferRef](MojoASTDeclRef decl) {
+    // We do not want to traverse into module imports at all.
+    if (decl.getApproximateViewKind() == DeclViewKind::DK_ModuleDeclView)
+      return false;
+
     // Imported decls may be in a different buffer, only consider decls in the
     // same buffer as the main decl.
     const char *declLoc = decl.getLoc().getPointer();
@@ -1242,6 +1246,10 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
   unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl.getLoc());
   StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
   auto processFn = [declBufferRef](MojoASTDeclRef decl) {
+    // We do not want to traverse into module imports at all.
+    if (decl.getApproximateViewKind() == DeclViewKind::DK_ModuleDeclView)
+      return false;
+
     // Imported decls may be in a different buffer, only consider decls in the
     // same buffer as the main decl.
     const char *declLoc = decl.getLoc().getPointer();
