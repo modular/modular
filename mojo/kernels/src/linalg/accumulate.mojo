@@ -622,7 +622,7 @@ struct _Accumulator[
 
                 @parameter
                 for j in range(num_cols):
-                    SIMD.prefetch[
+                    prefetch[
                         PrefetchOptions()
                         .for_read()
                         .high_locality()
@@ -683,7 +683,7 @@ struct _Accumulator[
 
                 @parameter
                 for j in range(num_cols):
-                    SIMD.prefetch[
+                    prefetch[
                         PrefetchOptions()
                         .for_read()
                         .high_locality()

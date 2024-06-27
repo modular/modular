@@ -188,7 +188,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
 
             @parameter
             for idx in range(kernel_cols // simd_size):
-                SIMD.prefetch[
+                prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ](b_ptr.offset(prefetch_offset + idx * simd_size))
 
