@@ -129,3 +129,10 @@ fn mogg_elementwise_hook():
     A hint that this is the elementwise function.
     """
     return
+
+
+fn mogg_intrinsic_attr(intrin: StringLiteral):
+    """
+    Attaches the given intrinsic annotation onto the function.
+    """
+    return
