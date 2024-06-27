@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_mlir_dialect(Interpreter interp -dialect=interp)
-add_modular_doc(Interpreter -gen-dialect-doc InterpreterDialect KGEN/docs -dialect=interp)
+add_modular_doc(Interpreter -gen-dialect-doc InterpreterDialect KGEN/docs/ -dialect=interp)
 
 set(LLVM_TARGET_DEFINITIONS InterpreterAttrs.td)
 mlir_tablegen(InterpreterAttrs.h.inc -gen-attrdef-decls -dialect=interp)
