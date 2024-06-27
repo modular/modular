@@ -150,8 +150,7 @@ struct GRPCServer[
 
         self._impl.run()
 
-        var rt = Runtime()
-        var tg = TaskGroup[__lifetime_of()](rt)
+        var tg = TaskGroup[__lifetime_of()]()
         for _ in range(self._num_listeners):
             tg.create_task(listen())
 

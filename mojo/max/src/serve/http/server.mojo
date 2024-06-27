@@ -19,7 +19,7 @@ from sys.ffi import DLHandle
 from memory.unsafe_pointer import UnsafePointer
 from python import PythonObject
 from python.python import _get_global_python_itf
-from runtime.llcl import Runtime, TaskGroup
+from runtime.llcl import TaskGroup
 from time import now
 
 from max._utils import handle_from_config
@@ -118,8 +118,7 @@ struct PythonServer[
     fn serve[
         handle_fn: Self.handle_fn_type
     ](inout self, num_listeners: Int = 4) raises -> None:
-        var rt = Runtime()
-        var tg = TaskGroup[__lifetime_of()](rt)
+        var tg = TaskGroup[__lifetime_of()]()
         var cpython = _get_global_python_itf().cpython()
         for i in range(num_listeners):
             tg.create_task(self._serve[handle_fn]())
