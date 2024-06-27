@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters --kgen-print-inline-type-values | FileCheck %s
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -767,9 +767,9 @@ fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
 fn call_with_tail_types():
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{.*}}FloatDyn1]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{\[}}!FloatDyn, {{.*}}]]>
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{.*}}Int2]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{\[}}!Int, {{.*}}]]>
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -804,7 +804,7 @@ fn mapSingle[A: AnyType, B: AnyType, R: AnyType](
 fn useMapSingle() -> object:
   fn f(x: object, y: object) -> object:
     return object()
-  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType #object1, :!AnyType #object1, :!AnyType #object1>
+  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType [!object, {{.*}}], :!AnyType [!object, {{.*}}], :!AnyType [!object, {{.*}}]>
   return mapSingle(f, object(), object())
 
 
@@ -1175,6 +1175,10 @@ struct StructWithSpecificSelfInitTypes[size: Int]:
    fn __init__(inout self: StructWithSpecificSelfInitTypes[1], a: Int): pass
    fn __init__(inout self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
 
+struct DependentSpecificInitSelf[T: AnyType]:
+    fn __init__[U: Movable](inout self: DependentSpecificInitSelf[U], owned value: U):
+        pass
+
 # CHECK-LABEL: lit.func @"test_inference_from_Self_type
 fn test_inference_from_Self_type(x: Int):
    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
@@ -1187,7 +1191,9 @@ fn test_inference_from_Self_type(x: Int):
    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>([[TMP]], %x, %x)
    _ = StructWithSpecificSelfInitTypes(x, x)
 
-
+   # CHECK:      [[TMP:%.*]] = lit.var.decl "anonymous
+   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>([[TMP]], %__mem_tmp__)
+   _ = DependentSpecificInitSelf(x)
 
 ##===----------------------------------------------------------------------===##
 # Lifetime Parameters

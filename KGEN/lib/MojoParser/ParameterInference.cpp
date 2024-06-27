@@ -346,9 +346,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         inferredParams.resize(parameterIndex + 1);
       TypedAttr &inferredValue = inferredParams[parameterIndex];
 
-      // Otherwise we succeeded in finding a value, see if it is compatible
-      // with other values we've inferred.
-      if (inferredValue && inferredValue != actualAttr) {
+      // Otherwise we succeeded in finding a value, see if it is compatible with
+      // or more specific than the other values we've inferred.
+      if (inferredValue && failed(matchParams(inferredValue, actualAttr))) {
         addFailure(parameterIndex, InferenceFailure::ValueConflictFailure{
                                        inferredValue, actualAttr});
         return failure();
@@ -533,6 +533,13 @@ LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
     // Try to infer this parameter from the expected (declared) type.
     if (failed(matchParams(expected, toInfer)))
       return failure();
+
+    // If we successfully inferred a more specific value, we need to remember
+    // this so we can come back and refine it later. This is because we could
+    // have inferred a forward reference, such as in:
+    //   struct Foo[T: AnyType]:
+    //     fn __init__[U: Movable](inout self: Foo[U], x: U):
+    initSelfParams.push_back(idx);
   }
 
   return success();
@@ -1097,6 +1104,11 @@ ParameterInferenceState::infer(LITSignatureType signature,
   // If we have left over operands, then this signature cannot match.
   if (posOperandIdx != numPosOperands && !signature.hasParamVarArgs())
     return failure();
+
+  for (unsigned idx : initSelfParams) {
+    TypedAttr &param = inferredParams[idx];
+    param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
+  }
 
   // We succeed iff we inferred a value for this parameter.
   return success();
