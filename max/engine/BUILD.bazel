@@ -1,10 +1,17 @@
+load("//bazel:api.bzl", "modular_pybind_extension")
+
+package(default_visibility = ["//visibility:public"])
+
 filegroup(
-    name = "engine",
-    srcs = [
-        "__init__.py",
-        "api.py",
-        "core.pyi",
-        "py.typed",
+    name = "all_srcs",
+    srcs = glob(["**"]),
+)
+
+modular_pybind_extension(
+    name = "core",
+    srcs = ["//SDK/lib/EngineAPI/python:cpp_bindings_srcs"],
+    deps = [
+        "//SDK:ModularFrameworkPython",
+        "//Support:Base",
     ],
-    visibility = ["//visibility:public"],
 )
