@@ -1492,6 +1492,7 @@ fn copy_local_to_sram[
         for i in range(num_stores_per_thread):
             var src_vec = src.aligned_load[elem_size](i, 0)
             var dst_vec: SIMD[dst_type, elem_size] = 0
+            alias dst_idx = dst_frag.layout(i)
 
             @parameter
             for j in range(0, elem_size, 2):
@@ -1501,7 +1502,10 @@ fn copy_local_to_sram[
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
-            dst_frag.aligned_store[elem_size](i, 0, dst_vec)
+            SIMD[size=elem_size].store[
+                alignment = alignof[SIMD[dst_type, src.element_size]](),
+                address_space = _GPUAddressSpace.SHARED,
+            ](dst_frag.ptr + dst_idx, dst_vec)
 
 
 # ===-----------------------------------------------------------------------===#

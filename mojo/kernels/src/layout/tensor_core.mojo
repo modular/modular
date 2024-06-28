@@ -363,12 +363,14 @@ struct TensorCore[
         ],
         fragments: LayoutTensor[type0, layout1, element_layout=element_layout1],
         mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
+        warp_tile_coordn: Int = 0,  # n coordiante of warp tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[in_type]()
         alias num_frags = fragments.dim[0]()
+        alias WN = warp_tile.dim[1]()
 
         @parameter
         if transpose_b:
@@ -430,18 +432,54 @@ struct TensorCore[
             else:
                 constrained[self.supported_half]()
 
+                var mma_tile = warp_tile.tile[shape[2], warp_tile.dim[1]()](
+                    mma_tile_coordk, 0
+                )
+
+                # This is a hack to get correct result for small warp tile.
+                # If we swizzle 3 bits, 8 simd vectors repeats a pattern,
+                # and if WN = 32 = 4 simd vectors, the result would be wrong
+                # because 2nd warp tile doesn't know it's in the middle of a pattern.
+                # The hack shifts back the pointer and use idx in shared memory tile
+                # to do the right swizzling.
+                # The potential fix is to have both base pointer and offset inside
+                # Layout tensor so the warp_tile has the original address of the
+                # shared memory tile.
                 @parameter
-                for i in range(0, num_frags, 2):
-                    var mma_tile = warp_tile.tile[shape[2], warp_tile.dim[1]()](
-                        mma_tile_coordk, 0
-                    )
-                    var vec = _load_matrix_frag[transposed=True](mma_tile, i)
-                    fragments[i, 0] = rebind[frag_type](
-                        SIMD[type0, 4](vec[0], vec[1], vec[2], vec[3])
-                    )
-                    fragments[i + 1, 0] = rebind[frag_type](
-                        SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
-                    )
+                if WN == 32:  # 32 is the min in practice.
+                    var mma_tile_shifted = LayoutTensor[
+                        mma_tile.dtype,
+                        mma_tile.layout,
+                        address_space = AddressSpace.SHARED,
+                    ](mma_tile.ptr - warp_tile_coordn * WN)
+
+                    @parameter
+                    for i in range(0, num_frags, 2):
+                        var swizzle_offset = (
+                            i + warp_tile_coordn * WN // simd_size
+                        )
+                        var vec = _load_matrix_frag[transposed=True](
+                            mma_tile_shifted, swizzle_offset
+                        )
+                        fragments[i, 0] = rebind[frag_type](
+                            SIMD[type0, 4](vec[0], vec[1], vec[2], vec[3])
+                        )
+                        fragments[i + 1, 0] = rebind[frag_type](
+                            SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
+                        )
+                else:
+
+                    @parameter
+                    for i in range(0, num_frags, 2):
+                        var vec = _load_matrix_frag[transposed=True](
+                            mma_tile, i
+                        )
+                        fragments[i, 0] = rebind[frag_type](
+                            SIMD[type0, 4](vec[0], vec[1], vec[2], vec[3])
+                        )
+                        fragments[i + 1, 0] = rebind[frag_type](
+                            SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
+                        )
 
     @always_inline
     fn mma(
