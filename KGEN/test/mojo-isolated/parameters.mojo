@@ -457,10 +457,16 @@ fn takeCallable[
 fn takeAndReturnIndex(x: int) -> int:
   return x
 
+fn posOnlyArg(x: int, /):
+  pass
+
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
 fn passFunction(a: int) -> int:
+  # CHECK: rebind(:!lit.signature<("x": index borrow, |) -> !kgen.none> {{.*}}posOnlyArg
+  alias changeKw: fn(x: int) -> None = posOnlyArg
+
   # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.signature<(index borrow, |) -> index>
-  # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> @parameters::@"takeAndReturnIndex{{.*}}")>(%a)
+  # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 # CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<type: dtype>() -> !kgen.none

@@ -174,7 +174,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
     return false;
 
   // Allow signature types to be converted for free if they differ only in
-  // argument names, parameter names, or implicit lifetimes.
+  // argument names, parameter names, passing kinds, or implicit lifetimes.
   size_t fromNumArgs = from.getNumArguments();
   if (fromNumArgs != to.getNumArguments())
     return false;
@@ -182,19 +182,6 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
     return false;
   if (from.getArgConventions() != to.getArgConventions())
     return false;
-
-  // Pos-or-kw arguments can be passed positionally.
-  PogListAttr fromArgListAttr = from.getArgListAttrs();
-  PogListAttr toArgListAttr = to.getArgListAttrs();
-  for (size_t idx = 0; idx < fromNumArgs; ++idx) {
-    PassingKind fromKind = fromArgListAttr.getPassingKind(idx);
-    PassingKind toKind = toArgListAttr.getPassingKind(idx);
-    if (toKind != fromKind) {
-      if (toKind == PassingKind::PosOnly && fromKind == PassingKind::PosOrKw)
-        continue;
-      return false;
-    }
-  }
 
   // Result types, and input/result parameter types must match exactly.
   if (from.getResults() != to.getResults() ||
