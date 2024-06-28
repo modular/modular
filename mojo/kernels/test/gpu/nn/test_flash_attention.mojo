@@ -44,16 +44,18 @@ fn test[
     num_keys: Int,
     ctx: DeviceContext,
     is_benchmark: Bool = False,
+    use_index_input: Bool = False,
 ) raises:
     print("test_flash_attention")
 
     # Query, key, value dimensions.
     alias batch_size = 1
     alias scale = Float32(0.0125)  # rsqrt[type, 1](Float32(depth))
+    alias kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
-    var k_size = batch_size * num_heads * num_keys * depth
+    var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
 
@@ -66,20 +68,39 @@ fn test[
     var flash_output_ptr = DTypePointer[type].alloc(o_size)
 
     # Q, K, V are randomly initalized.
-    rand[type](q_ptr, q_size)
-    rand[type](k_ptr, k_size)
-    rand[type](v_ptr, v_size)
-    rand[type](mask_ptr, seq_len * num_keys)
+    if use_index_input:
+        for i in range(seq_len):
+            for h in range(num_heads):
+                for j in range(depth):
+                    q_ptr[(i * num_heads + h) * depth + j] = i * depth + j
+        for i in range(num_keys):
+            for h in range(kv_num_heads):
+                for j in range(depth):
+                    k_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+        for i in range(num_keys):
+            for h in range(kv_num_heads):
+                for j in range(depth):
+                    v_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+        for i in range(seq_len):
+            for j in range(num_keys):
+                mask_ptr[i * num_keys + j] = (
+                    (seq_len - i) * num_keys + num_keys - j
+                )
+    else:
+        rand[type](q_ptr, q_size)
+        rand[type](k_ptr, k_size)
+        rand[type](v_ptr, v_size)
+        rand[type](mask_ptr, seq_len * num_keys)
 
     # Contruct buffers.
     var q = NDBuffer[type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
     var k = NDBuffer[type, 4](
-        k_ptr, Index(batch_size, num_keys, num_heads, depth)
+        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
     )
     var v = NDBuffer[type, 4](
-        v_ptr, Index(batch_size, num_keys, num_heads, depth)
+        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
     )
     var mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, num_keys))
     var output = NDBuffer[type, 4](
@@ -125,7 +146,7 @@ fn test[
             type,
             depth,
             num_heads,
-            group=1,
+            group=group,
             add_attn_mask=True,
             target="gpu",
             use_tensor_core=use_tensor_core,
@@ -180,7 +201,8 @@ fn test[
         ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var succeed = True
+    var rtol = 0.02 if (use_tensor_core and not use_index_input) else 1e-4
+
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
@@ -190,12 +212,9 @@ fn test[
                 var actual = Scalar.load(
                     flash_output_ptr, d + depth * (h + s * num_heads)
                 )
-                assert_almost_equal(
-                    expect,
-                    actual,
-                    atol=1e-5,
-                    rtol=2e-3 if use_tensor_core else 1e-4,
-                )
+                if not isclose(expect, actual, atol=1e-5, rtol=rtol):
+                    print(h, s, d, actual, expect)
+                assert_almost_equal(expect, actual, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -240,15 +259,39 @@ def main():
                 use_tensor_core=True,
             ](1024, 1024, ctx, is_benchmark())
 
-            # TODO: uncomment this once support transpose_b with bf16
             # bf16 depth == 128, bf16-fp32 mma
-            # test[
-            #     DType.bfloat16,
-            #     128,
-            #     1,
-            #     against_gpu_naive=True,
-            #     use_tensor_core=True,
-            # ](128, 128, ctx, is_benchmark())
+            test[
+                DType.bfloat16,
+                128,
+                1,
+                against_gpu_naive=True,
+                use_tensor_core=True,
+            ](128, 128, ctx, use_index_input=True)
+
+            test[
+                DType.bfloat16,
+                128,
+                1,
+                against_gpu_naive=True,
+                use_tensor_core=True,
+            ](128, 128, ctx)
+
+            test[
+                DType.bfloat16,
+                128,
+                32,
+                against_gpu_naive=True,
+                use_tensor_core=True,
+            ](1024, 1024, ctx)
+
+            test[
+                DType.bfloat16,
+                128,
+                24,
+                group=3,
+                against_gpu_naive=True,
+                use_tensor_core=True,
+            ](1024, 1024, ctx)
 
     except e:
         print("CUDA_ERROR:", e)
