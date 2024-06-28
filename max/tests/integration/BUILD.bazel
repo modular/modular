@@ -1,0 +1,43 @@
+load("@pip_deps//:requirements.bzl", "requirement")
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+filegroup(
+    name = "inputs",
+    srcs = glob(["Inputs/**"]),
+    visibility = [":__subpackages__"],
+)
+
+lit_tests(
+    name = "test",
+    size = "large",
+    srcs = glob(
+        [
+            "**/*.mlir",
+            "**/*.yaml",
+        ],
+        exclude = [
+            "max-cli/benchmark/Inputs/**",
+            "Inputs/**",
+        ],
+    ),
+    data = glob(["max-cli/benchmark/Inputs/**"]) + [
+        ":inputs",
+        "//KGEN:CompilerRT",
+        "//PyTorch:TorchRuntimePlugin",
+        "//PyTorch/tools/torch:mtorch",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    tags = [
+        "no-sandbox",  # These tests use openmp which validates only 1 shared library is loaded at the same time, the libraries in the sandbox appear different so running them in parallel fails otherwise.
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//SDK/tools/max",
+    ],
+    deps = [
+        requirement("torch"),
+    ],
+)
