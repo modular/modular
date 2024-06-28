@@ -9,6 +9,7 @@
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -163,10 +164,43 @@ private:
 
     // Map from the actual parameters we know are unused onto their index in the
     // function parameter list.
+    SmallVector<ParamDeclAttr> unusedDecls;
     for (auto [idx, decl] : llvm::enumerate(oldFunction.getInputParams())) {
       if (!unusedParamsAttr.contains(decl.getName())) {
         unusedParamsIndex[idx] = false;
         inputParams.push_back(decl);
+      } else {
+        unusedDecls.push_back(decl);
+      }
+    }
+
+    // The DISubroutineType of the function may reference unused parameters.
+    // This just means this function has a shared implementation across all
+    // possible instantiations of this parameter. Concretize unused parameters
+    // into UnknownAttr for now.
+    // TODO (MOCO-900): Represent templated DISubroutineType and concretize
+    // unused parameters to some special type (e.g. DIUnspecifiedType).
+    if (DebugInfo::DISubprogramAttr oldScope = oldFunction.getSubprogramScope();
+        oldScope && !unusedDecls.empty()) {
+      SmallVector<TypedAttr> unknownTypes(
+          llvm::map_range(unusedDecls, [](ParamDeclAttr decl) -> TypedAttr {
+            return UnknownAttr::get(decl.getType());
+          }));
+      ParameterEvaluator evaluator(unusedDecls, unknownTypes);
+      auto newType = cast<DebugInfo::DISubroutineType>(
+          evaluator.getReboundType(oldScope.getType()));
+      if (newType != oldScope.getType()) {
+        mlir::AttrTypeReplacer replacer;
+        auto newScope = oldScope.cloneWith(oldScope.getName(),
+                                           oldScope.getLinkageName(), newType);
+        replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
+          if (scope == oldScope)
+            return std::make_pair(newScope, WalkResult::skip());
+          return std::make_pair(scope, WalkResult::advance());
+        });
+        replacer.recursivelyReplaceElementsIn(
+            oldFunction, /*replaceAttrs=*/false, /*replaceLocs=*/true,
+            /*replaceTypes=*/false);
       }
     }
   }
