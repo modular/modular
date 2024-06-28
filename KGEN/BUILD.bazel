@@ -22,6 +22,16 @@ gentbl_mlir_dialect(
     ],
 )
 
+modular_cc_library(
+    name = "CustomDialect",
+    srcs = glob(["lib/CustomDialect/**/*.cpp"]),
+    hdrs = glob(["include/KGEN/CustomDialect/**/*.h"]),
+    deps = [
+        ":CustomDialectIncGen",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
 td_library(
     name = "CODialectTdFiles",
     srcs = glob(["include/KGEN/CODialect/*.td"]),
@@ -1062,6 +1072,7 @@ modular_cc_library(
     srcs = glob(["lib/Transforms/*.cpp"]),
     deps = [
         ":CODialect",
+        ":CustomDialect",
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
         ":LITDialect",
@@ -1082,6 +1093,7 @@ modular_cc_library(
         "lib/Elaborator/*.h",
     ]),
     deps = [
+        ":CustomDialect",
         ":KGENDialect",
         ":LITDialect",
         ":ToolCommon.headers",
@@ -1227,6 +1239,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
     deps = [
         ":CODialect",
+        ":CustomDialect",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":KGENPassesIncGen",
