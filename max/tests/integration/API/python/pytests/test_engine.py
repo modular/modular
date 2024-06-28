@@ -53,7 +53,10 @@ def relu_torchscript_model_path(sdk_test_inputs_path: Path) -> Path:
 
 @pytest.fixture
 def custom_ops_package_path(request) -> Path:
-    return Path(request.config.getoption("--custom-ops-path"))
+    return Path(
+        os.getenv("CUSTOM_OPS_PATH")
+        or request.config.getoption("--custom-ops-path")
+    ).absolute()
 
 
 @pytest.fixture
@@ -84,10 +87,15 @@ def test_execute_success(mo_model_path: Path):
 # Skip this test if we don't have onnx and torch framework libs available.
 @pytest.mark.skip(reason="#36814")
 @pytest.mark.skipif(
-    not os.path.exists(modular_lib_path() / f"libmonnx.{DYLIB_FILE_EXTENSION}")
-    or not os.path.exists(
-        modular_lib_path() / f"libmtorch.{DYLIB_FILE_EXTENSION}"
-    ),
+    (
+        not os.path.exists(
+            modular_lib_path() / f"libmonnx.{DYLIB_FILE_EXTENSION}"
+        )
+        or not os.path.exists(
+            modular_lib_path() / f"libmtorch.{DYLIB_FILE_EXTENSION}"
+        )
+    )
+    and not os.getenv("BAZEL"),
     reason="One or more missing framework libs",
 )
 def test_execute_multi_framework(
@@ -109,10 +117,13 @@ def test_execute_multi_framework(
     assert np.allclose(onnx_output, trch_output)
 
 
+def _cuda_available() -> bool:
+    output = run(os.getenv("MODULAR_IS_CUDA_AVAILABLE") or "is-cuda-available")
+    return output.returncode == 0
+
+
+@pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
 def test_execute_gpu(mo_model_path: Path):
-    output = run("is-cuda-available")
-    if output.returncode != 0:
-        return
     session = me.InferenceSession(device="cuda")
     model = session.load(mo_model_path)
     output = model.execute(input=np.ones((5)))

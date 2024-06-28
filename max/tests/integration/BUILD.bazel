@@ -1,10 +1,20 @@
 load("@pip_deps//:requirements.bzl", "requirement")
-load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_library")
 
 filegroup(
     name = "inputs",
     srcs = glob(["Inputs/**"]),
     visibility = [":__subpackages__"],
+)
+
+mojo_library(
+    name = "test_user_op",
+    srcs = glob(["Inputs/test_user_op/*.mojo"]),
+    visibility = [":__subpackages__"],
+    deps = [
+        "//Kernels/mojo/register",
+        "//open-source/mojo/stdlib/stdlib",
+    ],
 )
 
 lit_tests(

@@ -1,6 +1,23 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
 
+filegroup(
+    name = "pytest_inputs",
+    srcs = [
+        "Inputs/relu3x100x100.onnx",
+        "Inputs/relu3x100x100.torchscript",
+        "c/custom-ops-override.api",
+        "c/mo-model.api",
+    ],
+    visibility = [":__subpackages__"],
+)
+
+filegroup(
+    name = "inputs",
+    srcs = glob(["**/*.mlir"]),
+    visibility = [":__subpackages__"],
+)
+
 lit_tests(
     name = "test",
     size = "large",
@@ -21,7 +38,8 @@ lit_tests(
         "%onnx_test_models_dir": "../../../../../onnx~/onnx/backend/test/data/node",
         "%libpython": "$(rlocationpath //:libpython)",
     },
-    data = glob(["**/*.mlir"]) + [
+    data = [
+        ":inputs",
         "//:libpython",
         "//GenericML:DeviceDriver",
         "//GenericML:modular-framework-common",
