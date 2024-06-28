@@ -6,8 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug -I%S/../ %s | FileCheck %s
 
-from math import ceildiv, isclose
-from random import random_float64
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -16,10 +15,20 @@ from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from memory.reference import _GPUAddressSpace as GPUAddressSpace
-from testing import assert_equal, assert_almost_equal
 
 from utils.index import Index
-from internal_utils import HostNDBuffer, DeviceNDBuffer
+from internal_utils import (
+    HostNDBuffer,
+    DeviceNDBuffer,
+    fill,
+    zero,
+    linspace,
+    random,
+    almost_equal,
+    equal,
+)
+from buffer.list import _make_tuple
+
 
 alias TILE_SZ_A = 128
 alias TILE_SZ_B = 16
@@ -122,17 +131,9 @@ struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:
         self.b_device = ctx.create_buffer[DType.float32](k * n)
         self.c_device = ctx.create_buffer[DType.float32](m * n)
 
-        for i in range(m):
-            for j in range(k):
-                self.a_host.tensor[Index(i, j)] = 1
-
-        for i in range(k):
-            for j in range(n):
-                self.b_host.tensor[Index(i, j)] = 1
-
-        for i in range(m):
-            for j in range(n):
-                self.c_host.tensor[Index(i, j)] = 0
+        fill(self.a_host.tensor, 1.0)
+        fill(self.b_host.tensor, 1.0)
+        zero(self.c_host.tensor)
 
     # CHECK-LABEL: run_matmul
     fn run_test(self) raises:
@@ -172,60 +173,62 @@ struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:
                 )
 
 
-struct test_matmul[
-    M: Int, K: Int, N: Int, type: DType, low_precision: Bool = False
-]:
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
-    alias c_shape = DimList(M, N)
-
+struct test_matmul[type: DType]:
     var ctx: DeviceContext
 
-    var a_host: HostNDBuffer[type, 2, Self.a_shape]
-    var b_host: HostNDBuffer[type, 2, Self.b_shape]
-    var c_host: HostNDBuffer[type, 2, Self.c_shape]
-    var c_host_ref: HostNDBuffer[type, 2, Self.c_shape]
+    var M: Int
+    var N: Int
+    var K: Int
 
-    var a_device: DeviceNDBuffer[type, 2, Self.a_shape]
-    var b_device: DeviceNDBuffer[type, 2, Self.b_shape]
-    var c_device: DeviceNDBuffer[type, 2, Self.c_shape]
-    var c_device_ref: DeviceNDBuffer[type, 2, Self.c_shape]
+    var low_precision: Bool
 
-    fn __init__(inout self, ctx: DeviceContext) raises:
+    var a_host: HostNDBuffer[type, 2]
+    var b_host: HostNDBuffer[type, 2]
+    var c_host: HostNDBuffer[type, 2]
+    var c_host_ref: HostNDBuffer[type, 2]
+
+    var a_device: DeviceNDBuffer[type, 2]
+    var b_device: DeviceNDBuffer[type, 2]
+    var c_device: DeviceNDBuffer[type, 2]
+    var c_device_ref: DeviceNDBuffer[type, 2]
+
+    fn __init__(
+        inout self,
+        ctx: DeviceContext,
+        shape: Tuple[Int, Int, Int],
+        low_precision: Bool = False,
+    ) raises:
         self.ctx = ctx
 
-        self.a_host = HostNDBuffer[type, 2, Self.a_shape]()
-        self.b_host = HostNDBuffer[type, 2, Self.b_shape]()
-        self.c_host = HostNDBuffer[type, 2, Self.c_shape]()
-        self.c_host_ref = HostNDBuffer[type, 2, Self.c_shape]()
+        self.M = shape[0]
+        self.K = shape[1]
+        self.N = shape[2]
 
-        self.a_device = DeviceNDBuffer[type, 2, Self.a_shape](ctx=ctx)
-        self.b_device = DeviceNDBuffer[type, 2, Self.b_shape](ctx=ctx)
-        self.c_device = DeviceNDBuffer[type, 2, Self.c_shape](ctx=ctx)
-        self.c_device_ref = DeviceNDBuffer[type, 2, Self.c_shape](ctx=ctx)
+        self.low_precision = low_precision
 
-        for m in range(M):
-            for k in range(K):
+        var a_shape = DimList(self.M, self.K)
+        var b_shape = DimList(self.K, self.N)
+        var c_shape = DimList(self.M, self.N)
 
-                @parameter
-                if low_precision:
-                    self.a_host.tensor[Index(m, k)] = m * K + k
-                else:
-                    self.a_host.tensor[Index(m, k)] = random_float64(-10, 10)
+        self.a_host = HostNDBuffer[type, 2](a_shape)
+        self.b_host = HostNDBuffer[type, 2](b_shape)
+        self.c_host = HostNDBuffer[type, 2](c_shape)
+        self.c_host_ref = HostNDBuffer[type, 2](c_shape)
 
-        for k in range(K):
-            for n in range(N):
+        self.a_device = DeviceNDBuffer[type, 2](a_shape, ctx=ctx)
+        self.b_device = DeviceNDBuffer[type, 2](b_shape, ctx=ctx)
+        self.c_device = DeviceNDBuffer[type, 2](c_shape, ctx=ctx)
+        self.c_device_ref = DeviceNDBuffer[type, 2](c_shape, ctx=ctx)
 
-                @parameter
-                if low_precision:
-                    self.b_host.tensor[Index(k, n)] = k * N + n
-                else:
-                    self.b_host.tensor[Index(k, n)] = random_float64(-10, 10)
+        if low_precision:
+            linspace(self.a_host.tensor)
+            linspace(self.b_host.tensor)
+        else:
+            random(self.a_host.tensor)
+            random(self.b_host.tensor)
 
-        for i in range(M):
-            for j in range(N):
-                self.c_host.tensor[Index(i, j)] = 0
-                self.c_host_ref.tensor[Index(i, j)] = 0
+        zero(self.c_host.tensor)
+        zero(self.c_host_ref.tensor)
 
     fn run_test[test_function: fn (Self) raises capturing -> None](self) raises:
         var ctx = self.ctx
@@ -253,20 +256,10 @@ struct test_matmul[
         )
         ctx.synchronize()
 
-        for i in range(M):
-            for j in range(N):
-
-                @parameter
-                if low_precision:
-                    assert_almost_equal(
-                        self.c_host_ref.tensor[i, j],
-                        self.c_host.tensor[i, j],
-                        rtol=0.01,
-                    )
-                else:
-                    assert_equal(
-                        self.c_host_ref.tensor[i, j], self.c_host.tensor[i, j]
-                    )
+        if self.low_precision:
+            almost_equal(self.c_host_ref.tensor, self.c_host.tensor)
+        else:
+            equal(self.c_host_ref.tensor, self.c_host.tensor)
 
 
 # CHECK-NOT: CUDA_ERROR
@@ -277,9 +270,13 @@ def main():
 
             @parameter
             fn basic_test[
-                M: Int, K: Int, N: Int, type: DType, low_precision: Bool = False
-            ](test_ctx: test_matmul[M, K, N, type, low_precision]) raises:
-                _matmul_gpu[use_tensor_core=low_precision](
+                type: DType, use_tensor_core: Bool = False
+            ](test_ctx: test_matmul[type]) raises:
+                var M = test_ctx.M
+                var K = test_ctx.K
+                var N = test_ctx.N
+
+                _matmul_gpu[use_tensor_core=use_tensor_core](
                     test_ctx.c_device.tensor,
                     test_ctx.a_device.tensor,
                     test_ctx.b_device.tensor,
@@ -303,25 +300,32 @@ def main():
                     block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
                 )
 
-            test_matmul[1024, 3072, 5120, DType.float32](ctx).run_test[
-                basic_test[1024, 3072, 5120, DType.float32]
+            alias small_test = (1024, 3072, 5120)
+            alias large_test = (1024, 12288, 3072)
+
+            test_matmul[DType.float32](ctx, small_test).run_test[
+                basic_test[DType.float32]
             ]()
-            test_matmul[1024, 12288, 3072, DType.float32](ctx).run_test[
-                basic_test[1024, 12288, 3072, DType.float32]
+            test_matmul[DType.float32](ctx, large_test).run_test[
+                basic_test[DType.float32]
             ]()
 
             # Low precision test (use_tensor_core)
-            test_matmul[1024, 3072, 5120, DType.float32, True](ctx).run_test[
-                basic_test[1024, 3072, 5120, DType.float32, True]
+            test_matmul[DType.float32](ctx, small_test, True).run_test[
+                basic_test[DType.float32, True]
             ]()
-            test_matmul[1024, 3072, 5120, DType.bfloat16, True](ctx).run_test[
-                basic_test[1024, 3072, 5120, DType.bfloat16, True]
+            test_matmul[DType.bfloat16](ctx, small_test, True).run_test[
+                basic_test[DType.bfloat16, True]
             ]()
 
             @parameter
             fn epilogue_test[
-                M: Int, K: Int, N: Int, type: DType, low_precision: Bool = False
-            ](test_ctx: test_matmul[M, K, N, type, low_precision]) raises:
+                type: DType, use_tensor_core: Bool = False
+            ](test_ctx: test_matmul[type]) raises:
+                var M = test_ctx.M
+                var K = test_ctx.K
+                var N = test_ctx.N
+
                 alias some_constant = 20
 
                 var c_tensor = test_ctx.c_device.tensor
@@ -353,7 +357,7 @@ def main():
                     )
 
                 _matmul_gpu[
-                    use_tensor_core=low_precision,
+                    use_tensor_core=use_tensor_core,
                     transpose_b=False,
                     elementwise_lambda_fn=epilogue_fn,
                 ](
@@ -386,19 +390,19 @@ def main():
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
 
-            test_matmul[1024, 3072, 5120, DType.float32](ctx).run_test[
-                epilogue_test[1024, 3072, 5120, DType.float32]
+            test_matmul[DType.float32](ctx, small_test).run_test[
+                epilogue_test[DType.float32]
             ]()
-            test_matmul[1024, 12288, 3072, DType.float32](ctx).run_test[
-                epilogue_test[1024, 12288, 3072, DType.float32]
+            test_matmul[DType.float32](ctx, large_test).run_test[
+                epilogue_test[DType.float32]
             ]()
 
             # Low precision test (use_tensor_core)
-            test_matmul[1024, 3072, 5120, DType.float32, True](ctx).run_test[
-                epilogue_test[1024, 3072, 5120, DType.float32, True]
+            test_matmul[DType.float32](ctx, small_test, True).run_test[
+                epilogue_test[DType.float32, True]
             ]()
-            test_matmul[1024, 3072, 5120, DType.bfloat16, True](ctx).run_test[
-                epilogue_test[1024, 3072, 5120, DType.bfloat16, True]
+            test_matmul[DType.bfloat16](ctx, small_test, True).run_test[
+                epilogue_test[DType.bfloat16, True]
             ]()
     except e:
         print("CUDA_ERROR:", e)
