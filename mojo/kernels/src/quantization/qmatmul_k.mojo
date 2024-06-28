@@ -571,9 +571,9 @@ def matmul_Q4_K_pack_b(
     alias simd_width = simdwidthof[DType.float32]()
     alias block_n = simd_width * 2
 
-    var src_ptr = UnsafePointer[_block_Q4_K](address=int(b.data.address))
+    var src_ptr = UnsafePointer[_block_Q4_K](address=int(b.data))
     var dst_ptr = UnsafePointer[_block_Q4_K_packed[block_n]](
-        address=int(b_packed.data.address)
+        address=int(b_packed.data)
     )
 
     for kb in range(k_blocks):
@@ -598,9 +598,9 @@ def matmul_Q6_K_pack_b(
     alias simd_width = simdwidthof[DType.float32]()
     alias block_n = simd_width * 2
 
-    var src_ptr = UnsafePointer[_block_Q6_K](address=int(b.data.address))
+    var src_ptr = UnsafePointer[_block_Q6_K](address=int(b.data))
     var dst_ptr = UnsafePointer[_block_Q6_K_packed[block_n]](
-        address=int(b_packed.data.address)
+        address=int(b_packed.data)
     )
 
     for kb in range(k_blocks):
@@ -1140,67 +1140,6 @@ fn _matmul_Q4_K_columns[
     tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
 
 
-fn matmul_Q4_K(
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[DType.float32, 2],
-):
-    alias simd_width = simdwidthof[DType.float32]()
-
-    var M = a.dim[0]()
-    var N = b.dim[0]()
-    var K = a.dim[1]()
-    var k_blocks = K // _block_QK_K.quantized_k
-
-    var a_packed_base_ptr = _quantize_a_Q8_K[
-        _block_Q4_K.group_size, interleave_group_sums=True
-    ](a)
-
-    alias grain_size = 64
-
-    var num_workers = ceildiv(N, grain_size)
-
-    @__copy_capture(k_blocks, N, M)
-    @parameter
-    fn task_func(task_id: Int):
-        var task_n_start = task_id * grain_size
-        var task_n_count = min(N - task_n_start, grain_size)
-
-        var a_packed_ptr = a_packed_base_ptr
-        var b_packed_ptr = UnsafePointer[_block_Q4_K_packed[]](
-            address=int(b.data.address)
-        )
-
-        for k_block in range(k_blocks):
-            var bn_packed_ptr = b_packed_ptr + task_n_start
-            var cn_ptr = c.data + task_n_start
-            var accumulate = k_block > 0
-
-            @__copy_capture(accumulate)
-            @parameter
-            @always_inline
-            fn process_cols[tile_n: Int](n_idx: Int):
-                _matmul_Q4_K_columns[tile_n, simd_width](
-                    a_packed_ptr, bn_packed_ptr, cn_ptr, M, N, accumulate
-                )
-
-                bn_packed_ptr += tile_n * simd_width
-                cn_ptr += tile_n * simd_width
-
-            tile[process_cols, VariadicList[Int](2, 1)](
-                0, ceildiv(task_n_count, simd_width)
-            )
-            _ = bn_packed_ptr
-            _ = cn_ptr
-
-            a_packed_ptr += M
-            b_packed_ptr += N
-
-    sync_parallelize[task_func](num_workers)
-
-    a_packed_base_ptr.free()
-
-
 @always_inline
 fn _matmul_group_packed_Q6_K[
     tile_m: Int,
@@ -1408,7 +1347,21 @@ fn _matmul_Q6_K_columns[
     tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
 
 
-fn matmul_Q6_K(
+@always_inline
+fn _matmul_Qb_K[
+    group_size: Int,
+    b_type: AnyType, //,
+    columns_fn: fn[tile_n: Int, simd_width: Int] (
+        owned a_ptr: UnsafePointer[_block_Q8_K_packed[group_size]],
+        b_ptr: UnsafePointer[b_type],
+        owned c_ptr: DTypePointer[DType.float32],
+        M: Int,
+        N: Int,
+        accumulate: Bool,
+    ) -> None,
+    *,
+    interleave_group_sums: Bool = False,
+](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[DType.float32, 2],
@@ -1420,7 +1373,9 @@ fn matmul_Q6_K(
     var K = a.dim[1]()
     var k_blocks = K // _block_QK_K.quantized_k
 
-    var a_packed_base_ptr = _quantize_a_Q8_K[_block_Q6_K.group_size](a)
+    var a_packed_base_ptr = _quantize_a_Q8_K[
+        group_size, interleave_group_sums=interleave_group_sums
+    ](a)
 
     alias grain_size = 64
 
@@ -1433,9 +1388,7 @@ fn matmul_Q6_K(
         var task_n_count = min(N - task_n_start, grain_size)
 
         var a_packed_ptr = a_packed_base_ptr
-        var b_packed_ptr = UnsafePointer[_block_Q6_K_packed[]](
-            address=int(b.data.address)
-        )
+        var b_packed_ptr = UnsafePointer[b_type](address=int(b.data))
 
         for k_block in range(k_blocks):
             var bn_packed_ptr = b_packed_ptr + task_n_start
@@ -1445,7 +1398,7 @@ fn matmul_Q6_K(
             @parameter
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
-                _matmul_Q6_K_columns[tile_n, simd_width](
+                columns_fn[tile_n, simd_width](
                     a_packed_ptr, bn_packed_ptr, cn_ptr, M, N, accumulate
                 )
 
@@ -1455,6 +1408,8 @@ fn matmul_Q6_K(
             tile[process_cols, VariadicList[Int](2, 1)](
                 0, ceildiv(task_n_count, simd_width)
             )
+            _ = bn_packed_ptr
+            _ = cn_ptr
 
             a_packed_ptr += M
             b_packed_ptr += N
@@ -1462,3 +1417,19 @@ fn matmul_Q6_K(
     sync_parallelize[task_func](num_workers)
 
     a_packed_base_ptr.free()
+
+
+fn matmul_Q4_K(
+    a: NDBuffer[DType.float32, 2],
+    b: NDBuffer[DType.uint8, 2],
+    c: NDBuffer[DType.float32, 2],
+):
+    _matmul_Qb_K[_matmul_Q4_K_columns, interleave_group_sums=True](a, b, c)
+
+
+fn matmul_Q6_K(
+    a: NDBuffer[DType.float32, 2],
+    b: NDBuffer[DType.uint8, 2],
+    c: NDBuffer[DType.float32, 2],
+):
+    _matmul_Qb_K[_matmul_Q6_K_columns](a, b, c)
