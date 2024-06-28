@@ -765,6 +765,13 @@ fn testDependentField():
     # CHECK-SAME: !lit.ref<{{.*}}@Abstraction<:!Int {2}>
     takeAbstraction2(lvalue.value)
 
+struct LeafToRootEval[a: Int, b: Int]:
+    var value: Abstraction[a + b + a]
+
+# CHECK-LABEL: lit.func @"refine_type_leaf_to_root
+fn refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
+    # CHECK: call {{.*}}Abstraction::@"__copyinit__{{.*}}<:!Int {7}>
+    var value = e.value
 
 fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
     pass

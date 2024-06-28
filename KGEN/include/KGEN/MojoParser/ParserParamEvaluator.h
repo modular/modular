@@ -48,6 +48,8 @@ private:
   T refineImpl(T arg);
 
   DeclResolver &resolver;
+  /// Cache intermediate refine results.
+  DenseMap<const void *, const void *> refineCache;
 };
 
 } // namespace M::KGEN::LIT
