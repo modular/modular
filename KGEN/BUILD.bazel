@@ -5,6 +5,24 @@ load("//bazel:config.bzl", "MOJO_CONFIG_SECTION_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 
 td_library(
+    name = "CustomDialectTdFiles",
+    srcs = glob(["include/KGEN/CustomDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "//Support:MTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "CustomDialectIncGen",
+    dialect = "custom",
+    td_file = "include/KGEN/CustomDialect/Custom.td",
+    deps = [
+        ":CustomDialectTdFiles",
+    ],
+)
+
+td_library(
     name = "CODialectTdFiles",
     srcs = glob(["include/KGEN/CODialect/*.td"]),
     includes = ["include"],

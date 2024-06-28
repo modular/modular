@@ -32,6 +32,7 @@ add_subdirectory(lib/TransformUtils)
 add_subdirectory(lib/CODialect)
 add_subdirectory(lib/POPDialect)
 add_subdirectory(lib/LITDialect)
+add_subdirectory(lib/CustomDialect)
 
 # KGEN MLIR passes.
 add_subdirectory(lib/LowerLIT)

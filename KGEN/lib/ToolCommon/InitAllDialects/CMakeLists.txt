@@ -14,6 +14,7 @@ add_modular_library(KGENInitAllDialects
   LITDialect
   POPDialect
   CODialect
+  CustomDialect
 
   MLIRIndexDialect
   MLIRLLVMDialect

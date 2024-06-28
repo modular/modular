@@ -12,5 +12,6 @@ add_subdirectory(KGENDialect)
 add_subdirectory(LITDialect)
 add_subdirectory(POPDialect)
 add_subdirectory(CODialect)
+add_subdirectory(CustomDialect)
 
 add_modular_passes(MLIRKGENPasses KGENPasses KGEN/docs/)

@@ -56,6 +56,10 @@ namespace POP {
 class POPDialect;
 } // namespace POP
 
+namespace Custom {
+class CustomDialect;
+} // namespace Custom
+
 //===----------------------------------------------------------------------===//
 // Shared Enums
 //===----------------------------------------------------------------------===//
