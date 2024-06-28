@@ -169,12 +169,34 @@ Attribute ParserParamEvaluator::refine(Attribute attr) {
 
 template <typename T>
 T ParserParamEvaluator::refineImpl(T arg) {
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamOperatorAttr op) -> TypedAttr {
-    FailureOr<TypedAttr> result = evaluateExpression(op);
-    if (failed(result))
-      return op;
-    return *result;
-  });
-  return replacer.replace(arg);
+  if (auto it = refineCache.find(arg.getAsOpaquePointer());
+      it != refineCache.end())
+    return T::getFromOpaquePointer(it->second);
+
+  // Refine starting from the leaves, so we visit apply expressions sooner and
+  // fold them along the way. `AttrTypeReplacer` visits in the opposite
+  // direction.
+  SmallVector<Attribute, 16> newAttrs;
+  SmallVector<Type, 16> newTypes;
+  bool changed = false;
+  arg.walkImmediateSubElements(
+      [&](Attribute attr) {
+        newAttrs.push_back(refine(attr));
+        changed |= newAttrs.back() != attr;
+      },
+      [&](Type type) {
+        newTypes.push_back(refine(type));
+        changed |= newTypes.back() != type;
+      });
+  T value = arg;
+  if (changed)
+    value = arg.replaceImmediateSubElements(newAttrs, newTypes);
+  if constexpr (std::is_same_v<Attribute, T>)
+    if (auto op = dyn_cast<ParamOperatorAttr>(value))
+      if (FailureOr<TypedAttr> result = evaluateExpression(op);
+          succeeded(result))
+        value = *result;
+
+  refineCache.try_emplace(arg.getAsOpaquePointer(), value.getAsOpaquePointer());
+  return value;
 }
