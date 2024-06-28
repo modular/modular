@@ -31,8 +31,13 @@ M::permanentPluginLibrary(const std::filesystem::path &libFilepath) {
   // TODO(#27162): Upstream dlopen flags to LLVM getPermanentLibrary.
   void *handle = ::dlopen(libFilepath.c_str(), dlopenFlags);
   if (!handle) {
-    return Error(Twine("encountered errors loading ") + libFilepath.c_str() +
-                 Twine(":\n") + ::dlerror());
+    Dl_info info;
+    std::string loader = "unknown binary";
+    if (dladdr((void *)&M::permanentPluginLibrary, &info) != 0)
+      loader = info.dli_fname;
+
+    return Error(loader + Twine(": encountered errors loading ") +
+                 libFilepath.c_str() + Twine(":\n") + ::dlerror());
   }
 
   auto dylib = DynamicLibrary::addPermanentLibrary(handle, &errorMessage);
