@@ -8,6 +8,7 @@
 from collections import List
 from math import (
     ceil,
+    ceildiv,
     copysign,
     cos,
     exp2,
@@ -411,6 +412,18 @@ def test_ulp():
     assert_equal(ulp(Float64(-5)), 8.881784197001252e-16)
 
 
+def test_ceildiv():
+    # NOTE: these tests are here mostly to ensure the ceildiv method exists.
+    # Types that opt in to CeilDivable, should test their own dunder methods for
+    # correctness.
+    assert_equal(ceildiv(1, 7), 1)
+    assert_equal(ceildiv(548, -7), -78)
+
+    # Test the UInt overload.
+    assert_equal(ceildiv(UInt(1), UInt(7)), UInt(1))
+    assert_equal(ceildiv(UInt(546), UInt(7)), UInt(78))
+
+
 def main():
     test_sin()
     test_cos()
@@ -430,3 +443,4 @@ def main():
     test_gcd()
     test_lcm()
     test_ulp()
+    test_ceildiv()
