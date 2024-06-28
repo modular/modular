@@ -12,7 +12,6 @@
 namespace M::KGEN::MOGGPreElab {
 
 struct CallGraph;
-struct CallGraphNode;
 
 /// This class performs various checks in the user-provided kernel library to
 /// make sure it obeys the contract between the graph compiler and the kernel
