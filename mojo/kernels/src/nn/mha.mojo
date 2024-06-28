@@ -1662,12 +1662,14 @@ fn mha_single_batch[
 
     # Key global memory iterator
     # For group query
-    var kv_offset = depth * head_idx // group
+    alias kv_num_heads = num_heads // group
+    var kv_offset = depth * (head_idx // group)
 
     for kv_tile_start_row in range(0, seq_len, BN):
         var k_gmem_block = LayoutTensor[
-            k_type, Layout(IntTuple(BN, depth), IntTuple(num_heads * depth, 1))
-        ](k_ptr + kv_offset + kv_tile_start_row * num_heads * depth)
+            k_type,
+            Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
+        ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
         p_reg_tile.fill(0)
@@ -1771,8 +1773,9 @@ fn mha_single_batch[
         barrier()
 
         var v_gmem_block = LayoutTensor[
-            v_type, Layout(IntTuple(BN, depth), IntTuple(num_heads * depth, 1))
-        ](v_ptr + kv_offset + kv_tile_start_row * num_heads * depth)
+            v_type,
+            Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
+        ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         multistage_mma[
@@ -1983,9 +1986,8 @@ fn _bmm0[
     var q_offset = depth * (head + num_heads * seq_len * batch)
     var q = q_ptr + q_offset
 
-    var kv_offset = depth * (
-        head // group + (num_heads // group) * num_keys * batch
-    )
+    alias kv_num_heads = num_heads // group
+    var kv_offset = depth * (head // group + kv_num_heads * num_keys * batch)
     var k = k_ptr + kv_offset
 
     var p_offset = batch_head * seq_len * num_keys
@@ -1998,17 +2000,13 @@ fn _bmm0[
 
     for d in range(depth):
         accum += (
-            q[y * num_heads * depth + d].cast[p_type]()
-            * k[x * num_heads * depth + d].cast[p_type]()
-        )
+            q[y * num_heads * depth + d].cast[k_type]()
+            * k[x * kv_num_heads * depth + d]
+        ).cast[p_type]()
 
     p[y * num_keys + x] = (
         accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
     )
-
-    # if y == 1 and x == 0:
-    #     _printf["bmm0 accum %f\n"](accum.cast[DType.float64]())
-    #     _printf["bmm0 p %f\n"](p[0].cast[DType.float64]())
 
 
 @always_inline
@@ -2039,25 +2037,18 @@ fn _bmm1[
     var p_offset = batch_head * seq_len * num_keys
     var p = p_ptr + p_offset
 
-    var kv_offset = depth * (
-        head // group + (num_heads // group) * num_keys * batch
-    )
+    alias kv_num_heads = num_heads // group
+    var kv_offset = depth * (head // group + kv_num_heads * num_keys * batch)
     var v = v_ptr + kv_offset
 
     var output_offset = depth * (head + num_heads * seq_len * batch)
     var output = output_ptr + output_offset
 
-    var accum = SIMD[output_type, 1](0.0)
+    var accum = SIMD[DType.float32, 1](0.0)
 
     for i in range(num_keys):
         accum += (
-            p[y * num_keys + i].cast[output_type]()
-            * v[i * num_heads * depth + x].cast[output_type]()
-        )
+            p[y * num_keys + i].cast[v_type]() * v[i * kv_num_heads * depth + x]
+        ).cast[DType.float32]()
 
-    # if x == 0 and y == 1:
-    #     _printf["bmm1 p %f\n"](p[0].cast[DType.float64]())
-    #     _printf["bmm1 v %f\n"](v[0].cast[DType.float64]())
-    #     _printf["bmm1 accum %f\n"](accum.cast[DType.float64]())
-
-    output[y * num_heads * depth + x] = accum
+    output[y * num_heads * depth + x] = accum.cast[output_type]()
