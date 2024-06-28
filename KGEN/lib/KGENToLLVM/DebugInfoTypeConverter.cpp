@@ -166,6 +166,12 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(SignatureType type) {
   return buildPointerType(buildDebugSubroutineType(type.getValues()));
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(ParamRefType type) {
+  if (isa<UnknownAttr>(type.getParam()))
+    return DIUnspecifiedType::get(type.getContext(), "unknown");
+  llvm_unreachable("unresolved type parameter in debuginfo");
+}
+
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::VariantType type) {
   // This must be kept in sync with how KGEN VariantTypes are represented in
   // LLVM.
@@ -241,6 +247,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
 
   // Add direct debug info conversions.
   addConversion([&](IndexType type) { return buildDebugType(type); });
+  addConversion([&](ParamRefType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
   addConversion([&](SignatureType type) { return buildDebugType(type); });
   addConversion([&](KGEN::VariantType type) { return buildDebugType(type); });

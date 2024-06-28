@@ -23,6 +23,7 @@ class LLVMFuncOp;
 
 namespace M::KGEN {
 class KGENDType;
+class ParamRefType;
 class PointerType;
 class VariantType;
 class NoneType;
@@ -320,6 +321,7 @@ private:
 
   /// Build fully resolved debug type from kgen/pop types.
   DebugInfo::DIType buildDebugType(IndexType type);
+  DebugInfo::DIType buildDebugType(ParamRefType type);
   DebugInfo::DIType buildDebugType(StringType type);
   DebugInfo::DIType buildDebugType(SignatureType type);
   DebugInfo::DIType buildDebugType(KGEN::VariantType type);
