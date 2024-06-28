@@ -212,7 +212,7 @@ fn multistage_mma[
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
     mma_op.load_a[swizzle_a](a_warp_tile, a_reg_tiles[0])
-    mma_op.load_b(b_warp_tile, b_reg_tiles[0])
+    mma_op.load_b(b_warp_tile, b_reg_tiles[0], warp_tile_coordn=int(warp_x))
 
     for k_tile_id in range(num_iters):
         var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
@@ -246,7 +246,10 @@ fn multistage_mma[
                 a_warp_tile, a_reg_tiles[next], (k_mma + 1) % num_k_mmas
             )
             mma_op.load_b(
-                b_warp_tile, b_reg_tiles[next], (k_mma + 1) % num_k_mmas
+                b_warp_tile,
+                b_reg_tiles[next],
+                (k_mma + 1) % num_k_mmas,
+                int(warp_x),
             )
 
             mma_op.mma(
