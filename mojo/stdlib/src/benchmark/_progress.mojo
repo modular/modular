@@ -115,4 +115,4 @@ struct Progress:
 
     fn __exit__(self, err: Error) -> Bool:
         self.__exit__()
-        return err
+        return bool(err)
