@@ -88,5 +88,5 @@ struct MuxInferenceService(InferenceService):
         var model = self._model_dict[name][][version]
 
         var inputs = request.get_input_tensors()
-        var outputs = model[].execute(inputs^)
+        var outputs = model[].execute(inputs)
         response.set_output_tensors(request.get_outputs(), outputs^)
