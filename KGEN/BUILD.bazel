@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library", "td_library")
+load("//bazel:config.bzl", "MOJO_CONFIG_SECTION_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 
 td_library(
@@ -991,11 +992,6 @@ modular_shared_library(
     ],
 )
 
-# TODO: Move to configure.bzl?
-# Share this across variables:
-# https://bazel.build/build/share-variables#sharing_variables_across_multiple_build_files
-MOJO_CONFIG_COPTS = ["-DMOJO_CONFIG_SECTION=mojo"]
-
 modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
@@ -1003,7 +999,7 @@ modular_cc_library(
         "include/KGEN/Support/*.h",
         "include/KGEN/KGENDialect/*.h",
     ]),
-    copts = MOJO_CONFIG_COPTS,
+    local_defines = MOJO_CONFIG_SECTION_LOCAL_DEFINES,
     deps = [
         "//LLCL:Support",
         "//Support:Base",

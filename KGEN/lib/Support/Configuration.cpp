@@ -14,6 +14,10 @@ using namespace M::KGEN;
 #define _X_STRINGIFY(str) _STRINGIFY(str)
 #define STRINGIFY_MOJO_CONFIG(path) _X_STRINGIFY(MOJO_CONFIG_SECTION) path
 
+#ifndef MOJO_CONFIG_SECTION
+#error "Expected MOJO_CONFIG_SECTION to be set"
+#endif
+
 ErrorOr<std::filesystem::path> MojoConfig::getConfigFilePath() const {
   if (!std::holds_alternative<Config>(configSource))
     return Error("Configuration file path unavailable from settings");
