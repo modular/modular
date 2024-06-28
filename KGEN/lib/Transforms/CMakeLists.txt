@@ -43,6 +43,7 @@ add_modular_library(KGENTransforms
   HLCFAnalysis
   KGENDialect
   POPDialect
+  CustomDialect
   LITDialect
   MLIRTransformUtils
   MSupport
