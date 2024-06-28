@@ -14,6 +14,8 @@ from testing import assert_equal, assert_true
 from utils import InlineArray
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from utils.index import product
+from random import random_float64
+from testing import assert_equal, assert_almost_equal
 
 
 @value
@@ -26,10 +28,21 @@ struct HostNDBuffer[
     var tensor: NDBuffer[type, rank, shape]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(
+        inout self,
+        dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
+    ):
         self.tensor = NDBuffer[type, rank, shape](
-            DTypePointer[type].alloc(int(shape.product[len(shape)]()))
+            DTypePointer[type].alloc(product(dynamic_shape, rank)),
+            dynamic_shape,
         )
+
+    @always_inline
+    fn __init__(
+        inout self,
+        dynamic_shape: DimList,
+    ):
+        self.__init__(_make_tuple[rank](dynamic_shape))
 
     @always_inline
     fn __del__(owned self):
@@ -61,6 +74,15 @@ struct DeviceNDBuffer[
     @always_inline
     fn __init__(
         inout self,
+        dynamic_shape: DimList,
+        *,
+        ctx: DeviceContext,
+    ) raises:
+        self.__init__(_make_tuple[rank](dynamic_shape), ctx=ctx)
+
+    @always_inline
+    fn __init__(
+        inout self,
         dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
         *,
         stride: StaticIntTuple[rank],
@@ -70,6 +92,16 @@ struct DeviceNDBuffer[
         self.tensor = NDBuffer[type, rank, shape](
             self.buffer.ptr, dynamic_shape, stride
         )
+
+    @always_inline
+    fn __init__(
+        inout self,
+        dynamic_shape: DimList,
+        *,
+        stride: StaticIntTuple[rank],
+        ctx: DeviceContext,
+    ) raises:
+        self.__init__(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
 
 
 fn get_minmax[dtype: DType](x: DTypePointer[dtype], N: Int) -> SIMD[dtype, 2]:
@@ -176,3 +208,50 @@ struct TestTensor[type: DType, rank: Int]:
 
     fn __del__(owned self):
         self.ndbuffer.data.free()
+
+
+fn almost_equal[
+    type: DType
+](a: NDBuffer[type, 2], b: NDBuffer[type, 2],) raises:
+    for m in range(b.dynamic_shape[0]):
+        for n in range(b.dynamic_shape[1]):
+            assert_almost_equal(
+                a[m, n],
+                b[m, n],
+                rtol=0.01,
+            )
+
+
+fn equal[
+    type: DType
+](a: NDBuffer[type, 2], b: NDBuffer[type, 2],) raises:
+    for m in range(b.dynamic_shape[0]):
+        for n in range(b.dynamic_shape[1]):
+            assert_equal(
+                a[m, n],
+                b[m, n],
+            )
+
+
+fn linspace(buffer: NDBuffer):
+    for i in range(buffer.dim[0]()):
+        for j in range(buffer.dim[1]()):
+            buffer[(i, j)] = i * buffer.dim[1]() + j
+
+
+fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
+    for i in range(buffer.dim[0]()):
+        for j in range(buffer.dim[1]()):
+            buffer[(i, j)] = random_float64(min, max)
+
+
+fn zero(buffer: NDBuffer):
+    for i in range(buffer.dim[0]()):
+        for j in range(buffer.dim[1]()):
+            buffer[(i, j)] = 0
+
+
+fn fill[type: DType](buffer: NDBuffer, val: Scalar[type]):
+    for i in range(buffer.dim[0]()):
+        for j in range(buffer.dim[1]()):
+            buffer[(i, j)] = val
