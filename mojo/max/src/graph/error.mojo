@@ -6,8 +6,10 @@
 """Error helpers."""
 
 from builtin._location import __call_location, _SourceLocation
+from builtin.breakpoint import breakpoint
 from memory import stack_allocation
 from sys.ffi import external_call, C_char
+from sys import param_env
 
 
 @always_inline
@@ -44,6 +46,10 @@ fn error[
         message_string = layer_string + " - " + str(message)
     else:
         message_string = str(message)
+
+    @parameter
+    if param_env.is_defined["MODULAR_DEBUG_GRAPH"]():
+        breakpoint()
 
     return (
         "\n\n"
