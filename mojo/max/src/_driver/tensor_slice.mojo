@@ -14,6 +14,7 @@ from .tensor import (
 from utils import StaticTuple
 from math import ceil
 from max.tensor import TensorSpec
+from sys.intrinsics import strided_load, strided_store
 
 
 @value
@@ -207,3 +208,80 @@ struct UnsafeTensorSlice[
 
     fn unsafe_ptr[__type: DType = type](self) -> DTypePointer[__type]:
         return rebind[DTypePointer[__type]](self._ptr)
+
+    @always_inline
+    fn load[
+        width: Int,
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+    ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        constrained[_rank == rank]()
+        var flat_index = _dot_prod(
+            rebind[StaticIntTuple[rank]](index), self._strides
+        )
+        var stride = self._strides[rank - 1]
+
+        if stride == 0:
+            return Scalar.load(self._ptr, flat_index)
+        elif stride == 1:
+
+            @parameter
+            if type is DType.bool:
+                var v = SIMD[size=width].load(
+                    self._ptr.bitcast[DType.uint8](), flat_index
+                )
+                return v.cast[type]()
+            else:
+                return SIMD[size=width].load(self._ptr, flat_index)
+        else:
+
+            @parameter
+            if type is DType.bool:
+                var v = strided_load[DType.uint8, width](
+                    self._ptr.bitcast[DType.uint8]().offset(flat_index),
+                    stride,
+                )
+                return v.cast[type]()
+            else:
+                return strided_load[type, width](
+                    self._ptr.offset(flat_index), stride
+                )
+
+    @always_inline
+    fn store[
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+        width: Int,
+    ](inout self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
+        constrained[_rank == rank]()
+        var flat_index = _dot_prod(
+            rebind[StaticIntTuple[rank]](index), self._strides
+        )
+
+        var stride = self._strides[rank - 1]
+        if stride == 0:
+            Scalar.store(self._ptr, flat_index)
+        elif stride == 1:
+
+            @parameter
+            if type is DType.bool:
+                var v = val.cast[DType.uint8]()
+                SIMD[size = val.size].store(
+                    self._ptr.bitcast[DType.uint8](), flat_index, v
+                )
+            else:
+                SIMD[size = val.size].store(self._ptr, flat_index, val)
+        else:
+
+            @parameter
+            if type is DType.bool:
+                var v = val.cast[DType.uint8]()
+                strided_store[DType.uint8, width](
+                    v,
+                    self._ptr.bitcast[DType.uint8]().offset(flat_index),
+                    stride,
+                )
+            else:
+                return strided_store[type, width](
+                    val, self._ptr.offset(flat_index), stride
+                )

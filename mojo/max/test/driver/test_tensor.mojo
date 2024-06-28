@@ -331,6 +331,30 @@ def test_unsafe_slice_from_tensor():
     assert_equal(tensor[1, 1], 5)  # keeps slice alive
 
 
+def test_unsafe_slice_simd():
+    var dev = cpu_device()
+
+    var shape = Index(10, 10)
+    var dt = dev.allocate(TensorSpec(DType.float32, shape))
+    var tensor = dt^.to_tensor[DType.float32, shape.size]()
+
+    var val = 1
+    for i in range(10):
+        for j in range(10):
+            tensor[i, j] = val
+            val += 1
+
+    var unsafe_slice = tensor.unsafe_slice(slice(0, 5, 1), slice(0, 8, 2))
+    var value = unsafe_slice.load[4](StaticIntTuple[2](0, 1))
+    assert_equal(value, SIMD[DType.float32, 4](3, 5, 7, 9))
+
+    unsafe_slice.store(StaticIntTuple[2](0, 1), SIMD[DType.float32, 4](0))
+    value = unsafe_slice.load[4](StaticIntTuple[2](0, 1))
+    assert_equal(value, SIMD[DType.float32, 4](0))
+
+    _ = tensor^
+
+
 def test_kv_cache():
     cpu = cpu_device()
     alias type = DType.float32
@@ -403,3 +427,4 @@ def main():
     test_kv_cache()
     test_raw_data()
     test_take()
+    test_unsafe_slice_simd()
