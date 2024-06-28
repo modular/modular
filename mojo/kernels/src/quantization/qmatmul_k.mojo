@@ -19,12 +19,14 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
+from linalg.utils import partition_work
 from linalg.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
 from memory import UnsafePointer
 from memory.unsafe import DTypePointer
+from runtime.llcl import parallelism_level
 
 from utils import InlineArray
 from utils.index import Index
@@ -1377,15 +1379,19 @@ fn _matmul_Qb_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
 
-    alias grain_size = 64
+    alias grain_size = simd_width * 2
 
-    var num_workers = ceildiv(N, grain_size)
+    var work_count = ceildiv(N, grain_size)
+    var num_workers = min(work_count, parallelism_level())
 
     @parameter
-    @__copy_capture(a_packed_base_ptr, k_blocks, M, N, K)
+    @__copy_capture(
+        a_packed_base_ptr, k_blocks, M, N, K, work_count, num_workers
+    )
     fn task_func(task_id: Int):
-        var task_n_start = task_id * grain_size
-        var task_n_count = min(N - task_n_start, grain_size)
+        var block_range = partition_work(task_id, num_workers, work_count, 1)
+        var task_n_start = block_range[0] * grain_size
+        var task_n_count = block_range[1] * grain_size
 
         var a_packed_ptr = a_packed_base_ptr
         var b_packed_ptr = UnsafePointer[b_type](address=int(b.data))
