@@ -139,12 +139,13 @@ AsyncValueRef<Chain> ExpansionGraph::quiesce() {
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
   if (!impl)
     return ErrorTree(gen.getLoc(), "function instantiation failed");
-
-  ErrorTree err(gen.getLoc(), "function instantiation failed");
   if (!impl->error)
     return impl.get();
-  err.addCause(impl->error->copy());
-  return std::move(err);
+  // Propagate the error trivially if the current generator has no parameters.
+  if (inputParams.empty())
+    return impl->error->copy();
+  return ErrorTree(gen.getLoc(), "function instantiation failed",
+                   impl->error->copy());
 }
 
 ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
@@ -155,11 +156,13 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
 }
 
 ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
-  ErrorTree err(gen.getLoc(), "function instantiation failed");
   if (!impl->error)
     return success();
-  err.addCause(impl->error->copy());
-  return std::move(err);
+  // Propagate the error trivially if the current generator has no parameters.
+  if (inputParams.empty())
+    return impl->error->copy();
+  return ErrorTree(gen.getLoc(), "function instantiation failed",
+                   impl->error->copy());
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
@@ -532,9 +535,13 @@ Elaborator::collectConcreteImplementations(Operation *user, ImplNode *parent,
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
-    ErrorTree out(user->getLoc(), "call expansion failed");
-    out.addCause(concrete.takeError());
-    parent->setToError(std::move(out));
+    // If the callee has no parameters, don't build another error.
+    if (calleeNode->inputParams.empty()) {
+      parent->setToError(concrete.takeError());
+    } else {
+      parent->setToError(ErrorTree(user->getLoc(), "call expansion failed",
+                                   concrete.takeError()));
+    }
     return failure();
   }
 
@@ -640,8 +647,12 @@ Elaborator::completeCallProcessing(GeneratorUserOpInterface user,
                                    ArrayRef<ParamDeclAttr> decls,
                                    ImplNode *thisNode, ImplNode *node) {
   if (thisNode->error) {
-    node->setToError(ErrorTree(user.getLoc(), "call expansion failed",
-                               thisNode->error->copy()));
+    if (thisNode->parent->inputParams.empty()) {
+      node->setToError(thisNode->error->copy());
+    } else {
+      node->setToError(ErrorTree(user.getLoc(), "call expansion failed",
+                                 thisNode->error->copy()));
+    }
     return failure();
   }
 
