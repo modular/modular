@@ -35,9 +35,9 @@ fn test_gpu_print_formattable() raises:
     print("== test_gpu_print_formattable")
 
     fn do_print(x: Int, y: Float64):
-        #
+        # ==============================
         # Test printing primitive types
-        #
+        # ==============================
 
         # CHECK: Hello I got 42 7.2
         print("Hello I got", x, y)
@@ -52,9 +52,44 @@ fn test_gpu_print_formattable() raises:
         # CHECK: [0, -1, -inf, 1.79769e+308]
         print("SIMD values are:", simd)
 
-        #
+        # ------------------------------
+        # Test printing bfloat16
+        # ------------------------------
+
+        # Note:
+        #   The difference in content for the bfloat16 values tested below is
+        #   expected due to precision loss inherent in shrinking down to
+        #   a 16 bit type.
+
+        fn print_casts(value: Float32):
+            var a = value.cast[DType.float64]()
+            var b = value.cast[DType.bfloat16]()
+            var c = value.cast[DType.bfloat16]().cast[DType.float64]()
+
+            print("  original fp32:", value)
+            print("        => fp64:", a)
+            print("        => bf16:", b)  # Test formatting bfloat16 directly.
+            print("=> bf16 => fp64:", c)  # Test formatting bfloat16 indirectly.
+
+        # CHECK-LABEL: === value_a ===
+        # CHECK:   original fp32: 0.502364
+        # CHECK:         => fp64: 0.502364
+        # CHECK:         => bf16: 0.503906
+        # CHECK: => bf16 => fp64: 0.503906
+        print("=== value_a ===")
+        print_casts(Float32(0.502364))
+
+        # CHECK-LABEL: === value_b ===
+        # CHECK:   original fp32: 0.501858
+        # CHECK:         => fp64: 0.501858
+        # CHECK:         => bf16: 0.5
+        # CHECK: => bf16 => fp64: 0.5
+        print("=== value_b ===")
+        print_casts(Float32(0.501858))
+
+        # ==============================
         # Test printing some non-primitive types
-        #
+        # ==============================
 
         alias layout_str = _FixedString[50].format_sequence(
             Layout.row_major(2, 3)
