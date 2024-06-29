@@ -12,6 +12,7 @@ from memory.unsafe import DTypePointer, Pointer
 from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
 from .device import Device
+from gpu.host.function import FunctionCache
 
 # ===----------------------------------------------------------------------===#
 # Context
@@ -21,6 +22,7 @@ from .device import Device
 struct Context:
     var ctx: _ContextHandle
     var cuda_dll: Optional[CudaDLL]
+    var cuda_function_cache: UnsafePointer[FunctionCache]
     var owner: Bool
 
     fn __init__(inout self) raises:
@@ -28,6 +30,8 @@ struct Context:
 
     fn __init__(inout self, device: Device, flags: Int = 0) raises:
         self.cuda_dll = device.cuda_dll
+        self.cuda_function_cache = UnsafePointer[FunctionCache]().alloc(1)
+        self.cuda_function_cache.init_pointee_move(FunctionCache())
         self.ctx = _ContextHandle()
         self.owner = True
 
@@ -42,6 +46,9 @@ struct Context:
                 var cuCtxDestroy = self.cuda_dll.value().cuCtxDestroy if self.cuda_dll else cuCtxDestroy.load()
                 _check_error(cuCtxDestroy(self.ctx))
                 self.ctx = _ContextHandle()
+                if self.cuda_function_cache:
+                    self.cuda_function_cache.destroy_pointee()
+                    self.cuda_function_cache.free()
                 self.cuda_dll = None
                 self.owner = False
         except e:
@@ -53,6 +60,7 @@ struct Context:
     fn __moveinit__(inout self, owned existing: Self):
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
+        self.cuda_function_cache = existing.cuda_function_cache
         self.owner = True
         existing.ctx = _ContextHandle()
         existing.cuda_dll = None
@@ -61,6 +69,7 @@ struct Context:
     fn __copyinit__(inout self, existing: Self):
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
+        self.cuda_function_cache = existing.cuda_function_cache
         self.owner = False
 
     fn synchronize(self) raises:

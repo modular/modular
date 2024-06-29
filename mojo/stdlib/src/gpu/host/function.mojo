@@ -15,6 +15,7 @@ from gpu.host.device_context import DeviceBuffer
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 
+from utils.lock import BlockingSpinLock, BlockingScopedLock
 from utils.variant import Variant
 
 from ._compile import _compile_code, _get_nvptx_fn_name
@@ -137,7 +138,7 @@ struct _CachedFunctionInfo(Boolable):
 
 @value
 @register_passable("trivial")
-struct _GlobalPayload:
+struct _CachedFunctionPayload:
     var debug: Bool
     var verbose: Bool
     var max_registers: Int32
@@ -163,6 +164,57 @@ struct _GlobalPayload:
         }
 
 
+struct FunctionCache:
+    var dict: Dict[StringLiteral, UnsafePointer[_CachedFunctionInfo]]
+    var lock: BlockingSpinLock
+
+    fn __init__(inout self):
+        self.dict = Dict[StringLiteral, UnsafePointer[_CachedFunctionInfo]]()
+        self.lock = BlockingSpinLock()
+
+    fn __moveinit__(inout self: Self, owned existing: Self):
+        self.dict = existing.dict^
+        self.lock = BlockingSpinLock()
+
+    fn __del__(owned self):
+        for v in self.dict.values():
+            v[].destroy_pointee()
+
+    fn get_or_create_entry[
+        name: StringLiteral,
+        init_fn: fn (UnsafePointer[_CachedFunctionPayload]) -> UnsafePointer[
+            _CachedFunctionInfo
+        ],
+    ](
+        inout self,
+        payload: UnsafePointer[_CachedFunctionPayload] = UnsafePointer[
+            _CachedFunctionPayload
+        ](),
+    ) -> UnsafePointer[_CachedFunctionInfo]:
+        with BlockingScopedLock(self.lock):
+            # FIXME: (MSTDL-694) The following sporadically fails in commit test (unhandled exception).
+
+            # var entry = self.dict.find(name)
+
+            # if entry:
+            #     return entry.value()
+
+            # var info_ptr = init_fn(payload)
+            # self.dict[name] = info_ptr
+            # return info_ptr
+
+            # FIXME: (MSTDL-694) This code is unnecessairly expensive, but it won't fail in commit tests.
+            try:
+                if name in self.dict:
+                    return self.dict[name]
+
+                var info_ptr = init_fn(payload)
+                self.dict[name] = info_ptr
+                return info_ptr
+            except:
+                return UnsafePointer[_CachedFunctionInfo]()
+
+
 # ===----------------------------------------------------------------------===#
 # Function
 # ===----------------------------------------------------------------------===#
@@ -176,6 +228,7 @@ struct Function[
 ](Boolable):
     var info: _CachedFunctionInfo
     var cuda_dll: Optional[CudaDLL]
+    var cuda_function_cache: UnsafePointer[FunctionCache]
 
     alias _impl = _compile_code[
         func, is_failable=_is_failable, emission_kind="asm"
@@ -204,6 +257,7 @@ struct Function[
             cache_config=cache_config,
             func_attribute=func_attribute,
             cuda_dll=ctx.cuda_dll,
+            cuda_function_cache=ctx.cuda_function_cache,
         )
 
     @always_inline
@@ -218,22 +272,27 @@ struct Function[
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
         cuda_dll: Optional[CudaDLL] = None,
+        cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
+            FunctionCache
+        ](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
             raise self._impl.error_msg
 
         self.cuda_dll = cuda_dll
+        self.cuda_function_cache = cuda_function_cache
 
         Self._dump_rep(dump_ptx, dump_llvm)
 
-        var info = Self._get_global_cache_info[func_type, func](
+        var info = Self._get_cached_function_info[func_type, func](
             debug=debug,
             verbose=verbose,
             max_registers=max_registers.value() if max_registers else -1,
             threads_per_block=threads_per_block.value() if threads_per_block else -1,
             cache_config=cache_config.value().code if cache_config else -1,
             func_attribute=func_attribute.value() if func_attribute else FuncAttribute.NULL,
+            cuda_function_cache=cuda_function_cache,
         )
 
         if info.error:
@@ -252,12 +311,16 @@ struct Function[
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
         cuda_dll: Optional[CudaDLL] = None,
+        cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
+            FunctionCache
+        ](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
             raise self._impl.error_msg
 
         self.cuda_dll = cuda_dll
+        self.cuda_function_cache = cuda_function_cache
 
         Self._dump_rep(dump_ptx, dump_llvm)
 
@@ -389,12 +452,14 @@ struct Function[
             stream_value.synchronize()
 
     @staticmethod
-    fn _init_fn[
+    fn init_fn[
         func_type: AnyTrivialRegType, func: func_type
-    ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
+    ](payload_ptr: UnsafePointer[_CachedFunctionPayload]) -> UnsafePointer[
+        _CachedFunctionInfo
+    ]:
         var res = UnsafePointer[_CachedFunctionInfo].alloc(1)
         try:
-            var payload = payload_ptr.bitcast[_GlobalPayload]().load()
+            var payload = payload_ptr[]
 
             alias _impl = _compile_code[
                 func, emission_kind="asm", is_failable=_is_failable
@@ -432,7 +497,16 @@ struct Function[
             )
         except e:
             res.init_pointee_move(_CachedFunctionInfo(e))
-        return res.bitcast[NoneType]().address
+        return res.address
+
+    @staticmethod
+    fn _init_fn[
+        func_type: AnyTrivialRegType, func: func_type
+    ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
+        var res = Self.init_fn[func_type, func](
+            UnsafePointer[_CachedFunctionPayload](address=int(payload_ptr))
+        )
+        return Pointer[NoneType](address=int(res))
 
     @staticmethod
     fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
@@ -444,7 +518,7 @@ struct Function[
 
     @staticmethod
     @always_inline
-    fn _get_global_cache_info[
+    fn _get_cached_function_info[
         func_type: AnyTrivialRegType, func: func_type
     ](
         debug: Bool = False,
@@ -453,10 +527,13 @@ struct Function[
         threads_per_block: Int = -1,
         cache_config: Int32 = -1,
         func_attribute: FuncAttribute = FuncAttribute.NULL,
+        cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
+            FunctionCache
+        ](),
     ) -> _CachedFunctionInfo:
         alias fn_name = _get_nvptx_fn_name[func]()
 
-        var payload = _GlobalPayload(
+        var payload = _CachedFunctionPayload(
             debug=debug,
             verbose=verbose,
             max_registers=max_registers,
@@ -465,12 +542,22 @@ struct Function[
             func_attribute=func_attribute,
         )
 
-        var info_ptr = _get_global[
-            fn_name,
-            Self._init_fn[func_type, func],
-            Self._destroy_fn,
-        ](Pointer.address_of(payload).bitcast[NoneType]())
+        if cuda_function_cache:
+            var info_ptr = cuda_function_cache[].get_or_create_entry[
+                fn_name,
+                Self.init_fn[func_type, func],
+            ](UnsafePointer.address_of(payload))
 
-        _ = payload
+            return info_ptr[]
+        else:
+            var info_ptr = _get_global[
+                fn_name,
+                Self._init_fn[func_type, func],
+                Self._destroy_fn,
+            ](Pointer.address_of(payload).bitcast[NoneType]())
 
-        return UnsafePointer(info_ptr.address).bitcast[_CachedFunctionInfo]()[]
+            _ = payload
+
+            return UnsafePointer(info_ptr.address).bitcast[
+                _CachedFunctionInfo
+            ]()[]
