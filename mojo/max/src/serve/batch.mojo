@@ -16,7 +16,7 @@ from runtime.llcl import (
     _async_wait_timeout,
     Runtime,
 )
-from runtime.lock import BlockingSpinLock
+from utils.lock import BlockingSpinLock, BlockingScopedLock
 
 
 trait Batchable(CollectionElement):

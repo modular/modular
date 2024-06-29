@@ -6,8 +6,8 @@
 """Provides server statistics collecting capabilities."""
 
 from benchmark import Unit
-from runtime import BlockingScopedLock, BlockingSpinLock
 from time import now
+from utils.lock import BlockingSpinLock, BlockingScopedLock
 
 from .callbacks import ServerCallbacks
 
