@@ -532,8 +532,7 @@ Elaborator::collectConcreteImplementations(Operation *user, ImplNode *parent,
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
-    ErrorTree out(user->getLoc(),
-                  "call expansion failed - no concrete specializations");
+    ErrorTree out(user->getLoc(), "call expansion failed");
     out.addCause(concrete.takeError());
     parent->setToError(std::move(out));
     return failure();
@@ -1605,7 +1604,8 @@ LogicalResult Elaborator::run(ModuleOp theModule,
     ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
     if (err.isError()) {
       failed = true;
-      err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
+      err.takeError().emit([](Location loc) { return mlir::emitError(loc); },
+                           "call expansion failed");
     }
   }
   if (failed) {

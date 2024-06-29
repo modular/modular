@@ -129,9 +129,10 @@ ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
         interpreter.executeRegion(body, arguments);
     if (result.isError()) {
       // Swallow the error.
-      DEBUG_WITH_TYPE("lit-parameter-evaluator",
-                      result.takeError().emit(
-                          (InFlightDiagnostic(*)(Location))mlir::emitError));
+      DEBUG_WITH_TYPE(
+          "lit-parameter-evaluator",
+          result.takeError().emit(
+              (InFlightDiagnostic(*)(Location))mlir::emitError, "called from"));
       return failure();
     }
     value = cast<TypedAttr>(result->front());
