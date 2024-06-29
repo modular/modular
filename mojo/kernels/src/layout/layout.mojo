@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
 from builtin.string import _calc_initial_buffer_size_int32
 
 from utils._format import Formattable, Formatter, write_to
@@ -488,28 +487,57 @@ fn print_layout(layout: Layout):
     if layout.rank() != 2:
         abort("print_layout only supports 2D layouts")
 
-    var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
-    var delim = "+-----------------------"
     print(layout)
-    _printf["    "]()
+
+    var writer = Formatter.stdout()
+
+    format_layout(layout, writer)
+
+
+fn format_layout(layout: Layout, inout writer: Formatter):
+    @parameter
+    fn _write_divider(column_count: Int, cell_width: Int):
+        for _ in range(column_count):
+            writer.write("+")
+            writer._write_repeated("-".as_string_slice(), cell_width)
+        writer.write("+\n")
+
+    var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
+
+    # Print column labels
+    writer.write("    ")
     for n in range(layout[1].size()):
-        _printf["  %*d "](idx_width - 2, n)
-    _printf["\n"]()
+        writer.write("  ")
+        writer._write_int_padded(n, width=idx_width - 2)
+
+        var is_last_column = n + 1 == layout[1].size()
+
+        if not is_last_column:
+            writer.write(" ")
+
+    writer.write("\n")
 
     for m in range(layout[0].size()):
-        _printf["    "]()
-        for n in range(layout[1].size()):
-            _printf["%.*s"](idx_width + 1, delim)
-        _printf["+\n"]()
+        writer.write("    ")
+        _write_divider(layout[1].size(), idx_width)
 
-        _printf["%2d  "](m)
+        # Print row label
+        writer._write_int_padded(m, width=2)
+        writer.write("  ")
+
         for n in range(layout[1].size()):
-            _printf["| %*d "](idx_width - 2, int(layout(IntTuple(m, n))))
-        _printf["|\n"]()
-    _printf["    "]()
-    for n in range(layout[1].size()):
-        _printf["%.*s"](idx_width + 1, delim)
-    _printf["+\n"]()
+            writer.write("| ")
+            writer._write_int_padded(
+                int(layout(IntTuple(m, n))),
+                width=idx_width - 2,
+            )
+            writer.write(" ")
+        writer.write("|\n")
+
+    writer.write("    ")
+
+    # Write the final horizontal dividing line
+    _write_divider(layout[1].size(), idx_width)
 
 
 # Returns the sublayout with specific modes e.g sublayout(Layout(3,4,5), 0, 2)

@@ -17,6 +17,7 @@ from layout.layout import (
     logical_divide,
     logical_product,
     print_layout,
+    format_layout,
     size,
     sublayout,
     zipped_divide,
@@ -421,6 +422,31 @@ fn test_print_layout():
     print_layout(l1)
 
 
+fn test_format_layout_grid() raises:
+    var expected = """\
+       0    1    2    3
+    +----+----+----+----+
+ 0  |  0 |  2 |  4 |  6 |
+    +----+----+----+----+
+ 1  |  1 |  3 |  5 |  7 |
+    +----+----+----+----+
+ 2  |  2 |  4 |  6 |  8 |
+    +----+----+----+----+
+ 3  |  3 |  5 |  7 |  9 |
+    +----+----+----+----+
+"""
+
+    var string = String()
+    var fmt = Formatter(string)
+
+    format_layout(
+        Layout(IntTuple(4, 4), IntTuple(1, 2)),
+        fmt,
+    )
+
+    assert_equal(string, expected)
+
+
 # CHECK-LABEL: test_zipped_divide
 fn test_zipped_divide() raises:
     print("== test_zipped_divide")
@@ -483,6 +509,7 @@ def main():
     test_logcial_divide()
     test_logical_product()
     test_print_layout()
+    test_format_layout_grid()
     test_zipped_divide()
     test_sublayout()
     test_crd2idx()
