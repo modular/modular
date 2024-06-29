@@ -36,10 +36,18 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         size: SIMD width of the value.
     """
 
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
+
     var re: SIMD[type, size]
     """The real part of the complex SIMD value."""
     var im: SIMD[type, size]
     """The imaginary part of the complex SIMD value."""
+
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
 
     fn __str__(self) -> String:
         """Get the complex as a string.
@@ -102,6 +110,19 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         return String(buf)
 
     @always_inline
+    fn __abs__(self) -> SIMD[type, size]:
+        """Returns the magnitude of the complex value.
+
+        Returns:
+            Value of `sqrt(re*re + im*im)`.
+        """
+        return self.norm()
+
+    # ===-------------------------------------------------------------------===#
+    # Operator dunders
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
     fn __add__(self, rhs: Self) -> Self:
         """Adds two complex values.
 
@@ -137,6 +158,10 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         """
         return ComplexSIMD(-self.re, -self.im)
 
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
     @always_inline
     fn norm(self) -> SIMD[type, size]:
         """Returns the magnitude of the complex value.
@@ -147,15 +172,6 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         return llvm_intrinsic["llvm.sqrt", SIMD[type, size]](
             self.squared_norm()
         )
-
-    @always_inline
-    fn __abs__(self) -> SIMD[type, size]:
-        """Returns the magnitude of the complex value.
-
-        Returns:
-            Value of `sqrt(re*re + im*im)`.
-        """
-        return self.norm()
 
     @always_inline
     fn squared_norm(self) -> SIMD[type, size]:
