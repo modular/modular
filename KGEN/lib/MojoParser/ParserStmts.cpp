@@ -1636,14 +1636,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       // destroyed early.
       Value ptrOrScalar;
       // We don't care about extending PValues if one ever happened.
-      if (auto scalar = enterResult.getIfSBValue())
-        ptrOrScalar = scalar;
-      else if (auto scalar = enterResult.getIfSRValue())
-        ptrOrScalar = scalar;
-      else if (auto scalar = enterResult.getIfMBValue())
-        ptrOrScalar = scalar;
-      else if (auto scalar = enterResult.getIfMRValue())
-        ptrOrScalar = scalar;
+      if (enterResult.isMValue())
+        ptrOrScalar = enterResult.getMValueReference();
+      else if (enterResult.isSValue())
+        ptrOrScalar = enterResult.getSValueRegister();
       if (ptrOrScalar)
         builder.create<OwnershipUseOp>(loc, ptrOrScalar);
     }
