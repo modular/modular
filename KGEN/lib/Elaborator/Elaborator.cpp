@@ -1622,8 +1622,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   if (failed) {
     for (FuncOp func : llvm::make_second_range(concreteFuncs.get()))
       func.erase();
-    for (FuncOp func : deferredSymbols)
-      func.erase();
+
     return failure();
   }
 
