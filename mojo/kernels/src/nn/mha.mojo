@@ -1500,21 +1500,16 @@ fn mha[
     var mask_batch_offset = batch_idx * seq_len * seq_len
 
     mha_single_batch[
-        q_type,
-        k_type,
-        v_type,
-        mask_type,
-        output_type,
-        BM,
-        BN,
-        BK,
-        WM,
-        WN,
-        depth,
-        num_heads,
-        num_threads,
-        num_pipeline_stages,
-        group,
+        BM=BM,
+        BN=BN,
+        BK=BK,
+        WM=WM,
+        WN=WN,
+        depth=depth,
+        num_heads=num_heads,
+        num_threads=num_threads,
+        num_pipeline_stages=num_pipeline_stages,
+        group=group,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr.offset(kv_batch_offset),
@@ -1531,7 +1526,8 @@ fn mha_single_batch[
     k_type: DType,
     v_type: DType,
     mask_type: DType,
-    output_type: DType,
+    output_type: DType, //,
+    *,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
     BK: Int,  # tile size in depth dimension
