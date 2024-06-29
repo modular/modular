@@ -10,7 +10,7 @@ kgen.generator @out_of_range_read() -> i32 {
 }
 
 kgen.generator @call_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   %0 = kgen.param.constant: i32 = <apply(:() -> i32 @out_of_range_read)>
   kgen.return
 }
@@ -32,7 +32,7 @@ kgen.generator @stack_use_after_free() -> index {
 }
 
 kgen.generator @call_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @stack_use_after_free)>
   kgen.return
 }
@@ -52,7 +52,7 @@ kgen.generator @heap_use_after_free() -> i64 {
 }
 
 kgen.generator @call_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:() -> i64 @heap_use_after_free)>
   kgen.return
 }
@@ -74,7 +74,7 @@ kgen.generator @clobber_pointer(%arg0: i16) -> i16 {
 }
 
 kgen.generator @call_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i16 = <apply(:(i16) -> i16 @clobber_pointer, 5)>
   kgen.return
 }
@@ -92,7 +92,7 @@ kgen.generator @int_literal_convert() -> si64 {
 }
 
 kgen.generator @call_convert() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: si64 = <apply(:() -> si64 @int_literal_convert)>
   kgen.return
 }
@@ -119,7 +119,7 @@ kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
 }
 
 kgen.generator @call_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:(i64) -> i64 @clobber_pointer, 1)>
   kgen.return
 }
@@ -139,7 +139,7 @@ kgen.generator @parameter_closure() -> index {
 }
 
 kgen.generator export @use_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @parameter_closure)>
   kgen.return
 }

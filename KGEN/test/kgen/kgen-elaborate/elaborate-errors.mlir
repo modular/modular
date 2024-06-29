@@ -52,7 +52,7 @@ kgen.generator @cant_interpret(%arg0: index) -> index {
 }
 
 kgen.generator @interp_func() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   %0 = kgen.param.constant = <apply(:(index) -> index @cant_interpret, 1)>
   kgen.return
 }
@@ -75,7 +75,7 @@ kgen.generator @passthrough() -> index {
 }
 
 kgen.generator @call_it() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @passthrough)>
   kgen.return
 }
@@ -126,7 +126,7 @@ kgen.generator @fails() -> index {
 }
 
 kgen.generator @failed_apply() {
-  // expected-error @below {{failed to evaluate 'apply'}}
+  // expected-error @below {{failed to compile-time evaluate function call}}
   kgen.param.apply value = [() -> index: @fails]()
   kgen.param.constant = <value>
   kgen.return
