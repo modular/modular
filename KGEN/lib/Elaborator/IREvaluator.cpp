@@ -44,7 +44,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 
   // Report an error if evaluation fails.
   if (result.isError()) {
-    return ErrorTree(*errorLoc, "failed to evaluate 'apply'",
+    return ErrorTree(*errorLoc, "failed to compile-time evaluate function call",
                      result.takeError());
   }
 
@@ -72,7 +72,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
 
   // Report an error if evaluation fails.
   if (result.isError()) {
-    return ErrorTree(*errorLoc, "failed to evaluate 'apply'",
+    return ErrorTree(*errorLoc, "failed to compile-time evaluate function call",
                      result.takeError());
   }
 
