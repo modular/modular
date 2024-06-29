@@ -117,7 +117,8 @@ static void bundleRecursiveErrors(
   }
 }
 
-void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError) && {
+void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError,
+                     StringRef callSiteMsg) && {
   // Try to compress recursive errors. To provide a root, start iterating from
   // the first child.
   for (ErrorTree &cause : causes) {
@@ -129,17 +130,43 @@ void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError) && {
   // Emit the main error.
   InFlightDiagnostic diag = emitError(loc) << getMessage();
   // Emit the causes.
-  emit(diag, causes, /*indentDepth=*/2);
+  emit(diag, causes, callSiteMsg);
+}
+
+/// Dig out a CallSiteLoc from the given location.
+static std::optional<mlir::CallSiteLoc> getCallSiteLoc(Location loc) {
+  if (auto name = dyn_cast<mlir::NameLoc>(loc))
+    return getCallSiteLoc(name.getChildLoc());
+  if (auto callLoc = dyn_cast<mlir::CallSiteLoc>(loc))
+    return callLoc;
+  if (auto fused = dyn_cast<FusedLoc>(loc)) {
+    for (auto subLoc : fused.getLocations()) {
+      if (auto callLoc = getCallSiteLoc(subLoc))
+        return callLoc;
+    }
+    return {};
+  }
+  return {};
 }
 
 void ErrorTree::emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,
-                     unsigned indentDepth) {
+                     StringRef callSiteMsg) {
   if (errors.empty())
     return;
 
-  std::string spaces(indentDepth, ' ');
   for (const ErrorTree &err : errors) {
-    diag.attachNote(err.loc) << spaces << err.getMessage();
-    emit(diag, err.causes, indentDepth + 2);
+    Location loc = err.loc;
+    SmallVector<Location> locationStack{loc};
+    for (std::optional<mlir::CallSiteLoc> callLoc;
+         (callLoc = getCallSiteLoc(loc)); loc = callLoc->getCallee())
+      locationStack.push_back(callLoc->getCaller());
+    if (locationStack.empty()) {
+      diag.attachNote(loc) << err.getMessage();
+    } else {
+      for (Location loc : llvm::drop_begin(locationStack))
+        diag.attachNote(loc) << callSiteMsg;
+      diag.attachNote(locationStack.front()) << err.getMessage();
+    }
+    emit(diag, err.causes, callSiteMsg);
   }
 }

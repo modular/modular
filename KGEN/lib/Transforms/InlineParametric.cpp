@@ -545,12 +545,11 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   });
   b.replaceOp(call, scope.getResults());
 
-  std::optional<StringAttr> updateAttrName;
-  if (updateDebugInfo)
-    updateAttrName = StringAttr();
+  // Always update the callsite locations. We need them to be intact for the
+  // elaborator to give useful error messages.
   bool singleExit =
       numReturns == 1 && isa<ReturnOp>(callee.getBody()->getTerminator());
-  maybeUpdateDebugInfo(scope, updateAttrName, singleExit);
+  maybeUpdateDebugInfo(scope, StringAttr(), singleExit);
 }
 
 //===----------------------------------------------------------------------===//

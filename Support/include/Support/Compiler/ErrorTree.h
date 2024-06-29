@@ -83,12 +83,13 @@ public:
 
   /// Emit this error to an MLIR diagnostic. The main error is emitted as a
   /// diagnostic error. Any causes are emitted as notes.
-  void emit(function_ref<InFlightDiagnostic(Location)> emitError) &&;
+  void emit(function_ref<InFlightDiagnostic(Location)> emitError,
+            StringRef callSiteMsg) &&;
 
 private:
   /// Emit nested errors to an MLIR diagnostic as notes.
   static void emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,
-                   unsigned indentDepth);
+                   StringRef callSiteMsg);
 
   /// The location of the main error.
   Location loc;

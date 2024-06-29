@@ -79,9 +79,10 @@ ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
   if (op.getOpcode() == POC::Apply) {
     ErrorTreeOr<SmallVector<Attribute>> result = executeRegion(body, arguments);
     if (result.isError()) {
-      DEBUG_WITH_TYPE("simple-interpreter",
-                      result.takeError().emit(
-                          (InFlightDiagnostic(*)(Location))mlir::emitError));
+      DEBUG_WITH_TYPE(
+          "simple-interpreter",
+          result.takeError().emit(
+              (InFlightDiagnostic(*)(Location))mlir::emitError, "called from"));
       return failure();
     }
     value = cast<TypedAttr>(result->front());
@@ -94,9 +95,10 @@ ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
     ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
         body, arguments, isInitSelf, createUninitializedValueOf(resultType));
     if (result.isError()) {
-      DEBUG_WITH_TYPE("simple-interpreter",
-                      result.takeError().emit(
-                          (InFlightDiagnostic(*)(Location))mlir::emitError));
+      DEBUG_WITH_TYPE(
+          "simple-interpreter",
+          result.takeError().emit(
+              (InFlightDiagnostic(*)(Location))mlir::emitError, "called from"));
       return failure();
     }
     value = result.takeValue();
