@@ -9,7 +9,7 @@ from os.atomic import Atomic
 
 from memory import stack_allocation
 from memory.unsafe import Pointer
-from runtime.llcl import Runtime, SpinWaiter
+from runtime.llcl import Runtime
 from testing import assert_true
 
 
@@ -114,20 +114,9 @@ fn test_global_same_runtime():
     print(rt.ptr == rt2.ptr)
 
 
-# CHECK-LABEL: test_spin_waiter
-def test_spin_waiter():
-    print("== test_spin_waiter")
-    var waiter = SpinWaiter()
-    alias RUNS = 1000
-    for i in range(RUNS):
-        waiter.wait()
-    assert_true(True)
-
-
 def main():
     test_sync_coro()
     test_sync_raising_coro()
     test_runtime_task()
     test_runtime_taskgroup()
     test_global_same_runtime()
-    test_spin_waiter()
