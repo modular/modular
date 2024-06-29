@@ -117,22 +117,6 @@ static void bundleRecursiveErrors(
   }
 }
 
-void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError,
-                     StringRef callSiteMsg) && {
-  // Try to compress recursive errors. To provide a root, start iterating from
-  // the first child.
-  for (ErrorTree &cause : causes) {
-    std::vector<ErrorTree *> path;
-    DenseMap<std::pair<Location, StringRef>, ErrorTree *> seen;
-    bundleRecursiveErrors(path, seen, &cause, this, -1, -1, -1);
-  }
-
-  // Emit the main error.
-  InFlightDiagnostic diag = emitError(loc) << getMessage();
-  // Emit the causes.
-  emit(diag, causes, callSiteMsg);
-}
-
 /// Dig out a CallSiteLoc from the given location.
 static std::optional<mlir::CallSiteLoc> getCallSiteLoc(Location loc) {
   if (auto name = dyn_cast<mlir::NameLoc>(loc))
@@ -149,24 +133,55 @@ static std::optional<mlir::CallSiteLoc> getCallSiteLoc(Location loc) {
   return {};
 }
 
+static void emitErrorTreeDiag(const ErrorTree &err,
+                              function_ref<void(Location, StringRef)> emit,
+                              StringRef callSiteMsg) {
+  Location loc = err.getLoc();
+  SmallVector<Location> locationStack{loc};
+  for (std::optional<mlir::CallSiteLoc> callLoc;
+       (callLoc = getCallSiteLoc(loc)); loc = callLoc->getCallee())
+    locationStack.push_back(callLoc->getCaller());
+  if (locationStack.empty()) {
+    emit(loc, err.getMessage());
+  } else {
+    for (Location loc : llvm::drop_begin(locationStack))
+      emit(loc, callSiteMsg);
+    emit(locationStack.front(), err.getMessage());
+  }
+}
+
+void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError,
+                     StringRef callSiteMsg) && {
+  // Try to compress recursive errors. To provide a root, start iterating from
+  // the first child.
+  for (ErrorTree &cause : causes) {
+    std::vector<ErrorTree *> path;
+    DenseMap<std::pair<Location, StringRef>, ErrorTree *> seen;
+    bundleRecursiveErrors(path, seen, &cause, this, -1, -1, -1);
+  }
+
+  // Emit the main error.
+  std::optional<InFlightDiagnostic> diag;
+  auto emitMsg = [&](Location loc, StringRef msg) {
+    if (diag)
+      diag->attachNote(loc) << msg;
+    else
+      diag.emplace(emitError(loc)) << msg;
+  };
+  emitErrorTreeDiag(*this, emitMsg, callSiteMsg);
+  // Emit the causes.
+  emit(*diag, causes, callSiteMsg);
+}
+
 void ErrorTree::emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,
                      StringRef callSiteMsg) {
   if (errors.empty())
     return;
 
   for (const ErrorTree &err : errors) {
-    Location loc = err.loc;
-    SmallVector<Location> locationStack{loc};
-    for (std::optional<mlir::CallSiteLoc> callLoc;
-         (callLoc = getCallSiteLoc(loc)); loc = callLoc->getCallee())
-      locationStack.push_back(callLoc->getCaller());
-    if (locationStack.empty()) {
-      diag.attachNote(loc) << err.getMessage();
-    } else {
-      for (Location loc : llvm::drop_begin(locationStack))
-        diag.attachNote(loc) << callSiteMsg;
-      diag.attachNote(locationStack.front()) << err.getMessage();
-    }
+    emitErrorTreeDiag(
+        err, [&](Location loc, StringRef msg) { diag.attachNote(loc) << msg; },
+        callSiteMsg);
     emit(diag, err.causes, callSiteMsg);
   }
 }
