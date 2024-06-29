@@ -8,6 +8,6 @@ from .anytensor import AnyTensor
 from .cuda import cuda_device
 from .device import Device, CPUDescriptor, cpu_device
 from .device_memory import DeviceMemory, DeviceTensor
-from .graph import compile_graph
+from .graph import compile_graph, ExecutableGraph
 from .tensor import Tensor, StaticTensorSpec
 from .tensor_slice import TensorSlice, UnsafeTensorSlice

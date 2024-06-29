@@ -36,6 +36,10 @@ struct ExecutableGraph:
         self._impl = impl
         self._device = device
 
+    fn __moveinit__(inout self, owned existing: Self):
+        self._impl = existing._impl
+        self._device = existing._device^
+
     fn _steal_device_memory_impl_ptr(
         self, inout memory: AnyTensor
     ) raises -> UnsafePointer[NoneType]:

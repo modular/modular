@@ -64,6 +64,9 @@ struct AnyTensor:
         """
         return self._spec.rank()
 
+    fn spec(self) -> TensorSpec:
+        return self._spec
+
     fn _steal_ptr(owned self) -> DTypePointer[DType.uint8]:
         var ptr = self._data
         self._data = DTypePointer[DType.uint8]()
