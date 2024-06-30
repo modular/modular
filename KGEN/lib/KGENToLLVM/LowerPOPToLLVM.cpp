@@ -1500,9 +1500,21 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
   matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     std::optional<FunctionType> funcType = op.getVariadicType();
-    if (!funcType)
-      funcType =
-          rewriter.getFunctionType(op.getOperandTypes(), op.getResultTypes());
+    if (!funcType) {
+      // Expand one level of struct type from any operand types, these come from
+      // !kgen.pack.
+      SmallVector<Type> operandTypes;
+      operandTypes.reserve(op.getNumOperands());
+      for (auto type : op.getOperandTypes()) {
+        if (auto structTy = dyn_cast<StructType>(type)) {
+          operandTypes.append(structTy.getElementTypes().begin(),
+                              structTy.getElementTypes().end());
+        } else {
+          operandTypes.push_back(type);
+        }
+      }
+      funcType = rewriter.getFunctionType(operandTypes, op.getResultTypes());
+    }
     TypeConverter::SignatureConversion conversion(funcType->getNumInputs());
     Type signature = getTypeConverter()->convertFunctionSignature(
         *funcType, op.getVariadicType().has_value(),
@@ -1550,8 +1562,24 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
       symtab.insert(func);
     }
 
-    LLVM::CallOp call =
-        createLLVMCall(rewriter, op.getLoc(), func, adaptor.getOperands());
+    // Expand one level of structs so kgen.pack elements are passed as
+    // individual values instead of as a kgen.struct.
+    SmallVector<Value> operands;
+    operands.reserve(op.getNumOperands());
+    for (auto value : adaptor.getOperands()) {
+      if (auto structTy = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
+        // Unpack each of the elements.
+        for (size_t i = 0, e = structTy.getBody().size(); i != e; ++i) {
+          auto elt = rewriter.createOrFold<LLVM::ExtractValueOp>(op.getLoc(),
+                                                                 value, i);
+          operands.push_back(elt);
+        }
+      } else {
+        operands.push_back(value);
+      }
+    }
+
+    LLVM::CallOp call = createLLVMCall(rewriter, op.getLoc(), func, operands);
     rewriter.replaceOp(op, call);
     return success();
   }
