@@ -1728,11 +1728,23 @@ static ErrorTreeOrSuccess interpretFree(ExternalCallOp op,
 /// operations.
 ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
+  // external_call can take things through a !kgen.pack.  Expand that out before
+  // we try to interpret it.
+  SmallVector<Attribute> expandedOperands;
+  expandedOperands.reserve(operands.size());
+  for (auto attr : operands) {
+    if (auto pack = dyn_cast<PackAttr>(attr)) {
+      expandedOperands.append(pack.getValues().begin(), pack.getValues().end());
+    } else {
+      expandedOperands.push_back(attr);
+    }
+  }
+
   StringRef callee = getCallee();
   if (callee == "malloc")
-    return interpretMalloc(*this, operands, state);
+    return interpretMalloc(*this, expandedOperands, state);
   if (callee == "free")
-    return interpretFree(*this, operands, state);
+    return interpretFree(*this, expandedOperands, state);
 
   return ErrorTree(
       getLoc(),
