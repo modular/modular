@@ -42,7 +42,7 @@ public:
       hasKernels |= MOGGPreElab::isKernel(func);
 
     if (hasKernels && !debugBuild) {
-      mlir::OpPassManager pm("builtin.module");
+      mlir::OpPassManager pm(ModuleOp::getOperationName());
       pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
       pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
 

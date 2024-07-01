@@ -10,13 +10,18 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include <list>
 
-namespace M::KGEN::MOGGPreElab {
+using namespace M;
+using namespace KGEN;
+using namespace MOGGPreElab;
 
+namespace {
 struct CallGraphNode
     : public CallGraphNodeBase<CallGraphNode, GeneratorOp, CallOp> {
   using CallGraphNodeBase::CallGraphNodeBase;
 };
+} // namespace
 
+namespace M::KGEN::MOGGPreElab {
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   explicit CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
 
@@ -26,6 +31,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 
   const SymbolTable &symtab;
 };
+} // namespace M::KGEN::MOGGPreElab
 
 UserLibraryChecker::UserLibraryChecker(ModuleOp module,
                                        const SymbolTable &symtab)
@@ -45,9 +51,8 @@ LogicalResult UserLibraryChecker::run() {
   return success();
 }
 
-namespace {
-LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
-                                         GeneratorOp gen) {
+static LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
+                                                GeneratorOp gen) {
   auto checkFunc = [&](const StringLiteral &decorator, StringRef msg,
                        GeneratorOp root) -> LogicalResult {
     if (gen->hasAttr(decorator)) {
@@ -72,7 +77,7 @@ LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
   return success();
 }
 
-LogicalResult checkParamRegionCallsiteLocation(
+static LogicalResult checkParamRegionCallsiteLocation(
     CallGraph *cg,
     const llvm::SmallVectorImpl<ParamDeclareRegionOp> &paramDeclRegions,
     llvm::SmallPtrSetImpl<CallGraphNode *> &visited) {
@@ -90,20 +95,19 @@ LogicalResult checkParamRegionCallsiteLocation(
     // Checks and enqueues calls inside the ParamDeclareRegionOp within a
     // registered kernel.
     for (CallOp call : region.getOps<CallOp>()) {
-      GeneratorOp gen = dyn_cast_or_null<GeneratorOp>(
-          cg->symtab.lookup(call.getCallee().getSymbol().getLeafReference()));
+      auto gen = cg->symtab.lookup<GeneratorOp>(
+          call.getCallee().getSymbol().getLeafReference());
       assert(gen && "invalid IR?");
       if (failed(checkCallsiteErrorInternal(
-              call, region->getParentOfType<GeneratorOp>(), gen))) {
+              call, region->getParentOfType<GeneratorOp>(), gen)))
         res = failure();
-      }
     }
   }
 
   return res;
 }
 
-LogicalResult checkGeneratorCallsiteLocation(
+static LogicalResult checkGeneratorCallsiteLocation(
     CallGraph *cg, llvm::SmallPtrSetImpl<CallGraphNode *> &visited) {
 
   llvm::SmallVector<GeneratorOp> kernels;
@@ -145,7 +149,6 @@ LogicalResult checkGeneratorCallsiteLocation(
 
   return res;
 }
-} // namespace
 
 LogicalResult UserLibraryChecker::checkCallsiteLocation() {
   llvm::SmallPtrSet<CallGraphNode *, 32> visited;
@@ -158,5 +161,3 @@ LogicalResult UserLibraryChecker::checkCallsiteLocation() {
 
   return res;
 }
-
-} // namespace M::KGEN::MOGGPreElab

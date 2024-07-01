@@ -26,9 +26,7 @@ namespace M::KGEN::MOGGPreElab {
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
-namespace {
-
-void annotateTypes(LIT::FuncOp func) {
+static void annotateTypes(LIT::FuncOp func) {
   // Look through ref types to get underlaying decl ref type if needed.
   auto getAsDeclRefOrNull = [&](Type t) {
     auto asLitRef = dyn_cast<LIT::RefType>(t);
@@ -117,6 +115,7 @@ void annotateTypes(LIT::FuncOp func) {
   }
 }
 
+namespace {
 class MOGGAnnotatePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAnnotateBase<MOGGAnnotatePass> {
 public:
@@ -128,5 +127,4 @@ public:
     });
   }
 };
-
 } // namespace
