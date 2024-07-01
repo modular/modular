@@ -47,6 +47,30 @@ static SmallVector<T> permute(const SmallVector<T> &data,
   return permute(dataRef, permutation, stride);
 }
 
+/// Returns a vector where applying `permutation` to permute dimensions achieves
+/// output. Only supports stride 1 for now.
+///
+/// Example:
+///   data        : [a, b, c, d] <-- returns `data` given the below
+///   permutation : [3, 1, 2, 0]
+///   output      : [d, b, c, a]
+template <typename T>
+static SmallVector<T> permuteReverse(ArrayRef<T> output,
+                                     ArrayRef<int64_t> permutation) {
+  SmallVector<T> input(output.begin(), output.end());
+  for (auto [permIdx, outputValue] : llvm::zip(permutation, output)) {
+    input[permIdx] = outputValue;
+  }
+  return input;
+}
+
+template <typename T>
+static SmallVector<T> permuteReverse(const SmallVector<T> &data,
+                                     ArrayRef<int64_t> permutation) {
+  ArrayRef<T> dataRef(data);
+  return permuteReverse(dataRef, permutation);
+}
+
 } // namespace M
 
 #endif // SUPPORT_ML_PERMUTATION_H

@@ -15,6 +15,7 @@ add_modular_unittest(
   SupportMLTests
 
   FillTest.cpp
+  Permutation.cpp
 
   LINK_LIBS PRIVATE
   MSupportML
