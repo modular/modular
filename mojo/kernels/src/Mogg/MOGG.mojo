@@ -3851,7 +3851,7 @@ fn masked_flash_attention_gpu[
             output_type,
             add_attn_mask=True,
             target=target,
-            use_tensor_core=False,
+            use_tensor_core=True,
         ](output, q, k, v, mask, scale[0], context=ctx)
 
 
