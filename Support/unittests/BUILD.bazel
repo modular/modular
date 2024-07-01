@@ -207,6 +207,12 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "PermutationTest",
+    srcs = ["ML/Permutation.cpp"],
+    deps = ["//Support:ML"],
+)
+
+modular_cc_test(
     name = "MeteringTests",
     srcs = glob(["Metering/*.cpp"]),
     deps = ["//Support:Metering"],
