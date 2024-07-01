@@ -178,26 +178,6 @@ fn MOGGExport():
 
 
 # ===----------------------------------------------------------------------===#
-# Feature gate for EAP
-# TODO: Replace with entitlements when available.
-# ===----------------------------------------------------------------------===#
-
-alias MODULAR_PRODUCTION = is_defined["MODULAR_PRODUCTION"]()
-
-
-@always_inline
-fn _guard_against_gpu_target[
-    target: StringLiteral
-](ctx: MojoCallContextPtr) -> Bool:
-    @parameter
-    if MODULAR_PRODUCTION and target == "cuda":
-        ctx.set_to_error("GPU Support is not available in the current release")
-        return True
-    else:
-        return False
-
-
-# ===----------------------------------------------------------------------===#
 # Data structures used in MOGG/MGP ABI
 # ===----------------------------------------------------------------------===#
 
@@ -522,9 +502,6 @@ fn elementwise_wrapper[
             + String(";single_thread_blocking_override=")
             + str(single_thread_blocking_override)
         )
-
-    if _guard_against_gpu_target[target](ctx):
-        return
 
     with Trace[TraceLevel.OP](
         "mojo.elementwise",
@@ -1087,9 +1064,6 @@ fn concat[
     ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[type, rank],
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     with Trace[TraceLevel.OP]("mojo.concat") as t:
         var ins = variadic_list_to_vector(variadic_ins)
         _concat[rank, type, single_thread_blocking_override, target](
@@ -1383,9 +1357,6 @@ fn mean[
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn description_fn() -> String:
@@ -1562,9 +1533,6 @@ fn reduce_add[
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
@@ -1616,9 +1584,6 @@ fn reduce_max[
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
@@ -1670,9 +1635,6 @@ fn reduce_min[
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
@@ -1724,9 +1686,6 @@ fn reduce_mul[
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
@@ -1783,9 +1742,6 @@ fn slice[
     steps: NDBuffer[step_type, 1],
     ctx: MojoCallContextPtr,  # remove (#24946)
 ) -> NDBuffer[type, rank]:
-    if _guard_against_gpu_target[target](ctx):
-        return tensor
-
     return slice_as_view(tensor, starts, ends, steps)
 
 
@@ -1971,9 +1927,6 @@ fn transpose[
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
 
-    if _guard_against_gpu_target[target](ctx):
-        return input
-
     @parameter
     for i in range(rank):
         var dim = int(perms[i])
@@ -2076,9 +2029,6 @@ fn gather[
     output_shape: StaticIntTuple[output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     # TODO: This is disabled as if we make this a shape without a spec we have
     # nothing to deduce `indices_type` from.
     @parameter
@@ -2150,9 +2100,6 @@ fn matmul[
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
-
-    if _guard_against_gpu_target[target](ctx):
-        return
 
     constrained[
         not (b_packed and transpose_b),
@@ -2240,9 +2187,6 @@ fn batched_matmul[
 ):
     alias transpose_a = False
     alias transpose_b = transpose_in_1
-
-    if _guard_against_gpu_target[target](ctx):
-        return
 
     @parameter
     @always_inline
@@ -2468,9 +2412,6 @@ fn scatter_nd[
     output: NDBuffer[output_type, output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     _scatter_nd[
         output_type,
         indices_type,
@@ -2500,9 +2441,6 @@ fn scatter_nd_add[
     output: NDBuffer[output_type, output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn reduce_fn[
@@ -2540,9 +2478,6 @@ fn scatter_nd_max[
     output: NDBuffer[output_type, output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn reduce_fn[
@@ -2580,9 +2515,6 @@ fn scatter_nd_min[
     output: NDBuffer[output_type, output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn reduce_fn[
@@ -2620,9 +2552,6 @@ fn scatter_nd_mul[
     output: NDBuffer[output_type, output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     @always_inline
     @parameter
     fn reduce_fn[
@@ -2658,9 +2587,6 @@ fn softmax[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     _softmax[
         type,
         simdwidthof[type](),
@@ -3745,8 +3671,6 @@ fn reduce_min_and_max[
     writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
     the minimum reduction and [:, :, 1, :] contains the maximum reduction.
     """
-    if _guard_against_gpu_target[target](ctx):
-        return
 
     alias num_reductions = 2
     var axis = int(normalize_neg_index(axis0, rank))
@@ -3894,8 +3818,6 @@ fn masked_flash_attention_gpu[
     The underlying fusion follows ideas taken from the 2022 FlashAttention paper
     by Tri Dao et al.
     """
-    if _guard_against_gpu_target[target](ctx):
-        return
 
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
 
@@ -3974,9 +3896,6 @@ fn no_mask_fused_attention_cpu[
     # v -- BHSD
     # output: BHSD
 
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
@@ -4048,9 +3967,6 @@ fn with_mask_fused_attention_cpu[
     # v -- BHSD
     # output: BHSD
 
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
@@ -4098,9 +4014,6 @@ fn no_mask_flash_attention_cpu[
     output: NDBuffer[type, rank, input_4_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     constrained[target == "cpu"]()
 
     @always_inline
@@ -4193,8 +4106,6 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
         input_3_fn (k_cache): 1BHSD
         input_4_fn (v_cache: 1BHSD
     """
-    if _guard_against_gpu_target[target](ctx):
-        return
 
     constrained[target == "cpu"]()
 
@@ -4286,9 +4197,6 @@ fn with_mask_flash_attention_cpu[
     output: NDBuffer[type, rank, input_5_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    if _guard_against_gpu_target[target](ctx):
-        return
-
     constrained[target == "cpu"]()
 
     @always_inline
