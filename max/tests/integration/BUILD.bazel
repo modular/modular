@@ -12,6 +12,7 @@ mojo_library(
     srcs = glob(["Inputs/test_user_op/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
+        "//Kernels/mojo/buffer",
         "//Kernels/mojo/register",
         "//open-source/mojo/stdlib/stdlib",
     ],
