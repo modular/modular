@@ -3882,6 +3882,15 @@ fn masked_flash_attention_gpu[
       1. The mask is rank 3 and is of shape BSS
       2. The transposes are part of the kernel itself
 
+    Finally, this pattern supports grouped attention patterns. That is if we
+    have G groups, then let h = H / G. Key and value are allowed to be BShD
+    in these scenarios. Both key and value must be BShD if one is. If this is
+    true the following is equivalently run before Step 0:
+
+    ** Step -1:
+    key = concat(key, ...) # concat BShD --> BSHD
+    value = concat(value, ...) # concat BShD --> BSHD
+
     The underlying fusion follows ideas taken from the 2022 FlashAttention paper
     by Tri Dao et al.
     """
