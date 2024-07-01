@@ -98,42 +98,16 @@ fn test_bad_implicit_promotion() raises:
         _ = g[0] + g[1]
 
 
-fn test_bad_broadcast_dynamic_one() raises:
+fn test_dynamic_not_allowed() raises:
     var g = Graph(
         List[Type](
             TensorType(DType.float32, Dim.dynamic()),
             TensorType(DType.float32, Dim.dynamic()),
         ),
     )
-    g.output(g[0] + g[1])
-    g.verify()
 
-    var x = Tensor[DType.float32](TensorShape(3), -2, -1, 0)
-    var y = Tensor[DType.float32](TensorShape(1), 1.0)
-    var expected = Tensor[DType.float32](TensorShape(3), -1.0, 0.0, 1.0)
-
-    with assert_raises(
-        contains="RMO rebind shape check for broadcasting failed at: "
-    ):
-        _ = _testing.execute_binary(g, x, y)
-
-
-fn test_matching_dynamic() raises:
-    var g = Graph(
-        List[Type](
-            TensorType(DType.float32, Dim.dynamic()),
-            TensorType(DType.float32, Dim.dynamic()),
-        ),
-    )
-    g.output(g[0] + g[1])
-    g.verify()
-
-    var x = Tensor[DType.float32](TensorShape(3), -2, -1, 0)
-    var y = Tensor[DType.float32](TensorShape(3), 1.0, 1.0, 1.0)
-    var expected = Tensor[DType.float32](TensorShape(3), -1.0, 0.0, 1.0)
-
-    var actual = _testing.execute_binary(g, x, y)
-    _testing.assert_tensors_almost_equal(expected, actual, 1e-4)
+    with assert_raises(contains="contain dynamic dimensions"):
+        _ = g[0] + g[1]
 
 
 fn test_unary() raises:
@@ -193,10 +167,9 @@ def main():
     test_basic()
     test_literal()
     test_implicit_promotion()
-    test_matching_dynamic()
+    test_dynamic_not_allowed()
     test_comparison_results_in_bool()
     test_unary()
     test_unary_float()
     test_bad_implicit_promotion()
-    test_bad_broadcast_dynamic_one()
     test_unary_bad_dtype()
