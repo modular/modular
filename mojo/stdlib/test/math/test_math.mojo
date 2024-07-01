@@ -7,6 +7,8 @@
 
 from collections import List
 from math import (
+    align_down,
+    align_up,
     ceil,
     ceildiv,
     copysign,
@@ -424,6 +426,28 @@ def test_ceildiv():
     assert_equal(ceildiv(UInt(546), UInt(7)), UInt(78))
 
 
+def test_align_down():
+    assert_equal(align_down(1, 7), 0)
+    assert_equal(align_down(548, -7), 553)
+    assert_equal(align_down(-548, -7), -546)
+    assert_equal(align_down(-548, 7), -553)
+
+    # Test the UInt overload.
+    assert_equal(align_down(UInt(1), UInt(7)), UInt(0))
+    assert_equal(align_down(UInt(546), UInt(7)), UInt(546))
+
+
+def test_align_up():
+    assert_equal(align_up(1, 7), 7)
+    assert_equal(align_up(548, -7), 546)
+    assert_equal(align_up(-548, -7), -553)
+    assert_equal(align_up(-548, 7), -546)
+
+    # Test the UInt overload.
+    assert_equal(align_up(UInt(1), UInt(7)), UInt(7))
+    assert_equal(align_up(UInt(546), UInt(7)), UInt(546))
+
+
 def main():
     test_sin()
     test_cos()
@@ -444,3 +468,5 @@ def main():
     test_lcm()
     test_ulp()
     test_ceildiv()
+    test_align_down()
+    test_align_up()
