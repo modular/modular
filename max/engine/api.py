@@ -345,6 +345,8 @@ def _unwrap_pybind_objects(value: Any) -> Any:
 
 
 def _is_torchscript_module(obj: Any) -> bool:
+    """Checks if an object is a `torch.jit.script.ScriptModule` or a compatible (sub)class thereof.
+    """
     return type(obj).__name__ in [
         "ScriptModule",
         "RecursiveScriptModule",
@@ -352,17 +354,39 @@ def _is_torchscript_module(obj: Any) -> bool:
 
 
 def _is_torchscript_function(obj: Any) -> bool:
+    """Checks if an object is a `torch.jit.ScriptFunction`."""
     return type(obj).__name__ in ["ScriptFunction"] and type(
         obj
     ).__module__ in ["torch.jit"]
 
 
 def _is_torch_mlir_module(obj: Any) -> bool:
+    """Checks if an object is a `modular.torch_mlir.Module`."""
     # Only check last submodule since the higher level modules in the hierarchy
     # may differ depending on where the mlir module is built
     return type(obj).__name__ == "Module" and type(obj).__module__.startswith(
         "modular.torch_mlir"
     )
+
+
+def _remove_static_info_from_torch_jit_graph(graph: Any):
+    """Removes any static tensor type information from a torch.jit graph."""
+    import torch
+
+    def _remove_static_info_from_value(value):
+        if value.type().isSubtypeOf(torch._C.TensorType.get()):
+            value.setType(torch._C.TensorType.get())
+
+    def _remove_static_info_from_node(node):
+        for input in node.inputs():
+            _remove_static_info_from_value(input)
+
+        for output in node.outputs():
+            _remove_static_info_from_value(output)
+
+    # Apply this function to all nodes in the graph
+    for node in graph.nodes():
+        _remove_static_info_from_node(node)
 
 
 class InferenceSession:
@@ -482,10 +506,12 @@ class InferenceSession:
             _model = self._impl.compile_from_path(model_path, options_dict)
         else:
             if _is_torchscript_module(model):
+                _remove_static_info_from_torch_jit_graph(model.graph)
                 _model = self._impl.compile_from_object(
                     model._c, _FrameworkFormat.torchscript_module, options_dict
                 )
             elif _is_torchscript_function(model):
+                _remove_static_info_from_torch_jit_graph(model.graph)
                 _model = self._impl.compile_from_object(
                     model, _FrameworkFormat.torchscript_function, options_dict
                 )
