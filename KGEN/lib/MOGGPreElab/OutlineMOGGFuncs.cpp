@@ -32,7 +32,6 @@ namespace M::KGEN::MOGGPreElab {
 } // namespace M::KGEN::MOGGPreElab
 
 namespace {
-
 class OutlineMOGGFuncsPass
     : public M::KGEN::MOGGPreElab::impl::OutlineMOGGFuncsBase<
           OutlineMOGGFuncsPass> {
@@ -360,5 +359,4 @@ public:
     }
   }
 };
-
 } // namespace

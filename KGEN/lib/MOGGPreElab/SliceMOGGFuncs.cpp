@@ -33,7 +33,6 @@ namespace M::KGEN::MOGGPreElab {
 } // namespace M::KGEN::MOGGPreElab
 
 namespace {
-
 class SliceMOGGFuncsPass
     : public M::KGEN::MOGGPreElab::impl::SliceMOGGFuncsBase<
           SliceMOGGFuncsPass> {
@@ -717,5 +716,4 @@ public:
     }
   }
 };
-
 } // namespace
