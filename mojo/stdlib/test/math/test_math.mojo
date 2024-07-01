@@ -418,8 +418,19 @@ def test_ceildiv():
     # NOTE: these tests are here mostly to ensure the ceildiv method exists.
     # Types that opt in to CeilDivable, should test their own dunder methods for
     # correctness.
-    assert_equal(ceildiv(1, 7), 1)
-    assert_equal(ceildiv(548, -7), -78)
+    assert_equal(ceildiv(53.6, 1.35), 40.0)
+
+    # Test the IntLiteral overload.
+    alias a: IntLiteral = ceildiv(1, 7)
+    assert_equal(a, 1)
+    alias b: IntLiteral = ceildiv(548, -7)
+    assert_equal(b, -78)
+
+    # Test the Int overload.
+    assert_equal(ceildiv(Int(1), Int(7)), 1)
+    assert_equal(ceildiv(Int(548), Int(-7)), -78)
+    assert_equal(ceildiv(Int(-55), Int(8)), -6)
+    assert_equal(ceildiv(Int(-55), Int(-8)), 7)
 
     # Test the UInt overload.
     assert_equal(ceildiv(UInt(1), UInt(7)), UInt(1))
