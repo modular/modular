@@ -21,7 +21,12 @@ struct BFloat16Encoding(QuantizationEncoding):
     less precision for the fractional part. This is often a better trade-off
     for ML applications, compared to traditional float16, which has less
     numeric range because it uses only 5 bits to store the exponent (though it
-    has better precision with 10 bits for the mantissa)."""
+    has better precision with 10 bits for the mantissa).
+
+    Because this holds the quantized data in a special packing format, it
+    currently does not print float values at runtime—it's just a bag of
+    bits in uint8 format.
+    """
 
     @staticmethod
     def quantize(tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
@@ -136,6 +141,10 @@ struct Q4_0Encoding(QuantizationEncoding):
     packed into 18 bytes. The first two bytes specify the float16 quantization
     scale, and the other 16 bytes hold the 32 values (one byte holds two 4-bit
     values).
+
+    Because this holds the quantized data in a special packing format, it
+    currently does not print float values at runtime—it's just a bag of
+    bits in uint8 format.
     """
 
     @staticmethod
@@ -278,7 +287,12 @@ struct _BlockQ4K:
 
 
 struct Q4_KEncoding(QuantizationEncoding):
-    """The Q4_K quantization encoding."""
+    """The Q4_K quantization encoding.
+
+    Because this holds the quantized data in a special packing format, it
+    currently does not print float values at runtime—it's just a bag of
+    bits in uint8 format.
+    """
 
     @staticmethod
     def quantize(_tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
@@ -338,7 +352,12 @@ struct _BlockQ6K:
 
 
 struct Q6_KEncoding(QuantizationEncoding):
-    """The Q6_K quantization encoding."""
+    """The Q6_K quantization encoding.
+
+    Because this holds the quantized data in a special packing format, it
+    currently does not print float values at runtime—it's just a bag of
+    bits in uint8 format.
+    """
 
     @staticmethod
     def quantize(_tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:
