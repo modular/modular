@@ -44,19 +44,10 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     @parameter
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[2]](idx0)
-
-        @parameter
-        if simd_width == 1:
-            alias alignment = alignof[SIMD[type, pack_size]]()
-            out_buffer.store[width=simd_width, alignment=alignment](
-                idx,
-                in_buffer.load[width=simd_width, alignment=alignment](idx) + 42,
-            )
-        else:
-            out_buffer.store[width=simd_width](
-                idx,
-                in_buffer.load[width=simd_width](idx) + 42,
-            )
+        out_buffer.store(
+            idx,
+            in_buffer.load[width=simd_width](idx) + 42,
+        )
 
     _elementwise_impl_gpu[func, pack_size](
         StaticIntTuple[2](2, 8),
@@ -121,18 +112,10 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[2]](idx0)
 
-        @parameter
-        if simd_width == 1:
-            alias alignment = alignof[SIMD[type, pack_size]]()
-            out_buffer.store[width=simd_width, alignment=alignment](
-                idx,
-                in_buffer.load[width=simd_width, alignment=alignment](idx) + 42,
-            )
-        else:
-            out_buffer.store[width=simd_width](
-                idx,
-                in_buffer.load[width=simd_width](idx) + 42,
-            )
+        out_buffer.store(
+            idx,
+            in_buffer.load[width=simd_width](idx) + 42,
+        )
 
     _elementwise_impl_gpu[func, pack_size](
         StaticIntTuple[2](3, 3),
@@ -182,9 +165,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[3]](idx0)
 
-        out_buffer.store[width=simd_width](
-            idx, in_buffer_transposed.load[width=simd_width](idx)
-        )
+        out_buffer.store(idx, in_buffer_transposed.load[width=simd_width](idx))
 
     _elementwise_impl_gpu[func, 4](
         StaticIntTuple[3](4, 2, 5),
