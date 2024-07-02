@@ -29,6 +29,7 @@ from gpu import (
     syncwarp,
     WARP_SIZE,
 )
+from gpu.host._compile import _get_nvptx_target
 from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx
 from gpu.memory import AddressSpace
 from .reshape import reshape
@@ -203,9 +204,9 @@ fn layer_norm_gpu_warp_tiling[
     ] = None,
 ](
     data: NDBuffer[type, 2],
-    gamma: NDBuffer[type, 1, DimList(1)],
-    beta: NDBuffer[type, 1, DimList(1)],
-    epsilon: NDBuffer[type, 1, DimList(1)],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
 ):
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
@@ -246,7 +247,9 @@ fn layer_norm_gpu_warp_tiling[
     var row_var = max((row_m2 / row_count), 0.0)
 
     var norm_factor = rsqrt(row_var + epsilon[0])
-    var norm_val = (vec_data - row_mean) * norm_factor * gamma[0] + beta[0]
+    var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
+        width=simd_width, alignment=align
+    ](Index(idx)) + beta.load[width=simd_width, alignment=align](Index(idx))
     data.store[width=simd_width, alignment=align](Index(row, idx), norm_val)
 
 
@@ -261,9 +264,9 @@ fn layer_norm_gpu_block[
     ] = None,
 ](
     data: NDBuffer[type, 2],
-    gamma: NDBuffer[type, 1, DimList(1)],
-    beta: NDBuffer[type, 1, DimList(1)],
-    epsilon: NDBuffer[type, 1, DimList(1)],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
 ):
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
@@ -328,7 +331,9 @@ fn layer_norm_gpu_block[
 
         var norm_factor = rsqrt(row_var + epsilon[0])
 
-        var norm_val = (vec_data - row_mean) * norm_factor * gamma[0] + beta[0]
+        var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
+            width=simd_width, alignment=align
+        ](Index(x)) + beta.load[width=simd_width, alignment=align](Index(x))
         data.store[width=simd_width, alignment=align](Index(row, x), norm_val)
 
 
@@ -351,7 +356,7 @@ fn layer_norm_gpu[
     var rows = output.dim[0]()
     var cols = output.dim[1]()
 
-    alias simd_width = 4
+    alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
 
     # When the number of columns are less enough that they can be placed in
@@ -359,12 +364,7 @@ fn layer_norm_gpu[
     # and normalization.
     if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
         var gpu_func = ctx.compile_function[
-            layer_norm_gpu_warp_tiling[
-                type,
-                simd_width,
-                rank,
-                input_0_fn,
-            ]
+            layer_norm_gpu_warp_tiling[type, simd_width, rank, input_0_fn]
         ]()
         ctx.enqueue_function(
             gpu_func,
@@ -372,10 +372,8 @@ fn layer_norm_gpu[
             gamma,
             beta,
             epsilon,
-            grid_dim=(rows,),
-            block_dim=(
-                min(cols // simd_width, WARP_SIZE * max_warps_per_block),
-            ),
+            grid_dim=rows,
+            block_dim=min(cols // simd_width, WARP_SIZE * max_warps_per_block),
         )
     else:
         var gpu_func = ctx.compile_function[
@@ -392,10 +390,8 @@ fn layer_norm_gpu[
             gamma,
             beta,
             epsilon,
-            grid_dim=(rows,),
-            block_dim=(
-                min(cols // simd_width, WARP_SIZE * max_warps_per_block),
-            ),
+            grid_dim=rows,
+            block_dim=min(cols // simd_width, WARP_SIZE * max_warps_per_block),
         )
 
 
@@ -405,12 +401,10 @@ fn layer_norm_cpu[
     input_fn: fn[mytype: DType, width: Int] (Int, Int) capturing -> SIMD[
         mytype, width
     ],
-    shape: DimList,
-    inner_dim: DimList,
 ](
-    out_buf: NDBuffer[type, 2, shape],
-    gamma_buf: NDBuffer[type, 1, inner_dim],
-    beta_buf: NDBuffer[type, 1, inner_dim],
+    out_buf: NDBuffer[type, 2, _],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
     eps: Scalar[type],
 ):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -423,13 +417,11 @@ fn layer_norm_cpu[
         simd_width: The vector width for the computation.
         type: The x and out buffers' elements dtype.
         input_fn: Function called to generate an input value.
-        shape: The x and out buffers' shape.
-        inner_dim: The shape of gamma_buf and beta_buf.
 
     Args:
         out_buf: The output buffer.
-        gamma_buf: The gamma value to use in the layernorm calculation.
-        beta_buf: The beta value to use in the layernorm calculation.
+        gamma: The gamma value to use in the layernorm calculation.
+        beta: The beta value to use in the layernorm calculation.
         eps: The eps value to use in the layernorm calculation.
     """
 
@@ -438,7 +430,7 @@ fn layer_norm_cpu[
 
     for i in range(m):
         var start_coord = StaticIntTuple[2](i, 0)
-        var out_slice = Buffer[type, shape.at[1]()](
+        var out_slice = Buffer[type, out_buf.shape.at[1]()](
             out_buf._offset(start_coord), n
         )
 
@@ -451,7 +443,7 @@ fn layer_norm_cpu[
 
         var sum_val = map_reduce[
             simd_width,
-            shape.at[1](),
+            out_buf.shape.at[1](),
             type,
             type,
             input_gen_wrapper,
@@ -477,9 +469,9 @@ fn layer_norm_cpu[
         @parameter
         fn _normalize[simd_width: Int](idx: Int):
             var out_val = out_slice.load[width=simd_width](idx)
-            var norm_val = (out_val - mean_val) * norm_factor * gamma_buf.load[
+            var norm_val = (out_val - mean_val) * norm_factor * gamma.load[
                 width=simd_width
-            ](idx) + beta_buf.load[width=simd_width](idx)
+            ](idx) + beta.load[width=simd_width](idx)
             out_slice.store(idx, norm_val)
 
         vectorize[_normalize, simd_width](n)
@@ -508,7 +500,6 @@ fn layer_norm_cpu[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
         var eps = epsilon[0]
-
         alias simd_width = simdwidthof[type]()
 
         var last_dim = shape[rank - 1]
