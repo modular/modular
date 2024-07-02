@@ -1,6 +1,6 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
-load("//bazel:api.bzl", "pytest_test")
+load("//bazel:api.bzl", "modular_py_test")
 
 py_library(
     name = "support",
@@ -15,7 +15,7 @@ py_library(
     ],
 )
 
-pytest_test(
+modular_py_test(
     name = "unittests",
     srcs = glob(["tests/**/*.py"]),
     tags = ["requires-network"],
