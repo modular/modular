@@ -1081,15 +1081,15 @@ fn _get_start_indices_of_nth_subvolume[
 
     @parameter
     if rank - 1 == subvolume_rank:
-        var out = StaticIntTuple[rank](0)
+        var out = StaticIntTuple[rank](repeat=0)
         out[0] = n
         return out
 
     @parameter
     if rank == subvolume_rank:
-        return StaticIntTuple[rank](0)
+        return StaticIntTuple[rank](repeat=0)
 
-    var out = StaticIntTuple[rank](0)
+    var out = StaticIntTuple[rank](repeat=0)
     var curr_index = n
 
     @parameter
@@ -1265,7 +1265,7 @@ fn _elementwise_impl_cpu_1d[
         @always_inline
         @parameter
         fn blocking_task_fun[simd_width: Int](idx: Int):
-            func[simd_width, rank](idx)
+            func[simd_width, rank](StaticIntTuple[rank](repeat=idx))
 
         vectorize[blocking_task_fun, simd_width, unroll_factor=unroll_factor](
             problem_size
@@ -1288,7 +1288,7 @@ fn _elementwise_impl_cpu_1d[
         @parameter
         fn func_wrapper[simd_width: Int](idx: Int):
             var offset = start_offset + idx
-            func[simd_width, rank](offset)
+            func[simd_width, rank](StaticIntTuple[rank](repeat=idx))
 
         vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](len)
 
