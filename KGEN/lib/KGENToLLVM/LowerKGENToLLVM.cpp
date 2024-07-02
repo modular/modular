@@ -114,8 +114,7 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
 namespace {
 /// Cached attribute identifiers.
 struct AttributeIdentifiers {
-  StringAttr noalias;
-  StringAttr noundef;
+  StringAttr noalias, noundef, nonnull;
 };
 } // namespace
 
@@ -205,6 +204,9 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     case ArgConvention::BorrowedInMem:
       // TODO(MOCO-914): `ref` arguments could be mutable references, but we
       // don't have the information in the IR anymore.
+
+      // We know the pointers that back in-memory arguments are nonnull.
+      list.set(ids.nonnull, b.getUnitAttr());
       [[fallthrough]];
 
     case ArgConvention::BorrowedInReg:
@@ -1153,6 +1155,7 @@ public:
 
     ids.noalias = id(LLVMDialect::getNoAliasAttrName());
     ids.noundef = id(LLVMDialect::getNoUndefAttrName());
+    ids.nonnull = id(LLVMDialect::getNonNullAttrName());
 
     return success();
   }
