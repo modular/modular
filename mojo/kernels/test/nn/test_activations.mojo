@@ -185,7 +185,7 @@ fn test_gelu_libm():
     # CHECK: Compare Mojo activations.gelu vs. LibM
     # CHECK: AbsErr-Min/Max 0.0 4.76837158203125e-07
     # CHECK: RelErr-Min/Max 0.0 0.035714227706193924
-    compare[dtype, N](y32, libm_out, "Compare Mojo activations.gelu vs. LibM")
+    _ = compare(y32, libm_out, N, msg="Compare Mojo activations.gelu vs. LibM")
 
     x32.free()
     y32.free()

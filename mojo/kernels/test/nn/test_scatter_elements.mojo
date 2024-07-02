@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from buffer import DimList, NDBuffer
-from internal_utils import TestTensor, array_equal
+from internal_utils import TestTensor, assert_equal
 from nn.gather_scatter import scatter_elements
 
 
@@ -53,8 +53,7 @@ fn test_case[
         output.ndbuffer,
     )
 
-    if not array_equal(output, output_ref):
-        print("FAIL")
+    assert_equal(output, output_ref)
 
 
 fn main() raises:

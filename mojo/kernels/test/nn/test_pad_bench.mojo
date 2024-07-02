@@ -13,7 +13,8 @@ from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
-from testing import assert_equal, assert_true
+from testing import assert_true
+from internal_utils import assert_equal
 
 from utils import StaticIntTuple, StaticTuple, unroll
 
@@ -383,19 +384,6 @@ fn _pad_reflect_impl_rec[
     )
 
 
-fn array_equal[
-    type: DType, rank: Int, output_shape: DimList
-](
-    output_x: NDBuffer[type, rank, output_shape],
-    output_y: NDBuffer[type, rank, output_shape],
-) -> Bool:
-    for i in range(output_x.num_elements()):
-        if not isclose(output_x.data[i], output_y.data[i]):
-            print("FAIL @", output_x.get_nd_index(i))
-            return False
-    return True
-
-
 fn pretty_print(
     name: String,
     size: Int,
@@ -425,7 +413,7 @@ fn pretty_print(
 fn bench[
     func: fn[
         rank: Int, recursive: Int, size: Int, verify: Bool = False
-    ] () -> NoneType,
+    ] () raises -> NoneType,
     rank: Int,
     size: Int,
     name: String,
@@ -434,15 +422,21 @@ fn bench[
 
     @parameter
     fn runner_iter():
-        for i in range(N):
-            var result = func[rank, 0, size]()
-            # keep(result)
+        try:
+            for i in range(N):
+                var result = func[rank, 0, size]()
+                keep(result)
+        except e:
+            abort(e)
 
     @parameter
     fn runner_recursive():
-        for i in range(N):
-            var result = func[rank, 1, size]()
-            # keep(result)
+        try:
+            for i in range(N):
+                var result = func[rank, 1, size]()
+                keep(result)
+        except e:
+            abort(e)
 
     var ms_iter = benchmark.run[runner_iter](1, 10)
     var ms_recursive = benchmark.run[runner_recursive](1, 10)
@@ -466,10 +460,9 @@ fn bench[
     )
 
 
-@always_inline
 fn test_pad_constant_nd[
     rank: Int, recursive: Int, n: Int, verify: Bool = False
-]():
+]() raises:
     alias d_pre = 3
     alias d_post = 7
     alias d = d_pre + d_post
@@ -536,10 +529,7 @@ fn test_pad_constant_nd[
         pad_constant_dispatch[recursive=1](
             output_rec, input, paddings.data, constant
         )
-        if array_equal(output, output_rec):
-            print("PASS test_pad_constant_nd " + str(rank) + "d")
-        else:
-            print("FAILED test_pad_constant_nd " + str(rank) + "d")
+        assert_equal(output, output_rec)
 
         output_rec_ptr.free()
 
@@ -549,7 +539,7 @@ fn test_pad_constant_nd[
 
 fn test_pad_reflect_nd[
     rank: Int, recursive: Int, n: Int, verify: Bool = False
-]():
+]() raises:
     alias d_pre = 3
     alias d_post = 7
     alias d = d_pre + d_post
@@ -610,10 +600,7 @@ fn test_pad_reflect_nd[
         output_rec.fill(0)
         pad_reflect_dispatch[recursive=1](output_rec, input, paddings.data)
 
-        if array_equal(output, output_rec):
-            print("PASS test_pad_reflect_nd " + str(rank) + "d")
-        else:
-            print("FAILED test_pad_reflect_nd " + str(rank) + "d")
+        assert_equal(output, output_rec)
 
         output_rec_ptr.free()
 
@@ -622,10 +609,10 @@ fn test_pad_reflect_nd[
 
 
 # CHECK-LABEL: test_pad_iterative
-fn main() raises:
+def main():
     print("== test_pad_iterative")
 
-    fn all[N: Int]() raises:
+    def all[N: Int]():
         bench[test_pad_constant_nd, 1, N, "test_pad_constant_1d"]()
         bench[test_pad_constant_nd, 2, N, "test_pad_constant_2d"]()
         bench[test_pad_constant_nd, 3, N, "test_pad_constant_3d"]()
@@ -642,16 +629,10 @@ fn main() raises:
     # all[512]()
     # all[1024]()
 
-    # CHECK: PASS test_pad_constant_nd 1d
     test_pad_constant_nd[1, 0, 64, True]()
-    # CHECK: PASS test_pad_constant_nd 2d
     test_pad_constant_nd[2, 0, 64, True]()
-    # CHECK: PASS test_pad_constant_nd 3d
     test_pad_constant_nd[3, 0, 64, True]()
 
-    # CHECK: PASS test_pad_reflect_nd 1d
     test_pad_reflect_nd[1, 0, 64, True]()
-    # CHECK: PASS test_pad_reflect_nd 2d
     test_pad_reflect_nd[2, 0, 64, True]()
-    # CHECK: PASS test_pad_reflect_nd 3d
     test_pad_reflect_nd[3, 0, 64, True]()
