@@ -7,6 +7,7 @@
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.time import *
+from time import sleep
 from testing import *
 
 
@@ -19,6 +20,14 @@ fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ]
+
+
+fn sleep_function(val: Float64):
+    sleep(val)
+
+
+def test_sleep_function():
+    assert_true("nanosleep.u32 %r1;" in _compile_code[sleep_function]().asm)
 
 
 fn clock_functions():
@@ -34,19 +43,13 @@ fn _verify_clock_functions(asm: String) raises -> None:
 
 
 def test_clock_functions_sm80():
-    alias asm = str(
-        _compile_code[
-            clock_functions,
-            target = _get_nvptx_target(),
-        ]().asm
-    )
-    _verify_clock_functions(asm)
+    _verify_clock_functions(_compile_code[clock_functions]().asm)
 
 
 def test_clock_functions_sm90():
-    alias asm = str(
-        _compile_code[clock_functions, target = _get_nvptx_target_sm90()]().asm
-    )
+    alias asm = _compile_code[
+        clock_functions, target = _get_nvptx_target_sm90()
+    ]().asm
     _verify_clock_functions(asm)
 
 
@@ -70,23 +73,22 @@ fn _verify_time_functions(asm: String) raises -> None:
 
 
 def test_time_functions_sm80():
-    alias asm = str(
-        _compile_code[time_functions, target = _get_nvptx_target()]().asm
-    )
+    alias asm = _compile_code[
+        time_functions, target = _get_nvptx_target()
+    ]().asm
     _verify_time_functions(asm)
 
 
 def test_time_functions_sm90():
-    alias asm = str(
-        _compile_code[time_functions, target = _get_nvptx_target_sm90()]().asm
-    )
+    alias asm = _compile_code[
+        time_functions, target = _get_nvptx_target_sm90()
+    ]().asm
     _verify_time_functions(asm)
 
 
 def main():
-    @parameter
-    if not is_defined["MODULAR_PRODUCTION"]():
-        test_clock_functions_sm80()
-        test_clock_functions_sm90()
-        test_time_functions_sm80()
-        test_time_functions_sm90()
+    test_sleep_function()
+    test_clock_functions_sm80()
+    test_clock_functions_sm90()
+    test_time_functions_sm80()
+    test_time_functions_sm90()

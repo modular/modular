@@ -8,7 +8,8 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 import builtin
 import gpu.host as gpu_host
-from gpu import AddressSpace, ThreadIdx, memory, sync, time
+from gpu import AddressSpace, ThreadIdx, memory, sync
+import time
 from memory import stack_allocation
 
 
