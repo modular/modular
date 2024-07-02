@@ -52,7 +52,7 @@ fn cfunc[func_name: StringLiteral, T: AnyTrivialRegType]() -> T:
     var f = _get_dylib_function[
         "MOF_LIB", func_name, _init_dylib, _destroy_dylib, T
     ]()
-    var ptr = Pointer.address_of(f).bitcast[Pointer[NoneType]]().load()
+    var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
     if not ptr:
         abort("cannot load " + String(func_name) + " from graph library")
     return f

@@ -17,8 +17,8 @@ from max.tensor import TensorShape
 from collections import List
 from sys.info import is_little_endian, sizeof
 
-from memory import memcpy
-from memory.unsafe import DTypePointer, Pointer
+from memory import memcpy, UnsafePointer
+from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple
 from utils.loop import unroll
@@ -512,8 +512,8 @@ struct _TensorShapeStorage:
     fn __init__(inout self):
         """Default initializes the _TensorShapeStorage type."""
         var rep = _Rep32()
-        var rep_ptr = Pointer.address_of(rep)
-        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        var rep_ptr = UnsafePointer.address_of(rep)
+        self = rep_ptr.bitcast[_TensorShapeStorage]()[]
         _ = rep
 
     @always_inline
@@ -524,8 +524,8 @@ struct _TensorShapeStorage:
           rep: A shape representation.
         """
         var rep_copy = rep
-        var rep_ptr = Pointer.address_of(rep_copy)
-        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        var rep_ptr = UnsafePointer.address_of(rep_copy)
+        self = rep_ptr.bitcast[_TensorShapeStorage]()[]
         _ = rep_copy
 
     @always_inline
@@ -536,8 +536,8 @@ struct _TensorShapeStorage:
           rep: A shape representation.
         """
         var rep_copy = rep
-        var rep_ptr = Pointer.address_of(rep_copy)
-        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        var rep_ptr = UnsafePointer.address_of(rep_copy)
+        self = rep_ptr.bitcast[_TensorShapeStorage]()[]
         _ = rep_copy
 
     @always_inline
@@ -550,8 +550,8 @@ struct _TensorShapeStorage:
           rep: A shape representation.
         """
         var rep_copy = rep
-        var rep_ptr = Pointer.address_of(rep_copy)
-        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
+        var rep_ptr = UnsafePointer.address_of(rep_copy)
+        self = rep_ptr.bitcast[_TensorShapeStorage]()[]
         _ = rep_copy
 
 
@@ -566,8 +566,8 @@ fn _as_rep16(rep0: _TensorShapeStorage) -> _Rep16:
       The _Rep16 representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_Rep16]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_Rep16]()[]
     _ = rep
     return result
 
@@ -597,8 +597,8 @@ fn _as_rep16(rep0: _Rep32) -> _Rep16:
       The _Rep16 representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_Rep16]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_Rep16]()[]
     _ = rep
     return result
 
@@ -614,8 +614,8 @@ fn _as_rep32(rep0: _TensorShapeStorage) -> _Rep32:
       The _Rep32 representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_Rep32]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_Rep32]()[]
     _ = rep
     return result
 
@@ -631,8 +631,8 @@ fn _as_rep32(rep0: _Rep16) -> _Rep32:
       The _Rep32 representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_Rep32]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_Rep32]()[]
     _ = rep
     return result
 
@@ -662,8 +662,8 @@ fn _as_rep_out_of_line(rep0: _TensorShapeStorage) -> _RepOutOfLine:
       The _RepOutOfLine representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_RepOutOfLine]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_RepOutOfLine]()[]
     _ = rep
     return result
 
@@ -679,8 +679,8 @@ fn _as_rep_out_of_line(rep0: _Rep16) -> _RepOutOfLine:
       The _RepOutOfLine representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_RepOutOfLine]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_RepOutOfLine]()[]
     _ = rep
     return result
 
@@ -696,8 +696,8 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
       The _RepOutOfLine representation.
     """
     var rep = rep0
-    var rep_ptr = Pointer.address_of(rep)
-    var result = rep_ptr.bitcast[_RepOutOfLine]().load()
+    var rep_ptr = UnsafePointer.address_of(rep)
+    var result = rep_ptr.bitcast[_RepOutOfLine]()[]
     _ = rep
     return result
 
