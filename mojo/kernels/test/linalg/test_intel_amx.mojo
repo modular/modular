@@ -30,7 +30,7 @@ from linalg.intel_amx_intrinsics import (
 )
 from linalg.matmul import Matrix, naive_matmul
 from linalg.transpose import transpose, transpose_inplace
-from memory import memcmp, memset_zero
+from memory import memcmp, memset_zero, UnsafePointer
 from memory.unsafe import DTypePointer, Pointer
 
 from utils.loop import unroll
@@ -114,7 +114,7 @@ fn init_matrices(
 
 fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
-    var ptr = Pointer.address_of(tc)
+    var ptr = UnsafePointer.address_of(tc)
     var tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr, 64)
 
