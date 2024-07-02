@@ -2986,20 +2986,20 @@ fn conv[
     var dilation_flat = dilation.flatten()
     var padding_flat = paddings.flatten()
 
-    var stride_tuple = StaticIntTuple[input_rank - 2](0)
-    var dilation_tuple = StaticIntTuple[input_rank - 2](0)
+    var stride_tuple = StaticIntTuple[input_rank - 2](repeat=0)
+    var dilation_tuple = StaticIntTuple[input_rank - 2](repeat=0)
 
     @parameter
     for i in range(input_rank - 2):
         stride_tuple[i] = int(stride_flat[i])
         dilation_tuple[i] = int(dilation_flat[i])
 
-    if dilation_tuple != StaticIntTuple[input_rank - 2](1):
+    if dilation_tuple != StaticIntTuple[input_rank - 2](repeat=1):
         return ctx.set_to_error("Non-unit dilation is not supported yet.")
 
-    var pad_d_tuple = StaticIntTuple[2](0)
-    var pad_h_tuple = StaticIntTuple[2](0)
-    var pad_w_tuple = StaticIntTuple[2](0)
+    var pad_d_tuple = StaticIntTuple[2](repeat=0)
+    var pad_h_tuple = StaticIntTuple[2](repeat=0)
+    var pad_w_tuple = StaticIntTuple[2](repeat=0)
 
     @parameter
     if input_rank == 3:
@@ -3130,17 +3130,17 @@ fn conv_transpose[
             "$(2*(input_rank-2)) value expected in convTranspose paddings"
         )
 
-    var stride_tuple = StaticIntTuple[input_rank - 2](0)
-    var dilation_tuple = StaticIntTuple[input_rank - 2](0)
+    var stride_tuple = StaticIntTuple[input_rank - 2](repeat=0)
+    var dilation_tuple = StaticIntTuple[input_rank - 2](repeat=0)
 
     @parameter
     for i in range(input_rank - 2):
         stride_tuple[i] = int(strides[i])
         dilation_tuple[i] = int(dilation[i])
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = StaticIntTuple[2](repeat=0)
+    var pad_h = StaticIntTuple[2](repeat=0)
+    var pad_w = StaticIntTuple[2](repeat=0)
 
     @parameter
     if input_rank == 3:
