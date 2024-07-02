@@ -145,7 +145,7 @@ fn resize_nearest_neighbor[
     fn nn_interpolate[
         simd_width: Int, _rank: Int
     ](out_coords: StaticIntTuple[_rank]):
-        var in_coords = StaticIntTuple[rank](0)
+        var in_coords = StaticIntTuple[rank](repeat=0)
 
         @parameter
         for i in range(rank):
@@ -264,7 +264,7 @@ fn _resize[
         return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()
     var resize_dims = InlinedFixedVector[Int, size=rank](rank)
-    var tmp_dims = StaticIntTuple[rank](0)
+    var tmp_dims = StaticIntTuple[rank](repeat=0)
     for i in range(rank):
         # need to consider output dims when upsampling and input dims when downsampling
         tmp_dims[i] = max(input.dim(i), output.dim(i))

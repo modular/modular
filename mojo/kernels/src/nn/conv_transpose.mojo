@@ -291,7 +291,7 @@ fn get_num_partitions[
 
     var max_f_tasks = ceildiv(conv_shape.f, micro_kernel_f_size)
 
-    var num_partitions = StaticIntTuple[4](1)
+    var num_partitions = StaticIntTuple[4](repeat=1)
 
     num_partitions[0] = min(max_num_tasks, num_batches_and_groups)
     num_partitions[2] = min(max_f_tasks, max_num_tasks // num_partitions[0])
@@ -1285,7 +1285,7 @@ fn conv_transposed[
     alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1
 
     var packed_filter_ptr = filter.data
-    var packed_filter_shape = StaticIntTuple[packed_filter_rank](1)
+    var packed_filter_shape = StaticIntTuple[packed_filter_rank](repeat=1)
 
     # If filter is not packed, we have to pack it before the kernel.
     @parameter

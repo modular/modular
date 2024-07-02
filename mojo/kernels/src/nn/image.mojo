@@ -218,7 +218,7 @@ struct ImageData[
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
-        return 0
+        return StaticIntTuple[4](repeat=0)
 
     fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[type]:
         """Reads the underlying data buffer based on the tensor index and under-

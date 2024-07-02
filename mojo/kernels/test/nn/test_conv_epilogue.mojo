@@ -49,7 +49,7 @@ fn test[
 ) raises:
     print("== test_conv_epilogue")
 
-    var output_dims = StaticIntTuple[rank](1)
+    var output_dims = StaticIntTuple[rank](repeat=1)
 
     @parameter
     for i in range(rank):
@@ -61,9 +61,9 @@ fn test[
             - 1
         ) // stride[i] + 1
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = StaticIntTuple[2](repeat=0)
+    var pad_h = StaticIntTuple[2](repeat=0)
+    var pad_w = StaticIntTuple[2](repeat=0)
 
     @parameter
     if rank == 1:
@@ -332,7 +332,7 @@ fn main() raises:
         64,  # F
         Index(1, 1, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0),  # pad_d, pad_h, pad_w
+        StaticIntTuple[6](repeat=0),  # pad_d, pad_h, pad_w
         1,  # num_groups
     )
 
@@ -370,7 +370,7 @@ fn main() raises:
         64,  # F
         Index(2, 2, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0),  # pad_h, pad_w
+        StaticIntTuple[6](repeat=0),  # pad_h, pad_w
         1,  # num_groups
     )
 

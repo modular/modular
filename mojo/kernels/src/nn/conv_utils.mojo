@@ -276,9 +276,9 @@ fn get_conv_shape[
     pad_w: StaticIntTuple[2],
     num_groups: Int,
 ) -> ConvShape[rank]:
-    var output_dims = StaticIntTuple[rank](0)
-    var input_dims = StaticIntTuple[rank](0)
-    var filter_dims = StaticIntTuple[rank](0)
+    var output_dims = StaticIntTuple[rank](repeat=0)
+    var input_dims = StaticIntTuple[rank](repeat=0)
+    var filter_dims = StaticIntTuple[rank](repeat=0)
 
     @parameter
     for i in range(rank):
@@ -464,7 +464,7 @@ fn extend_shape[
     rank + 2
 ]:
     """Extend input shape by inserting `first` and `last` at both ends."""
-    var out_shape = StaticIntTuple[rank + 2](0)
+    var out_shape = StaticIntTuple[rank + 2](repeat=0)
     out_shape[0] = first
     out_shape[rank + 1] = last
 
@@ -482,7 +482,7 @@ fn append_shape[
     rank + 2
 ]:
     """Append input shape by inserting `last2nd` and `last` at the end."""
-    var out_shape = StaticIntTuple[rank + 2](0)
+    var out_shape = StaticIntTuple[rank + 2](repeat=0)
     out_shape[rank] = last2nd
     out_shape[rank + 1] = last
 

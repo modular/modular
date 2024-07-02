@@ -38,7 +38,7 @@ alias type = DType.float32
 fn extend_shape_5d[
     rank: Int
 ](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[5]:
-    var out_shape = StaticIntTuple[5](1)
+    var out_shape = StaticIntTuple[5](repeat=1)
     out_shape[0] = first
     out_shape[4] = last
 
@@ -60,7 +60,7 @@ fn extend_shape_5d[
 fn extend_shape_3d[
     rank: Int
 ](in_shape: StaticIntTuple[rank]) -> StaticIntTuple[3]:
-    var out_shape = StaticIntTuple[3](1)
+    var out_shape = StaticIntTuple[3](repeat=1)
 
     @parameter
     for i in range(rank):
@@ -73,7 +73,7 @@ fn extend_shape_3d[
 fn append_shape_5d[
     rank: Int
 ](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[5]:
-    var out_shape = StaticIntTuple[5](1)
+    var out_shape = StaticIntTuple[5](repeat=1)
     out_shape[3] = last2nd
     out_shape[4] = last
 
@@ -106,7 +106,7 @@ fn test_conv_transposed[
 ) raises:
     print("test_conv_transposed")
 
-    var output_dims = StaticIntTuple[rank](1)
+    var output_dims = StaticIntTuple[rank](repeat=1)
 
     @parameter
     for i in range(rank):
@@ -118,9 +118,9 @@ fn test_conv_transposed[
             + 1
         )
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = StaticIntTuple[2](repeat=0)
+    var pad_h = StaticIntTuple[2](repeat=0)
+    var pad_w = StaticIntTuple[2](repeat=0)
 
     @parameter
     if rank == 1:
@@ -372,7 +372,7 @@ fn main() raises:
         2,  # F
         Index(1, 3, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0),  # pad
+        StaticIntTuple[6](repeat=0),  # pad
         1,  # num_groups
     )
 
@@ -384,7 +384,7 @@ fn main() raises:
         2,  # F
         Index(2, 1, 2),  # stride
         Index(1, 1, 2),  # dilation
-        StaticIntTuple[6](0),  # pad
+        StaticIntTuple[6](repeat=0),  # pad
         1,  # num_groups
     )
 
