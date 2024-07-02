@@ -77,42 +77,41 @@ fn kernel(
     alias NR2 = NR // simd_size
 
     @parameter
-    @always_inline
-    fn loadc[idx0: Int, idx1: Int]():
-        var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
-        c_local.store[width=simd_size](NR * idx0 + simd_size * idx1, cv)
+    for idx0 in range(MR):
 
-    unroll[loadc, MR, NR2]()
+        @prameter
+        for idx1 in range(NR2):
+            var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
+            c_local.store(NR * idx0 + simd_size * idx1, cv)
 
     for pr in range(kc):
 
         @parameter
-        @always_inline
-        fn prefetch[idx0: Int]():
+        for i in range(NR2):
             prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](b_ptr.offset(NR * pr + simd_size * (idx0 + 16)))
-
-        unroll[prefetch, NR2]()
+            ](b_ptr.offset(NR * pr + simd_size * (i + 16)))
 
         @parameter
-        @always_inline
-        fn calc[idx0: Int, idx1: Int]():
-            var av = a[idx0 * k + pr].cast[dtype]()
-            var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
-            var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
-            cv += av * bv
-            c_local.store[width=simd_size](NR * idx0 + simd_size * idx1, cv)
+        for idx0 in range(MR):
 
-        unroll[calc, MR, NR2]()
+            @prameter
+            for idx1 in range(NR2):
+                var av = a[idx0 * k + pr].cast[dtype]()
+                var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
+                var cv = c_local.load[width=simd_size](
+                    NR * idx0 + simd_size * idx1
+                )
+                cv += av * bv
+                c_local.store(NR * idx0 + simd_size * idx1, cv)
 
     @parameter
-    @always_inline
-    fn storec[idx0: Int, idx1: Int]():
-        var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
-        c.store[width=simd_size](n * idx0 + simd_size * idx1, cv)
+    for idx0 in range(MR):
 
-    unroll[storec, MR, NR2]()
+        @prameter
+        for idx1 in range(NR2):
+            var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
+            c.store(n * idx0 + simd_size * idx1, cv)
 
 
 fn pack_B(
