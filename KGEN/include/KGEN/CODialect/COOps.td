@@ -46,8 +46,7 @@ def CO_HandleOp : COOp<"handle"> {
 // SuspendOp
 //===----------------------------------------------------------------------===//
 
-def CO_SuspendOp : COOp<"suspend", [SingleBlock,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
+def CO_SuspendOp : COOp<"suspend", [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "Suspend the current coroutine and await resumption.";
   let description = [{
     The `co.suspend` operation suspends the current coroutine function
@@ -65,7 +64,7 @@ def CO_SuspendOp : COOp<"suspend", [SingleBlock,
     ```
   }];
 
-  let regions = (region SizedRegion<1>:$body);
+  let regions = (region AnyRegion:$body);
   let assemblyFormat = "custom<SuspendBody>($body) attr-dict";
   let hasVerifier = 1;
 }

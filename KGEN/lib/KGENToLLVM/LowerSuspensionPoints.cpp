@@ -5,17 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CODialect/COOps.h"
-#include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/AsyncUtils.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
-#include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace M;
 using namespace KGEN;
@@ -94,25 +89,39 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
   buildContext.emitUpdateState(continuation);
   // Move operations from suspend region. They represent code to execute after
   // update state but before return.
-  Operation *current = &suspend.getRegion().front().front();
-  while (current) {
-    Operation *next = current->getNextNode();
-    assert(!isa<SuspendOp>(current) &&
-           "cannot have a suspend nested inside a suspend");
-    if (isa<SuspendEndOp>(current))
-      break;
-    current->moveBefore(suspend);
-    current = next;
+  Block *susBlock = &suspend.getRegion().front();
+  Block *targetBlock = suspend->getBlock();
+  auto location = suspend->getIterator();
+  while (susBlock) {
+    Operation *currentOp = &susBlock->front();
+    while (currentOp) {
+      Operation *next = currentOp->getNextNode();
+      assert(!isa<SuspendOp>(currentOp) &&
+             "cannot have a suspend nested inside a suspend");
+      currentOp->moveBefore(targetBlock, location);
+      if (isa<SuspendEndOp>(currentOp)) {
+        auto savePoint = buildContext.builder.saveInsertionPoint();
+        buildContext.builder.setInsertionPoint(currentOp);
+        buildContext.builder.create<ReturnOp>(ValueRange({}));
+        currentOp->erase();
+        buildContext.builder.restoreInsertionPoint(savePoint);
+        break;
+      }
+      currentOp = next;
+    }
+    susBlock->replaceAllUsesWith(targetBlock);
+    susBlock = susBlock->getNextNode();
+    targetBlock = suspend->getBlock()->splitBlock(suspend);
+    location = targetBlock->begin();
   }
-  buildContext.builder.create<ReturnOp>(ValueRange({}));
-  Block *newBlock = currentBlock->splitBlock(suspend);
-  buildContext.blockList.push_back(newBlock);
+  buildContext.blockList.push_back(targetBlock);
 }
 
 static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
                                            StringAttr coroAttrName) {
   if (!funcOp->hasAttr(coroAttrName))
     return success();
+
   TypeAttr coroType = cast<TypeAttr>(funcOp->getAttr(coroAttrName));
   TargetInfoAttr target = lookupTargetInfo(funcOp);
   if (!target) {
@@ -120,6 +129,7 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
                     "could not find an enclosing target specification");
     return failure();
   }
+
   ImplicitLocOpBuilder opBuilder(funcOp.getLoc(), funcOp.getContext());
   LLVMBuilder b(opBuilder, target);
 
@@ -202,6 +212,24 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
 }
 
 void LowerSuspensionPointsPass::runOnOperation() {
+  if (getOperation().isExternal())
+    return;
   if (failed(lowerSuspensionPoints(getOperation(), coroAttrName)))
     return signalPassFailure();
+  // HACK: Hoist all constant-sized allocations to the entry block. This is
+  // required so that LLVM doesn't generate dynamic allocas. This is a hack
+  // because it's indiscriminant.
+  Block *body = &getOperation().getBody().front();
+  getOperation().walk<mlir::WalkOrder::PreOrder>(
+      [&](mlir::LLVM::AllocaOp alloca) {
+        if (auto size =
+                alloca.getArraySize().getDefiningOp<mlir::LLVM::ConstantOp>()) {
+          alloca->moveBefore(body, body->begin());
+          size->moveBefore(alloca);
+          alloca->setLoc(FusedLoc::get(
+              alloca.getContext(), {alloca.getLoc(), getOperation().getLoc()}));
+          return WalkResult::skip();
+        }
+        return WalkResult::advance();
+      });
 }
