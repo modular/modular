@@ -1100,6 +1100,47 @@ fn _get_start_indices_of_nth_subvolume[
     return out
 
 
+# TODO(KERN-637) - optimize this algorithm for UInt rather than delegating
+# to the Int overload.
+@always_inline
+fn _get_start_indices_of_nth_subvolume_uint[
+    rank: Int,
+    subvolume_rank: UInt,
+](n: UInt, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+    """Converts a flat index into the starting ND indices of the nth subvolume
+    with rank `subvolume_rank`.
+
+    For example:
+        - `_get_start_indices_of_nth_subvolume[3, 0](n, shape)` will return
+        the starting indices of the nth element in shape.
+        - `_get_start_indices_of_nth_subvolume[3, 1](n, shape)` will return
+        the starting indices of the nth row in shape.
+        - `_get_start_indices_of_nth_subvolume[3, 2](n, shape)` will return
+        the starting indices of the nth horizontal slice in shape.
+
+    The ND indices will iterate from right to left. I.E
+        shape = (20, 5, 2, N)
+        _get_start_indices_of_nth_subvolume[4, 1](1, shape) = (0, 0, 1, 0)
+        _get_start_indices_of_nth_subvolume[4, 1](5, shape) = (0, 2, 1, 0)
+        _get_start_indices_of_nth_subvolume[4, 1](50, shape) = (5, 0, 0, 0)
+        _get_start_indices_of_nth_subvolume[4, 1](56, shape) = (5, 1, 1, 0)
+
+    Parameters:
+        rank: The rank of the ND index.
+        subvolume_rank: The rank of the subvolume under consideration.
+
+    Args:
+        n: The flat index to convert (the nth subvolume to retrieve).
+        shape: The shape of the ND space we are converting into.
+
+    Returns:
+        Constructed ND-index.
+    """
+    return _get_start_indices_of_nth_subvolume[rank, int(subvolume_rank)](
+        n.value, shape
+    )
+
+
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
 fn _elementwise_impl[
