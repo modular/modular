@@ -13,9 +13,11 @@ from algorithm.functional import (
     _elementwise_impl,
     _elementwise_impl_gpu,
     _get_start_indices_of_nth_subvolume,
+    _get_start_indices_of_nth_subvolume_uint,
     sync_parallelize,
 )
 from buffer import NDBuffer
+from builtin.uint import _temp_uint_from_int
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceContext, DeviceBuffer
 from memory import memcpy
@@ -1317,8 +1319,10 @@ fn _concat_inner_most_single_dim[
     output: NDBuffer[type, rank],
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
 ):
-    var idx = BlockIdx.x() * block_size + ThreadIdx.x()
-    var index = _get_start_indices_of_nth_subvolume[rank, 1](
+    var idx = _temp_uint_from_int(
+        BlockIdx.x().value
+    ) * block_size.value + _temp_uint_from_int(ThreadIdx.x().value)
+    var index = _get_start_indices_of_nth_subvolume_uint[rank, 1](
         idx, output.dynamic_shape
     )
 
