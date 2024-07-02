@@ -14,20 +14,15 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     return lhs
 
 
-struct RuntimeTuple[S: IntTuple]:
+@register_passable("trivial")
+struct RuntimeTuple[S: IntTuple](Stringable):
     alias sentinel = -1
     alias scalar_length = len(flatten(S))
     var value: StaticIntTuple[Self.scalar_length]
 
     @always_inline
-    fn __init__(inout self, *, uninit: ()):
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.value)
-        )
-
-    @always_inline
     fn __init__(inout self):
-        self.__init__(uninit=())
+        self.value = StaticIntTuple[Self.scalar_length]()
 
         alias f = flatten(S)
 
@@ -44,8 +39,9 @@ struct RuntimeTuple[S: IntTuple]:
         self.value = values
 
     @always_inline
-    fn __copyinit__(inout self, other: Self):
-        self.value = other.value
+    fn __init__[l: Int](inout self, values: StaticIntTuple[l]):
+        constrained[Self.scalar_length == l, "Must use same tuple length"]()
+        self.value = rebind[StaticIntTuple[Self.scalar_length]](values)
 
     @staticmethod
     @always_inline
@@ -68,19 +64,29 @@ struct RuntimeTuple[S: IntTuple]:
             return self.value[0]
 
     @always_inline
-    fn __getitem__[
-        i: Int
-    ](ref [_]self) -> ref [__lifetime_of(self)] RuntimeTuple[S[i]]:
+    fn __getitem__[i: Int](self) -> RuntimeTuple[S[i]]:
+        var res = RuntimeTuple[S[i]]()
         alias offset = Self.offset_until[i]()
-        var int_ptr = UnsafePointer.address_of(self).bitcast[Int]() + offset
-        return int_ptr.bitcast[RuntimeTuple[S[i]]]()[]
+
+        @parameter
+        for i in range(Self.scalar_length - offset):
+            res.value[i] = self.value[i + offset]
+        return res
 
     @always_inline
-    @__named_result(out)
+    fn __setitem__[i: Int](inout self, val: Int):
+        alias offset = Self.offset_until[i]()
+        self.value[offset] = val
+
+    @always_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @always_inline
     fn concat[
         R: IntTuple
     ](self, rhs: RuntimeTuple[R]) -> RuntimeTuple[concat(S, R)]:
-        out.__init__(uninit=())
+        var out = RuntimeTuple[concat(S, R)]()
 
         alias S_flat = flatten(S)
 
@@ -100,11 +106,11 @@ struct RuntimeTuple[S: IntTuple]:
             if R_flat[i] == Self.sentinel:
                 out.value[Self.scalar_length + i] = rhs.value[i]
 
+        return out
+
     @always_inline
-    fn flatten(self) -> ref [__lifetime_of(self)] RuntimeTuple[flatten(S)]:
-        return UnsafePointer.address_of(self).bitcast[
-            RuntimeTuple[flatten(S)]
-        ]()[]
+    fn flatten(self) -> RuntimeTuple[flatten(S)]:
+        return RuntimeTuple[flatten(S)](self.value)
 
     fn format_to(self, inout f: Formatter):
         @parameter

@@ -8,35 +8,37 @@
 from layout.runtime_tuple import RuntimeTuple
 from layout.int_tuple import IntTuple
 
+from testing import assert_equal
+
 
 # CHECK-LABEL: test_construct
-fn test_construct():
+def test_construct():
     print("== test_construct")
-    var lhs = RuntimeTuple[IntTuple(1, -1, IntTuple(1, -1))]()
-    lhs[1] = 44
-    lhs[2][1] = 102
-    # CHECK: (1, 44, (1, 102))
-    print(lhs)
+    var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
+    assert_equal(str(t1.__str__()), "(1, 44, (1, 102))")
 
-    var rhs = RuntimeTuple[IntTuple(-1, IntTuple(-1, IntTuple(-1, 202)))]()
-    rhs[0] = 33
-    rhs[1][0] = 44
-    rhs[1][1][0] = 55
-    # CHECK: (33, (44, (55, 202)))
-    print(rhs)
+    var t2 = RuntimeTuple[IntTuple(33, IntTuple(44, IntTuple(55, 202)))]()
+    assert_equal(str(t2), "(33, (44, (55, 202)))")
 
 
 # CHECK-LABEL: test_concat
-fn test_concat():
+def test_concat():
     print("== test_concat")
     var lhs = RuntimeTuple[IntTuple(1, -1, IntTuple(1, -1))](1, 44, 1, 102)
     var rhs = RuntimeTuple[IntTuple(-1, IntTuple(-1, IntTuple(-1, 202)))](
         33, 44, 55, 202
     )
-    # CHECK: (1, 44, (1, 102), 33, (44, (55, 202)))
     print(lhs.concat(rhs))
 
 
-fn main():
+# CHECK-LABEL: test_flatten
+def test_flatten():
+    print("== test_flatten")
+    var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
+    assert_equal(str(t1.flatten()), "(1, 44, 1, 102)")
+
+
+def main():
     test_construct()
     test_concat()
+    test_flatten()
