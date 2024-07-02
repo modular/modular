@@ -34,10 +34,11 @@ fn welford_mean_var[
 
 
 fn run_layer_norm_block[
-    type: DType, rows: Int, cols: Int
-](ctx: DeviceContext) raises:
+    type: DType
+](ctx: DeviceContext, rows: Int, cols: Int) raises:
     print("== run_layer_norm_gpu block kernel")
 
+    alias rank = 2
     var data_h = Pointer[Scalar[type]].alloc(rows * cols)
     var res = Pointer[Scalar[type]].alloc(rows * cols)
     var gamma_h = Pointer[Scalar[type]].alloc(1)
@@ -57,10 +58,10 @@ fn run_layer_norm_block[
     var beta_d = ctx.create_buffer[type](1)
     var epsilon_d = ctx.create_buffer[type](1)
 
-    alias data_shape = DimList(rows, cols)
+    var data_shape = StaticIntTuple[rank](rows, cols)
     alias param_shape = DimList(1)
 
-    var data_buf = NDBuffer[type, 2, data_shape](data_d.ptr)
+    var data_buf = NDBuffer[type, rank](data_d.ptr, data_shape)
     var gamma = NDBuffer[type, 1, param_shape](gamma_d.ptr)
     var beta = NDBuffer[type, 1, param_shape](beta_d.ptr)
     var epsilon = NDBuffer[type, 1, param_shape](epsilon_d.ptr)
@@ -74,9 +75,8 @@ fn run_layer_norm_block[
     var func_ln = ctx.compile_function[
         layer_norm_gpu_block[
             type,
-            2,
             simd_width,
-            data_shape,
+            rank,
         ]
     ](dump_ptx=False)
 
@@ -100,7 +100,7 @@ fn run_layer_norm_block[
     ctx.enqueue_copy_from_device(res, data_d)
 
     for r in range(rows):
-        var vec = Buffer[type, cols](data_h + r * cols)
+        var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
         var norm_factor_ref = 1 / sqrt(var_ref + epsilon_h[0])
@@ -124,10 +124,11 @@ fn run_layer_norm_block[
 
 
 fn run_layer_norm_warp_tiling[
-    type: DType, rows: Int, cols: Int
-](ctx: DeviceContext) raises:
+    type: DType
+](ctx: DeviceContext, rows: Int, cols: Int) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
+    alias rank = 2
     var data_h = Pointer[Scalar[type]].alloc(rows * cols)
     var res = Pointer[Scalar[type]].alloc(rows * cols)
     var gamma_h = Pointer[Scalar[type]].alloc(1)
@@ -147,10 +148,10 @@ fn run_layer_norm_warp_tiling[
     var beta_d = ctx.create_buffer[type](1)
     var epsilon_d = ctx.create_buffer[type](1)
 
-    alias data_shape = DimList(rows, cols)
+    var data_shape = StaticIntTuple[rank](rows, cols)
     alias param_shape = DimList(1)
 
-    var data_buf = NDBuffer[type, 2, data_shape](data_d.ptr)
+    var data_buf = NDBuffer[type, rank](data_d.ptr, data_shape)
     var gamma = NDBuffer[type, 1, param_shape](gamma_d.ptr)
     var beta = NDBuffer[type, 1, param_shape](beta_d.ptr)
     var epsilon = NDBuffer[type, 1, param_shape](epsilon_d.ptr)
@@ -164,9 +165,8 @@ fn run_layer_norm_warp_tiling[
     var func_ln = ctx.compile_function[
         layer_norm_gpu_warp_tiling[
             type,
-            2,
             simd_width,
-            data_shape,
+            rank,
         ]
     ](dump_ptx=False)
 
@@ -190,7 +190,7 @@ fn run_layer_norm_warp_tiling[
     ctx.enqueue_copy_from_device(res, data_d)
 
     for r in range(rows):
-        var vec = Buffer[type, cols](data_h + r * cols)
+        var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
         var norm_factor_ref = 1 / sqrt(var_ref + epsilon_h[0])
@@ -216,9 +216,9 @@ fn run_layer_norm_warp_tiling[
 def main():
     try:
         with DeviceContext() as ctx:
-            run_layer_norm_block[DType.float32, rows=1, cols=128](ctx)
-            run_layer_norm_block[DType.float32, rows=10, cols=1024](ctx)
-            run_layer_norm_warp_tiling[DType.float32, rows=1, cols=128](ctx)
-            run_layer_norm_warp_tiling[DType.float32, rows=10, cols=1024](ctx)
+            run_layer_norm_block[DType.float32](ctx, rows=1, cols=128)
+            run_layer_norm_block[DType.float32](ctx, rows=10, cols=1024)
+            run_layer_norm_warp_tiling[DType.float32](ctx, rows=1, cols=128)
+            run_layer_norm_warp_tiling[DType.float32](ctx, rows=10, cols=1024)
     except e:
         print("CUDA_ERROR:", e)
