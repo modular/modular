@@ -290,53 +290,6 @@ def LowerSuspensionPoints : Pass<"lower-suspension-points",
 }
 
 //===----------------------------------------------------------------------===//
-// TweakSpilledAllocas
-//===----------------------------------------------------------------------===//
-
-def TweakSpilledAllocas : Pass<"tweak-spilled-allocas",
-                               "mlir::LLVM::LLVMFuncOp"> {
-  let summary = "Trim and optimize lifetimes of spilled allocas.";
-  let description = [{
-    When LLVM lowers coroutines, spilled allocas are hoisted into the coroutine
-    frame, invalidating their lifetime markers. LLVM's `coro-split` pass pukes
-    when this happens, so prevent it by stripping lifetimes of spilled allocas.
-    This pass must run prior to `lower-control-flow`, since the algorithm is
-    trivial on region control-flow form.
-
-    This pass also makes a small optimization to reduce the number of variables
-    places on coroutine frames. Since `pop.stack_allocation` operations are
-    lowered to an `alloca` at the top of the function, it is quite common to see
-    `alloca > await > lifetime.start > lifetime.end`. Only the switched-resume
-    lowering is intelligent enough to do this automatically, but since KGEN
-    coroutines use the async lowering, it has to be done here.
-  }];
-
-  let statistics = [
-    Statistic<"numLocalVars", "num-local-vars",
-              "the number of variables moved off the coroutine frame">,
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// LowerKGENCoroutinesAsync
-//===----------------------------------------------------------------------===//
-
-def LowerKGENCoroutinesAsync : Pass<"lower-coroutines-async",
-                                    "ModuleOp"> {
-  let summary = "Lower async functions to async LLVM coroutines.";
-  let description = [{
-    The `lower-coroutines-async` pass lowers KGEN coroutines implemented with
-    POP coroutine operations to LLVM async coroutine intrinsics. LLVM async
-    coroutine intrinsics require the front-end to handle control-flow and ABI.
-    We generate the code to marshall function arguments and results through the
-    coroutine async context and we handle control-flow using by storing the
-    current resume function in the context.
-  }];
-
-  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerPOPToLLVM
 //===----------------------------------------------------------------------===//
 

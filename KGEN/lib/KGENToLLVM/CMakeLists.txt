@@ -9,7 +9,6 @@ add_modular_library(KGENToLLVM
   LLVMLoweringUtils.cpp
   LowerControlFlow.cpp
   LowerKGENClosuresToLLVM.cpp
-  LowerKGENCoroutines.cpp
   LowerKGENToLLVM.cpp
   LowerPOPToLLVM.cpp
   LowerSuspensionPoints.cpp
