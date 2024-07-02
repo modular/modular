@@ -104,78 +104,6 @@ struct DeviceNDBuffer[
         self.__init__(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
 
 
-fn get_minmax[dtype: DType](x: DTypePointer[dtype], N: Int) -> SIMD[dtype, 2]:
-    var max_val = x[0]
-    var min_val = x[0]
-    for i in range(1, N):
-        if x[i] > max_val:
-            max_val = x[i]
-        if x[i] < min_val:
-            min_val = x[i]
-    return SIMD[dtype, 2](min_val, max_val)
-
-
-fn compare[
-    dtype: DType, N: Int, verbose: Bool = True
-](x: DTypePointer[dtype], y: DTypePointer[dtype], label: String) -> SIMD[
-    dtype, 4
-]:
-    alias alignment = alignof[dtype]()
-
-    var atol = DTypePointer[dtype].alloc(N, alignment=alignment)
-    var rtol = DTypePointer[dtype].alloc(N, alignment=alignment)
-
-    # TODO: parallelize and unroll this loop
-    for i in range(N):
-        var d = abs(x[i] - y[i])
-        var e = abs(d / y[i])
-        atol[i] = d
-        rtol[i] = e
-
-    var atol_minmax = get_minmax[dtype](atol, N)
-    var rtol_minmax = get_minmax[dtype](rtol, N)
-    if verbose:
-        print(label)
-        print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
-        print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
-        print("==========================================================")
-    atol.free()
-    rtol.free()
-    return SIMD[dtype, 4](
-        atol_minmax[0], atol_minmax[1], rtol_minmax[0], rtol_minmax[1]
-    )
-
-
-fn array_equal[
-    type: DType,
-    rank: Int,
-](x: DTypePointer[type], y: DTypePointer[type], num_elements: Int,) -> Bool:
-    for i in range(num_elements):
-        if not isclose(x[i], y[i]):
-            print("FAIL: mismatch at idx ", end="")
-            print(i)
-            return False
-    return True
-
-
-# TODO: call the above function in this
-fn array_equal[
-    type: DType, rank: Int
-](x: NDBuffer[type, rank], y: NDBuffer[type, rank]) -> Bool:
-    for i in range(x.num_elements()):
-        if not isclose(x.data[i], y.data[i]):
-            print("FAIL: mismatch at idx ", end="")
-            print(x.get_nd_index(i))
-            return False
-    return True
-
-
-fn array_equal[
-    type: DType, rank: Int
-](x: TestTensor[type, rank], y: TestTensor[type, rank]) -> Bool:
-    return array_equal(x.ndbuffer, y.ndbuffer)
-
-
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @value
 struct TestTensor[type: DType, rank: Int]:
@@ -208,29 +136,6 @@ struct TestTensor[type: DType, rank: Int]:
 
     fn __del__(owned self):
         self.ndbuffer.data.free()
-
-
-fn almost_equal[
-    type: DType
-](a: NDBuffer[type, 2], b: NDBuffer[type, 2],) raises:
-    for m in range(b.dynamic_shape[0]):
-        for n in range(b.dynamic_shape[1]):
-            assert_almost_equal(
-                a[m, n],
-                b[m, n],
-                rtol=0.01,
-            )
-
-
-fn equal[
-    type: DType
-](a: NDBuffer[type, 2], b: NDBuffer[type, 2],) raises:
-    for m in range(b.dynamic_shape[0]):
-        for n in range(b.dynamic_shape[1]):
-            assert_equal(
-                a[m, n],
-                b[m, n],
-            )
 
 
 fn linspace(buffer: NDBuffer):

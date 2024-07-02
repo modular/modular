@@ -4,5 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-
-from ._test_utils import *
+from ._testing import assert_almost_equal, assert_equal, compare
+from ._utils import (
+    DeviceNDBuffer,
+    fill,
+    HostNDBuffer,
+    linspace,
+    TestTensor,
+    zero,
+    random,
+)
