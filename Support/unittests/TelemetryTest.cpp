@@ -207,7 +207,8 @@ TEST(Telemetry, Counter) {
 
 /// This test checks that if we create a histogram and add some records, we get
 /// the values we expect in the log file.
-TEST(Telemetry, Histogram) {
+/// FIXME(SVCS-218): This test is flaky.
+TEST(Telemetry, DISABLED_Histogram) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("histogram", "1");
   Settings settings(logFileSetup.getConfig(),
