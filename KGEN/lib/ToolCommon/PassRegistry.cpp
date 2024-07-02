@@ -38,7 +38,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerGlobalPOPToLLVM();
   KGEN::registerLowerArgConventions();
   KGEN::registerLowerLoops();
-  KGEN::registerLowerKGENCoroutinesAsync();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
   KGEN::registerLowerPOPToLLVM();
@@ -53,7 +52,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerSimplifyCF();
   KGEN::registerStackReuse();
   KGEN::registerSynthesizeDebugInfo();
-  KGEN::registerTweakSpilledAllocas();
   KGEN::registerVerifyParameters();
   KGEN::registerLowerSuspensionPoints();
   KGEN::registerLowerToLLVMPipeline();
