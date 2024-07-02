@@ -28,9 +28,9 @@ fn func_with_default(a: int = `0`):
 # CHECK-LABEL: lit.func @"test_passing_funcs
 fn test_passing_funcs():
     # CHECK: lit.call @{{.*}}::@"take_func_without_arg_name{{.*}}"<
-    # CHECK-SAME: :!lit.signature<(index borrow, |) -> !kgen.none> rebind(:!lit.signature<("a": index borrow) -> !kgen.none>
+    # CHECK-SAME: :!lit.signature<(index, |) -> !kgen.none> rebind(:!lit.signature<("a": index) -> !kgen.none>
     take_func_without_arg_name[func_with_arg_name]()
 
     # CHECK: lit.call @{{.*}}::@"take_func_without_default{{.*}}"<
-    # CHECK-SAME: :!lit.signature<("a": index borrow) -> !kgen.none> rebind(:!lit.signature<("a": index borrow = 0) -> !kgen.none>
+    # CHECK-SAME: :!lit.signature<("a": index) -> !kgen.none> rebind(:!lit.signature<("a": index = 0) -> !kgen.none>
     take_func_without_default[func_with_default]()

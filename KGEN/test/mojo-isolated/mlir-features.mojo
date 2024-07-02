@@ -10,7 +10,7 @@ alias `1` = __mlir_attr.`1 : index`
 alias `42` = __mlir_attr.`42 : index`
 
 
-# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16 borrow, %y: f8E5M2 borrow)
+# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:

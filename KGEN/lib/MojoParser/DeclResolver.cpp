@@ -943,8 +943,6 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
       llvm_unreachable("byref_result should be skipped");
-    case ArgConvention::None:
-      llvm_unreachable("none convention not permitted in lit");
     }
 
     while (numStars--)

@@ -33,7 +33,7 @@ lit.func @async_call[imm a, mut b]() async {
 }
 
 // CHECK-LABEL: kgen.generator @trivial_generator
-// CHECK-SAME: (%[[ARG0:.*]]: si32 owned) -> si32
+// CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 lit.func @trivial_generator(%arg0: si32) -> si32 {
@@ -41,7 +41,7 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
 }
 
 // CHECK-LABEL: kgen.generator @varDecl
-// CHECK-SAME:  (%[[ARG0:.*]]: index owned) -> index
+// CHECK-SAME:  (%[[ARG0:.*]]: index) -> index
 // CHECK-NEXT:    kgen.param.declare life: lifetime
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
 // CHECK-NEXT:    %1 = builtin.unrealized_conversion_cast %0
@@ -54,7 +54,7 @@ lit.func @varDecl(%arg0: index) -> index {
 }
 
 // CHECK-LABEL: kgen.generator @varDecl2
-// CHECK-SAME:  (%[[ARG0:.*]]: index owned)
+// CHECK-SAME:  (%[[ARG0:.*]]: index)
 // CHECK-NEXT: kgen.param.declare alife: lifetime<1> = <#lit.lifetime>
 // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
 // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !kgen.pointer<index> to !lit.ref<index, mut alife>
@@ -77,28 +77,28 @@ lit.func @decorated_fn()
 
 // CHECK-LABEL: @generic_types_retain_convention
 lit.func @generic_types_retain_convention[imm a]<T: type>(
-  // CHECK: %arg0: !kgen.paramref<T> borrow,
+  // CHECK: %arg0: !kgen.paramref<T>,
   // CHECK: %arg1: !lit.ref<T, imm *[0,0]> inout,
   // CHECK: %arg2: !kgen.paramref<T> owned,
-  // CHECK: %arg3: index borrow,
+  // CHECK: %arg3: index,
   // CHECK: %arg4: !kgen.pointer<index> owned
-  %p: !kgen.paramref<T> borrow,
+  %p: !kgen.paramref<T>,
   %q: !lit.ref<T, imm a> inout,
   %r: !kgen.paramref<T> owned,
-  %s1: index borrow,
+  %s1: index,
   %s2: !kgen.pointer<index> owned
 ){
   kgen.return
 }
 
-lit.func @generic_callee<T: type>(%p: !kgen.paramref<T> borrow){
+lit.func @generic_callee<T: type>(%p: !kgen.paramref<T>){
   kgen.return
 }
 
 // CHECK-LABEL: @call_generic
-lit.func @call_generic(%p: index borrow) {
-  // CHECK: kgen.call @generic_callee<:type index>({{.*}}) : (index borrow) -> ()
-  kgen.call @generic_callee<:type index>(%p) : !lit.signature<("p": index borrow) -> ()>
+lit.func @call_generic(%p: index) {
+  // CHECK: kgen.call @generic_callee<:type index>({{.*}}) : (index) -> ()
+  kgen.call @generic_callee<:type index>(%p) : !lit.signature<("p": index) -> ()>
   kgen.return
 }
 
@@ -171,7 +171,7 @@ lit.file_module @nested_imports {
 // -----
 
 lit.struct.decl @Adder<size> {
-  // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !lit.declref<@Adder<size>> owned)
+  // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !lit.declref<@Adder<size>>)
   // CHECK-NEXT:    kgen.param.declare life: lifetime
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
@@ -195,7 +195,7 @@ lit.struct.decl @A {
 }
 
 // CHECK-LABEL: kgen.generator @"B::foo"
-// CHECK-NEXT: call_param[(!lit.declref<@A> owned) -> (): @"A::foo"]
+// CHECK-NEXT: call_param[(!lit.declref<@A>) -> (): @"A::foo"]
 
 // CHECK-LABEL: lit.struct.decl @B
 lit.struct.decl @B {
@@ -207,9 +207,9 @@ lit.struct.decl @B {
 
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !lit.declref<@A>, %b: !lit.declref<@B>) {
-  // CHECK-NEXT: call_param[(!lit.declref<@B> owned, !lit.declref<@A> owned) -> (): @"B::foo"]
+  // CHECK-NEXT: call_param[(!lit.declref<@B>, !lit.declref<@A>) -> (): @"B::foo"]
   kgen.call_param[!lit.signature<("self": !lit.declref<@B>, "a": !lit.declref<@A>) -> ()>: @B::@foo](%b, %a)
-  // CHECK-NEXT: constant: (!lit.declref<@A> owned) -> () = <@"A::foo">
+  // CHECK-NEXT: constant: (!lit.declref<@A>) -> () = <@"A::foo">
   %0 = kgen.param.constant: !lit.signature<("self": !lit.declref<@A>) -> ()> = <@A::@foo>
   kgen.return
 }
@@ -228,7 +228,7 @@ lit.struct.decl @A<N> {
 
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !lit.declref<@A<1>>) {
-  // CHECK-NEXT: call_param[(!lit.declref<@A<1>> owned) -> index: @"A::foo"<1, 2>]
+  // CHECK-NEXT: call_param[(!lit.declref<@A<1>>) -> index: @"A::foo"<1, 2>]
   %0 = kgen.call_param[!lit.signature<("self": !lit.declref<@A<1>>) -> index>: @A::@foo<1, 2>](%a)
   kgen.return
 }
@@ -238,7 +238,7 @@ lit.func @main(%a: !lit.declref<@A<1>>) {
 lit.struct.decl @A {
 }
 
-// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !lit.declref<@A> owned)
+// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !lit.declref<@A>)
 lit.func @rhslitdeclref_no_params(%x: !lit.declref<@A>) {
   kgen.return
 }
@@ -248,7 +248,7 @@ lit.func @rhslitdeclref_no_params(%x: !lit.declref<@A>) {
 lit.struct.decl @A<b, c> {
 }
 
-// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !lit.declref<@A<10, 11>> owned)
+// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !lit.declref<@A<10, 11>>)
 lit.func @rhslitdeclref_params(%x: !lit.declref<@A<10, 11>>) {
   kgen.return
 }
@@ -408,7 +408,7 @@ lit.file_module @module {
   }
 
   lit.struct.decl @Adder<size> {
-    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !lit.declref<#Adder <size>> owned)
+    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !lit.declref<#Adder <size>>)
     // CHECK-NEXT:    kgen.call @"module::test"() : () -> ()
     lit.func @__add__(%self: !lit.declref<@module::@Adder<size>>)  {
       lit.call @module::@test() : !lit.signature<() -> ()>
@@ -419,7 +419,7 @@ lit.file_module @module {
   // CHECK-LABEL: lit.struct.decl @"module::Adder"<size> {
 }
 
-// CHECK-LABEL: kgen.generator @caller(%arg0: !lit.declref<#Adder <10>> owned)
+// CHECK-LABEL: kgen.generator @caller(%arg0: !lit.declref<#Adder <10>>)
 lit.func @caller(%ref: !lit.declref<@module::@Adder<10>>)  {
   // CHECK: kgen.call @"module::Adder::__add__"
   kgen.call @module::@Adder::@__add__<10>(%ref) : !lit.signature<("self": !lit.declref<@module::@Adder<10>>) -> ()>

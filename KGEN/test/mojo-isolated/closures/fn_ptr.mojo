@@ -28,7 +28,7 @@ struct Reg:
 # CHECK-NEXT: store [[DTOR]], [[DTOR_FIELD]]
 # CHECK-NEXT: [[COPY_FIELD:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT: store [[COPY]], [[COPY_FIELD]]
-# CHECK-NEXT: lit.func call_impl[[[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none> borrow, [[ARG:%.*]][*""]: !lit.ref<!Mem, [[LT]]> borrow_in_mem, |) -> !Int
+# CHECK-NEXT: lit.func call_impl[[[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>, [[ARG:%.*]][*""]: !lit.ref<!Mem, [[LT]]> borrow_in_mem, |) -> !Int
 # CHECK-NEXT:   [[CALLEE:%.*]] = pop.pointer.bitcast [[FN_PTR]]
 # CHECK-NEXT:   [[RES:%.*]] = lit.call_indirect [[CALLEE]][[[LT]]]([[ARG]])
 # CHECK-NEXT:   lit.return [[RES]]
@@ -41,7 +41,7 @@ struct Reg:
 # CHECK-LABEL: lit.struct.decl @"fn(Reg
 # CHECK-LABEL: lit.func @"__init__
 # CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[2]({{.*}}"__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!Mem, mut *[0,1]> byref_result) throws -> i1>
-# CHECK:      lit.func call_impl[mut [[ELT:.*]], mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none> borrow, [[ARG:%.*]][*""]: !Reg borrow, |, ?, [[ERR:%.*]]: !lit.ref<!Error, mut [[ELT]]> byref_error, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws -> i1
+# CHECK:      lit.func call_impl[mut [[ELT:.*]], mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>, [[ARG:%.*]][*""]: !Reg, |, ?, [[ERR:%.*]]: !lit.ref<!Error, mut [[ELT]]> byref_error, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws -> i1
 # CHECK:        [[RES:%.*]] = lit.call_indirect %{{.*}}[mut [[ELT]], mut [[LT]]]([[ARG]], [[ERR]], [[SLOT]])
 # CHECK-NEXT:   lit.return [[RES]]
 

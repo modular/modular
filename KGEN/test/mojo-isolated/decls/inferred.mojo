@@ -51,7 +51,7 @@ fn inferred_dependent_param[
     pass
 
 
-fn inferred_partial[x: int, //, y: int](owned z: ParamType[x]):
+fn inferred_partial[x: int, //, y: int](z: ParamType[x]):
     pass
 
 
@@ -63,7 +63,9 @@ struct InferredStruct[x: int, //, y: int, z: ParamType[x]]:
     pass
 
 
-struct InferredStructConversion[x: int, //, y: AnyTrivialRegType, z: ParamType[x]]:
+struct InferredStructConversion[
+    x: int, //, y: AnyTrivialRegType, z: ParamType[x]
+]:
     pass
 
 

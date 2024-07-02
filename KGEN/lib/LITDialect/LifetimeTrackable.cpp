@@ -205,9 +205,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endInitState = InitOnNormal;
     isFullObjectLiveOnEntry = true;
     break;
-
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
   }
 
   name = signature.getArgName(argIdx);
@@ -354,8 +351,6 @@ getCallOpEffects(Operation &op,
     case ArgConvention::ByRefResult:
     case ArgConvention::InitSelf:
       return OperandEffect::memStoreOwned;
-    case ArgConvention::None:
-      llvm_unreachable("none convention not permited in Mojo");
     }
     llvm_unreachable("invalid input convention");
   };

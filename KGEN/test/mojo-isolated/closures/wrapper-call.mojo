@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[1](!kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, "j": !Int borrow) -> !Int>>
-# CHECK: lit.func @"__call__{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %n: !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, %j: !Int borrow) -> !Int
+# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[1](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, "j": !Int) -> !Int>>
+# CHECK: lit.func @"__call__{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %n: !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, %j: !Int) -> !Int
 # CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: [[closure_impl0:%.*]] = lit.ref.load [[closure_impl_ref0]]
 # CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.ref.struct.ger %[[SELF]][call]
@@ -16,7 +16,7 @@
 # CHECK-NEXT: lit.end_func
 # CHECK-NEXT: }
 
-# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[2](!kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, ?, "__result__": !lit.ref<!MemType, mut *[0,1]> byref_result) -> !kgen.none>>
+# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[2](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, ?, "__result__": !lit.ref<!MemType, mut *[0,1]> byref_result) -> !kgen.none>>
 # CHECK: lit.func @"__call__{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %n: !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, ?, %[[RES:.*]]: !lit.ref<!MemType, mut {{.*}}> byref_result)
 # CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: [[closure_impl:%.*]] = lit.ref.load [[closure_impl_ref]]

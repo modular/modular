@@ -202,7 +202,6 @@ SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
 
 bool SignatureType::hasAddress(ArgConvention conv) {
   switch (conv) {
-  case ArgConvention::None:
   case ArgConvention::OwnedInReg:
   case ArgConvention::BorrowedInReg:
     return false;

@@ -638,8 +638,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   case ArgConvention::OwnedInReg:
   case ArgConvention::BorrowedInReg:
     break;
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
   }
 
   // Check to see if the expected type has an initializer with the

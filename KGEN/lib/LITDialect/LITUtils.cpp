@@ -268,7 +268,7 @@ ParseResult LIT::parseConventionAndVariadicness(
     std::optional<ArgConvention> &origArgPackConvention, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
-  convention = ArgConvention::OwnedInReg;
+  convention = ArgConvention::BorrowedInReg;
   if (succeeded(p.parseOptionalKeyword(&str))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(str)) {
       convention = *conv;
@@ -324,7 +324,7 @@ static void printVariadicness(AsmPrinter &p, Variadicness variadicness,
 void LIT::printConventionAndVariadicness(AsmPrinter &p,
                                          ArgConvention convention,
                                          Variadicness variadicness) {
-  if (convention == ArgConvention::OwnedInReg)
+  if (convention == ArgConvention::BorrowedInReg)
     return printVariadicness(p, variadicness);
 
   p << ' ' << stringifyArgConvention(convention);

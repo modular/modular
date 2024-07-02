@@ -30,7 +30,7 @@ fn test_kw_params_overload[x: int, y: int]():
     overloaded_param[b=y, a=x]()
 
     # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, :!MyInt apply_result_slot(
-    # CHECK-SAME :!lit.signature<("v": index borrow) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
+    # CHECK-SAME :!lit.signature<("v": index) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
     overloaded_param[b = MyInt(y), a=x]()
 
 
@@ -42,7 +42,7 @@ fn overloaded_arg(a: int, b: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_kw_args_overload{{.*}}"(%x: index borrow, %y: index borrow)
+# CHECK-LABEL: lit.func @"test_kw_args_overload{{.*}}"(%x: index, %y: index)
 fn test_kw_args_overload(x: int, y: int):
     # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
     overloaded_arg(b=y, a=x)
@@ -128,5 +128,5 @@ struct MyContainer[T: Copyable]:
 
 # CHECK-LABEL: lit.func @"test_impl
 fn test_impl(a: MyContainer[MyElement], b: int):
-    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index borrow
+    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index
     _ = a.foo(b)
