@@ -1160,7 +1160,7 @@ struct Tensor[type: DType](
         debug_assert(
             rank == self.rank(), "to_ndbuffer rank must match Tensor rank"
         )
-        var shape = StaticIntTuple[rank](0)
+        var shape = StaticIntTuple[rank](repeat=0)
 
         @parameter
         for i in range(rank):
