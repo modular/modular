@@ -234,6 +234,20 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         else:
             return writer.write(int(self))
 
+    fn or_else(self, default: Int) -> Int:
+        """Return the underlying value contained in the Optional or a default
+        value if the Optional's underlying value is not present.
+
+        Args:
+            default: The new value to use if no value was present.
+
+        Returns:
+            The underlying value contained in the Optional or a default value.
+        """
+        if self:
+            return self.get()
+        return default
+
 
 # ===----------------------------------------------------------------------===#
 # DimList
