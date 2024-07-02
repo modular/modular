@@ -40,8 +40,12 @@ struct RuntimeTuple[S: IntTuple]:
                 self.value[i] = v
 
     @always_inline
-    fn __init__(inout self, value: Int):
-        self.value = value
+    fn __init__(inout self, *values: Int):
+        self.value = values
+
+    @always_inline
+    fn __copyinit__(inout self, other: Self):
+        self.value = other.value
 
     @staticmethod
     @always_inline
