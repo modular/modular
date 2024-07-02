@@ -12,6 +12,7 @@ from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from memory.unsafe import Pointer
+from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -357,8 +358,8 @@ struct Device(Formattable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetHandleByIndex_v2",
-                fn (UInt32, Pointer[_DeviceImpl]) -> Result,
-            ]()(UInt32(idx), Pointer.address_of(device))
+                fn (UInt32, UnsafePointer[_DeviceImpl]) -> Result,
+            ]()(UInt32(idx), UnsafePointer.address_of(device))
         )
         self.idx = idx
         self.device = device
@@ -372,8 +373,8 @@ struct Device(Formattable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetMaxClockInfo",
-                fn (_DeviceImpl, ClockType, Pointer[UInt32]) -> Result,
-            ]()(self.device, clock_type, Pointer.address_of(clock))
+                fn (_DeviceImpl, ClockType, UnsafePointer[UInt32]) -> Result,
+            ]()(self.device, clock_type, UnsafePointer.address_of(clock))
         )
         return int(clock)
 
@@ -388,9 +389,13 @@ struct Device(Formattable):
 
         var result = _get_dylib_function[
             "nvmlDeviceGetSupportedMemoryClocks",
-            fn (_DeviceImpl, Pointer[UInt32], UnsafePointer[UInt32]) -> Result,
+            fn (
+                _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
+            ) -> Result,
         ]()(
-            self.device, Pointer.address_of(num_clocks), UnsafePointer[UInt32]()
+            self.device,
+            UnsafePointer.address_of(num_clocks),
+            UnsafePointer[UInt32](),
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -402,9 +407,9 @@ struct Device(Formattable):
             _get_dylib_function[
                 "nvmlDeviceGetSupportedMemoryClocks",
                 fn (
-                    _DeviceImpl, Pointer[UInt32], UnsafePointer[UInt32]
+                    _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
                 ) -> Result,
-            ]()(self.device, Pointer.address_of(num_clocks), clocks.data)
+            ]()(self.device, UnsafePointer.address_of(num_clocks), clocks.data)
         )
         _ = num_clocks
 
@@ -420,12 +425,15 @@ struct Device(Formattable):
         var result = _get_dylib_function[
             "nvmlDeviceGetSupportedGraphicsClocks",
             fn (
-                _DeviceImpl, UInt32, Pointer[UInt32], UnsafePointer[UInt32]
+                _DeviceImpl,
+                UInt32,
+                UnsafePointer[UInt32],
+                UnsafePointer[UInt32],
             ) -> Result,
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
-            Pointer.address_of(num_clocks),
+            UnsafePointer.address_of(num_clocks),
             UnsafePointer[UInt32](),
         )
 
@@ -442,12 +450,15 @@ struct Device(Formattable):
             _get_dylib_function[
                 "nvmlDeviceGetSupportedGraphicsClocks",
                 fn (
-                    _DeviceImpl, UInt32, Pointer[UInt32], UnsafePointer[UInt32]
+                    _DeviceImpl,
+                    UInt32,
+                    UnsafePointer[UInt32],
+                    UnsafePointer[UInt32],
                 ) -> Result,
             ]()(
                 self.device,
                 UInt32(memory_clock_mhz),
-                Pointer.address_of(num_clocks),
+                UnsafePointer.address_of(num_clocks),
                 clocks.data,
             )
         )
@@ -475,12 +486,14 @@ struct Device(Formattable):
             _get_dylib_function[
                 "nvmlDeviceGetAutoBoostedClocksEnabled",
                 fn (
-                    _DeviceImpl, Pointer[_EnableState], Pointer[_EnableState]
+                    _DeviceImpl,
+                    UnsafePointer[_EnableState],
+                    UnsafePointer[_EnableState],
                 ) -> Result,
             ]()(
                 self.device,
-                Pointer.address_of(is_enabled),
-                Pointer.address_of(default_is_enabled),
+                UnsafePointer.address_of(is_enabled),
+                UnsafePointer.address_of(default_is_enabled),
             )
         )
         _ = default_is_enabled
@@ -504,10 +517,10 @@ struct Device(Formattable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetPersistenceMode",
-                fn (_DeviceImpl, Pointer[_EnableState]) -> Result,
+                fn (_DeviceImpl, UnsafePointer[_EnableState]) -> Result,
             ]()(
                 self.device,
-                Pointer.address_of(is_enabled),
+                UnsafePointer.address_of(is_enabled),
             )
         )
         return is_enabled == _EnableState.ENABLED
