@@ -72,21 +72,21 @@ fn test_erf_float64():
 
 
 # CHECK-LABEL: test_erf_libm
-fn test_erf_libm() raises:
+def test_erf_libm():
     print("== test_erf_libm")
     seed(0)
-    alias N = 8192
+    var N = 8192
     alias test_dtype = DType.float32
 
     # generate input values and write them to file
-    var x32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    var x32 = DTypePointer[test_dtype].alloc(N)
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    var y32 = DTypePointer[test_dtype].alloc(N)
     for i in range(N):
         y32[i] = erf(x32[i])  # math.erf
 
@@ -99,7 +99,7 @@ fn test_erf_libm() raises:
     ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
         return libm_call[type, simd_width, "erff", "err"](arg)
 
-    var libm_out = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    var libm_out = DTypePointer[test_dtype].alloc(N)
     for i in range(N):
         libm_out[i] = erf_libm(x32[i])
 
@@ -112,15 +112,15 @@ fn test_erf_libm() raises:
         0.0, 5.9604644775390625e-08, 0.0, 1.172195140952681e-07
     )
 
-    var err = compare[test_dtype, N](
-        y32, libm_out, "Compare Mojo math.erf vs. LibM"
+    var err = compare[test_dtype](
+        y32, libm_out, N, msg="Compare Mojo math.erf vs. LibM"
     )
 
     assert_almost_equal(err, abs_rel_err)
 
-    DTypePointer[test_dtype].free(x32)
-    DTypePointer[test_dtype].free(y32)
-    DTypePointer[test_dtype].free(libm_out)
+    x32.free()
+    y32.free()
+    libm_out.free()
 
 
 def main():

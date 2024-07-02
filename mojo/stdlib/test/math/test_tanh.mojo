@@ -57,8 +57,8 @@ fn test_tanh_tfvals_fp32() raises:
     var abs_rel_err = SIMD[dtype, 4](
         0.0, 1.1920928955078125e-07, 0.0, 1.1920928955078125e-07
     )
-    var err = compare[dtype, 4](
-        y.data, tfvals_fp32.data, "Compare Mojo vs. Tensorflow FP32"
+    var err = compare[dtype](
+        y.data, tfvals_fp32.data, 4, msg="Compare Mojo vs. Tensorflow FP32"
     )
     assert_almost_equal(err, abs_rel_err)
 
@@ -109,8 +109,8 @@ fn test_tanh_tfvals_fp64() raises:
         1.4283624095774667e-08,
     )
 
-    var err = compare[dtype, 4](
-        y.data, tfvals_fp64.data, "Compare Mojo vs. Tensorflow FP64"
+    var err = compare[dtype](
+        y.data, tfvals_fp64.data, 4, msg="Compare Mojo vs. Tensorflow FP64"
     )
     assert_almost_equal(err, abs_rel_err)
 
@@ -121,21 +121,21 @@ fn test_tanh_libm[N: Int = 8192]() raises:
     print("== test_tanh_libm")
     seed(0)
     alias test_dtype = DType.float32
-    var x32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    var x32 = DTypePointer[test_dtype].alloc(N)
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # mojo tanh result
     ####################
-    var y32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    var y32 = DTypePointer[test_dtype].alloc(N)
     for i in range(N):
         y32[i] = tanh(x32[i])
 
     ####################
     ## libm tanh result
     ####################
-    var libm_out = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    var libm_out = DTypePointer[test_dtype].alloc(N)
     for i in range(N):
         libm_out[i] = tanh_libm(x32[i])
 
@@ -148,12 +148,12 @@ fn test_tanh_libm[N: Int = 8192]() raises:
         0.0, 2.384185791015625e-07, 0.0, 2.5438197326366208e-07
     )
 
-    var err = compare[test_dtype, N](y32, libm_out, "Compare Mojo vs. LibM")
+    var err = compare[test_dtype](y32, libm_out, N, msg="Compare Mojo vs. LibM")
     assert_almost_equal(err, abs_rel_err)
 
-    DTypePointer[test_dtype].free(x32)
-    DTypePointer[test_dtype].free(y32)
-    DTypePointer[test_dtype].free(libm_out)
+    x32.free()
+    y32.free()
+    libm_out.free()
 
 
 def test_direct():
