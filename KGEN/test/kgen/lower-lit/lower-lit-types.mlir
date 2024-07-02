@@ -487,8 +487,8 @@ kgen.func @g(%arg0: !kgen.pointer<@Bar>) {
 
 // -----
 
-lit.struct.decl @Pointer<T: type, as> register_passable {
-  lit.struct.field value: !kgen.pointer<T, as>
+lit.struct.decl @Pointer<T: type, as, exclusive: i1> register_passable_trivial {
+  lit.struct.field value: !kgen.pointer<T, as exclusive(exclusive)>
 }
 
 kgen.generator @make_ptr<T: type>() -> !kgen.pointer<T> {
@@ -498,8 +498,8 @@ kgen.generator @make_ptr<T: type>() -> !kgen.pointer<T> {
 // CHECK-LABEL: kgen.generator @pointer_const
 kgen.generator @pointer_const<T: type>() {
   // CHECK-NEXT: constant: pointer<none> = <ptr_bitcast(:pointer<T> apply(:() -> !kgen.pointer<T> @make_ptr<:type T>))>
-  kgen.param.constant: @Pointer<:type T, 0> = <{value: pointer<T> = apply(:() -> !kgen.pointer<T> @make_ptr<:type T>)}>
-  // CHECK-NEXT: constant: pointer<none, 1> = <0>
-  kgen.param.constant: @Pointer<:type T, 1> = <{value: pointer<T, 1> = 0}>
+  kgen.param.constant: @Pointer<:type T, 0, :i1 0> = <{value: pointer<T> = apply(:() -> !kgen.pointer<T> @make_ptr<:type T>)}>
+  // CHECK-NEXT: constant: pointer<none, 1 exclusive(1)> = <0>
+  kgen.param.constant: @Pointer<:type T, 1, :i1 1> = <{value: pointer<T, 1 exclusive(1)> = 0}>
   kgen.return
 }
