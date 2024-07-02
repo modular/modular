@@ -12,9 +12,6 @@ from complex import ComplexSIMD
 ```
 """
 
-from builtin.io import _snprintf, _snprintf_scalar
-from builtin.string import _calc_initial_buffer_size
-
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
 alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
@@ -26,7 +23,7 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 @value
 @register_passable("trivial")
-struct ComplexSIMD[type: DType, size: Int](Stringable):
+struct ComplexSIMD[type: DType, size: Int](Stringable, Formattable):
     """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
@@ -55,59 +52,56 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         Returns:
             A string representation.
         """
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this complex value to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        # TODO(MSTDL-700):
+        #   Add a Formatter.reserve() method, to afford format implementions
+        #   to request reservation of additional space from `Formatter`
+        #   implementations that support that. Then use the logic below to
+        #   call that method here.
 
         # Reserve space for opening and closing brackets, plus each element and
         # its trailing commas.
-        var buf = String._buffer_type()
-        var initial_buffer_size = 2
-        for i in range(size):
-            initial_buffer_size += (
-                _calc_initial_buffer_size(self.re[i])
-                + _calc_initial_buffer_size(self.im[i])
-                + 4  # for the ' + i' suffix on the imaginary
-                + 2
-            )
-        buf.reserve(initial_buffer_size)
+        # var initial_buffer_size = 2
+        # for i in range(size):
+        #     initial_buffer_size += (
+        #         _calc_initial_buffer_size(self.re[i])
+        #         + _calc_initial_buffer_size(self.im[i])
+        #         + 4  # for the ' + i' suffix on the imaginary
+        #         + 2
+        #     )
+        # buf.reserve(initial_buffer_size)
 
         # Print an opening `[`.
         @parameter
         if size > 1:
-            buf.size += _snprintf["["](buf.data, 2)
+            writer.write("[")
+
         # Print each element.
         for i in range(size):
             var re = self.re[i]
             var im = self.im[i]
             # Print separators between each element.
             if i != 0:
-                buf.size += _snprintf[", "](buf.data + buf.size, 3)
+                writer.write(", ")
 
-            buf.size += _snprintf_scalar[type](
-                buf.data + buf.size,
-                _calc_initial_buffer_size(re),
-                re,
-            )
+            writer.write(re)
 
             if im != 0:
-                buf.size += _snprintf[" + "](buf.data + buf.size, 4)
-                buf.size += _snprintf_scalar[type](
-                    buf.data + buf.size,
-                    _calc_initial_buffer_size(im),
-                    im,
-                )
-                buf.size += _snprintf["i"](buf.data + buf.size, 2)
-
-            debug_assert(
-                buf.size <= initial_buffer_size,
-                "the buffer size exceed the initial buffer size",
-            )
+                writer.write(" + ", im, "i")
 
         # Print a closing `]`.
         @parameter
         if size > 1:
-            buf.size += _snprintf["]"](buf.data + buf.size, 2)
-
-        buf.size += 1  # for the null terminator.
-        return String(buf)
+            writer.write("]")
 
     @always_inline
     fn __abs__(self) -> SIMD[type, size]:
