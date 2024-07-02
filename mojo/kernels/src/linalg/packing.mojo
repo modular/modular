@@ -192,10 +192,8 @@ struct PackMatrixRows[
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
-        @always_inline
-        @__copy_capture(write_bound)
         @parameter
-        fn transposed_inner_row_body[idx: Int]():
+        for idx in range(simd_size):
             var transposed_data = transpose_buffer.load[width=simd_size](
                 (idx, 0)
             )
@@ -214,8 +212,6 @@ struct PackMatrixRows[
                 )
             # Out of bound columns are discarded as there's no allocation for them
             #  in the packed buffer.
-
-        unroll[transposed_inner_row_body, simd_size]()
 
     fn _pack(self):
         """Helper function: Allocates transpose workspace and launch the
@@ -401,8 +397,14 @@ struct PackMatrixCols[
         @parameter
         if skip_row_bound:
             if not has_neon():
-                unroll[prefetch_body, unroll_factor]()
-            unroll[pack_body, unroll_factor]()
+
+                @parameter
+                for i in range(unroll_factor):
+                    prefetch_body[i]()
+
+            @parameter
+            for i in range(unroll_factor):
+                pack_body[i]()
         else:
             for row_idx in range(row_start, valid_row_count):
                 pack_vector(row_idx, col_start)

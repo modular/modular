@@ -56,38 +56,38 @@ struct LoadStore_i8mm[
     ):
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
-        @always_inline
         @parameter
-        fn body[idx0: Int, idx1: Int]():
-            var c_data: SIMD[type, simd_size] = 0
-            if self.skip_boundary_check or (
-                idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
-            ):
-                var t0 = SIMD[size=2].load(
-                    c_ptr_loc, c_stride * (2 * idx0) + 2 * idx1
-                )
-                var t1 = SIMD[size=2].load(
-                    c_ptr_loc, c_stride * (2 * idx0 + 1) + 2 * idx1
-                ) if not single_row else SIMD[type, 2](0)
-                c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
-            elif idx1 * 2 <= c_bound[1]:
-                var t0 = partial_simd_load[2](
-                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
-                    0,
-                    c_bound[1] - tile_n_idx - idx1 * 2,
-                    0,
-                )
-                var t1 = partial_simd_load[2](
-                    c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
-                    0,
-                    c_bound[1] - tile_n_idx - idx1 * 2,
-                    0,
-                ) if not single_row else SIMD[type, 2](0)
-                c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+        for idx0 in range(tile_rows):
 
-            self.output_tile[idx0, idx1] = c_data
+            @parameter
+            for idx1 in range(tile_columns // simd_size):
+                var c_data: SIMD[type, simd_size] = 0
+                if self.skip_boundary_check or (
+                    idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
+                ):
+                    var t0 = SIMD[size=2].load(
+                        c_ptr_loc, c_stride * (2 * idx0) + 2 * idx1
+                    )
+                    var t1 = SIMD[size=2].load(
+                        c_ptr_loc, c_stride * (2 * idx0 + 1) + 2 * idx1
+                    ) if not single_row else SIMD[type, 2](0)
+                    c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+                elif idx1 * 2 <= c_bound[1]:
+                    var t0 = partial_simd_load[2](
+                        c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                        0,
+                        c_bound[1] - tile_n_idx - idx1 * 2,
+                        0,
+                    )
+                    var t1 = partial_simd_load[2](
+                        c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
+                        0,
+                        c_bound[1] - tile_n_idx - idx1 * 2,
+                        0,
+                    ) if not single_row else SIMD[type, 2](0)
+                    c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
 
-        unroll[body, tile_rows, tile_columns // simd_size]()
+                self.output_tile[idx0, idx1] = c_data
 
     @always_inline
     fn _store_c_tile(
@@ -99,42 +99,46 @@ struct LoadStore_i8mm[
     ):
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
-        @always_inline
         @parameter
-        fn body[idx0: Int, idx1: Int]():
-            var c_data = self.output_tile[idx0, idx1]
-            if self.skip_boundary_check or (
-                idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
-            ):
-                SIMD[size=2].store(
-                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
-                    c_data.slice[2](),
-                )
+        for idx0 in range(tile_rows):
 
-                @parameter
-                if not single_row:
+            @parameter
+            for idx1 in range(tile_columns // simd_size):
+                var c_data = self.output_tile[idx0, idx1]
+                if self.skip_boundary_check or (
+                    idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
+                ):
                     SIMD[size=2].store(
-                        c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
-                        c_data.slice[2, offset=2](),
+                        c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                        c_data.slice[2](),
                     )
-            elif idx1 * 2 <= c_bound[1]:
-                partial_simd_store(
-                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
-                    0,
-                    c_bound[1] - tile_n_idx - idx1 * 2,
-                    c_data.slice[2](),
-                )
 
-                @parameter
-                if not single_row:
+                    @parameter
+                    if not single_row:
+                        SIMD[size=2].store(
+                            c_ptr_loc.offset(
+                                c_stride * (2 * idx0 + 1) + 2 * idx1
+                            ),
+                            c_data.slice[2, offset=2](),
+                        )
+                elif idx1 * 2 <= c_bound[1]:
                     partial_simd_store(
-                        c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
+                        c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
-                        c_data.slice[2, offset=2](),
+                        c_data.slice[2](),
                     )
 
-        unroll[body, tile_rows, tile_columns // simd_size]()
+                    @parameter
+                    if not single_row:
+                        partial_simd_store(
+                            c_ptr_loc.offset(
+                                c_stride * (2 * idx0 + 1) + 2 * idx1
+                            ),
+                            0,
+                            c_bound[1] - tile_n_idx - idx1 * 2,
+                            c_data.slice[2, offset=2](),
+                        )
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
