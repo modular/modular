@@ -80,21 +80,16 @@ fn run_layer_norm_block[
         ]
     ](dump_ptx=False)
 
-    @always_inline
-    @parameter
-    @__copy_capture(data_buf, gamma, beta, epsilon)
-    fn run_func_ln() raises:
-        ctx.enqueue_function(
-            func_ln,
-            data_buf,
-            gamma,
-            beta,
-            epsilon,
-            grid_dim=(rows, 1),
-            block_dim=(min(cols // simd_width, 1024), 1),
-        )
+    ctx.enqueue_function(
+        func_ln,
+        data_buf,
+        gamma,
+        beta,
+        epsilon,
+        grid_dim=(rows, 1),
+        block_dim=(min(cols // simd_width, 1024), 1),
+    )
 
-    run_func_ln()
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(res, data_d)
@@ -170,21 +165,16 @@ fn run_layer_norm_warp_tiling[
         ]
     ](dump_ptx=False)
 
-    @always_inline
-    @parameter
-    @__copy_capture(data_buf, gamma, beta, epsilon)
-    fn run_func_ln() raises:
-        ctx.enqueue_function(
-            func_ln,
-            data_buf,
-            gamma,
-            beta,
-            epsilon,
-            grid_dim=(rows, 1),
-            block_dim=(min(cols // simd_width, 1024), 1),
-        )
+    ctx.enqueue_function(
+        func_ln,
+        data_buf,
+        gamma,
+        beta,
+        epsilon,
+        grid_dim=(rows, 1),
+        block_dim=(min(cols // simd_width, 1024), 1),
+    )
 
-    run_func_ln()
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(res, data_d)
@@ -214,11 +204,8 @@ fn run_layer_norm_warp_tiling[
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_layer_norm_block[DType.float32](ctx, rows=1, cols=128)
-            run_layer_norm_block[DType.float32](ctx, rows=10, cols=1024)
-            run_layer_norm_warp_tiling[DType.float32](ctx, rows=1, cols=128)
-            run_layer_norm_warp_tiling[DType.float32](ctx, rows=10, cols=1024)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_layer_norm_block[DType.float32](ctx, rows=1, cols=128)
+        run_layer_norm_block[DType.float32](ctx, rows=10, cols=1024)
+        run_layer_norm_warp_tiling[DType.float32](ctx, rows=1, cols=128)
+        run_layer_norm_warp_tiling[DType.float32](ctx, rows=10, cols=1024)

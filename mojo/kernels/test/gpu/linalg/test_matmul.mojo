@@ -24,8 +24,8 @@ from internal_utils import (
     zero,
     linspace,
     random,
-    almost_equal,
-    equal,
+    assert_equal,
+    assert_almost_equal,
 )
 from buffer.list import _make_tuple
 
@@ -257,9 +257,9 @@ struct test_matmul[type: DType]:
         ctx.synchronize()
 
         if self.low_precision:
-            almost_equal(self.c_host_ref.tensor, self.c_host.tensor)
+            assert_almost_equal(self.c_host_ref.tensor, self.c_host.tensor)
         else:
-            equal(self.c_host_ref.tensor, self.c_host.tensor)
+            assert_equal(self.c_host_ref.tensor, self.c_host.tensor)
 
 
 # CHECK-NOT: CUDA_ERROR
