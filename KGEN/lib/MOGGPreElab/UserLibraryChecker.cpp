@@ -95,11 +95,14 @@ static LogicalResult checkParamRegionCallsiteLocation(
     // Checks and enqueues calls inside the ParamDeclareRegionOp within a
     // registered kernel.
     for (CallOp call : region.getOps<CallOp>()) {
-      auto gen = cg->symtab.lookup<GeneratorOp>(
-          call.getCallee().getSymbol().getLeafReference());
+      auto gen =
+          cg->symtab.lookup(call.getCallee().getSymbol().getLeafReference());
       assert(gen && "invalid IR?");
+      if (isa<ExternGeneratorOp>(gen))
+        continue;
       if (failed(checkCallsiteErrorInternal(
-              call, region->getParentOfType<GeneratorOp>(), gen)))
+              call, region->getParentOfType<GeneratorOp>(),
+              cast<GeneratorOp>(gen))))
         res = failure();
     }
   }
