@@ -14,6 +14,7 @@ from extensibility import Tensor as ExtensibilityTensor
 from gpu.host import Context as CudaContext
 from gpu.host import CudaInstance, Device, DeviceBuffer, DeviceContext
 from gpu.host.memory import _free, _malloc
+from memory import UnsafePointer
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
@@ -266,7 +267,7 @@ fn unpack_buffer[
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
         UnsafePointer[NoneType],
-    ](async_ptr, Pointer.address_of(size))
+    ](async_ptr, UnsafePointer.address_of(size))
     var shape = StaticIntTuple[1](int(size))
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
@@ -300,7 +301,7 @@ fn unpack_context(
     var ctxPtr: UnsafePointer[NoneType] = external_call[
         "KGEN_CompilerRT_GetContextAndSizeFromAsync",
         UnsafePointer[NoneType],
-    ](Pointer.address_of(numSlots), async_ptr)
+    ](UnsafePointer.address_of(numSlots), async_ptr)
     return StateContext(int(numSlots), ctxPtr)
 
 
