@@ -27,12 +27,12 @@ kgen.func @owned(%arg0: !kgen.pointer<i32> owned) {
   kgen.return
 }
 
-// CHECK-LABEL: @owned_in_mem(ptr noundef nonnull %0)
+// CHECK-LABEL: @owned_in_mem(ptr noalias noundef nonnull %0)
 kgen.func @owned_in_mem(%arg0: !kgen.pointer<i32> owned_in_mem) {
   kgen.return
 }
 
-// CHECK-LABEL: @inout(ptr noundef nonnull %0)
+// CHECK-LABEL: @inout(ptr noalias noundef nonnull %0)
 kgen.func @inout(%arg0: !kgen.pointer<i32> inout) {
   kgen.return
 }
@@ -42,17 +42,17 @@ kgen.func @ref(%arg0: !kgen.pointer<i32> ref) {
   kgen.return
 }
 
-// CHECK-LABEL: @byref_result(ptr noundef nonnull %0)
+// CHECK-LABEL: @byref_result(ptr noalias noundef nonnull %0)
 kgen.func @byref_result(%arg0: !kgen.pointer<i32> byref_result) {
   kgen.return
 }
 
-// CHECK-LABEL: @byref_error(ptr noundef nonnull %0, ptr noundef nonnull %1)
+// CHECK-LABEL: @byref_error(ptr noalias noundef nonnull %0, ptr noalias noundef nonnull %1)
 kgen.func @byref_error(%arg0: !kgen.pointer<i32> byref_error, %arg1: !kgen.pointer<i32> byref_result) throws {
   kgen.return
 }
 
-// CHECK-LABEL: @init_self(ptr noundef nonnull %0)
+// CHECK-LABEL: @init_self(ptr noalias noundef nonnull %0)
 kgen.func @init_self(%arg0: !kgen.pointer<i32> init_self) {
   kgen.return
 }
