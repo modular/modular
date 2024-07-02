@@ -206,7 +206,7 @@ fn layer_norm_gpu_warp_tiling[
     data: NDBuffer[type, 2],
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
 ):
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
@@ -246,7 +246,7 @@ fn layer_norm_gpu_warp_tiling[
 
     var row_var = max((row_m2 / row_count), 0.0)
 
-    var norm_factor = rsqrt(row_var + epsilon[0])
+    var norm_factor = rsqrt(row_var + epsilon)
     var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
         width=simd_width, alignment=align
     ](Index(idx)) + beta.load[width=simd_width, alignment=align](Index(idx))
@@ -266,7 +266,7 @@ fn layer_norm_gpu_block[
     data: NDBuffer[type, 2],
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
 ):
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
@@ -329,7 +329,7 @@ fn layer_norm_gpu_block[
                 Index(row, x)
             )
 
-        var norm_factor = rsqrt(row_var + epsilon[0])
+        var norm_factor = rsqrt(row_var + epsilon)
 
         var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
             width=simd_width, alignment=align
@@ -347,7 +347,7 @@ fn layer_norm_gpu[
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
     output: NDBuffer[type, rank],
     ctx: DeviceContext,
 ) raises:
@@ -487,7 +487,7 @@ fn layer_norm_cpu[
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
     output: NDBuffer[type, rank],
 ):
     @always_inline
@@ -499,7 +499,6 @@ fn layer_norm_cpu[
         "mojo.layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
-        var eps = epsilon[0]
         alias simd_width = simdwidthof[type]()
 
         var last_dim = shape[rank - 1]
@@ -512,7 +511,7 @@ fn layer_norm_cpu[
         var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
         @__copy_capture(
-            chunk_size, prod_all_but_last_dim, last_dim, output_buf, eps
+            chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
         )
         @parameter
         fn task_func(thread_id: Int):
@@ -526,7 +525,7 @@ fn layer_norm_cpu[
                 output_buf._offset(thread_starting_coord), per_thread_dims
             )
 
-            @__copy_capture(row_idx, eps)
+            @__copy_capture(row_idx, epsilon)
             @parameter
             @always_inline
             # Translate given 2d index back to original Nd tensor
@@ -541,7 +540,7 @@ fn layer_norm_cpu[
                 return input_val.cast[return_type]()
 
             layer_norm_cpu[simd_width, type, input_fn_2d](
-                output_buf_view, gamma, beta, eps
+                output_buf_view, gamma, beta, epsilon
             )
 
         sync_parallelize[task_func](num_workers)
@@ -558,7 +557,7 @@ fn layer_norm[
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -583,7 +582,7 @@ fn layer_norm_shape[
     input: NDBuffer[type, rank],
     gamma: NDBuffer[type, 1, DimList(1)],
     beta: NDBuffer[type, 1, DimList(1)],
-    epsilon: NDBuffer[type, 1, DimList(1)],
+    epsilon: Scalar[type],
 ) -> StaticIntTuple[rank]:
     """
     Compute the output shape of a `layer_norm` operation.
