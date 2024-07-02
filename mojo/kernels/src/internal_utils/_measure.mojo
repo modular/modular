@@ -168,11 +168,19 @@ fn _div(out: DTypePointer, x: __type_of(out), c: Scalar[out.type], len: Int):
 
 
 fn _sum(src: DTypePointer, len: Int) -> Scalar[src.type]:
-    return sum(Buffer[src.type, address_space = src.address_space](src, len))
+    return sum(
+        Buffer[src.type, address_space = src.address_space](
+            DTypePointer[_, _, False](src), len
+        )
+    )
 
 
 fn _mean(src: DTypePointer, len: Int) -> Scalar[src.type]:
-    return mean(Buffer[src.type, address_space = src.address_space](src, len))
+    return mean(
+        Buffer[src.type, address_space = src.address_space](
+            DTypePointer[_, _, False](src), len
+        )
+    )
 
 
 fn _dot(x: DTypePointer, y: __type_of(x), len: Int) -> Scalar[x.type]:
