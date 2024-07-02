@@ -111,10 +111,19 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
 // ConvertKGENFunc
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// Cached attribute identifiers.
+struct AttributeIdentifiers {
+  StringAttr noalias;
+};
+} // namespace
+
 /// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
 /// compatible representation. Unsupport metadata values are rejected.
 static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
-                                         DictionaryAttr metadata) {
+                                         SignatureType sig,
+                                         DictionaryAttr metadata,
+                                         const AttributeIdentifiers &ids) {
   NamedAttrList attrs = func->getAttrDictionary();
   SmallVector<Attribute> passthrough =
       llvm::to_vector(func.getPassthroughAttr());
@@ -171,7 +180,23 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     }
   }
 
+  // For each argument and result, leverage signature information to generate
+  // the correpsonding LLVM argument and result attributes.
+  SmallVector<Attribute> argAttrs;
+  NamedAttrList list;
+  for (auto [i, conv, type] :
+       llvm::enumerate(sig.getArgConventions(), sig.getArguments())) {
+    list.clear();
+    // `exclusive` pointer implies `noalias` pointer argument.
+    if (auto ptr = dyn_cast<PointerType>(type);
+        ptr && cast<BoolAttr>(ptr.getExclusive()).getValue())
+      list.set(ids.noalias, b.getUnitAttr());
+
+    argAttrs.push_back(list.getDictionary(b.getContext()));
+  }
+
   // Update the attributes.
+  attrs.set(func.getArgAttrsAttrName(), b.getArrayAttr(argAttrs));
   func->setAttrs(attrs.getDictionary(func.getContext()));
   func.setPassthroughAttr(b.getArrayAttr(passthrough));
   return success();
@@ -264,8 +289,11 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
   });
 }
 
-struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
+class ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
+public:
+  ConvertKGENFunc(mlir::LLVMTypeConverter &tc, SymbolTable &symtab,
+                  const AttributeIdentifiers &ids)
+      : ConvertSymbolOpToLLVM(tc, symtab), ids(ids) {}
 
   LogicalResult matchAndRewrite(FuncOp func, FuncOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
@@ -283,7 +311,8 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     auto funcOp = createLLVMFunc(
         b, target, func.getLoc(), func.getNameAttr(), funcType,
         getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
-    if (failed(convertLLVMMetadata(funcOp, func.getLLVMMetadataAttr())))
+    if (failed(convertLLVMMetadata(funcOp, func.getSignature(),
+                                   func.getLLVMMetadataAttr(), ids)))
       return failure();
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
@@ -320,6 +349,9 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     b.eraseOp(func);
     return success();
   }
+
+private:
+  const AttributeIdentifiers &ids;
 };
 
 //===----------------------------------------------------------------------===//
@@ -744,7 +776,8 @@ struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantTakeOp> {
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns,
                                        SymbolTable &symtab,
-                                       InterpreterMemoryConverter &imc) {
+                                       InterpreterMemoryConverter &imc,
+                                       const AttributeIdentifiers &ids) {
   patterns.insert<
       // clang-format off
       ConvertKGENCall,
@@ -762,11 +795,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENUndef
       // clang-format on
       >(typeConverter);
-  patterns.insert<
-      // clang-format off
-      ConvertKGENFunc
-      // clang-format on
-      >(typeConverter, symtab);
+  patterns.insert<ConvertKGENFunc>(typeConverter, symtab, ids);
   patterns.insert<ConvertKGENParamConstant, ConvertKGENParamMaterialize>(
       typeConverter, imc);
 }
@@ -1089,11 +1118,24 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
-struct LowerKGENToLLVMPass
+class LowerKGENToLLVMPass
     : public KGEN::impl::LowerKGENToLLVMBase<LowerKGENToLLVMPass> {
+public:
   using LowerKGENToLLVMBase::LowerKGENToLLVMBase;
 
+  LogicalResult initialize(MLIRContext *ctx) override {
+    using LLVM::LLVMDialect;
+    auto id = [&](StringRef name) { return StringAttr::get(ctx, name); };
+
+    ids.noalias = id(LLVMDialect::getNoAliasAttrName());
+
+    return success();
+  }
+
   void runOnOperation() override;
+
+private:
+  AttributeIdentifiers ids;
 };
 } // namespace
 
@@ -1179,7 +1221,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
   SymbolTable &symtab = symtabAnalysis.getTopLevelSymbolTable();
   InterpreterMemoryConverter imc(symtab, typeConverter);
-  populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc);
+  populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc, ids);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
