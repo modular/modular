@@ -1581,9 +1581,7 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
   let arguments = (ins KGEN_PackType:$operand);
   let results = (outs Index:$result);
 
-  let assemblyFormat = [{
-    $operand attr-dict `:` type($operand)
-  }];
+  let assemblyFormat = "$operand attr-dict `:` type($operand)";
 
   let hasFolder = 1;
 }
