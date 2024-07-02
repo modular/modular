@@ -1739,35 +1739,6 @@ void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *,
   p << "]";
 }
 
-/// Parse an address space parameter if present.
-void KGEN::printOptionalAddressSpaceParamValue(AsmPrinter &p, Operation *op,
-                                               TypedAttr addressSpace) {
-  if (!addressSpace)
-    return;
-
-  // If the address space is an integer and zero, then we can skip since that's
-  // the default address space.
-  if (auto addressSpaceInt = dyn_cast<IntegerAttr>(addressSpace);
-      addressSpaceInt && addressSpaceInt.getValue().isZero())
-    return;
-
-  p << " address_space ";
-  printParamValue(p, addressSpace);
-  p << " ";
-}
-
-/// Parse a parameter value that is known to be an address space type.
-ParseResult KGEN::parseOptionalAddressSpaceParamValue(AsmParser &p,
-                                                      TypedAttr &result) {
-  if (p.parseOptionalKeyword("address_space")) {
-    // The default address space is 0.
-    result = p.getBuilder().getIndexAttr(0);
-    return success();
-  }
-
-  return parseIndexParamValue(p, result);
-}
-
 /// Compare a range of values from an "originator" to a corresponding range of
 /// values from a "target".  If the two mismatch, emit an error that tries to
 /// explain the issue in a nice way.

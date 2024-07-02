@@ -65,3 +65,12 @@ kgen.func @type_value() {
   kgen.param.declare atype: type = <[struct<(typevalue<[struct<()>, {"method" : () -> () = @method}]>)>, struct<(struct<()>)>, {"method2" : () -> () = @method2}]>
   kgen.return
 }
+
+// CHECK-LABEL: @restrict_pointer
+kgen.generator @restrict_pointer<b: i1>(
+    // CHECK-SAME: !kgen.pointer<index, 7 exclusive(1)>
+    %arg0: !kgen.pointer<index, 7 exclusive(1)>,
+    // CHECK-SAME: !kgen.pointer<i32 exclusive(b)>
+    %arg1: !kgen.pointer<i32 exclusive(b)>) {
+  kgen.return
+}

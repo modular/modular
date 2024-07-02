@@ -319,15 +319,44 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
+/// Parse an address space parameter if present.
+static void printOptionalAddressSpaceParamValue(AsmPrinter &p, Operation *op,
+                                                TypedAttr addressSpace) {
+  if (!addressSpace)
+    return;
+
+  // If the address space is an integer and zero, then we can skip since that's
+  // the default address space.
+  if (auto addressSpaceInt = dyn_cast<IntegerAttr>(addressSpace);
+      addressSpaceInt && addressSpaceInt.getValue().isZero())
+    return;
+
+  p << " address_space ";
+  printParamValue(p, addressSpace);
+  p << " ";
+}
+
+/// Parse a parameter value that is known to be an address space type.
+static ParseResult parseOptionalAddressSpaceParamValue(AsmParser &p,
+                                                       TypedAttr &result) {
+  if (p.parseOptionalKeyword("address_space")) {
+    // The default address space is 0.
+    result = p.getBuilder().getIndexAttr(0);
+    return success();
+  }
+
+  return parseIndexParamValue(p, result);
+}
+
 /// Parse the element type of the allocated pointer type.
 static ParseResult parsePointerOf(AsmParser &p, Type &result,
                                   TypedAttr &addressSpace) {
   Type elementType;
   if (parseParamType(p, elementType) ||
-      KGEN::parseOptionalAddressSpaceParamValue(p, addressSpace))
+      parseOptionalAddressSpaceParamValue(p, addressSpace))
     return failure();
 
-  result = PointerType::get(p.getContext(), elementType, addressSpace);
+  result = PointerType::get(elementType, addressSpace);
   return success();
 }
 
@@ -335,7 +364,7 @@ static ParseResult parsePointerOf(AsmParser &p, Type &result,
 static void printPointerOf(AsmPrinter &p, Operation *op, Type result,
                            TypedAttr addressSpace) {
   printParamType(p, cast<PointerType>(result).getElementType());
-  KGEN::printOptionalAddressSpaceParamValue(p, op, addressSpace);
+  printOptionalAddressSpaceParamValue(p, op, addressSpace);
 }
 
 void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
