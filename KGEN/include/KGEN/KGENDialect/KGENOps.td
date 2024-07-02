@@ -226,7 +226,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
   }];
 
   let assemblyFormat = [{
-    custom<SymbolExport>($exportKind) $sym_name ``
+    `` custom<SymbolExport>($exportKind) $sym_name ``
     custom<ExternGenerator>($signature, $functionType, $inputParams,
                             $resultParams) attr-dict-with-keyword
     ($body^)?
