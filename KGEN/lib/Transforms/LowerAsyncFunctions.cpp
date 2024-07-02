@@ -53,8 +53,7 @@ public:
 struct FrameData {
   /// Error value and result value are excluded from the frame
   FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-            Value errorValue, Value resultValue,
-            function_ref<void(DenseMap<Operation *, int> &, FuncOp)> transform);
+            Value errorValue, Value resultValue);
   FrameData() {}
 
   /// Given a value, determine the state of its defining op or block argument.
@@ -567,10 +566,8 @@ int FrameData::getDefinitionStateForValue(Value operand) const {
   return opToState.at(definingOp);
 }
 
-FrameData::FrameData(
-    FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
-    Value resultValue,
-    function_ref<void(DenseMap<Operation *, int> &, FuncOp)> transform) {
+FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
+                     Value errorValue, Value resultValue) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -689,11 +686,7 @@ FrameData::FrameData(
     // target a second time, considering the result of the first pass in its
     // state computation.
     SmallVector<VirtualBlock> dryRuns;
-    int j = 0;
     while (!paths.empty()) {
-      j++;
-      if (j > 100000)
-        assert(false && "infinite loop");
       VirtualBlock virtualBlock = paths.front();
       paths.erase(paths.begin());
 
@@ -792,9 +785,6 @@ FrameData::FrameData(
       visited.back().insert(virtualBlock);
     }
   }
-
-  // Give caller chance to transform before frame calculation.
-  transform(opToState, originalFunction);
 
   // Calculate the frame. Whenever there is a use whose def lives in another
   // state, it must be added to the frame. We need to store the location of the
@@ -946,10 +936,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       alloc->moveBefore(ancestor);
     }
 
-    auto transform = [&](DenseMap<Operation *, int> &opToState, FuncOp target) {
-    };
-    FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
-                        transform);
+    FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue);
     COTypes cotypes(
         module.getContext(), frameData,
         StructType::get(funcOp.getContext(), funcOp.getResultTypes()));

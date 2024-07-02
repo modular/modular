@@ -46,7 +46,8 @@ def CO_HandleOp : COOp<"handle"> {
 // SuspendOp
 //===----------------------------------------------------------------------===//
 
-def CO_SuspendOp : COOp<"suspend", [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
+def CO_SuspendOp : COOp<"suspend", [
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "Suspend the current coroutine and await resumption.";
   let description = [{
     The `co.suspend` operation suspends the current coroutine function
