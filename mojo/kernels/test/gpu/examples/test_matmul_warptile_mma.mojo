@@ -66,9 +66,7 @@ alias MMA_K = 8
 # WMITER: The number of subwarp tiling steps in M dimension.
 # WNITER: The number of subwarp tiling steps in N dimension.
 # (Each warp sequentially computes sub-tiles of WMITERxWNITER dimension)
-@__llvm_metadata(
-    `nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS.cast[DType.int32]())
-)
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS))
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
@@ -76,34 +74,31 @@ fn sgemm_warp_tiling_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    indexing_integral_dtype: DType,
-    BM: Scalar[indexing_integral_dtype],
-    BN: Scalar[indexing_integral_dtype],
-    BK: Scalar[indexing_integral_dtype],
-    WM: Scalar[indexing_integral_dtype],
-    WN: Scalar[indexing_integral_dtype],
-    WMITER: Scalar[indexing_integral_dtype],
-    WNITER: Scalar[indexing_integral_dtype],
-    NUM_THREADS: Scalar[indexing_integral_dtype],
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    WMITER: Int,
+    WNITER: Int,
+    NUM_THREADS: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[c_type, 2, c_shape],
     mat_a: NDBuffer[a_type, 2, a_shape],
     mat_b: NDBuffer[b_type, 2, b_shape],
 ):
-    var M: Scalar[indexing_integral_dtype] = mat_c.dim(0)
-    var K: Scalar[indexing_integral_dtype] = mat_a.dim(1)
-    var N: Scalar[indexing_integral_dtype] = mat_c.dim(1)
+    var M = mat_c.dim(0)
+    var K = mat_a.dim(1)
+    var N = mat_c.dim(1)
 
-    var c_row: Scalar[indexing_integral_dtype] = BlockIdx.y()
-    var c_col: Scalar[indexing_integral_dtype] = BlockIdx.x()
+    var c_row = BlockIdx.y()
+    var c_col = BlockIdx.x()
 
     # Warp in which the thread is (in current thread block tile).
     # e.g., for 128 threads thread block, we have 4 warps, so warpIdx takes
     # values [0, 3]
-    var warp_idx = Scalar[indexing_integral_dtype](
-        ThreadIdx.x()
-    ) // WARP_SIZE  # the warp this thread is in
+    var warp_idx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
 
     # warpCol and warpRow indicate the warp tile position within a thread block.
     # Each thread block is divided in warp tiles of shape WMxWN.
@@ -186,15 +181,11 @@ fn sgemm_warp_tiling_kernel[
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
-        BK // 4
-    )
-    var inner_col_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BK // 4)
+    var inner_row_a = ThreadIdx.x() // (BK // 4)
+    var inner_col_a = ThreadIdx.x() % (BK // 4)
     alias row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
-        BN // 4
-    )
-    var inner_co_ib = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BN // 4)
+    var inner_row_b = ThreadIdx.x() // (BN // 4)
+    var inner_co_ib = ThreadIdx.x() % (BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
     var c_reg = stack_allocation[int(WMITER * WNITER), SIMD[c_type, 4]]()
@@ -499,7 +490,6 @@ fn run_matmul_mma_warptiling() raises:
             DimList(M, K),
             DType.float32,
             DimList(K, N),
-            indexing_integral_dtype = DType.uint32,
             BM=K10_BM,
             BN=K10_BN,
             BK=K10_BK,
