@@ -115,6 +115,7 @@ namespace {
 /// Cached attribute identifiers.
 struct AttributeIdentifiers {
   StringAttr noalias;
+  StringAttr noundef;
 };
 } // namespace
 
@@ -191,6 +192,29 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     if (auto ptr = dyn_cast<PointerType>(type);
         ptr && cast<BoolAttr>(ptr.getExclusive()).getValue())
       list.set(ids.noalias, b.getUnitAttr());
+
+    switch (conv) {
+    case ArgConvention::OwnedInMem:
+    case ArgConvention::InOut:
+    case ArgConvention::ByRefResult:
+    case ArgConvention::ByRefError:
+    case ArgConvention::InitSelf:
+      [[fallthrough]];
+
+    case ArgConvention::Ref:
+    case ArgConvention::BorrowedInMem:
+      // TODO(MOCO-914): `ref` arguments could be mutable references, but we
+      // don't have the information in the IR anymore.
+      [[fallthrough]];
+
+    case ArgConvention::BorrowedInReg:
+    case ArgConvention::OwnedInReg:
+      // The only thing we can say about values passed in-register is `noundef`,
+      // which is equivalent to saying that they are known initialized. This
+      // also applies to all the pointers passed for in-memory arguments.
+      list.set(ids.noundef, b.getUnitAttr());
+      break;
+    }
 
     argAttrs.push_back(list.getDictionary(b.getContext()));
   }
@@ -1128,6 +1152,7 @@ public:
     auto id = [&](StringRef name) { return StringAttr::get(ctx, name); };
 
     ids.noalias = id(LLVMDialect::getNoAliasAttrName());
+    ids.noundef = id(LLVMDialect::getNoUndefAttrName());
 
     return success();
   }

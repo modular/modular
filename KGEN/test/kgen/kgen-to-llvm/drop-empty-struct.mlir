@@ -3,7 +3,7 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
 
 // CHECK-LABEL: llvm.func internal @none_type_func
-//  CHECK-SAME: (%{{.*}}: i64) -> !llvm.struct<()>
+//  CHECK-SAME: (%{{.*}}: i64 {llvm.noundef}) -> !llvm.struct<()>
 kgen.func @none_type_func(%a : !kgen.none, %b: index) -> !kgen.none {
   // CHECK: %[[RVAL:.+]] = llvm.mlir.undef : !llvm.struct<()>
   // CHECK: llvm.return %[[RVAL]]
@@ -21,7 +21,7 @@ kgen.func @none_type_func_caller(){
 }
 
 // CHECK-LABEL: llvm.func internal @complex_empty_types
-//  CHECK-SAME: (%arg0: !llvm.struct<(i64)>)
+//  CHECK-SAME: (%arg0: !llvm.struct<(i64)> {llvm.noundef})
 kgen.func @complex_empty_types(
   %a0: !kgen.struct<(none, none)>,
   %a1: !pop.array<1, struct<(struct<()>)>>,

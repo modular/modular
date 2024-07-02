@@ -28,7 +28,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
-  // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr
+  // CHECK-SAME: %[[V:.*]]: f32 {llvm.noundef}, %[[V_OUT:.*]]: !llvm.ptr
   // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(f32)>)>
   // CHECK-NEXT: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
   // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]
@@ -74,7 +74,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
-  // CHECK-SAME: (%[[ARG:.*]]: f32) -> f32
+  // CHECK-SAME: (%[[ARG:.*]]: f32 {llvm.noundef}) -> f32
   // CHECK-NEXT: return %[[ARG]] : f32
   kgen.func export C @kernel(%a: f32) -> f32 {
     kgen.return %a : f32
