@@ -847,14 +847,15 @@ struct ConvDirectNHWC[
             output_micro_tile: micro_kernel_height * micro_kernel_width simd vectors.
         """
 
-        @always_inline
         @parameter
-        fn body[idx0: Int, idx1: Int]():
-            output_micro_tile.store[width=simd_size](
-                Index(idx0, idx1 * simd_size), SIMD[output_type, simd_size](0.0)
-            )
+        for idx0 in range(micro_kernel_height):
 
-        unroll[body, micro_kernel_height, micro_kernel_width]()
+            @parameter
+            for idx1 in range(micro_kernel_width):
+                output_micro_tile.store[width=simd_size](
+                    Index(idx0, idx1 * simd_size),
+                    SIMD[output_type, simd_size](0.0),
+                )
 
     @always_inline
     fn _load_output_micro_tile[
