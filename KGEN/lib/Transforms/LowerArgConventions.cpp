@@ -117,7 +117,9 @@ static LoweredSignature lowerSignature(SignatureType sig) {
         convention == ArgConvention::OwnedInMem) {
       if (Type newArgTy = lowerPointerType(argTy)) {
         // Update the info needed for the new signature.
-        newConvs[idx] = ArgConvention::None;
+        newConvs[idx] = convention == ArgConvention::OwnedInMem
+                            ? ArgConvention::OwnedInReg
+                            : ArgConvention::BorrowedInReg;
         newInputTypes[idx] = newArgTy;
         s.changedIndices.push_back(idx);
       }
