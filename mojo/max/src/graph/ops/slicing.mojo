@@ -65,10 +65,12 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     )
 
 
+@always_inline
 def slice(
     input: Symbol,
     slices: List[SymbolicSlice],
-    static_shape: Optional[List[Dim]] = None,
+    out_dims: List[Dim],
+    location: Optional[_SourceLocation] = None,
 ) -> Symbol:
     """Slices a symbolic tensor along each dimension.
 
@@ -77,7 +79,9 @@ def slice(
         slices: Per-dimension slice specifiers. If smaller than the
             input rank, trivial slices (ie. ones which select the whole range)
             will be added to the end for the remaining dimensions.
-        static_shape: An optional shape to use to hint the output type.
+        out_dims: The expected output dimensions returned by slicing.
+            These will be assert at graph execution time to be correct.
+        location: An optional location for a more specific error message.
 
     Returns:
         A new symbolic tensor representing the result of slicing the
@@ -89,18 +93,22 @@ def slice(
     """
     var g = input.graph()
     var input_type = input.tensor_type()
+    var loc = location or __call_location()
+    if len(slices) > input_type.rank():
+        message = str("got {} slices, tensor only has rank {}")
+        raise error(g, message.format(len(slices), input_type.rank()), loc)
 
-    var out_shape: List[Dim]
-    if static_shape:
-        out_shape = static_shape.value()
-    else:
-        var dims = List[Dim]()
-        for axis in range(input_type.rank()):
-            if axis < len(slices):
-                dims.append(Dim.dynamic())
-            else:
-                dims.append(input_type.dims[axis])
-        out_shape = dims
+    var out_shape = out_dims
+    if len(out_shape) != len(slices):
+        raise error(
+            input.graph(),
+            "Must specify an output dim for every sliced dimension",
+            loc,
+        )
+
+    # Append inner unsliced dims to the output shape.
+    for i in range(len(out_shape), len(input_type.dims)):
+        out_shape.append(input_type.dims[i])
 
     var starts = List[Symbol]()
     var stops = List[Symbol]()
@@ -241,9 +249,10 @@ def slice(
     """
     g = input.graph()
     t = input.tensor_type()
+    loc = location or __call_location()
     if len(slices) > t.rank():
         message = str("got {} slices, tensor only has rank {}")
-        raise error(g, message.format(len(slices), t.rank()))
+        raise error(g, message.format(len(slices), t.rank()), loc)
 
     slice_max = int(Int64.MAX)
     empty_slice = Slice(start=None, end=None, step=1)
@@ -253,13 +262,12 @@ def slice(
     stops = List[Int64]()
     steps = List[Int64]()
 
-    loc = location or __call_location()
     if out_dims:
         dims = out_dims
         if len(dims) != len(slices):
             raise error(
                 input.graph(),
-                "Must specify an output dim for every slice dimension",
+                "Must specify an output dim for every sliced dimension",
                 loc,
             )
 
@@ -358,7 +366,7 @@ def slice(
             slices.append(SymbolicSlice(None, None, None))
             dims.append(input_type.dims[i])
 
-    var out_sliced = slice(input, slices, static_shape=dims)
+    var out_sliced = slice(input, slices, dims)
 
     if keep_dims:
         return out_sliced

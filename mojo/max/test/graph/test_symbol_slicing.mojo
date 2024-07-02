@@ -69,7 +69,7 @@ fn test_vector_slice_sym() raises:
     )
     var arg = g[0]
     var idx = g[1]
-    g.output(arg[idx : idx + 2])
+    g.output(arg[idx : idx + 2, out_dims = List[Dim](2)])
 
     var x = Tensor[DType.int64](TensorShape(3), 1, 2, 3)
     var i = Tensor[DType.int64](TensorShape(), 1)
@@ -77,6 +77,37 @@ fn test_vector_slice_sym() raises:
 
     var actual = _testing.execute_binary[DType.int64](g, x, i)
     _testing.assert_tensors_equal[DType.int64](expected, actual)
+
+
+fn test_vector_slice_new_sym() raises:
+    var g = Graph(
+        List[Type](TensorType(DType.int64, 3), TensorType(DType.int64)),
+    )
+    var arg = g[0]
+    var len = g[1]
+    g.output(arg[:len, out_dims = List[Dim]("len")])
+
+    var x = Tensor[DType.int64](TensorShape(3), 1, 2, 3)
+    var i = Tensor[DType.int64](TensorShape(), 2)
+    var expected = Tensor[DType.int64](TensorShape(2), 1, 2)
+
+    var actual = _testing.execute_binary[DType.int64](g, x, i)
+    _testing.assert_tensors_equal[DType.int64](expected, actual)
+
+
+fn test_vector_slice_sym_incorrect_size() raises:
+    var g = Graph(
+        List[Type](TensorType(DType.int64, 3), TensorType(DType.int64)),
+    )
+    var arg = g[0]
+    var idx = g[1]
+    g.output(arg[idx : idx + 2, out_dims = List[Dim](5)])
+
+    var x = Tensor[DType.int64](TensorShape(3), 1, 2, 3)
+    var i = Tensor[DType.int64](TensorShape(), 1)
+
+    with assert_raises():
+        _ = _testing.execute_binary[DType.int64](g, x, i)
 
 
 fn test_vector_slice_known_size_restricts() raises:
@@ -151,7 +182,7 @@ fn test_matrix_slice_sym() raises:
     )
     var arg = g[0]
     var idx = g[1]
-    g.output(arg[idx : idx + 2])
+    g.output(arg[idx : idx + 2, out_dims = List[Dim](2)])
 
     var x = Tensor[DType.int64](TensorShape(3, 3), 1, 2, 3, 4, 5, 6, 7, 8, 9)
     var i = Tensor[DType.int64](TensorShape(), 1)
@@ -167,7 +198,7 @@ fn test_matrix_slice_double() raises:
     )
     var arg = g[0]
     var idx = g[1]
-    g.output(arg[idx : idx + 2, idx - 1 : idx + 1])
+    g.output(arg[idx : idx + 2, idx - 1 : idx + 1, out_dims = List[Dim](2, 2)])
 
     var x = Tensor[DType.int64](TensorShape(3, 3), 1, 2, 3, 4, 5, 6, 7, 8, 9)
     var i = Tensor[DType.int64](TensorShape(), 1)
@@ -235,6 +266,8 @@ def main():
     test_vector_index_sym()
     test_vector_slice_int()
     test_vector_slice_sym()
+    test_vector_slice_new_sym()
+    test_vector_slice_sym_incorrect_size()
     test_vector_slice_known_size_restricts()
     test_vector_slice_unknown_size_raises()
     test_vector_slice_with_out_dims()

@@ -290,7 +290,10 @@ struct Symbol(CollectionElement, Stringable, Formattable):
 
         return ops.slice(self, index_sym, axis, keep_dims)
 
-    fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
+    @always_inline
+    fn __getitem__(
+        self, *s: SymbolicSlice, out_dims: List[Dim]
+    ) raises -> Symbol:
         """Range-based slicing.
 
         Uses the `mo.slice` op. Slicing along multiple dimensions is
@@ -299,6 +302,8 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Args:
             s: The slice values. The `i`th `SymbolicSlice` in the variadic list
                 represents the begin:end:step triple for axis `i`.
+            out_dims: The expected output dimensions returned by slicing.
+              These will be assert at graph execution time to be correct.
 
         Returns:
             The slicing result.
@@ -306,7 +311,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         var slices = List[SymbolicSlice]()
         for sval in s:
             slices.append(sval[])
-        return ops.slice(self, slices)
+        return ops.slice(self, slices, out_dims, __call_location())
 
     @always_inline
     fn __getitem__(
