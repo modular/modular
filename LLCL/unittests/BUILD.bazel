@@ -1,6 +1,16 @@
 load("//bazel:api.bzl", "modular_cc_test")
 
 modular_cc_test(
+    name = "AllocatorTest",
+    srcs = ["AllocatorTest.cpp"],
+    deps = [
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
+    ],
+)
+
+modular_cc_test(
     name = "AsyncValueTest",
     srcs = ["AsyncValueTest.cpp"],
     target_compatible_with = select({

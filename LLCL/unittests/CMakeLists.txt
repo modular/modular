@@ -11,6 +11,7 @@ add_modular_unittest(
   TEST_NAME
   LLCLTests
 
+  AllocatorTest.cpp
   AsyncValueTest.cpp
   DebuggingAllocatorsTest.cpp
   ResourceTest.cpp
