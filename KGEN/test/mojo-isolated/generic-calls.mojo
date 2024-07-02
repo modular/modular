@@ -58,3 +58,9 @@ fn test_borrowed(x: RegPassable):
     # CHECK: lit.ref.store [[XCOPY]], [[XVAR]]
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XVAR]])
     owned_generic(x)
+
+
+# CHECK-LABEL: lit.func @"function_reference
+fn function_reference():
+    # CHECK: create_closure[{{.*}}@"function_reference
+    borrowed_generic(function_reference)

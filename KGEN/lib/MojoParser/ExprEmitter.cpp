@@ -640,10 +640,6 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   TypedAttr attr = value.ir.get();
   const ExprNode *expr = value.expr;
 
-  // Make sure this method isn't getting called inappropriately.
-  assert(value.ir.getType().isRegisterPassable(expr->getLoc(), shared) &&
-         "emitPValueToSRValue called on non-register-passable value");
-
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
   if (!builder) {
@@ -726,9 +722,7 @@ MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
   // variable does not get promoted off the stack, and after struct lowering,
   // the type is erased down to its MLIR constituents anyways.
   Location loc = translateLocation(value.expr->getLoc());
-  Value attr = value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)
-                   ? Value(builder->create<ParamConstantOp>(loc, value.ir))
-                   : builder->create<ParamMaterializeOp>(loc, value.ir);
+  Value attr = emitPValueToSRValue(value, context);
   builder->create<RefStoreOp>(loc, attr, dest);
   return MBValue(dest);
 }
