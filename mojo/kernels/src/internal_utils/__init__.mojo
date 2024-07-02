@@ -14,3 +14,4 @@ from ._utils import (
     zero,
     random,
 )
+from ._measure import kl_div, correlation, cosine
