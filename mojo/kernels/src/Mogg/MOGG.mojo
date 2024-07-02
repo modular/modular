@@ -3216,6 +3216,8 @@ fn layer_norm[
     input_0_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
+    *,
+    target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
@@ -3223,8 +3225,10 @@ fn layer_norm[
     epsilon: NDBuffer[type, 1],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
-):
-    _layer_norm[type, input_0_fn](shape, gamma, beta, epsilon, output)
+) raises:
+    _layer_norm[type, input_0_fn, target=target](
+        shape, gamma, beta, epsilon, output, ctx
+    )
 
 
 # ===----------------------------------------------------------------------===#
