@@ -3,7 +3,7 @@
 module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
 
 // CHECK-LABEL: llvm.func internal @trivial
-// CHECK-SAME: (%[[ARG0:.*]]: i32)
+// CHECK-SAME: (%[[ARG0:.*]]: i32
 // CHECK-SAME: ["target-cpu", "skylake-avx512"]
 // CHECK-SAME: ["target-features", "+fma"]
 // CHECK-SAME: ["tune-cpu", "skylake-avx512"]
@@ -72,7 +72,7 @@ kgen.func @reference_me(%a: i64) -> i64 {
 }
 
 // CHECK-LABEL: @address_dtype
-// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr,
+// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr
 // CHECK-SAME: %[[ARG1:.*]]: !llvm.vec<4 x ptr>
 kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, address>) {
   kgen.return
