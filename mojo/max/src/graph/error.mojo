@@ -37,6 +37,35 @@ fn error[
     Returns:
         The error message augmented with call context information.
     """
+
+    @parameter
+    if param_env.is_defined["MODULAR_DEBUG_GRAPH"]():
+        breakpoint()
+
+    return format_error(graph, message, location or __call_location())
+
+
+@always_inline
+fn format_error[
+    T: Stringable
+](
+    graph: Optional[Graph],
+    message: T,
+    location: Optional[_SourceLocation] = None,
+) -> String:
+    """Formats an error string that includes call information.
+
+    Parameters:
+        T: The message type.
+
+    Args:
+        graph: The graph for context information.
+        message: An error message to raise.
+        location: An optional location for a more specific error message.
+
+    Returns:
+        The string for an error message augmented with call context information.
+    """
     var layer_string = str("")
     if graph:
         layer_string = str(graph.value().current_layer())
@@ -46,10 +75,6 @@ fn error[
         message_string = layer_string + " - " + str(message)
     else:
         message_string = str(message)
-
-    @parameter
-    if param_env.is_defined["MODULAR_DEBUG_GRAPH"]():
-        breakpoint()
 
     return (
         "\n\n"

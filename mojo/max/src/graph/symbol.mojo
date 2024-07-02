@@ -12,7 +12,8 @@ from utils.variant import Variant
 import _mlir
 
 from ._attributes import _string_attr
-from .graph import Graph, _GraphRef, error
+from .graph import Graph, _GraphRef
+from .error import error, format_error
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about
@@ -133,23 +134,19 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         for dim in dims:
             out_dims.append(dim[])
 
-        var message = str(
-            error(
-                self.graph(),
-                "Failed to rebind runtime shape",
-                __call_location(),
-            )
+        var message = format_error(
+            self.graph(),
+            "Failed to rebind runtime shape",
+            __call_location(),
         )
         return ops.rebind(self, out_dims, message)
 
     @always_inline
     fn rebind(self, dims: List[Dim]) raises -> Symbol:
-        var message = str(
-            error(
-                self.graph(),
-                "Failed to rebind runtime shape",
-                __call_location(),
-            )
+        var message = format_error(
+            self.graph(),
+            "Failed to rebind runtime shape",
+            __call_location(),
         )
         return ops.rebind(self, dims, message)
 

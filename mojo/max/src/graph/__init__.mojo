@@ -57,4 +57,4 @@ from .type import (
     TensorType,
     Type,
 )
-from .error import error
+from .error import error, format_error
