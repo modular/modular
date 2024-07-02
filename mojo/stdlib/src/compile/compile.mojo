@@ -105,6 +105,8 @@ fn _compile_info_asm_non_failable_impl[
         _Info,
     ]
 
+    constrained[Int(cls.num_captures) != -1, "failed to compile code"]()
+
     alias result = Info(
         cls.asm,
         get_linkage_name[target, func](),
@@ -170,6 +172,8 @@ fn _compile_info_llvm_non_failable_impl[
         `> : `,
         _Info,
     ]
+
+    constrained[Int(cls.num_captures) != -1, "failed to compile code"]()
 
     alias result = Info(
         cls.asm,
