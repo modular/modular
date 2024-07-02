@@ -563,32 +563,24 @@ fn _process_tile[
     var input_vals = StaticTuple[SIMD[type, tile_size_m], tile_size_n]()
     var output_vals = StaticTuple[SIMD[type, tile_size_n], tile_size_m]()
 
-    @__copy_capture(input_tile_offset)
     @parameter
-    @always_inline
-    fn load_input_vals[count: Int]():
-        input_vals[count] = SIMD[size=tile_size_m].load(
-            in_ptr, input_tile_offset + M * count
+    for i in range(tile_size_n):
+        input_vals[i] = SIMD[size=tile_size_m].load(
+            in_ptr, input_tile_offset + M * i
         )
 
-    unroll[load_input_vals, tile_size_n]()
+    @parameter
+    for m in range(tile_size_m):
+
+        @parameter
+        for n in range(tile_size_n):
+            output_vals[m][n] = input_vals[n][m]
 
     @parameter
-    @always_inline
-    fn compute_output_vals[m: Int, n: Int]():
-        output_vals[m][n] = input_vals[n][m]
-
-    unroll[compute_output_vals, tile_size_m, tile_size_n]()
-
-    @__copy_capture(output_tile_offset, output_vals)
-    @parameter
-    @always_inline
-    fn store_output_vals[count: Int]():
+    for i in range(tile_size_m):
         SIMD[size=tile_size_n].store(
-            out_ptr, output_tile_offset + N * count, output_vals[count]
+            out_ptr, output_tile_offset + N * i, output_vals[i]
         )
-
-    unroll[store_output_vals, tile_size_m]()
 
 
 fn _transpose_2d_serial_tiled[
