@@ -528,7 +528,7 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<ArgConvention> argConventions;
   SmallVector<size_t> argVariadicIndices;
   ssize_t argPackIndex = -1;
-  auto origArgPackConvention = ArgConvention::None;
+  std::optional<ArgConvention> origArgPackConvention;
 
   PassingKindParser passingKindParser(p);
   size_t idx = 0;

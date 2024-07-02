@@ -117,7 +117,7 @@ ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 ParseResult parseConventionAndVariadicness(
     AsmParser &p, ArgConvention &convention,
     SmallVectorImpl<size_t> &variadicIndices, ssize_t &argPackIndex,
-    ArgConvention &origArgPackConvention, size_t idx);
+    std::optional<ArgConvention> &origArgPackConvention, size_t idx);
 
 enum class Variadicness : uint8_t;
 /// Print an optional passing convention and variadicness.

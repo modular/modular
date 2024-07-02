@@ -1404,7 +1404,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   argConventions.reserve(numArgs);
 
   ssize_t argPackIndex = -1;
-  ArgConvention argPackOrigConvention = ArgConvention::None;
+  std::optional<ArgConvention> argPackOrigConvention;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     bool isVariadic =
         arg.vararg == VarArgKind::VarArg || arg.vararg == VarArgKind::KWVarArg;

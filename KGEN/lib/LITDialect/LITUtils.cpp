@@ -180,7 +180,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<TypedAttr> defaultKwOnlyParams;
   SmallVector<size_t> variadicIndices;
   ssize_t packIndex = -1;
-  ArgConvention origPackConvention = ArgConvention::None;
+  std::optional<ArgConvention> origPackConvention;
 
   bool foundPosDefault = false;
   bool foundKwOnlyDefault = false;
@@ -258,14 +258,14 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   paramListAttr = PogListAttr::get(
       ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
-      variadicIndices, packIndex, origPackConvention);
+      variadicIndices, packIndex, std::move(origPackConvention));
   return success();
 }
 
 ParseResult LIT::parseConventionAndVariadicness(
     AsmParser &p, ArgConvention &convention,
     SmallVectorImpl<size_t> &variadicIndices, ssize_t &argPackIndex,
-    ArgConvention &origArgPackConvention, size_t idx) {
+    std::optional<ArgConvention> &origArgPackConvention, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
   convention = ArgConvention::OwnedInReg;
@@ -282,7 +282,7 @@ ParseResult LIT::parseConventionAndVariadicness(
       if (argPackIndex == ssize_t(idx)) {
         argPackIndex = idx;
         origArgPackConvention = convention;
-        if (origArgPackConvention == ArgConvention::OwnedInMem)
+        if (convention == ArgConvention::OwnedInMem)
           convention = ArgConvention::OwnedInReg;
         else
           convention = ArgConvention::BorrowedInReg;
@@ -296,7 +296,7 @@ ParseResult LIT::parseConventionAndVariadicness(
         return p.emitError(loc, "multiple packs not supported");
       argPackIndex = idx;
       origArgPackConvention = convention;
-      if (origArgPackConvention == ArgConvention::OwnedInMem)
+      if (convention == ArgConvention::OwnedInMem)
         convention = ArgConvention::OwnedInReg;
       else
         convention = ArgConvention::BorrowedInReg;
@@ -308,8 +308,7 @@ ParseResult LIT::parseConventionAndVariadicness(
 
 /// Print the variadicness as a strings.
 static void printVariadicness(AsmPrinter &p, Variadicness variadicness,
-                              char separator = ' ',
-                              ArgConvention packConv = ArgConvention::None) {
+                              char separator = ' ') {
   if (variadicness == Variadicness::kNone)
     return;
 
@@ -441,7 +440,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   paramListAttr = PogListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, variadicIndices, packIndex, ArgConvention::None);
+      defaultKwOnlyParams, variadicIndices, packIndex, std::nullopt);
   return success();
 }
 

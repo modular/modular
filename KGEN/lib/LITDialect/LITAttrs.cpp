@@ -38,6 +38,28 @@ void LITDialect::registerAttributes() {
 // PogListAttr
 //===----------------------------------------------------------------------===//
 
+static ParseResult parsePackInfo(AsmParser &p, ssize_t &idx,
+                                 std::optional<ArgConvention> &conv) {
+  conv.emplace();
+  FailureOr<ssize_t> idxResult = mlir::FieldParser<ssize_t>::parse(p);
+  if (failed(idxResult))
+    return failure();
+  idx = *idxResult;
+  if (p.parseComma())
+    return failure();
+  FailureOr<ArgConvention> convResult =
+      mlir::FieldParser<ArgConvention>::parse(p);
+  if (failed(convResult))
+    return failure();
+  conv = *convResult;
+  return success();
+}
+
+static void printPackInfo(AsmPrinter &p, ssize_t idx,
+                          const std::optional<ArgConvention> &conv) {
+  p << idx << ", " << *conv;
+}
+
 PogListAttr PogListAttr::get(MLIRContext *context) {
   return PogListAttr::get(context, {}, {});
 }
@@ -52,7 +74,7 @@ PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<TypedAttr> defaultPos,
                              ArrayRef<TypedAttr> defaultKwOnly) {
   return PogListAttr::get(context, pogs, defaultPos, defaultKwOnly, -1,
-                          ArgConvention::None);
+                          std::nullopt);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -70,18 +92,18 @@ PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                              ArrayRef<TypedAttr> defaultKwOnly,
                              ArrayRef<size_t> variadicIndices,
                              ssize_t packIndex,
-                             ArgConvention origPackConvention) {
+                             std::optional<ArgConvention> origPackConvention) {
   return PogListAttr::get(context, toPogs(names, passingKinds, variadicIndices),
                           defaultPos, defaultKwOnly, packIndex,
-                          origPackConvention);
+                          std::move(origPackConvention));
 }
 
-LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  ArrayRef<PogMetadataAttr> pogs,
-                                  ArrayRef<TypedAttr> defaultPos,
-                                  ArrayRef<TypedAttr> defaultKwOnly,
-                                  ssize_t packIndex,
-                                  ArgConvention origPackConvention) {
+LogicalResult
+PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                    ArrayRef<PogMetadataAttr> pogs,
+                    ArrayRef<TypedAttr> defaultPos,
+                    ArrayRef<TypedAttr> defaultKwOnly, ssize_t packIndex,
+                    std::optional<ArgConvention> origPackConvention) {
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
     if (!pogAttr.getName())
@@ -113,10 +135,10 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   if (packIndex != -1) {
     if (failed(verifyVariadicIdx(packIndex, /*isPack=*/true)))
       return failure();
-    if (origPackConvention == ArgConvention::None)
+    if (!origPackConvention)
       return emitError() << "pack convention not specified";
   } else {
-    if (origPackConvention != ArgConvention::None)
+    if (origPackConvention)
       return emitError() << "pack convention specified without pack";
   }
 

@@ -775,7 +775,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<ArgConvention> argConventions;
   SmallVector<size_t> argVariadicIndices;
   ssize_t argPackIndex = -1;
-  auto origArgPackConvention = ArgConvention::None;
+  std::optional<ArgConvention> origArgPackConvention;
 
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
@@ -999,7 +999,7 @@ Type LITSignatureType::getIfVariadicPack(size_t index) {
 /// example: fn x(inout *args: Int) is declared 'inout'.
 ArgConvention LITSignatureType::getPackVarArgConvention(size_t index) {
   assert(getMetadata().isPackVarArg(index));
-  return getArgListAttrs().getOrigPackConvention();
+  return *getArgListAttrs().getOrigPackConvention();
 }
 
 bool LITSignatureType::isParamVarArg(size_t index) {
