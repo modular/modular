@@ -98,17 +98,17 @@ kgen.generator @passing_kinds(
 
 // Test that passing kind printing/parsing works correctly for long signatures.
 !t = !kgen.signature<!lit.signature<(
-    "a": index borrow, |, *,
-    "b": index borrow, "c": index borrow, "d": index borrow, "e": index borrow,
-    "f": index borrow, "g": index borrow, "h": index borrow, "i": index borrow,
-    "j": index borrow, "k": index borrow, "l": index borrow, "m": index borrow
+    "a": index owned, |, *,
+    "b": index owned, "c": index owned, "d": index owned, "e": index owned,
+    "f": index owned, "g": index owned, "h": index owned, "i": index owned,
+    "j": index owned, "k": index owned, "l": index owned, "m": index owned
 ) -> !kgen.none>>
 
 // CHECK-LABEL: lit.func @long_sig(%t: !kgen.signature<!lit.signature<
-// CHECK-SAME: "a": index borrow, |, *,
-// CHECK-SAME: "b": index borrow, "c": index borrow, "d": index borrow, "e": index borrow,
-// CHECK-SAME: "f": index borrow, "g": index borrow, "h": index borrow, "i": index borrow,
-// CHECK-SAME: "j": index borrow, "k": index borrow, "l": index borrow, "m": index borrow
+// CHECK-SAME: "a": index owned, |, *,
+// CHECK-SAME: "b": index owned, "c": index owned, "d": index owned, "e": index owned,
+// CHECK-SAME: "f": index owned, "g": index owned, "h": index owned, "i": index owned,
+// CHECK-SAME: "j": index owned, "k": index owned, "l": index owned, "m": index owned
 lit.func @long_sig(%t: !t) {
     kgen.return
 }

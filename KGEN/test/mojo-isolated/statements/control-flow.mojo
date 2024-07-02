@@ -18,8 +18,8 @@
 # CHECK-NEXT:      %inside_a = lit.var.decl "inside_a"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
-# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call @{{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.signature<("lhs": !Int borrow, "rhs": !Int borrow) -> !Bool>
-# CHECK-NEXT:      [[TEST_B:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.signature<("self": !Bool borrow) -> i1>
+# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call @{{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.signature<("lhs": !Int, "rhs": !Int) -> !Bool>
+# CHECK-NEXT:      [[TEST_B:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.signature<("self": !Bool) -> i1>
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_B]] : i1
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_b = lit.var.decl "inside_b"
@@ -144,7 +144,7 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 # CHECK-LABEL: lit.func @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
     # CHECK: kgen.param.if <apply(
-    # CHECK-SAME: !lit.signature<("self": !Bool borrow) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", cond(
+    # CHECK-SAME: !lit.signature<("self": !Bool) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", cond(
     # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", a), b, a))> {
     @parameter
     if a and b:

@@ -96,19 +96,19 @@ lit.func @slashAndStarOnly(|, *) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1)
-lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1) {
-  // CHECK: self: !lit.signature<<"dt": dtype, "w": scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
-  kgen.param.declare self: !lit.signature<<"dt": dtype, "w": scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
-  // CHECK: call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.signature<("a": index borrow = 1) -> ()>
-  kgen.call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.signature<("a": index borrow = 1) -> ()>
+// CHECK-LABEL: lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index owned = 1)
+lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index owned = 1) {
+  // CHECK: self: !lit.signature<<"dt": dtype, "w": scalar<*(0,0)>>("a": index owned = 1) -> ()> = <@signature_type>
+  kgen.param.declare self: !lit.signature<<"dt": dtype, "w": scalar<*(0,0)>>("a": index owned = 1) -> ()> = <@signature_type>
+  // CHECK: call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.signature<("a": index owned = 1) -> ()>
+  kgen.call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.signature<("a": index owned = 1) -> ()>
   kgen.return
 }
 
 // CHECK-LABEL: lit.func @variadic<x: variadic<index> var, y: dtype pack>(
 lit.func @variadic<x: variadic<index> var, y: dtype pack>(
-  // CHECK-SAME: %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> borrow|var, %c: !kgen.pack<[index, index]> pack
-  %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> borrow|var, %c: !kgen.pack<[index, index]> pack
+  // CHECK-SAME: %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> owned|var, %c: !kgen.pack<[index, index]> pack
+  %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> owned|var, %c: !kgen.pack<[index, index]> pack
 ) {
   kgen.return
 }
@@ -116,24 +116,24 @@ lit.func @variadic<x: variadic<index> var, y: dtype pack>(
 // CHECK-LABEL: lit.func @default_params<
 // CHECK-SAME: a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
 // CHECK-SAME: d: dtype, e: dtype = si8, f: scalar<si16> = 2
-// CHECK-SAME: >(%z: index borrow = 42)
+// CHECK-SAME: >(%z: index owned = 42)
 lit.func @default_params<
   a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
   d: dtype, e: dtype = si8, f: scalar<si16> = 2
->(%z: index borrow = 42) {
+>(%z: index owned = 42) {
   // CHECK: self: !lit.signature<
   // CHECK-SAME: <"a": dtype, "b": dtype = f32, "c": scalar<si32> = 1, *, "d": dtype, "e": dtype = si8, "f": scalar<si16> = 2
-  // CHECK-SAME: >("z": index borrow = 42) -> ()> = <@default_params>
+  // CHECK-SAME: >("z": index owned = 42) -> ()> = <@default_params>
   kgen.param.declare self: !lit.signature<<
     "a": dtype, "b": dtype = f32, "c": scalar<si32> = 1, *, "d": dtype, "e": dtype = si8, "f": scalar<si16> = 2
-  >("z": index borrow = 42) -> ()> = <@default_params>
+  >("z": index owned = 42) -> ()> = <@default_params>
 
   // CHECK: call @default_params<
   // CHECK-SAME: :dtype si16, :dtype f16, :scalar<si32> 5, :dtype si16, :dtype f16, :scalar<si16> 5
-  // CHECK-SAME: >(%z) : !lit.signature<("z": index borrow = 42) -> ()>
+  // CHECK-SAME: >(%z) : !lit.signature<("z": index owned = 42) -> ()>
   kgen.call @default_params<
     :dtype si16, :dtype f16, :scalar<si32> 5, :dtype si16, :dtype f16, :scalar<si16> 5
-  >(%z) : !lit.signature<("z": index borrow = 42) -> ()>
+  >(%z) : !lit.signature<("z": index owned = 42) -> ()>
 
   kgen.return
 }
@@ -151,10 +151,10 @@ lit.func @default_args(
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index borrow = 42)
-lit.func @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index borrow = 42) {
-  // CHECK: self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@star_slash_params>
-  kgen.param.declare self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@star_slash_params>
+// CHECK-LABEL: lit.func @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index owned = 42)
+lit.func @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index owned = 42) {
+  // CHECK: self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index owned = 42) -> ()> = <@star_slash_params>
+  kgen.param.declare self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index owned = 42) -> ()> = <@star_slash_params>
   kgen.return
 }
 

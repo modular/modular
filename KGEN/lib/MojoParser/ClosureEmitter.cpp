@@ -171,7 +171,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       decl, "__init__", /*params=*/{},
       /*paramListAttrs=*/PogListAttr::get(ctx),
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
-      {ArgConvention::InitSelf, ArgConvention::OwnedInReg}, argListAttrs,
+      {ArgConvention::InitSelf, ArgConvention::BorrowedInReg}, argListAttrs,
       noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
   func.setInlineLevel(InlineLevel::Always);
   shared.declResolver->addFullyResolvedDecl(&*func, "__init__", decl.getLoc(),
@@ -269,7 +269,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto dtorMetadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}));
   auto dtorSig = SignatureType::get(b.getFunctionType(opaquePtrType, noneType),
-                                    ArgConvention::OwnedInReg,
+                                    ArgConvention::BorrowedInReg,
                                     /*effects=*/{}, dtorMetadata);
   auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
 
@@ -279,7 +279,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly}));
   auto cpySignatureType = SignatureType::get(
-      fnType, {ArgConvention::OwnedInReg}, /*effects=*/{}, metadata);
+      fnType, {ArgConvention::BorrowedInReg}, /*effects=*/{}, metadata);
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
@@ -898,8 +898,8 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(
       moduleDecl, generateName("_copyinit_"), topLevelParams, paramListAttrs,
-      {opaquePtrType}, {ArgConvention::OwnedInReg}, argListAttrs, opaquePtrType,
-      SpecialFunctionKind::kNormal, loc, builder);
+      {opaquePtrType}, {ArgConvention::BorrowedInReg}, argListAttrs,
+      opaquePtrType, SpecialFunctionKind::kNormal, loc, builder);
 
   SmallVector<TypedAttr> topLevelParamRefs;
   for (auto [i, p] : llvm::enumerate(totalParams))
@@ -952,11 +952,11 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   // Create top level destructor.
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelDtor =
-      createFunction(moduleDecl, generateName("_dtor_"), topLevelParams,
-                     paramListAttrs, opaquePtrType, ArgConvention::OwnedInReg,
-                     PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}),
-                     noneType, SpecialFunctionKind::kNormal, loc, builder);
+  LIT::FuncOp topLevelDtor = createFunction(
+      moduleDecl, generateName("_dtor_"), topLevelParams, paramListAttrs,
+      opaquePtrType, ArgConvention::BorrowedInReg,
+      PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}), noneType,
+      SpecialFunctionKind::kNormal, loc, builder);
 
   // Populate destructor body.
   {

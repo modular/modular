@@ -78,21 +78,21 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: lit.call @decls::@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: kgen.create_closure[!lit.signature<(!Int, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: kgen.create_closure[!lit.signature<(!Int, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     var float2: IntToFloat32Type = testThing
 
     # CHECK: lit.call @decls::@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
-    # CHECK-SAME: !lit.signature<(!Int borrow, |) -> !FloatDyn> rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing{{.*}}")>()
+    # CHECK-SAME: !lit.signature<(!Int, |) -> !FloatDyn> rebind(:!lit.signature<("a": !Int) -> !FloatDyn> @decls::@"testThing{{.*}}")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -226,7 +226,7 @@ fn variadic_params():
 
 
 # Test that pointers don't get confused with by-ref arguments.
-# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !kgen.pointer<si32> borrow) -> si32
+# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !kgen.pointer<si32>) -> si32
 fn testPointerArgs(ptr: __mlir_type.`!kgen.pointer<si32>`) -> __mlir_type.si32:
     # CHECK-NEXT: %0 = pop.load %ptr : !kgen.pointer<si32>
     return __mlir_op.`pop.load`[_type = __mlir_type.si32](ptr)
@@ -312,7 +312,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.signature<("x": index borrow) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.signature<("x": index) -> index>>
     paramRefFunc(func)
 
 
@@ -375,9 +375,9 @@ struct RPStructWithInitTrivial:
 
 
 # CHECK-LABEL: lit.func @"ownedConventionReg
-# CHECK-SAME: (%a: !RPStructWithInit,
-# CHECK-SAME:  %b: !RPStructWithInit borrow,
-# CHECK-SAME:  %triv: !RPStructWithInitTrivial borrow)
+# CHECK-SAME: (%a: !RPStructWithInit owned,
+# CHECK-SAME:  %b: !RPStructWithInit,
+# CHECK-SAME:  %triv: !RPStructWithInitTrivial)
 fn ownedConventionReg(
     owned a: RPStructWithInit,
     b: RPStructWithInit,
@@ -452,7 +452,7 @@ fn named_result_return_expr() -> SomeResultType:
 
 
 # CHECK-LABEL: lit.func @"defaultArgument
-# CHECK-SAME: %c: !Int borrow = {5})
+# CHECK-SAME: %c: !Int = {5})
 fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
     return a + b
 
@@ -473,7 +473,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int borrow = apply(:!lit.signature<("lhs": !Int borrow, "rhs": !Int borrow)
+# CHECK-SAME: (%a: !Int = apply(:!lit.signature<("lhs": !Int, "rhs": !Int)
 # CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}Int,{{.*}}Int)", {{.*}}p, {87}))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
@@ -521,12 +521,12 @@ fn referencesDefaultArgumentFunction():
 # CHECK-LABEL: lit.struct.decl @Outer<X:
 struct Outer[X: Int]:
     # CHECK: lit.func @"nested
-    # CHECK-SAME: %x: !Int borrow = X)
+    # CHECK-SAME: %x: !Int = X)
     fn nested(self, x: Int = X):
         pass
 
 
-# CHECK-LABEL: lit.func @"variadics({{.*}}Int*)"(%a: !kgen.variadic<!Int> borrow|var)
+# CHECK-LABEL: lit.func @"variadics({{.*}}Int*)"(%a: !kgen.variadic<!Int> var)
 fn variadics(*a: Int):
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
     pass
@@ -592,7 +592,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm #lit.lifetime>, borrow_in_mem> borrow|var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm #lit.lifetime>, borrow_in_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -754,7 +754,7 @@ struct StructExample:
     fn __init__(inout self):
         pass
 
-    # CHECK: lit.func @"static({{.*}}Int)"(%x: !Int borrow) -> !kgen.none attributes {{.*}}isStatic
+    # CHECK: lit.func @"static({{.*}}Int)"(%x: !Int) -> !kgen.none attributes {{.*}}isStatic
     @staticmethod
     fn static(x: Int):
         # CHECK: %0 = {{.*}}{4}
@@ -767,7 +767,7 @@ struct StructExample:
         pass
 
 
-# CHECK: lit.func @"callStatic{{.*}}(%a: !Int borrow)
+# CHECK: lit.func @"callStatic{{.*}}(%a: !Int)
 fn callStatic(a: Int):
     # CHECK: lit.call @decls::@StructExample::@"static{{.*}}(%a)
     StructExample.static(a)
@@ -844,7 +844,7 @@ struct ValueMem:
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
-# CHECK-SAME:  %a: !Int borrow,
+# CHECK-SAME:  %a: !Int,
 # CHECK-SAME:  %b: !StructExample
 # CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
 # CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
@@ -906,7 +906,7 @@ struct ValueReg:
 
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%other: !ValueReg borrow, |)
+# CHECK-SAME: (%other: !ValueReg, |)
 # CHECK-SAME:  -> !ValueReg
 # CHECK-SAME: attributes {{.*}}specialFnKind = 6 : i8
 # CHECK-NEXT: %0 = lit.struct.extract %other[a]
@@ -916,7 +916,7 @@ struct ValueReg:
 # CHECK-NEXT: lit.return %3
 
 # CHECK: lit.func @"__init__(
-# CHECK-SAME:  %a: !Int borrow,
+# CHECK-SAME:  %a: !Int,
 # CHECK-SAME:  %b: !StructExample
 # CHECK-SAME: ) -> !ValueReg
 # CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
@@ -932,7 +932,7 @@ struct Foo:
     var self: Int
 
 
-# CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<!Foo, mut {{.*}}> init_self, |, %a: !Int borrow, %self: !Int borrow)
+# CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<!Foo, mut {{.*}}> init_self, |, %a: !Int, %self: !Int)
 
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> var>
@@ -970,12 +970,12 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> borrow|var)
+    # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> var)
     # The argument is intentionally memory-only.
     fn __init__(inout self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.func @"__init__({{.*}}Int)"{{.*}}({{.*}}, %a: !Int borrow)
+    # CHECK: lit.func @"__init__({{.*}}Int)"{{.*}}({{.*}}, %a: !Int)
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
@@ -1094,7 +1094,7 @@ fn coroutine_lifetimes():
     # CHECK: store [[CORO_VAL]], %coro : <{{.*}}Coroutine<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>
     var coro = capture_byref(x, y)
 
-    # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.declref<#LifetimeAccess <:lifetime<1> [[Y_LT]]>>, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:lifetime<1> [[Y_LT]]>]
+    # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.declref<#LifetimeAccess <:lifetime<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:lifetime<1> [[Y_LT]]>]
     # CHECK: Coroutine<:!AnyType [none, {{.*}}], :lifetime.set {mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[__lifetime_of(y)]())
 

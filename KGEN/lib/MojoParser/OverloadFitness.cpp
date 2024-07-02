@@ -553,8 +553,6 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // Otherwise this is the wrong type for the argument.
     return {kWrongType, expectedType};
   }
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
   }
 
   llvm_unreachable("unknown case");

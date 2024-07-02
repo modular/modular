@@ -1317,12 +1317,11 @@ void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp) {
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention,
-                                     ArgConvention defaultConvention) {
+ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
   StringRef effectStr;
   llvm::SMLoc loc = p.getCurrentLocation();
   // Parse an optional input convention specifier.
-  convention = defaultConvention;
+  convention = ArgConvention::BorrowedInReg;
   if (succeeded(p.parseOptionalKeyword(&effectStr))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(effectStr)) {
       convention = *conv;
@@ -1333,9 +1332,8 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention,
   return success();
 }
 
-void KGEN::printArgConvention(AsmPrinter &p, ArgConvention convention,
-                              ArgConvention defaultConvention) {
-  if (convention != defaultConvention)
+void KGEN::printArgConvention(AsmPrinter &p, ArgConvention convention) {
+  if (convention != ArgConvention::BorrowedInReg)
     p << ' ' << stringifyArgConvention(convention);
 }
 

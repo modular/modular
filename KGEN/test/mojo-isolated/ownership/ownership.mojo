@@ -697,7 +697,7 @@ struct RegExampleValue:
     self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
-  # CHECK: lit.func @"__del__{{.*}}(%self: !RegExampleValue, |)
+  # CHECK: lit.func @"__del__{{.*}}(%self: !RegExampleValue owned, |)
   # CHECK-NEXT: %self_0 = lit.var.decl "self"
   # CHECK-NEXT: lifetime.start %self_0
   # CHECK-NEXT: lit.ref.store %self, %self_0
@@ -722,7 +722,7 @@ fn test_or(a: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.func @"variadic_mems
 # CHECK-SAME: [imm *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, borrow_in_mem> borrow|var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, borrow_in_mem> var)
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
@@ -781,7 +781,7 @@ fn variadic_field_sensitivity():
 
 # CHECK-LABEL: lit.func @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, inout> borrow|var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, inout> var)
 fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0

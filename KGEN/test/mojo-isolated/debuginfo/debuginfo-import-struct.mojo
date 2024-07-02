@@ -13,7 +13,7 @@ from debuginfo_module import VeryUniqueStruct
 
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-DAG: lit.func @"very_unique_func{{.*}}"(%C-3PO: index loc(#[[LINE_LOC:.*]]) borrow
+# CHECK-DAG: lit.func @"very_unique_func{{.*}}"(%C-3PO: index loc(#[[LINE_LOC:.*]])
 
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 

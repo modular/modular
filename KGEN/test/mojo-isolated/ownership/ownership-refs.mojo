@@ -22,11 +22,11 @@ struct MemExample:
   fn noop(self): pass
   fn mutate(inout self): pass
 
-# CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt> borrow)
+# CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt>)
 fn borrow[lt: ImmutableLifetime](a: Reference[MemExample, lt]._mlir_type):
   pass
 
-# CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt> borrow)
+# CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt>)
 fn mutate[lt: MutableLifetime](a: Reference[MemExample, lt]._mlir_type):
   pass
 
@@ -55,7 +55,7 @@ fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]()
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
-# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life> borrow)
+# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>)
 # CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
 fn parametricMut[isMut: Bool,
                  life: AnyLifetime[isMut].type](a: Reference[MemExample, life]._mlir_type)

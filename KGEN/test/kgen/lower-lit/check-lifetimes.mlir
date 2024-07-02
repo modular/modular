@@ -92,7 +92,7 @@ lit.func @indirectCall(%a: !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) {
 // CHECK-LABEL: lit.func @references1
 // CHECK-NOT: __del__
 lit.func @references1[mut alife](%a: !lit.ref<@Struct, mut alife> owned_in_mem,
-                             %cond: i1 borrow) {
+                             %cond: i1) {
   %x = lit.var.decl "x" var : !lit.ref<@Struct, mut xlife>
    // CHECK: lit.call @Struct::@__init__[mut xlife](%x)
   lit.call @Struct::@__init__[mut xlife](%x) : !lit.signature<[1](!lit.ref<@Struct, mut *[0,0]> init_self) -> !kgen.none>
@@ -371,7 +371,7 @@ lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
 
 !Reg = !lit.declref<@Reg>
 lit.struct.decl @Reg register_passable attributes {
-    copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg borrow) -> !Reg>,
+    copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg) -> !Reg>,
     destructor = #kgen.symbol.constant<@Reg::@__del__> : !lit.signature<(!Reg) -> !kgen.none>
 } {
   lit.func @__del__(%self: !Reg, |) {
@@ -393,7 +393,7 @@ lit.func @copy_del_reg_value() {
   // CHECK: lit.ref.store
   // CHECK: [[LOAD:%.*]] = lit.ref.load %x
   // CHECK: [[COPY:%.*]] = lit.call @Reg::@__copyinit__([[LOAD]])
-  %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg borrow, |) -> !Reg>
+  %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg, |) -> !Reg>
   // CHECK: [[ORIG:%.*]] = lit.ref.load %x
   // CHECK: call @Reg::@__del__([[ORIG]])
   // CHECK: call @Reg::@__del__([[COPY]])
@@ -468,8 +468,8 @@ lit.func @elifInitCorrect[mut *"__result__`0"](?, %cond: i1, %__result__[__resul
 
 // CHECK-LABEL: @unreachableInElif
 lit.func @unreachableInElif[mut *"range`", mut *"__result__`1"](
-  %cond1: i1 borrow,
-  %cond2: i1 borrow, ?,
+  %cond1: i1,
+  %cond2: i1, ?,
   %__result__: !lit.ref<@S, mut *"__result__`1"> byref_result) {
   hlcf.elif {
     hlcf.elif.yield %cond1 : i1
@@ -616,8 +616,8 @@ lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kg
 
 // CHECK-LABEL: @breakAndContinueInElif
 lit.func @breakAndContinueInElif(
-     %s1: i1 borrow,
-     %s2: i1 borrow,
+     %s1: i1,
+     %s2: i1,
      %A: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
      %B: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
      %C: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
@@ -662,7 +662,7 @@ lit.func @breakAndContinueInElif(
 // COM: Check that `kgen.param.for` behaves like a loop in check-lifetimes.
 
 lit.func @breakAndContinueInElifParamFor(
-     %s1: i1 borrow,
+     %s1: i1,
      %A: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
      %B: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
      %C: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
@@ -735,7 +735,7 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
 }
 
 // CHECK-LABEL: lit.func @destroyField
-lit.func @destroyField(%s2: i1 borrow, %A: !lit.ref<@HasMemFields, mut #lit.lifetime> owned_in_mem) -> !kgen.none {
+lit.func @destroyField(%s2: i1, %A: !lit.ref<@HasMemFields, mut #lit.lifetime> owned_in_mem) -> !kgen.none {
   // CHECK:  hlcf.elif {
   // CHECK-NEXT:   hlcf.elif.yield %s2 : i1
   // CHECK-NEXT:  } then {
@@ -800,7 +800,7 @@ lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant
 
   // Ensure that destructor is not inserted after calling other throwing initializer
   // CHECK-LABEL: lit.func @__init__2
-  lit.func @__init__2[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, %x: !S borrow, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+  lit.func @__init__2[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, %x: !S, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
     %0 = lit.call @throwing_init::@ThrowingSelfInit::@__init__1[mut self, mut err](%self, %__error__) : !lit.signature<[2]("self": !lit.ref<!ThrowingSelfInit, mut *[0,0]> init_self, |, ?, "__error__": !lit.ref<!Error, mut *[0,1]> byref_error) throws -> i1>
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}@ThrowingSelfInit::@__init__1{{.*}}(%self, %__error__)
     // CHECK-NEXT: if [[IS_ERR]]
@@ -824,7 +824,7 @@ lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant
 
   // Ensure that destructor is not inserted after calling other throwing initializer
   // CHECK-LABEL: lit.func @__init__3
-  lit.func @__init__3[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, %cond: i1 borrow, %x: !S borrow, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+  lit.func @__init__3[mut self, mut err](%self: !lit.ref<!ThrowingSelfInit, mut self> init_self, |, %cond: i1, %x: !S, ?, %__error__: !lit.ref<!Error, mut err> byref_error) throws -> i1 attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
     %0 = lit.call @throwing_init::@ThrowingSelfInit::@__init__1[mut self, mut err](%self, %__error__) : !lit.signature<[2]("self": !lit.ref<!ThrowingSelfInit, mut *[0,0]> init_self, |, ?, "__error__": !lit.ref<!Error, mut *[0,1]> byref_error) throws -> i1>
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}@ThrowingSelfInit::@__init__1{{.*}}(%self, %__error__)
     // CHECK-NEXT: if [[IS_ERR]]
@@ -877,7 +877,7 @@ lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper
 }
 
 // CHECK-LABEL: lit.func @indirectReferences
-lit.func @indirectReferences[mut mylife](%s2: i1 borrow, %wrapper: !lit.ref<@Wrapper, mut mylife> borrow_in_mem) -> !kgen.none {
+lit.func @indirectReferences[mut mylife](%s2: i1, %wrapper: !lit.ref<@Wrapper, mut mylife> borrow_in_mem) -> !kgen.none {
   // CHECK-NEXT:  hlcf.if %s2 {
   // CHECK-NEXT:    %[[V4:.*]] = lit.call @Wrapper::@__get_ref[mut mylife](%wrapper)
   // CHECK-NEXT:    %[[V5:.*]] = lit.ref.struct.ger %[[V4]][z] : <@Node, mut mylife> from @Container
@@ -1028,7 +1028,7 @@ lit.struct.decl @GGUFFile
       %14 = kgen.param.constant: !Int = <{1}>
 
       // Results in self bits getting set but because its unreachable it should not affect the upward consume set of the if.
-      %15 = lit.call @Int::@__iadd__[mut self](%13, %14) : !lit.signature<[1]("self": !lit.ref<!Int, mut *[0,0]> inout, "rhs": !Int borrow) -> !kgen.none>
+      %15 = lit.call @Int::@__iadd__[mut self](%13, %14) : !lit.signature<[1]("self": !lit.ref<!Int, mut *[0,0]> inout, "rhs": !Int) -> !kgen.none>
       hlcf.continue
     }
     // Causes bits in the self to be reset, which will trigger erroneous destructors if unreachable code is not ignored.
@@ -1057,8 +1057,8 @@ lit.struct.decl @GGUFFile
     %self: !lit.ref<!GGUFFile, mut selfLife> init_self, |,
     %consumeMe: !lit.ref<!GGUFFile, mut consumeMeLife> owned_in_mem,
     %iter: !lit.ref<!iter, mut iterLife> inout,
-    %x: i1 borrow,
-    %version: !Int borrow, ?,
+    %x: i1,
+    %version: !Int, ?,
     %__error__: !lit.ref<!Error, mut errorLife> byref_error) throws -> i1 {
     %15 = kgen.param.constant: i1 = <1>
     hlcf.loop "_loop_0" {
@@ -1080,7 +1080,7 @@ lit.struct.decl @GGUFFile
       %13 = lit.call @my_iter::@"__next__"[mut iterLife](%iter) : !lit.signature<[1]("self": !lit.ref<!iter, mut *[0,0]> inout) -> !Int>
 
       // CHECK-NEXT: hlcf.elif {
-      // CHECK-NEXT:   lit.call @print[mut consumeMeLife](%consumeMe) : !lit.signature<[1](!lit.ref<@GGUFFile, mut *[0,0]> borrow, |) -> !kgen.none>
+      // CHECK-NEXT:   lit.call @print[mut consumeMeLife](%consumeMe) : !lit.signature<[1](!lit.ref<@GGUFFile, mut *[0,0]>, |) -> !kgen.none>
       // CHECK-NEXT:   hlcf.elif.yield %x : i1
       // CHECK-NEXT: } then {
       // CHECK-NEXT:   lit.call @GGUFFile::@__del__[mut consumeMeLife](%consumeMe)
@@ -1091,7 +1091,7 @@ lit.struct.decl @GGUFFile
       // CHECK-NEXT: }
       hlcf.elif {
         // consume something here so that the consume set of this block is different from its successors
-        %3 = lit.call @print[mut consumeMeLife](%consumeMe) : !lit.signature<[1](!lit.ref<!GGUFFile, mut *[0,0]> borrow, |) -> !kgen.none>
+        %3 = lit.call @print[mut consumeMeLife](%consumeMe) : !lit.signature<[1](!lit.ref<!GGUFFile, mut *[0,0]>, |) -> !kgen.none>
         hlcf.elif.yield %x : i1
       } then {
         %14 = lit.call @Error::@"__init__"[mut errorLife](%__error__) : !lit.signature<[1]("self": !lit.ref<!Error, mut *[0,0]> init_self, |) -> !kgen.none>
@@ -1155,7 +1155,7 @@ lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper
 }
 
 // CHECK-LABEL: lit.func @respectLifetimes
-lit.func @respectLifetimes[mut mylife](%s2: i1 borrow) -> !kgen.none {
+lit.func @respectLifetimes[mut mylife](%s2: i1) -> !kgen.none {
   // CHECK-NEXT: %v = lit.var.decl "v" var : !lit.ref<@Wrapper, mut *"v`5">
   // CHECK-NEXT: lifetime.start %v
   // CHECK-NEXT: lit.call @Wrapper::@__init__[mut *"v`5"](%v)
@@ -1169,7 +1169,7 @@ lit.func @respectLifetimes[mut mylife](%s2: i1 borrow) -> !kgen.none {
   %v = lit.var.decl "v" var : !lit.ref<@Wrapper, mut *"v`5">
   %1 = lit.call @Wrapper::@__init__[mut *"v`5"](%v) : !lit.signature<[1]("self" : !lit.ref<@Wrapper, mut *[0,0]> init_self, |) -> !kgen.none>
   %refWrapper = lit.call @Wrapper::@__get_ref[mut *"v`5"](%v) : !lit.signature<[1](!lit.ref<!Wrapper, mut *[0,0]> borrow_in_mem) -> !Reference>
-  %ref = lit.call @Reference::@__get_ref[mut *"v`5"](%refWrapper) : !lit.signature<[1](!Reference borrow) -> !lit.ref<!MyStruct, mut *[0,0]>>
+  %ref = lit.call @Reference::@__get_ref[mut *"v`5"](%refWrapper) : !lit.signature<[1](!Reference) -> !lit.ref<!MyStruct, mut *[0,0]>>
   %35 = lit.ref.struct.ger %ref[a] : <!Int, mut *"v`5"> from !MyStruct
   %36 = lit.ref.immut %35 : <!Int, mut *"v`5">
   %41 = lit.call @print[muttoimm *"v`5"](%36) : !lit.signature<[1]("first": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !kgen.none>
@@ -1334,7 +1334,7 @@ lit.struct.decl @GGUFFile
       %20 = lit.ref.struct.ger %self[infos] : <@LegacyPointer, mut selfLife> from !GGUFFile
       %21 = lit.ref.load %20 : <@LegacyPointer, mut selfLife>
       %22 = lit.ref.immut %i : <!Int, mut iLife>
-      %23 = lit.call @LegacyPointer::@__refitem__[muttoimm iLife](%21, %22) : !lit.signature<[1]("self": !LegacyPointer borrow, "offset": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !lit.ref<!Int, mut #lit.lifetime>>
+      %23 = lit.call @LegacyPointer::@__refitem__[muttoimm iLife](%21, %22) : !lit.signature<[1]("self": !LegacyPointer, "offset": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !lit.ref<!Int, mut #lit.lifetime>>
       %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!Int, mut resultLife>
       %24 = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__) : !lit.signature<[2]("__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) throws -> i1>
       // CHECK: %[[V0:.*]] = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__)

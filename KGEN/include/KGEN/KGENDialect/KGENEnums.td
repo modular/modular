@@ -121,16 +121,27 @@ def KGEN_ExportKind : I32EnumAttr<"ExportKind", "export kind", [
 /// in the metadata of a SignatureType.
 def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
     "Function argument convention", [
-  /// This is used to represent conventions that should no longer be relevant,
-  /// i.e. non-generic arguments before calling convention lowering.
-  I32EnumAttrCase<"None", 0, "none">,
+  /// This is an immutable borrow of a register-passable value in an SSA
+  /// register.  The MLIR type may be anything that can be lowered to LLVM
+  /// (but notably not a memory-only type).
+  ///
+  /// The caller guarantees the value is live for the duration of the call.
+  I32EnumAttrCase<"BorrowedInReg", 0, "borrow">,
+
+  /// This is an immutably borrowed memory-only value, which is passed
+  /// indirectly.
+  ///
+  /// The MLIR type is always a PointerType, and the underlying type is a
+  /// memory-only type.  The caller passes a reference to an initialized memory
+  /// slot that may be read but not mutated by the callee.
+  I32EnumAttrCase<"BorrowedInMem", 1, "borrow_in_mem">,
 
   /// This is an owned register-passable value an SSA register.  The MLIR type
   /// may be anything that can be lowered to LLVM (notably not a memory-only
   /// type).
   ///
   /// The callee is responsible for destroying the value before returning.
-  I32EnumAttrCase<"OwnedInReg", 1, "owned">,
+  I32EnumAttrCase<"OwnedInReg", 2, "owned">,
 
   /// This is an owned memory-only value, which is passed indirectly.
   ///
@@ -139,29 +150,14 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// destroys it, returning with it uninitialized.
   ///
   /// The callee is responsible for destroying the value before returning.
-  I32EnumAttrCase<"OwnedInMem", 2, "owned_in_mem">,
-
-  /// This is an immutable borrow of a register-passable value in an SSA
-  /// register.  The MLIR type may be anything that can be lowered to LLVM
-  /// (but notably not a memory-only type).
-  ///
-  /// The caller guarantees the value is live for the duration of the call.
-  I32EnumAttrCase<"BorrowedInReg", 3, "borrow">,
-
-  /// This is an immutably borrowed memory-only value, which is passed
-  /// indirectly.
-  ///
-  /// The MLIR type is always a PointerType, and the underlying type is a
-  /// memory-only type.  The caller passes a reference to an initialized memory
-  /// slot that may be read but not mutated by the callee.
-  I32EnumAttrCase<"BorrowedInMem", 4, "borrow_in_mem">,
+  I32EnumAttrCase<"OwnedInMem", 3, "owned_in_mem">,
 
   /// This is used for inout arguments like `fn x(inout a: Int)`.
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function and must be initialized when the function returns.
-  I32EnumAttrCase<"InOut", 5, "inout">,
+  I32EnumAttrCase<"InOut", 4, "inout">,
 
   /// This is used for ref arguments like:
   ///   `fn x[,,](ref [lifetime, addrspace] T)`
@@ -169,7 +165,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function.
-  I32EnumAttrCase<"Ref", 6, "ref">,
+  I32EnumAttrCase<"Ref", 5, "ref">,
 
   /// This is used on the last argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.
@@ -179,16 +175,16 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// on exit from the function if it returns.
   ///
   /// The caller is responsible for destroying the value.
-  I32EnumAttrCase<"ByRefResult", 7, "byref_result">,
+  I32EnumAttrCase<"ByRefResult", 6, "byref_result">,
 
   /// This is used on the 'self' argument to `__init__`.  It has identical
   /// semantics to ByRefResult on the callee side, but isn't a result on the
   /// caller side.
-  I32EnumAttrCase<"InitSelf", 8, "init_self">,
+  I32EnumAttrCase<"InitSelf", 7, "init_self">,
 
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
-  I32EnumAttrCase<"ByRefError", 9, "byref_error">,
+  I32EnumAttrCase<"ByRefError", 8, "byref_error">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

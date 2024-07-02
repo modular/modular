@@ -47,8 +47,8 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
     return a
 
 # CHECK-LABEL: lit.func @"fancy_signature{{.*}}"<dt: !DType, size: !Int>
-# CHECK-SAME: (%x: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}> borrow,
-# CHECK-SAME: %exp: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}> borrow) -> !Int
+# CHECK-SAME: (%x: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}>,
+# CHECK-SAME: %exp: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}>) -> !Int
 fn fancy_signature[dt: DType, size: Int](
     x: SIMD[dt, size],
     exp: (SIMD)[dt, size]
@@ -85,8 +85,8 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.declref<#TestParamStruct <:!Int [[A]]>{{.*}}> borrow,
-  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}> borrow)
+  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.declref<#TestParamStruct <:!Int [[A]]>{{.*}}>,
+  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}>)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
@@ -189,7 +189,7 @@ fn makePair(a: SIMD[DType.float32, 42], b: Int) -> Pair[DType.float32]:
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]]: type>
 struct TypeParameter[T: __mlir_type.`!kgen.type`]:
-  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} borrow_in_mem, %val: !kgen.paramref<[[TYPE]]> borrow)
+  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} borrow_in_mem, %val: !kgen.paramref<[[TYPE]]>)
   fn bar(self, val: T):
     pass
 
@@ -446,11 +446,11 @@ fn parameter_memoryonly_call():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"<
-# CHECK-SAME: callable: !lit.signature<(index borrow, |) -> index>>(%a: index borrow) -> index
+# CHECK-SAME: callable: !lit.signature<(index, |) -> index>>(%a: index) -> index
 fn takeCallable[
      callable: fn(int) -> int
    ](a: int) -> int:
-  # CHECK-NEXT: %0 = lit.call[!lit.signature<(index borrow, |) -> index>: callable](%a)
+  # CHECK-NEXT: %0 = lit.call[!lit.signature<(index, |) -> index>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -462,11 +462,11 @@ fn posOnlyArg(x: int, /):
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
 fn passFunction(a: int) -> int:
-  # CHECK: rebind(:!lit.signature<("x": index borrow, |) -> !kgen.none> {{.*}}posOnlyArg
+  # CHECK: rebind(:!lit.signature<("x": index, |) -> !kgen.none> {{.*}}posOnlyArg
   alias changeKw: fn(x: int) -> None = posOnlyArg
 
-  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.signature<(index borrow, |) -> index>
-  # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
+  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.signature<(index, |) -> index>
+  # CHECK-SAME: rebind(:!lit.signature<("x": index) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 # CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<type: dtype>() -> !kgen.none
@@ -983,7 +983,7 @@ fn test_mem_only_default_param():
     mem_only_default_param()
 
 # CHECK-LABEL: lit.func @"param_default{{.*}}"<
-# CHECK-SAME: x: !Int = {1}>(%y: !Int borrow = x)
+# CHECK-SAME: x: !Int = {1}>(%y: !Int = x)
 fn param_default[x: Int = 1](y: Int = x):
     pass
 
@@ -1250,6 +1250,6 @@ fn take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 fn call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]]  = kgen.param.constant: !lit.signature<("x": !Int borrow) -> !kgen.none> = <@parameters::@"indirect_function(
+  # CHECK: [[FP:%.*]]  = kgen.param.constant: !lit.signature<("x": !Int) -> !kgen.none> = <@parameters::@"indirect_function(
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)

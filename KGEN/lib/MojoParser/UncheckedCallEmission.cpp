@@ -232,8 +232,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   }
 
   switch (convention) {
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in Mojo");
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
@@ -866,8 +864,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
         {std::move(dlvBuffer), mlvBuffer});
     return mlvBuffer;
   }
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
   }
   if (!arg) {
     llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";

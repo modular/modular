@@ -1122,8 +1122,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::BorrowedInReg:
     argIRValue = SBValue(blockArg);
     break;
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
   }
 
   // FIXME: This is not setting the correct type for Variadics.  We shouldn't

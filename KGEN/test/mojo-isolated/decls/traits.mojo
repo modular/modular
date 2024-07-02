@@ -131,10 +131,10 @@ fn generic_trait_fn[T: Trait](x: T):
     # CHECK: lit.call[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
     # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]])
     x.overloaded()
-    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": index borrow)
+    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": index)
     # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]], %{{.*}})
     x.overloaded(`1`)
-    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string borrow)
+    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string)
     # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]], %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
@@ -185,11 +185,11 @@ fn infer_trait[T: SimpleTrait](value: T):
 # CHECK-LABEL: lit.func @"test_metatype_to_trait_vtable
 fn test_metatype_to_trait_vtable():
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [!TraitStruct{{[0-9]*}}, {
-    # CHECK-SAME: "method" : !lit.signature<[1]("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@TraitStruct::@"method
+    # CHECK-SAME: "method" : !lit.signature<[1]("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem, "y": index) -> !kgen.none> = {{.*}}@TraitStruct::@"method
     # CHECK-SAME: "param_method" : !lit.signature<[1]<"x": index>("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
     take_simple_trait[TraitStruct]()
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : anystruct<{{.*}}>, {
-    # CHECK-SAME: "method" : !lit.signature<[1]("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>,
+    # CHECK-SAME: "method" : !lit.signature<[1]("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>,
     # CHECK-SAME: "param_method" : !lit.signature<[1]<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
 
@@ -282,7 +282,7 @@ trait TraitForReg:
 @register_passable
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"__init__
-    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %x: index borrow)
+    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %x: index)
     fn __init__(inout self, x: int):
         pass
 
@@ -331,7 +331,7 @@ struct CrazyRegisterPassable[a: int](CrazyTrait):
 
     # CHECK-LABEL: lit.func @"foo{{.*}}_thunk"
     # CHECK-SAME: <b>(%self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
-    # CHECK-SAME: %c: index borrow,
+    # CHECK-SAME: %c: index,
     # CHECK-SAME: %__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result
     fn foo[b: int](self, c: int) -> Self:
         # CHECK: %0 = lit.ref.load %self
@@ -999,7 +999,7 @@ struct RegPassableParamTrait[a: int](DependentParam):
         pass
 
     # CHECK: lit.func @"bar{{.*}}_thunk"
-    # CHECK-SAME: <x, y>(%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.declref<#ParamType <x>> borrow) -> !lit.declref<#ParamType <y>>
+    # CHECK-SAME: <x, y>(%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.declref<#ParamType <x>>) -> !lit.declref<#ParamType <y>>
     fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
         # CHECK: call {{.*}}<a, x, y>
         pass
