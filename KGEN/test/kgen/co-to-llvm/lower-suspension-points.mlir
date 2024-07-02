@@ -335,3 +335,44 @@ llvm.func internal @print(%arg0: f32) {
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  llvm.func @f(%arg0: !llvm.ptr {llvm.noundef}) attributes {coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<()>, ptr, ptr, struct<(ptr, i64)>, ptr, ptr, i64, i64, i8, i64, i64, i64, struct<(ptr, i64)>, i64, i64, struct<()>)>} {
+    %0 = llvm.mlir.constant(0 : i64) : i64
+    %1 = llvm.mlir.constant(1 : i64) : i64
+    %2 = llvm.mlir.constant(20 : i64) : i64
+    // CHECK:     ^bb1:  // 2 preds: ^bb0, ^bb0
+    // CHECK:  llvm.br ^bb2({{.*}} : i64)
+
+    // CHECK:      ^bb2([[ARG:%.*]]: i64):  // 2 preds: ^bb1, ^bb5
+    // CHECK-NEXT:   [[V10:%.*]] = llvm.icmp "slt" [[ARG]], {{.*}} : i64
+    // CHECK-NEXT:   llvm.cond_br [[V10]], ^bb3, ^bb4
+    // CHECK-NEXT: ^bb3:  // pred: ^bb2
+    // CHECK-NEXT:   llvm.br ^bb5
+    // CHECK-NEXT: ^bb4:  // pred: ^bb2
+    // CHECK-NEXT:   llvm.br ^bb6
+    // CHECK-NEXT: ^bb5:  // pred: ^bb3
+    // CHECK-NEXT:   [[V11:%.*]] = llvm.add [[ARG]], {{.*}} : i64
+    // CHECK-NEXT:   llvm.br ^bb2([[V11]] : i64)
+    // CHECK-NEXT: ^bb6:  // pred: ^bb4
+    // CHECK-NEXT:   llvm.return
+    co.suspend {
+      llvm.br ^bb1(%0 : i64)
+    ^bb1(%3: i64):  // 2 preds: ^bb0, ^bb4
+      %4 = llvm.icmp "slt" %3, %2 : i64
+      llvm.cond_br %4, ^bb2, ^bb3
+    ^bb2:  // pred: ^bb1
+      llvm.br ^bb4
+    ^bb3:  // pred: ^bb1
+      llvm.br ^bb5
+    ^bb4:  // pred: ^bb2
+      %5 = llvm.add %3, %1 : i64
+      llvm.br ^bb1(%5 : i64)
+    ^bb5:  // pred: ^bb3
+      co.suspend.end
+    }
+    llvm.return
+  }
+}

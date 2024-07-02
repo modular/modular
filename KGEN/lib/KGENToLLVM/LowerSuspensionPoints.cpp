@@ -110,9 +110,16 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
       currentOp = next;
     }
     susBlock->replaceAllUsesWith(targetBlock);
+    for (auto [src, target] :
+         llvm::zip(susBlock->getArguments(), targetBlock->getArguments()))
+      src.replaceAllUsesWith(target);
     susBlock = susBlock->getNextNode();
     targetBlock = suspend->getBlock()->splitBlock(suspend);
-    location = targetBlock->begin();
+    if (susBlock) {
+      for (auto arg : susBlock->getArguments())
+        targetBlock->addArgument(arg.getType(), arg.getLoc());
+      location = targetBlock->begin();
+    }
   }
   buildContext.blockList.push_back(targetBlock);
 }
