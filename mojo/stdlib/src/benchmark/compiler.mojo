@@ -7,6 +7,7 @@
 from sys._assembly import inlined_assembly
 
 from memory.unsafe import DTypePointer, Pointer
+from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------===#
 # keep
@@ -66,7 +67,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
         return
 
     var tmp = val
-    var tmp_ptr = Pointer.address_of(tmp)
+    var tmp_ptr = UnsafePointer.address_of(tmp)
 
     @parameter
     if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]]._mlir_type]():
@@ -118,7 +119,7 @@ fn keep[type: AnyTrivialRegType](val: Pointer[type]):
       val: The value to not optimize away.
     """
     var tmp = val
-    var tmp_ptr = Pointer.address_of(tmp)
+    var tmp_ptr = UnsafePointer.address_of(tmp)
     inlined_assembly[
         "",
         NoneType,
@@ -143,7 +144,7 @@ fn keep[type: AnyTrivialRegType](inout val: type):
       val: The value to not optimize away.
     """
     var tmp = val
-    var tmp_ptr = Pointer.address_of(tmp)
+    var tmp_ptr = UnsafePointer.address_of(tmp)
     inlined_assembly[
         "",
         NoneType,

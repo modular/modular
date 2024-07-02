@@ -10,7 +10,7 @@
 from time import sleep, time_function
 
 from benchmark import Report, Unit, clobber_memory, keep, run
-from memory.unsafe import DTypePointer, Pointer
+from memory import UnsafePointer
 
 
 # CHECK-LABEL: test_benchmark
@@ -90,7 +90,7 @@ fn test_keep():
     var val = SIMD[DType.index, 4](1, 2, 3, 4)
     keep(val)
 
-    var ptr = Pointer.address_of(val)
+    var ptr = UnsafePointer.address_of(val)
     keep(ptr)
     _ = val
 
