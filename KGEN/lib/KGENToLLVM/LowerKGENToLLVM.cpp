@@ -198,13 +198,16 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
     case ArgConvention::InitSelf:
+      // The compiler enforces that each function can only have one mutable
+      // reference to an object at a time. Thus, we know the pointers that back
+      // mutable in-memory arguments are noalias.
+      list.set(ids.noalias, b.getUnitAttr());
       [[fallthrough]];
 
     case ArgConvention::Ref:
-    case ArgConvention::BorrowedInMem:
       // TODO(MOCO-914): `ref` arguments could be mutable references, but we
       // don't have the information in the IR anymore.
-
+    case ArgConvention::BorrowedInMem:
       // We know the pointers that back in-memory arguments are nonnull.
       list.set(ids.nonnull, b.getUnitAttr());
       [[fallthrough]];
