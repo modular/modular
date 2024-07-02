@@ -10,8 +10,10 @@ filegroup(
 modular_pybind_extension(
     name = "core",
     srcs = ["//SDK/lib/EngineAPI/python:cpp_bindings_srcs"],
-    deps = [
+    pybind_deps = [
         "//SDK:ModularFrameworkPython",
+    ],
+    deps = [
         "//Support:Base",
     ],
 )
