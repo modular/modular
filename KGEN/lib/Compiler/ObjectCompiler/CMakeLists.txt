@@ -36,6 +36,7 @@ add_modular_library(KGENObjectCompiler
   MSupport
   LLCLCompilerSupport
 
+  MLIRReconcileUnrealizedCasts
   MLIRIndexToLLVM
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter

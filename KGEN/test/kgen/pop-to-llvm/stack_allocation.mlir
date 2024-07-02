@@ -1,20 +1,20 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @stack_allocation
 kgen.func @stack_allocation(%cond: i1) {
-  // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64 loc(#[[FUSEDLOC0:.*]])
-  // CHECK-DAG: %[[C4:.*]] = llvm.mlir.constant(4 : i64) : i64 loc(#[[FUSEDLOC1:.*]])
-  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {{.*}} loc(#[[FUSEDLOC0]])
-  // CHECK-DAG: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32> {{.*}} loc(#[[FUSEDLOC1]])
-  // CHECK: llvm.intr.lifetime.start 64, %[[PTR0]]
-  %0 = pop.stack_allocation 16 x !pop.simd<1, f32> loc(#locAlloc0)
+  // CHECK-NEXT: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
+  // CHECK-NEXT: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32
+  // CHECK-NEXT: llvm.intr.lifetime.start 64, %[[PTR0]]
+  %0 = pop.stack_allocation 16 x !pop.simd<1, f32>
   // CHECK: hlcf.if
   hlcf.if %cond {
+    // CHECK-NEXT: %[[C4:.*]] = llvm.mlir.constant(4 : i64) : i64
+    // CHECK-NEXT: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32>
     // CHECK-NEXT: llvm.intr.lifetime.start 64, %[[PTR1]]
     // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR1]]
-    %1 = pop.stack_allocation 4 x !pop.simd<4, f32> loc(#locAlloc1)
+    %1 = pop.stack_allocation 4 x !pop.simd<4, f32>
     // CHECK: }
     hlcf.yield
   } else {
@@ -23,7 +23,7 @@ kgen.func @stack_allocation(%cond: i1) {
   // CHECK: llvm.intr.lifetime.end 64, %[[PTR0]]
   // CHECK-NEXT: return
   kgen.return
-} loc(#locFunc)
+}
 
 // CHECK-LABEL: @stack_allocation_with_alignment
 kgen.func @stack_allocation_with_alignment() {
@@ -60,9 +60,9 @@ kgen.func @stack_allocation_with_align_and_addressspace() {
 
 // CHECK-LABEL: @stack_allocation_insertion
 kgen.func @stack_allocation_insertion(%v: !pop.simd<1, si32>) {
-  // CHECK: llvm.alloca
   // CHECK: hlcf.loop
   hlcf.loop {
+    // CHECK: llvm.alloca
     // CHECK: llvm.intr.lifetime.start
     %2 = pop.stack_allocation 1 x !pop.simd<1, si32>
     // CHECK: llvm.intr.lifetime.end
@@ -73,15 +73,6 @@ kgen.func @stack_allocation_insertion(%v: !pop.simd<1, si32>) {
 }
 
 }
-
-// CHECK-DAG: #[[LOC_ALLOC0:.*]] = loc("alloc0")
-// CHECK-DAG: #[[LOC_ALLOC1:.*]] = loc("alloc1")
-// CHECK-DAG: #[[LOC_FUNC:.*]] = loc("func")
-// CHECK-DAG: #[[FUSEDLOC0]] = loc(fused[#[[LOC_ALLOC0]], #[[LOC_FUNC]]])
-// CHECK-DAG: #[[FUSEDLOC1]] = loc(fused[#[[LOC_ALLOC1]], #[[LOC_FUNC]]])
-#locAlloc0 = loc("alloc0")
-#locAlloc1 = loc("alloc1")
-#locFunc = loc("func")
 
 // -----
 

@@ -260,3 +260,78 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     llvm.return
   }
 }
+
+// -----
+
+// COM: Support Control Flow In Suspension Point
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @exec_async
+// CHECK:     llvm.switch {{.*}} : i32, ^bb1 [
+// CHECK-NEXT:  1: ^bb5,
+// CHECK-NEXT:  0: ^bb1
+// CHECK-NEXT: ]
+
+// First block contains original entry code + update state + first block of suspension body.
+// CHECK-NEXT: ^bb1:  // 2 preds: ^bb0, ^bb0
+// CHECK-NEXT:   [[V2:%.*]] = llvm.getelementptr %arg0[0, 9]
+// CHECK-NEXT:   [[V3:%.*]] = llvm.load [[V2]]
+
+// CHECK-NEXT:   [[STATE_PTR:%.*]] = llvm.getelementptr %arg0[0, 0]
+// CHECK-NEXT:   [[STATE:%.*]] = llvm.load [[STATE_PTR]]
+// CHECK-NEXT:   llvm.mlir.constant
+// CHECK-NEXT:   llvm.add
+// CHECK-NEXT:   llvm.store
+
+// CHECK-NEXT: llvm.cond_br [[V3]], ^bb2, ^bb3
+
+// Blocks 2 through 4 are lifted from suspension body
+// CHECK-NEXT: ^bb2:  // pred: ^bb1
+// CHECK-NEXT:   [[V8:%.*]] = llvm.getelementptr %arg0[0, 8]
+// CHECK-NEXT:   [[V9:%.*]] = llvm.load [[V8]]
+// CHECK-NEXT:   llvm.call @print([[V9]]) : (f32) -> ()
+// CHECK-NEXT:   llvm.br ^bb4
+// CHECK-NEXT: ^bb3:  // pred: ^bb1
+// CHECK-NEXT:   [[V10:%.*]] = llvm.getelementptr %arg0[0, 7]
+// CHECK-NEXT:   [[V11:%.*]] = llvm.load [[V10]]
+// CHECK-NEXT:   llvm.call @print([[V11]]) : (f32) -> ()
+// CHECK-NEXT:   llvm.br ^bb4
+// CHECK-NEXT: ^bb4:  // 2 preds: ^bb2, ^bb3
+// CHECK-NEXT:   llvm.return
+
+// Final block is the code following the suspension point.
+// CHECK-NEXT: ^bb5:  // pred: ^bb0
+// CHECK-NEXT:   [[V12:%.*]] = llvm.getelementptr %arg0[0, 2]
+// CHECK-NEXT:   [[V13:%.*]] = llvm.load [[V12]] : !llvm.ptr -> !llvm.ptr
+// CHECK-NEXT:   [[V14:%.*]] = llvm.getelementptr %arg0[0, 3]
+// CHECK-NEXT:   [[V15:%.*]] = llvm.load [[V14]] : !llvm.ptr -> !llvm.ptr
+// CHECK-NEXT:   [[V16:%.*]] = llvm.call [[V13]]([[V15]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:   llvm.return
+// CHECK-NEXT: }
+llvm.func internal @exec_async_closure_0_resume(%arg0: !llvm.ptr) attributes {coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>} {
+  %2 = llvm.getelementptr %arg0[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>
+  %3 = llvm.load %2 {alignment = 4 : i64} : !llvm.ptr -> i1
+  co.suspend {
+    llvm.cond_br %3, ^bb1, ^bb2
+  ^bb1:  // pred: ^bb0
+    %21 = llvm.getelementptr %arg0[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>
+    %22 = llvm.load %21 {alignment = 8 : i64} : !llvm.ptr -> f32
+    llvm.call @print(%22) : (f32) -> ()
+    llvm.br ^bb3
+  ^bb2:  // pred: ^bb0
+    %23 = llvm.getelementptr %arg0[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>
+    %24 = llvm.load %23 {alignment = 8 : i64} : !llvm.ptr -> f32
+    llvm.call @print(%24) : (f32) -> ()
+    llvm.br ^bb3
+  ^bb3:  // 2 preds: ^bb1, ^bb2
+    co.suspend.end
+  }
+  llvm.return
+}
+
+llvm.func internal @print(%arg0: f32) {
+  llvm.return
+}
+
+}

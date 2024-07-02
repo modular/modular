@@ -465,7 +465,7 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, StructType promiseType)
   types[ErrorSlot] = typeForField(ErrorSlot);
   types[ResultSlot] = typeForField(ResultSlot);
 
-  // Header type omits the variable sized frame.
+  // Header type omits the variable sized frame and promise.
   headerType = StructType::get(types);
   types.push_back(typeForField(Promise));
   for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
@@ -584,18 +584,20 @@ FrameData::FrameData(
     auto pushSuccessors =
         [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
             Operation *controlFlowNode, Operation *controlFlowParent,
-            VirtualBlock current) {
+            Operation *predecessor) {
+          // For the first op of the region of each target, add the control flow
+          // node as a predecessor
           for (HLCF::ControlFlowTarget target : targets) {
-            VirtualBlock succ;
+            VirtualBlock successor;
             if (target.index.has_value()) {
               Region *succRegion =
                   &controlFlowParent->getRegion(target.index.value());
-              succ = &*succRegion->front().begin();
+              successor = &*succRegion->front().begin();
               regions.push_back(succRegion);
             } else {
-              succ = controlFlowParent->getNextNode();
+              successor = controlFlowParent->getNextNode();
             }
-            predecessors[succ].push_back(current);
+            predecessors[successor].push_back(controlFlowNode);
           }
         };
 
@@ -609,10 +611,13 @@ FrameData::FrameData(
         continue;
       visited.insert(region);
       Operation *lastControlFlowNode = nullptr;
-      Operation *lastAwait = nullptr;
+      CO::SuspendOp lastAwait = nullptr;
       for (Operation &op : region->front().getOperations()) {
         if (isa<ReturnOp, UnreachableOp>(op))
           continue;
+
+        // add the control flow terminator as a predecessor to the first op of a
+        // target block.
         if (auto controlFlowTerminator =
                 dyn_cast<HLCF::ControlFlowTerminator>(op)) {
           SmallVector<HLCF::ControlFlowTarget> targets;
@@ -620,12 +625,16 @@ FrameData::FrameData(
               controlFlowTerminator->getNumOperands(), Attribute());
           controlFlowTerminator.getBranchTargets(controlFlowTerminatorOperands,
                                                  targets);
-          Operation *curr =
+          Operation *predecessor =
               lastControlFlowNode
                   ? lastControlFlowNode->getNextNode()
                   : &*controlFlowTerminator->getParentRegion()->front().begin();
+          if (lastAwait) {
+            if (domInfo.dominates(predecessor, lastAwait))
+              predecessor = lastAwait->getNextNode();
+          }
           pushSuccessors(targets, controlFlowTerminator,
-                         getParentNode(controlFlowTerminator), curr);
+                         getParentNode(controlFlowTerminator), predecessor);
         }
         if (auto controlFlowNode = dyn_cast<HLCF::ControlFlowNode>(op)) {
           lastControlFlowNode = controlFlowNode;
@@ -640,12 +649,11 @@ FrameData::FrameData(
           Operation *next = suspend->getNextNode();
           if (!next)
             continue;
-          Operation *nodeStart =
-              lastAwait ? lastAwait->getNextNode() : &*region->front().begin();
           lastAwait = suspend;
-          VirtualBlock awaitVirtualBlock = &suspend.getBody().front().front();
-          predecessors[awaitVirtualBlock].push_back(nodeStart);
-          predecessors[next].push_back(awaitVirtualBlock);
+          predecessors[&*suspend.getBody().front().begin()].push_back(suspend);
+          // Terminator is used because that will trigger updated state.
+          predecessors[next].push_back(
+              suspend.getBody().front().getTerminator());
           regions.push_back(&suspend.getBody());
         }
       }
@@ -654,23 +662,22 @@ FrameData::FrameData(
 
   // Calculate the state of each op.
   {
-    SmallVector<std::pair<VirtualBlock, int>> paths;
-    paths.push_back({&*originalFunction.getBodyRegion().front().begin(), 0});
-    DenseMap<VirtualBlock, int> stateOfVirtualBlock;
-    DenseSet<VirtualBlock> visited;
+    SmallVector<VirtualBlock> paths;
+    paths.push_back(&*originalFunction.getBodyRegion().front().begin());
+    SmallVector<DenseSet<VirtualBlock>> visited;
+    visited.emplace_back();
     auto pushSuccessors =
         [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
             Operation *controlFlowVirtualBlock, int currentState,
             Operation *controlFlowParent) {
           for (HLCF::ControlFlowTarget target : targets) {
-            if (target.index.has_value())
-              paths.push_back(
-                  {&*controlFlowParent->getRegion(target.index.value())
-                         .front()
-                         .begin(),
-                   currentState});
-            else
-              paths.push_back({controlFlowParent->getNextNode(), currentState});
+            if (target.index.has_value()) {
+              auto o = &*controlFlowParent->getRegion(target.index.value())
+                             .front()
+                             .begin();
+              paths.push_back(o);
+            } else
+              paths.push_back(controlFlowParent->getNextNode());
           }
         };
 
@@ -682,47 +689,65 @@ FrameData::FrameData(
     // target a second time, considering the result of the first pass in its
     // state computation.
     SmallVector<VirtualBlock> dryRuns;
-    VirtualBlock poppedDryRun = nullptr;
+    int j = 0;
     while (!paths.empty()) {
-      auto [virtualBlock, stateAtPred] = paths.back();
-      paths.pop_back();
-      if (visited.contains(virtualBlock))
-        continue;
+      j++;
+      if (j > 100000)
+        assert(false && "infinite loop");
+      VirtualBlock virtualBlock = paths.front();
+      paths.erase(paths.begin());
+
+      // If this is a visited dry run node, proceed to re-processing it.
+      // Otherwise, skip.
+      if (visited.back().contains(virtualBlock)) {
+        if (dryRuns.empty() || dryRuns.back() != virtualBlock)
+          continue;
+      }
 
       bool allPredsHaveProcessed = true;
-      int currentState = stateAtPred;
-      bool needsDryRun;
+      auto myInitState = opToState.find(virtualBlock);
+      int maxState = myInitState == opToState.end() ? 0 : myInitState->second;
+      bool needsDryRun = false;
       for (VirtualBlock predecessor : predecessors[virtualBlock]) {
-        auto predMaybe = stateOfVirtualBlock.find(predecessor);
+        auto predMaybe = opToState.find(predecessor);
         // A dry run is needed if the predecessor does not dominate the
         // successor, which is the case in a loop.
         needsDryRun =
-            virtualBlock->getParentRegion() == predecessor->getParentRegion() &&
-            domInfo.dominates(virtualBlock, predecessor);
-        bool predIsProcessed = predMaybe != stateOfVirtualBlock.end();
-
-        // The needed dry run is already complete. Remove record of it so it's
-        // results can be recorded.
-        if (needsDryRun && predIsProcessed && dryRuns.back() == virtualBlock) {
-          poppedDryRun = dryRuns.back();
-          dryRuns.pop_back();
-        }
+            needsDryRun || (virtualBlock->getParentRegion() ==
+                                predecessor->getParentRegion() &&
+                            domInfo.dominates(virtualBlock, predecessor));
+        bool predIsProcessed = predMaybe != opToState.end();
         if (!predIsProcessed) {
           allPredsHaveProcessed = false;
-          if (needsDryRun) {
+          // We assume only one dry run is needed to calculate the state. If it
+          // is visited we have already performed a dry run and we don't need to
+          // add it to the dry run list.
+          if (needsDryRun && !visited.back().contains(virtualBlock)) {
+            visited.back().insert(virtualBlock);
+            visited.emplace_back();
             dryRuns.push_back(virtualBlock);
-            paths.push_back({virtualBlock, stateAtPred});
           }
           break;
         }
         int stateFromPred = predMaybe->getSecond();
-        if (stateFromPred > currentState)
-          currentState = stateFromPred;
+        if (stateFromPred > maxState)
+          maxState = stateFromPred;
       }
+
+      // We have encountered a dry run node and all its predecessors have
+      // processed. Time to pop and re-process.
+      if (needsDryRun && allPredsHaveProcessed) {
+        if (!dryRuns.empty() && dryRuns.back() == virtualBlock) {
+          visited.pop_back();
+          dryRuns.pop_back();
+        }
+      }
+
       // Another predecessor of this region needs to process before we can
       // process this region.
       if (!allPredsHaveProcessed && !needsDryRun)
         continue;
+
       // Iterate through each op in this virtual block to register its state.
       // The boundaries of a node are defined by awaits, control
       // flow nodes, and control flow terminators.
@@ -730,20 +755,18 @@ FrameData::FrameData(
       while (current) {
         Operation *op = current;
         current = op->getNextNode();
-        if (auto suspend = dyn_cast<CO::SuspendOp>(op)) {
-          opToState[op] = currentState;
-          // If the virtual block is equal to the poppedDryRun then this will
-          // result in the coroutine suspend assuming it's second iteration
-          // state instead of the original. Despite this we still want to update
-          // the state to divide states within the loop. Otherwise we cannot
-          // cache frame variable extractions.
-          int nextState = currentState + 1;
-          if (Operation *next = op->getNextNode())
-            paths.push_back({next, nextState});
-          paths.push_back({&*suspend.getBody().front().begin(), currentState});
+        if (auto susEnd = dyn_cast<SuspendEndOp>(op)) {
+          Operation *next = susEnd->getParentOp()->getNextNode();
+          opToState[op] = ++maxState;
+          if (next)
+            paths.push_back(next);
           break;
         }
-        opToState[op] = currentState;
+        opToState[op] = maxState;
+        if (auto suspend = dyn_cast<CO::SuspendOp>(op)) {
+          paths.push_back(&*suspend.getBody().front().begin());
+          break;
+        }
         if (isa<ReturnOp, UnreachableOp>(op))
           continue;
         if (auto controlFlowNode = dyn_cast<HLCF::ControlFlowNode>(op)) {
@@ -751,8 +774,7 @@ FrameData::FrameData(
           SmallVector<Attribute> controlFlowNodeOperands(
               controlFlowNode->getNumOperands(), Attribute());
           controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
-          pushSuccessors(targets, controlFlowNode, currentState,
-                         controlFlowNode);
+          pushSuccessors(targets, controlFlowNode, maxState, controlFlowNode);
           break;
         }
         if (auto controlFlowTerminator =
@@ -762,20 +784,15 @@ FrameData::FrameData(
               controlFlowTerminator->getNumOperands(), Attribute());
           controlFlowTerminator.getBranchTargets(controlFlowTerminatorOperands,
                                                  targets);
-          pushSuccessors(targets, controlFlowTerminator, currentState,
+          pushSuccessors(targets, controlFlowTerminator, maxState,
                          getParentNode(controlFlowTerminator));
           break;
         }
       }
-      stateOfVirtualBlock.insert({virtualBlock, currentState});
-      if (dryRuns.empty()) {
-        visited.insert(virtualBlock);
-      } else if (virtualBlock == poppedDryRun) {
-        poppedDryRun = nullptr;
-        visited.insert(virtualBlock);
-      }
+      visited.back().insert(virtualBlock);
     }
   }
+
   // Give caller chance to transform before frame calculation.
   transform(opToState, originalFunction);
 
@@ -803,8 +820,10 @@ FrameData::FrameData(
     if (StackAllocationOp stackAllocationOp =
             dyn_cast<StackAllocationOp>(operation)) {
       if (!stackAllocationOp.getMarkedLifetimes()) {
-        int endState = opToState
-            [stackAllocationOp->getParentRegion()->front().getTerminator()];
+        Operation *terminator =
+            stackAllocationOp->getParentRegion()->front().getTerminator();
+        int endState = isa<SuspendEndOp>(terminator) ? opToState[terminator] - 1
+                                                     : opToState[terminator];
         if (endState > useState)
           addToFrame(stackAllocationFrameType(stackAllocationOp),
                      stackAllocationOp);
@@ -852,6 +871,19 @@ FrameData::FrameData(
 // LowerAsyncFunctionsPass
 //===----------------------------------------------------------------------===//
 
+static Operation *findNearestCommonAncestor(mlir::DominanceInfo &domInfo,
+                                            Operation *lhs, Operation *rhs) {
+  auto findOpInCommonRegion = [](Operation *lhs, Operation *rhs) {
+    Region *currentRegion = rhs->getParentRegion();
+    while (!lhs->getParentRegion()->isAncestor(currentRegion))
+      lhs = lhs->getParentOp();
+    return lhs;
+  };
+  Operation *lhsCommon = findOpInCommonRegion(lhs, rhs);
+  Operation *rhsCommon = findOpInCommonRegion(rhs, lhs);
+  return domInfo.dominates(lhsCommon, rhsCommon) ? lhsCommon : rhsCommon;
+}
+
 void LowerAsyncFunctionsPass::runOnOperation() {
   ModuleOp module = getOperation();
   TargetInfoAttr targetInfo = lookupTargetInfo(module);
@@ -891,65 +923,30 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       if (resultIndex > -1)
         memoryResultValue = funcOp.getArgument(resultIndex);
     }
-    // Preprocess the function to move stack allocation ops as close to
-    // lifetime start as possible.
-    DenseMap<StackAllocationOp, Operation *> closestCommonParent;
-    funcOp.walk([&](StackAllocLifetimeStartOp startOp) {
-      for (Value value : startOp.getValues()) {
-        StackAllocationOp stackAlloc =
-            cast<StackAllocationOp>(value.getDefiningOp());
-        auto entry = closestCommonParent.find(stackAlloc);
-        if (entry == closestCommonParent.end()) {
-          closestCommonParent[stackAlloc] = startOp;
-        } else {
-          Operation *opInCommonRegion = entry->second;
-          Region *currentRegion = startOp->getParentRegion();
-          while (!opInCommonRegion->getParentRegion()->isProperAncestor(
-                     currentRegion) &&
-                 opInCommonRegion->getParentRegion() != currentRegion) {
-            opInCommonRegion = opInCommonRegion->getParentOp();
-          }
-          closestCommonParent[stackAlloc] = opInCommonRegion;
+
+    // Preprocess the function to move stack allocation ops as close to their
+    // first use as possible.
+    SmallVector<StackAllocationOp> allocs;
+    funcOp.walk([&](StackAllocationOp alloc) { allocs.push_back(alloc); });
+    for (StackAllocationOp alloc : allocs) {
+      if (alloc->use_empty())
+        continue;
+      Operation *ancestor = *alloc->user_begin();
+      for (Operation *user : llvm::drop_begin(alloc->getUsers())) {
+        if (domInfo.dominates(ancestor, user))
+          continue;
+        if (domInfo.dominates(user, ancestor)) {
+          ancestor = user;
+          continue;
         }
+        // `ancestor` and `user` live in sibling regions. We need to find a
+        // common ancestor.
+        ancestor = findNearestCommonAncestor(domInfo, ancestor, user);
       }
-    });
-    for (auto [stackAllocation, closestCommonParentOp] : closestCommonParent)
-      stackAllocation->moveBefore(closestCommonParentOp);
+      alloc->moveBefore(ancestor);
+    }
+
     auto transform = [&](DenseMap<Operation *, int> &opToState, FuncOp target) {
-      // Now that we have a state label for every op, clone stack allocations
-      // that have multiple lifespans
-      SmallVector<Block *> blocks;
-      blocks.push_back(&target.getBodyRegion().front());
-      while (!blocks.empty()) {
-        Block *current = blocks.pop_back_val();
-        for (Operation &op : llvm::make_early_inc_range(*current)) {
-          int useState = opToState[&op];
-          if (auto startOp = dyn_cast<StackAllocLifetimeStartOp>(op)) {
-            // Clone the original stack alloc and replace all uses of the
-            // original that appear after this start lifetime marker.
-            auto oldPoint = b.saveInsertionPoint();
-            b.setInsertionPoint(startOp);
-            for (auto [index, value] : llvm::enumerate(startOp.getValues())) {
-              auto stackAllocationOp =
-                  cast<StackAllocationOp>(value.getDefiningOp());
-              int defState = opToState[stackAllocationOp];
-              if (defState == useState)
-                continue;
-              // Otherwise, this is a second lifetime. We need a clone.
-              auto clone = cast<StackAllocationOp>(b.clone(*stackAllocationOp));
-              opToState[clone] = useState;
-              startOp->setOperand(index, clone.getResult());
-              stackAllocationOp->replaceUsesWithIf(
-                  clone, [&](OpOperand &operand) -> bool {
-                    return domInfo.dominates(startOp, operand.getOwner());
-                  });
-            }
-            b.restoreInsertionPoint(oldPoint);
-          }
-          for (Region &region : op.getRegions())
-            blocks.push_back(&region.front());
-        }
-      }
     };
     FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
                         transform);

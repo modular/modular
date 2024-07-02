@@ -20,6 +20,7 @@ void KGEN::registerDefaultKGENPasses() {
   mlir::registerCSEPass();
   mlir::registerCanonicalizerPass();
   mlir::registerConvertIndexToLLVMPass();
+  mlir::registerReconcileUnrealizedCasts();
 
   // Register opt passes.
   KGEN::registerApplyInliner();

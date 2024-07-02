@@ -102,15 +102,6 @@ static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures,
 // lowerAsyncExecute
 //===----------------------------------------------------------------------===//
 
-/// Generate the code to store the results of the coroutine into the coroutine
-/// promise. This code is inserted at every return site.
-static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
-                                    Operation *ret) {
-  b.setLoc(ret->getLoc());
-  b.setInsertionPoint(ret);
-  b.create<CO::SetResultsOp>(hdl, ret->getOperands());
-}
-
 /// Lower an async execute by making it isolated from above and hoisting it into
 /// a function. The conversion is done post-order, so there should be no nested
 /// `co.execute` operations nested beneath this one when the function
@@ -128,41 +119,31 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   // Before we do anything with the captures, insert the coroutine handle and
   // replace the byref arguments.
   Region &body = op.getBodyRegion();
-  ImplicitLocOpBuilder b(op.getLocNoInlined(),
-                         OpBuilder::atBlockBegin(&body.front()));
-  Value coroHdl = b.create<CO::HandleOp>(op.getTypes());
-  if (body.getNumArguments()) {
-    SmallVector<Type, 2> types;
-    types.push_back(body.getArguments().back().getType());
-    if (body.getNumArguments() == 2)
-      types.push_back(body.getArgumentTypes().front());
-    auto results = b.create<CO::GetByRefErrorAndResultOp>(types, coroHdl);
-    body.getArguments().back().replaceAllUsesWith(results.getResult());
-    if (body.getNumArguments() == 2)
-      body.getArguments().front().replaceAllUsesWith(results.getError());
-    body.front().eraseArguments(0, body.getNumArguments());
-  }
+  unsigned numByRefResults = body.getNumArguments();
 
   SmallVector<Value> captures;
   liftClosureRegion(body, captures, domInfo);
 
-  // Replace all returns.
-  op.walk([&](ReturnOp ret) {
-    createCoroutineFinalize(b, coroHdl, ret);
-    b.create<ReturnOp>(coroHdl);
-    ret.erase();
-  });
+  // We know the byref arguments got pushed to the beginning. Move them back to
+  // the end.
+  MutableArrayRef<BlockArgument> args = body.front().getArguments();
+  std::rotate(args.begin(), args.begin() + numByRefResults, args.end());
 
   // Move the body into a function. The function is not valid to inline.
-  b.clearInsertionPoint();
-  b.setLoc(op.getLoc());
+  ImplicitLocOpBuilder b{op.getLoc(), OpBuilder(op.getContext())};
   StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure_" +
                                     Twine(nameCounter++));
   // TODO: What conventions do we use for captures.
-  SmallVector<ArgConvention> conventions(body.getArgumentTypes().size(),
-                                         ArgConvention::None);
+  SmallVector<ArgConvention> conventions(captures.size(), ArgConvention::None);
+  // Add the appropriate byref conventions for the result slots.
+  if (numByRefResults == 2)
+    conventions.push_back(ArgConvention::ByRefError);
+  if (numByRefResults)
+    conventions.push_back(ArgConvention::ByRefResult);
+
   auto sig = SignatureType::get(
-      b.getFunctionType(body.getArgumentTypes(), op.getType()), conventions);
+      b.getFunctionType(body.getArgumentTypes(), op.getTypes()), conventions,
+      FnEffects().setAsync().setThrows(numByRefResults == 2));
   auto lifted = b.create<FuncOp>(name, sig);
   lifted.getBodyRegion().takeBody(body);
 
@@ -177,7 +158,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   b.setInsertionPoint(op);
   if (callLoc)
     b.setLoc(callLoc);
-  auto call = b.create<CallOp>(
+  Value call = b.create<CO::InvokeOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
       captures);
   op.replaceAllUsesWith(call);
@@ -312,79 +293,18 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 }
 
 //===----------------------------------------------------------------------===//
-// lowerAsyncFunction
+// lowerClosures
 //===----------------------------------------------------------------------===//
-
-/// Convert the signature of an async funciton by dropping the 'async' bit and
-/// any byref results.
-static std::pair<SignatureType, unsigned>
-convertAsyncSignature(SignatureType sig, CO::CoroutineType coroType) {
-  Builder b(sig.getContext());
-  unsigned numByRefArgs = sig.getNumAsyncReturnSlots();
-  auto newSig = SignatureType::get(
-      b.getFunctionType(sig.getArguments().drop_back(numByRefArgs), coroType),
-      sig.getArgConventions().drop_back(numByRefArgs));
-  return {newSig, numByRefArgs};
-}
 
 /// To lower an async function, we stick a `co.handle` operation in
 /// it, marshall results through a `co.promise`, and return the
 /// handle directly.
-static LogicalResult lowerAsyncFunction(FuncOp func,
-                                        Shared<SymbolTable &> &sharedTable,
-                                        mlir::DominanceInfo &domInfo) {
-  auto coroType = CO::CoroutineType::get(func.getContext());
+static LogicalResult lowerClosures(FuncOp func,
+                                   Shared<SymbolTable &> &sharedTable,
+                                   mlir::DominanceInfo &domInfo) {
   size_t closureNameCounter = 0;
-  Value coroHdl;
-  ImplicitLocOpBuilder b(func.getLoc(),
-                         OpBuilder::atBlockBegin(func.getBody()));
-  bool isAsyncFn = func.isAsync();
-  if (isAsyncFn) {
-    // Create the coroutine handle. The coroutine result types are the
-    // function result types.
-    coroHdl = b.create<CO::HandleOp>(func.getResultTypes());
-
-    // Update the function result type.
-    SignatureType origSig = func.getSignature();
-    auto [newSig, numByRefArgs] = convertAsyncSignature(origSig, coroType);
-    func.setSignature(newSig);
-    // Replace the `byref_result` and `byref_error` arguments.
-    if (origSig.hasMemoryOnlyResult() || origSig.isThrows()) {
-      b.setLoc(func.getLoc());
-      b.setInsertionPointAfter(coroHdl.getDefiningOp());
-      SmallVector<Type, 2> types;
-      types.push_back(origSig.getArguments().back());
-      if (origSig.isThrows())
-        types.push_back(origSig.getArguments().end()[-2]);
-      auto results = b.create<CO::GetByRefErrorAndResultOp>(types, coroHdl);
-      func.getArguments().back().replaceAllUsesWith(results.getResult());
-      if (origSig.isThrows())
-        func.getArguments().end()[-2].replaceAllUsesWith(results.getError());
-      func.getBody()->eraseArguments(origSig.getNumArguments() - numByRefArgs,
-                                     numByRefArgs);
-    }
-  }
-
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
-    // Replace async calls with a simple `kgen.call`.
-    if (auto call = dyn_cast<CO::InvokeOp>(op)) {
-      b.setLoc(call.getLoc());
-      b.setInsertionPoint(call);
-      // Be defensive about pass ordering.
-      auto callee = dyn_cast<SymbolConstantAttr>(call.getCallee());
-      if (LLVM_UNLIKELY(!callee)) {
-        return op->emitOpError("callee is not a symbol constant, did you "
-                               "forget to run `elaborate-generators`?");
-      }
-
-      auto [asyncSig, _] = convertAsyncSignature(callee.getType(), coroType);
-      auto newCall = b.create<CallOp>(
-          call.getType(), SymbolConstantAttr::get(callee.getSymbol(), asyncSig),
-          call.getOperands());
-      call.replaceAllUsesWith(newCall);
-      call.erase();
-
-    } else if (auto exec = dyn_cast<CO::ExecuteOp>(op)) {
+    if (auto exec = dyn_cast<CO::ExecuteOp>(op)) {
       lowerAsyncExecute(func, exec, sharedTable, closureNameCounter, domInfo);
     } else if (auto await = dyn_cast<CO::AwaitOp>(op)) {
       lowerAwait(await);
@@ -394,19 +314,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     }
     return WalkResult::advance();
   });
-  if (result.wasInterrupted())
-    return failure();
-
-  // If the surrounding function is an async function, go rewrite all the return
-  // sites now. Do this after nested `co.execute` ops are lifted to not
-  // clobber their returns.
-  if (isAsyncFn) {
-    func.getBodyRegion().walk([&](ReturnOp ret) {
-      createCoroutineFinalize(b, coroHdl, ret);
-      ret->setOperands(coroHdl);
-    });
-  }
-  return success();
+  return failure(result.wasInterrupted());
 }
 
 //===----------------------------------------------------------------------===//
@@ -430,7 +338,7 @@ struct LowerClosuresPass : impl::LowerClosuresBase<LowerClosuresPass> {
     auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 
     auto eachFn = [&](FuncOp func) {
-      return lowerAsyncFunction(func, sharedTable, domInfo);
+      return lowerClosures(func, sharedTable, domInfo);
     };
     std::vector<FuncOp> funcs;
     llvm::append_range(funcs, getOperation().getOps<FuncOp>());

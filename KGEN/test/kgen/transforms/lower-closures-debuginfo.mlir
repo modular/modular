@@ -18,8 +18,7 @@
 
 // CHECK-LABEL: kgen.func @foo_async_closure_0()
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[FOO_ASYNC_CL_CONST_LOC:.*]])
-// CHECK-NEXT:    %0 = co.handle : !pop.array<0, i1> loc(#[[FOO_ASYNC_CL_LOC:.*]])
-// CHECK:         kgen.return %0 : !co.routine loc(#[[FOO_ASYNC_CL_LOC]])
+// CHECK:         kgen.return %array {{.*}} loc(#[[FOO_ASYNC_CL_LOC:.*]])
 // CHECK-NEXT:  } loc(#[[FOO_ASYNC_CL_LOC]])
 
 // CHECK-LABEL: kgen.func @foo_closure_1()
@@ -33,7 +32,7 @@ kgen.func @foo() {
   // CHECK-NEXT: kgen.param.constant: array<0, i1> = <[]> loc(#[[LOC_CALLSITE:.*]])
   %array = kgen.param.constant: array<0, i1> = <[]> loc(#loc6)
 
-  // CHECK-NEXT: kgen.call @foo_async_closure_0() : () -> !co.routine loc(#[[LOC_CALLSITE]])
+  // CHECK-NEXT: co.invoke[{{.*}}: @foo_async_closure_0]() loc(#[[LOC_CALLSITE]])
   %0 = co.execute : !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<1, i1> = <[1]> loc(#loc7)
     kgen.return %array : !pop.array<0, i1> loc(#loc7)

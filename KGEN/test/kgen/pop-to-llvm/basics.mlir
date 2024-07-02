@@ -779,10 +779,10 @@ kgen.func @stack_lifetimes() {
 
 // CHECK-LABEL: kgen.func @multi_lifetimes
 kgen.func @multi_lifetimes() {
-  // CHECK: [[A1:%.*]] = llvm.alloca {{.*}} x i32
-  // CHECK-NEXT: llvm.intr.lifetime.end 4, [[A1]]
   // CHECK: [[A0:%.*]] = llvm.alloca {{.*}} x i64
   // CHECK-NEXT: llvm.intr.lifetime.end 8, [[A0]]
+  // CHECK: [[A1:%.*]] = llvm.alloca {{.*}} x i32
+  // CHECK-NEXT: llvm.intr.lifetime.end 4, [[A1]]
   %0 = pop.stack_allocation 1 x i64 marked
   %1 = pop.stack_allocation 1 x i32 marked
   // CHECK-NEXT: lifetime.start 8, [[A0]]

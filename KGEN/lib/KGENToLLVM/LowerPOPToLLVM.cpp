@@ -501,16 +501,14 @@ class ConvertPOPStackAllocation
     : public ConvertPOPToLLVMPattern<StackAllocationOp> {
 public:
   explicit ConvertPOPStackAllocation(mlir::LLVMTypeConverter &typeConverter,
-                                     Block *body, TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(typeConverter), body(body), target(target) {}
+                                     TargetInfoAttr target)
+      : ConvertPOPToLLVMPattern(typeConverter), target(target) {}
 
   LogicalResult
   matchAndRewrite(StackAllocationOp op, StackAllocationOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override;
 
 private:
-  /// The enclosing function body.
-  Block *body;
   /// The target info.
   TargetInfoAttr target;
 
@@ -525,15 +523,8 @@ private:
 /// count. The alloca is created at the top of the given block, and lifetime
 /// markers are inserted at the end of the given operation's block.
 static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
-                                   int64_t count, Block *block, Operation *op,
+                                   int64_t count, Operation *op,
                                    int64_t typeAllocSize, int64_t align) {
-  // Hoist the alloca to the top of the given block.
-  b.setInsertionPointToStart(block);
-  Location hoistedLoc = FusedLoc::get(
-      b.getContext(), {op->getLoc(), block->getParent()->getLoc()});
-  Value countVal =
-      b.create<LLVM::ConstantOp>(hoistedLoc, b.getI64IntegerAttr(count));
-
   unsigned addressSpace = 0;
   auto alloca = dyn_cast<StackAllocationOp>(op);
   if (alloca) {
@@ -542,20 +533,22 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
       addressSpace = addrSpaceAttr.getInt();
   }
 
+  Value countVal =
+      b.create<LLVM::ConstantOp>(op->getLoc(), b.getI64IntegerAttr(count));
   auto ptr = b.create<LLVM::AllocaOp>(
-      hoistedLoc, LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
+      op->getLoc(), LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
       elementType, countVal, align);
 
   if (alloca && alloca.getMarkedLifetimes()) {
     // If this alloca has marked lifetimes, it always begins as dead.
-    b.create<LLVM::LifetimeEndOp>(hoistedLoc, typeAllocSize * count, ptr);
+    b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
   } else {
     // Insert lifetime markers starting from the op to the end of its block.
     b.setInsertionPoint(op);
     auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(),
                                                  typeAllocSize * count, ptr);
     b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-    b.create<LLVM::LifetimeEndOp>(hoistedLoc, typeAllocSize * count, ptr);
+    b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
     b.setInsertionPointAfter(start);
   }
 
@@ -577,8 +570,8 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
     return op.emitError("could not get size of variadic element");
 
   Value alloca = materializeLLVMAlloca(
-      rewriter, elementType, cast<IntegerAttr>(op.getCount()).getInt(), body,
-      op, *typeAllocSize, resolveAlignment(op.getAlignment()));
+      rewriter, elementType, cast<IntegerAttr>(op.getCount()).getInt(), op,
+      *typeAllocSize, resolveAlignment(op.getAlignment()));
   rewriter.replaceOp(op, alloca);
   return success();
 }
@@ -840,7 +833,6 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 ///    elements.
 static LogicalResult convertVariadicCreate(VariadicType resultType,
                                            ValueRange operands, Operation *op,
-                                           Block *body,
                                            ConversionPatternRewriter &rewriter,
                                            const TypeConverter *typeConverter,
                                            TargetInfoAttr target) {
@@ -859,7 +851,7 @@ static LogicalResult convertVariadicCreate(VariadicType resultType,
     return op->emitError("failed to convert element type");
 
   size_t count = operands.size();
-  Value ptr = materializeLLVMAlloca(rewriter, elementType, count, body, op,
+  Value ptr = materializeLLVMAlloca(rewriter, elementType, count, op,
                                     *typeAllocSize, *typeABIAlign);
 
   // 2. Store elements of the sequence into the allocated space.
@@ -897,20 +889,18 @@ class ConvertPOPVariadicCreate
     : public ConvertPOPToLLVMPattern<VariadicCreateOp> {
 public:
   explicit ConvertPOPVariadicCreate(mlir::LLVMTypeConverter &typeConverter,
-                                    Block *body, TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(typeConverter), body(body), target(target) {}
+                                    TargetInfoAttr target)
+      : ConvertPOPToLLVMPattern(typeConverter), target(target) {}
 
   LogicalResult
   matchAndRewrite(VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
 
-    return convertVariadicCreate(op.getType(), adaptor.getOperands(), op, body,
+    return convertVariadicCreate(op.getType(), adaptor.getOperands(), op,
                                  rewriter, typeConverter, target);
   }
 
 private:
-  /// The enclosing function body.
-  Block *body;
   /// The target info.
   TargetInfoAttr target;
 };
@@ -925,8 +915,8 @@ class ConvertPOPVariadicSplat
     : public ConvertPOPToLLVMPattern<VariadicSplatOp> {
 public:
   explicit ConvertPOPVariadicSplat(mlir::LLVMTypeConverter &typeConverter,
-                                   Block *body, TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(typeConverter), body(body), target(target) {}
+                                   TargetInfoAttr target)
+      : ConvertPOPToLLVMPattern(typeConverter), target(target) {}
 
   LogicalResult
   matchAndRewrite(VariadicSplatOp op, VariadicSplatOpAdaptor adaptor,
@@ -937,13 +927,12 @@ public:
       return op.emitError("pop.variadic.splat has parametric # elements");
 
     SmallVector<Value> operands(numElements.getInt(), adaptor.getOperand());
-    return convertVariadicCreate(op.getType(), operands, op, body, rewriter,
+    return convertVariadicCreate(op.getType(), operands, op, rewriter,
                                  typeConverter, target);
   }
 
 private:
   /// The enclosing function body.
-  Block *body;
   /// The target info.
   TargetInfoAttr target;
 };
@@ -1467,9 +1456,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   populatePOPToLLVMPatterns(typeConverter, patterns);
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,
-                  ConvertPOPVariadicSplat>(
-      typeConverter, &func->getFunctionBody().front(), targetInfo);
-  patterns.insert<ConvertPOPStackAllocLifetimeStart,
+                  ConvertPOPVariadicSplat, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter);
