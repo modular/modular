@@ -19,6 +19,7 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
+from memory import UnsafePointer
 
 
 fn reduce(
@@ -64,7 +65,7 @@ fn run_reduce() raises:
     )
 
     var res = Float32(0)
-    _copy_device_to_host(Pointer.address_of(res), res_device, 1)
+    _copy_device_to_host(UnsafePointer.address_of(res), res_device, 1)
 
     # CHECK: res =  1024.0
     print("res = ", res)

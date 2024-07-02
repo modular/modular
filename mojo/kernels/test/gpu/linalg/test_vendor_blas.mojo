@@ -22,7 +22,7 @@ from gpu.host.memory import (
 )
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory.unsafe import DTypePointer
+from memory.unsafe import DTypePointer, Pointer
 from testing import assert_almost_equal
 
 from utils.index import Index
