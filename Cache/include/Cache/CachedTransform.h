@@ -8,7 +8,6 @@
 #define CACHE_CACHED_TRANSFORM_H
 
 #include "Cache/BlobCache.h"
-#include "Cache/CachedTransform.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "Support/Buffer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -115,7 +114,8 @@ constexpr bool accepts_buffer_v =
 /// AnyAsyncValueRef simply contains a Chain.
 template <typename TransformFnT>
 LLCL::AnyAsyncValueRef
-cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
+cachedTransform(EncodedLocation loc,
+                const RCRef<TransformCache> &transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFnT transformFn, CacheHitFn cacheHitFn,
                 bool errorOnCacheInsertFailure = true) {
@@ -315,8 +315,8 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
 LLCL::AnyAsyncValueRef cachedTransform(
     Operation *target, RCRef<TransformCache> transformCache,
     LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm,
-    std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
-    std::function<void(Operation *)> moreOnHit = [](Operation *) {});
+    const std::function<void(Operation *)> &moreOnMiss = [](Operation *) {},
+    const std::function<void(Operation *)> &moreOnHit = [](Operation *) {});
 
 } // namespace M::Cache
 

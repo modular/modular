@@ -10,8 +10,10 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/DebugStringHelper.h"
-#include "llvm/Support/BLAKE3.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace Cache;
@@ -22,11 +24,20 @@ using namespace LLCL;
 //===----------------------------------------------------------------------===//
 
 std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
-  // This is just a (usually relatively small) string - the hash is just the
-  // SHA256 hash of the input.
-  std::array<uint8_t, 32> hash = llvm::BLAKE3::hash(
-      ArrayRef((const uint8_t *)key->getBufferStart(), key->getBufferSize()));
-  return {hash.begin(), hash.end()};
+  TimeTraceScope scope(
+      CacheProfilerEntry::create("TransformCacheKey::hashKey"));
+
+  // Reserve a 16 byte result hash.
+  std::string result;
+  result.reserve(sizeof(llvm::XXH128_hash_t));
+
+  // Take the 128-bit xxhash of the input.
+  llvm::XXH128_hash_t hash =
+      llvm::xxh3_128bits(arrayRefFromStringRef(key->getBuffer()));
+
+  // Write the hash to the result buffer and return it.
+  result.append(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -149,8 +160,8 @@ static Diagnostic copyDiag(const Diagnostic &diag) {
 AnyAsyncValueRef
 Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                        AnyAsyncValueRef chain, mlir::PassManager &pm,
-                       std::function<void(Operation *)> moreOnMiss,
-                       std::function<void(Operation *)> moreOnHit) {
+                       const std::function<void(Operation *)> &moreOnMiss,
+                       const std::function<void(Operation *)> &moreOnHit) {
   auto keyBuf = WriteableBuffer::get();
   pm.printAsTextualPipeline(*keyBuf);
 
@@ -226,7 +237,7 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
   // Callback that on a cache hit reads the region hashes out of the cache and
   // places them on the operation.
   auto onCacheHit = [moreOnHit](Operation *op,
-                                BufferRef buf) -> ErrorOrSuccess {
+                                const BufferRef &buf) -> ErrorOrSuccess {
     moreOnHit(op);
     TimeTraceScope traceScope(CacheProfilerEntry::create(
         "Cache::cachedTransform(Operation *)::onCacheHit"));
