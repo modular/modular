@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, sqrt
+from math import ceildiv, rsqrt
 from collections import OptionalReg
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize
@@ -245,7 +245,7 @@ fn layer_norm_gpu_warp_tiling[
 
     var row_var = max((row_m2 / row_count), 0.0)
 
-    var norm_factor = 1 / sqrt(row_var + epsilon[0])
+    var norm_factor = rsqrt(row_var + epsilon[0])
     var norm_val = (vec_data - row_mean) * norm_factor * gamma[0] + beta[0]
     data.store[width=simd_width, alignment=align](Index(row, idx), norm_val)
 
@@ -326,7 +326,7 @@ fn layer_norm_gpu_block[
                 Index(row, x)
             )
 
-        var norm_factor = 1 / sqrt(row_var + epsilon[0])
+        var norm_factor = rsqrt(row_var + epsilon[0])
 
         var norm_val = (vec_data - row_mean) * norm_factor * gamma[0] + beta[0]
         data.store[width=simd_width, alignment=align](Index(row, x), norm_val)
@@ -471,7 +471,7 @@ fn layer_norm_cpu[
 
         var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
 
-        var norm_factor = 1 / sqrt(var_val + eps)
+        var norm_factor = rsqrt(var_val + eps)
 
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
