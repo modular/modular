@@ -42,7 +42,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
 
     var f_per_group = spec.f // spec.num_groups
 
-    var output_dims = StaticIntTuple[spec.static_info.rank](1)
+    var output_dims = StaticIntTuple[spec.static_info.rank](repeat=1)
 
     @parameter
     for i in range(spec.static_info.rank):
@@ -98,9 +98,9 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     rand[input_type](input_ptr, num_copies * input_alloc_size)
     rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = StaticIntTuple[2](repeat=0)
+    var pad_h = StaticIntTuple[2](repeat=0)
+    var pad_w = StaticIntTuple[2](repeat=0)
 
     @parameter
     if spec.static_info.rank == 1:
@@ -230,7 +230,7 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
         # fmt: on
 
     fn flops(self) -> Int:
-        var output_dims = StaticIntTuple[static_info.rank](1)
+        var output_dims = StaticIntTuple[static_info.rank](repeat=1)
 
         @parameter
         for i in range(static_info.rank):
