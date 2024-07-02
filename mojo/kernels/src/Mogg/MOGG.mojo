@@ -3222,7 +3222,7 @@ fn layer_norm[
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
