@@ -55,6 +55,7 @@ struct _OwnedGraph(Movable):
             layer += layer_name[]
         return layer^
 
+    @no_inline
     fn module(self) -> _mlir.Module:
         try:
             return _mlir.Module.from_op(self.op.parent())
@@ -67,6 +68,7 @@ struct _OwnedGraph(Movable):
         self.layers = existing.layers^
         self.parameters = existing.parameters^
 
+    @no_inline
     fn __del__(owned self):
         self.module().as_op().destroy()
         self.ctx.__exit__()
