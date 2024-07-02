@@ -1,5 +1,5 @@
 load("@pip_deps//:requirements.bzl", "requirement")
-load("//bazel:api.bzl", "pytest_test")
+load("//bazel:api.bzl", "modular_py_test")
 load("//utils/bazel/build/rules:mojo.bzl", "mojo_test_environment")
 
 mojo_test_environment(
@@ -9,7 +9,7 @@ mojo_test_environment(
     ],
 )
 
-pytest_test(
+modular_py_test(
     name = "tests",
     srcs = glob(["pytests/**/*.py"]),
     data = [
