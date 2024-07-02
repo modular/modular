@@ -196,7 +196,6 @@ modular_cc_test(
 modular_cc_test(
     name = "TelemetryTest",
     srcs = ["TelemetryTest.cpp"],
-    tags = ["manual"],  # TODO: fix on linux and re-enable
     deps = ["//Support:Telemetry"],
 )
 
