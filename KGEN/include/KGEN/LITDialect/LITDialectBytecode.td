@@ -100,12 +100,17 @@ def PogMetadataAttr : DialectAttribute<(attr
   Bool:$isVariadic
 )>;
 
+def OptionalArgConvention :
+  WithParser<"succeeded(readOptional($_reader, $_var, &readIntegral<ArgConvention>))",
+  WithPrinter<"writeOptional($_writer, $_getter, &writeIntegral<ArgConvention>)",
+  WithType<"std::optional<ArgConvention>">>>;
+
 def PogListAttr : DialectAttribute<(attr
   ConcreteAttrArray<"PogMetadataAttr">:$pogs,
   TypedAttrArray:$defaultPos,
   TypedAttrArray:$defaultKwOnly,
   VarInt:$packIndex,
-  EnumAttr<"ArgConvention">:$origPackConvention
+  OptionalArgConvention:$origPackConvention
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr

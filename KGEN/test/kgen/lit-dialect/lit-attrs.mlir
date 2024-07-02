@@ -12,10 +12,10 @@
 // CHECK-LABEL: "pogs.with_defaults"
 // CHECK-SAME: {pogs = #lit.pog_list<
 // CHECK-SAME: [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
-// CHECK-SAME: [4.200000e+00 : f32], [1 : i64], -1, none>}
+// CHECK-SAME: [4.200000e+00 : f32], [1 : i64]>}
 "pogs.with_defaults"() {pogs = #lit.pog_list<
   [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
-  [4.2 : f32], [1: i64], -1, none
+  [4.2 : f32], [1: i64]
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.with_variadics"
@@ -28,23 +28,23 @@
 >} : () -> ()
 
 // CHECK-LABEL: "empty.pogs"
-// CHECK-SAME: {pogs = #lit.pog_list<[], [], [], -1, none>}
-"empty.pogs"() {pogs = #lit.pog_list<[], [], [], -1, none>} : () -> ()
+// CHECK-SAME: {pogs = #lit.pog_list<[], [], []>}
+"empty.pogs"() {pogs = #lit.pog_list<[], [], []>} : () -> ()
 
 // CHECK-LABEL: "some.metadata"
 // CHECK-SAME: #lit.fn_metadata
-// CHECK-SAME: <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64], -1, none>,
-// CHECK-SAME: <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], [], -1, none>,
+// CHECK-SAME: <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64]>,
+// CHECK-SAME: <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], []>,
 // CHECK-SAME: 2>
 "some.metadata"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64], -1, none>,
-  <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], [], -1, none>,
+  <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64]>,
+  <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], []>,
   2
 >} : () -> ()
 
 // CHECK-LABEL: "empty.metadata"
-// CHECK-SAME: #lit.fn_metadata<<[], [], [], -1, none>, <[], [], [], -1, none>, 0>
-"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], [], -1, none>, <[], [], [], -1, none>, 0>} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<<[], [], []>, <[], [], []>, 0>
+"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], []>, <[], [], []>, 0>} : () -> ()
 
 // CHECK-LABEL: "none.type"
 // CHECK-SAME: #kgen.none : !kgen.none

@@ -26,18 +26,38 @@ LogicalResult readIntegral(mlir::DialectBytecodeReader &reader, T &result) {
   return success();
 }
 
+/// ODS helper for printing an enum.
+template <typename T>
+void writeIntegral(mlir::DialectBytecodeWriter &writer, T value) {
+  writer.writeVarInt(static_cast<uint64_t>(value));
+}
+
+template <typename T, typename ReadElementFn>
+LogicalResult readOptional(mlir::DialectBytecodeReader &reader,
+                           std::optional<T> &result, ReadElementFn &&read) {
+  FailureOr<APInt> present = reader.readAPIntWithKnownWidth(1);
+  if (failed(present))
+    return failure();
+  if (present->getLimitedValue() == 0)
+    return success();
+  result.emplace();
+  return std::forward<ReadElementFn>(read)(reader, *result);
+}
+
+template <typename T, typename WriteElementFn>
+void writeOptional(mlir::DialectBytecodeWriter &writer,
+                   const std::optional<T> &result, WriteElementFn &&write) {
+  writer.writeAPIntWithKnownWidth(APInt(1, result.has_value()));
+  if (result)
+    std::forward<WriteElementFn>(write)(writer, *result);
+}
+
 /// ODS helper for parsing an array of enums.
 template <typename T>
 LogicalResult readIntegralArray(mlir::DialectBytecodeReader &reader,
                                 SmallVectorImpl<T> &result) {
   return reader.readList(
       result, [&](T &value) { return M::readIntegral<T>(reader, value); });
-}
-
-/// ODS helper for printing an enum.
-template <typename T>
-void writeIntegral(mlir::DialectBytecodeWriter &writer, T value) {
-  writer.writeVarInt(static_cast<uint64_t>(value));
 }
 
 /// ODS helper for printing an array of enums.

@@ -93,6 +93,10 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
 // PogListAttr
 //===----------------------------------------------------------------------===//
 
+def LIT_PackIndexParameter : OptionalParameter<"ssize_t"> {
+  let defaultValue = "ssize_t(-1)";
+}
+
 def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
   let summary = "Argument or parameter list metadata.";
   let description = [{
@@ -127,15 +131,15 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
-    "ssize_t":$packIndex,
-    "ArgConvention":$origPackConvention
+    LIT_PackIndexParameter:$packIndex,
+    OptionalParameter<"std::optional<ArgConvention>">:$origPackConvention
   );
 
   let assemblyFormat = [{
     `<` `[` (`]`) : ($pogs^            `]`)? `,`
         `[` (`]`) : ($defaultPos^      `]`)? `,`
-        `[` (`]`) : ($defaultKwOnly^   `]`)? `,`
-        $packIndex `,` $origPackConvention
+        `[` (`]`) : ($defaultKwOnly^   `]`)?
+        (`,` custom<PackInfo>($packIndex, $origPackConvention)^)?
     `>`
   }];
 
@@ -153,7 +157,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<size_t>":$variadicIndices,
                      "ssize_t":$packIndex,
-                     "ArgConvention":$origPackConvention)>
+                     "std::optional<ArgConvention>":$origPackConvention)>
   ];
 
   let extraClassDeclaration = [{

@@ -98,7 +98,7 @@ struct ParsedArgument {
 
   // For variadics and packs, this is the declared argument convention, even
   // those the variadic type is passed another way.
-  ArgConvention kgenVariadicConvention = ArgConvention::None;
+  ArgConvention kgenVariadicConvention = ArgConvention(128);
 
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
