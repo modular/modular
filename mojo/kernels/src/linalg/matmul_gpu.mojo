@@ -87,9 +87,7 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
 # WNITER: The number of subwarp tiling steps in N dimension.
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
-@__llvm_metadata(
-    `nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS.cast[DType.int32]())
-)
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS))
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
@@ -97,17 +95,16 @@ fn sgemm_warp_tiling_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    indexing_integral_dtype: DType,
-    BM: Scalar[indexing_integral_dtype],
-    BN: Scalar[indexing_integral_dtype],
-    BK: Scalar[indexing_integral_dtype],
-    WM: Scalar[indexing_integral_dtype],
-    WN: Scalar[indexing_integral_dtype],
-    WMITER: Scalar[indexing_integral_dtype],
-    WNITER: Scalar[indexing_integral_dtype],
-    TM: Scalar[indexing_integral_dtype],
-    TN: Scalar[indexing_integral_dtype],
-    NUM_THREADS: Scalar[indexing_integral_dtype],
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    WMITER: Int,
+    WNITER: Int,
+    TM: Int,
+    TN: Int,
+    NUM_THREADS: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[c_type, 2, c_shape],
@@ -116,17 +113,15 @@ fn sgemm_warp_tiling_kernel[
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
-    var M: Scalar[indexing_integral_dtype] = mat_c.dim(0)
-    var K: Scalar[indexing_integral_dtype] = mat_a.dim(1)
-    var N: Scalar[indexing_integral_dtype] = mat_c.dim(1)
+    var M = mat_c.dim(0)
+    var K = mat_a.dim(1)
+    var N = mat_c.dim(1)
 
-    var c_row: Scalar[indexing_integral_dtype] = BlockIdx.y()
-    var c_col: Scalar[indexing_integral_dtype] = BlockIdx.x()
+    var c_row = BlockIdx.y()
+    var c_col = BlockIdx.x()
 
     # Placement of the warp in the threadblock tile.
-    var warp_idx = Scalar[indexing_integral_dtype](
-        ThreadIdx.x()
-    ) // WARP_SIZE  # the warp this thread is in
+    var warp_idx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
     var warp_col = warp_idx % (BN // WN)
     var warp_row = warp_idx // (BN // WN)
 
@@ -135,9 +130,7 @@ fn sgemm_warp_tiling_kernel[
     alias w_sub_n = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp subtile.
-    var thread_Idx_In_warp = Scalar[indexing_integral_dtype](
-        ThreadIdx.x()
-    ) % WARP_SIZE  # [0, 31]
+    var thread_Idx_In_warp = ThreadIdx.x() % WARP_SIZE  # [0, 31]
     var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
     var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
 
@@ -169,15 +162,11 @@ fn sgemm_warp_tiling_kernel[
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
-        BK // 4
-    )
-    var inner_col_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BK // 4)
+    var inner_row_a = ThreadIdx.x() // (BK // 4)
+    var inner_col_a = ThreadIdx.x() % (BK // 4)
     alias row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
-        BN // 4
-    )
-    var inner_co_ib = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BN // 4)
+    var inner_row_b = ThreadIdx.x() // (BN // 4)
+    var inner_co_ib = ThreadIdx.x() % (BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
@@ -909,7 +898,6 @@ fn _matmul_gpu[
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
     ctx: DeviceContext,
-    num_threads: Int = -1,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
     # single_thread_blocking_override should not be allowed, but the graph
@@ -925,64 +913,31 @@ fn _matmul_gpu[
     var n = shape.N
     var k = shape.K
 
-    # TODO: #25898, use max_finite
-    alias max_uint32 = Int(0xFFFFFFFF)
-    var use_32bit_indexing = m * n < max_uint32 and m * k < max_uint32 and n * k < max_uint32
-
     @parameter
     if elementwise_lambda_fn:
-        if use_32bit_indexing:
-            _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
-                indexing_integral_dtype = DType.uint32,
-                transpose_b=transpose_b,
-                use_tensor_core=use_tensor_core,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, ctx)
-        else:
-            _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
-                indexing_integral_dtype = DType.uint64,
-                transpose_b=transpose_b,
-                use_tensor_core=use_tensor_core,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, ctx)
+        _matmul_gpu_dispatch[
+            a.type,
+            a.shape,
+            b.type,
+            b.shape,
+            c.type,
+            c.shape,
+            transpose_b=transpose_b,
+            use_tensor_core=use_tensor_core,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](c, a, b, ctx)
 
     else:
-        if use_32bit_indexing:
-            _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
-                indexing_integral_dtype = DType.uint32,
-                transpose_b=transpose_b,
-                use_tensor_core=use_tensor_core,
-            ](c, a, b, ctx)
-        else:
-            _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
-                indexing_integral_dtype = DType.uint64,
-                transpose_b=transpose_b,
-                use_tensor_core=use_tensor_core,
-            ](c, a, b, ctx)
+        _matmul_gpu_dispatch[
+            a.type,
+            a.shape,
+            b.type,
+            b.shape,
+            c.type,
+            c.shape,
+            transpose_b=transpose_b,
+            use_tensor_core=use_tensor_core,
+        ](c, a, b, ctx)
 
 
 @always_inline
@@ -993,7 +948,6 @@ fn _matmul_gpu_dispatch[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    indexing_integral_dtype: DType,
     transpose_b: Bool = False,
     use_tensor_core: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1153,7 +1107,6 @@ fn _matmul_gpu_dispatch[
                 a_shape,
                 b_type,
                 b_shape,
-                indexing_integral_dtype=indexing_integral_dtype,
                 BM=BM,
                 BN=BN,
                 BK=BK,

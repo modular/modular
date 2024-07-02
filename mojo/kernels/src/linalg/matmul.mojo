@@ -759,18 +759,13 @@ fn matmul[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
-    num_threads: Int = -1,
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
     @parameter
     if target == "cpu":
-        var kernel_type_m = 0
-
-        @parameter
-        if a_shape.at[0]().has_value():
-            kernel_type_m = a_shape.at[0]().get()
+        var kernel_type_m = a_shape.at[0]().or_else(0)
 
         _matmul_cpu[
             a_type,
@@ -784,7 +779,7 @@ fn matmul[
             elementwise_lambda_fn,
             saturated_vnni,
             single_thread_blocking_override,
-        ](c, a, b, kernel_type_m, num_threads)
+        ](c, a, b, kernel_type_m)
 
     else:
         _matmul_gpu[
@@ -792,13 +787,7 @@ fn matmul[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](
-            c,
-            a,
-            b,
-            ctx.get_cuda_device(),
-            num_threads,
-        )
+        ](c, a, b, ctx.get_cuda_device())
 
 
 fn _submatmul_sequential_sync[
