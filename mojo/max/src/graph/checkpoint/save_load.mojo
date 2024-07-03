@@ -16,7 +16,7 @@ alias _SERIALIZATION_HEADER = InlineArray[Int8, 8](
 )
 
 # Serialization constants
-alias _SERIALIZATION_MAJOR_FORMAT: UInt32 = 110
+alias _SERIALIZATION_MAJOR_FORMAT: UInt32 = 0
 alias _SERIALIZATION_MINOR_FORMAT: UInt32 = 1
 
 
