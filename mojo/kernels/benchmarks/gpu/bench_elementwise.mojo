@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s -t
 
-from math import rsqrt, log, sin, tanh, exp, erf
+from math import sqrt, rsqrt, log, sin, tanh, exp, erf
 from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl_gpu
@@ -120,6 +120,7 @@ fn main() raises:
 
             @parameter
             for i in range(len(types)):
+                run_elementwise[types[i], sqrt](m, "sqrt", dims, ctx)
                 run_elementwise[types[i], rsqrt](m, "rsqrt", dims, ctx)
                 run_elementwise[types[i], log](m, "log", dims, ctx)
                 run_elementwise[types[i], sin](m, "sin", dims, ctx)
