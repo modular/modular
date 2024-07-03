@@ -270,7 +270,7 @@ fn _memset_async[
     """Sets the memory range of N 8-bit, 16-bit and 32-bit values to a specified value asynchronously.
     """
 
-    alias bitwidth = type.bitwidth()
+    alias bitwidth = bitwidthof[type]()
     constrained[
         bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
         "bitwidth of memset type must be one of [8,16,32]",
