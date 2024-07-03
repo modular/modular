@@ -519,3 +519,29 @@ kgen.func @break_different_label(%arg0: i1) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @noop_loop
+kgen.func @noop_loop(%arg0: index, %arg1: index, %arg2: index, %arg3: !kgen.pointer<index>) {
+  // CHECK-NOT: hlcf.for
+  hlcf.for [%arg0 to %arg1 step %arg2 slt add] (%arg4 = %arg0 : index) {
+    %0 = index.add %arg4, %arg2
+    %1 = pop.load %arg3 : !kgen.pointer<index>
+    %2 = index.add %0, %1
+    hlcf.for.yield [induction_var (%2 : index)] [retvals ()] [iterargs ()]
+  }
+  // CHECK-NEXT: return
+  kgen.return
+}
+
+// CHECK-LABEL: @store_loop
+kgen.func @store_loop(%arg0: index, %arg1: index, %arg2: index, %arg3: !kgen.pointer<index>) {
+  // CHECK: hlcf.for
+  hlcf.for [%arg0 to %arg1 step %arg2 slt add] (%arg4 = %arg0 : index) {
+    %0 = index.add %arg4, %arg2
+    %1 = pop.load %arg3 : !kgen.pointer<index>
+    %2 = index.add %0, %1
+    pop.store %2, %arg3 : !kgen.pointer<index>
+    hlcf.for.yield [induction_var (%2 : index)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}

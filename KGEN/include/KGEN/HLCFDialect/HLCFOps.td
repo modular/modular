@@ -152,6 +152,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
   }];
 
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
