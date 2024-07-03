@@ -85,7 +85,7 @@ fn run_elementwise[
 
         b.iter_custom[kernel_launch](ctx)
 
-    var num_bytes = N * type.sizeof()
+    var num_bytes = N * sizeof[type]()
     m.bench_function[bench_func](
         BenchId(
             "elementwise", input_id=fn_name + "/" + str(type) + "/" + str(dims)
