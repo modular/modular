@@ -258,6 +258,18 @@ struct Layout(
         self.shape.append(item.shape)
         self.stride.append(item.stride)
 
+    # Returns `True` if values in shape and stride are known, otherwise `False`.
+    #
+    @always_inline
+    fn all_dims_known(self) -> Bool:
+        for shape_i in flatten(self.shape):
+            if to_int(shape_i) == -1:
+                return False
+        for stride_i in flatten(self.stride):
+            if to_int(stride_i) == -1:
+                return False
+        return True
+
 
 fn size(l: Layout) -> Int:
     return l.size()
