@@ -5,6 +5,7 @@ load(
     "modular_cc_binary",
     "modular_cc_library",
     "rpath_shim",
+    "run_tool",
     "td_library",
 )
 
@@ -149,4 +150,48 @@ rpath_shim(
     deps = [
         "//ModularFramework/tools/mof",
     ],
+)
+
+run_tool(
+    name = "mojo-standalone",
+    data = [
+        "//GenericML:DeviceDriver",
+        "//GenericML:modular-framework-common",
+        "//KGEN:CompilerRT",
+        "//KGEN:CompilerRT.distributable",
+        "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
+        "//KGEN:mojo-lldb",
+        "//KGEN/tools/mojo",
+        "//KGEN/tools/mojo-repl-entry-point",
+        "//Kernels/mojo/_mlir",
+        "//Kernels/mojo/algorithm",
+        "//Kernels/mojo/autotune",
+        "//Kernels/mojo/benchmark",
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/compile",
+        "//Kernels/mojo/complex",
+        "//Kernels/mojo/extensibility",
+        "//Kernels/mojo/gpu",
+        "//Kernels/mojo/layout",
+        "//Kernels/mojo/linalg",
+        "//Kernels/mojo/nn",
+        "//Kernels/mojo/nvml",
+        "//Kernels/mojo/nvrtc",
+        "//Kernels/mojo/quantization",
+        "//Kernels/mojo/register",
+        "//Kernels/mojo/runtime",
+        "//Kernels/mojo/subprocess",
+        "//ModularFramework/tools/mof",
+        "//SDK/lib/API/mojo/max",
+        "//open-source/mojo/stdlib/stdlib",
+        "@llvm-project//compiler-rt:orc_rt",
+        "@llvm-project//lldb:lldb-argdumper",
+    ],
+    env = {
+        "MODULAR_CRASH_REPORTING_ENABLED": "false",
+    },
+    tags = ["manual"],
+    tool = ":mojo",
+    visibility = ["//visibility:private"],
 )
