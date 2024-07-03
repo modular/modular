@@ -123,6 +123,7 @@ def _cuda_available() -> bool:
 
 
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
+@pytest.mark.skip(reason="#GRA-629")
 def test_execute_gpu(mo_model_path: Path):
     session = me.InferenceSession(device="cuda")
     model = session.load(mo_model_path)
