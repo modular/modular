@@ -698,6 +698,8 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
       }
 
       bool allPredsHaveProcessed = true;
+      bool isCurrentDryRunNode =
+          !dryRuns.empty() && dryRuns.back() == virtualBlock;
       auto myInitState = opToState.find(virtualBlock);
       int maxState = myInitState == opToState.end() ? 0 : myInitState->second;
       bool needsDryRun = false;
@@ -714,8 +716,16 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
           allPredsHaveProcessed = false;
           // We assume only one dry run is needed to calculate the state. If it
           // is visited we have already performed a dry run and we don't need to
-          // add it to the dry run list.
-          if (needsDryRun && !visited.back().contains(virtualBlock)) {
+          // add it to the dry run list. If it is the current dry run and there
+          // are multiple predecessors (i.e. multiple continue statements in a
+          // loop) we assume all predecessors have the virtual block successor
+          // as a predecessor and thus will be visited again so we can skip
+          // processing this node by marking it as not needing a dry run.
+          if (needsDryRun) {
+            if (visited.back().contains(virtualBlock) || isCurrentDryRunNode) {
+              needsDryRun = false;
+              break;
+            }
             visited.back().insert(virtualBlock);
             visited.emplace_back();
             dryRuns.push_back(virtualBlock);
@@ -730,7 +740,7 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
       // We have encountered a dry run node and all its predecessors have
       // processed. Time to pop and re-process.
       if (needsDryRun && allPredsHaveProcessed) {
-        if (!dryRuns.empty() && dryRuns.back() == virtualBlock) {
+        if (isCurrentDryRunNode) {
           visited.pop_back();
           dryRuns.pop_back();
         }
