@@ -300,7 +300,7 @@ kgen.func @nested_loops_no_unroll_inner() {
   // CHECK-NEXT:   [[IDX0:%.*]] = index.sub %arg0, %idx1
   // CHECK-NEXT:   [[V0:%.*]]  = index.sub %idx2, %arg0
   // CHECK-NEXT:   kgen.call @foo([[V0]]) : (index) -> ()
-  // CHECK-NOT:    hlcf.for
+  // CHECK-NEXT:   hlcf.for [%idx1 to %arg0 step %idx2
   // CHECK-DAG:   hlcf.for.yield [induction_var ([[IDX0]] : index)] [retvals ()] [iterargs ()]
   // CHECK-NEXT: }
 
@@ -510,6 +510,24 @@ kgen.func @dependent_ops_in_break_branch() {
     }
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @dynamic_bounds
+kgen.func @dynamic_bounds(%arg0: index) {
+  %0 = kgen.call @bar() : () -> index
+  %1 = kgen.call @bar() : () -> index
+  // CHECK: hlcf.for [%0 to %1 step %arg0 slt add]
+  hlcf.loop (%arg1 = %0 : index) {
+    %2 = index.cmp slt(%arg1, %1)
+    hlcf.if %2 {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %3 = index.add %arg1, %arg0
+    hlcf.continue %3 : index
   }
   kgen.return
 }
