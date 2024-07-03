@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import exp
+from math import sqrt, rsqrt
 from sys.info import has_neon
 
 from algorithm.functional import _elementwise_impl_gpu
@@ -17,7 +17,12 @@ from gpu.host._compile import _get_nvptx_target
 from testing import *
 
 
-def run_elementwise[type: DType](ctx: DeviceContext):
+def run_elementwise[
+    type: DType,
+    kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
+        type, width
+    ],
+](ctx: DeviceContext):
     alias length = 256
 
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
@@ -27,7 +32,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     var flattened_length = in_host.num_elements()
     for i in range(length):
-        in_host[i] = 0.001 * (Scalar[type](i) - length // 2)
+        in_host[i] = 0.001 * abs(Scalar[type](i) - length // 2)
 
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
@@ -44,7 +49,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
         var idx = rebind[StaticIntTuple[1]](idx0)
 
         out_buffer.store[width=simd_width](
-            idx, exp(in_buffer.load[width=simd_width](idx))
+            idx, rsqrt(in_buffer.load[width=simd_width](idx))
         )
 
     _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
@@ -56,7 +61,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     for i in range(length):
         assert_almost_equal(
             out_host[i],
-            exp(in_host[i]),
+            rsqrt(in_host[i]),
             msg="values did not match at position "
             + str(i)
             + " for dtype="
@@ -72,5 +77,9 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 # CHECK-NOT: CUDA_ERROR
 def main():
     with DeviceContext() as ctx:
-        run_elementwise[DType.float16](ctx)
-        run_elementwise[DType.float32](ctx)
+        run_elementwise[DType.float16, sqrt](ctx)
+        run_elementwise[DType.float32, sqrt](ctx)
+        run_elementwise[DType.float64, sqrt](ctx)
+        run_elementwise[DType.float16, rsqrt](ctx)
+        run_elementwise[DType.float32, rsqrt](ctx)
+        run_elementwise[DType.float64, rsqrt](ctx)
