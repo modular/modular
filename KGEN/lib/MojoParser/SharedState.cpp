@@ -315,6 +315,10 @@ struct SharedState::Impl {
 
   /// An attribute walker used to resolve bytecode references.
   BytecodeResolutionReferenceWalker bytecodeRefResolutionWalker;
+
+  /// MLIR custom op implementations collected from the `@op_implementation`
+  /// decorator.
+  DenseMap<StringAttr, CustomOpImplAttr> customOpImpls;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
@@ -1994,4 +1998,43 @@ void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
     assert(it->second == isConvertible &&
            "convertibility cache disagrees from actual computation! Must need "
            "to include more information in the hash key");
+}
+
+LogicalResult SharedState::addCustomOpImpl(CustomOpImplAttr opImpl,
+                                           llvm::SMLoc location) {
+  bool emplaced =
+      getImpl().customOpImpls.try_emplace(opImpl.getOpName(), opImpl).second;
+
+  if (!emplaced) {
+    emitError(location) << "custom op " << opImpl.getOpName()
+                        << " is already defined";
+    return failure();
+  }
+
+  return success();
+}
+
+void SharedState::finalizeCustomOpImplementations(ModuleOp module) {
+  auto builder = OpBuilder::atBlockEnd(module.getBody());
+  auto ctx = module.getContext();
+
+  // We use an unknown location as we do not refer to any specific part of
+  // the input file.
+  auto loc = UnknownLoc::get(ctx);
+
+  const llvm::DenseMap<StringAttr, CustomOpImplAttr> &customOpImpls =
+      getImpl().customOpImpls;
+
+  // If we have no custom ops, we can leave early.
+  if (customOpImpls.empty()) {
+    builder.create<CustomOpImplsOp>(loc, ArrayRef<CustomOpImplAttr>());
+    return;
+  }
+
+  std::vector<CustomOpImplAttr> opImplVec;
+  opImplVec.reserve(customOpImpls.size());
+  for (auto [name, opImpl] : customOpImpls)
+    opImplVec.push_back(opImpl);
+
+  builder.create<CustomOpImplsOp>(loc, opImplVec);
 }

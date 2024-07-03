@@ -1917,4 +1917,24 @@ def KGEN_CaptureListExpandOp : KGENOp<"capture_list.expand"> {
   let assemblyFormat = "$captureList attr-dict";
 }
 
+//===----------------------------------------------------------------------===//
+// CustomOpImplsOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_CustomOpImplsOp : KGENOp<"custom.op_impls"> {
+  let summary = "Link `custom` ops names to their implementation";
+  let description = [{
+    The `kgen.custom.op_impl` operation defines the implementation of a
+    `custom` op.
+
+    Example:
+    ```mlir
+    kgen.custom.op_impls [<"custom.a", <@impl_a()">>]
+    ```
+  }];
+
+  let arguments = (ins KGEN_CustomOpImplArrayAttr:$impls);
+  let assemblyFormat = "$impls attr-dict";
+}
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

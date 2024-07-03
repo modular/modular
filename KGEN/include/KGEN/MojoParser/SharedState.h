@@ -23,6 +23,7 @@ class CompilationOptions;
 class NoneAttr;
 class ParamDeclAttr;
 class SignatureType;
+class CustomOpImplAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -458,6 +459,14 @@ public:
   std::optional<bool> getCachedImplicitConvertibility(ASTType from, ASTType to);
   void cacheImplicitConvertibility(ASTType from, ASTType to,
                                    bool isConvertible);
+
+  /// Add a new custom op implementation.
+  /// Raise an error at the given location if an implementation was already
+  /// provided for that op.
+  LogicalResult addCustomOpImpl(CustomOpImplAttr opImpl, llvm::SMLoc location);
+
+  /// Add in the `custom` op implementations in the IR.
+  void finalizeCustomOpImplementations(ModuleOp module);
 
 private:
   /// The internal state of an imported module or package.
