@@ -1569,3 +1569,45 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 }
 }
 
+// -----
+
+// COM: Verify DryRun Nodes With Multiple Predecessors
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @coroutine_nested_resume
+kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index, %arg4: i1) async -> index {
+  %idx3 = index.constant 3
+  %result = kgen.call @foo(%idx3, %arg1) : (index,index) -> index
+  // CHECK: hlcf.loop
+  hlcf.loop "_loop_1" {
+    // CHECK-NEXT: [[V6:%.*]] = kgen.struct.gep %arg0[[[#FRAME8:]]]
+    // CHECK-NEXT: [[V7:%.*]] = pop.load [[V6]]
+    // CHECK-NEXT: [[V8:%.*]] = kgen.struct.gep %arg0[[[#FRAME8 + 1]]]
+    // CHECK-NEXT: [[V9:%.*]] = pop.load [[V8]]
+    // CHECK-NEXT: kgen.call @bar([[V7]], [[V9]])
+    %isThisDetected = kgen.call @bar(%result, %arg3): (index,index) -> index
+    hlcf.if %arg0 {
+      hlcf.continue
+    } else {
+      hlcf.yield
+    }
+    co.suspend (%hdl) {
+      co.suspend.end
+    }
+    hlcf.continue
+  }
+  kgen.return %arg1 : index
+}
+
+kgen.func @foo(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.func @bar(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+}
+
