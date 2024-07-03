@@ -8,15 +8,22 @@ Defines the `Model` type that holds a model ready for execution.
 """
 
 from max._utils import call_dylib_func, exchange
+from max._driver import (
+    AnyTensor,
+    Device,
+    DeviceMemory,
+    DeviceTensor,
+    _steal_device_memory_impl_ptr,
+)
 from sys.ffi import DLHandle
 
 from ._model_impl import CModel
 from ._compilation import CompiledModel
 from ._context import CRuntimeContext
-from ._status import Status
+from ._status import Status, CStatus
 from .tensor_map import CTensorMap
 
-from max.tensor import Tensor
+from max.tensor import Tensor, TensorSpec
 
 
 @value
@@ -43,6 +50,7 @@ struct Model:
     var _lib: DLHandle
     var _session: InferenceSession
     var _compiled_model: CompiledModel
+    var _device: Device
 
     alias _InitModelFnName = "M_initModel"
     alias _ExecuteFnName = "M_executeModelSync"
@@ -60,6 +68,21 @@ struct Model:
         self._lib = existing._lib
         self._session = existing._session^
         self._compiled_model = existing._compiled_model^
+        self._device = existing._device^
+
+    fn _add_to_output_list(
+        self,
+        list: UnsafePointer[NoneType],
+        device_memory_ptr: UnsafePointer[NoneType],
+        spec_ptr: UnsafePointer[NoneType],
+    ) raises:
+        var spec = spec_ptr.bitcast[TensorSpec]()[]
+        var device_memory = DeviceTensor(
+            DeviceMemory(device_memory_ptr, spec.bytecount(), self._device),
+            spec,
+        )
+        var typed_list = list.bitcast[List[AnyTensor]]()
+        typed_list[].append(device_memory^)
 
     fn execute(self, inputs: TensorMap) raises -> TensorMap:
         """Execute model with given inputs.
@@ -284,6 +307,55 @@ struct Model:
         input_map.borrow(name2, EngineNumpyView(input2))
         input_map.borrow(name3, EngineNumpyView(input3))
         return self.execute(input_map)
+
+    fn _execute(self, owned *inputs: AnyTensor) raises -> List[AnyTensor]:
+        var inputs_impl = List[UnsafePointer[NoneType]]()
+        var inputs_spec = List[TensorSpec]()
+        for input in inputs:
+            inputs_spec.append(input[]._spec)
+            inputs_impl.append(_steal_device_memory_impl_ptr(input[]))
+
+        alias execute_func_name = "M_executeDeviceTensor"
+
+        var output_list = List[AnyTensor]()
+        var output_list_address = UnsafePointer.address_of(output_list)
+        var status = Status(self._lib)
+
+        var execute_func = self._lib.get_function[
+            fn (
+                CRuntimeContext,
+                CModel,
+                UnsafePointer[UnsafePointer[NoneType]],
+                UnsafePointer[TensorSpec],
+                Int,
+                __type_of(Self._add_to_output_list),
+                UnsafePointer[Self],
+                UnsafePointer[NoneType],
+                CStatus,
+            ) -> Int
+        ](execute_func_name)
+        var output_count = execute_func(
+            self._ctx,
+            self._ptr,
+            inputs_impl.unsafe_ptr(),
+            inputs_spec.unsafe_ptr(),
+            len(inputs_impl),
+            Self._add_to_output_list,
+            UnsafePointer.address_of(self),
+            output_list_address.bitcast[NoneType](),
+            status.borrow_ptr(),
+        )
+
+        if status:
+            raise str(status)
+
+        if len(output_list) != output_count:
+            raise "internal error: mismatch on output count during ffi"
+
+        # Make sure inputs are alive
+        _ = inputs_impl^
+        _ = inputs_spec^
+        return output_list
 
     fn num_model_inputs(self) raises -> Int:
         """Gets the number of inputs of the model.

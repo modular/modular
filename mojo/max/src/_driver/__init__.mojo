@@ -11,3 +11,4 @@ from .device_memory import DeviceMemory, DeviceTensor
 from .graph import ExecutableGraph
 from .tensor import Tensor, StaticTensorSpec
 from .tensor_slice import TensorSlice, UnsafeTensorSlice
+from .utils import _steal_device_memory_impl_ptr

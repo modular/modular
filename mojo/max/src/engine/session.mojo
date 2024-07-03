@@ -36,9 +36,11 @@ from max.tensor import Tensor, TensorSpec
 struct _InferenceSessionImpl(Movable):
     var engine: _EngineImpl
     var context: RuntimeContext
+    var device: Device
 
     fn __init__(inout self, lib_path: String, device: Device):
         self.engine = _EngineImpl(lib_path)
+        self.device = device
         var config = RuntimeConfig(
             self.engine.lib,
             device,
@@ -49,6 +51,7 @@ struct _InferenceSessionImpl(Movable):
     fn __moveinit__(inout self, owned existing: Self):
         self.engine = existing.engine^
         self.context = existing.context^
+        self.device = existing.device^
 
     fn _compile_model_from_config(
         self,
@@ -140,6 +143,7 @@ struct _InferenceSessionImpl(Movable):
             self.engine.lib,
             session^,
             compiled_model^,
+            self.device,
         )
         return model^
 

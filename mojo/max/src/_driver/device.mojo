@@ -15,6 +15,7 @@ from .device_memory import DeviceMemory, DeviceTensor
 from .graph import CompiledGraph, _CCompiledGraph, _CExecutableGraph
 from max.graph import Graph
 from ._status import Status, _CStatus
+from .utils import _steal_device_memory_impl_ptr
 
 
 struct CPUDescriptor:
@@ -198,9 +199,7 @@ struct Device(Stringable):
         var inputs_spec = List[TensorSpec]()
         for input in inputs:
             inputs_spec.append(input[]._spec)
-            inputs_impl.append(
-                executable_graph._steal_device_memory_impl_ptr(input[])
-            )
+            inputs_impl.append(_steal_device_memory_impl_ptr(input[]))
 
         alias execute_func_name = "M_executeGraph"
 
