@@ -1284,6 +1284,31 @@ VariantTakeOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// CustomOpImplsOp
+//===----------------------------------------------------------------------===//
+
+ExportKind CustomOpImplsOp::getExportKind() { return ExportKind::Exported; }
+
+void CustomOpImplsOp::setExportKind(ExportKind exportKind) {
+  if (exportKind != ExportKind::Exported)
+    assert(false && "cannot change export kind of kgen.custom.op_impl");
+}
+
+LogicalResult CustomOpImplsOp::verify() {
+  return success(getSymName() == kSymbolName);
+}
+
+CustomOpImplsOp CustomOpImplsOp::lookupOp(Operation *op) {
+  ModuleOp module = dyn_cast<ModuleOp>(op);
+  if (!module) {
+    module = op->getParentOfType<ModuleOp>();
+  }
+  assert(module && "expected toplevel module");
+
+  return module.lookupSymbol<CustomOpImplsOp>(CustomOpImplsOp::kSymbolName);
+}
+
 ///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
