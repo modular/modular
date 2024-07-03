@@ -85,10 +85,6 @@ struct _GraphLayerContext:
     fn __enter__(inout self):
         self.graph[].layers.append(self.name)
 
-    fn __exit__(inout self, _error: Error) -> Bool:
-        self.__exit__()
-        return False
-
     fn __exit__(inout self):
         var name = self.graph[].layers.pop()
         debug_assert(name == self.name, "non-hiercharchical graph layers")

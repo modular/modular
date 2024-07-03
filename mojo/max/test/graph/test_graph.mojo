@@ -96,6 +96,22 @@ def test_layer():
     print(g)
 
 
+def _layer_context_return(g: Graph) -> Symbol:
+    with g.layer("cheese"):
+        with g.layer("wheel"):
+            return g.constant[DType.int64](1)
+
+
+def test_layer_context_return():
+    g = Graph(List[Type]())
+    testing.assert_equal(g.current_layer(), "")
+    x = _layer_context_return(g)
+    g.output(x)
+    g.verify()
+    # CHECK: layer = "cheese.wheel"
+    print(g)
+
+
 def test_current_layer():
     g = Graph(List[Type]())
     testing.assert_equal(g.current_layer(), "")
@@ -115,3 +131,4 @@ fn main() raises:
     test_symbolic_dim()
     test_layer()
     test_current_layer()
+    test_layer_context_return()
