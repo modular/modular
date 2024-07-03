@@ -3,5 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-[pytest]
-addopts = -ra -q -svv
+
+import max.driver as md
+
+
+def test_cpu_device():
+    cpu = md.CPU()
+    assert "CPU" in str(cpu)
