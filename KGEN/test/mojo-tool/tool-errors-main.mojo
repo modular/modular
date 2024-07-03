@@ -7,7 +7,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-# CHECK: could not find a 'main' function to execute
+# CHECK: module does not define a `main` function
 @export
 fn foo() -> Float32:
     return 0.0

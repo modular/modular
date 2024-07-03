@@ -1921,20 +1921,44 @@ def KGEN_CaptureListExpandOp : KGENOp<"capture_list.expand"> {
 // CustomOpImplsOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CustomOpImplsOp : KGENOp<"custom.op_impls"> {
+def KGEN_CustomOpImplsOp : KGENOp<"custom.op_impls",
+    [Symbol, ExportInterface, DeclareOpInterfaceMethods<ExportInterface>]> {
   let summary = "Link `custom` ops names to their implementation";
   let description = [{
-    The `kgen.custom.op_impl` operation defines the implementation of a
-    `custom` op.
+    The `kgen.custom.op_impl` operation defines the implementation of
+    `custom` ops.
+
+    The operation always have the symbol name @CustomOpImplSymbol, and thus
+    this operation should only appear once in the IR.
 
     Example:
     ```mlir
-    kgen.custom.op_impls [<"custom.a", <@impl_a()">>]
+    kgen.custom.op_impls @CustomOpImplSymbol [<"custom.a", <@impl_a()">>]
     ```
   }];
 
-  let arguments = (ins KGEN_CustomOpImplArrayAttr:$impls);
-  let assemblyFormat = "$impls attr-dict";
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       KGEN_CustomOpImplArrayAttr:$impls);
+  let assemblyFormat = "$sym_name $impls attr-dict";
+  
+  let hasVerifier = 1;
+
+  let builders = [
+    OpBuilder<(ins "ArrayRef<CustomOpImplAttr>":$impls), [{
+      auto symbolAttr = StringAttr::get($_builder.getContext(), kSymbolName);
+      build($_builder, $_state, symbolAttr, impls);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// The expected operation symbol
+    static constexpr StringLiteral kSymbolName = "__CustomOpImplSymbol";
+
+    /// Lookup the unique CustomOpImplsOp from the given operation.
+    /// It will walk to the toplevel ModuleOp, and then use the operation
+    /// symbol to find the CustomOpImplsOp.
+    static CustomOpImplsOp lookupOp(Operation *op);
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

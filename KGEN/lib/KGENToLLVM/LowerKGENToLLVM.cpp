@@ -799,6 +799,21 @@ struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantTakeOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENCustomOpImplsOp
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENOpImpls : ConvertPOPToLLVMPattern<CustomOpImplsOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(CustomOpImplsOp op, CustomOpImplsOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
@@ -811,6 +826,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
+      ConvertKGENOpImpls,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,

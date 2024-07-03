@@ -34,7 +34,7 @@ fn main():
     print(res)
 
 # Check that the custom ops are registered with `custom.op_impls`
-# CHECK: kgen.custom.op_impls [<"custom.a",
+# CHECK: kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.a",
 # CHECK-SAME:                    @"custom-ops"::@CustomOpA::@"impl(stdlib::builtin::simd::SIMD[{int32}, {1}],stdlib::builtin::simd::SIMD[{int32}, {1}])">,
 # CHECK-SAME:                  <"custom.b",
 # CHECK-SAME:                    @"custom-ops"::@CustomOpB::@"impl(stdlib::builtin::simd::SIMD[{int32}, {1}],stdlib::builtin::simd::SIMD[{int32}, {1}])">,

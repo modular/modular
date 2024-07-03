@@ -312,7 +312,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   // sets up ORC JIT first query to be pending on the root of the function call
   // stack so that materialization ordering is correct.
   if (exports.find(StringAttr::get(&context, Twine("main"))) == exports.end())
-    return state.reportError("could not find a 'main' function to execute");
+    return state.reportError("module does not define a `main` function");
   ErrorOr<CompiledFunc> funcOr = engine->lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());

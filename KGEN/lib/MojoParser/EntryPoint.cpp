@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -201,6 +202,11 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     // Don't purge anything from the main package if we are parsing one.
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
+
+    // Don't erase custom op implementations. The operation has a symbol for
+    // fast access that is not referenced in the IR.
+    if (isa<KGEN::CustomOpImplsOp>(op))
+      return WalkResult::advance();
 
     if (isa<mlir::SymbolOpInterface, LIT::FuncOp>(op) &&
         !liveSymbols.contains(op)) {
