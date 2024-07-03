@@ -18,11 +18,11 @@ kgen.generator @param_prop<p0, p1>() {
   kgen.param.declare a0 = <p0>
   // CHECK-NOT: declare a2 = <2>
   kgen.param.declare a2 = <2>
-  // CHECK-NEXT: declare a1 = <add(p0, 1)>
+  // CHECK-not: declare a1 = <add(p0, 1)>
   kgen.param.declare a1 = <add(p0, 1)>
   // CHECK-NEXT: simd<p0, si8>
   "user"() : () -> !pop.simd<a0, si8>
-  // CHECK-NEXT: simd<a1, si8>
+  // CHECK-NEXT: simd<add(p0, 1), si8>
   "user"() : () -> !pop.simd<a1, si8>
   // CHECK-NEXT: simd<2, si8>
   "user"() : () -> !pop.simd<a2, si8>
@@ -35,17 +35,17 @@ kgen.generator @param_prop<p0, p1>() {
     kgen.param.declare b1 = <add(2, a2)>
     // CHECK-NEXT: simd<2, si8>
     "user"() : () -> !pop.simd<a2, si8>
-    // CHECK-NEXT: simd<a1, si8>
+    // CHECK-NEXT: simd<add(p0, 1), si8>
     "user"() : () -> !pop.simd<b0, si8>
     // CHECK-NEXT: simd<4, si8>
     "user"() : () -> !pop.simd<b1, si8>
     // CHECK-NOT: declare type_change0: simd<2, si8> = <value>
     kgen.param.declare type_change0: simd<a2, si8> = <value>
-    // CHECK-NEXT: declare type_change1: simd<a1, si8> = <rebind(:simd<2, si8> value)>
+    // CHECK-NOT: declare type_change1
     kgen.param.declare type_change1: simd<b0, si8> = <rebind(:simd<a2, si8> value)>
-    // CHECK-MEXT: simd<2, si8> = <type_change0>
+    // CHECK-NEXT: simd<2, si8> = <value>
     %0 = kgen.param.constant: simd<a2, si8> = <type_change0>
-    // CHECK-MEXT: simd<a1, si8> = <type_change1>
+    // CHECK-NEXT: simd<add(p0, 1), si8> = <rebind(:simd<2, si8> value)>
     %1 = kgen.param.constant: simd<b0, si8> = <type_change1>
     "user"(%1) : (!pop.simd<b0, si8>) -> ()
     kgen.return %0 : !pop.simd<a2, si8>

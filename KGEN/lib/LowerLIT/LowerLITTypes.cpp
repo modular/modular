@@ -513,8 +513,13 @@ static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
 // lit.ref.pack.extract => kgen.pack.extract
 static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  return b.create<PackExtractOp>(op.getLoc(), adaptor.getOperands()[0],
-                                 op.getIndex());
+  Value value = b.create<PackExtractOp>(op.getLoc(), adaptor.getOperands()[0],
+                                        op.getIndex());
+  // If the result didn't fold to a pointer type, we need to emit a rebind.
+  Type expected = b.replace(op.getType());
+  if (value.getType() != expected)
+    value = b.create<RebindOp>(op.getLoc(), expected, value);
+  return value;
 }
 
 Value LITTypeLowerer::getCastedToType(Location loc, Value value, Type type) {

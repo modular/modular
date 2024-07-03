@@ -243,10 +243,12 @@ kgen.generator @takes_pack
 // CHECK-SAME: (%arg0: !kgen.pack<variadic_ptr_map(:variadic<type> types, 42)>) {
 (%args: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>) {
 
-  // CHECK-NEXT: = kgen.pack.extract %arg0[0] : <variadic_ptr_map(:variadic<type> types, 42)>
+  // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[0] : <variadic_ptr_map(:variadic<type> types, 42)>
+  // CHECK-NEXT: kgen.rebind [[E]] : !kgen.paramref<{{.*}}> to !kgen.pointer
   %v1 = lit.ref.pack.extract %args[0]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
 
-  // CHECK-NEXT: = kgen.pack.extract %arg0[1] : <variadic_ptr_map(:variadic<type> types, 42)>
+  // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[1] : <variadic_ptr_map(:variadic<type> types, 42)>
+  // CHECK-NEXT: kgen.rebind [[E]] : !kgen.paramref<{{.*}}> to !kgen.pointer
   %v2 = lit.ref.pack.extract %args[1]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
 
   kgen.return
