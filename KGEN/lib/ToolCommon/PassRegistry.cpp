@@ -21,6 +21,7 @@ void KGEN::registerDefaultKGENPasses() {
   mlir::registerCanonicalizerPass();
   mlir::registerConvertIndexToLLVMPass();
   mlir::registerReconcileUnrealizedCasts();
+  mlir::registerPrintOpStats();
 
   // Register opt passes.
   KGEN::registerApplyInliner();
@@ -28,6 +29,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerFoldGlobalConstLoads();
+  KGEN::registerFunctionStats();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
   KGEN::registerLoopUnrolling();
