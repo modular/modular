@@ -78,8 +78,8 @@ def test_mnist():
     # copy host to device
     input_device_dt = input_host.to_device_tensor().copy_to(cuda)
     # execute
-    outputs_device = cuda.execute(
-        executable_graph, input_device_dt.to_tensor[DType.float32, 4]()
+    outputs_device = executable_graph(
+        input_device_dt.to_tensor[DType.float32, 4]()
     )
     assert_equal(len(outputs_device), 1)
 

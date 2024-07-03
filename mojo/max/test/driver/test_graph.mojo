@@ -29,7 +29,7 @@ def test_graph_execution():
 
     input = Tensor[DType.float32, 1]((1,))
     input[0] = 1.0
-    outputs = cpu.execute(executable_graph, input^)
+    outputs = executable_graph(input^)
     assert_equal(len(outputs), 1)
 
     for output in outputs:
@@ -98,7 +98,7 @@ def test_mnist():
             for k in range(28):
                 for l in range(1):
                     input[i, j, k, l] = 1.0
-    outputs = cpu.execute(executable_graph, input^)
+    outputs = executable_graph(input^)
     assert_equal(len(outputs), 1)
 
     for output in outputs:
