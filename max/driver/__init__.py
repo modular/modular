@@ -5,5 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .driver import __version__
+from .driver import CPU
 
 del driver
