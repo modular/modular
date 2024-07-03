@@ -93,6 +93,46 @@ kgen.generator @load_uninitialized_struct() {
   kgen.return
 }
 
+// CHECK-LABEL: @duplicate_constraints
+kgen.generator @duplicate_constraints<a: i1, b: i1, c: i1, d: i1>() {
+  // CHECK-NEXT: assert <a>
+  kgen.param.assert <a>, ""
+  kgen.param.assert <a>, ""
+  // CHECK-NEXT: assert <b>
+  kgen.param.assert <b>, ""
+  // CHECK-NEXT: param.if
+  kgen.param.if <d> {
+    kgen.param.assert <a>, ""
+    // CHECK-NEXT: assert <c>
+    kgen.param.assert <c>, ""
+    // CHECK-NEXT: yield
+    kgen.param.yield
+  // CHECK-NEXT: else
+  } else {
+    // CHECK-NEXT: assert <c>
+    kgen.param.assert <b>, ""
+    kgen.param.assert <c>, ""
+    // CHECK-NEXT: yield
+    kgen.param.yield
+  // CHECK-NEXT: }
+  }
+  // CHECK-NEXT: param.if
+  kgen.param.if <d> {
+    kgen.param.assert <a>, ""
+    kgen.param.assert <c>, ""
+    // CHECK-NEXT: assert <c>
+    kgen.param.assert <c>, ""
+    // CHECK-NEXT: yield
+    kgen.param.yield
+  // CHECK-NEXT: else
+  } else {
+    kgen.param.assert <b>, ""
+    // CHECK-NEXT: yield
+    kgen.param.yield
+  }
+  kgen.return
+}
+
 // -----
 
 kgen.generator @interpret_me(%arg0: index) -> index {

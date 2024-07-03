@@ -147,7 +147,8 @@ static void processOp(Operation *op, ParameterSimplifier &evaluator) {
 static void propagateTrivialParameters(Region *region,
                                        const ParameterUseDefGraph &graph,
                                        const ParameterUseDefGraph &topLevel,
-                                       ParameterSimplifier evaluator) {
+                                       ParameterSimplifier evaluator,
+                                       DenseSet<TypedAttr> seenAsserts) {
   // Collect the defining operations in topological order. The same operation
   // can define multiple parameters, so punt them according to their most
   // dominated definition. Do this by collecting them in reverse.
@@ -204,7 +205,14 @@ static void propagateTrivialParameters(Region *region,
         rebind && rebind.getInput().getType() == rebind.getType()) {
       rebind.replaceAllUsesWith(rebind.getInput());
       rebind.erase();
+      continue;
     }
+    // Deduplicate constraints seen along the same branch of the parameter scope
+    // tree. We can discard the message since we know the elaborator will hit
+    // the sooner assert first and only emit its error message.
+    if (auto constraint = dyn_cast<ParamAssertOp>(op))
+      if (!seenAsserts.insert(constraint.getCond()).second)
+        constraint.erase();
   }
 
   // Any op might contain a parametric location, so we go through all of them.
@@ -230,9 +238,10 @@ static void propagateTrivialParameters(Region *region,
       declScope->setLoc(rebindLoc(declScope->getLoc()));
 
   // Recurse into nested parameter scopes.
-  for (Region *region : graph.nestedDecls)
+  for (Region *region : graph.nestedDecls) {
     propagateTrivialParameters(region, topLevel.nestedScopes.at(region),
-                               topLevel, evaluator);
+                               topLevel, evaluator, seenAsserts);
+  }
 }
 
 namespace {
@@ -307,8 +316,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       ParameterUseDefGraph &graph = graphs[i];
       propagateTrivialParameters(
           declRegion, graph, graph,
-          ParameterSimplifier(enableInterp, module,
-                              analysis.getSymbolTables()));
+          ParameterSimplifier(enableInterp, module, analysis.getSymbolTables()),
+          DenseSet<TypedAttr>());
     }
   }
 };
