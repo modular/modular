@@ -12,27 +12,17 @@ from gpu.host.device import Device
 from gpu.host.event import Event
 from gpu.host.function import Function
 from gpu.host.stream import Stream
+from sys.param_env import is_defined, env_get_int
 from ._utils import _check_error, _StreamHandle
 
 
-@value
-struct KernelProfilingInfo:
-    """Struct that incorporates a list of KernelProfilingInfoElement's and a
-    pointer to it.
-
-    This is passed to DeviceContext and through the pointer and list append
-    operation the list of KernelProfilingInfoElements is constructed and
-    operated upon.
-    """
-
-    var kernelProfilingList: List[KernelProfilingInfoElement]
-    var KernelProfilingListPtr: UnsafePointer[List[KernelProfilingInfoElement]]
-
-    fn __init__(inout self):
-        self.kernelProfilingList = List[KernelProfilingInfoElement]()
-        self.KernelProfilingListPtr = UnsafePointer[
-            List[KernelProfilingInfoElement]
-        ].address_of(self.kernelProfilingList)
+# TODO: Figure a way to resolve circular dependency between the gpu and runtime
+# packages in the corresponding CMakes and sub below from runtime.tracing
+fn build_info_llcl_max_profiling_level() -> Optional[Int]:
+    @parameter
+    if not is_defined["MODULAR_LLCL_MAX_PROFILING_LEVEL"]():
+        return None
+    return env_get_int["MODULAR_LLCL_MAX_PROFILING_LEVEL"]()
 
 
 @value
@@ -55,9 +45,30 @@ struct KernelProfilingInfoElement(CollectionElement):
         self.name = name
         self.time = time
 
-    @staticmethod
-    fn print(kernelInfoList: List[KernelProfilingInfoElement]):
-        for m in kernelInfoList:
+
+@value
+struct KernelProfilingInfo:
+    """Struct that incorporates a list of KernelProfilingInfoElement's and a
+    pointer to it.
+
+    This is passed to DeviceContext and through the pointer and list append
+    operation the list of KernelProfilingInfoElements is constructed and
+    operated upon.
+    """
+
+    # TODO: Make this parameterizable. KERN-636.
+    alias out_file = "kernel_profile_info.log"
+
+    var kernelProfilingList: List[KernelProfilingInfoElement]
+
+    fn __init__(inout self):
+        self.kernelProfilingList = List[KernelProfilingInfoElement]()
+
+    fn append(inout self, element: KernelProfilingInfoElement):
+        self.kernelProfilingList.append(element)
+
+    fn print(self):
+        for m in self.kernelProfilingList:
             print(
                 "Function: ",
                 m[].name,
@@ -65,19 +76,23 @@ struct KernelProfilingInfoElement(CollectionElement):
                 m[].time,
             )
 
-    @staticmethod
-    fn get_kernel_from_list(
-        name: String,
-        kernelInfoList: UnsafePointer[List[KernelProfilingInfoElement]],
-    ) -> Optional[UnsafePointer[KernelProfilingInfoElement]]:
-        for i in range(len(kernelInfoList[])):
-            if (kernelInfoList[])[i].name == name:
-                return UnsafePointer.address_of((kernelInfoList[])[i])
-        return None
+    fn write(self, path: Path = Self.out_file) raises:
+        var report = String("Function name, Time (nsec)\n")
+        for m in self.kernelProfilingList:
+            report += m[].name + ", " + String(m[].time) + "\n"
 
-    @staticmethod
-    fn clear(kernelInfoList: UnsafePointer[List[KernelProfilingInfoElement]]):
-        kernelInfoList[].clear()
+        path.write_text(report)
+
+    fn clear(inout self):
+        self.kernelProfilingList.clear()
+
+    fn get_kernel_from_list(
+        self, name: String
+    ) -> Optional[UnsafePointer[KernelProfilingInfoElement]]:
+        for i in reversed(range(len(self.kernelProfilingList))):
+            if self.kernelProfilingList[i].name == name:
+                return UnsafePointer.address_of(self.kernelProfilingList[i])
+        return None
 
 
 @value
@@ -203,48 +218,51 @@ struct DeviceContext:
     var cuda_stream: Stream
     var cuda_context: Context
     var cuda_instance: CudaInstance
-    var profiling_enabled: Bool
-    var profiling_info: KernelProfilingInfo
+    var profiling_info_ptr: UnsafePointer[KernelProfilingInfo]
+    # Profiling is enabled only when the optional returned by the below call is
+    # not None and has a non-zero value (this will be True for a
+    # cmake-modular-profiling build).
+    alias profiling_enabled = True if build_info_llcl_max_profiling_level() and build_info_llcl_max_profiling_level().value() else False
 
+    # Default initializer for all existing cases outside MGP; this currently
+    # includes tests, benchmarks, Driver API. The tests and benchmarks (all of
+    # which, except the test_deviceContext_profiling.mojo) would have the
+    # profiling_enabled = False, which is OK. But for the Driver API, we would
+    # want profiling to occur for appropriate builds when it substitutes the
+    # current MGP implementation.
     fn __init__(
         inout self,
-        *,
-        profiling_enabled: Bool = False,
-        profiling_info: KernelProfilingInfo = KernelProfilingInfo(),
     ) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance))
         self.cuda_stream = Stream(self.cuda_context)
-        self.profiling_enabled = profiling_enabled
-        self.profiling_info = profiling_info
 
+        @parameter
+        if self.profiling_enabled:
+            self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo].alloc(
+                1
+            )
+            self.profiling_info_ptr.init_pointee_move(KernelProfilingInfo())
+        else:
+            self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo]()
+
+    # This initializer is only called from MGP.
     fn __init__(
         inout self,
         cuda_instance: CudaInstance,
         cuda_context: Context,
         cuda_stream: Stream,
-        *,
-        profiling_enabled: Bool = False,
-        profiling_info: KernelProfilingInfo = KernelProfilingInfo(),
+        profiling_info: UnsafePointer[KernelProfilingInfo],
     ):
         self.cuda_instance = cuda_instance
         self.cuda_context = cuda_context
         self.cuda_stream = cuda_stream
-        self.profiling_enabled = profiling_enabled
-        self.profiling_info = profiling_info
 
-    fn __init__(
-        inout self,
-        cuda_stream: Stream,
-        *,
-        profiling_enabled: Bool = False,
-        profiling_info: KernelProfilingInfo = KernelProfilingInfo(),
-    ) raises:
-        self.cuda_instance = CudaInstance()
-        self.cuda_context = Context(Device(self.cuda_instance))
-        self.cuda_stream = cuda_stream
-        self.profiling_enabled = profiling_enabled
-        self.profiling_info = profiling_info
+        @parameter
+        if self.profiling_enabled:
+            self.profiling_info_ptr = profiling_info
+        else:
+            self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo]()
 
     fn __enter__(owned self) -> Self:
         return self^
@@ -293,33 +311,42 @@ struct DeviceContext:
     ) raises:
         var kernel_time: Int
         var stream = self.cuda_stream
-        var start = Event(self.cuda_context)
-        var end = Event(self.cuda_context)
+
+        @parameter
         if self.profiling_enabled:
+            var start = Event(self.cuda_context)
+            var end = Event(self.cuda_context)
             kernel_time = 0
             start.record(stream)
-        f.cuda_function._call_pack(
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            stream=self.cuda_stream,
-        )
-        if self.profiling_enabled:
+            f.cuda_function._call_pack(
+                args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                stream=stream,
+            )
             end.record(stream)
             end.sync()
             kernel_time = int(start.elapsed(end) * 1e6)
-            var listItem = KernelProfilingInfoElement.get_kernel_from_list(
-                f.fn_name, self.profiling_info.KernelProfilingListPtr
+            var list_item = self.profiling_info_ptr[].get_kernel_from_list(
+                f.fn_name
             )
             # If kernel (as found by name) exists in the list, add the timing
             # info in the existing entry. Otherwise, create a new entry.
-            if listItem:
-                (listItem.value())[].time += kernel_time
+            if list_item:
+                (list_item.value())[].time += kernel_time
             else:
-                self.profiling_info.KernelProfilingListPtr[].append(
+                self.profiling_info_ptr[].append(
                     KernelProfilingInfoElement(f.fn_name, kernel_time)
                 )
+        else:
+            f.cuda_function._call_pack(
+                args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                stream=stream,
+            )
 
     fn execution_time[
         func: fn (DeviceContext) raises capturing -> None
@@ -384,13 +411,35 @@ struct DeviceContext:
     fn print_kernel_timing_info(self):
         """Print profiling info associated with this DeviceContext."""
 
-        KernelProfilingInfoElement.print(
-            self.profiling_info.KernelProfilingListPtr[]
-        )
+        @parameter
+        if self.profiling_enabled:
+            self.profiling_info_ptr[].print()
+        else:
+            print(
+                "<print_kernel_timing_info>: Kernel profiling has not been"
+                " enabled."
+            )
+
+    fn dump_kernel_timing_info(self) raises:
+        """Prints out profiling info associated with this DeviceContext."""
+
+        @parameter
+        if self.profiling_enabled:
+            self.profiling_info_ptr[].write()
+        else:
+            print(
+                "<dump_kernel_timing_info>: Kernel profiling has not been"
+                " enabled."
+            )
 
     fn clear_kernel_timing_info(self):
         """Clear profiling info associated with this DeviceContext."""
 
-        KernelProfilingInfoElement.clear(
-            self.profiling_info.KernelProfilingListPtr
-        )
+        @parameter
+        if self.profiling_enabled:
+            self.profiling_info_ptr[].clear()
+        else:
+            print(
+                "<clear_kernel_timing_info>: Kernel profiling has not been"
+                " enabled."
+            )
