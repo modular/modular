@@ -1,4 +1,4 @@
-// RUN: kgen-opt --hoist-trivial-invariants -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(hoist-trivial-invariants))' -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @basic
 kgen.func @basic(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>) {

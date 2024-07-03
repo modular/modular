@@ -133,7 +133,13 @@ static void moveInvariantsIn(FunctionLike func, mlir::DominanceInfo &domInfo,
 
 void HoistTrivialInvariants::runOnOperation() {
   unsigned numHoisted = 0;
-  moveInvariantsIn(getOperation(), getAnalysis<mlir::DominanceInfo>(),
-                   numHoisted);
+  auto func = dyn_cast<FunctionLike>(getOperation());
+  if (!func) {
+    mlir::emitError(getOperation()->getLoc(),
+                    "'hoist-trivial-invariants' must be nested on a "
+                    "function-like operation");
+    return signalPassFailure();
+  }
+  moveInvariantsIn(func, getAnalysis<mlir::DominanceInfo>(), numHoisted);
   this->numHoisted = numHoisted;
 }

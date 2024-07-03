@@ -648,7 +648,7 @@ def Mem2Reg : Pass<"mem-2-reg"> {
 // Basic Invariant code motion
 //===----------------------------------------------------------------------===//
 
-def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
+def HoistTrivialInvariants : Pass<"hoist-trivial-invariants"> {
   let summary = "Hoist trivial invariant operations out of regions";
   let description = [{
     Hoists operations which are trivially invariant within if and for blocks
