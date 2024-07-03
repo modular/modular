@@ -24,7 +24,9 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   // Lower semantic control flow operations like lit.return to terminators and
   // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
+#ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
+#endif
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
   // Insert calls to destructors, reject use before free, and borrow check.
@@ -46,10 +48,14 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
+#ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
+#endif
 
   pm.addPass(createLowerLITTypes());
+#ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
+#endif
 
   // Slice MOGG compute & shape functions out of base kernels.
   MOGGPreElab::MOGGPreElabPipelineOptions moggOpts;
@@ -128,7 +134,9 @@ void KGEN::buildElaborateModulePipeline(
     // TODO(#20717): CSE cannot run before `OutlineClosures`.
     pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
   }
+#ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
+#endif
   pm.addPass(createLiftAndFoldApply());
 
   // After elaboration, we have no use for the parameter verifier anymore.
