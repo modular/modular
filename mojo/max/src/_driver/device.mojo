@@ -6,12 +6,15 @@
 
 
 from collections import Optional
-from sys.ffi import DLHandle
+from sys.ffi import DLHandle, _get_global_or_null
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from pathlib import Path
 from max.tensor import TensorSpec
 from ._driver_library import DriverLibrary, ManagedDLHandle
 from .device_memory import DeviceMemory, DeviceTensor
+from .graph import CompiledGraph, _CCompiledGraph, _CExecutableGraph
+from max.graph import Graph
+from ._status import Status, _CStatus
 
 
 struct CPUDescriptor:
@@ -127,6 +130,121 @@ struct Device(Stringable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._cdev == other._cdev
+
+    fn compile(self, graph: Graph) raises -> CompiledGraph:
+        """Compiles graph to the given device.
+
+        Args:
+            graph: Graph to be compiled.
+
+        Returns:
+            Compiled graph ready to be loaded and executed.
+        """
+        # Graph compiler shares the context with Mojo. This context
+        # contains LLCL Runtime, Telemetery etc.
+        var max_context = _get_global_or_null["MaxContext"]().address
+        var status = Status(self.lib)
+        var compiled_ptr = call_dylib_func[_CCompiledGraph](
+            self.lib.get_handle(),
+            "M_compileGraph",
+            graph._module().c.ptr,
+            self._cdev,
+            max_context,
+            status.impl,
+        )
+        if status:
+            raise str(status)
+        return CompiledGraph(compiled_ptr, self)
+
+    fn load(self, compiled_graph: CompiledGraph) raises -> ExecutableGraph:
+        """Load and initialize compiled graph. This will run the setup function
+        of graph which includes initializing constants, loading constants into
+        device of choice etc.
+
+        Arguments:
+            compiled_graph: Compiled graph returned by Device.compile()
+
+        Returns:
+            Model ready for execution.
+        """
+        var status = Status(self.lib)
+        var executable_ptr = call_dylib_func[_CExecutableGraph](
+            self.lib.get_handle(),
+            "M_loadGraph",
+            compiled_graph._impl,
+            self._cdev,
+            status.impl,
+        )
+        if status:
+            raise str(status)
+        return ExecutableGraph(executable_ptr, self)
+
+    fn execute(
+        self, executable_graph: ExecutableGraph, owned *inputs: AnyTensor
+    ) raises -> List[AnyTensor]:
+        """Execute the graph with given inputs.
+
+        Args:
+            executable_graph: Executable graph returned by Device.load().
+            inputs: Inputs to the graph. Inputs to the graph. Inputs' memory is
+                    expected to be on the device for which the graph was
+                    compiled.
+        Returns:
+            Execution output. This will be in the device annotated in graph
+            output. If there is no annotation it's considered to be in CPU.
+        """
+        # Collect the C pointers of inputs to pass to C API.
+        var inputs_impl = List[UnsafePointer[NoneType]]()
+        var inputs_spec = List[TensorSpec]()
+        for input in inputs:
+            inputs_spec.append(input[]._spec)
+            inputs_impl.append(
+                executable_graph._steal_device_memory_impl_ptr(input[])
+            )
+
+        alias execute_func_name = "M_executeGraph"
+
+        # We pass a callback function to C API with address to output list
+        # The C API will call the callback to fill the list.
+        # TODO: We can reserve this in advance after adding inspection APIs
+        # to compiled graph.
+        var output_list = List[AnyTensor]()
+        var output_list_address = UnsafePointer.address_of(output_list)
+        var status = Status(self.lib)
+
+        var execute_func = self.lib.get_handle().get_function[
+            fn (
+                _CExecutableGraph,
+                UnsafePointer[UnsafePointer[NoneType]],
+                UnsafePointer[TensorSpec],
+                Int,
+                __type_of(__type_of(executable_graph)._add_to_output_list),
+                UnsafePointer[ExecutableGraph],
+                UnsafePointer[NoneType],
+                _CStatus,
+            ) -> Int
+        ](execute_func_name)
+        var output_count = execute_func(
+            executable_graph._impl,
+            inputs_impl.unsafe_ptr(),
+            inputs_spec.unsafe_ptr(),
+            len(inputs_impl),
+            __type_of(executable_graph)._add_to_output_list,
+            UnsafePointer.address_of(executable_graph),
+            output_list_address.bitcast[NoneType](),
+            status.impl,
+        )
+
+        if status:
+            raise str(status)
+
+        if len(output_list) != output_count:
+            raise "internal error: mismatch on output count during ffi"
+
+        # Make sure inputs are alive
+        _ = inputs_impl^
+        _ = inputs_spec^
+        return output_list
 
 
 fn cpu_device(descriptor: CPUDescriptor = CPUDescriptor()) raises -> Device:

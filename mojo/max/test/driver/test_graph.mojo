@@ -14,7 +14,7 @@
 
 from max import tensor
 from max.graph import Graph, TensorType, Type, ops
-from max._driver import compile_graph, cpu_device
+from max._driver import cpu_device
 
 from testing import assert_equal, assert_almost_equal
 
@@ -24,13 +24,13 @@ def test_graph_execution():
     graph.output(graph[0])
 
     cpu = cpu_device()
-    compiled_graph = compile_graph(graph, cpu)
-    executable_graph = compiled_graph.load()
+    compiled_graph = cpu.compile(graph)
+    executable_graph = cpu.load(compiled_graph)
 
     input_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1))
     input = input_dt^.to_tensor[DType.float32, 1]()
     input[0] = 1.0
-    outputs = executable_graph.execute(input^)
+    outputs = cpu.execute(executable_graph, input^)
     assert_equal(len(outputs), 1)
 
     for output in outputs:
@@ -90,8 +90,8 @@ def build_graph() -> Graph:
 def test_mnist():
     g = build_graph()
     cpu = cpu_device()
-    compiled_graph = compile_graph(g, cpu)
-    executable_graph = compiled_graph.load()
+    compiled_graph = cpu.compile(g)
+    executable_graph = cpu.load(compiled_graph)
 
     input_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1, 28, 28, 1))
     input = input_dt^.to_tensor[DType.float32, 4]()
@@ -100,7 +100,7 @@ def test_mnist():
             for k in range(28):
                 for l in range(1):
                     input[i, j, k, l] = 1.0
-    outputs = executable_graph.execute(input^)
+    outputs = cpu.execute(executable_graph, input^)
     assert_equal(len(outputs), 1)
 
     for output in outputs:

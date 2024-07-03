@@ -10,7 +10,7 @@
 
 from max import tensor
 from max.graph import Graph, TensorType, Type, ops
-from max._driver import compile_graph, cpu_device, cuda_device
+from max._driver import cpu_device, cuda_device
 
 from testing import assert_equal, assert_almost_equal
 
@@ -64,8 +64,8 @@ def test_mnist():
     cpu = cpu_device()
     cuda = cuda_device()
     # compile graph for cuda => mo inputs should be on device
-    compiled_graph = compile_graph(g, cuda)
-    executable_graph = compiled_graph.load()
+    compiled_graph = cuda.compile(g)
+    executable_graph = cuda.load(compiled_graph)
 
     # fill host tensor
     input_host_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1, 28, 28, 1))
@@ -79,8 +79,8 @@ def test_mnist():
     # copy host to device
     input_device_dt = input_host.to_device_tensor().copy_to(cuda)
     # execute
-    outputs_device = executable_graph.execute(
-        input_device_dt.to_tensor[DType.float32, 4]()
+    outputs_device = cuda.execute(
+        executable_graph, input_device_dt.to_tensor[DType.float32, 4]()
     )
     assert_equal(len(outputs_device), 1)
 
