@@ -12,7 +12,13 @@ from buffer.list import Dim, DimList
 from builtin.dtype import _get_runtime_dtype_size
 from extensibility import Tensor as ExtensibilityTensor
 from gpu.host import Context as CudaContext
-from gpu.host import CudaInstance, Device, DeviceBuffer, DeviceContext
+from gpu.host import (
+    CudaInstance,
+    Device,
+    DeviceBuffer,
+    DeviceContext,
+    KernelProfilingInfo,
+)
 from gpu.host.memory import _free, _malloc
 from memory import UnsafePointer
 from memory.memory import _malloc as _malloc_cpu
@@ -655,14 +661,17 @@ fn mgp_device_context_create[
 ](dummy_chain: Int, ctx: StateContext):
     @parameter
     if bDevice == "cuda":
-        alias dev_ty = Tuple[CudaContext, CudaInstance]
+        alias dev_ty = Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
         var dev_ctx = external_call[
             "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[dev_ty]
         ](sizeof[dev_ty](), alignof[dev_ty]())
         try:
             var instance = CudaInstance()
             var context = CudaContext(Device(instance))
-            dev_ctx.init_pointee_move((context, instance))
+            var kernel_profiling_info = KernelProfilingInfo()
+            dev_ctx.init_pointee_move(
+                (context, instance, kernel_profiling_info)
+            )
         except e:
             abort(e)
         return external_call["KGEN_CompilerRT_CudaContextSetDevice", NoneType,](
@@ -679,9 +688,14 @@ fn mgp_device_context_create[
 
 @export
 fn mgp_device_context_destroy(
-    dev_ctx: UnsafePointer[Tuple[StateContext, CudaInstance]]
+    dev_ctx: UnsafePointer[
+        Tuple[StateContext, CudaInstance, KernelProfilingInfo]
+    ]
 ):
-    dev_ctx.destroy_pointee()
+    _ = UnsafePointer.address_of(dev_ctx[][0]).destroy_pointee()
+    _ = UnsafePointer.address_of(dev_ctx[][1]).destroy_pointee()
+    # TODO: The below fails because dev_ctx[][2] is already freed.
+    # dev_ctx.destroy_pointee()
 
 
 @mogg_register("mgp.device.context.profile.start")
@@ -693,8 +707,8 @@ fn mgp_device_context_profile_start[
     cTag: StringLiteral,
     dFilePath: StringLiteral,
 ](ctx: StateContext, callCtx: MojoCallContextPtr):
-    # Call into device_context here....
-    print("mgp_device_context_profile_start", cTag)
+    # Call into device_context here.
+    pass
 
 
 @mogg_register("mgp.device.context.profile.end")
@@ -707,4 +721,7 @@ fn mgp_device_context_profile_end[
     dFilePath: StringLiteral,
 ](ctx: StateContext, callCtx: MojoCallContextPtr):
     # Call into device_context here....
-    print("mgp_device_context_profile_end", cTag)
+    try:
+        callCtx.get_cuda_device().dump_kernel_timing_info()
+    except e:
+        abort(e)
