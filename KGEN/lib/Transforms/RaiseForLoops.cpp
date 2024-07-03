@@ -12,8 +12,8 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
-#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
 #define DEBUG_TYPE "raise-for-loops"
@@ -59,7 +59,8 @@ private:
 
   /// Transform a simple loop that has no early exits and known iterations into
   /// a for-loop.
-  LogicalResult raiseForLoops(LoopOp loop, InFlightDiagnostic &diag);
+  LogicalResult raiseForLoops(LoopOp loop, InFlightDiagnostic &diag,
+                              mlir::DominanceInfo &domInfo);
 };
 
 struct ForLoopBoundsAndSteps {
@@ -117,55 +118,56 @@ SmallVector<OpT> getOps(ArrayRef<ET> vec) {
   return result;
 }
 
-/// Return whether `v` is a const value.
-static bool isConstValue(Value v) {
-  return mlir::matchPattern(v, mlir::m_Constant());
+/// A value is loop-invariant if it dominates the loop. This is an O(1) check
+/// and doesn't check if the value is transitively loop-invariant.
+static bool isLoopInvariant(Value v, LoopOp loop,
+                            mlir::DominanceInfo &domInfo) {
+  Operation *parent = v.getDefiningOp();
+  if (!parent)
+    parent = cast<BlockArgument>(v).getParentBlock()->getParentOp();
+  return domInfo.properlyDominates(parent, loop);
 }
 
 /// If `v` is a constant at the start of the loop, return that const value.
 /// If `v` is passed in as the initial operand of the loop, argNumber is filled
 /// with that operand number.
-static Value getValueIfConstAtLoopStart(Value v,
-                                        std::optional<int64_t> &argNumber,
-                                        LoopOp currLoop) {
-  Value result;
-  if (auto arg = dyn_cast<BlockArgument>(v)) {
-    // Return the initial value of a block argument if it is constant.
+static Value getValueAtLoopEntry(Value v, std::optional<int64_t> &argNumber,
+                                 LoopOp currLoop,
+                                 mlir::DominanceInfo &domInfo) {
+  // Check if the value is loop-invariant, and if so, return it.
+  if (isLoopInvariant(v, currLoop, domInfo))
+    return v;
+
+  // Otherwise, check if this is an argument to the loop. If so, return its
+  // value on entry.
+  auto arg = dyn_cast<BlockArgument>(v);
+  if (arg && arg.getParentBlock()->getParentOp() == currLoop) {
+    // Save the argument number. This might be the loop induction variable.
     argNumber = arg.getArgNumber();
-    if (arg.getParentBlock()->getParentOp() == currLoop) {
-      Value input = currLoop->getOperand(arg.getArgNumber());
-      if (isConstValue(input))
-        result = input;
-    }
-  } else if (isConstValue(v)) {
-    // If the value v is a constant get the value.
-    result = v;
+    return currLoop->getOperand(arg.getArgNumber());
   }
-  // Otherwise return a null Value.
-  return result;
+
+  // Otherwise, we don't know what this is.
+  return {};
 }
 
 /// If `v` is a constant in every iteration of the loop, return that const
 /// value. Requires `continueOp` to be the only continue in the loop.
-static Value getValueIfConstEveryIteration(Value v, LoopOp loop,
-                                           ContinueOp continueOp) {
-  if (auto arg = dyn_cast<BlockArgument>(v)) {
-    if (arg.getParentBlock()->getParentOp() == loop) {
-      // Make sure the initial input is constant.
-      Value initialConst = loop.getOperand(arg.getArgNumber());
-      if (!isConstValue(initialConst))
-        return {};
-
-      // Make sure continue is using the same value.
-      unsigned argNumber = arg.getArgNumber();
-      if (continueOp->getOperand(argNumber) != arg)
-        return {};
-
-      return initialConst;
-    }
-  } else if (isConstValue(v)) {
+static Value getValueIfLoopInvariant(Value v, LoopOp loop,
+                                     ContinueOp continueOp,
+                                     mlir::DominanceInfo &domInfo) {
+  // Check if the value is loop-invariant, and if so, return it.
+  if (isLoopInvariant(v, loop, domInfo))
     return v;
-  }
+
+  // Check if this is an argument to the loop. If so, check if it remains the
+  // same every iteration.
+  auto arg = dyn_cast<BlockArgument>(v);
+  if (arg && arg.getParentBlock()->getParentOp() == loop &&
+      continueOp->getOperand(arg.getArgNumber()) == arg)
+    return loop.getOperand(arg.getArgNumber());
+
+  // Otherwise, we don't know what it is.
   return {};
 }
 
@@ -203,7 +205,8 @@ invertCmpPred(HLCF::ForLoopBoundCmpPredicate pred) {
 }
 
 static std::optional<ForLoopBoundsAndSteps>
-inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
+inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
+               mlir::DominanceInfo &domInfo) {
   // The infer logic here is assuming that for-loop's ranges are:
   // - range(n) - zero starting range with start = 0, end = n, stride = 1.
   // - range(s, e) - sequential range with start = s, end = e, stride = 1.
@@ -260,17 +263,17 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     // initial value is the start value of the loop; the other operand (if a
     // constant) is the end of the loop.
     start =
-        getValueIfConstAtLoopStart(cmp.getLhs(), inductionVarArgNumber, loop);
+        getValueAtLoopEntry(cmp.getLhs(), inductionVarArgNumber, loop, domInfo);
     if (inductionVarArgNumber.has_value()) {
       // The end must always be a constant in every iteration.
-      end = getValueIfConstEveryIteration(cmp.getRhs(), loop, continueOp);
+      end = getValueIfLoopInvariant(cmp.getRhs(), loop, continueOp, domInfo);
     } else {
       // No inductionVarArgNumber means `start` is not a block argument, and
       // comes directly from a const op. This means it is always constant every
       // iteration too. Can safely use it as `end`.
       end = start;
-      start =
-          getValueIfConstAtLoopStart(cmp.getRhs(), inductionVarArgNumber, loop);
+      start = getValueAtLoopEntry(cmp.getRhs(), inductionVarArgNumber, loop,
+                                  domInfo);
       cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
                          ? HLCF::ForLoopBoundCmpPredicate::SGT
                          : HLCF::ForLoopBoundCmpPredicate::SLT;
@@ -288,7 +291,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     Value input0 = nextIterOp->getOperand(0);
     Value input1 = nextIterOp->getOperand(1);
     if (auto blockArg = dyn_cast<BlockArgument>(input0)) {
-      stride = getValueIfConstEveryIteration(input1, loop, continueOp);
+      stride = getValueIfLoopInvariant(input1, loop, continueOp, domInfo);
       indVarCompute = isa<mlir::index::AddOp>(nextIterOp)
                           ? HLCF::ForLoopIndVarCompute::ADD
                           : HLCF::ForLoopIndVarCompute::SUB;
@@ -390,7 +393,8 @@ static bool hasComplexExitLogic(LoopOp loop, IfOp ifOp) {
 }
 
 LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
-                                           InFlightDiagnostic &diag) {
+                                           InFlightDiagnostic &diag,
+                                           mlir::DominanceInfo &domInfo) {
   auto iter = loopJumpOps.find(loop);
   if (iter == loopJumpOps.end())
     return failure();
@@ -470,7 +474,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   }
 
   std::optional<ForLoopBoundsAndSteps> loopInfo =
-      inferLoopCount(loop, continueOp, breakOp);
+      inferLoopCount(loop, continueOp, breakOp, domInfo);
 
   if (!loopInfo.has_value()) {
     return diag.attachNote(loop->getLoc())
@@ -568,12 +572,14 @@ void RaiseForLoops::runOnOperation() {
   loopsToRaiseInOrder.clear();
   parentLoops.clear();
 
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+
   walkLoopsPreorder(getOperation());
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
     InFlightDiagnostic diag =
         mlir::emitWarning(loop->getLoc(), "failed to raise loop");
-    (void)raiseForLoops(loop, diag);
+    (void)raiseForLoops(loop, diag, domInfo);
     bool dropDiag = true;
     LLVM_DEBUG(dropDiag = false;);
     if (dropDiag)
