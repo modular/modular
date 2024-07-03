@@ -159,6 +159,7 @@ struct CompiledGraph:
             self._device.lib.get_handle(),
             "M_loadGraph",
             self._impl,
+            self._device._cdev,
             status.impl,
         )
         if status:
