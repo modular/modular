@@ -1298,7 +1298,7 @@ struct Tensor[type: DType](
         var byte_tensor = Tensor[DType.uint8](path.read_bytes())
         var num_elements = byte_tensor.num_elements()
         return Self(
-            num_elements // type.sizeof(),
+            num_elements // sizeof[type](),
             byte_tensor._steal_ptr().bitcast[type](),
         )
 
@@ -1426,7 +1426,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
         + minor_format_bytes.num_elements()
         + spec_size_bytes.num_elements()
         + spec_bytes.num_elements()
-        + tensor.num_elements() * type.sizeof()
+        + tensor.num_elements() * sizeof[type]()
     )
     var copied: Int = 0
 
@@ -1453,9 +1453,9 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     memcpy(
         bytes.unsafe_ptr() + copied,
         tensor.unsafe_ptr().bitcast[DType.uint8](),
-        tensor.num_elements() * type.sizeof(),
+        tensor.num_elements() * sizeof[type](),
     )
-    copied += tensor.num_elements() * type.sizeof()
+    copied += tensor.num_elements() * sizeof[type]()
 
     debug_assert(bytes.num_elements() == copied, "expected these to be same.")
 
