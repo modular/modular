@@ -14,7 +14,7 @@ from nn.flash_attention import flash_attention
 from register import mogg_register
 from buffer import NDBuffer, DimList
 from utils import Index
-from .types import ContiguousKVCache, ContiguousKVCacheCollection
+from .types import ContiguousKVCache, ContiguousKVCacheCollection, KVCacheLayout
 from runtime.llcl import (
     MojoCallContextPtr,
 )
@@ -23,7 +23,9 @@ from runtime.llcl import (
 @mogg_register("kv_cache_length")
 @export
 fn kv_cache_length(
-    kv_collection: ContiguousKVCacheCollection[DType.float32, False],
+    kv_collection: ContiguousKVCacheCollection[
+        DType.float32, KVCacheLayout.BHSD
+    ],
     output: NDBuffer[DType.int64, 1],
 ):
     """Returns the size of the cache in a ContiguousKVCacheCollection mo.opaque object.
@@ -37,8 +39,10 @@ fn kv_cache_length(
 @export
 fn key_cache_for_layer(
     layer_idx: Int64,
-    kv_collection: ContiguousKVCacheCollection[DType.float32, False],
-) -> ContiguousKVCache[DType.float32, False]:
+    kv_collection: ContiguousKVCacheCollection[
+        DType.float32, KVCacheLayout.BHSD
+    ],
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
     """Retrieves the Key cache for the given layer."""
     return kv_collection.get_key_cache(int(layer_idx))
 
@@ -47,8 +51,10 @@ fn key_cache_for_layer(
 @export
 fn value_cache_for_layer(
     layer_idx: Int64,
-    kv_collection: ContiguousKVCacheCollection[DType.float32, False],
-) -> ContiguousKVCache[DType.float32, False]:
+    kv_collection: ContiguousKVCacheCollection[
+        DType.float32, KVCacheLayout.BHSD
+    ],
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
     """Retrieves the Value cache for the given layer."""
     return kv_collection.get_value_cache(int(layer_idx))
 
@@ -60,8 +66,8 @@ fn matmul_kv_cache[
 ](
     hidden_state: NDBuffer[DType.float32, 3],
     weight: NDBuffer[DType.float32, 2],
-    cache: ContiguousKVCache[DType.float32, False],
-) -> ContiguousKVCache[DType.float32, False]:
+    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -81,8 +87,8 @@ fn matmul_kv_cache_with_rope[
     hidden_state: NDBuffer[DType.float32, 3],
     weight: NDBuffer[DType.float32, 2],
     freqs: NDBuffer[DType.float32, 2],
-    cache: ContiguousKVCache[DType.float32, False],
-) -> ContiguousKVCache[DType.float32, False]:
+    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
     """Performs a matmul, writing the output w/ rope embeddings into a
     mutable ContiguousKVCache object.
     Args:
@@ -141,9 +147,9 @@ fn _matmul_kv_cache[
 ](
     hidden_state: NDBuffer[DType.float32, 3],
     weight: NDBuffer[DType.float32, 2],
-    cache: ContiguousKVCache[DType.float32, False],
+    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
     context: MojoCallContextPtr = MojoCallContextPtr(),
-) -> ContiguousKVCache[DType.float32, False]:
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
     """Helper for performing matmul with custom ContiguousKVCache types.
 
     Parameters:
@@ -225,8 +231,8 @@ fn flash_attention_kv_cache_shape_func[
     single_thread_blocking_override: Bool
 ](
     q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, False],
-    v: ContiguousKVCache[DType.float32, False],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
     mask: NDBuffer[DType.float32, 2],
     scale: NDBuffer[DType.float32, 1],
 ) -> StaticIntTuple[4]:
@@ -239,8 +245,8 @@ fn flash_attention_kv_cache[
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, False],
-    v: ContiguousKVCache[DType.float32, False],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
     mask: NDBuffer[DType.float32, 2],
     scale: NDBuffer[DType.float32, 1],
     output: NDBuffer[DType.float32, 4],
@@ -272,8 +278,8 @@ fn flash_attention_kv_cache[
 
 fn _flash_attention_kv_cache_cpu(
     q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, False],
-    v: ContiguousKVCache[DType.float32, False],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
     mask: NDBuffer[DType.float32, 2],
     scale: NDBuffer[DType.float32, 1],
     output: NDBuffer[DType.float32, 4],
@@ -338,8 +344,8 @@ fn _flash_attention_kv_cache_cpu(
 
 fn _flash_attention_kv_cache_gpu(
     q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, False],
-    v: ContiguousKVCache[DType.float32, False],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
     mask: NDBuffer[DType.float32, 2],
     scale: NDBuffer[DType.float32, 1],
     output: NDBuffer[DType.float32, 4],
