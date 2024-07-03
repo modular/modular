@@ -280,8 +280,10 @@ public:
   void maybeVerify(
       function_ref<LogicalResult(function_ref<InFlightDiagnostic()>)> verifyFn)
       override {
+#ifndef MODULAR_PRODUCTION
     if (failed(verifyFn([&] { return mlir::emitError(op->getLoc()); })))
       hadError = true;
+#endif
   }
 
   /// Whether a verification error occurred.
@@ -300,6 +302,7 @@ private:
 } // namespace
 
 void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
+#ifndef MODULAR_PRODUCTION
   CompilerTimeTraceScope traceScope("verifyRefAttr");
 
   // We only check this during the op verification phase.
@@ -311,9 +314,11 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
 
   if (failed(refAttr.verifySymbolUses(module, *symtab, op->getLoc())))
     hadError = true;
+#endif
 }
 
 void VerifyingParameterCollector::verifyRefType(DeclRefTypeInterface refType) {
+#ifndef MODULAR_PRODUCTION
   CompilerTimeTraceScope traceScope("verifyRefType");
 
   // We only check this during the op verification phase.
@@ -325,6 +330,7 @@ void VerifyingParameterCollector::verifyRefType(DeclRefTypeInterface refType) {
 
   if (failed(refType.verifySymbolUses(module, *symtab, op->getLoc())))
     hadError = true;
+#endif
 }
 
 //===----------------------------------------------------------------------===//
