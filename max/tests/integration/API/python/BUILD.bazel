@@ -1,19 +1,10 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("//bazel:api.bzl", "modular_py_test")
-load("//utils/bazel/build/rules:mojo.bzl", "mojo_test_environment")
-
-mojo_test_environment(
-    name = "test_env",
-    data = [
-        "//SDK/integration-test:test_user_op",
-    ],
-)
 
 modular_py_test(
     name = "tests",
     srcs = glob(["pytests/**/*.py"]),
     data = [
-        ":test_env",
         "//CUDASupport/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
@@ -34,13 +25,15 @@ modular_py_test(
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_PATH": ".",
     },
+    mojo_deps = [
+        "//SDK/integration-test:test_user_op",
+    ],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    toolchains = [":test_env"],
     deps = [
         "//SDK/lib/EngineAPI/python:max_engine",
         requirement("torch"),
