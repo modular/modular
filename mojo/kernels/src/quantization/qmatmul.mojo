@@ -19,7 +19,9 @@ from buffer.list import DimList
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
+from linalg.utils import partition_work
 from memory.unsafe import DTypePointer
+from runtime.llcl import parallelism_level
 
 from utils import InlineArray
 from utils.index import Index
@@ -986,15 +988,17 @@ fn _matmul_qint4_m_1[
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    alias grain_size = 64
+    alias grain_size = simd_width * 2
 
-    var num_workers = ceildiv(N, grain_size)
+    var work_count = ceildiv(N, grain_size)
+    var num_workers = min(work_count, parallelism_level())
 
     @parameter
-    @__copy_capture(N, K, k_groups)
+    @__copy_capture(N, K, k_groups, work_count, num_workers)
     fn task_func(task_id: Int):
-        var task_n_start = task_id * grain_size
-        var task_n_count = min(N - task_n_start, grain_size)
+        var block_range = partition_work(task_id, num_workers, work_count, 1)
+        var task_n_start = block_range[0] * grain_size
+        var task_n_count = block_range[1] * grain_size
 
         var b_ptr = b.data.bitcast[DType.int8]()
 
@@ -1049,15 +1053,17 @@ fn _matmul_qint4_m_any[
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    alias grain_size = 64
+    alias grain_size = simd_width * 2
 
-    var num_workers = ceildiv(N, grain_size)
+    var work_count = ceildiv(N, grain_size)
+    var num_workers = min(work_count, parallelism_level())
 
     @parameter
-    @__copy_capture(M, N, K, k_groups)
+    @__copy_capture(M, N, K, k_groups, work_count, num_workers)
     fn task_func(task_id: Int):
-        var task_n_start = task_id * grain_size
-        var task_n_count = min(N - task_n_start, grain_size)
+        var block_range = partition_work(task_id, num_workers, work_count, 1)
+        var task_n_start = block_range[0] * grain_size
+        var task_n_count = block_range[1] * grain_size
 
         var b_ptr = b.data
 
