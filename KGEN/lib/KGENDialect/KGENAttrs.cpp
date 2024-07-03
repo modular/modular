@@ -2168,18 +2168,6 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
     return variadic.getValues()[index.getInt()];
   }
 
-  // Simplify get(ptr_map(x)) -> PointerType(get(x)).
-  if (auto expr = dyn_cast<ParamOperatorAttr>(operands.front()))
-    if (expr.getOpcode() == POC::VariadicPtrMap) {
-      TypedAttr list = expr.getOperand(0);
-      TypedAttr addrSpace = expr.getOperand(1);
-      auto unmappedElt =
-          ParamOperatorAttr::get(POC::VariadicGet, list, operands[1]);
-      auto ptrType =
-          PointerType::get(ParamRefType::get(unmappedElt), addrSpace);
-      return TypeConstantAttr::get(ptrType, resultType);
-    }
-
   return {};
 }
 

@@ -179,14 +179,8 @@ static void propagateTrivialParameters(Region *region,
       // The type of the parameter may change. Try to rebind it.
       auto decl = cast<ParamDeclAttr>(
           evaluator.getReboundAttribute(declare.getParamDecl()));
-      if (isa<ParamDeclRefAttr, TypeConstantAttr>(value) ||
-          ParameterAttr::isSimpleConstant(value)) {
-        evaluator.setParameterValue(decl, value);
-        declare.erase();
-      } else {
-        evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
-        processOp(op, evaluator);
-      }
+      evaluator.setParameterValue(decl, value);
+      declare.erase();
     } else {
       // If this is any other operation, just walk its definitions in the
       // current scope.
