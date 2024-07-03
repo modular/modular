@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout.int_tuple import IntTuple, flatten
+
+from layout.int_tuple import prefix_product as prefix_product_int_tuple
+
 from utils.static_tuple import InlineArray
 
 
@@ -15,7 +18,7 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
 
 
 @register_passable("trivial")
-struct RuntimeTuple[S: IntTuple](Stringable):
+struct RuntimeTuple[S: IntTuple](Stringable, Sized):
     alias sentinel = -1
     alias scalar_length = len(flatten(S))
     var value: StaticIntTuple[Self.scalar_length]
@@ -129,3 +132,27 @@ struct RuntimeTuple[S: IntTuple](Stringable):
                 if i != size - 1:
                     f.write_str[", "]()
             f.write_str[")"]()
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return self.scalar_length
+
+
+fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t]) -> Bool:
+    return t.is_tuple()
+
+
+fn is_int[t: IntTuple](tuple: RuntimeTuple[t]) -> Bool:
+    return t.is_value()
+
+
+@always_inline
+fn prefix_product[
+    t: IntTuple
+](tuple: RuntimeTuple[t]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
+    var res = RuntimeTuple[prefix_product_int_tuple(t)]()
+    var prefix_res = 1
+    for i in range(len(tuple)):
+        res.value[i] = prefix_res
+        prefix_res *= tuple.value[i]
+    return res
