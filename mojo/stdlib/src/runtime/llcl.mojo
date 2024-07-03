@@ -14,7 +14,7 @@ from sys.param_env import is_defined
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import Context as CudaContext
-from gpu.host import CudaInstance, DeviceContext, Stream
+from gpu.host import CudaInstance, DeviceContext, Stream, KernelProfilingInfo
 from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
@@ -496,11 +496,18 @@ struct MojoCallContextPtr:
         var stream = self.get_stream()
         var ptr = external_call[
             "KGEN_CompilerRT_LLCL_MojoCallContext_GetCudaDevice",
-            UnsafePointer[Tuple[CudaContext, CudaInstance]],
+            UnsafePointer[
+                Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
+            ],
         ](
             self.ptr,
         )
-        return DeviceContext(ptr[][1], ptr[][0], stream)
+        return DeviceContext(
+            ptr[][1],
+            ptr[][0],
+            stream,
+            profiling_info=UnsafePointer.address_of(ptr[][2]),
+        )
 
     @always_inline
     fn set_to_error(self, err: Error):
