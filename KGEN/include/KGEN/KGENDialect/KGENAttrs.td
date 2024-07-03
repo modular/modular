@@ -1017,4 +1017,47 @@ def KGEN_LinkDependencyArrayAttr : ArrayOfAttr<KGENDialect,
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// CustomOpImplAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_CustomOpImplAttr : KGENAttr<"CustomOpImpl", "custom.op_impl"> {
+  let summary = "Describes the implementation of a custom operation";
+  let description = [{
+    The `#kgen.custom.op_impl` attribute contains a `custom` op name and a
+    symbol reference to its implementation method.
+
+    Example:
+    ```mlir
+    #kgen.custom.op_impl<"custom.add", @impl_method>
+    ```
+  }];
+
+  let parameters = (ins "StringAttr":$opName,
+                        "SymbolConstantAttr":$opImplementation);
+  let assemblyFormat = "`<` $opName `,` custom<ColonTypeSymbolConstant>($opImplementation) `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$opName,
+                                        "SymbolConstantAttr":$opImplementation)>,
+    AttrBuilderWithInferredContext<(ins "StringRef":$opName,
+                                        "SymbolConstantAttr":$opImplementation)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// CustomOpImplArray
+//===----------------------------------------------------------------------===//
+
+def KGEN_CustomOpImplArrayAttr : ArrayOfAttr<KGENDialect, "CustomOpImplArray",
+    "custom.op_impls", "CustomOpImplAttr"> {
+  let summary = "An array of custom ops implementations, sorted by name";
+  let builders = [
+    AttrBuilder<(ins CArg<"ArrayRef<CustomOpImplAttr>", "{}">:$value)>
+  ];
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

@@ -2096,6 +2096,11 @@ private:
   void processValueDecorator(SMLoc decoratorLoc, LIT::FuncOp moveFunc,
                              LIT::FuncOp copyFunc);
 
+  /// Process the @op_implementation body decorator on structs.
+  /// It adds a new operation in the IR that link the new op name with the
+  /// relevant struct methods.
+  void processOpImplDecorator(ExprNode *decorator, StringRef opName);
+
   StructDeclOp structOp;
   ASTDecl &structDecl;
   ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
@@ -2191,15 +2196,74 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
   }
 }
 
+void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
+                                                  StringRef opName) {
+  SMLoc decoratorLoc = decorator->getRangeStart();
+  auto noImplMethodError = [this, decoratorLoc]() {
+    emitError(decoratorLoc) << "struct annotated with '@op_implementation' "
+                            << "should define an `impl` method";
+  };
+
+  // Get the `impl` methods.
+  TypeCheckScopeInfo scopeInfo{structDecl, false, shared};
+  auto implMethods = OverloadSet::lookup(
+      scopeInfo, structDecl.getTypeDeclSelf(), "impl", decorator,
+      CallSyntax::kMethodCallSynthetic, noImplMethodError);
+
+  // Case where we did not find the `impl` method or an error occured.
+  if (!implMethods)
+    return;
+
+  // Emit the constant symbol for the `impl` method.
+  auto implMethodsUValue = OverloadSetUValue::create(std::move(implMethods));
+  ExprEmitter emitter(shared, structDecl, {});
+  PValue value = emitter.emitPValue({implMethodsUValue}, {});
+  if (!value)
+    return;
+
+  auto implConstant = cast<SymbolConstantAttr>(value.get());
+
+  // Add the op implementation, and return an error if the op already had an
+  // implementation.
+  (void)shared.addCustomOpImpl(CustomOpImplAttr::get(opName, implConstant),
+                               decoratorLoc);
+  return;
+}
+
 LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
                                                      LIT::FuncOp moveFunc,
                                                      LIT::FuncOp copyFunc) {
+  // @value decorator
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "value") {
       processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
       return success();
     }
+    if (declRef->spelling == "op_implementation") {
+      emitError(decorator->getLoc())
+          << "@op_implementation expects a string literal argument";
+      structDecl.setErroneous();
+      return success();
+    }
     return failure();
+  }
+
+  // @op_implementation decorator
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
+    if (!declRef || declRef->spelling != "op_implementation" ||
+        callNode->operands.size() != 1 ||
+        !callNode->operands.front().isPositional())
+      return failure();
+    auto strExpr = dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
+    if (!strExpr) {
+      emitError(decorator->getLoc())
+          << "@op_implementation expects a string literal argument";
+      structDecl.setErroneous();
+      return success();
+    }
+    processOpImplDecorator(decorator, strExpr->getValue());
+    return success();
   }
   return failure();
 }

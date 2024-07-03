@@ -249,6 +249,9 @@ importMojoImpl(LLCL::Runtime &runtime, StringRef moduleIdentifier,
   if (failed(sharedState.finalizeImportedBytecodeModules()))
     return {nullptr, nullptr};
 
+  // Add in the `custom` op implementations in the IR.
+  sharedState.finalizeCustomOpImplementations(*module);
+
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.

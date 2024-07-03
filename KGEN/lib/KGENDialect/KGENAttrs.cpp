@@ -511,6 +511,26 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
                                    func->getLoc());
 }
 
+ParseResult parseColonTypeSymbolConstant(AsmParser &p,
+                                         SymbolConstantAttr &value) {
+  mlir::SMLoc loc = p.getCurrentLocation();
+
+  TypedAttr typedAttr;
+  if (parseColonTypeParamValue(p, typedAttr))
+    return failure();
+
+  if (auto symbol = mlir::dyn_cast<SymbolConstantAttr>(typedAttr)) {
+    value = symbol;
+    return success();
+  }
+
+  return p.emitError(loc) << "symbol constant expected, got" << typedAttr;
+}
+
+void printColonTypeSymbolConstant(AsmPrinter &p, SymbolConstantAttr value) {
+  printColonTypeParamValue(p, value);
+}
+
 //===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//
@@ -2606,6 +2626,85 @@ TypedAttr KGEN::emitMLIROperationCall(
                       SignatureType::get(ctx, operandTypes, resultType)));
   llvm::append_range(applyOperands, operands);
   return ParamOperatorAttr::get(POC::Apply, applyOperands);
+}
+
+//===----------------------------------------------------------------------===//
+// CustomOpImplAttr
+//===----------------------------------------------------------------------===//
+
+CustomOpImplAttr CustomOpImplAttr::get(StringAttr opName,
+                                       SymbolConstantAttr opImplementation) {
+  return CustomOpImplAttr::get(opName.getContext(), opName, opImplementation);
+}
+
+CustomOpImplAttr CustomOpImplAttr::get(StringRef opName,
+                                       SymbolConstantAttr opImplementation) {
+  MLIRContext *context = opImplementation.getContext();
+  auto opNameAttr = StringAttr::get(context, opName);
+  return CustomOpImplAttr::get(context, opNameAttr, opImplementation);
+}
+
+//===----------------------------------------------------------------------===//
+// CustomOpImplArray
+//===----------------------------------------------------------------------===//
+
+/// Compare the names of two custom op implementations.
+/// This function is used for sorting `CustomOpImplArrayAttr`.
+/// Arguments are passed as `const *` to satisfy `llvm::array_pod_start`
+/// signature.
+static int compareOpImplNames(const CustomOpImplAttr *lhs,
+                              const CustomOpImplAttr *rhs) {
+  if (*lhs == *rhs)
+    return 0;
+  return lhs->getOpName().compare(rhs->getOpName());
+}
+
+/// Sort an array of `CustomOpImplAttr` in a given empty storage.
+static bool opImplArrayAttrSort(ArrayRef<CustomOpImplAttr> value,
+                                SmallVectorImpl<CustomOpImplAttr> &storage) {
+  // Common case
+  if (value.empty())
+    return false;
+
+  storage.assign(value.begin(), value.end());
+
+  // Only sort if necessary.
+  bool isSorted =
+      llvm::is_sorted(value, [](CustomOpImplAttr l, CustomOpImplAttr r) {
+        return compareOpImplNames(&l, &r);
+      });
+  if (!isSorted)
+    llvm::array_pod_sort(storage.begin(), storage.end(), compareOpImplNames);
+  return !isSorted;
+}
+
+LogicalResult
+CustomOpImplArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                              ArrayRef<CustomOpImplAttr> opImpls) {
+  for (int i = 0, e = (int)opImpls.size() - 1; i < e; i++)
+    if (opImpls[i].getOpName() == opImpls[i + 1].getOpName())
+      return emitError() << opImpls[i].getOpName() << " is defined twice";
+  return success();
+}
+
+CustomOpImplArrayAttr
+CustomOpImplArrayAttr::get(mlir::MLIRContext *ctx,
+                           ArrayRef<CustomOpImplAttr> opImpls) {
+  SmallVector<CustomOpImplAttr> sortedOpImpls;
+  opImplArrayAttrSort(opImpls, sortedOpImpls);
+  return Base::get(ctx, sortedOpImpls);
+}
+
+CustomOpImplArrayAttr
+CustomOpImplArrayAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  mlir::MLIRContext *ctx,
+                                  ArrayRef<CustomOpImplAttr> opImpls) {
+  if (failed(verify(emitError, opImpls)))
+    return {};
+
+  SmallVector<CustomOpImplAttr> sortedOpImpls;
+  opImplArrayAttrSort(opImpls, sortedOpImpls);
+  return Base::get(ctx, sortedOpImpls);
 }
 
 //===----------------------------------------------------------------------===//
