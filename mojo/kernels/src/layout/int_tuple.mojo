@@ -12,6 +12,8 @@ from utils._format import Formatter, write_to
 from utils.variant import Variant
 
 # IntTuple definition
+# TODO: Consider a different approch https://linear.app/modularml/issue/KERN-638
+alias UNKNOWN_VALUE = -1
 
 
 # FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance
@@ -132,7 +134,9 @@ fn sum(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
-        return a + (to_int(b) if is_int(b) else sum(b))
+        return -1 if a == UNKNOWN_VALUE else a + (
+            to_int(b) if is_int(b) else sum(b)
+        )
 
     return reduce[Int, reducer](t, 0)
 
@@ -142,7 +146,9 @@ fn product(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
-        return a * (to_int(b) if is_int(b) else product(b))
+        return -1 if a == UNKNOWN_VALUE else a * (
+            to_int(b) if is_int(b) else product(b)
+        )
 
     return reduce[Int, reducer](t, 1)
 
@@ -351,14 +357,13 @@ fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
         if is_tuple(init):  # tuple tuple
             if len(a) != len(init):
                 abort("len(a) != len(init)")
-
             return apply_zip[prefix_product](a, init)
         else:  # tuple "int"
             var v_init = to_int(init)
             var r = IntTuple()
             for v in a:
                 r.append(prefix_product(v, v_init))
-                v_init = v_init * product(v)
+                v_init = -1 if v_init == UNKNOWN_VALUE else v_init * product(v)
             return r
     else:
         if is_tuple(init):  # "int" tuple

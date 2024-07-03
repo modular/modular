@@ -12,7 +12,7 @@ from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 # CHECK-LABEL: test_tuple_basic
-fn test_tuple_basic() raises:
+def test_tuple_basic():
     print("== test_tuple_basic")
 
     # Test len() operator
@@ -74,7 +74,7 @@ fn test_tuple_basic() raises:
 
 
 # CHECK-LABEL: test_tuple_slicing
-fn test_tuple_slicing() raises:
+def test_tuple_slicing():
     print("== test_tuple_slicing")
 
     alias tr = IntTuple(0, 1, 2, 3, 4)
@@ -99,7 +99,7 @@ fn test_tuple_slicing() raises:
 
 
 # CHECK-LABEL: test_tuple_basic_ops
-fn test_tuple_basic_ops() raises:
+def test_tuple_basic_ops():
     print("== test_tuple_basic_ops")
 
     alias p0 = product(2)
@@ -157,7 +157,7 @@ fn test_tuple_basic_ops() raises:
 
 
 # CHECK-LABEL: test_sorted
-fn test_sorted() raises:
+def test_sorted():
     print("== test_sorted")
 
     alias t0 = sorted[lt](IntTuple(7, 3, 1, 5, 0))
@@ -173,7 +173,7 @@ fn test_sorted() raises:
 
 
 # CHECK-LABEL: test_product
-fn test_product() raises:
+def test_product():
     print("== test_product")
 
     assert_equal(product(2), 2)
@@ -182,7 +182,7 @@ fn test_product() raises:
 
 
 # CHECK-LABEL: test_inner_product
-fn test_inner_product() raises:
+def test_inner_product():
     print("== test_inner_product")
 
     assert_equal(inner_product(2, 3), 6)
@@ -194,7 +194,7 @@ fn test_inner_product() raises:
 
 
 # CHECK-LABEL: test_shape_div
-fn test_shape_div() raises:
+def test_shape_div():
     print("== test_shape_div")
 
     assert_equal(shape_div(IntTuple(3, 4), 6), IntTuple(1, 2))
@@ -209,7 +209,7 @@ fn test_shape_div() raises:
 
 
 # CHECK-LABEL: test_prefix_product
-fn test_prefix_product() raises:
+def test_prefix_product():
     print("== test_prefix_product")
 
     assert_equal(prefix_product(2), 1)
@@ -231,7 +231,7 @@ fn test_prefix_product() raises:
 
 
 # CHECK-LABEL: test_crd2idx
-fn test_crd2idx() raises:
+def test_crd2idx():
     print("== test_crd2idx")
 
     alias cx0 = crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4))
@@ -253,7 +253,7 @@ fn test_crd2idx() raises:
 
 
 # CHECK-LABEL: test_idx2crd
-fn test_idx2crd() raises:
+def test_idx2crd():
     print("== test_idx2crd")
 
     alias xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
@@ -275,7 +275,7 @@ fn test_idx2crd() raises:
 
 
 # CHECK-LABEL: test_weakly_congruent
-fn test_weakly_congruent() raises:
+def test_weakly_congruent():
     print("== test_weakly_congruent")
     alias a = IntTuple(1)
     alias b = IntTuple(2)
@@ -323,7 +323,7 @@ fn test_weakly_congruent() raises:
 
 
 # CHECK-LABEL: test_weakly_compatible
-fn test_weakly_compatible() raises:
+def test_weakly_compatible():
     print("== test_weakly_compatible")
     alias a = IntTuple(16)
     alias b = IntTuple(12)
@@ -368,7 +368,7 @@ fn test_weakly_compatible() raises:
     assert_false(weakly_compatible(a3, a2))
 
 
-fn test_fill_like() raises:
+def test_fill_like():
     print("test_fill_like")
     alias t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
     alias t2 = IntTuple(IntTuple(3, 4), 2, IntTuple(3))
@@ -376,7 +376,7 @@ fn test_fill_like() raises:
     assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
 
 
-fn test_reverse() raises:
+def test_reverse():
     print("test_reverse")
     alias t1 = IntTuple(2, IntTuple(3, 4))
     alias t2 = IntTuple(IntTuple(1, 2), 3, 4, IntTuple(5, 6, 7))
@@ -384,11 +384,18 @@ fn test_reverse() raises:
     assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
 
 
-fn test_depth() raises:
+def test_depth():
     print("test_depth")
     assert_equal(depth(IntTuple(1)), 0)
     assert_equal(depth(IntTuple(1, 2)), 1)
     assert_equal(depth(IntTuple(1, IntTuple(2, 3))), 2)
+
+
+def test_unknown_value_arith():
+    print("test_unknown_value_arith")
+    var t = IntTuple(-1, IntTuple(2, 3), 4)
+    assert_equal(prefix_product(t), IntTuple(1, IntTuple(-1, -1), -1))
+    assert_equal(sum(t), -1)
 
 
 def main():
@@ -410,3 +417,5 @@ def main():
     test_fill_like()
     test_reverse()
     test_depth()
+
+    test_unknown_value_arith()
