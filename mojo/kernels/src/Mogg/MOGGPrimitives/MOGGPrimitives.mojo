@@ -527,7 +527,7 @@ fn get_mgp_buffer[
 ](tensor: ExtensibilityTensor[type, rank]) -> NDBuffer[DType.uint8, 1]:
     var bufferRef = NDBuffer[DType.uint8, 1](
         tensor.data.bitcast[DType.uint8](),
-        tensor.nelems() * type.sizeof(),
+        tensor.nelems() * sizeof[type](),
     )
     return bufferRef
 
