@@ -89,6 +89,8 @@ struct Reducer {
   mlir::PassManager reproPm;
   /// The pass manager used to run symbol DCE.
   mlir::PassManager dcePm;
+  /// The reproducer pipeline.
+  std::string pipelineStr;
 
   /// The expected error to reproduce.
   std::string expectedDiag;
@@ -136,9 +138,9 @@ ErrorOrSuccess Reducer::run() {
     }
   }
 
-  log << "[kgen-reduce] ";
-  reproPm.printAsTextualPipeline(log);
-  log << "\n";
+  llvm::raw_string_ostream os(pipelineStr);
+  reproPm.printAsTextualPipeline(os);
+  log << "[kgen-reduce] " << pipelineStr << "\n";
 
   std::optional<std::string> initDiag = attemptRepro(*inputModule);
   if (!initDiag)
@@ -148,7 +150,7 @@ ErrorOrSuccess Reducer::run() {
   log << "[kgen-reduce] expected diagnostic:\n" << expectedDiag << "\n\n";
 
   IRState curModule(std::move(inputModule));
-  if (auto err = stashFile(*curModule.ir, "kgen-reduce.base"))
+  if (auto err = stashFile(*curModule.ir, "kgen-reduce.base", pipelineStr))
     return err;
 
   if (startAt <= 0) {
@@ -156,7 +158,8 @@ ErrorOrSuccess Reducer::run() {
       return err;
     if (auto err = tryDCE(curModule))
       return err.takeError();
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions.binary"))
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions.binary",
+                             pipelineStr))
       return err;
   }
 
@@ -165,7 +168,8 @@ ErrorOrSuccess Reducer::run() {
       return err;
     if (auto err = tryDCE(curModule))
       return err.takeError();
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
+    if (auto err =
+            stashFile(*curModule.ir, "kgen-reduce.functions", pipelineStr))
       return err;
   }
 
@@ -174,7 +178,7 @@ ErrorOrSuccess Reducer::run() {
       return err;
     if (auto err = tryDCE(curModule))
       return err.takeError();
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.regions"))
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.regions", pipelineStr))
       return err;
   }
 
@@ -183,14 +187,14 @@ ErrorOrSuccess Reducer::run() {
       return err;
     if (auto err = tryDCE(curModule))
       return err.takeError();
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops"))
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops", pipelineStr))
       return err;
   }
 
   if (startAt <= 4) {
     if (auto err = reduceDCE(curModule))
       return err;
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops.dce"))
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops.dce", pipelineStr))
       return err;
   }
 
@@ -229,7 +233,7 @@ ErrorOrSuccess Reducer::maybeSnapshot(ModuleOp module) {
     return success();
   lastSnapshotTime = curTime;
 
-  auto fileOr = getTempFile(module, getTempFileName());
+  auto fileOr = getTempFile(module, getTempFileName(), pipelineStr);
   if (fileOr.isError())
     return fileOr.takeError();
   auto file = fileOr.takeValue();

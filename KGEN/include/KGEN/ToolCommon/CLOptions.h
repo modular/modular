@@ -92,7 +92,7 @@ public:
 
   bool enableMLIRCrashReproducer{false};
 
-  bool enableLocalMLIRReproducer{false};
+  bool enableLocalMLIRReproducer{true};
 
   bool timeTrace{false};
 
