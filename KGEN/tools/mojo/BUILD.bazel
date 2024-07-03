@@ -187,6 +187,7 @@ run_tool(
         "//open-source/mojo/stdlib/stdlib",
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
+        "@llvm-project//lldb:lldb-server",
     ],
     env = {
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
