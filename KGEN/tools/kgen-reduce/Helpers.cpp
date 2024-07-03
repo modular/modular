@@ -28,19 +28,27 @@ std::string M::getTempFileName() {
 }
 
 ErrorOr<std::unique_ptr<llvm::ToolOutputFile>>
-M::getTempFile(ModuleOp module, const Twine &fileName) {
+M::getTempFile(ModuleOp module, const Twine &fileName, StringRef pipeline) {
   std::string err;
   std::unique_ptr<llvm::ToolOutputFile> output =
       mlir::openOutputFile((fileName + ".mlirbc").str());
   if (!output)
     return Error(err);
-  if (failed(mlir::writeBytecodeToFile(module, output->os())))
+  mlir::BytecodeWriterConfig config("kgen-reduce");
+  config.attachResourcePrinter("mlir_reproducer",
+                               [&](Operation *op, mlir::AsmResourceBuilder &b) {
+                                 b.buildString("pipeline", pipeline);
+                                 b.buildBool("disable_threading", true);
+                                 b.buildBool("verify_each", true);
+                               });
+  if (failed(mlir::writeBytecodeToFile(module, output->os(), config)))
     return Error("failed to write bytecode");
   return std::move(output);
 }
 
-ErrorOrSuccess M::stashFile(ModuleOp module, const Twine &fileName) {
-  auto err = getTempFile(module, fileName);
+ErrorOrSuccess M::stashFile(ModuleOp module, const Twine &fileName,
+                            StringRef pipeline) {
+  auto err = getTempFile(module, fileName, pipeline);
   if (err.isError())
     return err.takeError();
   err.takeValue()->keep();

@@ -27,10 +27,11 @@ std::string getTempFileName();
 /// Write the module to a temporary file that will by default be deleted on
 /// exit.
 ErrorOr<std::unique_ptr<llvm::ToolOutputFile>>
-getTempFile(ModuleOp module, const Twine &fileName);
+getTempFile(ModuleOp module, const Twine &fileName, StringRef pipeline);
 
 /// Store the module to a permanent file.
-ErrorOrSuccess stashFile(ModuleOp module, const Twine &fileName);
+ErrorOrSuccess stashFile(ModuleOp module, const Twine &fileName,
+                         StringRef pipeline);
 
 /// Indicate that a file should be removed on exit from the process instead.
 void unkeepToolOutputFile(llvm::ToolOutputFile &file);

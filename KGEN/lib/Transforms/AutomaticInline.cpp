@@ -488,11 +488,11 @@ struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
     // generation has the nested passes.
     mlir::OpPassManager pipeline;
     buildFuncPasses(pipeline);
-    llvm::raw_string_ostream os(funcPipelineStr);
+    std::string str;
+    llvm::raw_string_ostream os(str);
     pipeline.printAsTextualPipeline(os);
     // Strip `any(...)` from the textual pipeline.
-    funcPipelineStr =
-        StringRef(funcPipelineStr).drop_front(4).drop_back().str();
+    funcPipelineStr = StringRef(str).drop_front(4).drop_back().str();
     return success();
   }
 

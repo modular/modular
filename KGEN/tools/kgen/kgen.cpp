@@ -186,6 +186,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   DialectRegistry registry;
   TraceProfiler tracer(clOptions.timeTrace, clOptions.timeTraceGranularity);
 
+  if (clOptions.enableMLIRCrashReproducer) {
+    // If the reproducer is enable, turn off all threading.
+    ctx->disableMultithreading();
+    clOptions.useSingleThreadedWorkqueue();
+  }
+
   // Register MLIR stuff
   registerAllKGENDialects(registry);
   registerKGENToLLVMTranslation(registry);
@@ -200,7 +206,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                   clOptions.parser.options.withCPUAffinity(false)));
   if (ctxOr.isError())
     return failure();
-  registerContext(registry, *ctxOr);
+  if (!clOptions.enableMLIRCrashReproducer)
+    registerContext(registry, *ctxOr);
   LLCL::Runtime &runtime = *(*ctxOr)->get<LLCL::Runtime>();
 
   // Set up the dialects in the context.
@@ -221,12 +228,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     timingManager = std::move(defaultManager);
   }
   TimingScope timing = timingManager->getRootScope();
-
-  if (clOptions.enableMLIRCrashReproducer) {
-    // If the reproducer is enable, turn off all threading.
-    ctx->disableMultithreading();
-    clOptions.useSingleThreadedWorkqueue();
-  }
 
   PassManagerConfigOptions pmOptions;
   pmOptions.applyPassManagerCLOptions = true;
