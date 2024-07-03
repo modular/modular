@@ -11,7 +11,6 @@ from max._driver import (
     DeviceMemory,
     DeviceTensor,
     cuda_device,
-    Tensor,
 )
 from testing import assert_equal
 from max.tensor import TensorSpec

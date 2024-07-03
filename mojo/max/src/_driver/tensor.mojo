@@ -6,7 +6,7 @@
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice, UnsafeTensorSlice
 from utils import StaticTuple
-from max.tensor import TensorSpec
+from max.tensor import TensorSpec, TensorShape
 
 
 @always_inline
@@ -118,6 +118,17 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         var tmp = device_tensor._storage^
         device_tensor._storage = DeviceMemory()
         self._device_memory_impl_ptr = tmp^._steal_impl_ptr()
+
+    fn __init__(inout self, shape: Tuple) raises:
+        var device = cpu_device()
+        var spec = TensorSpec(type, shape)
+        var dt = device.allocate(spec)
+        self = Self(dt)
+
+    fn __init__(inout self, shape: Tuple, device: Device) raises:
+        var spec = TensorSpec(type, shape)
+        var dt = device.allocate(spec)
+        self = Self(dt)
 
     fn __moveinit__(inout self, owned existing: Self):
         self._ptr = existing._ptr

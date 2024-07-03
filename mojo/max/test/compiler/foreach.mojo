@@ -7,7 +7,7 @@
 
 from max.compiler import foreach
 
-from max._driver import cpu_device, UnsafeTensorSlice
+from max._driver import cpu_device, UnsafeTensorSlice, Tensor
 from utils import Index
 from max.tensor import TensorSpec
 from testing import assert_equal
@@ -16,17 +16,14 @@ from testing import assert_equal
 # CHECK-LABEL: == test_foreach
 fn test_foreach() raises:
     print("== test_foreach")
-    var dev = cpu_device()
-    var shape = Index(10, 2)
+    var shape = (10, 2)
 
-    var data1 = dev.allocate(TensorSpec(DType.float32, shape))
-    var tensor1 = data1^.to_tensor[DType.float32, shape.size]()
+    var tensor1 = Tensor[DType.float32, 2](shape)
     var unsafe_slice1 = UnsafeTensorSlice[DType.float32, 2](
         tensor1.unsafe_ptr(), shape
     )
 
-    var data2 = dev.allocate(TensorSpec(DType.float32, shape))
-    var tensor2 = data2^.to_tensor[DType.float32, shape.size]()
+    var tensor2 = Tensor[DType.float32, 2](shape)
     var unsafe_slice2 = UnsafeTensorSlice[DType.float32, 2](
         tensor2.unsafe_ptr(), shape
     )

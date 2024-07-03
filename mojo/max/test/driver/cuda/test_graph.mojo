@@ -10,7 +10,7 @@
 
 from max import tensor
 from max.graph import Graph, TensorType, Type, ops
-from max._driver import cpu_device, cuda_device
+from max._driver import cpu_device, cuda_device, Tensor
 
 from testing import assert_equal, assert_almost_equal
 
@@ -68,8 +68,7 @@ def test_mnist():
     executable_graph = cuda.load(compiled_graph)
 
     # fill host tensor
-    input_host_dt = cpu.allocate(tensor.TensorSpec(DType.float32, 1, 28, 28, 1))
-    input_host = input_host_dt^.to_tensor[DType.float32, 4]()
+    input_host = Tensor[DType.float32, 4]((1, 28, 28, 1))
     for i in range(1):
         for j in range(28):
             for k in range(28):

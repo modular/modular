@@ -14,17 +14,12 @@ from max._driver import (
     UnsafeTensorSlice,
 )
 from max.tensor import TensorSpec
-from utils import Index
 from testing import assert_equal, assert_raises
+from utils import Index
 
 
 def test_tensor():
-    dev = cpu_device()
-
-    dt = dev.allocate(
-        TensorSpec(DType.float32, 2, 2),
-    )
-    tensor = dt^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((2, 2))
 
     assert_equal(tensor.spec().rank(), 2)
     assert_equal(tensor.spec().dtype(), DType.float32)
@@ -39,12 +34,7 @@ def test_tensor():
 
 
 def test_tensor_slice():
-    dev = cpu_device()
-
-    dt = dev.allocate(
-        TensorSpec(DType.float32, 3, 3),
-    )
-    tensor = dt^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((3, 3))
 
     assert_equal(tensor.spec().rank(), 2)
     assert_equal(tensor.spec().dtype(), DType.float32)
@@ -88,12 +78,7 @@ def test_tensor_slice():
 
 
 def test_slice_with_step():
-    dev = cpu_device()
-
-    dt = dev.allocate(
-        TensorSpec(DType.float32, 18),
-    )
-    tensor = dt^.to_tensor[DType.float32, 1]()
+    tensor = Tensor[DType.float32, 1]((18,))
 
     index = 0
     for _ in range(3):
@@ -108,12 +93,7 @@ def test_slice_with_step():
 
 
 def test_2dslice_with_step():
-    dev = cpu_device()
-
-    dt = dev.allocate(
-        TensorSpec(DType.float32, 10, 2),
-    )
-    tensor = dt^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((10, 2))
 
     val = 1
     for i in range(10):
@@ -128,12 +108,7 @@ def test_2dslice_with_step():
 
 
 def test_2dslice_with_step_row_column():
-    dev = cpu_device()
-
-    dt = dev.allocate(
-        TensorSpec(DType.float32, 10, 10),
-    )
-    tensor = dt^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((10, 10))
 
     val = 1
     for i in range(10):
@@ -167,11 +142,8 @@ def test_2dslice_with_step_row_column():
 
 
 def test_4dslice_with_step():
-    var dev = cpu_device()
-
-    var shape = Index(7, 8, 13, 9)
-    var dt = dev.allocate(TensorSpec(DType.float32, shape))
-    var tensor = dt^.to_tensor[DType.float32, 4]()
+    var shape = (7, 8, 13, 9)
+    var tensor = Tensor[DType.float32, 4](shape)
 
     # np.arange
     var val = 0
@@ -190,10 +162,7 @@ def test_4dslice_with_step():
 
 
 def test_round_trip():
-    dev = cpu_device()
-
-    dt = dev.allocate(TensorSpec(DType.float32, 10, 2), str("mytensor"))
-    tensor = dt^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((10, 2))
 
     val = 1
     for i in range(10):
@@ -206,7 +175,7 @@ def test_round_trip():
     dt2 = tensor^.to_device_tensor()
     assert_equal(
         str(dt2),
-        "DeviceTensor(mytensor,Device(type=CPU),Spec(10x2xfloat32))",
+        "DeviceTensor(Device(type=CPU),Spec(10x2xfloat32))",
     )
 
     tensor2 = dt2^.to_tensor[DType.float32, 2]()
@@ -249,12 +218,7 @@ def test_copy():
 
 
 def test_set_through_slice():
-    dev = cpu_device()
-
-    dt = dev.allocate(
-        TensorSpec(DType.float32, 10, 2),
-    )
-    tensor = dt^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((10, 2))
 
     val = 1
     for i in range(10):
@@ -274,11 +238,8 @@ def test_set_through_slice():
 
 
 def test_unsafe_slice():
-    var dev = cpu_device()
-
-    var shape = Index(10, 2)
-    var dt = dev.allocate(TensorSpec(DType.float32, shape))
-    var tensor = dt^.to_tensor[DType.float32, shape.size]()
+    var shape = (10, 2)
+    var tensor = Tensor[DType.float32, 2](shape)
 
     var val = 1
     for i in range(10):
@@ -298,11 +259,8 @@ def test_unsafe_slice():
 
 
 def test_unsafe_slice_from_tensor():
-    var dev = cpu_device()
-
-    var shape = Index(10, 1)
-    var dt = dev.allocate(TensorSpec(DType.float32, shape))
-    var tensor = dt^.to_tensor[DType.float32, shape.size]()
+    var shape = (10, 1)
+    var tensor = Tensor[DType.float32, 2](shape)
 
     var val = 1
     for i in range(10):
@@ -332,11 +290,8 @@ def test_unsafe_slice_from_tensor():
 
 
 def test_unsafe_slice_simd():
-    var dev = cpu_device()
-
-    var shape = Index(10, 10)
-    var dt = dev.allocate(TensorSpec(DType.float32, shape))
-    var tensor = dt^.to_tensor[DType.float32, shape.size]()
+    var shape = (10, 10)
+    var tensor = Tensor[DType.float32, 2](shape)
 
     var val = 1
     for i in range(10):
@@ -356,13 +311,11 @@ def test_unsafe_slice_simd():
 
 
 def test_kv_cache():
-    cpu = cpu_device()
     alias type = DType.float32
     alias shape = (2,)
     tensors = List[Tensor[type, len(shape)]]()
     for _ in range(2):
-        dt = cpu.allocate(TensorSpec(type, shape))
-        tensor = dt.to_tensor[type, len(shape)]()
+        tensor = Tensor[type, len(shape)](shape)
         tensor[0] = 1
         tensor[1] = 2
 
@@ -378,30 +331,22 @@ def test_kv_cache():
 
 
 def test_raw_data():
-    dev = cpu_device()
-
     alias type = DType.float32
     alias shape = (1,)
-    dt = dev.allocate(
-        TensorSpec(type, shape),
-    )
-
-    t = dt^.to_tensor[DType.float32, len(shape)]()
+    t = Tensor[DType.float32, len(shape)](shape)
     ptr = t.unsafe_ptr()
     t[0] = 22
     assert_equal(Scalar.load(ptr), t[0])
 
 
 def test_take():
-    cpu = cpu_device()
     alias type = DType.float32
     alias shape = (1,)
     alias TensorType = Tensor[type, len(shape)]
     tensors = List[TensorType]()
     for i in range(2):
-        tensors.append(
-            cpu.allocate(TensorSpec(type, shape)).to_tensor[type, len(shape)]()
-        )
+        tensors.append(TensorType(shape))
+
         tensors[i][0] = 2
 
     def consume_and_check(owned tensor: TensorType):

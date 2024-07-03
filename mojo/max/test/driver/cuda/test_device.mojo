@@ -7,7 +7,7 @@
 # REQUIRES: cuda
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from max._driver import cpu_device, cuda_device
+from max._driver import cpu_device, cuda_device, Tensor
 from testing import assert_equal
 from max.tensor import TensorSpec
 from utils import Index
@@ -22,11 +22,7 @@ def test_copy_d2h():
     cpu = cpu_device()
     gpu = cuda_device()
 
-    input_cpu = cpu.allocate(
-        TensorSpec(DType.float32, 10, 2),
-    )
-
-    input = input_cpu^.to_tensor[DType.float32, 2]()
+    input = Tensor[DType.float32, 2]((10, 2))
 
     val = 1
     for i in range(10):
@@ -55,9 +51,6 @@ def test_copy_empty():
     )
     assert_equal(input_cpu.bytecount(), 0)
 
-    input = input_cpu^.to_tensor[DType.float32, 2]()
-
-    input_cpu = input^.to_device_tensor()
     gpu_tensor = input_cpu.copy_to(gpu)
 
     assert_equal(gpu_tensor.bytecount(), 0)
@@ -67,11 +60,7 @@ def test_copy_d2d():
     cpu = cpu_device()
     gpu = cuda_device()
 
-    input_cpu = cpu.allocate(
-        TensorSpec(DType.float32, 10, 2),
-    )
-
-    input = input_cpu^.to_tensor[DType.float32, 2]()
+    input = Tensor[DType.float32, 2]((10, 2))
 
     val = 1
     for i in range(10):

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
-from max._driver import AnyTensor, cpu_device
+from max._driver import AnyTensor, cpu_device, Tensor
 from testing import assert_equal
 from max.tensor import TensorSpec
 
@@ -25,11 +25,7 @@ def test_from_device_memory():
 def test_from_tensor():
     dev = cpu_device()
 
-    dm = dev.allocate(
-        TensorSpec(DType.float32, 2, 2),
-    )
-
-    tensor = dm^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((2, 2))
 
     tensor[0, 0] = 1
 
@@ -49,11 +45,7 @@ def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
 def test_implicit_conversion():
     dev = cpu_device()
 
-    dt1 = dev.allocate(
-        TensorSpec(DType.float32, 2, 2),
-    )
-
-    tensor = dt1^.to_tensor[DType.float32, 2]()
+    tensor = Tensor[DType.float32, 2]((2, 2))
 
     dt2 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
