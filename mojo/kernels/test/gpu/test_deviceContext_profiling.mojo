@@ -4,13 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug -D MODULAR_LLCL_MAX_PROFILING_LEVEL=1 %s | FileCheck %s
 
 
 from buffer import DimList, NDBuffer
 from gpu.host.device_context import DeviceContext, KernelProfilingInfo
 from linalg.bmm import _batched_matmul_gpu
-
 from utils.index import Index, StaticIntTuple
 
 
@@ -96,10 +95,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
 # CHECK-NOT: CUDA_ERROR
 fn main():
     try:
-        var profiling_info = KernelProfilingInfo()
-        with DeviceContext(
-            profiling_enabled=True, profiling_info=profiling_info
-        ) as ctx:
+        with DeviceContext() as ctx:
             # Upon first run, an entry for the kernel will be created with the
             # timing information.
             test_batched_matmul(ctx)
@@ -113,6 +109,5 @@ fn main():
             ctx.clear_kernel_timing_info()
             test_batched_matmul(ctx)
             ctx.print_kernel_timing_info()
-        _ = profiling_info
     except e:
         print("CUDA_ERROR:", e)
