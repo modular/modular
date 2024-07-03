@@ -942,6 +942,138 @@ struct LayoutTensor[
                 )
             ).store(self.ptr.offset(dst_idx))
 
+    # TODO: Remove when masked tensor is fixed (KERN-607)
+    @always_inline
+    fn copy_from_masked_src[
+        other_layout: Layout,
+        other_addr_space: AddressSpace,
+        other_element_layout: Layout,
+        other_mask: Bool,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            address_space=other_addr_space,
+            element_layout=other_element_layout,
+            masked=other_mask,
+        ],
+        offset: Int,
+        rows: Int,
+        cols: Int,
+    ):
+        alias dst_size = layout.size()
+        alias src_size = other_layout.size()
+
+        alias dst_element_size = int(self.element_size)
+        alias src_element_size = int(other.element_size)
+
+        constrained[
+            dst_size == src_size, "copy_from should move data of the same size"
+        ]()
+
+        constrained[
+            dst_element_size == src_element_size, "copy_from should move"
+        ]()
+
+        constrained[
+            not other_mask or dst_element_size == 1,
+            "For masked src only scalar copy is supported",
+        ]()
+
+        alias is_masked = self.masked or other_mask
+        constrained[
+            not is_masked, "copy_from doesn't support masked tensors."
+        ]()
+
+        @parameter
+        for i in range(dst_size):
+            alias src_idx = make_layout(other.element_layout, other_layout)(
+                i * src_element_size
+            )
+            alias dst_idx = make_layout(self.element_layout, self.layout)(
+                i * dst_element_size
+            )
+            var m: Int
+            var n: Int
+            m, n = divmod(offset + src_idx, cols)
+            if m < rows:
+                var src_element = Element[dtype, other.element_layout].load(
+                    other.ptr.offset(src_idx)
+                )
+                alias dst_element_type = Element[dtype, self.element_layout]
+                dst_element_type(
+                    rebind[dst_element_type.element_data_type](
+                        src_element.element_data
+                    )
+                ).store(self.ptr.offset(dst_idx))
+
+    # TODO: Remove when masked tensor is fixed (KERN-607)
+    @always_inline
+    fn copy_from_masked_dst[
+        other_layout: Layout,
+        other_addr_space: AddressSpace,
+        other_element_layout: Layout,
+        other_mask: Bool,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            address_space=other_addr_space,
+            element_layout=other_element_layout,
+            masked=other_mask,
+        ],
+        offset: Int,
+        rows: Int,
+        cols: Int,
+    ):
+        alias dst_size = layout.size()
+        alias src_size = other_layout.size()
+
+        alias dst_element_size = int(self.element_size)
+        alias src_element_size = int(other.element_size)
+
+        constrained[
+            dst_size == src_size, "copy_from should move data of the same size"
+        ]()
+
+        constrained[
+            dst_element_size == src_element_size, "copy_from should move"
+        ]()
+
+        constrained[
+            not other_mask or dst_element_size == 1,
+            "For masked src only scalar copy is supported",
+        ]()
+
+        alias is_masked = self.masked or other_mask
+        constrained[
+            not is_masked, "copy_from doesn't support masked tensors."
+        ]()
+
+        @parameter
+        for i in range(dst_size):
+            alias src_idx = make_layout(other.element_layout, other_layout)(
+                i * src_element_size
+            )
+            alias dst_idx = make_layout(self.element_layout, self.layout)(
+                i * dst_element_size
+            )
+            var m: Int
+            var n: Int
+            m, n = divmod(offset + dst_idx, cols)
+            if m < rows:
+                var src_element = Element[dtype, other.element_layout].load(
+                    other.ptr.offset(src_idx)
+                )
+                alias dst_element_type = Element[dtype, self.element_layout]
+                dst_element_type(
+                    rebind[dst_element_type.element_data_type](
+                        src_element.element_data
+                    )
+                ).store(self.ptr.offset(dst_idx))
+
     @always_inline
     fn copy_from_async[
         src_layout: Layout,
