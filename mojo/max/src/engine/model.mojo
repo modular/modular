@@ -309,11 +309,35 @@ struct Model:
         return self.execute(input_map)
 
     fn _execute(self, owned *inputs: AnyTensor) raises -> List[AnyTensor]:
-        var inputs_impl = List[UnsafePointer[NoneType]]()
-        var inputs_spec = List[TensorSpec]()
+        """Execute model with the given inputs.
+
+        Arguments:
+            inputs: Input tensors, which may be located on any Device. This
+            API will automatically copy the input tensors to the Device set in
+            the InferenceSession's SessionConfig.
+        Returns:
+            A list of output tensors, which are located on the Device set in the
+            InferenceSession's SessionConfig.
+        """
+        var on_device_inputs = List[AnyTensor]()
+
         for input in inputs:
+            if input[]._device == self._session._ptr[].device:
+                on_device_inputs.append(input[].take())
+            else:
+                var input_dt = (
+                    input[]
+                    .take()
+                    .to_device_tensor()
+                    .copy_to(self._session._ptr[].device)
+                )
+                on_device_inputs.append(input_dt)
+
+        var on_device_inputs_impl = List[UnsafePointer[NoneType]]()
+        var inputs_spec = List[TensorSpec]()
+        for input in on_device_inputs:
             inputs_spec.append(input[]._spec)
-            inputs_impl.append(_steal_device_memory_impl_ptr(input[]))
+            on_device_inputs_impl.append(_steal_device_memory_impl_ptr(input[]))
 
         alias execute_func_name = "M_executeDeviceTensor"
 
@@ -337,9 +361,9 @@ struct Model:
         var output_count = execute_func(
             self._ctx,
             self._ptr,
-            inputs_impl.unsafe_ptr(),
+            on_device_inputs_impl.unsafe_ptr(),
             inputs_spec.unsafe_ptr(),
-            len(inputs_impl),
+            len(on_device_inputs_impl),
             Self._add_to_output_list,
             UnsafePointer.address_of(self),
             output_list_address.bitcast[NoneType](),
@@ -353,7 +377,7 @@ struct Model:
             raise "internal error: mismatch on output count during ffi"
 
         # Make sure inputs are alive
-        _ = inputs_impl^
+        _ = on_device_inputs_impl^
         _ = inputs_spec^
         return output_list
 
