@@ -311,21 +311,12 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       return;
     }
 
-    bool interp = enableInterp;
-    // In production builds, we don't run the parameter verifier. This allows us
-    // to aggressively simplify parameter expressions with the interpreter, even
-    // if it would mean parameter expressions no longer line up across function
-    // boundaries (since the verifier doesn't run the interpreter).
-#ifdef MODULAR_PRODUCTION
-    interp = true;
-#endif
-
     CompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
       propagateTrivialParameters(
           declRegion, graph, graph,
-          ParameterSimplifier(interp, module, analysis.getSymbolTables()),
+          ParameterSimplifier(enableInterp, module, analysis.getSymbolTables()),
           DenseSet<TypedAttr>());
     }
   }
