@@ -380,12 +380,12 @@ struct IfRemoveUnusedResults : public OpRewritePattern<IfOp> {
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
-                                       MLIRContext *context) {
+                                       MLIRContext *ctx) {
   results.add<RemoveStaticCondition, HoistUnconditionalReturn<KGEN::ReturnOp>,
               HoistUnconditionalReturn<HLCF::BreakOp>,
               HoistUnconditionalReturn<HLCF::ContinueOp>,
               HoistConditionalReturn, HoistYieldResults, IfRemoveUnusedResults>(
-      context);
+      ctx);
 }
 
 //===----------------------------------------------------------------------===//
@@ -512,7 +512,56 @@ struct RemoveUnusedLoopArgs : OpRewritePattern<LoopOp> {
 } // namespace
 
 void LoopOp::getCanonicalizationPatterns(RewritePatternSet &results,
-                                         MLIRContext *context) {
+                                         MLIRContext *ctx) {
   results.insert<RemoveDeadLoop, RemoveUnusedLoopResults, RemoveUnusedLoopArgs>(
-      context);
+      ctx);
+}
+
+//===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
+
+static bool isPureOrReadOnly(Operation &op) {
+  auto itf = dyn_cast<mlir::MemoryEffectOpInterface>(op);
+  if (!itf)
+    return false;
+  SmallVector<mlir::MemoryEffects::EffectInstance> effects;
+  itf.getEffects(effects);
+  if (effects.empty())
+    return true;
+  return llvm::all_of(effects, [](auto &e) {
+    return isa<mlir::MemoryEffects::Read>(e.getEffect());
+  });
+}
+
+namespace {
+/// Scan the body of a loop with no results up to a small number of consecutive
+/// ops, checking if they are all pure or readonly. If this is the case, we know
+/// the loop is overall a no-op.
+struct RemoveNoopLoop : OpRewritePattern<ForOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ForOp op, PatternRewriter &b) const override {
+    if (op.getNumResults())
+      return b.notifyMatchFailure(op.getLoc(), "loop has results");
+
+    constexpr unsigned numToScan = 5;
+    for (auto [idx, op] :
+         llvm::enumerate(op.getBody().front().without_terminator())) {
+      if (idx > numToScan)
+        return b.notifyMatchFailure(op.getLoc(), "body is too large");
+      if (op.getNumRegions())
+        return b.notifyMatchFailure(op.getLoc(), "body op with regions");
+      if (!isPureOrReadOnly(op))
+        return b.notifyMatchFailure(op.getLoc(), "not a pure or readonly op");
+    }
+    b.eraseOp(op);
+    return success();
+  }
+};
+} // namespace
+
+void ForOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                        MLIRContext *ctx) {
+  results.insert<RemoveNoopLoop>(ctx);
 }
