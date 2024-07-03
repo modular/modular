@@ -170,6 +170,10 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
             + str(rank),
         )
 
+    # Short circuit to handle scalars with less ops.
+    if rank == 0:
+        return v.reshape(1)
+
     # TODO: Bug - passing v_type.rank() + 1 into a variadic Int64 corrupts it.
     var new_shape = g.op(
         "rmo.mo.unsqueeze_shape",

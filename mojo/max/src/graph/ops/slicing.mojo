@@ -516,4 +516,9 @@ def stack(values: List[Symbol], axis: Int = 0) -> Symbol:
     var unsqueezed = List[Symbol]()
     for i in range(len(values)):
         unsqueezed.append(unsqueeze(values[i], axis))
+
+    # Short circuit to avoid bloating graph with unneeded op.
+    if len(unsqueezed) == 1:
+        return unsqueezed[0]
+
     return concat(unsqueezed, axis=axis)
