@@ -7,6 +7,18 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// FunctionStats
+//===----------------------------------------------------------------------===//
+
+def FunctionStats : Pass<"function-stats", "ModuleOp"> {
+  let summary = "Print function stats.";
+  let description = [{
+    The `function-stats` pass analyzes functions in the module and prints them.
+    This is useful for debugging mainly.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Canonicalizer
 //===----------------------------------------------------------------------===//
 
