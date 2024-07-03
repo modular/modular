@@ -268,7 +268,6 @@ fn flash_attention[
         q_shape.all_known[2, 4](),
         "Only support static head (H) and depth (D) dimensions",
     ]()
-
     var ctx = context.get_cuda_device()
 
     alias num_heads = q_shape.get[2]()
