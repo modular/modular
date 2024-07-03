@@ -37,7 +37,7 @@ def matmul_qint4_pack_b[
 ](b: NDBuffer[DType.uint8, 2], b_rot: NDBuffer[DType.uint8, 2]):
     alias n_tiles = 2
     alias n_groups = n_tiles * simdwidthof[DType.float32]()
-    alias bytes_per_group_int4 = DType.float16.sizeof() + (group_size // 2)
+    alias bytes_per_group_int4 = sizeof[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = b.dim[1]() // bytes_per_group_int4 * group_size
@@ -58,8 +58,8 @@ def matmul_qint4_pack_b[
                 Scalar.store(
                     dst_k_ptr.bitcast[DType.float16]().offset(nn), scale
                 )
-                src_ptr += DType.float16.sizeof()
-                dst_k_ptr += DType.float16.sizeof() * n_groups
+                src_ptr += sizeof[DType.float16]()
+                dst_k_ptr += sizeof[DType.float16]() * n_groups
 
                 var b_data_i4 = SIMD[size = group_size // 2].load(src_ptr)
                 src_ptr += group_size // 2
@@ -205,7 +205,7 @@ fn _unpack_weights[
             SIMD.store(b_scale_ptr, col * simd_width, b_scale)
 
         b_scale_ptr += tile_n * simd_width
-        b_packed_ptr += DType.float16.sizeof() * tile_n * simd_width
+        b_packed_ptr += sizeof[DType.float16]() * tile_n * simd_width
 
         var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
             0
@@ -450,7 +450,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         c_int32.init()
 
         # Skip over the float16 scales.
-        var b_offset = DType.float16.sizeof() * tile_n * simd_width
+        var b_offset = sizeof[DType.float16]() * tile_n * simd_width
 
         var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
             0
@@ -596,7 +596,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         c_int32.init()
 
         # Skip over the float16 scales.
-        var b_offset = DType.float16.sizeof() * tile_n * simd_width
+        var b_offset = sizeof[DType.float16]() * tile_n * simd_width
 
         var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
             0
@@ -765,7 +765,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         c_int32.init()
 
         # Skip over the float16 scales.
-        var b_offset = DType.float16.sizeof() * tile_n * simd_width
+        var b_offset = sizeof[DType.float16]() * tile_n * simd_width
 
         @parameter
         for k in range(0, group_size, 16):
@@ -982,7 +982,7 @@ fn _matmul_qint4_m_1[
     c: NDBuffer[DType.float32, 2],
 ):
     alias simd_width = simdwidthof[DType.float32]()
-    alias bytes_per_group_int4 = DType.float16.sizeof() + (group_size // 2)
+    alias bytes_per_group_int4 = sizeof[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = a_quant.dim[1]()
@@ -1046,7 +1046,7 @@ fn _matmul_qint4_m_any[
 ):
     alias simd_width = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_width]]()
-    alias bytes_per_group_int4 = DType.float16.sizeof() + (group_size // 2)
+    alias bytes_per_group_int4 = sizeof[DType.float16]() + (group_size // 2)
 
     var M = a_quant.dim[0]()
     var N = b.dim[0]()
