@@ -484,26 +484,6 @@ def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// FoldGlobalConstLoads
-//===----------------------------------------------------------------------===//
-
-def FoldGlobalConstLoads : Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
-  let summary = "Replace loads from global constants with the constant";
-  let description = [{
-    When we load from a global constant we can just directly replace it with
-    the constant itself. This improves codegen as the global constant itself
-    cannot be directly folded but the constant obviously can.
-  }];
-
-  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
-
-  let statistics = [
-    Statistic<"numLoadsFolded", "num-loads-folded",
-              "the number of loads folded away">,
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerCallingConventions
 //===----------------------------------------------------------------------===//
 

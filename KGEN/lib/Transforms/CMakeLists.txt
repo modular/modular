@@ -10,7 +10,6 @@ add_modular_library(KGENTransforms
   Canonicalizer.cpp
   DeadArgumentElimination.cpp
   EliminateDeadSymbols.cpp
-  FoldGlobalConstLoads.cpp
   FunctionStats.cpp
   HoistTrivialInvariants.cpp
   InlineParametric.cpp
