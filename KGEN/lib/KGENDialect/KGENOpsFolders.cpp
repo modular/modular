@@ -1452,7 +1452,8 @@ ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
 
 OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
   if (auto value = llvm::cast_if_present<TypedAttr>(adaptor.getOperand()))
-    return VariantAttr::get(value, getIndex(), getType());
+    if (getOperand().getType() == value.getType())
+      return VariantAttr::get(value, getIndex(), getType());
 
   // Canonicalize `kgen.variant.create(kgen.variant.take(x, n), n) -> x`
   auto takeOp = getOperand().getDefiningOp<VariantTakeOp>();
