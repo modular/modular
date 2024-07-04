@@ -1064,3 +1064,12 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.signature<() -> ()>) -> !kgen.poin
   %1 = pop.load %0 : !kgen.pointer<pointer<index>>
   kgen.return %1 : !kgen.pointer<index>
 }
+
+// CHECK-LABEL: @store_bitcast
+kgen.func @store_bitcast(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<pointer<none>>) {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<none>
+  %0 = pop.pointer.bitcast %arg1 : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: pop.store %0, %arg1 : !kgen.pointer<pointer<none>>
+  pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
+  kgen.return
+}
