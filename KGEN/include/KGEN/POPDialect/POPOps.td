@@ -779,6 +779,8 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     OpBuilder<(ins "Value":$arg, "Value":$ptr,
                    CArg<"std::optional<unsigned>", "{}">:$alignment)>
   ];
+
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

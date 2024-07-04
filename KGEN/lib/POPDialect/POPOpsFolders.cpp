@@ -929,6 +929,28 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
+LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
+  // Canonicalize `store x, bitcast(ptr) -> store bitcast(x), ptr` if the
+  // element type is a pointer type.
+  if (!isa<PointerType>(op.getArg().getType()))
+    return b.notifyMatchFailure(op.getLoc(), "arg is not a pointer");
+  auto bitcast = op.getPtr().getDefiningOp<PointerBitcastOp>();
+  if (!bitcast)
+    return b.notifyMatchFailure(op.getLoc(), "ptr is not a bitcast");
+  auto ptrType = dyn_cast<PointerType>(bitcast.getInput().getType());
+  if (!ptrType || !isa<PointerType>(ptrType.getElementType()))
+    return b.notifyMatchFailure(op.getLoc(), "bitcast input is not a pointer");
+
+  // Rewrite the store in-place.
+  auto newBitcast = b.create<PointerBitcastOp>(
+      op.getLoc(), ptrType.getElementType(), op.getArg());
+  b.modifyOpInPlace(op, [&] {
+    op.getPtrMutable().set(bitcast.getInput());
+    op.getArgMutable().set(newBitcast);
+  });
+  return success();
+}
+
 ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   auto value = cast_or_null<TypedAttr>(operands[0]);
