@@ -27,8 +27,8 @@ alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 @value
 struct TileMask[
     rank: Int,
-    element_size: StaticIntTuple[rank] = StaticIntTuple[rank](repeat=1),
-    element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](repeat=1),
+    element_size: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+    element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
 ]:
     var max_dim: StaticIntTuple[rank]
     var offset: StaticIntTuple[rank]
@@ -36,7 +36,7 @@ struct TileMask[
     fn __init__(
         inout self,
         max_dim: StaticIntTuple[rank],
-        offset: StaticIntTuple[rank] = StaticIntTuple[rank](repeat=0),
+        offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
     ):
         self.max_dim = max_dim
         self.offset = offset
@@ -94,8 +94,8 @@ struct TileMask[
 fn _tile_mask[
     *tile_sizes: Dim,
     rank: Int,
-    __sizes: StaticIntTuple[rank] = StaticIntTuple[rank](repeat=1),
-    __element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](repeat=1),
+    __sizes: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+    __element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
 ](shape: StaticIntTuple[rank], tile_coords: StaticIntTuple[rank]) -> TileMask[
     rank, __sizes, __element_stride
 ]:

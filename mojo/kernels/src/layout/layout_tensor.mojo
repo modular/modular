@@ -153,9 +153,9 @@ struct LayoutTensor[
     ):
         self.ptr = ptr
 
-        self.max_dim = StaticIntTuple[rank](repeat=Int.MAX)
-        self.dim_offset = StaticIntTuple[rank](repeat=0)
-        self.dim_stride = StaticIntTuple[rank](repeat=1)
+        self.max_dim = StaticIntTuple[rank](Int.MAX)
+        self.dim_offset = StaticIntTuple[rank](0)
+        self.dim_stride = StaticIntTuple[rank](1)
 
     fn __init__(inout self, *, other: Self):
         """Explicitly copy the provided value.
