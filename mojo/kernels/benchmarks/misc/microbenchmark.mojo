@@ -42,9 +42,9 @@ fn run[
     var total_time = 0.0
     for _ in range(num_iters):
         benchmark_obj.pre_run()
-        var start_time = time.now()
+        var start_time = time.perf_counter_ns()
         benchmark_obj.run()
-        var end_time = time.now()
+        var end_time = time.perf_counter_ns()
         benchmark_obj.post_run()
         total_time += end_time - start_time
 
