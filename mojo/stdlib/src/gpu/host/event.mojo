@@ -6,7 +6,7 @@
 """This Event implements the event utilities."""
 
 from os import abort
-from time import now
+from time import perf_counter_ns
 
 from memory.unsafe import DTypePointer, Pointer
 
@@ -180,6 +180,6 @@ fn time_function[
 fn time_function[func: fn () capturing -> None]() -> Int:
     """Time a function using CPU timer."""
 
-    var start = now()
+    var start = perf_counter_ns()
     func()
-    return now() - start
+    return perf_counter_ns() - start
