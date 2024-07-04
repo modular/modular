@@ -29,6 +29,8 @@ from .int_tuple import (
     zip,
 )
 
+from .int_tuple import UNKNOWN_VALUE
+
 # ===-----------------------------------------------------------------------===#
 # Layout Trait                                                                 #
 # ===-----------------------------------------------------------------------===#
@@ -263,10 +265,10 @@ struct Layout(
     @always_inline
     fn all_dims_known(self) -> Bool:
         for shape_i in flatten(self.shape):
-            if to_int(shape_i) == -1:
+            if to_int(shape_i) == UNKNOWN_VALUE:
                 return False
         for stride_i in flatten(self.stride):
-            if to_int(stride_i) == -1:
+            if to_int(stride_i) == UNKNOWN_VALUE:
                 return False
         return True
 

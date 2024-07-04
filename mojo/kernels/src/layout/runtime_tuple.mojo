@@ -7,7 +7,7 @@
 from layout.int_tuple import IntTuple, flatten
 
 from layout.int_tuple import prefix_product as prefix_product_int_tuple
-from layout.int_tuple import idx2crd as idx2crd_int_tuple
+from layout.int_tuple import idx2crd as idx2crd_int_tuple, UNKNOWN_VALUE
 
 from utils.static_tuple import InlineArray
 
@@ -20,7 +20,6 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
 
 @register_passable("trivial")
 struct RuntimeTuple[S: IntTuple](Stringable, Sized):
-    alias sentinel = -1
     alias scalar_length = len(flatten(S))
     var value: StaticIntTuple[Self.scalar_length]
 
@@ -35,7 +34,7 @@ struct RuntimeTuple[S: IntTuple](Stringable, Sized):
             alias v = f[i].value()
 
             @parameter
-            if v != Self.sentinel:
+            if v != UNKNOWN_VALUE:
                 self.value[i] = v
 
     @always_inline
@@ -62,7 +61,7 @@ struct RuntimeTuple[S: IntTuple](Stringable, Sized):
         alias comptime_value: Int = S.value()
 
         @parameter
-        if comptime_value != Self.sentinel:
+        if comptime_value != UNKNOWN_VALUE:
             return comptime_value
         else:
             return self.value[0]
@@ -98,7 +97,7 @@ struct RuntimeTuple[S: IntTuple](Stringable, Sized):
         for i in range(Self.scalar_length):
 
             @parameter
-            if S_flat[i] == Self.sentinel:
+            if S_flat[i] == UNKNOWN_VALUE:
                 out.value[i] = self.value[i]
 
         alias R_flat = flatten(R)
@@ -107,7 +106,7 @@ struct RuntimeTuple[S: IntTuple](Stringable, Sized):
         for i in range(rhs.scalar_length):
 
             @parameter
-            if R_flat[i] == Self.sentinel:
+            if R_flat[i] == UNKNOWN_VALUE:
                 out.value[Self.scalar_length + i] = rhs.value[i]
 
         return out
