@@ -1272,7 +1272,7 @@ fn testUnmovable(a: Unmovable):
 # Issue 23233 https://github.com/modularml/modular/issues/23233
 fn setitemParamToDLValue():
   alias x = 3
-  var coords = StaticIntTuple[3](repeat=0)
+  var coords = StaticIntTuple[3](0)
   # The main check is just that it's not erroring.
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <apply{{.*}}__neg__
   # CHECK: lit.call {{.*}}StaticIntTuple{{.*}}__setitem__{{.*}}[[VAR]]
