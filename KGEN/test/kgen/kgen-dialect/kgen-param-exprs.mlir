@@ -816,3 +816,12 @@ kgen.generator @unification() {
   kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.type<!lit.declref<@unification, !metatype.type>>)>
   kgen.return
 }
+
+// CHECK-LABEL: @struct_extract
+kgen.generator @struct_extract() {
+  // CHECK-NEXT: <2>
+  kgen.param.constant = <#kgen.struct.extract<:struct<(index, index)> { 1, 2 }, 1>>
+  // CHECK-NEXT: <*?>
+  kgen.param.constant = <#kgen.struct.extract<:struct<(index, index)> *?, 0>>
+  kgen.return
+}
