@@ -2697,6 +2697,20 @@ CustomOpImplArrayAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return Base::get(ctx, sortedOpImpls);
 }
 
+CustomOpImplAttr CustomOpImplArrayAttr::getOpImpl(StringAttr opName) {
+  ArrayRef<CustomOpImplAttr> value = getValue();
+
+  // We write our own binary search here, as both std and llvm are assuming
+  // that we are searching knowing
+  const CustomOpImplAttr *attr = llvm::lower_bound(
+      value, opName, [](CustomOpImplAttr lhs, StringAttr opName) {
+        return lhs.getOpName().compare(opName) < 0;
+      });
+  if (attr == value.end() || attr->getOpName() != opName)
+    return {};
+  return *attr;
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
