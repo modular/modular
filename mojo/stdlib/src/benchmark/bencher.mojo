@@ -904,10 +904,10 @@ struct Bencher:
             iter_fn: The target function to benchmark.
         """
 
-        var start = time.now()
+        var start = time.perf_counter_ns()
         for _ in range(self.num_iters):
             iter_fn()
-        var stop = time.now()
+        var stop = time.perf_counter_ns()
         self.elapsed = stop - start
 
     fn iter_custom[iter_fn: fn (Int) capturing -> Int](inout self):
@@ -943,10 +943,10 @@ struct Bencher:
             iter_fn: The target function to benchmark.
         """
 
-        var start = time.now()
+        var start = time.perf_counter_ns()
         for _ in range(self.num_iters):
             iter_fn()
-        var stop = time.now()
+        var stop = time.perf_counter_ns()
         self.elapsed = stop - start
 
     # TODO (#31795):  overload should not be needed
