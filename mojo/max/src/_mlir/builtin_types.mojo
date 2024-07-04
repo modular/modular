@@ -31,9 +31,9 @@ struct FunctionType(DialectType):
         return _c.BuiltinTypes.mlirFunctionTypeGet(
             self.ctx.c,
             len(self.inputs),
-            Pointer[_c.IR.MlirType](address=int(self.inputs.data)),
+            UnsafePointer[_c.IR.MlirType](address=int(self.inputs.data)),
             len(self.results),
-            Pointer[_c.IR.MlirType](address=int(self.results.data)),
+            UnsafePointer[_c.IR.MlirType](address=int(self.results.data)),
         )
 
     @staticmethod

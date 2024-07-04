@@ -359,7 +359,7 @@ struct Operation(CollectionElement, Stringable, Formattable):
             successors.elements,
         )
         name._strref_keepalive()
-        self.c = _c.IR.mlirOperationCreate(Pointer.address_of(state))
+        self.c = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
         _ = state
 
     fn __init__(
@@ -387,12 +387,12 @@ struct Operation(CollectionElement, Stringable, Formattable):
         )
         if enable_result_type_inference:
             _c.IR.mlirOperationStateEnableResultTypeInference(
-                Pointer.address_of(state)
+                UnsafePointer.address_of(state)
             )
 
         var result: Self.cType
         with location.context().diagnostic_error():
-            result = _c.IR.mlirOperationCreate(Pointer.address_of(state))
+            result = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
             if not result.ptr:
                 raise "operation create failed"
         _ = state
@@ -730,8 +730,8 @@ struct Block(CollectionElement, Stringable):
         )
         self.c = _c.IR.mlirBlockCreate(
             len(args),
-            Pointer[Type.cType](address=int(args.data)),
-            Pointer[Location.cType](address=int(locations.data)),
+            UnsafePointer[Type.cType](address=int(args.data)),
+            UnsafePointer[Location.cType](address=int(locations.data)),
         )
         _ = args
         _ = locations
