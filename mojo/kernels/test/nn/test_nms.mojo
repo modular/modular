@@ -53,7 +53,7 @@ fn fill_boxes[
 fn linear_offset_to_coords[
     rank: Int
 ](idx: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
-    var output = StaticIntTuple[rank](repeat=0)
+    var output = StaticIntTuple[rank](0)
     var curr_idx = idx
     for i in reversed(range(rank)):
         output[i] = curr_idx % shape[i]

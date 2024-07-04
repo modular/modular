@@ -1326,7 +1326,7 @@ fn _concat_inner_most_single_dim[
         idx, output.dynamic_shape
     )
 
-    if index > StaticIntTuple[rank](repeat=output.num_elements()):
+    if index > output.num_elements():
         return
 
     @parameter

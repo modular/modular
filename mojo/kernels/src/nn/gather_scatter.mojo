@@ -852,11 +852,11 @@ fn scatter_nd_generator[
 
         # Stores the full index on output, where to copy updates to.
         # Zeroing here to avoid doing it selectively within the nested loop below.
-        var output_index_tensor = StaticIntTuple[data_rank](repeat=0)
+        var output_index_tensor = StaticIntTuple[data_rank](0)
 
         # Stores the full index on updates, where to copy from.
         # Zeroing here to avoid doing it selectively within the nested loop below.
-        var updates_index_tensor = StaticIntTuple[updates_rank](repeat=0)
+        var updates_index_tensor = StaticIntTuple[updates_rank](0)
 
         # Construct the full index on updates tensor, i.e., where to copy from.
         for dim in range(_rank):
