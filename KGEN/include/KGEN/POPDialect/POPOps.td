@@ -743,6 +743,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   ];
 
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

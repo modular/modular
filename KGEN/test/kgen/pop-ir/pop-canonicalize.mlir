@@ -1036,3 +1036,31 @@ kgen.func @lifetime_markers() {
   // CHECK-NEXT: return
   kgen.return
 }
+
+// CHECK-LABEL: @load_bitcast
+kgen.func @load_bitcast(%arg0: !kgen.pointer<pointer<none>>) -> !kgen.pointer<index> {
+  // CHECK-NEXT: %0 = pop.load %arg0 : !kgen.pointer<pointer<none>>
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<index>
+  %1 = pop.load %0 : !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: return %1
+  kgen.return %1 : !kgen.pointer<index>
+}
+
+// CHECK-LABEL: @load_bitcast_ptr_ptr
+kgen.func @load_bitcast_ptr_ptr(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<pointer<none>>
+  // CHECK-NEXT: pop.load %0
+  %1 = pop.load %0 : !kgen.pointer<pointer<none>>
+  kgen.return %1 : !kgen.pointer<none>
+}
+
+// CHECK-LABEL: @load_bitcast_func_ptr
+kgen.func @load_bitcast_func_ptr(%arg0: !kgen.signature<() -> ()>) -> !kgen.pointer<index> {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0
+  %0 = pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: pop.load %0
+  %1 = pop.load %0 : !kgen.pointer<pointer<index>>
+  kgen.return %1 : !kgen.pointer<index>
+}
