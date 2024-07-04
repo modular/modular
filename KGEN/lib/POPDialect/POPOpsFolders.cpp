@@ -412,6 +412,30 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
+  // Canonicalize `load(bitcast(ptr)) -> bitcast(load(ptr))` if the element type
+  // is also a pointer.
+  if (!isa<PointerType>(op.getType()))
+    return b.notifyMatchFailure(op.getLoc(), "element type is not a pointer");
+  auto bitcast = op.getPtr().getDefiningOp<PointerBitcastOp>();
+  if (!bitcast || !bitcast->hasOneUse())
+    return b.notifyMatchFailure(op.getLoc(), "pointer is not a bitcast");
+  Value ptr = bitcast.getInput();
+  auto ptrType = dyn_cast<PointerType>(ptr.getType());
+  if (!ptrType || !isa<PointerType>(ptrType.getElementType()))
+    return b.notifyMatchFailure(op.getLoc(), "bitcast input is not a pointer");
+
+  // Rewrite the load in-place.
+  b.setInsertionPointAfter(op);
+  auto newBitcast = b.create<PointerBitcastOp>(op.getLoc(), op.getType(), op);
+  b.modifyOpInPlace(op, [&] {
+    op.setOperand(ptr);
+    Value(op).setType(ptrType.getElementType());
+  });
+  b.replaceAllUsesExcept(op, newBitcast, newBitcast);
+  return success();
+}
+
 ErrorTreeOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
   ErrorOr<Attribute> result =
