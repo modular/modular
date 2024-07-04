@@ -227,7 +227,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
     @always_inline
     fn get_nd_indices(self) -> StaticIntTuple[static_rank]:
         """Creates empty indices with the same rank as this tensor."""
-        return StaticIntTuple[static_rank](repeat=0)
+        return StaticIntTuple[static_rank](0)
 
     @always_inline
     fn simd_load[simd_width: Int](self, index: Int) -> SIMD[type, simd_width]:
