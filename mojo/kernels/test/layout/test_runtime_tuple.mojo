@@ -5,8 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout.runtime_tuple import RuntimeTuple, prefix_product, is_int, is_tuple
+from layout.runtime_tuple import (
+    RuntimeTuple,
+    prefix_product,
+    is_int,
+    is_tuple,
+    idx2crd,
+)
+
 from layout.int_tuple import IntTuple
+from layout.int_tuple import idx2crd as idx2crd_int_tuple, fill_like
 
 from testing import assert_equal, assert_true, assert_false
 
@@ -47,8 +55,24 @@ def test_prefix_product():
     assert_equal(str(t1_p.S), "(1, (-1, -1))")
 
 
+# CHECK-LABEL: test_idx2crd
+def test_idx2crd():
+    print("== test_idx2crd")
+
+    alias tuple = IntTuple(2, IntTuple(2, 4))
+
+    var r_tuple = RuntimeTuple[fill_like(tuple, -1)](2, 2, 4)
+
+    for i in range(16):
+        assert_equal(
+            str(idx2crd_int_tuple(i, tuple)),
+            str(idx2crd(RuntimeTuple[-1](i), r_tuple)),
+        )
+
+
 def main():
     test_construct()
     test_concat()
     test_flatten()
     test_prefix_product()
+    test_idx2crd()

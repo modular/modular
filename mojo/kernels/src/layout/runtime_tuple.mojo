@@ -7,6 +7,7 @@
 from layout.int_tuple import IntTuple, flatten
 
 from layout.int_tuple import prefix_product as prefix_product_int_tuple
+from layout.int_tuple import idx2crd as idx2crd_int_tuple
 
 from utils.static_tuple import InlineArray
 
@@ -147,6 +148,12 @@ fn is_int[t: IntTuple](tuple: RuntimeTuple[t]) -> Bool:
 
 
 @always_inline
+fn to_int[t: IntTuple](tuple: RuntimeTuple[t]) -> Int:
+    constrained[t.is_value(), "tuple must be a single int value"]()
+    return tuple.value[0]
+
+
+@always_inline
 fn prefix_product[
     t: IntTuple
 ](tuple: RuntimeTuple[t]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
@@ -156,3 +163,27 @@ fn prefix_product[
         res.value[i] = prefix_res
         prefix_res *= tuple.value[i]
     return res
+
+
+@always_inline
+fn idx2crd[
+    idx_t: IntTuple, shape_t: IntTuple, stride_t: IntTuple
+](
+    idx: RuntimeTuple[idx_t],
+    shape: RuntimeTuple[shape_t],
+    stride: RuntimeTuple[stride_t],
+) -> RuntimeTuple[idx2crd_int_tuple(idx_t, shape_t, stride_t)]:
+    var res = RuntimeTuple[idx2crd_int_tuple(idx_t, shape_t, stride_t)]()
+    constrained[idx_t.is_value(), "Only scalar index is supported"]()
+    for i in range(len(res)):
+        res.value[i] = (to_int(idx) // stride.value[i]) % shape.value[i]
+    return res
+
+
+@always_inline
+fn idx2crd[
+    idx_t: IntTuple, shape_t: IntTuple
+](idx: RuntimeTuple[idx_t], shape: RuntimeTuple[shape_t]) -> RuntimeTuple[
+    idx2crd_int_tuple(idx_t, shape_t, prefix_product_int_tuple(shape_t))
+]:
+    return idx2crd(idx, shape, prefix_product(shape))

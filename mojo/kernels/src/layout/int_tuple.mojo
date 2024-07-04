@@ -450,7 +450,11 @@ fn idx2crd(
 
             return apply_zip[idx2crd2](shape, stride)
         else:  # "int" "int" "int"
-            return (to_int(idx) // to_int(stride)) % to_int(shape)
+            return UNKNOWN_VALUE if (
+                to_int(idx) == UNKNOWN_VALUE
+                or to_int(stride) == UNKNOWN_VALUE
+                or to_int(shape) == UNKNOWN_VALUE
+            ) else (to_int(idx) // to_int(stride)) % to_int(shape)
 
 
 # Map a logical coordinate to a linear index
