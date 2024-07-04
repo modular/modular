@@ -741,6 +741,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     OpBuilder<(ins "Value":$ptr,
                    CArg<"std::optional<unsigned>", "{}">:$alignment)>,
   ];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

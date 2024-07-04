@@ -358,6 +358,60 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 // LoadOp
 //===----------------------------------------------------------------------===//
 
+/// We can fold loads of `pop.global_constant` ops.
+OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
+  Operation *parent = getPtr().getDefiningOp();
+  if (!parent)
+    return {};
+
+  // `load(global_constant())` is a load of the whole value.
+  if (auto cst = dyn_cast<GlobalConstantOp>(parent))
+    return cst.getValue();
+
+  auto findValueAt = [&](GlobalConstantOp cst, uint64_t idx) -> OpFoldResult {
+    auto attr = dyn_cast<POP::ArrayAttr>(cst.getValue());
+    if (!attr || idx >= attr.getValues().size() ||
+        attr.getType().getElementType() != getType())
+      return {};
+    return attr.getValues()[idx];
+  };
+
+  auto findOffsetValueAt = [&](GlobalConstantOp cst,
+                               Value offset) -> OpFoldResult {
+    APInt idx;
+    if (!mlir::matchPattern(offset, mlir::m_ConstantInt(&idx)) ||
+        idx.isNegative())
+      return {};
+    return findValueAt(cst, idx.getLimitedValue());
+  };
+
+  // `load(gep(global_constant()))` is a load of a specific element, if the gep
+  // index is a constant.
+  if (auto gep = dyn_cast<ArrayGEPOp>(parent)) {
+    if (auto cst = gep.getArray().getDefiningOp<GlobalConstantOp>())
+      return findOffsetValueAt(cst, gep.getIndex());
+    return {};
+  }
+
+  // `load(offset(bitcast(global_constant())))` where the offset index is known.
+  if (auto offset = dyn_cast<OffsetOp>(parent)) {
+    if (auto bitcast = offset.getPtr().getDefiningOp<PointerBitcastOp>())
+      if (auto cst = bitcast.getInput().getDefiningOp<GlobalConstantOp>())
+        return findOffsetValueAt(cst, offset.getIndex());
+    return {};
+  }
+
+  // `load(bitcast(global_constant())` where the element types are equal is a
+  // load of the first element.
+  if (auto bitcast = dyn_cast<PointerBitcastOp>(parent)) {
+    if (auto cst = bitcast.getInput().getDefiningOp<GlobalConstantOp>())
+      return findValueAt(cst, 0);
+    return {};
+  }
+
+  return {};
+}
+
 ErrorTreeOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
   ErrorOr<Attribute> result =

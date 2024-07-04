@@ -211,7 +211,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createSCCP());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
-    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   }
 
   pm.addPass(createEliminateDeadSymbols());
@@ -221,7 +220,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
-    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   }
@@ -231,7 +229,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
-    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
     pm.addNestedPass<FuncOp>(createSimplifyCF());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
