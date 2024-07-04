@@ -6,7 +6,7 @@
 """Provides server statistics collecting capabilities."""
 
 from benchmark import Unit
-from time import now
+from time import perf_counter_ns
 from utils.lock import BlockingSpinLock, BlockingScopedLock
 
 from .callbacks import ServerCallbacks
@@ -100,7 +100,7 @@ struct ServerStats(ServerCallbacks):
 
     fn on_batch_complete(inout self, start_ns: Int, batch_size: Int):
         with BlockingScopedLock(self.lock):
-            self.total_request_ns += now() - start_ns
+            self.total_request_ns += perf_counter_ns() - start_ns
 
     fn on_request_receive(inout self):
         with BlockingScopedLock(self.lock):
@@ -108,7 +108,7 @@ struct ServerStats(ServerCallbacks):
 
     fn on_request_ok(inout self, start_ns: Int):
         with BlockingScopedLock(self.lock):
-            self.total_request_ns += now() - start_ns
+            self.total_request_ns += perf_counter_ns() - start_ns
             self.total_ok_requests += 1
 
     fn on_request_fail(inout self, error: String):

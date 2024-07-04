@@ -78,7 +78,7 @@ struct Batch[Input: Batchable, Output: Batchable]:
                 _async_wait(UnsafePointer[Chain].address_of(self.chain))
                 return False
 
-        var timeout = self.deadline - time.now()
+        var timeout = self.deadline - time.perf_counter_ns()
         if timeout < 0:
             # Execute immediately, if needed.
             return self._start()
@@ -121,7 +121,7 @@ struct Batcher[
         batch[].pending.append(input^)
         var last = index + 1 >= self.max
         if index == 0 and self.timeout != 0:
-            batch[].deadline = time.now() + self.timeout
+            batch[].deadline = time.perf_counter_ns() + self.timeout
         if last:
             self.current = Batch[Input, Output](rt=self.rt, capacity=self.max)
         _ = self.mu.unlock(0)

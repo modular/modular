@@ -8,7 +8,7 @@
 from os import Atomic
 from runtime.llcl import Runtime, TaskGroup
 from sys.ffi import DLHandle
-from time import now
+from time import perf_counter_ns
 
 from max.engine import InferenceSession, Model
 from max.engine._compilation import CCompiledModel
@@ -124,7 +124,7 @@ struct GRPCServer[
                 var resp = batch.response_at(i)
 
                 # TODO: Record start closer to actual request receipt.
-                var start = now()
+                var start = perf_counter_ns()
                 self._callbacks.on_request_receive()
                 try:
                     handle_fn(req, resp)
@@ -142,7 +142,7 @@ struct GRPCServer[
                 # TODO: Construct merged request (per model) for batching.
                 var batch = InferenceBatch(self._lib, self._session)
                 await self._impl.pop_ready(batch._impl)
-                var start = now()
+                var start = perf_counter_ns()
                 self._callbacks.on_batch_receive(len(batch))
                 await process(batch)
                 self._callbacks.on_batch_complete(start, len(batch))

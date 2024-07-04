@@ -20,7 +20,7 @@ from memory.unsafe_pointer import UnsafePointer
 from python import PythonObject
 from python.python import _get_global_python_itf
 from runtime.llcl import TaskGroup
-from time import now
+from time import perf_counter_ns
 
 from max._utils import handle_from_config
 
@@ -132,7 +132,7 @@ struct PythonServer[
             var batch = PythonBatch(self._lib)
             await self._impl.pop_ready(batch._impl)
             self._callbacks.on_batch_receive(len(batch))
-            var start = now()
+            var start = perf_counter_ns()
             var state = cpython.PyGILState_Ensure()
             for i in range(len(batch)):
                 self._callbacks.on_request_receive()
