@@ -11,10 +11,12 @@ from layout.runtime_tuple import (
     is_int,
     is_tuple,
     idx2crd,
+    crd2idx,
 )
 
 from layout.int_tuple import IntTuple
 from layout.int_tuple import idx2crd as idx2crd_int_tuple, fill_like
+from layout.int_tuple import crd2idx as crd2idx_int_tuple
 
 from testing import assert_equal, assert_true, assert_false
 
@@ -70,9 +72,31 @@ def test_idx2crd():
         )
 
 
+# CHECK-LABEL: test_crd2idx
+def test_crd2idx():
+    print("== test_crd2idx")
+    alias shape_t = IntTuple(4, 4)
+    alias stride_t = IntTuple(4, 1)
+    alias unk_r2_t = IntTuple(-1, -1)
+
+    for i in range(4):
+        for j in range(4):
+            assert_equal(
+                str(
+                    crd2idx(
+                        RuntimeTuple[unk_r2_t](i, j),
+                        RuntimeTuple[unk_r2_t](4, 4),
+                        RuntimeTuple[unk_r2_t](4, 1),
+                    )
+                ),
+                str(crd2idx_int_tuple(IntTuple(i, j), shape_t, stride_t)),
+            )
+
+
 def main():
     test_construct()
     test_concat()
     test_flatten()
     test_prefix_product()
     test_idx2crd()
+    test_crd2idx()

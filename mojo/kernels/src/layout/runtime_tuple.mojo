@@ -19,7 +19,7 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
 
 
 @register_passable("trivial")
-struct RuntimeTuple[S: IntTuple](Stringable, Sized):
+struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
     alias scalar_length = len(flatten(S))
     var value: StaticIntTuple[Self.scalar_length]
 
@@ -165,6 +165,16 @@ fn prefix_product[
 
 
 @always_inline
+fn product[t: IntTuple](tuple: RuntimeTuple[t]) -> Int:
+    var res: Int = 1
+
+    @parameter
+    for i in range(tuple.scalar_length):
+        res *= tuple.value[i]
+    return res
+
+
+@always_inline
 fn idx2crd[
     idx_t: IntTuple, shape_t: IntTuple, stride_t: IntTuple
 ](
@@ -186,3 +196,45 @@ fn idx2crd[
     idx2crd_int_tuple(idx_t, shape_t, prefix_product_int_tuple(shape_t))
 ]:
     return idx2crd(idx, shape, prefix_product(shape))
+
+
+fn crd2idx[
+    crd_t: IntTuple, shape_t: IntTuple, stride_t: IntTuple
+](
+    crd: RuntimeTuple[crd_t],
+    shape: RuntimeTuple[shape_t],
+    stride: RuntimeTuple[stride_t],
+) -> Int:
+    @parameter
+    if crd_t.is_tuple():
+        constrained[
+            shape_t.is_tuple()
+            and (len(crd_t) == len(shape_t) == len(stride_t)),
+            "Inputs should have same rank",
+        ]()
+        var r: Int = 0
+        alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))
+
+        @parameter
+        for i in range(size):
+            r += crd2idx(crd[i], shape[i], stride[i])
+        return r
+    else:
+        var int_crd: Int = 0 if len(crd) == 0 else to_int(crd)
+
+        @parameter
+        if shape_t.is_tuple():  # "int" tuple tuple
+            constrained[
+                len(shape_t) == len(stride_t),
+                "shape and stride should have same rank",
+            ]()
+            var result: Int = 0
+
+            @parameter
+            for i in range(len(shape_t) - 1):
+                var divisor_quotient = divmod(int_crd, product(shape[i]))
+                result += crd2idx(divisor_quotient[1], shape[i], stride[i])
+                int_crd = divisor_quotient[0]
+            return result + crd2idx(int_crd, shape[-1], stride[-1])
+        else:  # "int" "int" "int"
+            return int_crd * to_int(stride)
