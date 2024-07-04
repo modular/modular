@@ -193,7 +193,7 @@ fn welford_block_all_reduce[
     )
 
 
-fn layer_norm_gpu_warp_tiling[
+fn layer_norm_gpu_warp_tiling_vector[
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -229,14 +229,26 @@ fn layer_norm_gpu_warp_tiling[
     # To utilize simd vector load
     @parameter
     if input_func:
-        alias ew_input_fn = input_func.value()
-        vec_data = ew_input_fn[simd_width, rank](StaticIntTuple[rank](row, idx))
+        alias input_fn = input_func.value()
+        if idx < num_cols:
+            vec_data = input_fn[simd_width, rank](
+                StaticIntTuple[rank](row, idx)
+            )
+            # every thread computes its own simd width of mean and variance
+            for i in range(simd_width):
+                welford_update(
+                    vec_data[i], thread_mean, thread_m2, thread_count
+                )
     else:
-        vec_data = data.load[width=simd_width, alignment=align](Index(row, idx))
-
-    # every thread computes its own simd width of mean and variance
-    for i in range(simd_width):
-        welford_update[type](vec_data[i], thread_mean, thread_m2, thread_count)
+        if idx < num_cols:
+            vec_data = data.load[width=simd_width, alignment=align](
+                Index(row, idx)
+            )
+            # every thread computes its own simd width of mean and variance
+            for i in range(simd_width):
+                welford_update(
+                    vec_data[i], thread_mean, thread_m2, thread_count
+                )
 
     # a whole block computes part of the row main and variance and broadcasts to
     # threadIdx 0 to update the final row mean and variance
@@ -244,16 +256,75 @@ fn layer_norm_gpu_warp_tiling[
         thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
     )
 
-    var row_var = max((row_m2 / row_count), 0.0)
+    var row_var = max((row_m2 / (row_count - 1)), 0.0)
 
     var norm_factor = rsqrt(row_var + epsilon)
-    var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
-        width=simd_width, alignment=align
-    ](Index(idx)) + beta.load[width=simd_width, alignment=align](Index(idx))
-    data.store[width=simd_width, alignment=align](Index(row, idx), norm_val)
+    if idx < num_cols:
+        var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
+            width=simd_width, alignment=align
+        ](Index(idx)) + beta.load[width=simd_width, alignment=align](Index(idx))
+        data.store[width=simd_width, alignment=align](Index(row, idx), norm_val)
 
 
-fn layer_norm_gpu_block[
+fn layer_norm_gpu_warp_tiling_scalar[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    input_func: OptionalReg[
+        fn[
+            width: Int, rank: Int
+        ] (StaticIntTuple[rank]) capturing -> SIMD[type, width]
+    ] = None,
+](
+    data: NDBuffer[type, 2],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+):
+    var num_rows = data.dim[0]()
+    var num_cols = data.dim[1]()
+    var tid = ThreadIdx.x()
+    var row = BlockIdx.x()
+
+    var vec_data = Scalar[type]()
+
+    # To store final row mean, mean of squares and the element count
+    var row_mean = Scalar[type]()
+    var row_m2 = Scalar[type]()
+    var row_count = Scalar[type]()
+
+    var thread_mean = Scalar[type]()
+    var thread_m2 = Scalar[type]()
+    var thread_count = Scalar[type]()
+
+    # To utilize simd vector load
+    @parameter
+    if input_func:
+        alias input_fn = input_func.value()
+        if tid < num_cols:
+            vec_data = input_fn[1, rank](StaticIntTuple[rank](row, tid))
+            welford_update(vec_data, thread_mean, thread_m2, thread_count)
+    else:
+        if tid < num_cols:
+            vec_data = data.load(Index(row, tid))
+            welford_update(vec_data, thread_mean, thread_m2, thread_count)
+
+    # a whole block computes part of the row main and variance and broadcasts to
+    # threadIdx 0 to update the final row mean and variance
+    welford_block_all_reduce(
+        thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
+    )
+
+    var row_var = max((row_m2 / (row_count - 1)), 0.0)
+    var norm_factor = rsqrt(row_var + epsilon)
+    if tid < num_cols:
+        var norm_val = (vec_data - row_mean) * norm_factor * gamma.load(
+            tid
+        ) + beta.load(tid)
+        data.store(Index(row, tid), norm_val)
+
+
+fn layer_norm_gpu_block_vector[
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -280,31 +351,39 @@ fn layer_norm_gpu_block[
     var row_count = Scalar[type]()
 
     # Every block has a single row to process
-    for x in range(tid * simd_width, num_cols, BlockDim.x() * simd_width):
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
         var thread_mean = Scalar[type]()
         var thread_m2 = Scalar[type]()
         var thread_count = Scalar[type]()
 
         # To utilize simd vector load
         var vec_data = SIMD[type, simd_width]()
+        var offset = x * BlockDim.x() * simd_width + tid * simd_width
 
         @parameter
         if input_func:
-            alias ew_input_fn = input_func.value()
-            vec_data = ew_input_fn[simd_width, rank](
-                StaticIntTuple[rank](row, x)
-            )
-        else:
-            vec_data = data.load[width=simd_width, alignment=align](
-                Index(row, x)
-            )
+            alias input_fn = input_func.value()
+            if offset < num_cols:
+                vec_data = input_fn[simd_width, rank](
+                    StaticIntTuple[rank](row, offset)
+                )
 
-        # every thread computes its own simd width of mean and variance
-        @parameter
-        for i in range(simd_width):
-            welford_update[type](
-                vec_data[i], thread_mean, thread_m2, thread_count
-            )
+                @parameter
+                for i in range(simd_width):
+                    welford_update(
+                        vec_data[i], thread_mean, thread_m2, thread_count
+                    )
+        else:
+            if offset < num_cols:
+                vec_data = data.load[width=simd_width, alignment=align](
+                    Index(row, offset)
+                )
+
+                @parameter
+                for i in range(simd_width):
+                    welford_update(
+                        vec_data[i], thread_mean, thread_m2, thread_count
+                    )
 
         # a whole block computes part of the row main and variance and broadcasts to
         # threadIdx 0 to update the final row mean and variance
@@ -312,29 +391,120 @@ fn layer_norm_gpu_block[
             thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
         )
 
-    var row_var = max((row_m2 / row_count), 0.0)
+    var row_var = max((row_m2 / (row_count - 1)), 0.0)
 
     # need a pass again to perform in place normalization
-    for x in range(tid * simd_width, num_cols, BlockDim.x() * simd_width):
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
         var vec_data = SIMD[type, simd_width]()
+        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+        var norm_factor = rsqrt(row_var + epsilon)
 
         @parameter
         if input_func:
-            alias ew_input_fn = input_func.value()
-            vec_data = ew_input_fn[simd_width, rank](
-                StaticIntTuple[rank](row, x)
-            )
+            alias input_fn = input_func.value()
+            if offset < num_cols:
+                vec_data = input_fn[simd_width, rank](
+                    StaticIntTuple[rank](row, offset)
+                )
+                var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
+                    width=simd_width, alignment=align
+                ](Index(offset)) + beta.load[width=simd_width, alignment=align](
+                    Index(offset)
+                )
+                data.store[width=simd_width, alignment=align](
+                    Index(row, offset), norm_val
+                )
         else:
-            vec_data = data.load[width=simd_width, alignment=align](
-                Index(row, x)
-            )
+            if offset < num_cols:
+                vec_data = data.load[width=simd_width, alignment=align](
+                    Index(row, offset)
+                )
+                var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
+                    width=simd_width, alignment=align
+                ](Index(offset)) + beta.load[width=simd_width, alignment=align](
+                    Index(offset)
+                )
+                data.store[width=simd_width, alignment=align](
+                    Index(row, offset), norm_val
+                )
 
+
+fn layer_norm_gpu_block_scalar[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    input_func: OptionalReg[
+        fn[
+            width: Int, rank: Int
+        ] (StaticIntTuple[rank]) capturing -> SIMD[type, width]
+    ] = None,
+](
+    data: NDBuffer[type, 2],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+):
+    var num_rows = data.dim[0]()
+    var num_cols = data.dim[1]()
+    var tid = ThreadIdx.x()
+    var row = BlockIdx.x()
+
+    # To store final row mean, mean of squares and the element count
+    var row_mean = Scalar[type]()
+    var row_m2 = Scalar[type]()
+    var row_count = Scalar[type]()
+
+    # Every block has a single row to process
+    for x in range(ceildiv(num_cols, BlockDim.x())):
+        var thread_mean = Scalar[type]()
+        var thread_m2 = Scalar[type]()
+        var thread_count = Scalar[type]()
+
+        # To utilize simd vector load
+        var vec_data = Scalar[type]()
+        var offset = x * BlockDim.x() + tid
+
+        @parameter
+        if input_func:
+            alias input_fn = input_func.value()
+            if offset < num_cols:
+                vec_data = input_fn[1, rank](StaticIntTuple[rank](row, offset))
+                welford_update(vec_data, thread_mean, thread_m2, thread_count)
+        else:
+            if offset < num_cols:
+                vec_data = data.load(Index(row, offset))
+                welford_update(vec_data, thread_mean, thread_m2, thread_count)
+
+        # a whole block computes part of the row main and variance and broadcasts to
+        # threadIdx 0 to update the final row mean and variance
+        welford_block_all_reduce(
+            thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
+        )
+
+    var row_var = max((row_m2 / (row_count - 1)), 0.0)
+
+    # need a pass again to perform in place normalization
+    for x in range(ceildiv(num_cols, BlockDim.x())):
+        var vec_data = Scalar[type]()
+        var offset = x * BlockDim.x() + tid
         var norm_factor = rsqrt(row_var + epsilon)
 
-        var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
-            width=simd_width, alignment=align
-        ](Index(x)) + beta.load[width=simd_width, alignment=align](Index(x))
-        data.store[width=simd_width, alignment=align](Index(row, x), norm_val)
+        @parameter
+        if input_func:
+            alias input_fn = input_func.value()
+            if offset < num_cols:
+                vec_data = input_fn[1, rank](StaticIntTuple[rank](row, offset))
+                var norm_val = (vec_data - row_mean) * norm_factor * gamma.load(
+                    offset
+                ) + beta.load(offset)
+                data.store(Index(row, offset), norm_val)
+        else:
+            if offset < num_cols:
+                vec_data = data.load(Index(row, offset))
+                var norm_val = (vec_data - row_mean) * norm_factor * gamma.load(
+                    offset
+                ) + beta.load(offset)
+                data.store(Index(row, offset), norm_val)
 
 
 fn layer_norm_gpu[
@@ -359,40 +529,83 @@ fn layer_norm_gpu[
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
 
+    var grid_dim = rows
+    var block_dim = min(
+        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        WARP_SIZE * max_warps_per_block,
+    )
+
     # When the number of columns are less enough that they can be placed in
     # registers we do warp tiling which is a single pass to do mean/var computation
     # and normalization.
     if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-        var gpu_func = ctx.compile_function[
-            layer_norm_gpu_warp_tiling[type, simd_width, rank, input_0_fn]
-        ]()
-        ctx.enqueue_function(
-            gpu_func,
-            output,
-            gamma,
-            beta,
-            epsilon,
-            grid_dim=rows,
-            block_dim=min(cols // simd_width, WARP_SIZE * max_warps_per_block),
-        )
+        if cols % simd_width == 0:
+            var gpu_func = ctx.compile_function[
+                layer_norm_gpu_warp_tiling_vector[
+                    type, simd_width, rank, input_0_fn
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                output,
+                gamma,
+                beta,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
+        else:
+            var gpu_func = ctx.compile_function[
+                layer_norm_gpu_warp_tiling_scalar[
+                    type, simd_width, rank, input_0_fn
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                output,
+                gamma,
+                beta,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
     else:
-        var gpu_func = ctx.compile_function[
-            layer_norm_gpu_block[
-                type,
-                simd_width,
-                rank,
-                input_0_fn,
-            ]
-        ]()
-        ctx.enqueue_function(
-            gpu_func,
-            output,
-            gamma,
-            beta,
-            epsilon,
-            grid_dim=rows,
-            block_dim=min(cols // simd_width, WARP_SIZE * max_warps_per_block),
-        )
+        if cols % simd_width == 0:
+            var gpu_func = ctx.compile_function[
+                layer_norm_gpu_block_vector[
+                    type,
+                    simd_width,
+                    rank,
+                    input_0_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                output,
+                gamma,
+                beta,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
+        else:
+            var gpu_func = ctx.compile_function[
+                layer_norm_gpu_block_scalar[
+                    type,
+                    simd_width,
+                    rank,
+                    input_0_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                output,
+                gamma,
+                beta,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
 
 
 fn layer_norm_cpu[
