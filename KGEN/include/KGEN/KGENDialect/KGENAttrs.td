@@ -1056,6 +1056,11 @@ def KGEN_CustomOpImplArrayAttr : ArrayOfAttr<KGENDialect, "CustomOpImplArray",
     AttrBuilder<(ins CArg<"ArrayRef<CustomOpImplAttr>", "{}">:$value)>
   ];
 
+  let extraClassDeclaration = [{
+    /// Get the implementation of an op.
+    CustomOpImplAttr getOpImpl(StringAttr opName);
+  }];
+
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }

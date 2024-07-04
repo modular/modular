@@ -39,6 +39,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();
   KGEN::registerLowerArgConventions();
+  KGEN::registerLowerCustomOps();
   KGEN::registerLowerLoops();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
