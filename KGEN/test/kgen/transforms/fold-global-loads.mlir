@@ -1,4 +1,4 @@
-// RUN: kgen-opt -fold-global-const-loads -canonicalize %s | FileCheck %s
+// RUN: kgen-opt -canonicalize %s | FileCheck %s
 
 kgen.func @bitcast() -> !pop.scalar<si64> {
   %0 = pop.global_constant: array<1, scalar<si64>> = <[2]>
