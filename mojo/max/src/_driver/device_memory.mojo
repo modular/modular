@@ -38,6 +38,15 @@ trait DeviceBuffer:
         """
         ...
 
+    fn move_to(owned self, dev: Device) raises -> Self:
+        """Returns self if already allocated on dev, otherwise copy the contents
+        of self to dev.
+
+        Args:
+            dev: The Device of the returned buffer.
+        """
+        ...
+
     fn unsafe_ptr(self) -> DTypePointer[DType.uint8]:
         ...
 
@@ -218,6 +227,12 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         self.copy_into(dst)
         return dst^
 
+    fn move_to(owned self, dev: Device) raises -> Self:
+        if dev == self._device:
+            return self^
+        else:
+            return self.copy_to(dev)
+
     fn unsafe_ptr(self) -> DTypePointer[DType.uint8]:
         """Returns a pointer to the underlying device memory.
 
@@ -276,6 +291,12 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         if dst_tensor.spec != self.spec:
             raise "src and dst tensor specs do not match"
         self._storage.copy_into(dst_tensor._storage)
+
+    fn move_to(owned self, dev: Device) raises -> Self:
+        if dev == self._storage._device:
+            return self^
+        else:
+            return self.copy_to(dev)
 
     fn unsafe_ptr(self) -> DTypePointer[DType.uint8]:
         return self._storage.unsafe_ptr()

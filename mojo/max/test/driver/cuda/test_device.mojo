@@ -8,7 +8,7 @@
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
 from max._driver import cpu_device, cuda_device, Tensor
-from testing import assert_equal
+from testing import assert_equal, assert_not_equal
 from max.tensor import TensorSpec
 from utils import Index
 
@@ -82,8 +82,24 @@ def test_copy_d2d():
             assert_equal(input[i, j], output[i, j])
 
 
+def test_move():
+    cpu = cpu_device()
+    gpu = cuda_device()
+
+    tensor = cpu.allocate(TensorSpec(DType.float32, (2, 2)))
+    addr = tensor.unsafe_ptr()
+    moved_tensor = tensor.move_to(cpu)
+    assert_equal(addr, moved_tensor.unsafe_ptr())
+
+    tensor = cpu.allocate(TensorSpec(DType.float32, (2, 2)))
+    addr = tensor.unsafe_ptr()
+    moved_tensor = moved_tensor.move_to(gpu)
+    assert_not_equal(addr, moved_tensor.unsafe_ptr())
+
+
 def main():
     test_cuda_device()
     test_copy_d2h()
     test_copy_empty()
     test_copy_d2d()
+    test_move()
