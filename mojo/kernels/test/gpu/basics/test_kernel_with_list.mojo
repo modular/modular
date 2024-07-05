@@ -20,7 +20,7 @@ fn kernel_with_list(res: Pointer[Float32]):
 fn test_kernel_with_list() raises:
     print("== test_kernel_with_list")
     var res = _malloc_managed[Float32](1)
-    res.store(0)
+    res[] = 0
     # CHECK: call.uni
     # CHECK: malloc,
     # CHECK: (

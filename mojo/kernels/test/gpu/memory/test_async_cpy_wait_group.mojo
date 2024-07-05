@@ -25,10 +25,10 @@ fn copy_via_shared(
     dst: DTypePointer[DType.float32],
 ):
     var thread_id = ThreadIdx.x()
-    var mem_buff: Pointer[Float32, AddressSpace.SHARED] = stack_allocation[
-        16, Float32, address_space = AddressSpace.SHARED
-    ]()
-    var src_global: Pointer[
+    var mem_buff: UnsafePointer[
+        Float32, AddressSpace.SHARED
+    ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
+    var src_global: UnsafePointer[
         Float32, AddressSpace.GLOBAL
     ] = src._as_scalar_pointer().bitcast[address_space = AddressSpace.GLOBAL]()
 

@@ -10,7 +10,6 @@
 from pathlib import Path, _dir_of_current_file
 
 from gpu.host import Context, CudaInstance, Device, Function, Module, Stream
-from memory.unsafe import Pointer
 
 
 # CHECK-LABEL: run_cuda_mem_ops
@@ -19,7 +18,7 @@ fn run_cuda_mem_ops(ctx: Context) raises:
 
     alias length = 20
 
-    var host_mem = Pointer[Int].alloc(length)
+    var host_mem = UnsafePointer[Int].alloc(length)
     var device_mem = ctx.malloc[Int](length)
 
     ctx.copy_host_to_device(device_mem, host_mem, length)
@@ -48,9 +47,9 @@ fn run_vec_add(ctx: Context) raises:
 
     alias length = 1024
 
-    var in0_host = Pointer[Float32].alloc(length)
-    var in1_host = Pointer[Float32].alloc(length)
-    var out_host = Pointer[Float32].alloc(length)
+    var in0_host = UnsafePointer[Float32].alloc(length)
+    var in1_host = UnsafePointer[Float32].alloc(length)
+    var out_host = UnsafePointer[Float32].alloc(length)
 
     for i in range(length):
         in0_host[i] = i
@@ -65,7 +64,7 @@ fn run_vec_add(ctx: Context) raises:
 
     @parameter
     @always_inline
-    fn populate(ptr: Pointer[NoneType]):
+    fn populate(ptr: UnsafePointer[NoneType]):
         return
 
     var block_dim = 32
@@ -93,7 +92,7 @@ fn run_vec_add(ctx: Context) raises:
     # CHECK: at index 8 the value is 10.0
     # CHECK: at index 9 the value is 11.0
     for i in range(10):
-        print("at index", i, "the value is", out_host.load(i))
+        print("at index", i, "the value is", out_host[i])
 
     ctx.free(in0_device)
     ctx.free(in1_device)
