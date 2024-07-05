@@ -212,7 +212,7 @@ alias cuModuleLoadDataEx = _dylib_function[
         UnsafePointer[UInt8],
         UInt32,
         UnsafePointer[JitOptions],
-        UnsafePointer[UnsafePointer[NoneType]],
+        UnsafePointer[Int],
     ) -> Result,
 ]
 

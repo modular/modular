@@ -367,47 +367,37 @@ struct Module:
             memset_zero(error_buffer, buffer_size)
 
             var opts = stack_allocation[max_num_options, JitOptions]()
-            var option_vals = stack_allocation[
-                max_num_options, UnsafePointer[NoneType]
-            ]()
+            var option_vals = stack_allocation[max_num_options, Int]()
 
             opts[num_options] = JitOptions.INFO_LOG_BUFFER
-            option_vals[num_options] = info_buffer.bitcast[NoneType]()
+            option_vals[num_options] = int(info_buffer)
             num_options += 1
 
             opts[num_options] = JitOptions.INFO_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = UnsafePointer[NoneType](
-                address=buffer_size
-            )
+            option_vals[num_options] = buffer_size
             num_options += 1
 
             opts[num_options] = JitOptions.ERROR_LOG_BUFFER
-            option_vals[num_options] = info_buffer.bitcast[NoneType]()
+            option_vals[num_options] = int(info_buffer)
             num_options += 1
 
             opts[num_options] = JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = UnsafePointer[NoneType](
-                address=buffer_size
-            )
+            option_vals[num_options] = buffer_size
             num_options += 1
 
             if debug:
                 opts[num_options] = JitOptions.GENERATE_DEBUG_INFO
-                option_vals[num_options] = UnsafePointer[NoneType](address=1)
+                option_vals[num_options] = 1
                 num_options += 1
 
             if max_registers:
                 opts[num_options] = JitOptions.MAX_REGISTERS
-                option_vals[num_options] = UnsafePointer[NoneType](
-                    address=max_registers.value()
-                )
+                option_vals[num_options] = max_registers.value()
                 num_options += 1
 
             if threads_per_block:
                 opts[num_options] = JitOptions.THREADS_PER_BLOCK
-                option_vals[num_options] = UnsafePointer[NoneType](
-                    address=threads_per_block.value()
-                )
+                option_vals[num_options] = threads_per_block.value()
                 num_options += 1
 
             # Note that content has already gone through _cleanup_asm and
