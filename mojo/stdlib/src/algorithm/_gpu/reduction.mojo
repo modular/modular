@@ -104,7 +104,7 @@ fn block_reduce[
         address_space = AddressSpace.SHARED,
     ]()
 
-    var warp = ThreadIdx.x() // WARP_SIZE
+    var warp: UInt = ThreadIdx.x() // WARP_SIZE
 
     var warp_accum = do_warp_reduce(val)
 
@@ -114,7 +114,9 @@ fn block_reduce[
         for i in range(num_reductions):
             # bank conflict for sub 4 byte data elems
             SIMD[size=simd_width].store(
-                shared, (warp * num_reductions + i) * simd_width, warp_accum[i]
+                shared,
+                (Int(warp.value) * num_reductions + i) * simd_width,
+                warp_accum[i],
             )
 
     barrier()
@@ -227,14 +229,16 @@ fn row_reduce[
         init_cast[i] = init[i].cast[accum_type]()
         accum[i] = init_cast[i]
 
-    var tid = ThreadIdx.x()
+    var tid: UInt = ThreadIdx.x()
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row = (tid + offset_in_row) * simd_width
+        var idx_in_padded_row: UInt = (
+            tid + offset_in_row.value
+        ) * simd_width.value
 
-        if idx_in_padded_row >= rounded_row_size:
+        if idx_in_padded_row >= UInt(rounded_row_size.value):
             break
 
-        row_coords[axis] = idx_in_padded_row
+        row_coords[axis] = Int(idx_in_padded_row.value)
         var val = input_fn[type, simd_width, rank](row_coords).cast[
             accum_type
         ]()
@@ -290,12 +294,10 @@ fn reduce_kernel[
 
     # grid stride loop over rows
     # each block reduces a row, which requires no partial reductions
-    for row_idx in range(
-        BlockIdx.x(),
-        num_rows,
-        GridDim.x(),
-    ):
-        var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+    for row_idx in range(BlockIdx.x(), UInt(num_rows.value), GridDim.x()):
+        var row_coords = _get_nd_indices_from_flat_index[rank](
+            row_idx.value, shape, axis
+        )
 
         var row_accum = row_reduce[
             BLOCK_SIZE,

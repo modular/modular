@@ -1136,7 +1136,7 @@ fn _get_start_indices_of_nth_subvolume_uint[
     Returns:
         Constructed ND-index.
     """
-    return _get_start_indices_of_nth_subvolume[rank, int(subvolume_rank)](
+    return _get_start_indices_of_nth_subvolume[rank, Int(subvolume_rank.value)](
         n.value, shape
     )
 
@@ -1495,11 +1495,15 @@ fn _elementwise_impl_gpu[
             return
 
         # process the packed region
-        var tid = ThreadIdx.x() + block_size * BlockIdx.x()
-        for idx in range(tid, num_packed_elems, block_size * GridDim.x()):
-            var start_indices = _get_start_indices_of_nth_subvolume[rank, 0](
-                idx * simd_width, shape
-            )
+        var tid = ThreadIdx.x() + UInt(block_size.value) * BlockIdx.x()
+        for idx in range(
+            Int(tid.value),
+            Int(num_packed_elems.value),
+            block_size * Int(GridDim.x().value),
+        ):
+            var start_indices = _get_start_indices_of_nth_subvolume_uint[
+                rank, 0
+            ](UInt(idx.value) * simd_width.value, shape)
 
             @parameter
             if handle_uneven_simd:
@@ -1509,7 +1513,8 @@ fn _elementwise_impl_gpu[
                     for off in range(simd_width):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume[rank, 0](
-                                idx * simd_width + off, shape
+                                idx * simd_width + off,
+                                shape,
                             )
                         )
                 else:
@@ -1520,7 +1525,7 @@ fn _elementwise_impl_gpu[
         # process the tail region
         if tid < unpacked_tail_length:
             var index_tup = _get_start_indices_of_nth_subvolume[rank, 0](
-                packed_region_length + tid, shape
+                packed_region_length + Int(tid.value), shape
             )
             func[1, rank](index_tup)
 
