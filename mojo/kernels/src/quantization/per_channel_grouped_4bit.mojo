@@ -569,12 +569,8 @@ fn q4_k_dequantize_impl(
     alias block_nbytes = sizeof[block_Q4_K]()
 
     var num_blocks = input_tensor.num_elements() // block_nbytes
-    var input_q4_k_ptr = UnsafePointer[block_Q4_K](
-        address=int(input_tensor.data.address)
-    )
-    var output_ptr = UnsafePointer[Float32](
-        address=int(output_tensor.data.address)
-    )
+    var input_q4_k_ptr = input_tensor.data.bitcast[block_Q4_K]()
+    var output_ptr = output_tensor.data.bitcast[Float32]()
     for block_idx in range(num_blocks):
         var src_ptr = input_q4_k_ptr + block_idx
         var dst_ptr = output_ptr + (block_idx * block_nelems)
@@ -662,12 +658,8 @@ fn q6_k_dequantize_impl(
     alias block_nbytes = sizeof[block_Q6_K]()
 
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
-    var input_q6_k_ptr = UnsafePointer[block_Q6_K](
-        address=int(input_tensor.data.address)
-    )
-    var dst_ptr = UnsafePointer[Float32](
-        address=int(output_tensor.data.address)
-    )
+    var input_q6_k_ptr = input_tensor.data.bitcast[block_Q6_K]()
+    var dst_ptr = output_tensor.data.bitcast[Float32]()
     var dst_idx = 0
     for block_idx in range(num_blocks):
         var src_ptr = input_q6_k_ptr + block_idx

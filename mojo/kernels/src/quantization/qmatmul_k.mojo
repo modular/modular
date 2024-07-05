@@ -573,10 +573,8 @@ def matmul_Q4_K_pack_b(
     alias simd_width = simdwidthof[DType.float32]()
     alias block_n = simd_width * 2
 
-    var src_ptr = UnsafePointer[_block_Q4_K](address=int(b.data))
-    var dst_ptr = UnsafePointer[_block_Q4_K_packed[block_n]](
-        address=int(b_packed.data)
-    )
+    var src_ptr = b.data.bitcast[_block_Q4_K]()
+    var dst_ptr = b_packed.data.bitcast[_block_Q4_K_packed[block_n]]()
 
     for kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -600,10 +598,8 @@ def matmul_Q6_K_pack_b(
     alias simd_width = simdwidthof[DType.float32]()
     alias block_n = simd_width * 2
 
-    var src_ptr = UnsafePointer[_block_Q6_K](address=int(b.data))
-    var dst_ptr = UnsafePointer[_block_Q6_K_packed[block_n]](
-        address=int(b_packed.data)
-    )
+    var src_ptr = b.data.bitcast[_block_Q6_K]()
+    var dst_ptr = b_packed.data.bitcast[_block_Q6_K_packed[block_n]]()
 
     for kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -1394,7 +1390,7 @@ fn _matmul_Qb_K[
         var task_n_count = block_range[1] * grain_size
 
         var a_packed_ptr = a_packed_base_ptr
-        var b_packed_ptr = UnsafePointer[b_type](address=int(b.data))
+        var b_packed_ptr = b.data.bitcast[b_type]()
 
         for k_block in range(k_blocks):
             var bn_packed_ptr = b_packed_ptr + task_n_start

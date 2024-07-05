@@ -134,7 +134,7 @@ struct qgemm_Q4_0(QuantizedGemm):
         var b_ptr = DTypePointer[DType.uint8].alloc(
             N * k_groups * sizeof[_block_Q4_0]()
         )
-        var block_ptr = UnsafePointer[_block_Q4_0](address=int(b_ptr.address))
+        var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
         for n in range(N):
             for k in range(k_groups):
@@ -168,9 +168,9 @@ struct qgemm_Q4_0(QuantizedGemm):
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = UnsafePointer[_block_Q4_0](
-            address=int(b._offset(Index(n, 0)))
-        ) + (k // Self.k_group_size())
+        var block_ptr = b._offset(Index(n, 0)).bitcast[_block_Q4_0]() + (
+            k // Self.k_group_size()
+        )
 
         var a_quant_data = stack_allocation[
             _block_Q4_0.group_size, DType.int8
@@ -221,7 +221,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         var b_ptr = DTypePointer[DType.uint8].alloc(
             N * k_groups * sizeof[_block_Q4_K]()
         )
-        var block_ptr = UnsafePointer[_block_Q4_K](address=int(b_ptr.address))
+        var block_ptr = b_ptr.bitcast[_block_Q4_K]()
 
         for n in range(N):
             for k in range(k_groups):
@@ -257,9 +257,9 @@ struct qgemm_Q4_K(QuantizedGemm):
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = UnsafePointer[_block_Q4_K](
-            address=int(b._offset(Index(n, 0)))
-        ) + (k // Self.k_group_size())
+        var block_ptr = b._offset(Index(n, 0)).bitcast[_block_Q4_K]() + (
+            k // Self.k_group_size()
+        )
 
         var a_quant_data = stack_allocation[
             _block_QK_K.quantized_k, DType.int8
@@ -341,7 +341,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         var b_ptr = DTypePointer[DType.uint8].alloc(
             N * k_groups * sizeof[_block_Q6_K]()
         )
-        var block_ptr = UnsafePointer[_block_Q6_K](address=int(b_ptr.address))
+        var block_ptr = b_ptr.bitcast[_block_Q6_K]()
 
         for n in range(N):
             for k in range(k_groups):
@@ -377,9 +377,9 @@ struct qgemm_Q6_K(QuantizedGemm):
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = UnsafePointer[_block_Q6_K](
-            address=int(b._offset(Index(n, 0)))
-        ) + (k // Self.k_group_size())
+        var block_ptr = b._offset(Index(n, 0)).bitcast[_block_Q6_K]() + (
+            k // Self.k_group_size()
+        )
 
         var a_quant_data = stack_allocation[
             _block_QK_K.quantized_k, DType.int8
