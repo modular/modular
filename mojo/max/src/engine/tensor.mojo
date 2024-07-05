@@ -162,7 +162,7 @@ struct EngineNumpyView:
         Returns:
             DTypePointer of given type.
         """
-        return DTypePointer[DType.invalid](address=self._obj.ctypes.data)
+        return self._obj.ctypes.data._unsafe_get_as_pointer[DType.invalid]()
 
     fn dtype(self) raises -> DType:
         """Get DataType of the array backing the view.
