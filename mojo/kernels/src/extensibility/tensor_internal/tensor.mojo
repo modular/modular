@@ -336,7 +336,7 @@ struct Tensor[type: DType](
         """
         # Store the list length before we do a wiping take from it
         var data_anyptr = list.steal_data()
-        var data_ptr = Pointer[Scalar[type]](address=int(data_anyptr))
+        var data_ptr = data_anyptr
         var data_dptr = DTypePointer[type](data_ptr)
 
         self = Self(shape, data_dptr)
@@ -352,7 +352,7 @@ struct Tensor[type: DType](
         var list_len = len(list)
 
         var data_anyptr = list.steal_data()
-        var data_ptr = Pointer[Scalar[type]](address=int(data_anyptr))
+        var data_ptr = data_anyptr
         var data_dptr = DTypePointer[type](data_ptr)
 
         self = Self(TensorShape(list_len), data_dptr)
