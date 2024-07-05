@@ -68,13 +68,13 @@ struct GRPCClient:
             ClientResult.free(self._impl._lib, result)
             return response^
 
-    fn infer(
+    fn _make_inference_request(
         inout self,
         name: String,
         version: String,
         inputs: TensorMap,
         outputs: List[String],
-    ) raises -> InferenceResponse:
+    ) raises -> InferenceRequest:
         var request = InferenceRequest(
             self._impl.create_infer_request(
                 name._strref_dangerous(), version._strref_dangerous()
@@ -83,4 +83,33 @@ struct GRPCClient:
         )
         request.set_input_tensors(inputs.keys(), inputs)
         request.set_outputs(outputs)
+        return request^
+
+    fn _make_inference_response(
+        inout self,
+        name: String,
+        version: String,
+        inputs: TensorMap,
+        outputs: List[String],
+    ) raises -> InferenceRequest:
+        var request = InferenceRequest(
+            self._impl.create_infer_request(
+                name._strref_dangerous(), version._strref_dangerous()
+            ),
+            self._session,
+        )
+        request.set_input_tensors(inputs.keys(), inputs)
+        request.set_outputs(outputs)
+        return request^
+
+    fn infer(
+        inout self,
+        name: String,
+        version: String,
+        inputs: TensorMap,
+        outputs: List[String],
+    ) raises -> InferenceResponse:
+        var request = self._make_inference_request(
+            name, version, inputs, outputs
+        )
         return Runtime().run(self._infer(request))

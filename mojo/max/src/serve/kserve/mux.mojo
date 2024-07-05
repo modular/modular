@@ -6,10 +6,10 @@
 """Provides a basic multi-model server."""
 
 from utils.variant import Variant
-from max.engine import InferenceSession, InputSpec, Model
+from max.engine import InferenceSession, InputSpec, Model, TensorMap
 
 from .service import InferenceService
-from .types import InferenceRequest, InferenceResponse
+from .types import InferenceRequest, InferenceResponse, CInferenceResponse
 
 
 @value
@@ -82,11 +82,15 @@ struct MuxInferenceService(InferenceService):
     fn infer(
         inout self, request: InferenceRequest, inout response: InferenceResponse
     ) raises -> None:
+        var outputs = self.infer(request)
+        response.set_output_tensors(request.get_outputs(), outputs^)
+
+    fn infer(inout self, request: InferenceRequest) raises -> TensorMap:
         var name = request.get_model_name()
         var version = request.get_model_version()
-        # TODO: Choose latest if version is not set.
         var model = self._model_dict[name][][version]
 
         var inputs = request.get_input_tensors()
         var outputs = model[].execute(inputs)
-        response.set_output_tensors(request.get_outputs(), outputs^)
+
+        return outputs^
