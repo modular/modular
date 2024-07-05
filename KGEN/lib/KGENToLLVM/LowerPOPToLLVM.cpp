@@ -1311,8 +1311,6 @@ using ConvertPOPMin = OneToOneFloatOrIntConversion<MinOp, LLVM::MinNumOp,
 using ConvertPOPBitcast =
     mlir::OneToOneConvertToLLVMPattern<BitcastOp, LLVM::BitcastOp>;
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
-using ConvertPOPIndexToPointer =
-    mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
 using ConvertPOPPointerToIndex =
     mlir::OneToOneConvertToLLVMPattern<PointerToIndexOp, LLVM::PtrToIntOp>;
 
@@ -1346,7 +1344,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDTypeToUI8,
       ConvertPOPFence,
       ConvertPOPFMA,
-      ConvertPOPIndexToPointer,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,

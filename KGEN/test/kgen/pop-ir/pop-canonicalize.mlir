@@ -542,42 +542,6 @@ kgen.func @cast_index_to_index() -> !pop.scalar<index> {
   kgen.return %1 : !pop.scalar<index>
 }
 
-// CHECK-LABEL: @cast_int_to_address
-kgen.func @cast_int_to_address() -> !pop.scalar<address> {
-  // CHECK-NEXT: scalar<address> = <62>
-  // CHECK-NOT: pop.cast
-  %0 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<62>>
-  %1 = pop.cast %0 : !pop.scalar<si32> to !pop.scalar<address>
-  kgen.return %1 : !pop.scalar<address>
-}
-
-// CHECK-LABEL: @cast_address_to_int
-kgen.func @cast_address_to_int() -> !pop.scalar<ui64> {
-  // CHECK-NEXT: scalar<ui64> = <78>
-  // CHECK-NOT: pop.cast
-  %0 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<78>>
-  %1 = pop.cast %0 : !pop.scalar<address> to !pop.scalar<ui64>
-  kgen.return %1 : !pop.scalar<ui64>
-}
-
-// CHECK-LABEL: @cast_index_to_address
-kgen.func @cast_index_to_address() -> !pop.scalar<address> {
-  // CHECK-NEXT: scalar<address> = <88>
-  // CHECK-NOT: pop.cast
-  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<88>>
-  %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<address>
-  kgen.return %1 : !pop.scalar<address>
-}
-
-// CHECK-LABEL: @cast_address_to_index
-kgen.func @cast_address_to_index() -> !pop.scalar<index> {
-  // CHECK-NEXT: scalar<index> = <95>
-  // CHECK-NOT: pop.cast
-  %0 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<95>>
-  %1 = pop.cast %0 : !pop.scalar<address> to !pop.scalar<index>
-  kgen.return %1 : !pop.scalar<index>
-}
-
 // CHECK-LABEL: @cast_and_trancate
 kgen.func @cast_and_trancate(%v0 : !pop.simd<2, si64>) -> !pop.simd<2, si32> {
   // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, si64> to !pop.simd<2, si32>
@@ -723,27 +687,6 @@ kgen.func @array_replace() -> !pop.array<2, index> {
   kgen.return %2 : !pop.array<2, index>
 }
 
-// CHECK-LABEL: @index_to_pointer
-kgen.func @index_to_pointer() -> (!kgen.pointer<i8>, !pop.scalar<address>) {
-  // CHECK-DAG: pointer<i8> = <1>
-  // CHECK-DAG: scalar<address> = <2>
-  %0 = kgen.param.constant: scalar<index> = <<1>>
-  %1 = kgen.param.constant: scalar<index> = <<2>>
-  %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !kgen.pointer<i8>
-  %3 = pop.index_to_pointer %1 : !pop.scalar<index> to !pop.scalar<address>
-  kgen.return %2, %3 : !kgen.pointer<i8>, !pop.scalar<address>
-}
-
-// CHECK-LABEL: @index_to_ptr_fold
-kgen.func @index_to_ptr_fold(%arg0: !kgen.pointer<none>) -> (!kgen.pointer<none>, !kgen.pointer<index>) {
-  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<index>
-  %0 = pop.pointer_to_index %arg0 : !kgen.pointer<none> to !pop.scalar<index>
-  %1 = pop.index_to_pointer %0 : !pop.scalar<index> to !kgen.pointer<none>
-  %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !kgen.pointer<index>
-  // CHECK-NEXT: return %arg0, %0
-  kgen.return %1, %2 : !kgen.pointer<none>, !kgen.pointer<index>
-}
-
 // CHECK-LABEL: @pointer_to_index
 kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: <1>
@@ -753,18 +696,6 @@ kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   %2 = pop.pointer_to_index %0 : !kgen.pointer<i8> to !pop.scalar<index>
   %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>
   kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
-}
-
-// CHECK-LABEL: @ptr_to_index_fold
-kgen.func @ptr_to_index_fold(%arg0: !pop.scalar<index>, %arg1: !pop.simd<2, index>) -> (!pop.scalar<index>, !pop.simd<2, index>) {
-  %0 = pop.index_to_pointer %arg0 : !pop.scalar<index> to !kgen.pointer<none>
-  %1 = pop.pointer_to_index %0 : !kgen.pointer<none> to !pop.scalar<index>
-
-  %2 = pop.index_to_pointer %arg1 : !pop.simd<2, index> to !pop.simd<2, address>
-  %3 = pop.pointer_to_index %2 : !pop.simd<2, address> to !pop.simd<2, index>
-
-  // CHECK-NEXT: return %arg0, %arg1
-  kgen.return %1, %3 : !pop.scalar<index>, !pop.simd<2, index>
 }
 
 // CHECK-LABEL: @cast_to_builtin

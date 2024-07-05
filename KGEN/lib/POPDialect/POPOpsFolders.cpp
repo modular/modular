@@ -1396,50 +1396,6 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
 }
 
 //===----------------------------------------------------------------------===//
-// IndexToPointerOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult IndexToPointerOp::fold(FoldAdaptor adaptor) {
-  if (auto index = dyn_cast_if_present<SIMDAttr>(adaptor.getValue())) {
-    // Check for a pointer type. Create a pointer constant attribute.
-    if (isa<PointerType>(getType()))
-      return PointerAttr::get(index.getValues().front().getIndexVal(),
-                              getType());
-    // Otherwise, this is converting to an address dtype vector. The DTypeValue
-    // storage is the same, but the type is different.
-    SmallVector<DTypeValue> values;
-    for (const DTypeValue &value : index.getValues())
-      values.emplace_back(value.getIndexVal(), KGENDType::address);
-    return SIMDAttr::get(values, cast<SIMDType>(getType()));
-  }
-
-  if (auto parent = getValue().getDefiningOp<PointerToIndexOp>())
-    if (parent.getValue().getType() == getType())
-      return parent.getValue();
-
-  return {};
-}
-
-LogicalResult IndexToPointerOp::canonicalize(IndexToPointerOp op,
-                                             PatternRewriter &b) {
-  auto parent = op.getValue().getDefiningOp<PointerToIndexOp>();
-  if (!parent)
-    return failure();
-  if (parent.getValue().getType() == op.getType()) {
-    b.replaceOp(op, parent.getValue());
-    return success();
-  }
-
-  if (isa<PointerType>(op.getType()) &&
-      isa<PointerType>(parent.getValue().getType())) {
-    b.replaceOpWithNewOp<PointerBitcastOp>(op, op.getType(), parent.getValue());
-    return success();
-  }
-
-  return failure();
-}
-
-//===----------------------------------------------------------------------===//
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
@@ -1457,10 +1413,6 @@ OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
       values.emplace_back(value.getIndexVal(), KGENDType::index);
     return SIMDAttr::get(values, getType());
   }
-
-  if (auto parent = getValue().getDefiningOp<IndexToPointerOp>())
-    if (parent.getValue().getType() == getType())
-      return parent.getValue();
 
   return {};
 }

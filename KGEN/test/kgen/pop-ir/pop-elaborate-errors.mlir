@@ -108,10 +108,10 @@ kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
   %2 = kgen.struct.gep %1[1] : <struct<(i64, !kgen.pointer<i64>)>>
   pop.store %0, %2 : !kgen.pointer<pointer<i64>>
   %3 = kgen.struct.gep %1[0] : <struct<(i64, !kgen.pointer<i64>)>>
-  %4 = pop.pointer_to_index %3 : !kgen.pointer<i64> to !pop.scalar<index>
-  %idx2 = kgen.param.constant: scalar<index> = <1>
-  %5 = pop.add %4, %idx2 : !pop.scalar<index>
-  %6 = pop.index_to_pointer %5 : !pop.scalar<index> to !kgen.pointer<i64>
+  %4 = pop.pointer.bitcast %3 : !kgen.pointer<i64> to !kgen.pointer<i32>
+  %idx1 = index.constant 1
+  %5 = pop.offset %4[%idx1] : !kgen.pointer<i32>
+  %6 = pop.pointer.bitcast %5 : !kgen.pointer<i32> to !kgen.pointer<i64>
   // expected-note @below {{failed to interpret operation pop.store}}
   // expected-note @below {{write clobbers a pointer region}}
   pop.store %arg0, %6 : !kgen.pointer<i64>

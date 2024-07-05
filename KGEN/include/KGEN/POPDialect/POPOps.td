@@ -354,8 +354,8 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
   }];
 
   let arguments = (ins POP_CmpPredicateAttr:$pred,
-                       UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$lhs,
-                       UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$rhs);
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs BoolSIMD:$result);
 
   let assemblyFormat = [{
@@ -544,8 +544,8 @@ def POP_CastOp : POPOp<"cast", [Pure,
     ```
   }];
 
-  let arguments = (ins UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$input);
-  let results = (outs UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$output);
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$input);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to`  qualified(type($output))
   }];
@@ -1440,42 +1440,6 @@ def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store",
   let assemblyFormat = "$name `,` $value `:` type($value) attr-dict";
 }
 
-
-//===----------------------------------------------------------------------===//
-// IndexToPointerOp
-//===----------------------------------------------------------------------===//
-
-def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
-    Pure,
-    DeclareOpInterfaceMethods<CastOpInterface>
-  ]> {
-  let summary = "converts an index value to a pointer type.";
-  let description = [{
-    The `pop.index_to_pointer` instruction takes a simd vector of index dtype
-    to cast, and a type to cast it to, which must be a pointer type or a simd
-    of address dtype.
-
-    Example:
-
-    ```mlir
-    %addr0 = pop.index_to_pointer %idx : index to !kgen.pointer<scalar<f32>>
-    %addr1 = pop.index_to_pointer %idx : index to !kgen.pointer<simd<4, type>>
-    %addr2 = pop.index_to_pointer %idx : index to !pop.scalar<address>
-    %addr4 = pop.index_to_pointer %idx : !pop.simd<4, index> to
-                                         !pop.simd<4, address>
-
-    ```
-  }];
-
-  let arguments = (ins IndexSIMD:$value);
-  let results = (outs UnboundOrPointerOrSIMDAddressType:$result);
-
-  let assemblyFormat = [{
-    $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
-  }];
-  let hasFolder = 1;
-  let hasCanonicalizeMethod = 1;
-}
 
 //===----------------------------------------------------------------------===//
 // PointerToIndexOp
