@@ -1445,10 +1445,8 @@ def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store",
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
-def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
-    Pure,
-    DeclareOpInterfaceMethods<CastOpInterface>
-  ]> {
+def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure,
+    DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "gets the address of the pointer as an index type.";
   let description = [{
     The `pop.pointer_to_index` instruction takes a pointer or a simd value of
@@ -1459,17 +1457,12 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
     ```mlir
     %addr0 = pop.pointer_to_index %ptr : !kgen.pointer<scalar<f32>> to index
     %addr1 = pop.pointer_to_index %idx : !kgen.pointer<simd<4, type>> to index
-    %addr2 = pop.pointer_to_index %idx : !pop.scalar<address> to index
-    %addr4 = pop.pointer_to_index %idx : !pop.simd<4, address> to
-                                         !pop.simd<4, index>
     ```
   }];
 
-  let arguments = (ins UnboundOrPointerOrSIMDAddressType:$value);
-  let results = (outs IndexSIMD:$result);
-  let assemblyFormat = [{
-    $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
-  }];
+  let arguments = (ins PointerType:$value);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$value attr-dict `:` type($value)";
   let hasFolder = 1;
 }
 

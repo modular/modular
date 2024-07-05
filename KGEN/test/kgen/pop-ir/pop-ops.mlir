@@ -702,32 +702,11 @@ kgen.generator @global_constant_aligned() {
 }
 
 // CHECK-LABEL: @pointer_to_index
-kgen.generator @pointer_to_index<ty: type>(%a: !kgen.pointer<ty>,
-                                             %b: !kgen.pointer<scalar<f32>>,
-                                             %c: !kgen.pointer<simd<4, f32>>,
-                                             %d: !kgen.pointer<scalar<invalid>>) {
-  // CHECK: pop.pointer_to_index %{{.*}} : !kgen.pointer<ty>
-  %0 = pop.pointer_to_index %a : !kgen.pointer<ty> to !pop.scalar<index>
-  // CHECK: pop.pointer_to_index %{{.*}} : !kgen.pointer<scalar<f32>>
-  %1 = pop.pointer_to_index %b : !kgen.pointer<scalar<f32>> to !pop.scalar<index>
-  // CHECK: pop.pointer_to_index %{{.*}} : !kgen.pointer<simd<4, f32>>
-  %2 = pop.pointer_to_index %c : !kgen.pointer<simd<4, f32>> to !pop.scalar<index>
-  // CHECK: pop.pointer_to_index %{{.*}} : !kgen.pointer<scalar<invalid>>
-  %3 = pop.pointer_to_index %d : !kgen.pointer<scalar<invalid>> to !pop.scalar<index>
-  kgen.return
-}
-
-// CHECK-LABEL: @address_to_index
-kgen.generator @address_to_index(%a: !pop.simd<1, address>) {
-  // CHECK: pop.pointer_to_index %{{.*}} : !pop.scalar<address>
-  %0 = pop.pointer_to_index %a : !pop.simd<1, address> to !pop.scalar<index>
-  kgen.return
-}
-
-// CHECK-LABEL: @simd_address_to_index
-kgen.generator @simd_address_to_index(%a: !pop.simd<4, address>) {
-  // CHECK: pop.pointer_to_index %{{.*}} : !pop.simd<4, address> to !pop.simd<4, index>
-  %0 = pop.pointer_to_index %a : !pop.simd<4, address> to !pop.simd<4, index>
+kgen.generator @pointer_to_index<ty: type>(%a: !kgen.pointer<ty>, %b: !kgen.pointer<scalar<f32>>) {
+  // CHECK: pop.pointer_to_index %{{.*}} : <ty>
+  %0 = pop.pointer_to_index %a : !kgen.pointer<ty>
+  // CHECK: pop.pointer_to_index %{{.*}} : <scalar<f32>>
+  %1 = pop.pointer_to_index %b : !kgen.pointer<scalar<f32>>
   kgen.return
 }
 

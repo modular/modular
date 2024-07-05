@@ -1401,19 +1401,8 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
 
 OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
   // Check for a pointer input. The result must be a scalar index.
-  if (auto ptr = dyn_cast_if_present<PointerAttr>(adaptor.getValue())) {
-    DTypeValue index(static_cast<int64_t>(ptr.getAddr()), KGENDType::index);
-    return SIMDAttr::get(index, getType());
-  }
-
-  // Otherwise, the input might be an address vector.
-  if (auto simd = dyn_cast_if_present<SIMDAttr>(adaptor.getValue())) {
-    SmallVector<DTypeValue> values;
-    for (const DTypeValue &value : simd.getValues())
-      values.emplace_back(value.getIndexVal(), KGENDType::index);
-    return SIMDAttr::get(values, getType());
-  }
-
+  if (auto ptr = dyn_cast_if_present<PointerAttr>(adaptor.getValue()))
+    return Builder(getContext()).getIndexAttr(ptr.getAddr());
   return {};
 }
 

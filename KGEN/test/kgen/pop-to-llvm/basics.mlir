@@ -560,26 +560,12 @@ kgen.func @cmp_simd(%lhs: !pop.simd<4, f32>, %rhs: !pop.simd<4, f32>) -> !pop.si
 
 // CHECK-LABEL: @pointer_to_index
 kgen.func @pointer_to_index(%a: !kgen.pointer<scalar<f32>>, %b: !kgen.pointer<simd<4, si32>>)
-    -> (!pop.scalar<index>, !pop.scalar<index>) {
+    -> (index, index) {
   // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !kgen.pointer<scalar<f32>> to !pop.scalar<index>
+  %0 = pop.pointer_to_index %a : !kgen.pointer<scalar<f32>>
   // CHECK: llvm.ptrtoint
-  %1 = pop.pointer_to_index %b : !kgen.pointer<simd<4, si32>> to !pop.scalar<index>
-  kgen.return %0, %1 : !pop.scalar<index>, !pop.scalar<index>
-}
-
-// CHECK-LABEL: @address_to_index
-kgen.func @address_to_index(%a: !pop.simd<1, address>) -> !pop.scalar<index> {
-  // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !pop.simd<1, address> to !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
-}
-
-// CHECK-LABEL: @simd_address_to_index
-kgen.func @simd_address_to_index(%a: !pop.simd<4, address>) -> !pop.simd<4, index> {
-  // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !pop.simd<4, address> to !pop.simd<4, index>
-  kgen.return %0 : !pop.simd<4, index>
+  %1 = pop.pointer_to_index %b : !kgen.pointer<simd<4, si32>>
+  kgen.return %0, %1 : index, index
 }
 
 // CHECK-LABEL: @lower_raise_cast
