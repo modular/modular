@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
 from sys.info import alignof
 
 from buffer import DimList, NDBuffer
