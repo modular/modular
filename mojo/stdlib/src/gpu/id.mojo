@@ -18,7 +18,7 @@ struct ThreadIdx:
 
     @staticmethod
     @always_inline("nodebug")
-    fn x() -> Int:
+    fn x() -> UInt:
         """Gets the `x` coordinate of the thread within the block.
 
         Returns:
@@ -28,11 +28,11 @@ struct ThreadIdx:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.tid.x", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn y() -> Int:
+    fn y() -> UInt:
         """Gets the `y` coordinate of the thread within the block.
 
         Returns:
@@ -42,11 +42,11 @@ struct ThreadIdx:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.tid.y", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn z() -> Int:
+    fn z() -> UInt:
         """Gets the `z` coordinate of the thread within the block.
 
         Returns:
@@ -56,7 +56,7 @@ struct ThreadIdx:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.tid.z", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
 
 # ===----------------------------------------------------------------------===#
@@ -70,7 +70,7 @@ struct BlockIdx:
 
     @staticmethod
     @always_inline("nodebug")
-    fn x() -> Int:
+    fn x() -> UInt:
         """Gets the `x` coordinate of the block within a grid.
 
         Returns:
@@ -80,11 +80,11 @@ struct BlockIdx:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.ctaid.x", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn y() -> Int:
+    fn y() -> UInt:
         """Gets the `y` coordinate of the block within a grid.
 
         Returns:
@@ -94,11 +94,11 @@ struct BlockIdx:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.ctaid.y", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn z() -> Int:
+    fn z() -> UInt:
         """Gets the `z` coordinate of the block within a grid.
 
         Returns:
@@ -108,7 +108,7 @@ struct BlockIdx:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.ctaid.z", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
 
 # ===----------------------------------------------------------------------===#
@@ -122,7 +122,7 @@ struct BlockDim:
 
     @staticmethod
     @always_inline("nodebug")
-    fn x() -> Int:
+    fn x() -> UInt:
         """Gets the `x` dimension of the block.
 
         Returns:
@@ -132,11 +132,11 @@ struct BlockDim:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.ntid.x", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn y() -> Int:
+    fn y() -> UInt:
         """Gets the `y` dimension of the block.
 
         Returns:
@@ -146,11 +146,11 @@ struct BlockDim:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.ntid.y", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn z() -> Int:
+    fn z() -> UInt:
         """Gets the `z` dimension of the block.
 
         Returns:
@@ -160,7 +160,7 @@ struct BlockDim:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.ntid.z", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
 
 # ===----------------------------------------------------------------------===#
@@ -174,7 +174,7 @@ struct GridDim:
 
     @staticmethod
     @always_inline("nodebug")
-    fn x() -> Int:
+    fn x() -> UInt:
         """Gets the `x` dimension of the grid.
 
         Returns:
@@ -184,11 +184,11 @@ struct GridDim:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.nctaid.x", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn y() -> Int:
+    fn y() -> UInt:
         """Gets the `y` dimension of the grid.
 
         Returns:
@@ -198,11 +198,11 @@ struct GridDim:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.nctaid.y", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
     @staticmethod
     @always_inline("nodebug")
-    fn z() -> Int:
+    fn z() -> UInt:
         """Gets the `z` dimension of the grid.
 
         Returns:
@@ -212,7 +212,7 @@ struct GridDim:
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.nctaid.z", Int32, has_side_effect=False
             ]()
-        )
+        ).value
 
 
 # ===----------------------------------------------------------------------===#
