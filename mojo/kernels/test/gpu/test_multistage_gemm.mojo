@@ -56,6 +56,7 @@ from linalg.cublas import cublas_matmul
 from linalg._multistage_gemm_gpu import multistage_mma
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory.unsafe import DTypePointer, Pointer
+from memory import UnsafePointer
 from random import rand
 from testing import assert_almost_equal
 
@@ -420,8 +421,8 @@ fn test[type: DType, transpose_b: Bool]() raises:
 
     var c_buffer_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
 
-    var handle = Pointer[cublasContext]()
-    check_cublas_error(cublasCreate(Pointer.address_of(handle)))
+    var handle = UnsafePointer[cublasContext]()
+    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     check_cublas_error(
         cublas_matmul(
             handle,

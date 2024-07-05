@@ -66,8 +66,8 @@ fn test_cublas() raises:
     var c = NDBuffer[type, 2, DimList(M, N)](c_device)
     var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
 
-    var handle = Pointer[cublasContext]()
-    check_cublas_error(cublasCreate(Pointer.address_of(handle)))
+    var handle = UnsafePointer[cublasContext]()
+    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     check_cublas_error(cublas_matmul(handle, c, a, b, c_row_major=True))
     check_cublas_error(cublasDestroy(handle))
 
