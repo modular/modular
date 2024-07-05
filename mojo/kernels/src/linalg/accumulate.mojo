@@ -188,7 +188,7 @@ struct _Accumulator[
         base_column: Int,
         column_count: Int,
         is_load: Bool,
-    ](inout self, row_ptrs: Pointer[DTypePointer[type]], stride: Int):
+    ](inout self, row_ptrs: UnsafePointer[DTypePointer[type]], stride: Int):
         """Loads or stores one or more columns from the base column for each
         row of the tile."""
         alias column_step = min(column_count, simd_width)
@@ -237,7 +237,7 @@ struct _Accumulator[
     ](
         inout self,
         transfer_count: Int,
-        row_ptrs: Pointer[DTypePointer[type]],
+        row_ptrs: UnsafePointer[DTypePointer[type]],
         stride: Int,
     ):
         """Loads/stores all pairwise vectors of the tile and dispatches the
@@ -277,7 +277,7 @@ struct _Accumulator[
     ](
         inout self,
         transfer_count: Int,
-        row_ptrs: Pointer[DTypePointer[type]],
+        row_ptrs: UnsafePointer[DTypePointer[type]],
         stride: Int,
     ):
         """Loads/stores the last elements of the tile that cannot be accessed
@@ -308,7 +308,7 @@ struct _Accumulator[
     ](
         inout self,
         transfer_count: Int,
-        row_ptrs: Pointer[DTypePointer[type]],
+        row_ptrs: UnsafePointer[DTypePointer[type]],
         stride: Int,
     ):
         var tail_size = transfer_count - base_column
@@ -372,7 +372,7 @@ struct _Accumulator[
             partial_load: Whether load input partially.
 
         Args:
-            input: Pointer to input buffer.
+            input: UnsafePointer to input buffer.
             input_stride: Stride between input segments of size `num_cols * simd_width`.
             partial_load_size: Size of partial load for input.
         """
@@ -408,7 +408,7 @@ struct _Accumulator[
             partial_store: Whether store output partially.
 
         Args:
-            output: Pointer to output buffer.
+            output: UnsafePointer to output buffer.
             output_stride: Stride between output segments of size `num_cols * simd_width`.
             partial_store_size: Size of partial store to the output.
         """
