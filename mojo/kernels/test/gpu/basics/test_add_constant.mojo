@@ -69,11 +69,7 @@ def run_add_constant(ctx: Context):
     _ = stream^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with CudaInstance() as instance:
-            with Context(Device(instance)) as ctx:
-                run_add_constant(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with CudaInstance() as instance:
+        with Context(Device(instance)) as ctx:
+            run_add_constant(ctx)
