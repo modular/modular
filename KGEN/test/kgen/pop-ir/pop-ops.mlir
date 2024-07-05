@@ -731,29 +731,6 @@ kgen.generator @simd_address_to_index(%a: !pop.simd<4, address>) {
   kgen.return
 }
 
-// CHECK-LABEL: @index_to_address
-kgen.generator @index_to_address(%idx: !pop.scalar<index>) {
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<index> to !pop.scalar<address>
-  %0 = pop.index_to_pointer %idx : !pop.scalar<index> to !pop.simd<1, address>
-  kgen.return
-}
-
-// CHECK-LABEL: @index_to_pointer
-kgen.generator @index_to_pointer(%idx: !pop.scalar<index>) {
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<index> to !kgen.pointer<scalar<f32>>
-  %0 = pop.index_to_pointer %idx : !pop.scalar<index> to !kgen.pointer<scalar<f32>>
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<index> to !kgen.pointer<simd<4, f32>>
-  %1 = pop.index_to_pointer %idx : !pop.scalar<index> to !kgen.pointer<simd<4, f32>>
-  kgen.return
-}
-
-// CHECK-LABEL: @simd_index_to_address
-kgen.generator @simd_index_to_address(%idx0: !pop.simd<4, index>) {
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.simd<4, index> to !pop.simd<4, address>
-  %0 = pop.index_to_pointer %idx0 : !pop.simd<4, index> to !pop.simd<4, address>
-  kgen.return
-}
-
 // CHECK-LABEL: @struct
 kgen.generator @struct<ty: type, dt: dtype>(
   // CHECK-SAME: %[[A:.*]]: !kgen.paramref

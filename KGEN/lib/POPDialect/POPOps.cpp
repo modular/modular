@@ -608,7 +608,7 @@ CompilerGlobalStoreOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// IndexToPointerOp
+// PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
 /// Checks the the input pointer type is catabolic to the output address type.
@@ -637,14 +637,6 @@ static bool isPointerToAddressCastCompatible(TypeRange inputs,
   return isa<PointerType>(inputs.front()) &&
          outputType.getResolvedSize().value_or(0) == 1;
 }
-
-bool IndexToPointerOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
-  return isPointerToAddressCastCompatible(outputs, inputs);
-}
-
-//===----------------------------------------------------------------------===//
-// PointerToIndexOp
-//===----------------------------------------------------------------------===//
 
 bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   return isPointerToAddressCastCompatible(inputs, outputs);
