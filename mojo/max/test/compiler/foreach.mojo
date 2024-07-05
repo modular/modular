@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
 
-from max.compiler import foreach
+from max._compiler import foreach
 
 from max._driver import cpu_device, UnsafeTensorSlice, Tensor
 from utils import Index
