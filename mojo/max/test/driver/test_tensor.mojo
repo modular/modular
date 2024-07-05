@@ -54,7 +54,7 @@ def test_tensor_slice():
     # 0 1 2
     # 1 2 3
 
-    var slice_spec = slice.spec()
+    slice_spec = slice.spec()
     assert_equal(slice_spec.rank(), 2)
     assert_equal(slice_spec[0], 2)
     assert_equal(slice_spec[1], 3)
@@ -62,13 +62,19 @@ def test_tensor_slice():
     assert_equal(slice[0, 0], 0)
     assert_equal(slice[1, 2], 3)
 
+    slice = tensor[:]
+    slice_spec = slice.spec()
+    assert_equal(slice_spec[0], 3)
+    assert_equal(slice_spec[1], 3)
+    assert_equal(slice[2, 2], 4)
+
     inner_slice = tensor[0:2, 1:2]
 
     # inner_slice
     # 1
     # 2
 
-    var inner_slice_spec = inner_slice.spec()
+    inner_slice_spec = inner_slice.spec()
     assert_equal(inner_slice_spec.rank(), 2)
     assert_equal(inner_slice_spec[0], 2)
     assert_equal(inner_slice_spec[1], 1)

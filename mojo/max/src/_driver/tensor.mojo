@@ -179,14 +179,20 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
             slice_tuple[i] = slices[i]
             slice_tuple[i].start = (slice_tuple[i].start or 0).value()
             slice_tuple[i].end = (slice_tuple[i].end or self._spec[i]).value()
+        # pads any unspecified Slices with default values
+        for i in range(len(slices), rank):
+            slice_tuple[i].start = 0
+            slice_tuple[i].end = self._spec[i]
+            slice_tuple[i].step = 1
+
         return slice_tuple
 
     @always_inline
     fn __getitem__(
         ref [_]self: Self, *slices: Slice
     ) raises -> TensorSlice[type, rank, __lifetime_of(self)]:
-        if len(slices) != rank:
-            raise "mismatch between slice count and rank"
+        if len(slices) > rank:
+            raise "len(slices) exceeds rank"
         return TensorSlice(self, self._canonicalize_slices(slices))
 
     @always_inline
@@ -194,8 +200,8 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self,
         *slices: Slice,
     ) raises -> UnsafeTensorSlice[type, rank]:
-        if len(slices) != rank:
-            raise "mismatch between slice count and rank"
+        if len(slices) > rank:
+            raise "len(slices) exceeds rank"
         return UnsafeTensorSlice[type, rank](
             self.unsafe_ptr(),
             self._canonicalize_slices(slices),
