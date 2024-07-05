@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import isclose
-
 import benchmark
 from benchmark import Unit, keep
 from buffer import Buffer, NDBuffer
