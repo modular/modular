@@ -908,6 +908,146 @@ FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::RewriterBase &b) {
 }
 
 //===----------------------------------------------------------------------===//
+// CreateRegStubOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CreateRegStubOp::verify() {
+  auto calleeSig = cast<SignatureType>(getCallee().getType());
+  SignatureType resSig = getType();
+
+  if (calleeSig.isThrows() || resSig.isThrows())
+    return emitOpError("throwing function not supported");
+  for (Type ty : resSig.getResults())
+    if (!isa<NoneType>(ty))
+      return emitOpError("result signature with output types not suported");
+
+  bool expectPromotedMemOutputs =
+      (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
+      (!calleeSig.hasMemoryOnlyResult() && !calleeSig.hasInitSelfArg());
+  unsigned expectedArgsCount =
+      calleeSig.getNumArguments() + unsigned(expectPromotedMemOutputs);
+  if (resSig.getNumArguments() != expectedArgsCount) {
+    return emitOpError("result signature has ")
+           << resSig.getNumArguments()
+           << " arguments, but the expected count is " << expectedArgsCount;
+  }
+
+  for (unsigned i = 0, e = resSig.getNumArguments(); i < e; ++i) {
+    Type argTy = getOriginalArgType(i);
+    Type calleeTy = getCalleeArgType(i);
+    if (argTy == calleeTy)
+      continue;
+
+    PointerType argPtrTy = dyn_cast<PointerType>(argTy);
+    if (!argPtrTy || argPtrTy.getElementType() != calleeTy) {
+      return emitOpError("result signature argument #")
+             << i << " type is " << argTy
+             << " but callee signature argument is " << calleeTy;
+    }
+  }
+
+  return success();
+}
+
+void CreateRegStubOp::build(mlir::OpBuilder &builder,
+                            mlir::OperationState &state,
+                            mlir::TypedAttr callee) {
+  SignatureType resultTy =
+      getStubSignatureType(cast<SignatureType>(callee.getType()));
+  build(builder, state, resultTy, callee);
+}
+
+SignatureType CreateRegStubOp::getStubSignatureType(SignatureType calleeSign) {
+  FunctionType values = calleeSign.getValues();
+
+  // Check if type is a memory type that can be promoted to value.
+  // These types will be wrapped in a memory struct.
+  auto canLowerToRegPassable = [](Type ty, ArgConvention conv) {
+    if (!SignatureType::hasAddress(conv))
+      return false;
+
+    PointerType ptrTy = dyn_cast<PointerType>(ty);
+    if (!ptrTy)
+      return false;
+    auto structElemTy = dyn_cast<StructType>(ptrTy.getElementType());
+    if (structElemTy && structElemTy.getIsMemoryOnly())
+      return false;
+
+    return true;
+  };
+
+  SmallVector<Type> newArgTypes;
+  for (unsigned i = 0, e = values.getNumInputs(); i < e; ++i) {
+    Type argTy = values.getInput(i);
+    // Replace register-passable `!kgen.pointer<T> owned_in_mem` with
+    // `!kgen.pointer<struct<(T) memoryOnly>> owned_in_mem`:
+    // - It guarantees the pointer arguments won't be lowered to by-value.
+    // - It also tells LLVM that arguments don't alias.
+    if (canLowerToRegPassable(argTy, calleeSign.getArgConvention(i))) {
+      PointerType ptrTy = cast<PointerType>(argTy);
+      newArgTypes.push_back(PointerType::get(
+          StructType::get(calleeSign.getContext(), ptrTy.getElementType(),
+                          /*isMemoryOnly=*/true)));
+    } else {
+      // Other types aren't changed.
+      newArgTypes.push_back(argTy);
+    }
+  }
+
+  return SignatureType::get(FunctionType::get(calleeSign.getContext(),
+                                              newArgTypes, values.getResults()),
+                            calleeSign.getArgConventions());
+}
+
+Type CreateRegStubOp::getOriginalArgType(unsigned index) {
+  Type rawArgTy = getType().getValues().getInput(index);
+  Type calleeArgTy = getCalleeArgType(index);
+  // The type isn't transformed if it's identical to callee.
+  if (rawArgTy == calleeArgTy)
+    return rawArgTy;
+
+  // Wrapped types are memory types of the form `pointer<struct<(T)
+  // memoryOnly>`.
+  if (!SignatureType::hasAddress(getType().getArgConvention(index)))
+    return rawArgTy;
+
+  PointerType ptrTy = dyn_cast<PointerType>(rawArgTy);
+  if (!ptrTy)
+    return rawArgTy;
+  auto structElemTy = dyn_cast<StructType>(ptrTy.getElementType());
+  if (!structElemTy || structElemTy.getNumElements() != 1 ||
+      !structElemTy.getIsMemoryOnly())
+    return rawArgTy;
+
+  // Returns pointer<T>.
+  return PointerType::get(structElemTy.getElementTypes()[0]);
+}
+
+Type CreateRegStubOp::getCalleeArgType(unsigned index) {
+  // Some arguments might be promoted to outputs.
+  SignatureType calleeSig = getCalleeSignature();
+  SignatureType resSig = getType();
+  bool promotedOutputs =
+      (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
+      (!calleeSig.hasMemoryOnlyResult() && !calleeSig.hasInitSelfArg());
+  if (!promotedOutputs)
+    return calleeSig.getValues().getInput(index);
+
+  ArgConvention conv = resSig.getArgConvention(index);
+  // If `conv` is InitSelf / ByRefResult, the promoted output has to be this
+  // argument.
+  if (conv == ArgConvention::InitSelf || conv == ArgConvention::ByRefResult)
+    return calleeSig.getValues().getResult(0);
+
+  // A different argument is promoted.
+  // InitSelf is always first (and ByRefResult always last).
+  // So we need to skip the first argument for InitSelf.
+  if (resSig.hasInitSelfArg())
+    --index;
+  return calleeSig.getValues().getInput(index);
+}
+
+//===----------------------------------------------------------------------===//
 // SourceLocOp
 //===----------------------------------------------------------------------===//
 

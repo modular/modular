@@ -1061,6 +1061,88 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// CreateRegStubOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
+  DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
+  let summary = "Create a stub to enforce by-memory arguments for `callee`.";
+  let description = [{
+
+    This op is similar to CreateClosureOp (without captures).
+    But during LowerArgConvention, some arguments are promoted from by-memory
+    to by-value.
+    This would also affect the signature type of CreateClosureOp.
+
+    With CreateRegStubOp, during LowerArgConvention, the signature of `callee`
+    might change, but the result signature always remains the same.
+    The compiler also adds the correct load / stores around `callee`'s call.
+
+    This is needed for interoperability. We can hold mojo register_passable
+    types by pointer in C++, and create a function pointer with CreateRegStub.
+    Even if the compiled mojo functions excepts value arguments, you can have
+    a function pointer to a wrapper that takes arguments by pointer.
+
+    For example:
+    ```mlir
+    kgen.create_reg_stub [
+      (!kgen.pointer<index> init_self, !kgen.pointer<index> owned_in_mem)
+      -> !kgen.none: @regtype__moveinit__] :
+      <(!kgen.pointer<struct<(index) memoryOnly>> init_self,
+      !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+    ```
+
+    The type is wrapped aound a memory struct to preverse the signature,
+    and also to indicate to LLVM that pointers don't alias.
+
+    After LowerCallConvention, only `callee`'s signature change:
+    ```mlir
+    kgen.create_reg_stub [(index) -> index: @regtype__moveinit__] :
+      <(!kgen.pointer<struct<(index) memoryOnly>> init_self,
+      !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+    ```
+
+    Callee can also take any other kind of arguments (eg memory mojo objects,
+    scalars, raw pointers) that don't get promoted:
+    ```mlir
+    kgen.create_reg_stub [
+      (!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
+      !pop.scalar<si16> borrow) -> !kgen.none: @foo] :
+      <(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
+      !pop.scalar<si16> borrow) -> !kgen.none>
+    ```
+  }];
+
+  let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee);
+  let results = (outs KGEN_SignatureType:$result);
+
+  let assemblyFormat = [{
+    custom<ParametricCallee>($callee) attr-dict `:` type($result)
+  }];
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$callee)>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the signature type of the output stub.
+    /// `calleeSign` is the original callee with by-memory operands.
+    static SignatureType getStubSignatureType(SignatureType calleeSign);
+
+    /// The stub signature wraps some arguments to preserve the semantics.
+    /// Returns the original (unwrapped) argument type.
+    Type getOriginalArgType(unsigned index);
+
+    /// Returns the type of the arg `index` in callee's signature.
+    /// It takes into account that after callee is lowered some arguments are
+    /// now outputs.
+    Type getCalleeArgType(unsigned index);
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // SourceLocOp
 //===----------------------------------------------------------------------===//
 
@@ -1940,7 +2022,7 @@ def KGEN_CustomOpImplsOp : KGENOp<"custom.op_impls",
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_CustomOpImplArrayAttr:$impls);
   let assemblyFormat = "$sym_name $impls attr-dict";
-  
+
   let hasVerifier = 1;
 
   let builders = [
