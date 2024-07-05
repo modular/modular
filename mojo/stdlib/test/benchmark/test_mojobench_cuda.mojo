@@ -39,7 +39,7 @@ fn bench_empty_sync(inout b: Bencher) raises:
 
 
 def main():
-    with Context() as ctx:
+    with Context():
         var m = Bench()
         m.bench_function[bench_empty_async](BenchId("bench_empty_async"))
         m.bench_function[bench_empty_sync](BenchId("bench_empty_sync"))
