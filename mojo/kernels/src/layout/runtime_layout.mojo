@@ -6,12 +6,13 @@
 
 from .int_tuple import IntTuple
 from .layout import Layout
-from .runtime_tuple import RuntimeTuple
+from .runtime_tuple import RuntimeTuple, product, crd2idx
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
 # IntTuple.
 
 
+@register_passable("trivial")
 struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     var shape: RuntimeTuple[layout.shape]
     var stride: RuntimeTuple[layout.stride]
@@ -30,6 +31,14 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     ):
         self.shape = shape
         self.stride = stride
+
+    @always_inline
+    fn __call__[t: IntTuple](self, idx: RuntimeTuple[t]) -> Int:
+        return crd2idx(idx, self.shape, self.stride)
+
+    @always_inline
+    fn size(self) -> Int:
+        return product(self.shape)
 
     fn __str__(self) -> String:
         return String.format_sequence(self)
