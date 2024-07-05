@@ -16,8 +16,8 @@
 #include "Support/STLExtras.h"
 #include "Support/URI.h"
 #include "llvm/Support/MemoryBuffer.h"
-
 #include <filesystem>
+#include <string_view>
 
 namespace M::Cache {
 /// This class is the backend interface for a BlobCache. The backend contains a
@@ -227,7 +227,7 @@ getFilesystemBackend(const std::filesystem::path &basePath = "",
 /// MODULAR_VERSION_STRING if the provided version is empty.
 ErrorOr<RCRef<BlobCacheBackend>>
 getFilesystemBackend(const std::filesystem::path &cacheDir,
-                     const std::string &version);
+                     std::string_view version);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
@@ -235,10 +235,10 @@ getFilesystemBackend(const std::filesystem::path &cacheDir,
 /// cache, defaults to MODULAR_VERSION_STRING if the provided version is empty.
 ErrorOr<RCRef<BlobCacheBackend>>
 getLocalDefaultBackendChain(const std::filesystem::path &cacheDir = "",
-                            std::string version = "");
+                            std::string_view version = "");
 
 ErrorOr<RCRef<BlobCacheBackend>>
-getDefaultBackendChain(const URI &cacheUri, std::string version = "");
+getDefaultBackendChain(const URI &cacheUri, std::string_view version = "");
 
 } // namespace M::Cache
 

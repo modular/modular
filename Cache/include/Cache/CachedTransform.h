@@ -270,7 +270,8 @@ using OpCacheHitFn =
     llvm::unique_function<LLCL::AnyAsyncValueRef(Operation *, BufferRef)>;
 
 /// Helper method to write the given operation to the provided cache key.
-LogicalResult writeOperationToCacheKey(Operation *op, WriteableBufferRef key);
+LogicalResult writeOperationToCacheKey(Operation *op,
+                                       const WriteableBufferRef &key);
 
 /// Run the specified transform on the target operation. The transform must have
 /// a key of some kind that can be associated with the operation. The semantics
@@ -285,7 +286,7 @@ LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformationFnT &&transformFn, CacheHitFnT &&cacheHitFn) {
-  if (failed(writeOperationToCacheKey(target, transformKey.copy()))) {
+  if (failed(writeOperationToCacheKey(target, transformKey))) {
     chain.copy().setToError(LLCL::getMLIRDiagnostic(
         "failed to write bytecode file", target->getLoc()));
     return chain;

@@ -19,6 +19,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include <shared_mutex>
+#include <string_view>
 
 using namespace M;
 using namespace Cache;
@@ -37,7 +38,7 @@ static EncodedDiagnostic getError(std::optional<EncodedLocation> loc,
 /// Returns whether the given path is a directory that the current process can
 /// write to. If the path does not exist, this attempts to create a writable
 /// directory at that path.
-static bool checkOrCreateWriteableDirectory(std::filesystem::path path) {
+static bool checkOrCreateWriteableDirectory(const std::filesystem::path &path) {
   [[maybe_unused]] std::error_code existsErr;
   if (std::filesystem::exists(path, existsErr)) {
     // If the path exists but is not a directory, return false.
@@ -100,7 +101,7 @@ ErrorOrSuccess BlobCacheBackend::insertSync(StringRef keyHash, BufferRef obj) {
     return success();
 
   // Insert synchronously into the delegate as well.
-  return delegate->insertSync(std::move(keyHash), std::move(obj));
+  return delegate->insertSync(keyHash, std::move(obj));
 }
 
 AsyncValueRef<Chain>
@@ -489,7 +490,7 @@ M::Cache::getFilesystemBackend(const std::filesystem::path &basePath,
 /// MODULAR_VERSION_STRING if the provided version is empty.
 static ErrorOr<RCRef<FilesystemBackend>>
 getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
-                              std::string version) {
+                              std::string_view version) {
   // If no version is specified, use the default version.
   if (version.empty())
     version = getModularVersionString();
@@ -572,7 +573,7 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
 
 ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getFilesystemBackend(const std::filesystem::path &cacheDir,
-                               const std::string &version) {
+                               std::string_view version) {
   return getVersionedFilesystemBackend(cacheDir, version);
 }
 
@@ -608,7 +609,7 @@ struct DylibBackendStub : public BlobCacheBackend {
                                std::move(loc));
   }
   ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) override {
-    return backend->insertSyncImpl(std::move(keyHash), std::move(obj));
+    return backend->insertSyncImpl(keyHash, std::move(obj));
   }
 
   AsyncValueRef<bool>
@@ -617,7 +618,7 @@ struct DylibBackendStub : public BlobCacheBackend {
     return backend->containsImpl(runtime, std::move(keyHash), std::move(loc));
   }
   ErrorOr<bool> containsSyncImpl(StringRef keyHash) override {
-    return backend->containsSyncImpl(std::move(keyHash));
+    return backend->containsSyncImpl(keyHash);
   }
 
   AsyncValueRef<std::optional<BufferRef>>
@@ -626,7 +627,7 @@ struct DylibBackendStub : public BlobCacheBackend {
     return backend->findImpl(runtime, std::move(keyHash), std::move(loc));
   }
   ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) override {
-    return backend->findSyncImpl(std::move(keyHash));
+    return backend->findSyncImpl(keyHash);
   }
 
   void appendDelegate(RCRef<BlobCacheBackend> d) override {
@@ -664,8 +665,8 @@ private:
 
 ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getLocalDefaultBackendChain(const std::filesystem::path &cacheDir,
-                                      std::string version) {
-  auto filesystemOr = getFilesystemBackend(cacheDir, std::move(version));
+                                      std::string_view version) {
+  auto filesystemOr = getFilesystemBackend(cacheDir, version);
   if (filesystemOr.isError())
     return filesystemOr.takeError();
   auto memory = getInMemoryBackend();
@@ -674,16 +675,12 @@ M::Cache::getLocalDefaultBackendChain(const std::filesystem::path &cacheDir,
 }
 
 ErrorOr<RCRef<BlobCacheBackend>>
-M::Cache::getDefaultBackendChain(const URI &uri, std::string version) {
+M::Cache::getDefaultBackendChain(const URI &uri, std::string_view version) {
   StringRef scheme = uri.getScheme();
   if (scheme == "file") {
     std::string path(uri.getPath());
-    return getLocalDefaultBackendChain(path, std::move(version));
+    return getLocalDefaultBackendChain(path, version);
   }
-
-  // If no version is specified, use the default version.
-  if (version.empty())
-    version = getModularVersionString();
 
   return Error("Can't build BlobCache backend chain with unknown URI scheme: " +
                scheme);
