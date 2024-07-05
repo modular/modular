@@ -51,7 +51,7 @@ kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
 // -----
 
 kgen.generator @cast_simd_size<type: dtype>(%a: !pop.simd<2, type>) {
-  // expected-error @below {{cannot cast between SIMD types of different sizes}}
+  // expected-error @below {{are cast incompatible}}
   %0 = pop.cast %a : !pop.simd<2, type> to !pop.simd<4, type>
   kgen.return
 }
@@ -59,7 +59,7 @@ kgen.generator @cast_simd_size<type: dtype>(%a: !pop.simd<2, type>) {
 // -----
 
 kgen.generator @cast_simd_size<size, type: dtype>(%a: !pop.simd<size, type>) {
-  // expected-error @below {{cannot cast between SIMD types of different sizes}}
+  // expected-error @below {{are cast incompatible}}
   %0 = pop.cast %a : !pop.simd<size, type> to !pop.simd<add(size, 1), type>
   kgen.return
 }
