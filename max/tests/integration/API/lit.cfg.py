@@ -84,10 +84,22 @@ config.environment["MODULAR_MAX_ENABLE_MODEL_IR_CACHE"] = mef_cache_config
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
-if "numpy" in sys.modules:
+# Check if numpy is available.
+try:
+    import numpy
+
+except ImportError:
+    pass
+else:
     config.available_features.add("numpy")
 
-if "requests" in sys.modules:
+# Check if requests is available.
+try:
+    import requests
+
+except ImportError:
+    pass
+else:
     config.available_features.add("requests")
 
 config.excludes.update(["test_user_op"])
