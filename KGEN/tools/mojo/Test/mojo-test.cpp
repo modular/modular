@@ -101,6 +101,15 @@ static int test(const State &subcommandState) {
   } else {
     testID = TestID(std::filesystem::current_path().string());
   }
+
+  // If the input is a directory instead of an individual test
+  // then add it to the import search path.
+  // Implements MOTO-521
+  std::filesystem::path testIDFilePath = testID.getFilePath();
+  if (std::filesystem::is_directory(testIDFilePath)) {
+    additionalImportPaths.push_back(testIDFilePath);
+  }
+
   LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
   ErrorOr<std::optional<Test>> testOr =
       Test::discoverFromID(runtime, testID, additionalImportPaths);

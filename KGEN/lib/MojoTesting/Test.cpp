@@ -63,24 +63,17 @@ TestID::TestID(StringRef pathArg, StringRef testSuiteArg, StringRef testArg) {
 
 TestID &TestID::operator=(const TestID &rhs) {
   id = rhs.id;
-  path = strref().take_front(rhs.path.size());
-
-  // Map the string references from the rhs to the new id.
-  auto mapString = [&](StringRef str) {
-    return StringRef(id.data() + (str.data() - rhs.id.data()), str.size());
-  };
-  if (!rhs.testSuite.empty())
-    testSuite = mapString(rhs.testSuite);
-  if (!rhs.test.empty())
-    test = mapString(rhs.test);
+  path = rhs.path;
+  testSuite = rhs.testSuite;
+  test = rhs.test;
   return *this;
 }
 
 std::filesystem::path TestID::getFilePath() const {
   std::error_code ec;
-  auto resultPath = std::filesystem::canonical(path.str(), ec);
+  auto resultPath = std::filesystem::canonical(path, ec);
   if (ec)
-    return path.str();
+    return path;
   return resultPath;
 }
 
