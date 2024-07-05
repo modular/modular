@@ -33,13 +33,13 @@ fn naive_matmul[
     lhs: LayoutTensor[DType.float32, layout_dst],
     rhs: LayoutTensor[DType.float32, layout_dst],
 ):
-    var dst_tile = dst.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
-    dst_tile[ThreadIdx.y(), ThreadIdx.x()] = 0
+    var dst_tile = dst.tile[BM, BN](BlockIdx.y().value, BlockIdx.x().value)
+    dst_tile[ThreadIdx.y().value, ThreadIdx.x().value] = 0
     for k in range(dst.shape[0]()):
-        var lhs_tile = rhs.tile[BM, 1](BlockIdx.y(), k)
-        var rhs_tile = lhs.tile[1, BN](k, BlockIdx.x())
-        dst_tile[ThreadIdx.y(), ThreadIdx.x()] += (
-            lhs_tile[ThreadIdx.y(), k] * rhs_tile[k, ThreadIdx.x()]
+        var lhs_tile = rhs.tile[BM, 1](BlockIdx.y().value, k)
+        var rhs_tile = lhs.tile[1, BN](k, BlockIdx.x().value)
+        dst_tile[ThreadIdx.y().value, ThreadIdx.x().value] += (
+            lhs_tile[ThreadIdx.y().value, k] * rhs_tile[k, ThreadIdx.x().value]
         )
 
 
@@ -115,7 +115,7 @@ fn sram_blocked_matmul[
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
+    var dst_tile = dst.tile[BM, BN](BlockIdx.y().value, BlockIdx.x().value)
 
     # Distribute thread layout into a block of size [BM, BN], It repeats the
     # layout accross the BMxBN block, e.g row major layout will repeate as the
@@ -139,8 +139,8 @@ fn sram_blocked_matmul[
     # Loop over tiles in K dim.
     for k in range(lhs.shape[1]() // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](BlockIdx.y(), k)
-        var rhs_tile = rhs.tile[BK, BN](k, BlockIdx.x())
+        var lhs_tile = lhs.tile[BM, BK](BlockIdx.y().value, k)
+        var rhs_tile = rhs.tile[BK, BN](k, BlockIdx.x().value)
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
         var lhs_tile_local = lhs_tile.distribute[thread_layout](ThreadIdx.x())
@@ -247,18 +247,18 @@ fn single_warp_mma_sync_m16n8k8[
     var mat_b_mma = mat_b.transpose().reshape[layout_b_mma]()
     var mat_c_mma = mat_c.reshape[layout_c_mma]()
 
-    var thread_y = ThreadIdx.x() // 4
-    var thread_x = ThreadIdx.x() % 4
+    var thread_y: UInt = ThreadIdx.x() // 4
+    var thread_x: UInt = ThreadIdx.x() % 4
 
     var vec_a_layout = SIMD[DType.float32, 4](
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 0]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 0]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 1]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 1]),
+        rebind[Float32](mat_a_mma[thread_x.value, thread_y.value, 0, 0]),
+        rebind[Float32](mat_a_mma[thread_x.value, thread_y.value, 1, 0]),
+        rebind[Float32](mat_a_mma[thread_x.value, thread_y.value, 0, 1]),
+        rebind[Float32](mat_a_mma[thread_x.value, thread_y.value, 1, 1]),
     )
     var vec_b_layout = SIMD[DType.float32, 2](
-        rebind[Float32](mat_b_mma[thread_x, thread_y, 0]),
-        rebind[Float32](mat_b_mma[thread_x, thread_y, 1]),
+        rebind[Float32](mat_b_mma[thread_x.value, thread_y.value, 0]),
+        rebind[Float32](mat_b_mma[thread_x.value, thread_y.value, 1]),
     )
 
     var vec_d = SIMD[DType.float32, 4](0)
@@ -266,10 +266,10 @@ fn single_warp_mma_sync_m16n8k8[
 
     mma(vec_d, vec_a_layout, vec_b_layout, vec_c)
 
-    mat_c_mma[thread_x, thread_y, 0, 0] = vec_d[0]
-    mat_c_mma[thread_x, thread_y, 1, 0] = vec_d[1]
-    mat_c_mma[thread_x, thread_y, 0, 1] = vec_d[2]
-    mat_c_mma[thread_x, thread_y, 1, 1] = vec_d[3]
+    mat_c_mma[thread_x.value, thread_y.value, 0, 0] = vec_d[0]
+    mat_c_mma[thread_x.value, thread_y.value, 1, 0] = vec_d[1]
+    mat_c_mma[thread_x.value, thread_y.value, 0, 1] = vec_d[2]
+    mat_c_mma[thread_x.value, thread_y.value, 1, 1] = vec_d[3]
 
 
 fn test_single_warp_tf32_m16n8k8_matmul() raises:
@@ -363,7 +363,9 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN]((BlockIdx.y(), BlockIdx.x()))
+    var dst_tile = dst.tile[BM, BN](
+        StaticIntTuple[2](BlockIdx.y().value, BlockIdx.x().value)
+    )
 
     # Distribute thread layout into a block of size [BM, BN], It repeats the
     # layout accross the BMxBN block, e.g row major layout will repeate as the
@@ -389,22 +391,26 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Loop over tiles in K dim.
     for k in range(lhs.dim(1) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK]((BlockIdx.y(), k))
-        var rhs_tile = rhs.tile[BK, BN]((k, BlockIdx.x()))
+        var lhs_tile = lhs.tile[BM, BK](
+            StaticIntTuple[2](BlockIdx.y().value, k)
+        )
+        var rhs_tile = rhs.tile[BK, BN](
+            StaticIntTuple[2](k, BlockIdx.x().value)
+        )
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
         var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](
             ThreadIdx.x()
         )
         copy_from_nd_buffer[thread_layout=thread_layout](
-            lhs_sram_tile_local, lhs_tile, ThreadIdx.x()
+            lhs_sram_tile_local, lhs_tile, ThreadIdx.x().value
         )
 
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
             ThreadIdx.x()
         )
         copy_from_nd_buffer[thread_layout=thread_layout](
-            rhs_sram_tile_local, rhs_tile, ThreadIdx.x()
+            rhs_sram_tile_local, rhs_tile, ThreadIdx.x().value
         )
 
         barrier()
@@ -423,7 +429,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
     # Move data from register tile to DRAM
     copy_to_nd_buffer[thread_layout=thread_layout](
-        dst_tile, dst_register_tile, ThreadIdx.x()
+        dst_tile, dst_register_tile, ThreadIdx.x().value
     )
 
 

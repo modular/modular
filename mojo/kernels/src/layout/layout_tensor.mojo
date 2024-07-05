@@ -568,7 +568,7 @@ struct LayoutTensor[
             layout, threads_layout, axis
         ](),
         submode_axis: Optional[Int] = None,
-    ](self, thread_id: Int) -> LayoutTensor[
+    ](self, thread_id: UInt) -> LayoutTensor[
         dtype,
         tiled_layout[1],
         address_space=address_space,
@@ -618,18 +618,22 @@ struct LayoutTensor[
 
         @parameter
         for i in range(len(fragments_layout_stride)):
-            alias fragments_stride_i = to_int(fragments_layout_stride[i])
-            alias shape_i = to_int(thread_projected_shape[i])
-            alias stride_i = to_int(thread_projected_stride[i])
-            var thread_coord_i = (thread_id // stride_i) % shape_i
+            alias fragments_stride_i: UInt = to_int(
+                fragments_layout_stride[i]
+            ).value
+            alias shape_i: UInt = to_int(thread_projected_shape[i]).value
+            alias stride_i: UInt = to_int(thread_projected_stride[i]).value
+            var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
             offset += thread_coord_i * fragments_stride_i
 
             # Populate data needed for masked access.
             @parameter
             if Self.masked:
                 res.max_dim[i] = self.max_dim[i]
-                res.dim_offset[i] = self.dim_offset[i] + thread_coord_i
-                res.dim_stride[i] = shape_i
+                res.dim_offset[i] = self.dim_offset[i] + Int(
+                    thread_coord_i.value
+                )
+                res.dim_stride[i] = Int(shape_i.value)
 
         # Swizzling applies to the index of elements rather than scalars because
         # the former is the unit in distribution.

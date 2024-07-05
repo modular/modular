@@ -1319,5 +1319,5 @@ fn copy_from_nd_buffer_async[
     copy_from_nd_buffer[thread_layout=thread_layout, is_async=True](
         dst_tensor.distribute[thread_layout](ThreadIdx.x()),
         src_buffer,
-        ThreadIdx.x(),
+        ThreadIdx.x().value,
     )

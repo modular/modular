@@ -420,7 +420,7 @@ struct TensorCore[
                         mma_tile_coordk, i
                     )
                     var frag = mma_tile.distribute[Layout.col_major(4, 8)](
-                        int(lane_id())
+                        int(lane_id()).value
                     )
                     fragments[i, 0] = rebind[frag_type](
                         SIMD[type0, 2](
