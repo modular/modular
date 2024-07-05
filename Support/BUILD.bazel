@@ -102,13 +102,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "HMAC",
-    srcs = ["lib/HMAC.cpp"],
-    hdrs = ["include/Support/HMAC.h"],
-    deps = [":Base"],
-)
-
-modular_cc_library(
     name = "Buffer",
     srcs = ["lib/Buffer.cpp"],
     hdrs = ["include/Support/Buffer.h"],

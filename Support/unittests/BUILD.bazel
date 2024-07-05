@@ -114,12 +114,6 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "HMACTest",
-    srcs = ["HMACTest.cpp"],
-    deps = ["//Support:HMAC"],
-)
-
-modular_cc_test(
     name = "MicroBenchmarkTest",
     srcs = ["MicroBenchmarkTest.cpp"],
     deps = ["//Support:MicroBenchmark"],

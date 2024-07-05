@@ -38,7 +38,6 @@ add_modular_unittest(
   ErrorTest.cpp
   FileSystemExtrasTest.cpp
   FunctionExtrasTest.cpp
-  HMACTest.cpp
   HostTest.cpp
   IPIntTest.cpp
   IPRationalTest.cpp
