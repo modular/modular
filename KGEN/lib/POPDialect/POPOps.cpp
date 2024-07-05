@@ -611,35 +611,9 @@ CompilerGlobalStoreOp::interpret(ArrayRef<Attribute> operands,
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
-/// Checks the the input pointer type is catabolic to the output address type.
-static bool isPointerToAddressCastCompatible(TypeRange inputs,
-                                             TypeRange outputs) {
-  if (inputs.size() != 1 || inputs.size() != outputs.size())
-    return false;
-
-  // The output type must be a vector of indices.
-  auto outputType = dyn_cast<SIMDType>(outputs.front());
-  if (!outputType || outputType.getResolvedDType().value_or(DType::invalid) !=
-                         KGENDType::index)
-    return false;
-
-  // The input type can be a vector, in which case its dtype must be address and
-  // its size must match the output size.
-  if (auto inputType = dyn_cast<SIMDType>(inputs.front())) {
-    if (inputType.getResolvedDType().value_or(DType::invalid) !=
-        KGENDType::address)
-      return false;
-    return inputType.getSize() == outputType.getSize();
-  }
-
-  // Otherwise, the input type must be a pointer and the output type must be an
-  // index scalar.
-  return isa<PointerType>(inputs.front()) &&
-         outputType.getResolvedSize().value_or(0) == 1;
-}
-
 bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
-  return isPointerToAddressCastCompatible(inputs, outputs);
+  assert(inputs.size() == 1 && outputs.size() == 1);
+  return isa<PointerType>(inputs.front()) && isa<IndexType>(outputs.front());
 }
 
 //===----------------------------------------------------------------------===//

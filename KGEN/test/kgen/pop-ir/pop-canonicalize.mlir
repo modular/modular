@@ -688,14 +688,11 @@ kgen.func @array_replace() -> !pop.array<2, index> {
 }
 
 // CHECK-LABEL: @pointer_to_index
-kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
+kgen.func @pointer_to_index() -> index {
   // CHECK-DAG: <1>
-  // CHECK-DAG: <2>
   %0 = kgen.param.constant: pointer<i8> = <#interp.pointer<1>>
-  %1 = kgen.param.constant: scalar<address> = <<2>>
-  %2 = pop.pointer_to_index %0 : !kgen.pointer<i8> to !pop.scalar<index>
-  %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>
-  kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
+  %1 = pop.pointer_to_index %0 : !kgen.pointer<i8>
+  kgen.return %1 : index
 }
 
 // CHECK-LABEL: @cast_to_builtin
