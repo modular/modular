@@ -194,7 +194,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         elif Self.has_static_length():
             return self.stack_alloc_data[index]
         else:
-            return self.data.load(index)
+            return self.data[index]
 
     @always_inline
     fn nelems(self) -> Int:
@@ -223,7 +223,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         if Self.has_static_length():
             self.stack_alloc_data[index] = value
         else:
-            self.data.store(index, value)
+            self.data[index] = value
 
     @staticmethod
     @always_inline

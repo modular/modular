@@ -554,7 +554,7 @@ fn to_tensor[
     else:
         # Start from the back so we can accumulate the strides.
         for i in reversed(range(length)):
-            shape[i] = shape_ptr.load(i)
+            shape[i] = shape_ptr[i]
             strides[i] = stride
             stride *= shape[i]
 
