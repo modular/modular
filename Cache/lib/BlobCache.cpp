@@ -13,11 +13,13 @@
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/DiskUsage.h"
-#include "Support/HMAC.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/xxhash.h"
 #include <shared_mutex>
 #include <string_view>
 
@@ -377,9 +379,10 @@ struct FilesystemBackend : public BlobCacheBackend {
       // Copy the data into the file buffer.
       os.write(obj->getBufferStart(), obj->getBufferSize());
 
-      // Compute and copy the HMAC as well.
-      BLAKE3Hash hash = hmacBLAKE3(obj->getBuffer(), kIntegrityKey);
-      os.write((const char *)hash.data(), hash.size());
+      // Compute and copy the hash as well.
+      llvm::XXH128_hash_t hash =
+          llvm::xxh3_128bits(arrayRefFromStringRef(obj->getBuffer()));
+      os.write(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
     };
 
     // Safely process creating the file, taking into account that we may
@@ -430,15 +433,18 @@ struct FilesystemBackend : public BlobCacheBackend {
       return Error("file '" + Twine(filePath->string()) +
                    "' exists, but is empty");
 
-    StringRef contentsAndHMAC = buffer->getBuffer();
+    StringRef contentsAndHash = buffer->getBuffer();
 
-    // Get a StringRef of the contents without the HMAC.
-    StringRef contents = contentsAndHMAC.drop_back(blake3Bytes);
-    BLAKE3Hash computedHMAC = hmacBLAKE3(contents, kIntegrityKey);
-    StringRef storedHMAC = contentsAndHMAC.take_back(blake3Bytes);
+    // Get a StringRef of the contents without the hash.
+    StringRef contents = contentsAndHash.drop_back(sizeof(llvm::XXH128_hash_t));
+    llvm::XXH128_hash_t computedHash =
+        llvm::xxh3_128bits(arrayRefFromStringRef(contents));
+    StringRef storedHash =
+        contentsAndHash.take_back(sizeof(llvm::XXH128_hash_t));
 
-    // Check the computed hmac against the one in the file.
-    if (memcmp(computedHMAC.data(), storedHMAC.data(), blake3Bytes) != 0) {
+    // Check the computed hash against the hash in the file.
+    if (memcmp(llvm::bit_cast<char *>(&computedHash), storedHash.data(),
+               sizeof(llvm::XXH128_hash_t)) != 0) {
       return Error("corrupted file: stored hash and computed hash did not "
                    "match for file '" +
                    Twine(filePath->string()) + "'");
@@ -466,10 +472,6 @@ struct FilesystemBackend : public BlobCacheBackend {
     return absolute;
   }
 
-  /// This is a CSPRNG-generated 32-byte string. It's used for integrity
-  /// checking in the HMAC.
-  static constexpr llvm::StringLiteral kIntegrityKey =
-      "bedcaea9f09fa9fe565a8088ea66547c06c7c8e9c47fa46e0fb768a157d640a6";
   /// The base path for the filesystem cache.
   std::string basePath;
   /// Whether the filesystem cache is read-only. If `true`, reads are performed
