@@ -5251,21 +5251,21 @@ fn cublasDspr(
 
 
 fn cublasGemmEx(
-    handle: Pointer[cublasContext],
+    handle: UnsafePointer[cublasContext],
     transa: cublasOperation_t,
     transb: cublasOperation_t,
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: Pointer[NoneType],
-    _a: Pointer[NoneType],
+    alpha: UnsafePointer[NoneType],
+    _a: UnsafePointer[NoneType],
     _atype: DataType,
     lda: Int32,
-    _b: Pointer[NoneType],
+    _b: UnsafePointer[NoneType],
     _btype: DataType,
     ldb: Int32,
-    beta: Pointer[NoneType],
-    _c: Pointer[NoneType],
+    beta: UnsafePointer[NoneType],
+    _c: UnsafePointer[NoneType],
     _ctype: DataType,
     ldc: Int32,
     compute_type: ComputeType,
@@ -5274,21 +5274,21 @@ fn cublasGemmEx(
     return _get_dylib_function[
         "cublasGemmEx",
         fn (
-            Pointer[cublasContext],
+            UnsafePointer[cublasContext],
             cublasOperation_t,
             cublasOperation_t,
             Int32,
             Int32,
             Int32,
-            Pointer[NoneType],
-            Pointer[NoneType],
+            UnsafePointer[NoneType],
+            UnsafePointer[NoneType],
             DataType,
             Int32,
-            Pointer[NoneType],
+            UnsafePointer[NoneType],
             DataType,
             Int32,
-            Pointer[NoneType],
-            Pointer[NoneType],
+            UnsafePointer[NoneType],
+            UnsafePointer[NoneType],
             DataType,
             Int32,
             ComputeType,
@@ -5882,10 +5882,10 @@ fn cublasDscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn cublasCreate(handle: Pointer[Pointer[cublasContext]]) -> Result:
+fn cublasCreate(handle: UnsafePointer[UnsafePointer[cublasContext]]) -> Result:
     return _get_dylib_function[
         "cublasCreate_v2",
-        fn (Pointer[Pointer[cublasContext]]) -> Result,
+        fn (UnsafePointer[UnsafePointer[cublasContext]]) -> Result,
     ]()(handle)
 
 

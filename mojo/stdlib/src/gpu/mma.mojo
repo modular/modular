@@ -9,7 +9,7 @@ warp-matrix-matrix-multiplication (wmma) instructions."""
 from sys import _RegisterPackType, llvm_intrinsic
 
 from gpu.memory import AddressSpace
-from memory.unsafe import Pointer, bitcast
+from memory import UnsafePointer, bitcast
 
 from utils import StaticTuple
 
@@ -82,7 +82,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var sa = a.split()
         var c0 = c
 
-        var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
+        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.f32.f32",
@@ -136,7 +136,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var sa = a.split()
         var c0 = c
 
-        var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
+        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.bf16",
@@ -173,7 +173,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var sb = b.split()
         var c0 = c
 
-        var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
+        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k16.row.col.bf16",
@@ -214,9 +214,9 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var b0 = b
         var c0 = c
 
-        var a_ptr = Pointer.address_of(a0).bitcast[UInt32]()
-        var b_ptr = Pointer.address_of(b0).bitcast[UInt32]()
-        var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
+        var a_ptr = UnsafePointer.address_of(a0).bitcast[UInt32]()
+        var b_ptr = UnsafePointer.address_of(b0).bitcast[UInt32]()
+        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k4.row.col.tf32",
@@ -253,9 +253,9 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var b0 = b
         var c0 = c
 
-        var a_ptr = Pointer.address_of(a0).bitcast[UInt32]()
-        var b_ptr = Pointer.address_of(b0).bitcast[UInt32]()
-        var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
+        var a_ptr = UnsafePointer.address_of(a0).bitcast[UInt32]()
+        var b_ptr = UnsafePointer.address_of(b0).bitcast[UInt32]()
+        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.tf32",
@@ -324,13 +324,13 @@ fn ld_matrix[
     if num_registers == 1:
         alias ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
-        var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
+        var r_ptr = UnsafePointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
         _ = r
     elif num_registers == 2:
         alias ins = base + ".x2" + get_suffix()
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
-        var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
+        var r_ptr = UnsafePointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
         _ = r
     else:
@@ -342,7 +342,7 @@ fn ld_matrix[
         var r = llvm_intrinsic[
             ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
         ](ptr)
-        var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
+        var r_ptr = UnsafePointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
         _ = r
     return d

@@ -9,6 +9,7 @@ from sys._assembly import inlined_assembly
 from sys.info import alignof
 from sys.intrinsics import llvm_intrinsic
 
+from memory import UnsafePointer
 from memory.unsafe import DTypePointer, bitcast
 
 from .sys import is_sm_greater_equal
@@ -130,7 +131,7 @@ fn convert[
     ](src[1].cast[DType.float32](), src[0].cast[DType.float32]())
 
     # Reinterpret cast uint32 to 2 bf16.
-    var ptr = Pointer.address_of(bf16x2_as_uint32).bitcast[
+    var ptr = UnsafePointer.address_of(bf16x2_as_uint32).bitcast[
         SIMD[dst_type, width]
     ]()
 
