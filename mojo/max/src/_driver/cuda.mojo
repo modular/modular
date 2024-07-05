@@ -24,11 +24,9 @@ fn alloc_device_buffer(
     ctx: UnsafePointer[DeviceContext], bytes: Int
 ) -> DTypePointer[DType.uint8]:
     try:
-        var ret = ctx[].cuda_context.malloc_async[DType.uint8](
+        return ctx[].cuda_context.malloc_async[DType.uint8](
             bytes, ctx[].cuda_stream
         )
-        ctx[].cuda_stream.synchronize()
-        return ret
     except e:
         return abort[Pointer[UInt8]]()
 
@@ -43,7 +41,6 @@ fn copy_device_to_host(
         ctx[].cuda_context.copy_device_to_host_async(
             host_ptr, dev_ptr, size, ctx[].cuda_stream
         )
-        ctx[].cuda_stream.synchronize()
     except e:
         abort(e)
 
@@ -58,7 +55,6 @@ fn copy_host_to_device(
         ctx[].cuda_context.copy_host_to_device_async(
             dev_ptr, host_ptr, size, ctx[].cuda_stream
         )
-        ctx[].cuda_stream.synchronize()
     except e:
         abort(e)
 
@@ -73,7 +69,6 @@ fn copy_device_to_device(
         ctx[].cuda_context.copy_device_to_device_async(
             dst_ptr, src_ptr, size, ctx[].cuda_stream
         )
-        ctx[].cuda_stream.synchronize()
     except e:
         abort(e)
 
@@ -83,7 +78,13 @@ fn free_buffer(
 ):
     try:
         ctx[].cuda_context.free_async(ptr, ctx[].cuda_stream)
-        ctx[].cuda_stream.synchronize()
+    except e:
+        abort(e)
+
+
+fn synchronize(ctx: UnsafePointer[DeviceContext]):
+    try:
+        ctx[].synchronize()
     except e:
         abort(e)
 
@@ -122,6 +123,7 @@ struct ContextAPIFuncPtrs:
         DTypePointer[DType.uint8],
     ) -> None
     var free_context: fn (UnsafePointer[DeviceContext],) -> None
+    var synchronize: fn (UnsafePointer[DeviceContext],) -> None
 
     fn __init__(inout self):
         self.alloc_device_context = alloc_device_context
@@ -131,6 +133,7 @@ struct ContextAPIFuncPtrs:
         self.copy_device_to_device = copy_device_to_device
         self.free_buffer = free_buffer
         self.free_context = free_context
+        self.synchronize = synchronize
 
 
 fn cuda_device(gpu_id: Int = 0) raises -> Device:
