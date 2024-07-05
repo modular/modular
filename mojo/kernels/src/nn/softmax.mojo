@@ -15,6 +15,7 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
+from builtin.uint import _temp_uint_from_int
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier, WARP_SIZE, lane_id
 from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
@@ -667,8 +668,8 @@ fn softmax_kernel[
     rank: Int,
     accum_type: DType = get_accum_type[type](),
 ](shape: StaticIntTuple[rank], output: NDBuffer[type, rank], axis: Int,):
-    var row_size = shape[axis]
-    var num_rows = shape.flattened_length() // row_size
+    var row_size = _temp_uint_from_int(shape[axis])
+    var num_rows = _temp_uint_from_int(shape.flattened_length()) // row_size
 
     var max_buf = Buffer[
         accum_type, 1, address_space = AddressSpace.SHARED
@@ -691,18 +692,20 @@ fn softmax_kernel[
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return x + y
 
-    var row_size_padded = align_up(row_size, BLOCK_SIZE)
+    var row_size_padded = align_up(row_size, _temp_uint_from_int(BLOCK_SIZE))
 
     # grid stride loop over rows
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
     for row_idx in range(
-        BlockIdx.x(),
+        _temp_uint_from_int(BlockIdx.x()),
         num_rows,
-        GridDim.x(),
+        _temp_uint_from_int(GridDim.x()),
     ):
         # Step 1: compute max in row
-        var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+        var row_coords = _get_nd_indices_from_flat_index(
+            int(row_idx), shape, axis
+        )
         var row_max = row_reduce[
             BLOCK_SIZE,
             input_fn,
@@ -711,7 +714,7 @@ fn softmax_kernel[
             1,
             rank,
             accum_type=accum_type,
-        ](row_coords, axis, Scalar[type].MIN, row_size)
+        ](row_coords, axis, Scalar[type].MIN, int(row_size))
 
         if ThreadIdx.x() == 0:
             max_buf[0] = row_max
@@ -719,12 +722,16 @@ fn softmax_kernel[
 
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
         var exp_sum = Scalar[accum_type](0)
-        for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
+        for offset_in_row in range(
+            UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
+        ):
+            var idx_in_padded_row: UInt = _temp_uint_from_int(
+                ThreadIdx.x()
+            ) + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
-            row_coords[axis] = idx_in_padded_row
+            row_coords[axis] = int(idx_in_padded_row)
             # loads from input_fn twice
             var val = exp(
                 input_fn[type, 1, rank](row_coords).cast[accum_type]()
@@ -743,12 +750,16 @@ fn softmax_kernel[
 
         # Step 3: Normalize output
         var block_exp_sum_recip = 1 / exp_sum_buf[0]
-        for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
+        for offset_in_row in range(
+            UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
+        ):
+            var idx_in_padded_row: UInt = _temp_uint_from_int(
+                ThreadIdx.x()
+            ) + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
-            row_coords[axis] = idx_in_padded_row
+            row_coords[axis] = int(idx_in_padded_row)
             output[row_coords] *= block_exp_sum_recip.cast[type]()
 
 
