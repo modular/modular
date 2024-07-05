@@ -15,6 +15,7 @@ from utils import StaticTuple
 from math import ceil
 from max.tensor import TensorSpec
 from sys.intrinsics import strided_load, strided_store
+from sys.info import triple_is_nvidia_cuda
 
 
 @value
@@ -65,6 +66,10 @@ struct TensorSlice[
         """
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
+        )
+        debug_assert(
+            "CPU" in str(self._ref[]._device) or triple_is_nvidia_cuda(),
+            "Cannot index into non-CPU Tensor from host",
         )
         # cannot use UnsafeTensorSlice.__getitem__ because this function returns
         # a Reference

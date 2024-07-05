@@ -168,6 +168,10 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
         )
+        debug_assert(
+            "CPU" in str(self._device),
+            "Cannot index into non-CPU Tensor from host",
+        )
         var offset = _dot_prod(indices, self._strides)
         return self._ptr[offset]
 
@@ -224,6 +228,10 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
         )
+        debug_assert(
+            "CPU" in str(self._device),
+            "Cannot index into non-CPU Tensor from host",
+        )
         return SIMD[size=width].load(
             self._ptr, _dot_prod(indices, self._strides)
         )
@@ -243,6 +251,10 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         Returns:
           The SIMD value at the specified indices.
         """
+        debug_assert(
+            "CPU" in str(self._device),
+            "Cannot index into non-CPU Tensor from host",
+        )
         return SIMD[size=width].load(
             self._ptr, _dot_prod(indices, self._strides)
         )
@@ -260,6 +272,10 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
           indices: The indices of the value to set.
           val: The SIMD value to store.
         """
+        debug_assert(
+            "CPU" in str(self._device),
+            "Cannot index into non-CPU Tensor from host",
+        )
         SIMD[size=width].store(
             self._ptr, _dot_prod(indices, self._strides), val
         )
