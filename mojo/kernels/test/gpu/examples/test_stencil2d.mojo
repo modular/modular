@@ -39,19 +39,19 @@ fn stencil2d(
     coeff3: Int,
     coeff4: Int,
 ):
-    var tidx = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var tidy = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var tidx: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tidy: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
-        b[tidy * num_cols + tidx] = (
-            coeff0 * a[tidy * num_cols + tidx - 1]
-            + coeff1 * a[tidy * num_cols + tidx]
-            + coeff2 * a[tidy * num_cols + tidx + 1]
-            + coeff3 * a[(tidy - 1) * num_cols + tidx]
-            + coeff4 * a[(tidy + 1) * num_cols + tidx]
+        b[(tidy * UInt(num_cols.value) + tidx).value] = (
+            coeff0 * a[(tidy * UInt(num_cols.value) + tidx - UInt(1)).value]
+            + coeff1 * a[(tidy * UInt(num_cols.value) + tidx).value]
+            + coeff2 * a[(tidy * UInt(num_cols.value) + tidx + UInt(1)).value]
+            + coeff3 * a[((tidy - UInt(1)) * UInt(num_cols.value) + tidx).value]
+            + coeff4 * a[((tidy + UInt(1)) * UInt(num_cols.value) + tidx).value]
         )
 
 
@@ -67,10 +67,10 @@ fn stencil2d_smem(
     coeff3: Int,
     coeff4: Int,
 ):
-    var tidx = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var tidy = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    var lindex_x = ThreadIdx.x() + 1
-    var lindex_y = ThreadIdx.y() + 1
+    var tidx: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tidy: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var lindex_x: UInt = ThreadIdx.x() + 1
+    var lindex_y: UInt = ThreadIdx.y() + 1
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
@@ -83,26 +83,30 @@ fn stencil2d_smem(
     ].stack_allocation()
 
     # Each element is loaded in shared memory.
-    a_shared[Index(lindex_y, lindex_x)] = a[tidy * num_cols + tidx]
+    a_shared[Index(lindex_y, lindex_x)] = a[tidy.value * num_cols + tidx.value]
 
     # First column also loads elements left and right to the block.
     if ThreadIdx.x() == 0:
-        a_shared[Index(lindex_y, 0)] = a[tidy * num_cols + (tidx - 1)]
-        a_shared[Index(lindex_y, BLOCK_DIM + 1)] = a[
-            tidy * num_cols + tidx + BLOCK_DIM
+        a_shared[Index(lindex_y, UInt(0))] = a[
+            (tidy * UInt(num_cols.value) + (tidx - 1)).value
+        ]
+        a_shared[Index(Int(lindex_y.value), BLOCK_DIM + 1)] = a[
+            (tidy * UInt(num_cols.value) + tidx + BLOCK_DIM).value
         ]
 
     # First row also loads elements above and below the block.
     if ThreadIdx.y() == 0:
-        a_shared[Index(0, lindex_x)] = a[(tidy - 1) * num_cols + tidx]
-        a_shared[Index(BLOCK_DIM + 1, lindex_x)] = a[
-            (tidy + BLOCK_DIM) * num_cols + tidx
+        a_shared[Index(0, Int(lindex_x.value))] = a[
+            ((tidy - 1) * num_cols.value + tidx).value
+        ]
+        a_shared[Index(BLOCK_DIM + 1, Int(lindex_x.value))] = a[
+            ((tidy + BLOCK_DIM) * num_cols.value + tidx).value
         ]
 
     barrier()
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
-        b[tidy * num_cols + tidx] = (
+        b[(tidy * num_cols.value + tidx).value] = (
             coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
             + coeff1 * a_shared[Index(lindex_y, lindex_x)]
             + coeff2 * a_shared[Index(lindex_y, lindex_x + 1)]

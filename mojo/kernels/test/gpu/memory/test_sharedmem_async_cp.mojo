@@ -26,8 +26,8 @@ fn copy_via_shared(
     ] = src._as_scalar_pointer().bitcast[address_space = AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
-        src_global.offset(thId),
-        mem_buff.offset(thId),
+        src_global.offset(Int(thId.value)),
+        mem_buff.offset(Int(thId.value)),
     )
 
     var m_barrier = stack_allocation[

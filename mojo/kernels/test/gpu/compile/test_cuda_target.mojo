@@ -122,14 +122,16 @@ fn erf_elementwise(
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
 
-    var tid = granularity * (ThreadIdx.x() + BlockDim.x() * BlockIdx.x())
+    var tid = granularity * Int(
+        (ThreadIdx.x() + BlockDim.x() * BlockIdx.x()).value
+    )
 
     @always_inline
     @__copy_capture(tid)
     @parameter
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        var offset = tid + idx[0]
-        if offset >= len:
+        var offset = tid + UInt(idx[0].value)
+        if offset >= len.value:
             return
         buf[offset] = erf(buf[offset])
 
@@ -167,7 +169,7 @@ def test_erf_elementwise_sm90():
 fn erf_kernel(buf: DTypePointer[DType.float32], len: Int):
     var tid = ThreadIdx.x() + BlockDim.y() * BlockIdx.y()
 
-    if tid >= len:
+    if tid >= len.value:
         return
 
     buf[tid] = erf(buf[tid])
@@ -323,8 +325,11 @@ fn gemm(
 
         # Load the B matrix into shared memory.
         var b_val: Float32
-        if tile_idx * TILE_SZ_RATIO + i < k and col + j < n:
-            b_val = get_b(tile_idx * TILE_SZ_RATIO + i, col + j)
+        if tile_idx * TILE_SZ_RATIO + i.value < k.value and col + j < n:
+            b_val = get_b(
+                (tile_idx * TILE_SZ_RATIO + i.value).value,
+                (col + j.value).value,
+            )
         else:
             b_val = 0
         b_shared[i * TILE_SZ_B + j] = b_val
@@ -337,7 +342,7 @@ fn gemm(
             # Load the A tile into the register.
             var a_reg: Float32
             if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
-                a_reg = get_a(row, tile_idx * TILE_SZ_RATIO + idx)
+                a_reg = get_a(row.value, tile_idx * TILE_SZ_RATIO + idx)
             else:
                 a_reg = 0
 
@@ -350,8 +355,10 @@ fn gemm(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < m and col + out_idx < n:
-            set_c(row, col + out_idx, Scalar.load(c_reg, out_idx))
+        if row < m and col + out_idx.value < n:
+            set_c(
+                row.value, Int(col.value) + out_idx, Scalar.load(c_reg, out_idx)
+            )
 
 
 def _verify_gemm(asm: String):

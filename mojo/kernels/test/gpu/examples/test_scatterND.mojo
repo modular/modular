@@ -32,8 +32,8 @@ fn scatter_nd_gpu[
     last_index_dimension: Int,
     num_updates_elements: Int,
 ):
-    var id = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    if id >= num_indices:
+    var id: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    if id >= num_indices.value:
         return
 
     var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
@@ -42,7 +42,7 @@ fn scatter_nd_gpu[
 
     var data_offset = 0
 
-    var indices_start = last_index_dimension * id
+    var indices_start = last_index_dimension * id.value
     var indices_end = indices_start + last_index_dimension
 
     for i in range(indices_start, indices_end):
@@ -73,7 +73,9 @@ fn scatter_nd_gpu[
         data_offset += index * element_count_dim
 
     # Set updates_data_base to appropriate offset (from where to copy).
-    var updates_data_base = updates_data_ptr.offset(num_updates_elements * id)
+    var updates_data_base = updates_data_ptr.offset(
+        num_updates_elements * id.value
+    )
     # Set output_data_base to appropriate offset (where to copy).
     var output_data_base = output_data_ptr.offset(data_offset)
 

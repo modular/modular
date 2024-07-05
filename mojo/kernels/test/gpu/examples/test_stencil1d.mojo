@@ -34,13 +34,17 @@ fn stencil1d(
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tid: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
-    if 0 < tid < arr_size - 1:
-        b[tid] = coeff0 * a[tid - 1] + coeff1 * a[tid] + coeff2 * a[tid + 1]
+    if 0 < Int(tid.value) < Int(arr_size.value) - 1:
+        b[tid.value] = (
+            coeff0 * a[(tid - 1).value]
+            + coeff1 * a[tid.value]
+            + coeff2 * a[(tid + 1).value]
+        )
 
 
 fn stencil1d_smem(
@@ -51,8 +55,8 @@ fn stencil1d_smem(
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var lindex = ThreadIdx.x() + 1
+    var tid: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var lindex: UInt = ThreadIdx.x() + 1
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
@@ -61,15 +65,15 @@ fn stencil1d_smem(
         BLOCK_DIM + 2, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    a_shared[lindex] = a[tid]
+    a_shared[lindex] = a[tid.value]
     if ThreadIdx.x() == 0:
-        a_shared[lindex - 1] = a[tid - 1]
-        a_shared[lindex + BLOCK_DIM] = a[tid + BLOCK_DIM]
+        a_shared[lindex - 1] = a[(tid - 1).value]
+        a_shared[lindex + BLOCK_DIM] = a[(tid + BLOCK_DIM).value]
 
     barrier()
 
-    if 0 < tid < arr_size - 1:
-        b[tid] = (
+    if 0 < Int(tid.value) < arr_size - 1:
+        b[tid.value] = (
             coeff0 * a_shared[lindex - 1]
             + coeff1 * a_shared[lindex]
             + coeff2 * a_shared[lindex + 1]

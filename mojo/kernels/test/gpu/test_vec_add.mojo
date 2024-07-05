@@ -19,8 +19,8 @@ fn vec_func(
     out: DTypePointer[DType.float32],
     len: Int,
 ):
-    var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
-    if tid >= len:
+    var tid: UInt = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+    if tid >= len.value:
         return
     out[tid] = in0[tid] + in1[tid]
 

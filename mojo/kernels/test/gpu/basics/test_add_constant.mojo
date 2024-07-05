@@ -17,8 +17,8 @@ fn add_constant_fn(
     constant: Float32,
     len: Int,
 ):
-    var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
-    if tid >= len:
+    var tid: UInt = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+    if tid >= len.value:
         return
     out[tid] = input[tid] + constant
 

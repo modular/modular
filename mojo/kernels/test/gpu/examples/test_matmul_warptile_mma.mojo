@@ -142,12 +142,12 @@ fn sgemm_warp_tiling_kernel[
 
     # Indices (row, col) for registers d[0], d[1], d[2], d[3].
     # Same indices for registers c[0-3].
-    var row_cd0_cd1 = group_id
-    var row_cd2_cd3 = group_id + 8
-    var col_cd0 = (thread_id_in_group * 2) + (0 & 0x1)
-    var col_cd1 = (thread_id_in_group * 2) + (1 & 0x1)
-    var col_cd2 = (thread_id_in_group * 2) + (2 & 0x1)
-    var col_cd3 = (thread_id_in_group * 2) + (3 & 0x1)
+    var row_cd0_cd1: UInt = group_id
+    var row_cd2_cd3: UInt = group_id + 8
+    var col_cd0: UInt = (thread_id_in_group * 2) + (0 & 0x1)
+    var col_cd1: UInt = (thread_id_in_group * 2) + (1 & 0x1)
+    var col_cd2: UInt = (thread_id_in_group * 2) + (2 & 0x1)
+    var col_cd3: UInt = (thread_id_in_group * 2) + (3 & 0x1)
 
     # ==========================================================================
 
@@ -250,7 +250,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val0 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a0) * BM_padded
+                        (subwarp_tile_row_A + row_a0.value) * BM_padded
                         + subwarp_tile_col_A
                         + col_a0
                     )
@@ -258,7 +258,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val1 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a1) * BM_padded
+                        (subwarp_tile_row_A + row_a1.value) * BM_padded
                         + subwarp_tile_col_A
                         + col_a1
                     )
@@ -266,7 +266,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val2 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a2) * BM_padded
+                        (subwarp_tile_row_A + row_a2.value) * BM_padded
                         + subwarp_tile_col_A
                         + col_a2
                     )
@@ -274,7 +274,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val3 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a3) * BM_padded
+                        (subwarp_tile_row_A + row_a3.value) * BM_padded
                         + subwarp_tile_col_A
                         + col_a3
                     )
@@ -295,7 +295,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val0 = b_sram[
                     Index(
-                        (subwarp_tile_row_B + row_b0) * BN
+                        (subwarp_tile_row_B + row_b0.value) * BN
                         + subwarp_tile_col_B
                         + col_b0_b1
                     )
@@ -303,7 +303,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val1 = b_sram[
                     Index(
-                        (subwarp_tile_row_B + row_b1) * BN
+                        (subwarp_tile_row_B + row_b1.value) * BN
                         + subwarp_tile_col_B
                         + col_b0_b1
                     )
@@ -351,16 +351,20 @@ fn sgemm_warp_tiling_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(row_cd0_cd1 * N, col_cd0), vec[0]
+                    Index(Int(row_cd0_cd1.value) * N, Int(col_cd0.value)),
+                    vec[0],
                 )
                 elementwise_lambda[c_type, 1](
-                    Index(row_cd0_cd1 * N, col_cd1), vec[1]
+                    Index(Int(row_cd0_cd1.value) * N, Int(col_cd1.value)),
+                    vec[1],
                 )
                 elementwise_lambda[c_type, 1](
-                    Index(row_cd2_cd3 * N, col_cd2), vec[2]
+                    Index(Int(row_cd2_cd3.value) * N, Int(col_cd2.value)),
+                    vec[2],
                 )
                 elementwise_lambda[c_type, 1](
-                    Index(row_cd2_cd3 * N, col_cd3), vec[3]
+                    Index(Int(row_cd2_cd3.value) * N, Int(col_cd3.value)),
+                    vec[3],
                 )
             else:
                 # Store result.

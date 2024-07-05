@@ -91,31 +91,31 @@ fn matmul_sram(
 
         @parameter
         if not full_tile:
-            a_val = a[row, offset + localCol] if (
-                row < M and offset + localCol < K
+            a_val = a[row.value, offset + localCol.value] if (
+                row < M and offset + localCol.value < K
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < M else 0.0
-        a_shared[localRow * tile_size + localCol] = a_val
+            a_val = a[row.value, offset + localCol.value] if row < M else 0.0
+        a_shared[localRow.value * tile_size + localCol.value] = a_val
 
         # Load B tile into shared memory.
         var b_val: Float32
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow, col] if (
-                col < N and offset + localRow < K
+            b_val = b[offset + localRow.value, col.value] if (
+                col < N and offset + localRow.value < K
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < N else 0.0
-        b_shared[localRow * tile_size + localCol] = b_val
+            b_val = b[offset + localRow.value, col.value] if col < N else 0.0
+        b_shared[localRow.value * tile_size + localCol.value] = b_val
 
         barrier()
 
         for k in range(tile_size):
             result += Scalar.load(
-                a_shared, localRow * tile_size + k
-            ) * Scalar.load(b_shared, k * tile_size + localCol)
+                a_shared, localRow.value * tile_size + k
+            ) * Scalar.load(b_shared, k * tile_size + localCol.value)
 
         barrier()
 

@@ -38,10 +38,10 @@ fn matmul_naive(
     n: Int,
     k: Int,
 ):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
-    if x >= m or y >= n:
+    if x >= m.value or y >= n.value:
         return
 
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
@@ -50,7 +50,7 @@ fn matmul_naive(
 
     var accum = Float32(0)
     for i in range(k):
-        accum = a[x, i] * b[i, y] + accum
+        accum = a[x.value, i] * b[i, y.value] + accum
     c[Index(x, y)] = accum
 
 

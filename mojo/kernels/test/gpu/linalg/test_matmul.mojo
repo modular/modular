@@ -64,8 +64,8 @@ fn matmul(
     ]()
 
     # Thread indexing offsets.
-    var row = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var col = BlockIdx.y() * TILE_SZ_B
+    var row: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var col: UInt = BlockIdx.y() * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
@@ -74,13 +74,16 @@ fn matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i = ThreadIdx.x() // TILE_SZ_B
-        var j = ThreadIdx.x() % TILE_SZ_B
+        var i: UInt = ThreadIdx.x() // TILE_SZ_B
+        var j: UInt = ThreadIdx.x() % TILE_SZ_B
 
         # Load the B matrix into shared memory.
         var b_val: Float32
-        if tile_idx * TILE_SZ_RATIO + i < k and col + j < n:
-            b_val = b[tile_idx * TILE_SZ_RATIO + i, col + j]
+        if tile_idx * TILE_SZ_RATIO + i.value < k and col + j.value < n:
+            b_val = b[
+                (tile_idx * TILE_SZ_RATIO + i.value).value,
+                (col + j.value).value,
+            ]
         else:
             b_val = 0
         b_shared[i * TILE_SZ_B + j] = b_val
@@ -92,7 +95,7 @@ fn matmul(
             # Load the A tile into the register.
             var a_reg: Float32
             if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
-                a_reg = a[row, tile_idx * TILE_SZ_RATIO + idx]
+                a_reg = a[row.value, (tile_idx * TILE_SZ_RATIO + idx).value]
             else:
                 a_reg = 0
 
@@ -105,8 +108,8 @@ fn matmul(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < m and col + out_idx < n:
-            c[Index(row, col + out_idx)] = c_reg[out_idx]
+        if row < m and out_idx + col.value < n:
+            c[Index(row, col + out_idx.value)] = c_reg[out_idx]
 
 
 struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:

@@ -58,16 +58,19 @@ fn matmul_naive[
     mat_a: LayoutTensor[in_type, layout_a],
     mat_b: LayoutTensor[in_type, layout_b],
 ):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
-    if x >= mat_c.shape[0]() or y >= mat_c.shape[1]():
+    if Int(x.value) >= mat_c.shape[0]() or Int(y.value) >= mat_c.shape[1]():
         return
 
-    var accum = mat_c[x, y]
+    var accum = mat_c[x.value, y.value]
     for i in range(mat_a.shape[1]()):
-        accum += mat_a[x, i].cast[out_type]() * mat_b[i, y].cast[out_type]()
-    mat_c[x, y] = accum
+        accum += (
+            mat_a[x.value, i].cast[out_type]()
+            * mat_b[i, y.value].cast[out_type]()
+        )
+    mat_c[x.value, y.value] = accum
 
 
 fn test_layout_mma[
