@@ -57,12 +57,13 @@ public:
 
   /// Return the test suite component of the test ID, if present.
   std::optional<StringRef> getTestSuite() const {
-    return testSuite.empty() ? std::nullopt : std::make_optional(testSuite);
+    return testSuite.empty() ? std::nullopt
+                             : std::make_optional(StringRef(testSuite));
   }
 
   /// Return the test component of the test ID, if present.
   std::optional<StringRef> getTest() const {
-    return test.empty() ? std::nullopt : std::make_optional(test);
+    return test.empty() ? std::nullopt : std::make_optional(StringRef(test));
   }
 
   /// Return a new TestID using the path and test suite of this ID, but with
@@ -83,7 +84,7 @@ private:
   std::string id;
 
   /// The individual components of the test ID.
-  StringRef path, testSuite, test;
+  std::string path, testSuite, test;
 };
 raw_ostream &operator<<(raw_ostream &os, const TestID &testID);
 
