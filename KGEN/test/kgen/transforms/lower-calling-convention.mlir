@@ -166,3 +166,73 @@ kgen.func @nested_pack_attr() {
   kgen.param.constant: !kgen.pack<[!kgen.pack<[]>, !kgen.pack<[i32, i64]>]> = <#kgen.pack<#kgen.pack<>, #kgen.pack<1, 2>>>
   kgen.return
 }
+
+kgen.func @memtype__moveinit__(%arg0: !kgen.pointer<struct<(index) memoryOnly>> init_self, %arg1: !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+}
+// CHECK-LABEL kgen.func @memtype_create_reg_stub
+kgen.func @memtype_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none> {
+  // CHECK: kgen.create_closure[(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> (): @memtype__moveinit__]()
+  %0 = kgen.create_reg_stub [(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none: @memtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+}
+
+kgen.func @regtype__moveinit__(%arg0: index owned) -> index {
+  kgen.return %arg0 : index
+}
+// CHECK-LABEL: kgen.func @regtype_create_reg_stub
+kgen.func @regtype_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none> {
+  // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> init_self, [[ARG1:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) {
+  // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
+  // CHECK-NEXT: [[V2:%.*]] = pop.pointer.bitcast [[ARG1]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
+  // CHECK-NEXT: [[V3:%.*]] = pop.load [[V2]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V4:%.*]] = kgen.call @regtype__moveinit__([[V3]]) : (index owned) -> index
+  // CHECK-NEXT: pop.store [[V4]], [[V1]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.return
+  %0 = kgen.create_reg_stub [(index owned) -> index: @regtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+}
+
+kgen.func @mixtypes_fun(%arg0: !kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, %arg1: !kgen.pointer<none> borrow, %arg2: !pop.scalar<si16> borrow) -> index {
+  %0 = kgen.param.constant = <1>
+  kgen.return %0 : index
+}
+// CHECK-LABEL: kgen.func @mixtypes_create_reg_stub
+kgen.func @mixtypes_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none> borrow, !pop.scalar<si16> borrow) -> !kgen.none> {
+  // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> init_self, [[ARG1:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, [[ARG2:%.*]]: !kgen.pointer<none>, [[ARG3:%.*]]: !pop.scalar<si16>) {
+  // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
+  // CHECK-NEXT: [[V2:%.*]] = kgen.call @mixtypes_fun([[ARG1]], [[ARG2]], [[ARG3]]) : (!kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none>, !pop.scalar<si16>) -> index
+  // CHECK-NEXT: pop.store [[V2]], [[V1]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.return
+  %0 = kgen.create_reg_stub [(!kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none> borrow, !pop.scalar<si16> borrow) -> index: @mixtypes_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none> borrow, !pop.scalar<si16> borrow) -> !kgen.none>
+  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none> borrow, !pop.scalar<si16> borrow) -> !kgen.none>
+}
+
+kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !pop.scalar<si32> {
+  %0 = kgen.param.constant: scalar<si32> = <42>
+  kgen.return %0 : !pop.scalar<si32>
+}
+// CHECK-LABEL: kgen.func @byrefresult_create_reg_stub
+kgen.func @byrefresult_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
+  // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, [[ARG1:%.*]]: !kgen.pointer<none>, [[ARG2:%.*]]: !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) {
+  // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
+  // CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
+  // CHECK-NEXT: [[V3:%.*]] = pop.pointer.bitcast [[ARG2]] : !kgen.pointer<struct<(scalar<si32>) memoryOnly>> to !kgen.pointer<scalar<si32>>
+  // CHECK-NEXT: [[V4:%.*]] = kgen.call @byrefresult_fun([[V2]], [[ARG1]]) : (index, !kgen.pointer<none>) -> !pop.scalar<si32>
+  // CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<scalar<si32>>
+  // CHECK-NEXT: kgen.return
+  %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !pop.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
+  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> borrow_in_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
+}
+
+kgen.func @noargs_fun() -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+}
+// CHECK-LABEL kgen.func @noargs_create_reg_stub
+kgen.func @noargs_create_reg_stub() -> !kgen.signature<() -> !kgen.none> {
+  // CHECK: kgen.create_closure[() -> (): @noargs_create_reg_stub]()
+  %0 = kgen.create_reg_stub [() -> !kgen.none: @noargs_create_reg_stub] : <() -> !kgen.none>
+  kgen.return %0 : !kgen.signature<() -> !kgen.none>
+}

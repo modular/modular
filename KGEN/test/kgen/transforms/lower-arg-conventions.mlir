@@ -337,3 +337,29 @@ kgen.func @two_call_indirect(%arg0: !kgen.signature<(!kgen.pointer<index> byref_
   kgen.call_indirect %arg0(%1) : (!kgen.pointer<index> byref_result) -> !kgen.none
   kgen.return
 }
+
+// COM: Function signature remains the same.
+// CHECK-LABEL: @memtype__moveinit__(%arg0: !kgen.pointer<struct<(index) memoryOnly>> init_self, %arg1: !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem)
+kgen.func @memtype__moveinit__(%arg0: !kgen.pointer<struct<(index) memoryOnly>> init_self, %arg1: !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+kgen.func @memtype_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none> {
+  // COM: Both callee and stub signature remain the same.
+  // CHECK: kgen.create_reg_stub [(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none: @memtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+  %0 = kgen.create_reg_stub [(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none: @memtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+}
+
+// COM: Function signature converted to register types
+// CHECK-LABEL: kgen.func @regtype__moveinit__(%arg0: index owned) -> index {
+kgen.func @regtype__moveinit__(%arg0: !kgen.pointer<index> init_self, %arg1: !kgen.pointer<index> owned_in_mem) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+kgen.func @regtype_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none> {
+  // COM: callee signature converted to register types but stub signature remains the same.
+  // CHECK: kgen.create_reg_stub [(index owned) -> index: @regtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+  %0 = kgen.create_reg_stub [(!kgen.pointer<index> init_self, !kgen.pointer<index> owned_in_mem) -> !kgen.none: @regtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+  kgen.return %0: !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+}

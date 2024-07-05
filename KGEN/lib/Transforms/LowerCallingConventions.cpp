@@ -84,6 +84,70 @@ static StructAttr lowerPackAttrToStruct(PackAttr pack) {
   return StructAttr::get(pack.getValues(), structType);
 }
 
+static void lowerCreateRegStubOp(mlir::IRRewriter &b, CreateRegStubOp op) {
+  SignatureType resSig = op.getResult().getType();
+  SignatureType calleeSig = cast<SignatureType>(op.getCallee().getType());
+  Location loc = op->getLoc();
+  SymbolConstantAttr callee = cast<SymbolConstantAttr>(op.getCallee());
+
+  if (calleeSig == resSig) {
+    // Signatures are equal, no need to transform the arguments.
+    // Directly lower to CreateClosureOp.
+    b.replaceOpWithNewOp<CreateClosureOp>(op, callee);
+    return;
+  }
+
+  auto closureWrapper = b.create<StageClosureOp>(loc, resSig);
+  Block *body = b.createBlock(&closureWrapper.getBodyRegion());
+
+  // Bitcast the function arguments and load the inputs.
+  SmallVector<Value> insValues;
+  SmallVector<Type> outsTypes;
+  SmallVector<Value> outsPointers;
+  bool promotedOutputs =
+      (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
+      (!calleeSig.hasMemoryOnlyResult() && !calleeSig.hasInitSelfArg());
+  for (auto [i, rawArgTy] : llvm::enumerate(resSig.getValues().getInputs())) {
+    ArgConvention conv = resSig.getArgConvention(i);
+    Value arg = body->addArgument(rawArgTy, loc);
+    Type argTy = op.getOriginalArgType(i);
+    // Bitcast to the original type if needed.
+    if (rawArgTy != argTy)
+      arg = b.create<POP::PointerBitcastOp>(loc, argTy, arg);
+
+    if (promotedOutputs && (conv == ArgConvention::InitSelf ||
+                            conv == ArgConvention::ByRefResult)) {
+      // Output was a memory argument but got promoted to a register output.
+      // Store will be inserted after the function.
+      PointerType argTy = cast<PointerType>(arg.getType());
+      outsTypes.push_back(argTy.getElementType());
+      outsPointers.push_back(arg);
+    } else if (arg.getType() == op.getCalleeArgType(i)) {
+      // Input type remained the same.
+      // Just pass it directly to the function.
+      insValues.push_back(arg);
+    } else {
+      // Input was a memory argument but got lowered to a register argument.
+      // Load it before passing it to the function.
+      Value loadArg = b.create<POP::LoadOp>(loc, arg);
+      insValues.push_back(loadArg);
+    }
+  }
+
+  // Insert the call.
+  CallOp callOp = b.create<CallOp>(loc, outsTypes, callee, insValues);
+
+  // Add stores for the call outputs.
+  for (auto [resultVal, resultPtr] :
+       llvm::zip(callOp->getResults(), outsPointers))
+    b.create<POP::StoreOp>(loc, resultVal, resultPtr);
+
+  // Add the terminator (KGEN::ReturnOp).
+  b.create<ReturnOp>(loc);
+
+  b.replaceOp(op, closureWrapper);
+}
+
 /// We need to roll our own walk function because we are converting types and
 /// operations at the same time. We need a pre-order walk to convert argument
 /// types before their users, but we are also erasing ops with regions.
@@ -183,6 +247,11 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     }
     b.replaceOpWithNewOp<StructCreateOp>(load, load->getResultTypes(),
                                          elements);
+    return;
+  }
+
+  if (auto createRegStubOp = dyn_cast<CreateRegStubOp>(op)) {
+    lowerCreateRegStubOp(b, createRegStubOp);
     return;
   }
 
