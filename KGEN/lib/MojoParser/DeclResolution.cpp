@@ -2217,8 +2217,8 @@ void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
   // Emit the constant symbol for the `impl` method.
   auto implMethodsUValue = OverloadSetUValue::create(std::move(implMethods));
   ExprEmitter emitter(shared, structDecl, {});
-  PValue value =
-      emitter.emitPValue({implMethodsUValue}, ExprContext::EC_Decorator);
+  PValue value = emitter.emitPValue({implMethodsUValue, decorator},
+                                    ExprContext::EC_Decorator);
   if (!value)
     return;
 
