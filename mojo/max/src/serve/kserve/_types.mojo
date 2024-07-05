@@ -90,7 +90,7 @@ fn _get_tensors[
             i,
             UnsafePointer.address_of(view_ptr),
         )
-        var view = view_ptr.load()
+        var view = view_ptr[]
         map.borrow(view.name, _get_tensor_spec(view), view.contents)
         CTensorView.free(lib, view_ptr)
     return map^
