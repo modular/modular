@@ -8,7 +8,7 @@
 from os import abort
 from time import perf_counter_ns
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from ._utils import _check_error, _EventHandle, _StreamHandle
 from .context import Context
@@ -81,7 +81,9 @@ struct Event:
         self._event = _EventHandle()
 
         var cuEventCreate = self.cuda_dll.value().cuEventCreate if self.cuda_dll else cuEventCreate.load()
-        _check_error(cuEventCreate(Pointer.address_of(self._event), flags))
+        _check_error(
+            cuEventCreate(UnsafePointer.address_of(self._event), flags)
+        )
 
     @always_inline
     fn __del__(owned self):
@@ -122,7 +124,7 @@ struct Event:
         var ms = Float32(0)
         _check_error(
             cuEventElapsedTime(
-                Pointer.address_of(ms), self._event, other._event
+                UnsafePointer.address_of(ms), self._event, other._event
             )
         )
         return ms

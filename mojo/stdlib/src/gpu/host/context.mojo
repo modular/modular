@@ -7,7 +7,7 @@
 
 from os import abort
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
@@ -37,7 +37,7 @@ struct Context:
 
         var cuCtxCreate = self.cuda_dll.value().cuCtxCreate if self.cuda_dll else cuCtxCreate.load()
         _check_error(
-            cuCtxCreate(Pointer.address_of(self.ctx), flags, device.id)
+            cuCtxCreate(UnsafePointer.address_of(self.ctx), flags, device.id)
         )
 
     fn __del__(owned self):
@@ -77,15 +77,13 @@ struct Context:
         var cuCtxSynchronize = self.cuda_dll.value().cuCtxSynchronize if self.cuda_dll else cuCtxSynchronize.load()
         _check_error(cuCtxSynchronize())
 
-    fn malloc[
-        type: AnyTrivialRegType
-    ](self, count: Int) raises -> Pointer[type]:
+    fn malloc[type: AnyType](self, count: Int) raises -> UnsafePointer[type]:
         """Allocates GPU device memory."""
 
-        var ptr = Pointer[Int]()
+        var ptr = UnsafePointer[Int]()
         var cuMemAlloc = self.cuda_dll.value().cuMemAlloc if self.cuda_dll else cuMemAlloc.load()
         _check_error(
-            cuMemAlloc(Pointer.address_of(ptr), count * sizeof[type]())
+            cuMemAlloc(UnsafePointer.address_of(ptr), count * sizeof[type]())
         )
         return ptr.bitcast[type]()
 
@@ -93,16 +91,16 @@ struct Context:
         return self.malloc[Scalar[type]](count)
 
     fn malloc_managed[
-        type: AnyTrivialRegType
-    ](self, count: Int) raises -> Pointer[type]:
+        type: AnyType
+    ](self, count: Int) raises -> UnsafePointer[type]:
         """Allocates memory that will be automatically managed by the Unified Memory system.
         """
         alias CU_MEM_ATTACH_GLOBAL = UInt32(1)
-        var ptr = Pointer[Int]()
+        var ptr = UnsafePointer[Int]()
         var cuMemAllocManaged = self.cuda_dll.value().cuMemAllocManaged if self.cuda_dll else cuMemAllocManaged.load()
         _check_error(
             cuMemAllocManaged(
-                Pointer.address_of(ptr),
+                UnsafePointer.address_of(ptr),
                 count * sizeof[type](),
                 CU_MEM_ATTACH_GLOBAL,
             )
@@ -114,7 +112,7 @@ struct Context:
     ](self, count: Int) raises -> DTypePointer[type]:
         return self.malloc_managed[Scalar[type]](count)
 
-    fn free[type: AnyTrivialRegType](self, ptr: Pointer[type]) raises:
+    fn free[type: AnyType](self, ptr: UnsafePointer[type]) raises:
         """Frees allocated GPU device memory."""
 
         var cuMemFree = self.cuda_dll.value().cuMemFree if self.cuda_dll else cuMemFree.load()
@@ -124,9 +122,12 @@ struct Context:
         self.free(ptr._as_scalar_pointer())
 
     fn copy_host_to_device[
-        type: AnyTrivialRegType
+        type: AnyType
     ](
-        self, device_dest: Pointer[type], host_src: Pointer[type], count: Int
+        self,
+        device_dest: UnsafePointer[type],
+        host_src: UnsafePointer[type],
+        count: Int,
     ) raises:
         """Copies memory from host to device."""
 
@@ -154,11 +155,11 @@ struct Context:
         )
 
     fn copy_host_to_device_async[
-        type: AnyTrivialRegType
+        type: AnyType
     ](
         self,
-        device_dst: Pointer[type],
-        host_src: Pointer[type],
+        device_dst: UnsafePointer[type],
+        host_src: UnsafePointer[type],
         count: Int,
         stream: Stream,
     ) raises:
@@ -191,9 +192,12 @@ struct Context:
         )
 
     fn copy_device_to_host[
-        type: AnyTrivialRegType
+        type: AnyType
     ](
-        self, host_dest: Pointer[type], device_src: Pointer[type], count: Int
+        self,
+        host_dest: UnsafePointer[type],
+        device_src: UnsafePointer[type],
+        count: Int,
     ) raises:
         """Copies memory from device to host."""
 
@@ -221,11 +225,11 @@ struct Context:
         )
 
     fn copy_device_to_host_async[
-        type: AnyTrivialRegType
+        type: AnyType
     ](
         self,
-        host_dest: Pointer[type],
-        device_src: Pointer[type],
+        host_dest: UnsafePointer[type],
+        device_src: UnsafePointer[type],
         count: Int,
         stream: Stream,
     ) raises:
@@ -258,9 +262,13 @@ struct Context:
         )
 
     fn copy_device_to_device_async[
-        type: AnyTrivialRegType
+        type: AnyType
     ](
-        self, dst: Pointer[type], src: Pointer[type], count: Int, stream: Stream
+        self,
+        dst: UnsafePointer[type],
+        src: UnsafePointer[type],
+        count: Int,
+        stream: Stream,
     ) raises:
         """Copies memory from device to device asynchronously."""
 
@@ -288,8 +296,8 @@ struct Context:
         )
 
     fn memset[
-        type: AnyTrivialRegType
-    ](self, device_dest: Pointer[type], val: UInt8, count: Int) raises:
+        type: AnyType
+    ](self, device_dest: UnsafePointer[type], val: UInt8, count: Int) raises:
         """Sets the memory range of N 8-bit values to a specified value."""
 
         var cuMemsetD8 = self.cuda_dll.value().cuMemsetD8 if self.cuda_dll else cuMemsetD8.load()
@@ -362,11 +370,11 @@ struct Context:
 
     @always_inline
     fn copy_device_to_device[
-        type: AnyTrivialRegType
+        type: AnyType
     ](
         self,
-        device_dest: Pointer[type],
-        device_src: Pointer[type],
+        device_dest: UnsafePointer[type],
+        device_src: UnsafePointer[type],
         count: Int,
     ) raises:
         """Copies memory from device to device."""
@@ -402,22 +410,24 @@ struct Context:
         return self.malloc_async[Scalar[type]](count, stream)
 
     fn malloc_async[
-        type: AnyTrivialRegType
-    ](self, count: Int, stream: Stream) raises -> Pointer[type]:
+        type: AnyType
+    ](self, count: Int, stream: Stream) raises -> UnsafePointer[type]:
         """Allocates memory with stream ordered semantics."""
 
-        var ptr = Pointer[Int]()
+        var ptr = UnsafePointer[Int]()
         var cuMemAllocAsync = self.cuda_dll.value().cuMemAllocAsync if self.cuda_dll else cuMemAllocAsync.load()
         _check_error(
             cuMemAllocAsync(
-                Pointer.address_of(ptr), count * sizeof[type](), stream.stream
+                UnsafePointer.address_of(ptr),
+                count * sizeof[type](),
+                stream.stream,
             )
         )
         return ptr.bitcast[type]()
 
     fn free_async[
-        type: AnyTrivialRegType
-    ](self, ptr: Pointer[type], stream: Stream) raises:
+        type: AnyType
+    ](self, ptr: UnsafePointer[type], stream: Stream) raises:
         """Frees memory with stream ordered semantics."""
 
         var cuMemFreeAsync = self.cuda_dll.value().cuMemFreeAsync if self.cuda_dll else cuMemFreeAsync.load()

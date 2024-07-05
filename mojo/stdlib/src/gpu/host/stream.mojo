@@ -7,7 +7,7 @@
 
 from os import abort
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from ._utils import _check_error, _StreamHandle
 
@@ -52,7 +52,7 @@ struct Stream(CollectionElement):
 
         var cuStreamCreate = self.cuda_dll.value().cuStreamCreate if self.cuda_dll else cuStreamCreate.load()
         _check_error(
-            cuStreamCreate(Pointer.address_of(self.stream), Int32(flags))
+            cuStreamCreate(UnsafePointer.address_of(self.stream), Int32(flags))
         )
 
     fn __init__(inout self, ctx: Context, flags: Int = 0) raises:

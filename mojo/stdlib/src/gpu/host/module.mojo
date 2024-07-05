@@ -10,7 +10,7 @@ from os import abort
 from pathlib import Path
 
 from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from utils import StringRef
 
@@ -52,7 +52,7 @@ struct JitOptions:
       Applies to: compiler and linker
     """
     alias INFO_LOG_BUFFER: Self = 3
-    """Pointer to a buffer in which to print any log messages
+    """UnsafePointer to a buffer in which to print any log messages
       that are informational in nature (the buffer size is specified via
       option ::CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES)
       Option type: char *
@@ -66,7 +66,7 @@ struct JitOptions:
       Applies to: compiler and linker
     """
     alias ERROR_LOG_BUFFER: Self = 5
-    """Pointer to a buffer in which to print any log messages that
+    """UnsafePointer to a buffer in which to print any log messages that
       reflect errors (the buffer size is specified via option
       ::CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES)
       Option type: char *
@@ -316,7 +316,7 @@ struct Module:
 
         _check_error(
             cuModuleLoad.load()(
-                Pointer.address_of(module),
+                UnsafePointer.address_of(module),
                 path_cstr.unsafe_cstr_ptr(),
             )
         )
@@ -368,7 +368,7 @@ struct Module:
 
             var opts = stack_allocation[max_num_options, JitOptions]()
             var option_vals = stack_allocation[
-                max_num_options, Pointer[NoneType]
+                max_num_options, UnsafePointer[NoneType]
             ]()
 
             opts[num_options] = JitOptions.INFO_LOG_BUFFER
@@ -376,7 +376,9 @@ struct Module:
             num_options += 1
 
             opts[num_options] = JitOptions.INFO_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = Pointer[NoneType](address=buffer_size)
+            option_vals[num_options] = UnsafePointer[NoneType](
+                address=buffer_size
+            )
             num_options += 1
 
             opts[num_options] = JitOptions.ERROR_LOG_BUFFER
@@ -384,24 +386,26 @@ struct Module:
             num_options += 1
 
             opts[num_options] = JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = Pointer[NoneType](address=buffer_size)
+            option_vals[num_options] = UnsafePointer[NoneType](
+                address=buffer_size
+            )
             num_options += 1
 
             if debug:
                 opts[num_options] = JitOptions.GENERATE_DEBUG_INFO
-                option_vals[num_options] = Pointer[NoneType](address=1)
+                option_vals[num_options] = UnsafePointer[NoneType](address=1)
                 num_options += 1
 
             if max_registers:
                 opts[num_options] = JitOptions.MAX_REGISTERS
-                option_vals[num_options] = Pointer[NoneType](
+                option_vals[num_options] = UnsafePointer[NoneType](
                     address=max_registers.value()
                 )
                 num_options += 1
 
             if threads_per_block:
                 opts[num_options] = JitOptions.THREADS_PER_BLOCK
-                option_vals[num_options] = Pointer[NoneType](
+                option_vals[num_options] = UnsafePointer[NoneType](
                     address=threads_per_block.value()
                 )
                 num_options += 1
@@ -410,7 +414,7 @@ struct Module:
             # is null terminated.
             var cuModuleLoadDataEx = self.cuda_dll.value().cuModuleLoadDataEx if self.cuda_dll else cuModuleLoadDataEx.load()
             var result = cuModuleLoadDataEx(
-                Pointer.address_of(self.module),
+                UnsafePointer.address_of(self.module),
                 content.unsafe_ptr(),
                 UInt32(num_options),
                 opts,
@@ -435,7 +439,7 @@ struct Module:
             var cuModuleLoadData = self.cuda_dll.value().cuModuleLoadData if self.cuda_dll else cuModuleLoadData.load()
             _check_error(
                 cuModuleLoadData(
-                    Pointer.address_of(self.module), content.unsafe_ptr()
+                    UnsafePointer.address_of(self.module), content.unsafe_ptr()
                 )
             )
 
@@ -466,7 +470,7 @@ struct Module:
         var cuModuleGetFunction = self.cuda_dll.value().cuModuleGetFunction if self.cuda_dll else cuModuleGetFunction.load()
         _check_error(
             cuModuleGetFunction(
-                Pointer.address_of(func),
+                UnsafePointer.address_of(func),
                 self.module,
                 name.unsafe_cstr_ptr(),
             )

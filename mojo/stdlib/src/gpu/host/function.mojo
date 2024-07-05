@@ -13,7 +13,7 @@ from sys.intrinsics import _mlirtype_is_eq
 
 from gpu.host.device_context import DeviceBuffer
 from memory import stack_allocation
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from utils.lock import BlockingSpinLock, BlockingScopedLock
 from utils.variant import Variant
@@ -105,7 +105,7 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 # ===----------------------------------------------------------------------===#
 
 
-alias _populate_fn_type = fn (Pointer[NoneType]) capturing -> None
+alias _populate_fn_type = fn (UnsafePointer[NoneType]) capturing -> None
 
 
 @value
@@ -423,7 +423,7 @@ struct Function[
     @always_inline
     fn __call_impl(
         self,
-        args: Pointer[UnsafePointer[NoneType]],
+        args: UnsafePointer[UnsafePointer[NoneType]],
         *,
         grid_dim: Dim,
         block_dim: Dim,
@@ -502,14 +502,13 @@ struct Function[
     @staticmethod
     fn _init_fn[
         func_type: AnyTrivialRegType, func: func_type
-    ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
-        var res = Self.init_fn[func_type, func](
-            UnsafePointer[_CachedFunctionPayload](address=int(payload_ptr))
-        )
-        return Pointer[NoneType](address=int(res))
+    ](payload_ptr: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+        return Self.init_fn[func_type, func](
+            payload_ptr.bitcast[_CachedFunctionPayload]()
+        ).bitcast[NoneType]()
 
     @staticmethod
-    fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
+    fn _destroy_fn(cached_value_ptr: UnsafePointer[NoneType]):
         if not cached_value_ptr:
             return
         # We do not need to destroy the module, since it will be destroyed once the
@@ -554,7 +553,7 @@ struct Function[
                 fn_name,
                 Self._init_fn[func_type, func],
                 Self._destroy_fn,
-            ](Pointer.address_of(payload).bitcast[NoneType]())
+            ](UnsafePointer.address_of(payload).bitcast[NoneType]())
 
             _ = payload
 

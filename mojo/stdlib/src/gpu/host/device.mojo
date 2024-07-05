@@ -7,7 +7,7 @@
 
 from sys.ffi import DLHandle
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from utils import StringRef
 
@@ -605,7 +605,7 @@ fn device_count() raises -> Int:
 
     var cuDeviceGetCount = cuDeviceGetCount.load()
     var res: Int32 = 0
-    _check_error(cuDeviceGetCount(Pointer.address_of(res)))
+    _check_error(cuDeviceGetCount(UnsafePointer.address_of(res)))
     return int(res)
 
 
@@ -697,7 +697,7 @@ struct Device(StringableRaising):
 
         var cuDeviceTotalMem = self.cuda_dll.value().cuDeviceTotalMem if self.cuda_dll else cuDeviceTotalMem.load()
         var res: Int = 0
-        _check_error(cuDeviceTotalMem(Pointer.address_of(res), self.id))
+        _check_error(cuDeviceTotalMem(UnsafePointer.address_of(res), self.id))
         return res
 
     fn _query(self, attr: DeviceAttribute) raises -> Int:
@@ -706,7 +706,7 @@ struct Device(StringableRaising):
         var cuDeviceGetAttribute = self.cuda_dll.value().cuDeviceGetAttribute if self.cuda_dll else cuDeviceGetAttribute.load()
         var res: Int32 = 0
         _check_error(
-            cuDeviceGetAttribute(Pointer.address_of(res), attr, self.id)
+            cuDeviceGetAttribute(UnsafePointer.address_of(res), attr, self.id)
         )
         return int(res)
 

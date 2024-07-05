@@ -30,12 +30,12 @@ struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
 alias _DeviceHandle = Int32
 
 alias cuDeviceGetCount = _dylib_function[
-    "cuDeviceGetCount", fn (Pointer[Int32]) -> Result
+    "cuDeviceGetCount", fn (UnsafePointer[Int32]) -> Result
 ]
 
 alias cuDeviceGetAttribute = _dylib_function[
     "cuDeviceGetAttribute",
-    fn (Pointer[Int32], DeviceAttribute, _DeviceHandle) -> Result,
+    fn (UnsafePointer[Int32], DeviceAttribute, _DeviceHandle) -> Result,
 ]
 
 alias cuDeviceGetName = _dylib_function[
@@ -44,12 +44,12 @@ alias cuDeviceGetName = _dylib_function[
 ]
 
 alias cuDeviceTotalMem = _dylib_function[
-    "cuDeviceTotalMem_v2", fn (Pointer[Int], _DeviceHandle) -> Result
+    "cuDeviceTotalMem_v2", fn (UnsafePointer[Int], _DeviceHandle) -> Result
 ]
 
 alias cuCtxCreate = _dylib_function[
     "cuCtxCreate_v2",
-    fn (Pointer[_ContextHandle], Int32, _DeviceHandle) -> Result,
+    fn (UnsafePointer[_ContextHandle], Int32, _DeviceHandle) -> Result,
 ]
 
 alias cuCtxDestroy = _dylib_function[
@@ -59,7 +59,7 @@ alias cuCtxDestroy = _dylib_function[
 alias cuCtxSynchronize = _dylib_function["cuCtxSynchronize", fn () -> Result]
 
 alias cuEventCreate = _dylib_function[
-    "cuEventCreate", fn (Pointer[_EventHandle], Flag) -> Result
+    "cuEventCreate", fn (UnsafePointer[_EventHandle], Flag) -> Result
 ]
 
 alias cuEventDestroy = _dylib_function[
@@ -76,11 +76,11 @@ alias cuEventRecord = _dylib_function[
 
 alias cuEventElapsedTime = _dylib_function[
     "cuEventElapsedTime",
-    fn (Pointer[Float32], _EventHandle, _EventHandle) -> Result,
+    fn (UnsafePointer[Float32], _EventHandle, _EventHandle) -> Result,
 ]
 
 alias cuStreamCreate = _dylib_function[
-    "cuStreamCreate", fn (Pointer[_StreamHandle], Int32) -> Result
+    "cuStreamCreate", fn (UnsafePointer[_StreamHandle], Int32) -> Result
 ]
 
 alias cuStreamDestroy = _dylib_function[
@@ -92,57 +92,65 @@ alias cuStreamSynchronize = _dylib_function[
 ]
 
 alias cuMemAlloc = _dylib_function[
-    "cuMemAlloc_v2", fn (Pointer[Pointer[Int]], Int) -> Result
+    "cuMemAlloc_v2", fn (UnsafePointer[UnsafePointer[Int]], Int) -> Result
 ]
 
 alias cuMemAllocAsync = _dylib_function[
     "cuMemAllocAsync",
-    fn (Pointer[Pointer[Int]], Int, _StreamHandle) -> Result,
+    fn (UnsafePointer[UnsafePointer[Int]], Int, _StreamHandle) -> Result,
 ]
 
 alias cuMemAllocManaged = _dylib_function[
     "cuMemAllocManaged",
-    fn (Pointer[Pointer[Int]], Int, UInt32) -> Result,
+    fn (UnsafePointer[UnsafePointer[Int]], Int, UInt32) -> Result,
 ]
 
-alias cuMemFree = _dylib_function["cuMemFree_v2", fn (Pointer[Int]) -> Result]
+alias cuMemFree = _dylib_function[
+    "cuMemFree_v2", fn (UnsafePointer[Int]) -> Result
+]
 
 alias cuMemFreeAsync = _dylib_function[
-    "cuMemFreeAsync", fn (Pointer[Int], _StreamHandle) -> Result
+    "cuMemFreeAsync", fn (UnsafePointer[Int], _StreamHandle) -> Result
 ]
 
 alias cuMemcpyHtoD = _dylib_function[
     "cuMemcpyHtoD_v2",
-    fn (Pointer[Int], Pointer[NoneType], Int) -> Result,
+    fn (UnsafePointer[Int], UnsafePointer[NoneType], Int) -> Result,
 ]
 
 alias cuMemcpyHtoDAsync = _dylib_function[
     "cuMemcpyHtoDAsync_v2",
-    fn (Pointer[NoneType], Pointer[Int], Int, _StreamHandle) -> Result,
+    fn (
+        UnsafePointer[NoneType], UnsafePointer[Int], Int, _StreamHandle
+    ) -> Result,
 ]
 
 alias cuMemcpyDtoH = _dylib_function[
     "cuMemcpyDtoH_v2",
-    fn (Pointer[NoneType], Pointer[Int], Int) -> Result,
+    fn (UnsafePointer[NoneType], UnsafePointer[Int], Int) -> Result,
 ]
 
 alias cuMemcpyDtoHAsync = _dylib_function[
     "cuMemcpyDtoHAsync_v2",
-    fn (Pointer[NoneType], Pointer[Int], Int, _StreamHandle) -> Result,
+    fn (
+        UnsafePointer[NoneType], UnsafePointer[Int], Int, _StreamHandle
+    ) -> Result,
 ]
 
 alias cuMemcpyDtoDAsync = _dylib_function[
     "cuMemcpyDtoDAsync_v2",
-    fn (Pointer[NoneType], Pointer[Int], Int, _StreamHandle) -> Result,
+    fn (
+        UnsafePointer[NoneType], UnsafePointer[Int], Int, _StreamHandle
+    ) -> Result,
 ]
 
 alias cuMemcpyDtoD = _dylib_function[
     "cuMemcpyDtoD_v2",
-    fn (Pointer[Int], Pointer[Int], Int) -> Result,
+    fn (UnsafePointer[Int], UnsafePointer[Int], Int) -> Result,
 ]
 
 alias cuMemsetD8 = _dylib_function[
-    "cuMemsetD8_v2", fn (Pointer[Int], UInt8, Int) -> Result
+    "cuMemsetD8_v2", fn (UnsafePointer[Int], UInt8, Int) -> Result
 ]
 
 alias cuMemsetD8Async = _dylib_function[
@@ -172,7 +180,7 @@ alias cuLaunchKernel = _dylib_function[
         UInt32,  # BlockDimX
         UInt32,  # SharedMemSize
         _StreamHandle,
-        Pointer[UnsafePointer[NoneType]],  # Args
+        UnsafePointer[UnsafePointer[NoneType]],  # Args
         DTypePointer[DType.invalid],  # Extra
     ) -> Result,
 ]
@@ -189,22 +197,22 @@ alias cuFuncSetAttribute = _dylib_function[
 
 alias cuModuleLoad = _dylib_function[
     "cuModuleLoad",
-    fn (Pointer[_ModuleHandle], UnsafePointer[C_char]) -> Result,
+    fn (UnsafePointer[_ModuleHandle], UnsafePointer[C_char]) -> Result,
 ]
 
 alias cuModuleLoadData = _dylib_function[
     "cuModuleLoadData",
-    fn (Pointer[_ModuleHandle], UnsafePointer[UInt8]) -> Result,
+    fn (UnsafePointer[_ModuleHandle], UnsafePointer[UInt8]) -> Result,
 ]
 
 alias cuModuleLoadDataEx = _dylib_function[
     "cuModuleLoadDataEx",
     fn (
-        Pointer[_ModuleHandle],
+        UnsafePointer[_ModuleHandle],
         UnsafePointer[UInt8],
         UInt32,
-        Pointer[JitOptions],
-        Pointer[Pointer[NoneType]],
+        UnsafePointer[JitOptions],
+        UnsafePointer[UnsafePointer[NoneType]],
     ) -> Result,
 ]
 
@@ -215,7 +223,7 @@ alias cuModuleUnload = _dylib_function[
 alias cuModuleGetFunction = _dylib_function[
     "cuModuleGetFunction",
     fn (
-        Pointer[_FunctionHandle],
+        UnsafePointer[_FunctionHandle],
         _ModuleHandle,
         UnsafePointer[C_char],
     ) -> Result,
@@ -340,6 +348,8 @@ struct CudaInstance:
     fn num_devices(self) raises -> Int:
         var res: Int32 = 0
         _check_error(
-            self.cuda_dll.value().cuDeviceGetCount(Pointer.address_of(res))
+            self.cuda_dll.value().cuDeviceGetCount(
+                UnsafePointer.address_of(res)
+            )
         )
         return int(res)
