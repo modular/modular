@@ -7,7 +7,7 @@
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo %s
 
-from math import ceildiv, isclose
+from math import ceildiv
 from random import random_float64
 
 from buffer import DimList, NDBuffer

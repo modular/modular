@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import ceildiv, isclose
+from math import ceildiv
 from random import random_si64
 
 from gpu import WARP_SIZE, ThreadIdx, barrier, lane_id
@@ -24,7 +24,7 @@ from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
-from testing import assert_true
+from testing import assert_almost_equal
 
 
 fn test_ldmatrix_fp32(
@@ -205,7 +205,7 @@ fn check_ldmatrix_transposed_bf16[
     for i in range(M * N):
         var out_val = Scalar.load(c_host, i)
         var out_ref = Scalar.load(c_host_ref, i)
-        assert_true(isclose(out_val, out_ref))
+        assert_almost_equal(out_val, out_ref)
 
     _free(a_device)
     _free(b_device)
@@ -315,7 +315,7 @@ fn check_ldmatrix(
     for i in range(M * N):
         var out_val = c_host[i]
         var out_ref = c_host_ref[i]
-        assert_true(isclose(out_val, out_ref))
+        assert_almost_equal(out_val, out_ref)
 
     _free(a_device)
     _free(b_device)

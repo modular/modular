@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from algorithm import mean, variance
-from math import ceildiv, isclose, rsqrt
+from math import ceildiv, rsqrt
 from random import random_float64
 from nn.normalization import *
 from buffer import Buffer, NDBuffer
@@ -15,7 +15,7 @@ from buffer.list import DimList
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from gpu import WARP_SIZE
 from memory.unsafe import DTypePointer
-from testing import assert_true
+from testing import assert_almost_equal
 from utils.index import StaticTuple, StaticIntTuple, Index
 from gpu.host._compile import _compile_code, _get_nvptx_target
 
@@ -112,7 +112,7 @@ fn run_layer_norm_block_vector[
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
                 c
             ] + beta_h[c]
-            assert_true(isclose(val, res[idx], rtol=rtol))
+            assert_almost_equal(val, res[idx], rtol=rtol)
 
     _ = data_h
     _ = gamma_h
@@ -202,7 +202,7 @@ fn run_layer_norm_block_scalar[
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
                 c
             ] + beta_h[c]
-            assert_true(isclose(val, res[idx], rtol=rtol))
+            assert_almost_equal(val, res[idx], rtol=rtol)
 
     _ = data_h
     _ = gamma_h

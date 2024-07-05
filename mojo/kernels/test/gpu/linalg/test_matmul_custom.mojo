@@ -15,7 +15,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory.unsafe import DTypePointer
-from testing import assert_true
+from testing import assert_almost_equal
 
 from utils.index import Index
 
@@ -121,7 +121,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     for i in range(M * N):
         var out_val = c_host[i]
         var out_ref = c_host_n[i].cast[DType.bfloat16]()
-        assert_true(isclose(out_val, out_ref))
+        assert_almost_equal(out_val, out_ref)
 
     _ = a_device
     _ = b_device
@@ -237,9 +237,9 @@ fn run_matmul[
         var out_val = c_host[i]
         var out_ref = c_host_n[i]
         if debug:
-            if not isclose[type, 1](out_val, out_ref, rtol=rtol):
+            if not isclose(out_val, out_ref, rtol=rtol):
                 print(i, out_val, out_ref)
-        assert_true(isclose[type, 1](out_val, out_ref, rtol=rtol))
+        assert_almost_equal(out_val, out_ref, rtol=rtol)
 
     _ = a_device
     _ = b_device
@@ -351,7 +351,7 @@ fn run_batched_matmul(
     for i in range(B * M * N):
         var out_val = c_host[i]
         var out_ref = c_host_n[i].cast[DType.bfloat16]()
-        assert_true(isclose(out_val, out_ref, rtol=1e-02))
+        assert_almost_equal(out_val, out_ref, rtol=1e-02)
 
     _ = a_device
     _ = b_device
