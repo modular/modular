@@ -8,5 +8,7 @@ from debug_test_utils import keep_alive
 
 
 fn main():
-    var ptr = DTypePointer[DType.invalid](100)
+    var base = DTypePointer[DType.float32].alloc(1)
+    var ptr = base.bitcast[DType.invalid]()
     keep_alive(ptr)  # breakpoint
+    base.free()
