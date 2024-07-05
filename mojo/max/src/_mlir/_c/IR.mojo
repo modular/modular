@@ -15,6 +15,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ffi import MLIR_func
+from memory import UnsafePointer
 
 # ===-- mlir-c/IR.h - C API to Core MLIR IR classes ---------------*- C -*-===//
 #

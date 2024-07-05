@@ -6,7 +6,7 @@
 
 
 from collections.optional import Optional
-
+from memory import UnsafePointer
 from utils.variant import Variant
 
 import ._c
