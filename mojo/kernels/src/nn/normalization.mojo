@@ -211,8 +211,8 @@ fn layer_norm_gpu_warp_tiling_vector[
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
     var num_cols = data.dim[1]()
-    var tid = ThreadIdx.x()
-    var row = BlockIdx.x()
+    var tid: UInt = UInt(ThreadIdx.x().value)
+    var row: UInt = UInt(BlockIdx.x().value)
 
     var vec_data = SIMD[type, simd_width]()
 
@@ -221,7 +221,7 @@ fn layer_norm_gpu_warp_tiling_vector[
     var row_m2 = Scalar[type]()
     var row_count = Scalar[type]()
 
-    var idx = tid * simd_width
+    var idx: UInt = tid * UInt(simd_width.value)
     var thread_mean = Scalar[type]()
     var thread_m2 = Scalar[type]()
     var thread_count = Scalar[type]()
@@ -230,9 +230,9 @@ fn layer_norm_gpu_warp_tiling_vector[
     @parameter
     if input_func:
         alias input_fn = input_func.value()
-        if idx < num_cols:
+        if idx < UInt(num_cols.value):
             vec_data = input_fn[simd_width, rank](
-                StaticIntTuple[rank](row, idx)
+                StaticIntTuple[rank](row.value, idx.value)
             )
             # every thread computes its own simd width of mean and variance
             for i in range(simd_width):
@@ -240,7 +240,7 @@ fn layer_norm_gpu_warp_tiling_vector[
                     vec_data[i], thread_mean, thread_m2, thread_count
                 )
     else:
-        if idx < num_cols:
+        if idx < UInt(num_cols.value):
             vec_data = data.load[width=simd_width, alignment=align](
                 Index(row, idx)
             )
@@ -259,7 +259,7 @@ fn layer_norm_gpu_warp_tiling_vector[
     var row_var = max((row_m2 / (row_count - 1)), 0.0)
 
     var norm_factor = rsqrt(row_var + epsilon)
-    if idx < num_cols:
+    if idx < UInt(num_cols.value):
         var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
             width=simd_width, alignment=align
         ](Index(idx)) + beta.load[width=simd_width, alignment=align](Index(idx))
@@ -302,7 +302,9 @@ fn layer_norm_gpu_warp_tiling_scalar[
     if input_func:
         alias input_fn = input_func.value()
         if tid < num_cols:
-            vec_data = input_fn[1, rank](StaticIntTuple[rank](row, tid))
+            vec_data = input_fn[1, rank](
+                StaticIntTuple[rank](Int(row.value), Int(tid.value))
+            )
             welford_update(vec_data, thread_mean, thread_m2, thread_count)
     else:
         if tid < num_cols:
@@ -319,8 +321,8 @@ fn layer_norm_gpu_warp_tiling_scalar[
     var norm_factor = rsqrt(row_var + epsilon)
     if tid < num_cols:
         var norm_val = (vec_data - row_mean) * norm_factor * gamma.load(
-            tid
-        ) + beta.load(tid)
+            tid.value
+        ) + beta.load(tid.value)
         data.store(Index(row, tid), norm_val)
 
 
@@ -341,7 +343,7 @@ fn layer_norm_gpu_block_vector[
 ):
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
-    var num_cols = data.dim[1]()
+    var num_cols: UInt = data.dim[1]().value
     var tid = ThreadIdx.x()
     var row = BlockIdx.x()
 
@@ -351,7 +353,7 @@ fn layer_norm_gpu_block_vector[
     var row_count = Scalar[type]()
 
     # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
+    for x in range(ceildiv(num_cols // UInt(simd_width.value), BlockDim.x())):
         var thread_mean = Scalar[type]()
         var thread_m2 = Scalar[type]()
         var thread_count = Scalar[type]()
@@ -365,7 +367,7 @@ fn layer_norm_gpu_block_vector[
             alias input_fn = input_func.value()
             if offset < num_cols:
                 vec_data = input_fn[simd_width, rank](
-                    StaticIntTuple[rank](row, offset)
+                    StaticIntTuple[rank](row.value, offset.value)
                 )
 
                 @parameter
@@ -404,7 +406,7 @@ fn layer_norm_gpu_block_vector[
             alias input_fn = input_func.value()
             if offset < num_cols:
                 vec_data = input_fn[simd_width, rank](
-                    StaticIntTuple[rank](row, offset)
+                    StaticIntTuple[rank](row.value, offset.value)
                 )
                 var norm_val = (vec_data - row_mean) * norm_factor * gamma.load[
                     width=simd_width, alignment=align
@@ -468,7 +470,9 @@ fn layer_norm_gpu_block_scalar[
         if input_func:
             alias input_fn = input_func.value()
             if offset < num_cols:
-                vec_data = input_fn[1, rank](StaticIntTuple[rank](row, offset))
+                vec_data = input_fn[1, rank](
+                    StaticIntTuple[rank](row.value, offset.value)
+                )
                 welford_update(vec_data, thread_mean, thread_m2, thread_count)
         else:
             if offset < num_cols:
@@ -493,17 +497,19 @@ fn layer_norm_gpu_block_scalar[
         if input_func:
             alias input_fn = input_func.value()
             if offset < num_cols:
-                vec_data = input_fn[1, rank](StaticIntTuple[rank](row, offset))
+                vec_data = input_fn[1, rank](
+                    StaticIntTuple[rank](row.value, offset.value)
+                )
                 var norm_val = (vec_data - row_mean) * norm_factor * gamma.load(
-                    offset
-                ) + beta.load(offset)
+                    offset.value
+                ) + beta.load(offset.value)
                 data.store(Index(row, offset), norm_val)
         else:
             if offset < num_cols:
                 vec_data = data.load(Index(row, offset))
                 var norm_val = (vec_data - row_mean) * norm_factor * gamma.load(
-                    offset
-                ) + beta.load(offset)
+                    offset.value
+                ) + beta.load(offset.value)
                 data.store(Index(row, offset), norm_val)
 
 
