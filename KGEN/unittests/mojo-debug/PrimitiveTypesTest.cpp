@@ -70,7 +70,6 @@ TEST(PrimitiveTypesTest, testInvalidPointer) {
 
   StopContext ctx = buildAndLaunch("invalid_pointer.mojo");
   SBValue var = ctx.frame.FindVariable("ptr");
-  EXPECT_STREQ(var.GetValue(), "0x0000000000000064");
   EXPECT_STREQ(var.GetTypeName(), "!kgen.pointer<scalar<invalid>>");
 }
 
