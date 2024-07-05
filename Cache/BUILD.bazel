@@ -16,7 +16,6 @@ modular_cc_library(
         "//Support:Buffer",
         "//Support:Compiler",
         "//Support:Configuration",
-        "//Support:HMAC",
         "//Support:HTTP",
         "//Support:Telemetry",
         "//Support:URI",
