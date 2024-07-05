@@ -97,14 +97,14 @@ struct BenchMetric(CollectionElement):
                 return m[]
 
         var err: String = "\n"
-        err += "------------------------------------------------------------\n"
-        err += "------------------------------------------------------------\n"
+        err += str("-") * 80 + "\n"
+        err += str("-") * 80 + "\n"
         err += "Couldn't match metric [" + name + "]\n"
         err += "Available throughput metrics (case-insensitive) in the list:\n"
         for m in metric_list:
             err += "    metric: [" + m[].name.lower() + "]\n"
-        err += "------------------------------------------------------------\n"
-        err += "------------------------------------------------------------\n"
+        err += str("-") * 80 + "\n"
+        err += str("-") * 80 + "\n"
         err += "[ERROR]: metric [" + name + "] is NOT supported!\n"
         raise Error(err)
 
@@ -851,9 +851,10 @@ struct Bench:
             for i in range(num_runs):
                 var sep = "\n" if i < num_runs - 1 else ""
                 report += str(self.info_vec[i]) + sep
-        print("------------------------------------------")
+        print()
+        print(str("-") * 80)
         print("Benchmark results")
-        print("------------------------------------------")
+        print(str("-") * 80)
         print(report)
 
         if self.config.out_file:
