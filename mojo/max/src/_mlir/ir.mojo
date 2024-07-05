@@ -730,8 +730,8 @@ struct Block(CollectionElement, Stringable):
         )
         self.c = _c.IR.mlirBlockCreate(
             len(args),
-            UnsafePointer[Type.cType](address=int(args.data)),
-            UnsafePointer[Location.cType](address=int(locations.data)),
+            args.data.bitcast[Type.cType](),
+            locations.data.bitcast[Location.cType](),
         )
         _ = args
         _ = locations
