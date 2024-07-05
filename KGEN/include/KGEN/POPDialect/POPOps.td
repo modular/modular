@@ -527,7 +527,8 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 // CastOp
 //===----------------------------------------------------------------------===//
 
-def POP_CastOp : POPOp<"cast", [Pure]> {
+def POP_CastOp : POPOp<"cast", [Pure,
+    DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "element wise cast";
   let description = [{
     Perform an element-wise cast between SIMD vectors types or between scalar
@@ -548,7 +549,6 @@ def POP_CastOp : POPOp<"cast", [Pure]> {
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to`  qualified(type($output))
   }];
-  let hasVerifier = 1;
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
 }

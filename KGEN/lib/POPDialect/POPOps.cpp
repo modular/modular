@@ -124,10 +124,13 @@ bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 // CastOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult CastOp::verify() {
-  if (getInput().getType().getSize() != getOutput().getType().getSize())
-    return emitOpError("cannot cast between SIMD types of different sizes");
-  return success();
+bool CastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
+  assert(inputs.size() == 1 && outputs.size() == 1);
+  auto input = dyn_cast<SIMDType>(inputs.front());
+  auto output = dyn_cast<SIMDType>(outputs.front());
+  if (!input || !output) // unbound
+    return true;
+  return input.getSize() == output.getSize();
 }
 
 //===----------------------------------------------------------------------===//
