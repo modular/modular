@@ -380,14 +380,14 @@ fn multistage_gemm[
     ]()
 
     var tid: UInt32 = ThreadIdx.x()
-    var ln_id = lane_id()
+    var ln_id = UInt(int(lane_id()).value)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle_by_scale[3](
-        Index(BlockIdx.x(), BlockIdx.y()), Index(N // BN, M // BM)
-    ) if swizzle_block else Index(BlockIdx.x(), BlockIdx.y())
+        Index(Int(BlockIdx.x().value), Int(BlockIdx.y().value)), Index(N // BN, M // BM)
+    ) if swizzle_block else Index(Int(BlockIdx.x().value), Int(BlockIdx.y().value))
 
     # Coordinates of the current warp.
     var warp_x: Int
@@ -682,7 +682,7 @@ fn multistage_gemm[
             alias epilogue = elementwise_lambda_fn.value()
             var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
-            ](int(ln_id))
+            ](ln_id)
             var c_reg_frag = c_reg_tile.vectorize[1, 2]().transpose()
             var m: Int
             var n: Int

@@ -9,7 +9,10 @@ from math import align_up, ceildiv, gcd
 from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize
-from algorithm.functional import _get_start_indices_of_nth_subvolume
+from algorithm.functional import (
+    _get_start_indices_of_nth_subvolume_uint,
+    _get_start_indices_of_nth_subvolume,
+)
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -395,9 +398,9 @@ fn _batched_matmul_cpu[
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
             )
 
-            var batch_coords = _get_start_indices_of_nth_subvolume[rank, 2](
-                batch, c_buf.get_shape()
-            )
+            var batch_coords = _get_start_indices_of_nth_subvolume_uint[
+                rank, UInt(2)
+            ](UInt(batch.value), c_buf.get_shape())
 
             @parameter
             fn elementwise_lambda_2d[
@@ -460,35 +463,35 @@ fn batched_matmul_kernel[
     b_buff: NDBuffer[b_type, 3, b_shape],
     c_buff_nd_shape: StaticIntTuple[rank],
 ) -> None:
-    var batch_size = c_buff.dim(0)
-    var m = c_buff.dim(1)
-    var n = c_buff.dim(2)
-    var k = a_buff.dim(2)
+    var batch_size: UInt = c_buff.dim(0).value
+    var m: UInt = c_buff.dim(1).value
+    var n: UInt = c_buff.dim(2).value
+    var k: UInt = a_buff.dim(2).value
 
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    var z = BlockIdx.z()
+    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var z: UInt = BlockIdx.z()
 
     if z >= batch_size or x >= n or y >= m:
         return
     var val = Scalar[accum_type](0.0)
     for ki in range(k):
         val += (
-            a_buff[z, y, ki].cast[accum_type]()
-            * b_buff[z, ki, x].cast[accum_type]()
+            a_buff[z.value, y.value, ki.value].cast[accum_type]()
+            * b_buff[z.value, ki.value, x.value].cast[accum_type]()
         )
 
     @parameter
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
-        var nd_corrds = _get_start_indices_of_nth_subvolume[rank, 2](
+        var nd_corrds = _get_start_indices_of_nth_subvolume_uint[rank, 2](
             z, c_buff_nd_shape
         )
-        nd_corrds[rank - 1] = x
-        nd_corrds[rank - 2] = y
+        nd_corrds[rank - 1] = x.value
+        nd_corrds[rank - 2] = y.value
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[(z, y, x)] = val.cast[c_type]()
+        c_buff[(Int(z.value), Int(y.value), Int(x.value))] = val.cast[c_type]()
 
 
 @always_inline
