@@ -119,8 +119,8 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy_from_device(c_host_n, c_device_n)
 
     for i in range(M * N):
-        var out_val = c_host.load(i)
-        var out_ref = c_host_n.load(i).cast[DType.bfloat16]()
+        var out_val = c_host[i]
+        var out_ref = c_host_n[i].cast[DType.bfloat16]()
         assert_true(isclose(out_val, out_ref))
 
     _ = a_device
@@ -234,8 +234,8 @@ fn run_matmul[
     ctx.synchronize()
 
     for i in range(M * N):
-        var out_val = c_host.load(i)
-        var out_ref = c_host_n.load(i)
+        var out_val = c_host[i]
+        var out_ref = c_host_n[i]
         if debug:
             if not isclose[type, 1](out_val, out_ref, rtol=rtol):
                 print(i, out_val, out_ref)
@@ -349,8 +349,8 @@ fn run_batched_matmul(
     ctx.synchronize()
 
     for i in range(B * M * N):
-        var out_val = c_host.load(i)
-        var out_ref = c_host_n.load(i).cast[DType.bfloat16]()
+        var out_val = c_host[i]
+        var out_ref = c_host_n[i].cast[DType.bfloat16]()
         assert_true(isclose(out_val, out_ref, rtol=1e-02))
 
     _ = a_device

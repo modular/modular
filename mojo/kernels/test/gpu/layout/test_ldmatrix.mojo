@@ -313,8 +313,8 @@ fn check_ldmatrix(
     _copy_device_to_host(c_host_ref, c_device_ref, M * N)
 
     for i in range(M * N):
-        var out_val = c_host.load(i)
-        var out_ref = c_host_ref.load(i)
+        var out_val = c_host[i]
+        var out_ref = c_host_ref[i]
         assert_true(isclose(out_val, out_ref))
 
     _free(a_device)

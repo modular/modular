@@ -83,7 +83,7 @@ fn run_vec_add(ctx: Context) raises:
     # CHECK: at index 8 the value is 10.0
     # CHECK: at index 9 the value is 11.0
     for i in range(10):
-        print("at index", i, "the value is", out_host.load(i))
+        print("at index", i, "the value is", out_host[i])
 
     ctx.free(in0_device)
     ctx.free(in1_device)

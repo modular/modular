@@ -142,8 +142,8 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     var errorTolerance = 0.1
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i)
-        var outRef = c_host_n.load(i)
+        var outVal = c_host[i]
+        var outRef = c_host_n[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True

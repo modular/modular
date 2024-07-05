@@ -340,8 +340,8 @@ fn run_mma_fp32_tf32(
     # Check correctness.
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i)
-        var outRef = c_host_ref.load(i)
+        var outVal = c_host[i]
+        var outRef = c_host_ref[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
@@ -496,8 +496,8 @@ fn run_mma_fp32_bf16(
     # Check correctness.
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i)
-        var outRef = c_host_ref.load(i)
+        var outVal = c_host[i]
+        var outRef = c_host_ref[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
@@ -652,8 +652,8 @@ fn run_mma_fp32_bf16_2(
     # Check correctness.
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i)
-        var outRef = c_host_ref.load(i)
+        var outVal = c_host[i]
+        var outRef = c_host_ref[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
@@ -808,8 +808,8 @@ fn run_mma_fp32_fp16(
     # Check correctness.
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i)
-        var outRef = c_host_ref.load(i)
+        var outVal = c_host[i]
+        var outRef = c_host_ref[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
@@ -964,9 +964,9 @@ fn run_mma_fp16_fp16(
     # Check correctness.
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i).cast[DType.float32]()
-        # var outVal = c_host.load(i)
-        var outRef = c_host_ref.load(i)
+        var outVal = c_host[i].cast[DType.float32]()
+        # var outVal = c_host[i]
+        var outRef = c_host_ref[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True

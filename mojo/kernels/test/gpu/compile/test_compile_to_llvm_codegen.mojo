@@ -34,10 +34,7 @@ fn test_dynamic_shared_mem():
         # CHECK: fadd contract float %1, %2
         var dynamic_sram_ptr_1 = dynamic_shared_memory[Float32, alignment=4]()
         var dynamic_sram_ptr_2 = dynamic_shared_memory[Float32, alignment=4]()
-        return (
-            dynamic_sram_ptr_1.offset(0).load()
-            + dynamic_sram_ptr_2.offset(1).load()
-        )
+        return dynamic_sram_ptr_1.offset(0)[] + dynamic_sram_ptr_2.offset(1)[]
 
     print(_compile_code[kernel, emission_kind="llvm"]().asm)
 

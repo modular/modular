@@ -14,7 +14,7 @@ fn kernel_with_list(res: Pointer[Float32]):
     var list = List[Float32](10)
     for i in range(4):
         list.append(i + 1)
-    res.store(list[0] * list[1] + list[2] * list[3])
+    res[] = list[0] * list[1] + list[2] * list[3]
 
 
 fn test_kernel_with_list() raises:

@@ -259,12 +259,12 @@ fn bench_matmuls(inout m: Bench) raises:
     var failed = False
     for i in range(M * N):
         if (
-            c_host.load(i) != c_host_naive.load(i)
-            or isnan(c_host_naive.load(i))
-            or isnan(c_host.load(i))
+            c_host[i] != c_host_naive[i]
+            or isnan(c_host_naive[i])
+            or isnan(c_host[i])
         ):
-            print(c_host.load(i))
-            print(c_host_naive.load(i))
+            print(c_host[i])
+            print(c_host_naive[i])
             raise "Failed ❌: results mismatch"
 
     _free(a_device)

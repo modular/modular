@@ -93,7 +93,7 @@ fn run_binary_add(ctx: Context, capture: Float32) raises:
     # CHECK: at index 8 the value is 12.5
     # CHECK: at index 9 the value is 13.5
     for i in range(10):
-        print("at index", i, "the value is", out_host.load(i))
+        print("at index", i, "the value is", out_host[i])
 
     ctx.free(in0_device)
     ctx.free(in1_device)

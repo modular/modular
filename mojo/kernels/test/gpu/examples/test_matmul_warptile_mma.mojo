@@ -565,8 +565,8 @@ fn run_matmul_mma_warptiling() raises:
 
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i)
-        var outRef = c_host_naive.load(i)
+        var outVal = c_host[i]
+        var outRef = c_host_naive[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (relDiff > REL_DIFF_THRESHOLD) or isnan(outVal) or isnan(outRef):
             failed = True
