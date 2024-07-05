@@ -759,9 +759,12 @@ struct Bench:
             bench_fn(b)
             return b.elapsed
 
-        var full_name = bench_id.func_name + "/" + bench_id.input_id.value() if bench_id.input_id else bench_id.func_name
+        var full_name = bench_id.func_name
+        if bench_id.input_id:
+            full_name += "/" + bench_id.input_id.value()
+
         if self.config.show_progress:
-            print("Running", full_name, "...", end="")
+            print("Running", full_name)
         else:
             print(".", end="")
 
