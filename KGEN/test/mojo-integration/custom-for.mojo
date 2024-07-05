@@ -49,11 +49,11 @@ struct MyList:
 
     fn __setitem__(inout self, idx: Int, val: Int):
         var ptr = self.start + idx
-        ptr.store(val)
+        ptr[] = val
 
     fn __getitem__(inout self, idx: Int) -> Int:
         var ptr = self.start + idx
-        return ptr.load()
+        return ptr[]
 
     fn __iter__(inout self) -> my_iter:
         return my_iter(self)

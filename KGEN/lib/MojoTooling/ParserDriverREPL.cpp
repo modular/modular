@@ -420,7 +420,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
             "  try:\n"
             "    __mojo_repl_expr_impl__(__mojo_repl_arg";
   for (auto &[name, type] : variables)
-    exprOS << formatv(", __mojo_repl_arg.`{0}`.load()[]", name);
+    exprOS << formatv(", __mojo_repl_arg.`{0}`[][]", name);
 
   exprOS << ")\n"
             "  except error:\n"
