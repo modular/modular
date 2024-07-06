@@ -6,7 +6,7 @@
 # A temporary home for the experimental int list type.
 
 
-from buffer.list import DimList, _make_tuple
+from buffer.dimlist import DimList, _make_tuple
 
 from utils.index import StaticIntTuple
 

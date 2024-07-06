@@ -8,7 +8,7 @@ from collections.vector import InlinedFixedVector
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from builtin.dtype import _get_runtime_dtype_size
 from extensibility import Tensor as ExtensibilityTensor
 from gpu.host import Context as CudaContext

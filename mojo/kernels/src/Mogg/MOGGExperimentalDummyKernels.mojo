@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from MOGGExperimental import empty_tensor
 from MOGGIntList import IntList
 from MOGGTensor import Tensor

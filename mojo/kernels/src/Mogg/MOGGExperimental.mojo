@@ -8,7 +8,7 @@ from collections import Optional
 from math import erf, exp, iota, log, log1p, rsqrt, sqrt
 
 from algorithm.reduction import _reduce_generator
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn.activations import relu

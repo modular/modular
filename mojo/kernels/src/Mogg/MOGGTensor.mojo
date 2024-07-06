@@ -12,7 +12,7 @@ from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise, vectorize
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from extensibility.tensor_helpers import InnerStride, UnsafeRefCounter
 from memory import UnsafePointer
 from memory.unsafe import bitcast

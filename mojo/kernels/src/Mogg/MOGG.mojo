@@ -24,7 +24,7 @@ from algorithm.reduction import (
 )
 from algorithm.reduction import mean as _mean
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from builtin.simd import Int64, UInt8, UInt64, _pow
 from extensibility import Tensor as ExtensibilityTensor
 from gpu.host._compile import _get_nvptx_target

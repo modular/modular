@@ -7,7 +7,7 @@
 from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from extensibility import Tensor as ExtensibilityTensor
 from extensibility import empty_tensor
 from register import *
