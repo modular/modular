@@ -167,7 +167,7 @@ struct ValOrDim[dim: Dim = Dim()]:
             not dim.is_dynamic(),
             "Can't construct a dynamic dim with no runtime value",
         ]()
-        self.value = dim.value.value()
+        self.value = dim.get()
 
     fn __init__(inout self, v: Int):
         self.value = v
