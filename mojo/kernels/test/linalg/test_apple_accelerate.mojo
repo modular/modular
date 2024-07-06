@@ -8,7 +8,7 @@
 from sys.info import os_is_macos
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.apple_accelerate import apple_batched_matmul, apple_matmul
 from testing import *
 

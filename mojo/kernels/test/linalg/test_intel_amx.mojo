@@ -15,7 +15,7 @@
 from sys.info import has_intel_amx, os_is_linux
 
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from linalg.intel_amx_intrinsics import (
     _tile_dpbssd,
     _tile_dpbssd_emulated,

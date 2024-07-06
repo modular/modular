@@ -6,7 +6,7 @@
 """The module implements Matrix Solve functions."""
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from register import mogg_register
 from runtime.tracing import Trace, TraceLevel
 

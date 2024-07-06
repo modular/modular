@@ -9,7 +9,7 @@ from sys.info import alignof, has_neon, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import MojoCallContextPtr, parallelism_level

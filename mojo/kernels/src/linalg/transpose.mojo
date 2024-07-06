@@ -11,7 +11,7 @@ from sys.intrinsics import strided_load, strided_store
 
 from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import Buffer, NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from runtime.llcl import parallelism_level

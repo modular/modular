@@ -8,7 +8,7 @@
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.packing import PackMatrixCols
 
 from utils.index import Index

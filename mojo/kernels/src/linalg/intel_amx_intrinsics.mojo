@@ -12,7 +12,7 @@
 from sys import llvm_intrinsic
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory.unsafe import DTypePointer
 
 from utils.static_tuple import StaticTuple

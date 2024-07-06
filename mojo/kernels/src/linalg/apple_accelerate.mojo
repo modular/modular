@@ -18,7 +18,7 @@ from algorithm.functional import (
     parallelize_over_rows,
 )
 from buffer.buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 
 from utils.index import Index
 

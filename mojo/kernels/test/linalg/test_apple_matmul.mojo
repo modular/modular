@@ -14,7 +14,7 @@ from sys.info import os_is_macos
 
 import benchmark
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.bmm import batched_matmul
 from linalg.matmul import _matmul_cpu, matmul
 from linalg.packing import (

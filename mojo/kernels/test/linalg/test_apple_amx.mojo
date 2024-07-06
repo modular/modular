@@ -13,7 +13,7 @@
 from sys.info import is_apple_silicon, sizeof
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.apple_amx_intrinsics import *
 from testing import *
 

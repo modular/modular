@@ -10,7 +10,7 @@ from math import align_up
 from sys.info import has_neon, has_vnni
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.matmul import GemmShape, KernelConfig
 from linalg.matmul_default import Inner_matmul_default
 from linalg.matmul_i8mm import Inner_matmul_i8mm

@@ -9,7 +9,7 @@ from sys.info import alignof
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 

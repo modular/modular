@@ -8,7 +8,7 @@ from collections.optional import OptionalReg
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device

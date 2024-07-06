@@ -15,7 +15,7 @@ from algorithm.functional import (
 )
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
 from memory import memset_zero

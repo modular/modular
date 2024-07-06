@@ -11,7 +11,7 @@ from sys.info import simdwidthof
 
 import benchmark
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim
+from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
 

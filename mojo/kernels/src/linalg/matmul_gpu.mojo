@@ -9,7 +9,7 @@ from sys.info import alignof
 
 from algorithm.functional import tile_and_unswitch
 from buffer.buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
