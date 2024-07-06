@@ -11,6 +11,7 @@ from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from builtin._location import __call_location
+from math import floor
 from .result import Result as DriverResult
 
 # ===----------------------------------------------------------------------===#
@@ -25,19 +26,25 @@ fn _check_error(err: DriverResult) raises:
         raise Error(loc.prefix(str(err)))
 
 
+fn _pretty_print_float(val: Float64) -> String:
+    if Float64(floor(val)) == val:
+        return str(int(val))
+    return str(val)
+
+
 fn _human_memory(size: Int) -> String:
     alias KB = 1024
     alias MB = KB * KB
     alias GB = MB * KB
 
     if size >= GB:
-        return str(Float32(size) / GB) + "GB"
+        return _pretty_print_float(Float64(size) / GB) + "GB"
 
     if size >= MB:
-        return str(Float32(size) / MB) + "MB"
+        return _pretty_print_float(Float64(size) / MB) + "MB"
 
     if size >= KB:
-        return str(Float32(size) / KB) + "KB"
+        return _pretty_print_float(Float64(size) / KB) + "KB"
 
     return str(size) + "B"
 
