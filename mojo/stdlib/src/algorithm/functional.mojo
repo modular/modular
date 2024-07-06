@@ -1524,25 +1524,16 @@ fn _elementwise_impl_gpu[
             )
             func[1, rank](index_tup)
 
-    @always_inline
-    @parameter
-    fn _invoke_with_edge_case():
-        _elementwise_gpu_kernel[True]()
-
-    @always_inline
-    @parameter
-    fn _invoke_without_edge_case():
-        _elementwise_gpu_kernel[False]()
-
     try:
-        # TODO cleanup after #26672
         if shape[rank - 1] % simd_width == 0:
-            var gpu_func = ctx.compile_function[_invoke_without_edge_case]()
+            var gpu_func = ctx.compile_function[
+                _elementwise_gpu_kernel[False]
+            ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=num_blocks, block_dim=block_size
             )
         else:
-            var gpu_func = ctx.compile_function[_invoke_with_edge_case]()
+            var gpu_func = ctx.compile_function[_elementwise_gpu_kernel[True]]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=num_blocks, block_dim=block_size
             )
