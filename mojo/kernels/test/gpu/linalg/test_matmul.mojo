@@ -9,7 +9,7 @@
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
@@ -27,7 +27,7 @@ from internal_utils import (
     assert_equal,
     assert_almost_equal,
 )
-from buffer.list import _make_tuple
+from buffer.dimlist import _make_tuple
 
 
 alias TILE_SZ_A = 128

@@ -10,7 +10,7 @@ from collections import OptionalReg
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function

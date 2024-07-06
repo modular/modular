@@ -11,7 +11,7 @@ from math import ceildiv, rsqrt
 from random import random_float64
 from nn.normalization import *
 from buffer import Buffer, NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from gpu import WARP_SIZE
 from memory.unsafe import DTypePointer

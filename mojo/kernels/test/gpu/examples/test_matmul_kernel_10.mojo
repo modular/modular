@@ -12,7 +12,7 @@ from math import ceildiv
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream
 from gpu.host.memory import (

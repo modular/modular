@@ -9,7 +9,7 @@
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host.device_context import DeviceContext
 from utils.index import Index

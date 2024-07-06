@@ -11,7 +11,7 @@ from pathlib import Path
 from sys import argv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import WARP_SIZE, AddressSpace, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
     CacheConfig,

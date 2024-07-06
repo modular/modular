@@ -9,7 +9,7 @@
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
