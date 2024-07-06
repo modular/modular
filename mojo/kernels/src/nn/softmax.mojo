@@ -14,7 +14,7 @@ from algorithm.reduction import (
     _reduce_generator,
 )
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier, WARP_SIZE, lane_id
 from gpu.host import Device, DeviceAttribute, DeviceContext

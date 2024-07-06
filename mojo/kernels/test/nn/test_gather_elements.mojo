@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from internal_utils import TestTensor, assert_equal
 from nn.gather_scatter import gather_elements
 

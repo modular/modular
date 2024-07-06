@@ -12,7 +12,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import _elementwise_impl, tile
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import memset_zero, stack_allocation
 from register import mogg_register

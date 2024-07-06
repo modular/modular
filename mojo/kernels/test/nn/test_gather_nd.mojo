@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory import stack_allocation
 from nn.gather_scatter import gather_nd, gather_nd_shape
 

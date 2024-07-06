@@ -12,7 +12,7 @@
 from collections.vector import InlinedFixedVector
 
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides

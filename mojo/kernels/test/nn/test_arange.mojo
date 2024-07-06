@@ -7,7 +7,7 @@
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 from nn.arange import arange, arange_shape
 from nn.slice import slice_as_copy, slice_as_view

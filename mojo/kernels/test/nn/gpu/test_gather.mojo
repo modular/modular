@@ -9,7 +9,7 @@
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
 from nn.gather_scatter import gather
 from utils.index import Index, StaticIntTuple

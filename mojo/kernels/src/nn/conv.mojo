@@ -22,7 +22,7 @@ from buffer.buffer import (
     partial_simd_store,
     prod_dims,
 )
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import stack_allocation

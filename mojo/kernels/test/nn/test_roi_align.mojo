@@ -6,7 +6,7 @@
 # RUN: %mojo %s
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from nn.roi_align import roi_align_nhwc
 from testing import *
 

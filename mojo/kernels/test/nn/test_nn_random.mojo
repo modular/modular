@@ -8,7 +8,7 @@
 from random import seed
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from nn.randn import random_normal
 
 

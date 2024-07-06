@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from register import mogg_register, mogg_view_op
 
 from utils.index import StaticIntTuple

@@ -8,7 +8,7 @@
 from math import iota
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from nn.cumsum import cumsum
 
 

@@ -10,7 +10,7 @@ from math import isclose
 from random import rand, random_float64, seed
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor

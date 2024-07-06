@@ -8,7 +8,7 @@ from math import ceildiv
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from nn.gather_scatter import normalize_neg_index
 from runtime.llcl import parallelism_level
 

@@ -9,7 +9,7 @@ from math import align_down, ceildiv, exp, iota
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
     BlockIdx,

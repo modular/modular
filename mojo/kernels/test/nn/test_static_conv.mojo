@@ -10,7 +10,7 @@ from random import rand
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,

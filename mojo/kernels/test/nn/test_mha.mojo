@@ -9,7 +9,7 @@ from math import isclose, rsqrt
 from random import rand
 
 from buffer.buffer import NDBuffer, _compute_nd_index
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory.unsafe import DTypePointer
 from nn.mha import _naive_attention, fused_attention
 from testing import assert_true

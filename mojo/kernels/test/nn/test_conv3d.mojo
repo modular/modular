@@ -10,7 +10,7 @@ from random import rand
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory.unsafe import DTypePointer
 from nn.conv import (
     ConvDirectNHWC,

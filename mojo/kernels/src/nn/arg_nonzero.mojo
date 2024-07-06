@@ -7,7 +7,7 @@
 from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from register import mogg_register
 from runtime.tracing import Trace, TraceLevel
 

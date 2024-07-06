@@ -8,7 +8,7 @@
 from random import random_ui64
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import index_tensor, index_tensor_1d, index_tensor_shape
 

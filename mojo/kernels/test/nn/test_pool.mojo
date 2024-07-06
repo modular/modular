@@ -7,7 +7,7 @@
 
 import builtin
 from buffer import Buffer, NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from internal_utils import TestTensor
 from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape

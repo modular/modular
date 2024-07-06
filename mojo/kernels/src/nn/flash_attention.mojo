@@ -16,7 +16,7 @@ from algorithm.reduction import (
     map_reduce,
 )
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
 from linalg.transpose import transpose_inplace
