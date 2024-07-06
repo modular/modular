@@ -956,14 +956,14 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
     if (isSubscript)
       diag << " is not subscriptable, it does not implement the "
-              "`__getitem__`/`__setitem__` or `__refitem__` methods";
+              "`__getitem__`/`__setitem__` methods";
     else
       diag << " value has no attribute '"
            << cast<StringLiteralNode>(exprOperands[0].expr)->getValue() << "'";
   };
 
   // This gets each of the operand expressions, which will be passed to the
-  // __refitem__ / __getitem__ / __setitem__ calls.
+  // __getitem__ / __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   KeywordOperands kwOperands;
 

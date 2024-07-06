@@ -1334,7 +1334,7 @@ lit.struct.decl @GGUFFile
       %20 = lit.ref.struct.ger %self[infos] : <@LegacyPointer, mut selfLife> from !GGUFFile
       %21 = lit.ref.load %20 : <@LegacyPointer, mut selfLife>
       %22 = lit.ref.immut %i : <!Int, mut iLife>
-      %23 = lit.call @LegacyPointer::@__refitem__[muttoimm iLife](%21, %22) : !lit.signature<[1]("self": !LegacyPointer, "offset": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !lit.ref<!Int, mut #lit.lifetime>>
+      %23 = lit.call @LegacyPointer::@__getitem__[muttoimm iLife](%21, %22) : !lit.signature<[1]("self": !LegacyPointer, "offset": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !lit.ref<!Int, mut #lit.lifetime>>
       %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!Int, mut resultLife>
       %24 = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__) : !lit.signature<[2]("__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) throws -> i1>
       // CHECK: %[[V0:.*]] = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__)
