@@ -182,9 +182,8 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   return success();
 }
 
-LogicalResult ObjectCompiler::produceFunctionDecls(
-    const SymbolTable &symtab, const ExportMap &exportedSymbols,
-    StringRef filename, llvm::raw_ostream &os) {
+LogicalResult ObjectCompiler::emitCXXHeader(ModuleOp module, StringRef filename,
+                                            llvm::raw_ostream &os) {
   const char *headerFmtStart = R"literal(//===-{0}-===//
 //
 // This file is Modular Inc proprietary.
@@ -229,11 +228,8 @@ using ssize_t = SSIZE_T;
                       headerGuard);
 
   // Emit the function decls into the header.
-  auto module = cast<ModuleOp>(symtab.getOp());
   for (auto f : module.getOps<FuncOp>()) {
-    auto itExported = exportedSymbols.find(f.getNameAttr());
-    if (itExported == exportedSymbols.end() ||
-        itExported->second.kind != ExportKind::CExported)
+    if (!f.isCExported())
       continue;
     // The symbol was exported, use its alias name.
     if (failed(emitSignature(os, f)))

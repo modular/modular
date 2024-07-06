@@ -472,8 +472,9 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   ExportMap exportedSymbols;
   exportedSymbols.insert({StringAttr::get(module->getContext(), exprFnName),
                           ExportedSymbol(ExportKind::Exported)});
-  auto bufferOr =
-      impl->objCompiler->produceStandaloneArchive(symbolTable, exportedSymbols);
+  OwningOpRef<ModuleOp> sliceModule =
+      impl->objCompiler->produceStandaloneModule(symbolTable, exportedSymbols);
+  auto bufferOr = impl->objCompiler->emitArchive(*sliceModule);
   if (bufferOr.isError()) {
     impl->expressionLogger->errorLog(
         "Failed to produce standalone archive: {0}", bufferOr.getError());

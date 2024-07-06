@@ -561,15 +561,6 @@ static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
   }
 }
 
-ErrorOr<std::unique_ptr<llvm::Module>>
-ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
-                                    const ExportMap &exportedSymbols,
-                                    llvm::LLVMContext &ctx) {
-  OwningOpRef<ModuleOp> module =
-      produceStandaloneModule(symtab, exportedSymbols);
-  return lowerAllFuncsToLLVM(ctx, *module);
-}
-
 static mlir::PassManager
 createPassManager(const std::optional<std::string> &operationName,
                   mlir::MLIRContext *context) {
@@ -716,18 +707,11 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
 }
 
 //===----------------------------------------------------------------------===//
-// produceArchive
+// emitArchive
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef>
-ObjectCompiler::produceArchive(const SymbolTable &symtab,
-                               const ExportMap &exportedSymbols,
-                               bool standalone) {
+ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
   CompilerTimeTraceScope traceScope("produce-archive");
-
-  // Slice out a standalone module for the exported symbols.
-  OwningOpRef<ModuleOp> slicedModule =
-      produceStandaloneModule(symtab, exportedSymbols);
 
   // Perform a cache aware transformation to translate the module to an archive
   // file.
@@ -738,9 +722,9 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 #ifdef MODULAR_ENABLE_TELEMETRY
     CacheTelemetryContext::getCacheTelemetryContext(
         loadContext(op->getContext()))
-        .recordCacheMiss("ObjectCompiler::produceArchive");
+        .recordCacheMiss("ObjectCompiler::emitArchive");
 #endif
-    chain.andThenSync([this, &runtime, op, output = output.copy(), standalone,
+    chain.andThenSync([this, &runtime, op, output = output.copy(),
                        buf = buf.copy()]() mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -749,7 +733,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
               ->get<M::Telemetry::TelemetryContext>()
               ->createUInt64Timer<std::chrono::milliseconds>(
                   "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-                  {{"pipeline", "ObjectCompiler::produceArchive"}});
+                  {{"pipeline", "ObjectCompiler::emitArchive"}});
 
 #endif
 
@@ -779,8 +763,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       // Split the module into multiple slices and compile each in parallel.
       // FIXME(#25622): Disable module splitting for non-standalone archives.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
-      bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
-                         generatingPtx || !standalone;
+      bool noSplitting =
+          runtime.getWorkQueue()->getParallelismLevel() < 2 || generatingPtx;
 
       auto processSync = [&]() {
         // If sync, await cacheResults so that the cloned sub-module
@@ -867,7 +851,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
                       ->createUInt64Timer<std::chrono::milliseconds>(
                           "mojo.compile.cache.miss.time",
                           M::Telemetry::Level::L2,
-                          {{"pipeline", "ObjectCompiler::produceArchive"}});
+                          {{"pipeline", "ObjectCompiler::emitArchive"}});
 #endif
 
               // If any of the cache results failed, propagate the error.
@@ -948,19 +932,19 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 #ifdef MODULAR_ENABLE_TELEMETRY
     CacheTelemetryContext::getCacheTelemetryContext(
         loadContext(op->getContext()))
-        .recordCacheHit("ObjectCompiler::produceArchive");
+        .recordCacheHit("ObjectCompiler::emitArchive");
 #endif
     return buf.copy();
   };
 
   WriteableBufferRef produceArchiveKey = WriteableBuffer::get();
-  options.print(*produceArchiveKey << "produceArchive(");
+  options.print(*produceArchiveKey << "emitArchive(");
   *produceArchiveKey << ", isJIT=" << isJIT
                      << ", enableLLVMPerFunctionSplitting="
                      << options.enableLLVMPerFunctionSplitting << ')';
 
   auto output = cachedTransform(
-      *slicedModule, transformCache.copy(),
+      module, transformCache.copy(),
       LLCL::AsyncValueRef<Chain>::createReady(runtime),
       std::move(produceArchiveKey), runTransformation, onCacheHit);
   await(output);
@@ -971,14 +955,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 }
 
 //===----------------------------------------------------------------------===//
-// produceStandaloneArchive
+// lowerLLVMModuleToObjects
 //===----------------------------------------------------------------------===//
-
-ErrorOr<BufferRef>
-ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
-                                         const ExportMap &exportedSymbols) {
-  return produceArchive(symtab, exportedSymbols, /*standalone=*/true);
-}
 
 SmallVector<LLCL::AnyAsyncValueRef>
 ObjectCompiler::lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
@@ -1022,20 +1000,15 @@ ObjectCompiler::lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
                                        emitAssembly, moduleIdx);
 }
 
-ErrorOr<ElementsAttr>
-ObjectCompiler::produceStandaloneArchiveAttr(const SymbolTable &symtab,
-                                             const ExportMap &exportedSymbols,
-                                             TargetInfoAttr target) {
-  auto bufferOr = produceStandaloneArchive(symtab, exportedSymbols);
+ErrorOr<ElementsAttr> ObjectCompiler::emitArchiveAttr(ModuleOp module) {
+  auto bufferOr = emitArchive(module);
   if (bufferOr.isError())
     return bufferOr.takeError();
   BufferRef buffer = bufferOr.takeValue();
 
-  auto module = cast<ModuleOp>(symtab.getOp());
-
   // Get the standalone archive key to use as the archive name.
   WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
-  options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
+  options.print(*produceStandaloneArchiveKey << "emitArchiveAttr(");
   *produceStandaloneArchiveKey << ")";
   if (failed(mlir::writeBytecodeToFile(module.getOperation(),
                                        *produceStandaloneArchiveKey)))
@@ -1047,7 +1020,7 @@ ObjectCompiler::produceStandaloneArchiveAttr(const SymbolTable &symtab,
 
   // Produce a DenseResourceElementsAttr from the file.
   auto resourceManager =
-      DenseResourceElementsHandle::getManagerInterface(target.getContext());
+      DenseResourceElementsHandle::getManagerInterface(module.getContext());
 
   // Pretend this is a "tensor" of data.
   // TODO (#6986) It would be much nicer if we didn't have to clone this data
@@ -1055,7 +1028,7 @@ ObjectCompiler::produceStandaloneArchiveAttr(const SymbolTable &symtab,
   //   prevent us from having to hash the module above.
   auto attrType = RankedTensorType::get(
       {(int64_t)buffer->getBufferSize()},
-      IntegerType::get(target.getContext(), 8, IntegerType::Unsigned));
+      IntegerType::get(module.getContext(), 8, IntegerType::Unsigned));
   auto attrName = "archive_" + llvm::toHex(hash, /*LowerCase=*/true);
   ArrayRef<char> blobData(buffer->getBufferStart(), buffer->getBufferSize());
   auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(blobData,
@@ -1065,20 +1038,16 @@ ObjectCompiler::produceStandaloneArchiveAttr(const SymbolTable &symtab,
 }
 
 //===----------------------------------------------------------------------===//
-// produceStandaloneAssembly
+// emitAssembly
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess
-ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
-                                          const ExportMap &exportedSymbols,
-                                          llvm::raw_pwrite_stream &os) {
+ErrorOrSuccess ObjectCompiler::emitAssembly(ModuleOp module,
+                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("produce-standalone-assembly");
 
-  OwningOpRef<ModuleOp> slicedModule =
-      produceStandaloneModule(symtab, exportedSymbols);
   llvm::LLVMContext ctx;
   ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
-      lowerAllFuncsToLLVM(ctx, *slicedModule);
+      lowerAllFuncsToLLVM(ctx, module);
 
   if (llvmModuleOr)
     return Error(llvmModuleOr.getError());
