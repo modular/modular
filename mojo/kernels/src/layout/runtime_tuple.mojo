@@ -135,7 +135,7 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
 
     @always_inline
     fn __len__(self) -> Int:
-        return self.scalar_length
+        return len(S)
 
 
 fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t]) -> Bool:
@@ -158,7 +158,7 @@ fn prefix_product[
 ](tuple: RuntimeTuple[t]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
     var res = RuntimeTuple[prefix_product_int_tuple(t)]()
     var prefix_res = 1
-    for i in range(len(tuple)):
+    for i in range(tuple.scalar_length):
         res.value[i] = prefix_res
         prefix_res *= tuple.value[i]
     return res
@@ -184,7 +184,7 @@ fn idx2crd[
 ) -> RuntimeTuple[idx2crd_int_tuple(idx_t, shape_t, stride_t)]:
     var res = RuntimeTuple[idx2crd_int_tuple(idx_t, shape_t, stride_t)]()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
-    for i in range(len(res)):
+    for i in range(res.scalar_length):
         res.value[i] = (to_int(idx) // stride.value[i]) % shape.value[i]
     return res
 
@@ -230,11 +230,16 @@ fn crd2idx[
             ]()
             var result: Int = 0
 
+            alias last_elem_idx = len(shape_t) - 1
+
             @parameter
-            for i in range(len(shape_t) - 1):
+            for i in range(last_elem_idx):
                 var divisor_quotient = divmod(int_crd, product(shape[i]))
                 result += crd2idx(divisor_quotient[1], shape[i], stride[i])
                 int_crd = divisor_quotient[0]
-            return result + crd2idx(int_crd, shape[-1], stride[-1])
+            # FIXME(KERN-640): Replace with [-1], currently not giving correct result.
+            return result + crd2idx(
+                int_crd, shape[last_elem_idx], stride[last_elem_idx]
+            )
         else:  # "int" "int" "int"
             return int_crd * to_int(stride)

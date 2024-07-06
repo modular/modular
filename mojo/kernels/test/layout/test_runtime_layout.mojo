@@ -73,7 +73,34 @@ def test_tiled_layout_indexing():
                     )
 
 
+# CHECK-LABEL: test_tiled_layout_indexing
+def test_tiled_layout_indexing_linear_idx():
+    print("== test_tiled_layout_indexing_linear_idx")
+
+    alias shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    alias stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
+
+    alias d_tuple = IntTuple(IntTuple(-1, -1), IntTuple(-1, -1))
+    alias d_layout = Layout(d_tuple, d_tuple)
+
+    var layout = RuntimeLayout[d_layout](
+        RuntimeTuple[d_layout.shape](2, 2, 2, 2),
+        RuntimeTuple[d_layout.stride](1, 8, 2, 4),
+    )
+
+    for i in range(16):
+        assert_equal(
+            crd2idx(
+                i,
+                shape,
+                stride,
+            ),
+            layout(i),
+        )
+
+
 def main():
     test_runtime_layout_const()
     test_static_and_dynamic_size()
     test_tiled_layout_indexing()
+    test_tiled_layout_indexing_linear_idx()
