@@ -13,8 +13,6 @@ from buffer.dimlist import Dim
 ```
 """
 
-from collections import OptionalReg
-
 from utils import StaticIntTuple, StaticTuple, unroll
 
 # ===----------------------------------------------------------------------===#
@@ -32,8 +30,13 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
     present, the dimension is dynamic.
     """
 
-    var value: OptionalReg[Int]
-    """An optional value for the dimension."""
+    alias _sentinel = -31337
+    """The sentinel value to use if the dimension is dynamic.  This value was
+    chosen to be a visible-in-the-debugger sentinel.  We can't use Int.MIN
+    because that value is target-dependent and won't fold in parameters."""
+
+    var _value_or_missing: Int
+    """The dimension value to use or `_sentinel` if the dimension is dynamic."""
 
     @always_inline("nodebug")
     fn __init__[type: Intable](inout self, value: type):
@@ -45,7 +48,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         Args:
             value: The static dimension value.
         """
-        self.value = int(value)
+        self._value_or_missing = int(value)
 
     @always_inline("nodebug")
     fn __init__(inout self, value: __mlir_type.index):
@@ -54,12 +57,12 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         Args:
             value: The static dimension value.
         """
-        self.value = Int(value)
+        self._value_or_missing = Int(value)
 
     @always_inline("nodebug")
     fn __init__(inout self):
         """Creates a dynamic dimension with no static value."""
-        self.value = None
+        self._value_or_missing = Self._sentinel
 
     @always_inline("nodebug")
     fn __bool__(self) -> Bool:
@@ -68,7 +71,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         Returns:
             Whether the dimension has a static value.
         """
-        return self.value.__bool__()
+        return self._value_or_missing != Self._sentinel
 
     @always_inline("nodebug")
     fn __as_bool__(self) -> Bool:
@@ -104,7 +107,8 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         Returns:
             The static dimension value.
         """
-        return self.value.value()
+        # TODO: Shouldn't this assert the value is present?
+        return self._value_or_missing
 
     @always_inline
     fn is_multiple[alignment: Int](self) -> Bool:
@@ -174,7 +178,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         Returns:
             The static dimension value.
         """
-        return self.value.value()
+        return self.get()
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Dim) -> Bool:

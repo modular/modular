@@ -56,7 +56,7 @@ fn test_dim():
     # CHECK: True
     print(dim2.has_value())
     # CHECK: 4
-    print(dim2.value.value())
+    print(dim2.get())
 
     var dim3 = dim1 // Dim()
     # CHECK: False
