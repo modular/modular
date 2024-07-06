@@ -121,18 +121,18 @@ fn multistage_mma[
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
-    alias async_copy_a_swizzle = None if not swizzle_a else OptionalReg[
+    alias async_copy_a_swizzle = None if not swizzle_a else Optional[
         _swizzle_signature
     ](xor_2bits_per8T)
     alias async_copy_b_layout = Layout.row_major(
         num_threads * simd_size // b_smem_layout.stride[0].value(),
         b_smem_layout.stride[0].value() // simd_size,
     )
-    alias async_copy_b_swizzle = OptionalReg[_swizzle_signature](
+    alias async_copy_b_swizzle = Optional[_swizzle_signature](
         xor_2bits_per8T
     ) if transpose_b else (
         None if a_type
-        == DType.float32 else OptionalReg[_swizzle_signature](xor_3bits_per16T)
+        == DType.float32 else Optional[_swizzle_signature](xor_3bits_per16T)
     )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -441,7 +441,7 @@ fn multistage_gemm[
         num_threads * simd_size // BD_1, BD_1 // simd_size
     )
     alias async_copy_b_swizzle = None if transpose_b else (
-        OptionalReg[_swizzle_signature](
+        Optional[_swizzle_signature](
             xor_2bits_per8T if a_type == DType.float32 else xor_3bits_per16T
         )
     )
