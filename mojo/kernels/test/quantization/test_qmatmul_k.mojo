@@ -10,7 +10,7 @@ from random import rand, random_float64
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from quantization.qmatmul import (
     matmul_qint4,
     matmul_qint4_pack_b,

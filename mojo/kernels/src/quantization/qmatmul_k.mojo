@@ -16,7 +16,7 @@ from sys.intrinsics import llvm_intrinsic
 from algorithm import sync_parallelize, tile, vectorize
 from bit import is_power_of_two
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work

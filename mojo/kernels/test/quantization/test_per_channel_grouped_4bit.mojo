@@ -9,7 +9,7 @@ from math import ceildiv
 from sys.info import alignof, sizeof
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from quantization import Q4sym
 
 
