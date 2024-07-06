@@ -271,7 +271,7 @@ fn test_tensor_tile_and_distribute():
                 var fragment_2x2 = tile_4x4.distribute[
                     Layout(IntTuple(2, 2), IntTuple(2, 1))
                 ](
-                    th_i.value,
+                    th_i,
                 )
                 print("----fragments-data[", th_i, "]----")
                 print_tile_tensor(fragment_2x2)
@@ -501,9 +501,7 @@ fn test_distribute_with_tile_size():
 
     for tid in range(thread_layout.size()):
         print("----thread[", tid, "]----")
-        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](
-            tid.value
-        )
+        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](tid)
         tile.print()
 
     var tensor8x1 = LayoutTensor[
@@ -546,7 +544,7 @@ fn test_distribute_with_tile_size():
         print("----thread[", tid, "]----")
         var tile = tensor8x1.vectorize[2, 1]().distribute[
             thread_layout, axis=0
-        ](tid.value)
+        ](tid)
         tile.print()
 
 
