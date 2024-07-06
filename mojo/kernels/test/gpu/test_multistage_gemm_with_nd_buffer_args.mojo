@@ -73,7 +73,7 @@ fn ld_mma[
     num_matrices: Int,
     # Refactor the three parameters with ComposedLayout
     thread_layout: Layout,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
     *,
     # work around parameter deduction
     __layout: Layout,
