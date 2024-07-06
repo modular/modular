@@ -374,6 +374,33 @@ kgen.func @xor() -> !pop.scalar<ui4> {
   kgen.return %2 : !pop.scalar<ui4>
 }
 
+// CHECK-LABEL: @xor_zero
+kgen.func @xor_zero(%arg0: !pop.simd<2, ui16>) -> !pop.simd<2, ui16> {
+  %0 = kgen.param.constant: simd<2, ui16> = <0>
+  %1 = pop.xor %0, %arg0 : !pop.simd<2, ui16>
+  // CHECK-NEXT: return %arg0
+  kgen.return %1 : !pop.simd<2, ui16>
+}
+
+// CHECK-LABEL: @not_not
+kgen.func @not_not(%arg0: !pop.scalar<bool>) ->!pop.scalar<bool>{
+  %0 = kgen.param.constant: scalar<bool> = <true>
+  %1 = pop.xor %arg0, %0 : !pop.scalar<bool>
+  %2 = pop.xor %1, %0 : !pop.scalar<bool>
+  // CHECK-NEXT: return %arg0
+  kgen.return %2 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @mask_ones
+kgen.func @mask_ones(%arg0: !pop.simd<2, ui4>) -> !pop.simd<2, ui4> {
+  %0 = kgen.param.constant: simd<2, ui4> = <15>
+  %1 = kgen.param.constant: simd<2, ui4> = <15>
+  %2 = pop.xor %arg0, %0 : !pop.simd<2, ui4>
+  %3 = pop.xor %2, %1 : !pop.simd<2, ui4>
+  // CHECK-NEXT: return %arg0
+  kgen.return %3 : !pop.simd<2, ui4>
+}
+
 // CHECK-LABEL: @simd_select
 kgen.func @simd_select() -> !pop.simd<2, si4> {
   // CHECK-NEXT: <1, 4>
