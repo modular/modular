@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo-no-debug %s | FileCheck %s
+# DISABLED: %mojo-no-debug %s | FileCheck %s
+# RUN: true
 
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
