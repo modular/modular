@@ -250,6 +250,9 @@ fn flash_attention[
     (1), (2), (3) happens while loading the data into shared memory.
     (8) happens when writing output to global memory.
 
+    This kernel also handles grouped attention optimization. In this case the shape of
+    K and V are BShD where h = H / num_groups.
+
     Assumptions:
         (1) depth per head is 128 (or 256, set TN=8).
         (2) seqlen is multiple of 32 and 128.
