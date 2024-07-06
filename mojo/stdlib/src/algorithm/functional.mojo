@@ -1459,14 +1459,13 @@ fn _elementwise_impl_gpu[
     alias registers_per_block = 65536
 
     # optimize based on device attributes
-    var sm_count: Int
-    var threads_per_sm: Int
+    var sm_count = 142
+    var threads_per_sm = 1536
     try:
         sm_count = Device().multiprocessor_count()
         threads_per_sm = Device().max_threads_per_sm()
     except e:
-        abort(e)
-        return
+        pass
 
     # split between packed and tail regions of input
     var length = shape.flattened_length()
