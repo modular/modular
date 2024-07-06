@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 
 

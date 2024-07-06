@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from buffer import Buffer
-from buffer.list import Dim
+from buffer.dimlist import Dim
 
 
 # CHECK-LABEL: test_buffer

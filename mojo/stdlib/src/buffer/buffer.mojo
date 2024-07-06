@@ -17,7 +17,7 @@ from pathlib import Path
 from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
-from buffer.list import Dim, DimList, _make_tuple
+from buffer.dimlist import Dim, DimList, _make_tuple
 from memory import memset_zero, stack_allocation
 from memory.reference import AddressSpace, _GPUAddressSpace
 from memory.unsafe import DTypePointer, Pointer

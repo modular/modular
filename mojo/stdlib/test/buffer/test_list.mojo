@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from testing import *
 
 from utils.index import StaticIntTuple

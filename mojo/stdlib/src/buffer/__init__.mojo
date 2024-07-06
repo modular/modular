@@ -10,4 +10,4 @@ from .buffer import (  # Explicitly don't import these; partial_simd_store,; pro
     DynamicRankBuffer,
     NDBuffer,
 )
-from .list import Dim, DimList
+from .dimlist import Dim, DimList

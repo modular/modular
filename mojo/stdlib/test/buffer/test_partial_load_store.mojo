@@ -13,7 +13,7 @@ from buffer.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory import stack_allocation
 
 from utils.index import StaticIntTuple

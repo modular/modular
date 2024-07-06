@@ -11,7 +11,7 @@ from sys.intrinsics import PrefetchOptions
 from tempfile import NamedTemporaryFile
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory import memcmp, memset_zero
 from testing import assert_equal
 

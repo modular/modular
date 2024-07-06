@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from buffer import Buffer, NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from memory import stack_allocation
 
 

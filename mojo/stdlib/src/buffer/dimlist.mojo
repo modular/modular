@@ -9,7 +9,7 @@
 You can import these APIs from the `buffer` package. For example:
 
 ```mojo
-from buffer.list import Dim
+from buffer.dimlist import Dim
 ```
 """
 
@@ -36,7 +36,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
     """An optional value for the dimension."""
 
     @always_inline("nodebug")
-    fn __init__[type: Intable](value: type) -> Dim:
+    fn __init__[type: Intable](inout self, value: type):
         """Creates a statically-known dimension.
 
         Parameters:
@@ -44,32 +44,22 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
 
         Args:
             value: The static dimension value.
-
-        Returns:
-            A dimension with a static value.
         """
-        return Self {value: int(value)}
+        self.value = int(value)
 
     @always_inline("nodebug")
-    fn __init__(value: __mlir_type.index) -> Dim:
+    fn __init__(inout self, value: __mlir_type.index):
         """Creates a statically-known dimension.
 
         Args:
             value: The static dimension value.
-
-        Returns:
-            A dimension with a static value.
         """
-        return Self {value: Int(value)}
+        self.value = Int(value)
 
     @always_inline("nodebug")
-    fn __init__() -> Dim:
-        """Creates a dynamic dimension.
-
-        Returns:
-            A dimension value with no static value.
-        """
-        return Self {value: None}
+    fn __init__(inout self):
+        """Creates a dynamic dimension with no static value."""
+        self.value = None
 
     @always_inline("nodebug")
     fn __bool__(self) -> Bool:
