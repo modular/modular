@@ -1028,3 +1028,11 @@ kgen.func @store_bitcast(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<point
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
   kgen.return
 }
+
+// CHECK-LABEL: @bitcast_free
+kgen.func @bitcast_free(%arg0: !kgen.pointer<none>) {
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<index>
+  // CHECK-NEXT: pop.aligned_free %arg0
+  pop.aligned_free %0 : <index>
+  kgen.return
+}
