@@ -1490,10 +1490,6 @@ fn _elementwise_impl_gpu[
     @parameter
     @__llvm_metadata(`nvvm.maxntid`=Index(block_size))
     fn _elementwise_gpu_kernel[handle_uneven_simd: Bool]():
-        @parameter
-        if not triple_is_nvidia_cuda():
-            return
-
         # process the packed region
         var tid = ThreadIdx.x() + UInt(block_size.value) * BlockIdx.x()
         for idx in range(
