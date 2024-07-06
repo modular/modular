@@ -698,9 +698,9 @@ fn softmax_kernel[
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
     for row_idx in range(
-        _temp_uint_from_int(BlockIdx.x()),
+        BlockIdx.x(),
         num_rows,
-        _temp_uint_from_int(GridDim.x()),
+        GridDim.x(),
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
@@ -725,9 +725,7 @@ fn softmax_kernel[
         for offset_in_row in range(
             UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
         ):
-            var idx_in_padded_row: UInt = _temp_uint_from_int(
-                ThreadIdx.x()
-            ) + offset_in_row
+            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
@@ -754,9 +752,7 @@ fn softmax_kernel[
         for offset_in_row in range(
             UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
         ):
-            var idx_in_padded_row: UInt = _temp_uint_from_int(
-                ThreadIdx.x()
-            ) + offset_in_row
+            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
