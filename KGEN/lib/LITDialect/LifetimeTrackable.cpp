@@ -296,7 +296,8 @@ static void
 getCallOpEffects(Operation &op,
                  SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
                  SmallVectorImpl<ResultEffect> &results,
-                 SmallVectorImpl<TypedAttr> &lifetimes) {
+                 SmallVectorImpl<TypedAttr> &lifetimes,
+                 CachedTypeLifetimeFinder &lifetimeFinder) {
   LITSignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
@@ -452,21 +453,10 @@ getCallOpEffects(Operation &op,
 
   // Look at the types accessible by the callee to see if there are any
   // lifetime accesses.
-  // FIXME: This appears wrong for things like `List[Reference[...]]` because
-  // the lifetime is buried in the type, not first order on the List.
-  for (auto [num, argType] : llvm::enumerate(typesAccessibleByCallee)) {
-    auto dre = dyn_cast<DeclRefType>(argType);
-    if (!dre)
-      continue;
-
-    for (auto paramValue : dre.getParamValues()) {
-      // If the type captured a lifetime, the callee may touch the location
-      // with the mutability of the target access.
-      if (isa<LifetimeType>(paramValue.getType()))
-        lifetimes.push_back(paramValue);
-      else if (auto set = dyn_cast<LifetimeSetAttr>(paramValue))
-        llvm::append_range(lifetimes, set.getOperands());
-    }
+  {
+    SmallVector<TypedAttr> lifetimesUsedByTypes =
+        lifetimeFinder.findLifetimesInTypes(typesAccessibleByCallee);
+    lifetimes.append(lifetimesUsedByTypes.begin(), lifetimesUsedByTypes.end());
   }
 
   // If the result is defining an owned register value, then we treat this as
@@ -484,7 +474,8 @@ getCallOpEffects(Operation &op,
 OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<TypedAttr> &lifetimes) {
+    SmallVectorImpl<TypedAttr> &lifetimes,
+    CachedTypeLifetimeFinder &lifetimeFinder) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
   if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
@@ -593,7 +584,7 @@ OverallOpValueEffect LIT::getOperationEffects(
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (isa<LIT::CallIndirectOp, KGENCallOpInterface>(op)) {
-    getCallOpEffects(op, operands, results, lifetimes);
+    getCallOpEffects(op, operands, results, lifetimes, lifetimeFinder);
     return {};
   }
 
@@ -690,13 +681,11 @@ template <typename TypeOrAttr>
 static void
 scanForLifetimes(TypeOrAttr pvalue,
                  llvm::DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
-                 llvm::DenseSet<const void *> &typesAndAttrsWithLifetimes,
                  SmallVector<TypedAttr> &results) {
   const void *pvaluePtr = pvalue.getAsOpaquePointer();
 
   // Ignore types we have already scanned.
-  if (typesAndAttrsWithoutLifetimes.count(pvaluePtr) ||
-      typesAndAttrsWithLifetimes.count(pvaluePtr))
+  if (typesAndAttrsWithoutLifetimes.count(pvaluePtr))
     return;
 
   size_t oldNumResults = results.size();
@@ -715,32 +704,26 @@ scanForLifetimes(TypeOrAttr pvalue,
     // function type, types like !pop.scalar<ty> etc.
     pvalue.walkImmediateSubElements(
         [&](Attribute attr) {
-          scanForLifetimes(attr, typesAndAttrsWithoutLifetimes,
-                           typesAndAttrsWithLifetimes, results);
+          scanForLifetimes(attr, typesAndAttrsWithoutLifetimes, results);
         },
         [&](Type type) {
-          scanForLifetimes(type, typesAndAttrsWithoutLifetimes,
-                           typesAndAttrsWithLifetimes, results);
+          scanForLifetimes(type, typesAndAttrsWithoutLifetimes, results);
         });
   }
 
-  // Make sure we don't revisit this type/attribute in the future.
+  // If we can prove that this subtree doesn't contain lifetimes, then remember
+  // this so we don't revisit this type/attribute in the future.
   if (oldNumResults == results.size())
     typesAndAttrsWithoutLifetimes.insert(pvaluePtr);
-  else
-    typesAndAttrsWithLifetimes.insert(pvaluePtr);
 }
 
 SmallVector<TypedAttr>
 CachedTypeLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
   SmallVector<TypedAttr> results;
 
-  // Scan each type, accumulating the results; the sets avoid revisiting notes
-  // that we know cannot have lifetimes or that we already have seen in this
-  // scan and have lifetimes.
-  llvm::DenseSet<const void *> typesAndAttrsWithLifetimes;
+  // Scan each type, accumulating the results; the set avoid revisiting nodes
+  // that we know cannot have lifetimes.
   for (auto type : types)
-    scanForLifetimes(type, typesAndAttrsWithoutLifetimes,
-                     typesAndAttrsWithLifetimes, results);
+    scanForLifetimes(type, typesAndAttrsWithoutLifetimes, results);
   return results;
 }

@@ -491,14 +491,18 @@ struct ValueSet {
   /// number of fields they have.
   TypeDeclInfo &typeDeclInfo;
 
+  /// This provides efficient lookup for lifetimes buried in MLIR types.
+  CachedTypeLifetimeFinder &lifetimeFinder;
+
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
   ///
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
-  ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func)
-      : typeDeclInfo(typeDeclInfo), func(func) {
+  ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
+           CachedTypeLifetimeFinder &lifetimeFinder)
+      : typeDeclInfo(typeDeclInfo), lifetimeFinder(lifetimeFinder), func(func) {
     addValue(Value(), LifetimeTrackable(Value()));
   }
 
@@ -1159,7 +1163,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
     resultEffects.clear();
     lifetimeEffects.clear();
     auto overall =
-        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects);
+        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects,
+                            valueSet.lifetimeFinder);
     /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
@@ -1670,7 +1675,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     resultEffects.clear();
     lifetimeEffects.clear();
     auto overall =
-        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects);
+        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects,
+                            valueSet.lifetimeFinder);
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
       // NOTE: Enable logging when debugging.
@@ -3086,25 +3092,29 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // Process all the structs into TypeDeclInfo.
     TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
                               std::move(traitMap));
+    CachedTypeLifetimeFinder lifetimeFinder;
 
-    // TODO: Do in parallel, watch out for mutations of TypeDeclInfo though!
+    // TODO: Do in parallel, watch out for mutations of TypeDeclInfo and
+    // lifetimeFinder though!
     bool hadError = false;
     for (auto func : functionVector)
-      hadError |= failed(processFunction(func, typeDeclInfo));
+      hadError |= failed(processFunction(func, typeDeclInfo, lifetimeFinder));
 
     if (hadError)
       return signalPassFailure();
   }
 
-  LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo);
+  LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
+                                CachedTypeLifetimeFinder &lifetimeFinder);
 };
 } // namespace
 
-LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
-                                              TypeDeclInfo &typeDeclInfo) {
+LogicalResult
+CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
+                                CachedTypeLifetimeFinder &lifetimeFinder) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
-  ValueSet valueSet(typeDeclInfo, func);
+  ValueSet valueSet(typeDeclInfo, func, lifetimeFinder);
 
   // Check if the local variables of this function need debug info.
   DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();

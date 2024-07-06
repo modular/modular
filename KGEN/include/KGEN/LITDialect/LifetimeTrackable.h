@@ -183,7 +183,8 @@ OverallOpValueEffect
 getOperationEffects(Operation &op,
                     SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
                     SmallVectorImpl<ResultEffect> &results,
-                    SmallVectorImpl<TypedAttr> &lifetimes);
+                    SmallVectorImpl<TypedAttr> &lifetimes,
+                    CachedTypeLifetimeFinder &lifetimeFinder);
 
 } // namespace LIT
 } // namespace M::KGEN
