@@ -158,13 +158,11 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
     return state.reportError("module does not contain a 'main' function");
 
   // Generate an archive for the module.
-  auto standaloneOr = objectCompiler->produceStandaloneArchive(
-      symtab, getExportedSymbols(moduleOp));
-
-  if (failed(standaloneOr))
+  auto archiveOr = objectCompiler->emitArchive(moduleOp);
+  if (failed(archiveOr))
     return state.reportError("failed to produce an archive for the module: " +
-                             Twine(standaloneOr.getError()));
-  archive = std::move(*standaloneOr);
+                             Twine(archiveOr.getError()));
+  archive = std::move(*archiveOr);
   return std::nullopt;
 }
 

@@ -357,6 +357,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
   auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
+  ObjectCompiler &objCompiler = objectCompilerLayer.getRawCompiler();
 
   // Compiles the module through KGEN compiler pipeline.
   // We don't need to try to look anything up.
@@ -376,8 +377,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kEmitLLVM) {
     llvm::LLVMContext llvmCtx;
     ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
-        objectCompilerLayer.getRawCompiler().lowerAllFuncsToLLVM(
-            symtab, exportedSymbols, llvmCtx);
+        objCompiler.lowerAllFuncsToLLVM(llvmCtx, *theModule);
 
     if (llvmModuleOr)
       return failure(clOptions.reportError(
@@ -399,9 +399,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .s output file"));
 
-    auto standaloneOr =
-        objectCompilerLayer.getRawCompiler().produceStandaloneAssembly(
-            symtab, exportedSymbols, outFile->os());
+    auto standaloneOr = objCompiler.emitAssembly(*theModule, outFile->os());
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +
@@ -414,8 +412,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kEmitHeader) {
     LogicalResult result = failure();
     auto writeFn = [&](raw_ostream &os) {
-      result = objectCompilerLayer.getRawCompiler().produceFunctionDecls(
-          symtab, exportedSymbols, clOptions.outputFilename, os);
+      result =
+          objCompiler.emitCXXHeader(*theModule, clOptions.outputFilename, os);
     };
     if (clOptions.outputFilename == "-") {
       auto writeContents = [&](raw_ostream &os) {
@@ -454,9 +452,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .o output file"));
 
-    auto standaloneOr =
-        objectCompilerLayer.getRawCompiler().produceStandaloneArchive(
-            symtab, exportedSymbols);
+    auto standaloneOr = objCompiler.emitArchive(*theModule);
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +

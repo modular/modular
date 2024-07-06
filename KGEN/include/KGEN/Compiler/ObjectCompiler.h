@@ -43,17 +43,11 @@ public:
          MLIRContext &context,
          PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
-  /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
-  /// success, and nullptr on failure.
-  ErrorOr<std::unique_ptr<llvm::Module>>
-  lowerAllFuncsToLLVM(const SymbolTable &symtab,
-                      const ExportMap &exportedSymbols, llvm::LLVMContext &ctx);
-
-  /// Lower the given module to LLVM. Returns the LLVM module on success, and
-  /// nullptr on failure.
-  ErrorOr<std::unique_ptr<llvm::Module>>
-  lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module);
-
+  /// Produce a standalone MLIR module by slicing out the dependencies of the
+  /// provided exported ops.
+  OwningOpRef<ModuleOp>
+  produceStandaloneModule(const SymbolTable &symtab,
+                          const ExportMap &exportedSymbols);
   /// Produce a standalone MLIR module by slicing out the dependencies of the
   /// provided exported ops. An `IRMapping` can be provided to be able to map
   /// into the sliced module.
@@ -61,31 +55,25 @@ public:
   produceStandaloneModule(const SymbolTable &symtab,
                           const ExportMap &exportedSymbols, IRMapping &mapping);
 
-  /// Slices the call graph for all exported symbols to produce a "standalone"
-  /// archive, meaning all external libraries the archive depends upon are
-  /// pulled into the archive itself.
-  ErrorOr<BufferRef> produceStandaloneArchive(const SymbolTable &symtab,
-                                              const ExportMap &exportedSymbols);
+  /// Emit the module to a object archive.
+  ErrorOr<BufferRef> emitArchive(ModuleOp module);
 
-  /// Produces a standalone archive as an ElementsAttr that can be used as an
-  /// attribute on another operation. Using this function generally implies
-  /// `isJIT`, which is why it defaults to `true`. Clients should prefer this
-  /// method if they intend to store the compiled object in another graph.
-  ErrorOr<ElementsAttr>
-  produceStandaloneArchiveAttr(const SymbolTable &symtab,
-                               const ExportMap &exportedSymbols,
-                               TargetInfoAttr target);
+  /// Emit the module to a object archive as an ElementsAttr that can be used as
+  /// an attribute on another operation.
+  ErrorOr<ElementsAttr> emitArchiveAttr(ModuleOp module);
+
+  /// Lower the given module to LLVM. Returns the LLVM module on success, and
+  /// nullptr on failure.
+  ErrorOr<std::unique_ptr<llvm::Module>>
+  lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
-  ErrorOrSuccess produceStandaloneAssembly(const SymbolTable &symtab,
-                                           const ExportMap &exportedSymbols,
-                                           llvm::raw_pwrite_stream &os);
+  ErrorOrSuccess emitAssembly(ModuleOp module, llvm::raw_pwrite_stream &os);
 
-  /// Writes function declarations for all exported symbols.
-  LogicalResult produceFunctionDecls(const SymbolTable &symtab,
-                                     const ExportMap &exportedSymbols,
-                                     StringRef filename, raw_ostream &os);
+  /// Writes C++ function declarations for all exported symbols.
+  LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
+                              raw_ostream &os);
 
   /// Get a reference to the object compiler's transform cache.
   RCRef<Cache::TransformCache> getTransformCache() {
@@ -108,17 +96,6 @@ private:
   lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
                            MLIRContext *mlirContext, bool parLLC,
                            std::optional<size_t> moduleIdx = std::nullopt);
-
-  /// Slices the call graph for all exported symbols to produce an archive.
-  /// The `standalone` argument is false by default, but if set to true, then
-  /// dependent libraries are pulled into the archive itself.
-  ErrorOr<BufferRef> produceArchive(const SymbolTable &symtab,
-                                    const ExportMap &exportedSymbols,
-                                    bool standalone = false);
-
-  OwningOpRef<ModuleOp>
-  produceStandaloneModule(const SymbolTable &symtab,
-                          const ExportMap &exportedSymbols);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;

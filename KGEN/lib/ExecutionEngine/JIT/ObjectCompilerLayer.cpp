@@ -147,10 +147,11 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
 
   ErrorOr<BufferRef> bufOr = Error(" ");
   if (exports.empty()) {
-    bufOr = objectCompiler->produceStandaloneArchive(symtab,
-                                                     getAllSymbols(theModule));
+    bufOr = objectCompiler->emitArchive(theModule);
   } else {
-    bufOr = objectCompiler->produceStandaloneArchive(symtab, exports);
+    OwningOpRef<ModuleOp> standaloneModule =
+        objectCompiler->produceStandaloneModule(symtab, exports);
+    bufOr = objectCompiler->emitArchive(*standaloneModule);
   }
 
   // No buffer - materialization fails.

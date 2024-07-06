@@ -24,8 +24,8 @@ fn main():
 
 
 # The arg type for `agnostic_user` should be an unspecified type.
-# CHECK: ![[SP]] = distinct !DISubprogram({{.*}}, type: ![[SP_TYPE:[0-9]+]],
-# CHECK: ![[SP_TYPE]] = !DISubroutineType({{.*}}types: ![[SP_MEMBER_TYPES:[0-9]+]]
-# CHECK: ![[SP_MEMBER_TYPES]] = !{null, ![[ARG_TYPE:[0-9]+]]}
-# CHECK: ![[ARG_TYPE]] = !DIDerivedType({{.*}}baseType: ![[BASE_TYPE:[0-9]+]]
-# CHECK: ![[BASE_TYPE]] = !DIBasicType(tag: DW_TAG_unspecified_type
+# CHECK-DAG: ![[SP]] = distinct !DISubprogram({{.*}}name:{{.*}}agnostic_user{{.*}}, type: ![[SP_TYPE:[0-9]+]],
+# CHECK-DAG: ![[SP_TYPE]] = !DISubroutineType({{.*}}types: ![[SP_MEMBER_TYPES:[0-9]+]]
+# CHECK-DAG: ![[SP_MEMBER_TYPES]] = !{null, ![[ARG_TYPE:[0-9]+]]}
+# CHECK-DAG: ![[ARG_TYPE]] = !DIDerivedType({{.*}}baseType: ![[BASE_TYPE:[0-9]+]]
+# CHECK-DAG: ![[BASE_TYPE]] = !DIBasicType(tag: DW_TAG_unspecified_type
