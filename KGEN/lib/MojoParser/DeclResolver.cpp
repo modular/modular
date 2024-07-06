@@ -949,5 +949,9 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       mangledName += '*';
   }
   mangledName += ')';
+
+  // Having "@" in mangled names confuses gnu ld and triggers error at linking
+  // stage. See issue #6918. So replacing "@" with "_".
+  std::replace(mangledName.begin(), mangledName.end(), '@', '_');
   return StringAttr::get(baseName.getContext(), mangledName);
 }

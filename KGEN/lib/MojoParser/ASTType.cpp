@@ -756,6 +756,7 @@ std::string ASTType::getAsString(bool forDiag, bool demangleParams) const {
   std::string result;
   llvm::raw_string_ostream os(result);
   print(os, forDiag, demangleParams);
+
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
   std::replace(result.begin(), result.end(), '@', '_');
