@@ -1488,7 +1488,7 @@ fn _elementwise_impl_gpu[
     )
     @parameter
     @__llvm_metadata(`nvvm.maxntid`=Index(block_size))
-    fn _elementwise_gpu_kernel[handle_uneven_simd: Bool]():
+    fn _elementwise_gpu_kernel[*, block_size: Int, handle_uneven_simd: Bool]():
         # process the packed region
         var tid = ThreadIdx.x() + UInt(block_size.value) * BlockIdx.x()
         for idx in range(
@@ -1527,13 +1527,19 @@ fn _elementwise_impl_gpu[
     try:
         if shape[rank - 1] % simd_width == 0:
             var gpu_func = ctx.compile_function[
-                _elementwise_gpu_kernel[False]
+                _elementwise_gpu_kernel[
+                    block_size=block_size, handle_uneven_simd=False
+                ]
             ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=num_blocks, block_dim=block_size
             )
         else:
-            var gpu_func = ctx.compile_function[_elementwise_gpu_kernel[True]]()
+            var gpu_func = ctx.compile_function[
+                _elementwise_gpu_kernel[
+                    block_size=block_size, handle_uneven_simd=True
+                ]
+            ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=num_blocks, block_dim=block_size
             )
