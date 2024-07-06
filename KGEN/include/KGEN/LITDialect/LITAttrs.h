@@ -17,7 +17,7 @@ namespace M::KGEN {
 class NoneType;
 namespace LIT {
 class AnyStructType;
-class DeclRefType;
+class StructType;
 class LifetimeType;
 class LifetimeSetType;
 class RefPackType;

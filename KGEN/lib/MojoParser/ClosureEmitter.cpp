@@ -577,7 +577,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // Declare an extra field to carry the parametric closure captures.
     ASTType clType = shared.getBuiltinCaptureListType(nestedFnDecl.getLoc());
     TypedAttr bound = callFunc.getBoundReference(ParameterExprArrayAttr::get(
-        getContext(), cast<DeclRefType>(structSelfType).getParamValues()));
+        getContext(), cast<StructType>(structSelfType).getParamValues()));
     clType = BindTypeAttr::get(
         PValue(clType),
         {TypeConstantAttr::get(bound.getType(), TypeType::get(getContext())),

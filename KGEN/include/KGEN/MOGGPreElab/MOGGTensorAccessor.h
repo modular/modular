@@ -34,7 +34,7 @@ std::optional<size_t> getIndexOfParam(KGEN::GeneratorOp gen, TypedAttr attr) {
 struct MOGGTensorParamAccessor {
   MOGGTensorParamAccessor() { params.resize(NUM_PARAMS); }
 
-  explicit MOGGTensorParamAccessor(KGEN::LIT::DeclRefType decl) {
+  explicit MOGGTensorParamAccessor(KGEN::LIT::StructType decl) {
     params.resize(NUM_PARAMS);
     params[DTYPE_IDX] = decl.getParamValues()[DTYPE_IDX];
     params[SHAPE_IDX] = decl.getParamValues()[SHAPE_IDX];

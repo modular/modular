@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s --mogg-annotate | FileCheck %s
 
 lit.func @kernel() capturing -> !kgen.none
-  decorators <:none apply(:!lit.signature<("name": !lit.declref<@stdlib::@builtin::@string_literal::@StringLiteral> borrow, "priority": !lit.declref<@stdlib::@builtin::@int::@Int> borrow) -> !kgen.none> @register::@register::@"mogg_register_override(stdlib::builtin::string_literal::StringLiteral,stdlib::builtin::int::Int)", {:string "kernel_reg_test"}, {4242})> attributes {linkageName = "kernel", sourceName = "kernel", specialFnKind = 0 : i8} {
+  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral> borrow, "priority": !lit.struct<@stdlib::@builtin::@int::@Int> borrow) -> !kgen.none> @register::@register::@"mogg_register_override(stdlib::builtin::string_literal::StringLiteral,stdlib::builtin::int::Int)", {:string "kernel_reg_test"}, {4242})> attributes {linkageName = "kernel", sourceName = "kernel", specialFnKind = 0 : i8} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -26,7 +26,7 @@ decorators <
 // CHECK: lit.func export @elementwise_user() {{.*}}attributes{{.*}}mogg.elementwise
 
 lit.func @extensibility_kernel[imm *"x`", mut *"__result__`1"]<type: @stdlib::@builtin::@dtype::@DType, rank: @stdlib::@builtin::@int::@Int>(%x: !lit.ref<@extensibility::@tensor::@Tensor<:@stdlib::@builtin::@dtype::@DType type, :@stdlib::@builtin::@int::@Int rank>, imm *"x`"> borrow_in_mem, ?, %__result__: !lit.ref<@extensibility::@tensor::@Tensor<:@stdlib::@builtin::@dtype::@DType type, :@stdlib::@builtin::@int::@Int rank>, mut *"__result__`1"> byref_result) -> !kgen.none
-decorators <:none apply(:!lit.signature<("name": !lit.declref<@stdlib::@builtin::@string_literal::@StringLiteral> borrow) -> !kgen.none> @register::@register::@"mogg_register(stdlib::builtin::string_literal::StringLiteral)", {:string "my_kernel"})> attributes {sourceName = "foo", specialFnKind = 0 : i8} {
+decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral> borrow) -> !kgen.none> @register::@register::@"mogg_register(stdlib::builtin::string_literal::StringLiteral)", {:string "my_kernel"})> attributes {sourceName = "foo", specialFnKind = 0 : i8} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }

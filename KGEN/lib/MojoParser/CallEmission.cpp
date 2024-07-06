@@ -976,7 +976,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
         singleOperandType = cValue.getRValueType();
 
       auto diag = emitError(expr->getLoc());
-      if (isa<DeclRefType>(type)) {
+      if (isa<StructType>(type)) {
         diag << "invalid implicit conversion to " << type
              << ": no constructors found";
         return {};

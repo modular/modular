@@ -119,9 +119,9 @@ private:
   /// out-of-line declaration, verify it.
   virtual void verifyRefAttr(DeclRefAttrInterface refAttr) {}
 
-  /// When we encounter a DeclRefType, check that its parameter bindings match
+  /// When we encounter a StructType, check that its parameter bindings match
   /// the parameter declarations on the type declaration.
-  virtual void verifyRefType(DeclRefTypeInterface refType) {}
+  virtual void verifyRefType(StructTypeInterface refType) {}
 
   /// Optionally perform verification and emit an error.
   virtual void

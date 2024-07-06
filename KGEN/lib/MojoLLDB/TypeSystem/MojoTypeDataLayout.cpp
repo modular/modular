@@ -81,12 +81,12 @@ MojoTypeDataLayoutContext::Impl::calculateForStructLike(
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForStruct(
     MojoASTTypeRef typeRef, LIT::StructDeclOp structOp) {
-  auto refType = cast<LIT::DeclRefType>(typeRef);
+  auto refType = cast<LIT::StructType>(typeRef);
   return calculateForStructLike(llvm::map_to_vector(
       structOp.getFieldDecls(), [&](LIT::StructFieldOp field) {
         MojoASTTypeRef fieldType =
             MojoASTTypeRef(field.getTypeAttr().getValue());
-        // If the DeclRefType has parameters, try to evaluate and substitute
+        // If the StructType has parameters, try to evaluate and substitute
         // them into the type.
         if (!refType.getParamValues().empty()) {
           fieldType = context.concretizeType(typeRef, refType.getParamValues(),

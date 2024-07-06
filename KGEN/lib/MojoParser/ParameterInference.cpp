@@ -134,9 +134,9 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                        expectedParamRef.getParam());
   }
 
-  // Handle when both are DeclRefTypes.
-  if (auto actualDRT = dyn_cast<DeclRefType>(actualType)) {
-    if (auto expectedDRT = dyn_cast<DeclRefType>(expectedType)) {
+  // Handle when both are StructTypes.
+  if (auto actualDRT = dyn_cast<StructType>(actualType)) {
+    if (auto expectedDRT = dyn_cast<StructType>(expectedType)) {
       // Ignore if these are two fundamentally different symbols.
       if (actualDRT.getSymbol() != expectedDRT.getSymbol())
         return failure();
@@ -461,7 +461,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
     auto expStruct = expExtract.getStructValue();
     // Figure out if the struct is something we can handle.
-    auto expDRT = cast<DeclRefType>(expStruct.getType());
+    auto expDRT = cast<StructType>(expStruct.getType());
     // Conservatively only handle the types we know have a single field.
     if (expDRT.getName().strref() != "AddressSpace" &&
         expDRT.getName().strref() != "Int" &&
@@ -503,8 +503,8 @@ LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
     return failure();
 
   // We can only support struct inference right now.
-  auto actualDRT = dyn_cast<DeclRefType>(actualType);
-  auto expectedDRT = dyn_cast<DeclRefType>(expectedType);
+  auto actualDRT = dyn_cast<StructType>(actualType);
+  auto expectedDRT = dyn_cast<StructType>(expectedType);
   if (!actualDRT)
     return success();
 

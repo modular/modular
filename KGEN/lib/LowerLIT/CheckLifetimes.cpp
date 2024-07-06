@@ -162,16 +162,16 @@ struct TypeDeclInfo {
 
   /// Return the start bit for a field with the specified name in the specified
   /// type.
-  unsigned getFieldIndex(DeclRefType type, StringAttr fieldName) const;
+  unsigned getFieldIndex(LIT::StructType type, StringAttr fieldName) const;
 
   /// Given a field number that indicates a stored field in the specified type,
   /// return the name of the field that contains it as well as its declared
   /// type.
-  std::pair<StringAttr, Type> getFieldContaining(DeclRefType type,
+  std::pair<StringAttr, Type> getFieldContaining(LIT::StructType type,
                                                  unsigned fieldNo);
 
-  /// Return the struct decl for the specified DeclRefType.
-  LIT::StructDeclOp getStructDeclForType(DeclRefType type) const {
+  /// Return the struct decl for the specified StructType.
+  LIT::StructDeclOp getStructDeclForType(LIT::StructType type) const {
     auto it = structMap.find(type.getSymbol());
     assert(it != structMap.end() && "reference to struct that wasn't declared");
     return it->second;
@@ -206,7 +206,7 @@ private:
 
   /// This keeps track of the number of fields in the struct specified by the
   /// (fully flattened) symbol and parameters.
-  DenseMap<DeclRefType, unsigned> numFields;
+  DenseMap<LIT::StructType, unsigned> numFields;
 
   /// A map from struct name and field name to index within the struct.  This
   /// isn't the field number, this is the number of recursively flattened
@@ -217,7 +217,7 @@ private:
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
 /// move, or destructor members.
 bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
-  if (DeclRefType valueType = dyn_cast<DeclRefType>(type))
+  if (auto valueType = dyn_cast<LIT::StructType>(type))
     return getStructDeclForType(valueType).isRegisterPassableTrivial();
 
   // Other values of raw MLIR type are always trivial.
@@ -227,7 +227,7 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
 static SymbolConstantAttr getSpecialMemberForType(
     Type type, const TypeDeclInfo *typeDecls,
     llvm::function_ref<SymbolConstantAttr(StructDeclOp)> getMember) {
-  auto valueType = dyn_cast<DeclRefType>(type);
+  auto valueType = dyn_cast<LIT::StructType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
   SymbolConstantAttr attr =
@@ -281,7 +281,7 @@ SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
 unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
   // We currently treat all non-struct types as being a single element, even
   // things like kgen.list containing struct types.
-  DeclRefType declRef = dyn_cast<DeclRefType>(type);
+  auto declRef = dyn_cast<LIT::StructType>(type);
   if (!declRef)
     return 1;
 
@@ -324,7 +324,7 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
 
 /// Return the start bit for a field with the specified name in the specified
 /// type.
-unsigned TypeDeclInfo::getFieldIndex(DeclRefType type,
+unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
                                      StringAttr fieldName) const {
   auto it = fieldIndices.find({type.getSymbol(), fieldName});
   assert(it != fieldIndices.end() &&
@@ -336,7 +336,7 @@ unsigned TypeDeclInfo::getFieldIndex(DeclRefType type,
 /// return the name of the field that contains it as well as its declared
 /// type.
 std::pair<StringAttr, Type>
-TypeDeclInfo::getFieldContaining(DeclRefType declRef, unsigned fieldNo) {
+TypeDeclInfo::getFieldContaining(LIT::StructType declRef, unsigned fieldNo) {
   LIT::StructDeclOp decl = getStructDeclForType(declRef);
 
   // Scan to find the field that contains this.
@@ -734,7 +734,7 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();
     unsigned fieldOffset = typeDeclInfo.getFieldIndex(
-        cast<DeclRefType>(containerType), structGER.getFieldAttr());
+        cast<LIT::StructType>(containerType), structGER.getFieldAttr());
     unsigned startBit = baseVal.startBit + fieldOffset;
     auto resultType = structGER.getType().getElementType();
     return ValueRef{baseVal.valueId, startBit,
@@ -895,7 +895,7 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
       return type;
 
     // To index into this type, it must be a DeclRef.
-    DeclRefType declRefType = cast<DeclRefType>(type);
+    auto declRefType = cast<LIT::StructType>(type);
 
     auto [fieldName, fieldType] =
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
@@ -909,7 +909,7 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
 
   // Dig into the field to ignore trailing members that we don't care about.
   while (nextValidOffset < typeDeclInfo.getNumFieldsInType(type)) {
-    DeclRefType declRefType = cast<DeclRefType>(type);
+    auto declRefType = cast<LIT::StructType>(type);
     auto [fieldName, fieldType] =
         typeDeclInfo.getFieldContaining(declRefType, 0);
     type = fieldType;
@@ -2358,7 +2358,7 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
     return;
   }
 
-  DeclRefType valueDRType = dyn_cast<DeclRefType>(valueType);
+  auto valueDRType = dyn_cast<LIT::StructType>(valueType);
   if (!valueDRType) // Trait values are not trivial.
     return;
 
@@ -2399,7 +2399,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
 
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
-  auto valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
+  auto valueType = dyn_cast<LIT::StructType>(valueRef.getValueType(value));
   if (!valueType) {
     emitDebugKillAndDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);

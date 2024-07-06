@@ -1316,9 +1316,9 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // If the base is a DLValue, we need to emit this as a projected DLValue.
     // This allows to emit a get and/or set as needed.
     if (DLValue baseLV = baseVal.getIfDLValue()) {
-      // The base is a known DeclRefType because we got the ASTDecl from it.
+      // The base is a known StructType because we got the ASTDecl from it.
       ASTType elementType =
-          fieldOp.getReboundType(cast<DeclRefType>(baseRVType.mlirType));
+          fieldOp.getReboundType(cast<LIT::StructType>(baseRVType.mlirType));
       DLValue result(RCRef<StoredAttributeRefDLValue>::create(
           ASTExprAnd<DLValue>{baseLV, base}, fieldOp, elementType, this));
       return emitter.emitResult(result, this, dest);
@@ -1333,7 +1333,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // to construct this specific type, not the shared type on the struct.
   if (auto parameter = memberDecl.getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
-    if (auto baseDecl = dyn_cast<DeclRefType>(baseRVType)) {
+    if (auto baseDecl = dyn_cast<LIT::StructType>(baseRVType)) {
       for (auto [name, value] :
            llvm::zip(cast<StructDeclOp>(typeDecl).getParams(),
                      baseDecl.getParamValues())) {
@@ -1415,7 +1415,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
           auto tca = cast<TypeConstantAttr>(value);
-          auto drt = cast<DeclRefType>(tca.getMlirType());
+          auto drt = cast<LIT::StructType>(tca.getMlirType());
           ArrayRef<TypedAttr> paramValues = drt.getParamValues();
           assert(paramValues.size() == 1 &&
                  "_types tuple ParamValues must be size 1");
@@ -2040,7 +2040,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // If all the fields are PValues, form a new PValue.
   if (allInitializersPValues) {
     auto result = LITStructAttr::get(fieldParamValues,
-                                     cast<DeclRefType>(initType.mlirType));
+                                     cast<StructType>(initType.mlirType));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -2976,7 +2976,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Build the return type by binding the parent parameter values to the
     // struct parameters.
     // TODO: Handle partial binding.
-    DeclRefType selfType = structOp.bindReference(llvm::map_to_vector(
+    StructType selfType = structOp.bindReference(llvm::map_to_vector(
         capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
     return emitter.emitResult(ASTType(selfType), this, dest);
   }

@@ -27,8 +27,7 @@ static bool isExtensibilityKernel(LIT::FuncOp func) {
     if (!asLitRef)
       return false;
 
-    auto asDeclRef =
-        dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
+    auto asDeclRef = dyn_cast<KGEN::LIT::StructType>(asLitRef.getElementType());
     if (!asDeclRef)
       return false;
     if (!isExtensibilityTensor(asDeclRef) && !isCustomType(asDeclRef))

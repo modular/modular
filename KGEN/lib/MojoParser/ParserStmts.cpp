@@ -417,7 +417,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
     // Allow object/PythonObject to be ignored.  This should really be
     // implemented with a decorator on the type, not hard coded here.
-    auto declRef = dyn_cast<DeclRefType>(type.mlirType);
+    auto declRef = dyn_cast<LIT::StructType>(type.mlirType);
     if (!declRef || !declRef.getParamValues().empty())
       return false;
 

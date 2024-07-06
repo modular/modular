@@ -225,8 +225,8 @@ void ParameterCollector::collectUsesFromTypesImpl(
     return;
   }
 
-  // Check any DeclRefType's we encounter.
-  if (auto refType = dyn_cast<DeclRefTypeInterface>(type))
+  // Check any StructType's we encounter.
+  if (auto refType = dyn_cast<StructTypeInterface>(type))
     verifyRefType(refType);
 
   // Save the number of nested parameters before recursing and check whether the
@@ -235,7 +235,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Types that reference external symbols must be treated as implicitly
   // parametric because the external type definition could contain parametric
   // types. We don't want to assume that the type is concrete.
-  bool hasNestedConstExpr = isa<DeclRefTypeInterface>(type);
+  bool hasNestedConstExpr = isa<StructTypeInterface>(type);
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type, types like !pop.scalar<ty> etc.
@@ -271,10 +271,10 @@ public:
   /// out-of-line declaration, verify it.
   void verifyRefAttr(DeclRefAttrInterface refAttr) override;
 
-  /// The first time we encounter a DeclRefType, check to see if its parameter
+  /// The first time we encounter a StructType, check to see if its parameter
   /// bindings agrees with the parameter declarations of the referred type
   /// declaration.
-  void verifyRefType(DeclRefTypeInterface refType) override;
+  void verifyRefType(StructTypeInterface refType) override;
 
   /// Invoke the verification function using the current operation's location.
   void maybeVerify(
@@ -317,7 +317,7 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
 #endif
 }
 
-void VerifyingParameterCollector::verifyRefType(DeclRefTypeInterface refType) {
+void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
 #ifndef MODULAR_PRODUCTION
   CompilerTimeTraceScope traceScope("verifyRefType");
 

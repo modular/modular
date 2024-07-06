@@ -977,7 +977,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   // Create the ClosureWrapper type by binding parent parameters to the
   // ClosureWrapper type.
   // TODO: Handle partial binding.
-  DeclRefType closureWrapperType =
+  LIT::StructType closureWrapperType =
       closureWrapper.bindReference(llvm::map_to_vector(
           capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
@@ -1849,7 +1849,7 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
 
     // Reject inheriting from types we don't support yet.
     if (!isa<TraitType>(type)) {
-      if (isa<DeclRefType>(type)) {
+      if (isa<LIT::StructType>(type)) {
         p.emitError(loc)
             << "TODO: inheriting from other structs is not implemented";
       } else if (isa<ParamRefType>(type)) {

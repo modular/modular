@@ -7,7 +7,7 @@ lit.func @x() {
   kgen.return
 }
 
-// CHECK: !lit.declref<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f" : () -> () = @x}]>>
-lit.func @g<T: trait<@Bar>>() -> !lit.declref<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f": !lit.signature<() -> ()> = @x}]>> {
+// CHECK: !lit.struct<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f" : () -> () = @x}]>>
+lit.func @g<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f": !lit.signature<() -> ()> = @x}]>> {
   kgen.unreachable
 }

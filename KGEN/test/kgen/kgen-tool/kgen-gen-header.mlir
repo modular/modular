@@ -37,11 +37,11 @@ lit.struct.decl @Foo<DT:dtype> {
 }
 
 lit.struct.decl @Bar {
-  lit.struct.field a : !lit.declref<@Foo<:dtype f32>>
+  lit.struct.field a : !lit.struct<@Foo<:dtype f32>>
   lit.struct.field b : !pop.scalar<f64>
 }
 
-kgen.func export C @nestedParametricStruct(%a: !lit.declref<@Bar>) {
+kgen.func export C @nestedParametricStruct(%a: !lit.struct<@Bar>) {
   kgen.return
 }
 // STRUCT: extern void nestedParametricStruct(float, double)

@@ -2151,7 +2151,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   if (isa<UnboundAttr>(input))
     return UnboundAttr::get(resultType);
 
-  // Fold rebinds of a DeclRefType. Unify metatypes so information is not lost.
+  // Fold rebinds of a StructType. Unify metatypes so information is not lost.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(input))
     return TypeConstantAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
                                  resultType);

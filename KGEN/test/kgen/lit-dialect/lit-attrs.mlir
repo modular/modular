@@ -61,7 +61,7 @@ lit.struct.decl @Foo {
 
 // CHECK-LABEL: "struct.attr"
 // CHECK-SAME: #lit.struct<{foo = 5, bar: dtype = f32}>
-"struct.attr"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.declref<@Foo>} : () -> ()
+"struct.attr"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.struct<@Foo>} : () -> ()
 
 // CHECK-LABEL: "lifetime.attr"
 // CHECK: #lit.lifetime : !lit.lifetime<1>

@@ -101,7 +101,7 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
   };
 
   auto typeType = TypeType::get(ctx);
-  auto emptyStructType = StructType::get(ctx, {});
+  auto emptyStructType = KGEN::StructType::get(ctx, {});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
 
   // Partially bound types never have any uses in KGEN. This attribute is
@@ -109,8 +109,8 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
   // TODO: Need to codegen here when Mojo has parametric traits.
   addReplacement([=, &replacer](BindTypeAttr bind) {
     AnyStructType metatype = bind.getType();
-    auto ref = DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
-                                typeType);
+    auto ref = LIT::StructType::get(metatype.getSymbol(),
+                                    metatype.getParamValues(), typeType);
     return TypeConstantAttr::get(replacer.replace(ref), typeType);
   });
 
@@ -163,7 +163,7 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
 
   // #lit.struct -> #kgen.struct
   replacer.addReplacement([&, noneType](LITStructAttr attr) -> AttrResult {
-    DeclRefType ref = attr.getType();
+    LIT::StructType ref = attr.getType();
     StructDecl &decl = get(ref.getName());
 
     SmallVector<TypedAttr> values;
@@ -185,14 +185,14 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
 
     if (decl.isSingleElement())
       return {values.front(), WalkResult::skip()};
-    if (auto type = cast_or_null<StructType>(replacer.replace(ref)))
+    if (auto type = cast_or_null<KGEN::StructType>(replacer.replace(ref)))
       return {StructAttr::get(values, type), WalkResult::skip()};
     return {{}, WalkResult::interrupt()};
   });
 
   // #lit.struct.extract -> #kgen.struct.extract
   replacer.addReplacement([&](LIT::StructExtractAttr attr) -> AttrResult {
-    auto ref = cast<DeclRefType>(attr.getStructValue().getType());
+    auto ref = cast<LIT::StructType>(attr.getStructValue().getType());
     int idx = fieldIndices.at({ref.getName(), attr.getField()});
     auto value =
         cast_or_null<TypedAttr>(replacer.replace(attr.getStructValue()));
@@ -257,7 +257,7 @@ LogicalResult StructDecls::process(ModuleOp module, SymbolTable &symtab) {
     return success();
   };
 
-  dfs.addReplacement([&](DeclRefType ref) -> std::pair<Type, WalkResult> {
+  dfs.addReplacement([&](LIT::StructType ref) -> std::pair<Type, WalkResult> {
     // Recurse into a the definition of a struct.
     StructDecl &decl = get(ref.getName());
     if (!decl.done && failed(computeLoweredType(decl)))
@@ -287,11 +287,11 @@ struct LITTypeLowerer : public mlir::IRRewriter, mlir::AttrTypeReplacer {
   explicit LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls);
 
   /// Get the index of the struct field.
-  int getField(StringAttr name, DeclRefType ref) {
+  int getField(StringAttr name, LIT::StructType ref) {
     return structDecls.fieldIndices.lookup({ref.getName(), name});
   }
   /// Return true if the struct is single element.
-  bool isSingleElement(DeclRefType ref) {
+  bool isSingleElement(LIT::StructType ref) {
     return structDecls.get(ref.getName()).isSingleElement();
   }
   Value getCastedToType(Location loc, Value value, Type type);
@@ -310,7 +310,7 @@ struct LITTypeLowerer : public mlir::IRRewriter, mlir::AttrTypeReplacer {
 } // namespace
 
 static DebugInfo::DIType
-buildDebugInfoForStructRef(DeclRefType ref, StructDecls &structDecls,
+buildDebugInfoForStructRef(LIT::StructType ref, StructDecls &structDecls,
                            DebugInfo::DebugInfoTypeConverter &converter) {
   // Substitute parameters into the field types.
   StructDecl &decl = structDecls.get(ref.getName());
@@ -368,7 +368,7 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
 
   // Since lowerings have been generated for all struct types, we just need to
   // lookup the lowered type and substitute the parameters.
-  addReplacement([&, noneType, ctx](DeclRefType ref) -> Type {
+  addReplacement([&, noneType, ctx](LIT::StructType ref) -> Type {
     StructDecl &decl = this->structDecls.get(ref.getName());
     // Substitute the given parameters in.
     ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
@@ -388,7 +388,8 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
     }
     if (decl.isSingleElement())
       return replace(fieldTypes.front());
-    return replace(StructType::get(ctx, fieldTypes, !decl.isRegisterPassable));
+    return replace(
+        KGEN::StructType::get(ctx, fieldTypes, !decl.isRegisterPassable));
   });
 
   // Build a converter to handle updating converted types within debug info
@@ -399,9 +400,11 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
       return debugTypeConverter.convertDebugType(newType);
     return std::nullopt;
   });
-  debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
-    return buildDebugInfoForStructRef(type, structDecls, debugTypeConverter);
-  });
+  debugTypeConverter.addConversion(
+      [&](LIT::StructType type) -> DebugInfo::DIType {
+        return buildDebugInfoForStructRef(type, structDecls,
+                                          debugTypeConverter);
+      });
   debugTypeConverter.addConversion([&](PointerType type) -> DebugInfo::DIType {
     DebugInfo::DIType elementType =
         debugTypeConverter.convertDebugType(type.getElementType());
@@ -432,7 +435,7 @@ static Value lowerOp(LIT::StructCreateOp op, LIT::StructCreateOpAdaptor adaptor,
 
 static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  DeclRefType ref = op.getContainer().getType();
+  LIT::StructType ref = op.getContainer().getType();
   if (b.isSingleElement(ref))
     return adaptor.getValue();
 
@@ -443,7 +446,7 @@ static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
 
 static Value lowerOp(LIT::StructExtractOp op,
                      LIT::StructExtractOpAdaptor adaptor, LITTypeLowerer &b) {
-  DeclRefType ref = op.getContainer().getType();
+  LIT::StructType ref = op.getContainer().getType();
   if (b.isSingleElement(ref))
     return adaptor.getContainer();
 
@@ -485,7 +488,8 @@ static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
 
 static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  auto ref = cast<DeclRefType>(op.getContainer().getType().getElementType());
+  auto ref =
+      cast<LIT::StructType>(op.getContainer().getType().getElementType());
   if (b.isSingleElement(ref))
     return adaptor.getContainer();
 

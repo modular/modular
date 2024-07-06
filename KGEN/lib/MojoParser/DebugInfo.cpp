@@ -114,7 +114,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
 SourceNameAttr SourceNames::getSourceName(Type type) {
   // If this is a reference to a source type, then we can use its full source
   // name.
-  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+  if (auto declRef = dyn_cast<StructType>(type)) {
     ASTDecl &decl =
         shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
     StructDeclOp op = cast<StructDeclOp>(decl);

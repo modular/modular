@@ -85,7 +85,7 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.declref<#TestParamStruct <:!Int [[A]]>{{.*}}>,
+  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>{{.*}}>,
   # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}>)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
@@ -404,9 +404,9 @@ fn intbox_memory_result(x: Int) -> IntBox:
 
 
 # CHECK-LABEL: lit.func @"interpret_initself_ctor
-# CHECK-SAME: %arg: !lit.declref<#InitSelfParam <:!InitSelfCtor {x: !Int = {42}}>>
+# CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {42}}>>
 fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
-    # CHECK-NEXT: !lit.signature<() -> !lit.declref<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
+    # CHECK-NEXT: !lit.signature<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
     alias refined_fn = refine_memory_only_results[1, 2]
 
     # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{x: !Int = {42}}>
@@ -853,8 +853,8 @@ fn signature_inference[dt: DType, rank: Int]():
         pass
 
     # CHECK: call {{.*}}implicit_signature{{.*}}<:!DType dt, :!Int rank,
-    # CHECK-SAME: :!lit.signature<<"width": !Int>(!lit.declref<#Abstraction <:!Int rank>
-    # CHECK-SAME: -> !lit.declref<#SIMD <:!DType dt, :!Int *(0,0)>>
+    # CHECK-SAME: :!lit.signature<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
+    # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!Int *(0,0)>>
     implicit_signature[func]()
 
 ##===----------------------------------------------------------------------===##
@@ -1162,7 +1162,7 @@ fn scalar_type[dt: DType]():
 
     #FIXME(29495): reenable.
     # https://github.com/modularml/modular/issues/29495
-    # HECK: lit.var.decl "value" = %{{.*}} : !lit.declref<{{.*}}@SIMD<:!DType dt,
+    # HECK: lit.var.decl "value" = %{{.*}} : !lit.struct<{{.*}}@SIMD<:!DType dt,
     #var value: T = 1
     # HECK: call {{.*}}<:!DType dt, {{.*}}, :!DType dt>(%value)
     #_ = value.cast[dt]()

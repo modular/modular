@@ -32,6 +32,6 @@ struct IntLiteral:
 # COM: Check the TypeSignatureType attribute. This is the only memory-only
 # COM: struct so we can match with 0.
 # CHECK: "lit.struct.decl"() <{convention = 0 :
-# CHECK-SAME: signature = !lit.type_signature<"x": index, "y": [[OPT:.*:@Optional]]<:type !lit.signature<<"y": index>() -> !lit.declref<#Param <*(1,0)>>
+# CHECK-SAME: signature = !lit.type_signature<"x": index, "y": [[OPT:.*:@Optional]]<:type !lit.signature<<"y": index>() -> !lit.struct<#Param <*(1,0)>>
 struct Thing[x: int, y: Optional[fn[y: int] () -> Param[x]] = None]:
     alias z = 1

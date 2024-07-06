@@ -22,5 +22,5 @@ TEST(SourceNamesTest, testFunctionBeforeStructParsing) {
 
   ctx.stepOver();
   SBValue p1 = ctx.frame.FindVariable("p1");
-  EXPECT_STREQ(p1.GetTypeName(), "!lit.declref<@point::@Point>");
+  EXPECT_STREQ(p1.GetTypeName(), "!lit.struct<@point::@Point>");
 }

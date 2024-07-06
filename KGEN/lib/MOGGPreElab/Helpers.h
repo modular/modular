@@ -43,22 +43,22 @@ inline bool isTensor(Attribute maybeTensor) {
   return false;
 }
 
-inline bool isXType(LIT::DeclRefType maybeTensor, StringLiteral root,
+inline bool isXType(LIT::StructType maybeTensor, StringLiteral root,
                     StringLiteral className) {
   if (maybeTensor.getSymbol().getRootReference() != root)
     return false;
   return maybeTensor.getSymbol().getLeafReference() == className;
 }
 
-inline bool isMOGGTensor(LIT::DeclRefType maybeTensor) {
+inline bool isMOGGTensor(LIT::StructType maybeTensor) {
   return isXType(maybeTensor, "MOGGTensor", "Tensor");
 }
 
-inline bool isExtensibilityTensor(LIT::DeclRefType maybeTensor) {
+inline bool isExtensibilityTensor(LIT::StructType maybeTensor) {
   return isXType(maybeTensor, "extensibility", "Tensor");
 }
 
-inline bool isCustomType(LIT::DeclRefType maybeCustom) {
+inline bool isCustomType(LIT::StructType maybeCustom) {
   return !isMOGGTensor(maybeCustom) && !isExtensibilityTensor(maybeCustom);
 }
 

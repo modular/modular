@@ -23,8 +23,9 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
-using namespace KGEN;
-using namespace LIT;
+using namespace KGEN::LIT;
+using KGEN::ArgConvention;
+using KGEN::DeclInterface;
 
 //===----------------------------------------------------------------------===//
 // LITDialectFoldInterface
@@ -54,8 +55,8 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
 
   AliasResult getAlias(Type type, raw_ostream &os) const override {
-    // Alias DeclRefType if required.
-    if (auto ref = dyn_cast<DeclRefType>(type)) {
+    // Alias StructType if required.
+    if (auto ref = dyn_cast<StructType>(type)) {
       if (std::optional<StringRef> aliasName = ref.getAliasName()) {
         os << *aliasName;
         return AliasResult::OverridableAlias;
@@ -65,7 +66,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 
     if (auto trait = dyn_cast<TraitType>(type)) {
       if (std::optional<StringRef> name =
-              DeclRefType::getAliasName(trait.getSymbol())) {
+              StructType::getAliasName(trait.getSymbol())) {
         os << *name;
         return AliasResult::OverridableAlias;
       }
@@ -76,7 +77,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
       if (!meta.getParamValues().empty())
         return AliasResult::NoAlias;
       if (std::optional<StringRef> name =
-              DeclRefType::getAliasName(meta.getSymbol())) {
+              StructType::getAliasName(meta.getSymbol())) {
         os << "mt_" << *name;
         return AliasResult::OverridableAlias;
       }
@@ -99,7 +100,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 
     if (auto symbol = dyn_cast<SymbolAttr>(attr)) {
       if (std::optional<StringRef> alias =
-              DeclRefType::getAliasName(symbol.getValue())) {
+              StructType::getAliasName(symbol.getValue())) {
         os << *alias;
         return AliasResult::OverridableAlias;
       }
@@ -115,7 +116,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 //===----------------------------------------------------------------------===//
 
 using WrappedBindTypeAttr = WrappedAttrType<BindTypeAttr>;
-using WrappedStructExtractAttr = WrappedAttrType<LIT::StructExtractAttr>;
+using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
 using WrappedLifetimeUnionAttr = WrappedAttrType<LifetimeUnionAttr>;
 using WrappedLifetimeMutCastAttr = WrappedAttrType<LifetimeMutCastAttr>;
 using WrappedLifetimeSetAttr = WrappedAttrType<LifetimeSetAttr>;
@@ -124,7 +125,6 @@ using WrappedLifetimeSetUnionAttr = WrappedAttrType<LifetimeSetUnionAttr>;
 //===----------------------------------------------------------------------===//
 // Utilities
 
-using LIT::StructExtractAttr;
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;

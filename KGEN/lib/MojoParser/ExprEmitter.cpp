@@ -1855,7 +1855,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
     return {};
 
   // If verifyBindings changed the bindings set, then we may have had an
-  // empty varargs list or something.  Rebind the DeclRefType.
+  // empty varargs list or something.  Rebind the StructType.
   if (bindingValuesAttr.getValue() != type.getParamBindings())
     type = structDecl.bindReference(bindingValuesAttr);
   return type;

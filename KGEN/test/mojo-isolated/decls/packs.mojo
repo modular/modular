@@ -43,13 +43,13 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
 # CHECK-SAME: [mut *"rest`"]<Ts: variadic<!AnyType> var>
 
 # Check the argument pack.
-# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
+# CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
 # CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> owned_in_mem|pack)
 
 
 # Check the argument pack.
 # CHECK-LABEL: lit.func @"takeOwnedSomeTraitPack
-# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
+# CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> owned_in_mem|pack)
 fn takeOwnedSomeTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
     pass
@@ -109,7 +109,7 @@ fn test_owned_trait():
 
 # Check the argument pack.
 # CHECK-LABEL: lit.func @"takeInoutSomeTraitPack
-# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
+# CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> inout|pack)
 fn takeInoutSomeTraitPack[*Ts: SomeTrait](inout *rest: *Ts):
     pass
@@ -181,14 +181,14 @@ struct MyTuple[*Ts: AnyType]:
 
 # CHECK-LABEL: lit.func @"pack[
 # CHECK-SAME: Ts: variadic<!AnyType> var>(
-# CHECK-SAME: %args: !lit.declref<#VariadicPack <:i1 0, :lifetime<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> borrow_in_mem|pack)
+# CHECK-SAME: %args: !lit.struct<#VariadicPack <:i1 0, :lifetime<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> borrow_in_mem|pack)
 fn pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.func @"packBorrowed[
 # CHECK-SAME: Ts: variadic<!AnyType> var>(
-# CHECK-SAME: %args: !lit.declref<#VariadicPack {{.*}} borrow_in_mem|pack
+# CHECK-SAME: %args: !lit.struct<#VariadicPack {{.*}} borrow_in_mem|pack
 fn packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -232,6 +232,6 @@ fn usePacks(x: FloatDyn, y: Int):
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.signature<[1](
-    # CHECK-SAME: "args": !lit.declref<#VariadicPack <:i1 0, :lifetime<0> #lit.lifetime, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
+    # CHECK-SAME: "args": !lit.struct<#VariadicPack <:i1 0, :lifetime<0> #lit.lifetime, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
     # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))>
     alias foo = pack(a)

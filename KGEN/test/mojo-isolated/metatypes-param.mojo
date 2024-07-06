@@ -22,7 +22,7 @@ struct Param[x: int]:
 
     # COM: Test self type of parametric struct.
     # CHECK-LABEL: lit.func @"self_type
-    # CHECK-SAME: -> !lit.declref<[[SELF:.*]]>
+    # CHECK-SAME: -> !lit.struct<[[SELF:.*]]>
     @staticmethod
     fn self_type() -> Self:
         pass
@@ -49,7 +49,7 @@ fn fully_bound_alias():
     alias alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<1>
     BoundType.foo()
-    # CHECK: call {{.*}}@Param::@"self_type()"<1>{{.*}} -> !lit.declref<#Param <1>>
+    # CHECK: call {{.*}}@Param::@"self_type()"<1>{{.*}} -> !lit.struct<#Param <1>>
     _ = BoundType.self_type()
 
 
@@ -109,7 +109,7 @@ fn partially_bound_kw():
 
 
 # CHECK-LABEL: lit.func @"partial_autoparam
-# CHECK-SAME: <?, [[X:.*]]>(%value: !lit.declref<#TwoParam <[[X]], 1>
+# CHECK-SAME: <?, [[X:.*]]>(%value: !lit.struct<#TwoParam <[[X]], 1>
 fn partial_autoparam(value: TwoParam[y=`1`]):
     alias first = value.x
     alias second = value.y
@@ -144,7 +144,7 @@ struct DependentParam[
 
 # CHECK-LABEL: lit.func @"direct_binding
 fn direct_binding():
-    # Test direct bind of DeclRefType
+    # Test direct bind of StructType
     # CHECK: alias.decl *"a{{.*}} anystruct<[[DEP:.*]]<?, ?, :[[PT:.*]]<?> ?>, <"a": index, "b": index, "c": [[PT]]<*(0,1)>
     alias a = DependentParam
     # CHECK: alias.decl *"b{{.*}} anystruct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>
@@ -152,7 +152,7 @@ fn direct_binding():
     # CHECK: alias.decl *"c{{.*}} anystruct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>
     alias c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
 
-    # Test partial bind of DeclRefType
+    # Test partial bind of StructType
     # CHECK: alias.decl *"d{{.*}} anystruct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>
     alias d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
 

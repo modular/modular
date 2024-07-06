@@ -1038,7 +1038,7 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
 
 bool StructDeclOp::isSynthetic() { return getIsSynthetic(); }
 
-DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
+LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
   TypeSignatureType sig = getSignature();
 
@@ -1050,8 +1050,8 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       unbound.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
       evaluator.addInputValue(unbound.back());
     }
-    return DeclRefType::get(symbol, unbound,
-                            AnyStructType::get(symbol, unbound, sig));
+    return LIT::StructType::get(symbol, unbound,
+                                AnyStructType::get(symbol, unbound, sig));
   }
 
   // Compute the resultant signature.
@@ -1080,8 +1080,8 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   auto newParamListAttr =
       PogListAttr::get(ctx, newPogs, newPosDefaults, newKwOnlyDefaults);
   auto newSig = TypeSignatureType::get(ctx, newParamTypes, newParamListAttr);
-  return DeclRefType::get(symbol, paramValues,
-                          AnyStructType::get(symbol, paramValues, newSig));
+  return LIT::StructType::get(symbol, paramValues,
+                              AnyStructType::get(symbol, paramValues, newSig));
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.
@@ -1166,7 +1166,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
   p << name.getValue();
 }
 
-Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
+Type StructFieldOp::getReboundType(StructType structSelfType) {
   if (structSelfType.getParamValues().empty())
     return getType();
   ParameterEvaluator evaluator(getParentOp().getParams(),
@@ -1193,7 +1193,7 @@ void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
 /// parameterized under different domains. We have to rebind them.
 static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 DeclRefType ref) {
+                 LIT::StructType ref) {
   auto module = KGENModule::from(user, symbolTable);
   auto decl = module.lookup<StructDeclOp>(ref.getSymbol());
   if (!decl) {
@@ -1337,7 +1337,7 @@ OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
 
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
-                         DeclRefType ref, StringAttr fieldName, Type type) {
+                         LIT::StructType ref, StringAttr fieldName, Type type) {
   auto [structDecl, evaluator] = lookupStructDecl(symbolTable, op, ref);
   if (!structDecl)
     return op->emitOpError("struct ") << ref.getSymbol() << " cannot be found";
@@ -1365,7 +1365,7 @@ LIT::StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 void LIT::StructExtractOp::build(OpBuilder &builder, OperationState &result,
                                  Value structBase, StructFieldOp field) {
-  auto structType = cast<DeclRefType>(structBase.getType());
+  auto structType = cast<StructType>(structBase.getType());
   build(builder, result, field.getReboundType(structType), structBase,
         field.getNameAttr());
 }
@@ -1408,14 +1408,14 @@ LogicalResult
 RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   Type structType = getContainer().getType().getElementType();
   return verifyStructFieldAndType(symbolTable, *this,
-                                  cast<DeclRefType>(structType), getFieldAttr(),
+                                  cast<StructType>(structType), getFieldAttr(),
                                   getResult().getType().getElementType());
 }
 
 void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
                            Value structBasePtr, StructFieldOp field) {
   auto refType = cast<RefType>(structBasePtr.getType());
-  auto eltType = cast<DeclRefType>(refType.getElementType());
+  auto eltType = cast<StructType>(refType.getElementType());
   build(builder, result, refType.getWithElement(field.getReboundType(eltType)),
         field.getNameAttr(), structBasePtr);
 }

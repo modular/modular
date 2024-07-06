@@ -230,7 +230,7 @@ private:
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
-  /// DeclRefType: StructTypes, aliases, etc.
+  /// StructType: StructTypes, aliases, etc.
   DenseMap<SymbolRefAttr, ASTDecl *> declForTypeSymbol;
 
   /// This map tracks the ASTDecl for every LIT::FuncOp, allowing clients to map

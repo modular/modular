@@ -233,7 +233,7 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   if (auto it = dialect->typePrintFns.find(type.getTypeID());
       it != dialect->typePrintFns.end()) {
     it->second(p, type);
-  } else if (auto ref = dyn_cast<DeclRefTypeInterface>(type)) {
+  } else if (auto ref = dyn_cast<StructTypeInterface>(type)) {
     ref.printSymbol(p);
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
