@@ -49,7 +49,6 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
-#include <filesystem>
 
 #define DEBUG_TYPE "mojo-parser"
 
@@ -1190,14 +1189,6 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
   if (it == impl->moduleStates.end())
     return std::nullopt;
   return it->second->sourcePath;
-}
-
-bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
-  // Handle source files.
-  if (path.extension() == ".mojo" || path.extension() == ".🔥")
-    return true;
-  // Handle source packages.
-  return Filesystem::isMojoSourcePackagePath(path);
 }
 
 SharedState::ModuleState &
