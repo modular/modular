@@ -16,7 +16,6 @@
 #include "Support/Compiler/Diags.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
-#include <filesystem>
 
 namespace M::KGEN {
 class CompilationOptions;
@@ -232,10 +231,6 @@ public:
   /// Return the source path for the given module decl, or nullopt if the decl
   /// doesn't have a source path.
   std::optional<std::string> getModuleSourcePath(ASTDecl &module);
-
-  /// Returns true if the given local path corresponds with a module or a
-  /// package.
-  static bool isModuleOrPackagePath(const std::filesystem::path &path);
 
   /// Resolve a declaration that originated from bytecode to the given
   /// resolvedness.

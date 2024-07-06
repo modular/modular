@@ -24,6 +24,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Filesystem/Paths.h"
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
@@ -1570,6 +1571,14 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 // Package Decl implementation
 //===----------------------------------------------------------------------===//
 
+static bool isModuleOrPackagePath(const std::filesystem::path &path) {
+  // Handle source files.
+  if (path.extension() == ".mojo" || path.extension() == ".🔥")
+    return true;
+  // Handle source packages.
+  return Filesystem::isMojoSourcePackagePath(path);
+}
+
 ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   // A source package corresponds to a directory, resolving the body requires
   // iterating the filesystem directory and importing the corresponding
@@ -1589,7 +1598,7 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   OpBuilder builder = decl.getDeclEndBuilder();
   SmallVector<std::string> nestedModules;
   for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-    if (ec || !SharedState::isModuleOrPackagePath(entry.path()))
+    if (ec || !isModuleOrPackagePath(entry.path()))
       continue;
     nestedModules.emplace_back(
         entry.path().filename().replace_extension().generic_string());
