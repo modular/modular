@@ -563,7 +563,7 @@ struct LayoutTensor[
     fn distribute[
         threads_layout: Layout,
         axis: Optional[Int] = None,
-        swizzle: OptionalReg[_swizzle_signature] = None,
+        swizzle: Optional[_swizzle_signature] = None,
         tiled_layout: Layout = _compute_distribute_layout[
             layout, threads_layout, axis
         ](),
@@ -1291,7 +1291,7 @@ fn copy_dram_to_sram[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1327,7 +1327,7 @@ fn copy_dram_to_sram[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1371,7 +1371,7 @@ fn copy_dram_to_sram_async[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1407,7 +1407,7 @@ fn copy_dram_to_sram_async[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1449,7 +1449,7 @@ fn copy_sram_to_dram[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
         dst_type,

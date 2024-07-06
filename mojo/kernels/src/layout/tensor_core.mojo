@@ -512,7 +512,7 @@ struct TensorCore[
 @always_inline
 fn _load_matrix_frag[
     # Refactor the three parameters with ComposedLayout
-    # swizzle: OptionalReg[_swizzle_signature] = None,
+    # swizzle: Optional[_swizzle_signature] = None,
     swizzle: Bool = True,
     transposed: Bool = False,
     *,
