@@ -30,11 +30,13 @@ fn copy_fn(x: SIMD) -> __type_of(x):
 
 # CHECK-LABEL: run_elementwise
 fn run_elementwise[
+    rank: Int, //,
     type: DType,
     kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-    rank: Int,
+    *,
+    use_aligned_memory: Bool,
 ](
     inout m: Bench,
     fn_name: String,
@@ -42,7 +44,9 @@ fn run_elementwise[
     ctx: DeviceContext,
 ) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
-    alias align = alignof[SIMD[type, pack_size]]()
+    alias align = alignof[
+        SIMD[type, pack_size], target = _get_nvptx_target()
+    ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
     var in_host_ptr = DTypePointer[type].alloc(N, alignment=align)
@@ -67,9 +71,9 @@ fn run_elementwise[
     @parameter
     fn func[simd_width: Int, rank_: Int](idx0: StaticIntTuple[rank_]):
         var idx = rebind[StaticIntTuple[rank]](idx0)
-
-        out_tensor.store[width=simd_width](
-            idx, kernel_fn(in_tensor.load[width=simd_width](idx))
+        out_tensor.store[alignment=align](
+            idx,
+            kernel_fn(in_tensor.load[width=simd_width, alignment=align](idx)),
         )
 
     @parameter
@@ -88,7 +92,15 @@ fn run_elementwise[
     var num_bytes = N * sizeof[type]()
     m.bench_function[bench_func](
         BenchId(
-            "elementwise", input_id=fn_name + "/" + str(type) + "/" + str(dims)
+            "elementwise",
+            input_id="/"
+            + ("aligned" if use_aligned_memory else "unaligned")
+            + "/"
+            + fn_name
+            + "/"
+            + str(type)
+            + "/"
+            + str(dims),
         ),
         ThroughputMeasure(BenchMetric.bytes, num_bytes),
     )
@@ -100,6 +112,10 @@ fn run_elementwise[
     _ = out_buffer
     in_host_ptr.free()
     out_host_ptr.free()
+
+
+fn simd_sqrt(x: SIMD) -> __type_of(x):
+    return sqrt(x)
 
 
 fn main() raises:
@@ -120,15 +136,52 @@ fn main() raises:
 
             @parameter
             for i in range(len(types)):
-                run_elementwise[types[i], sqrt](m, "sqrt", dims, ctx)
-                run_elementwise[types[i], rsqrt](m, "rsqrt", dims, ctx)
-                run_elementwise[types[i], log](m, "log", dims, ctx)
-                run_elementwise[types[i], sin](m, "sin", dims, ctx)
-                run_elementwise[types[i], tanh](m, "tanh", dims, ctx)
-                run_elementwise[types[i], exp](m, "exp", dims, ctx)
-                run_elementwise[types[i], erf](m, "erf", dims, ctx)
-                run_elementwise[types[i], add_const_fn](
-                    m, "add_const", dims, ctx
-                )
-                run_elementwise[types[i], copy_fn](m, "copy", dims, ctx)
+
+                @parameter
+                for aligned_memory_config in range(2):
+                    run_elementwise[
+                        types[i],
+                        simd_sqrt,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "sqrt", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        rsqrt,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "rsqrt", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        log,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "log", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        sin,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "sin", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        tanh,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "tanh", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        exp,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "exp", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        erf,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "erf", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        add_const_fn,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "add_const", dims, ctx)
+                    run_elementwise[
+                        types[i],
+                        copy_fn,
+                        use_aligned_memory = aligned_memory_config == 0,
+                    ](m, "copy", dims, ctx)
     m.dump_report()
