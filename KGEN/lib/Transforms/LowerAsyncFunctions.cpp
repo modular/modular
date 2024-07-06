@@ -660,9 +660,8 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
   // Calculate the state of each op.
   {
     SmallVector<VirtualBlock> paths;
-    paths.push_back(&*originalFunction.getBodyRegion().front().begin());
-    SmallVector<DenseSet<VirtualBlock>> visited;
-    visited.emplace_back();
+    VirtualBlock initial = &*originalFunction.getBodyRegion().front().begin();
+    paths.push_back(initial);
     auto pushSuccessors =
         [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
             Operation *controlFlowVirtualBlock, int currentState,
@@ -678,77 +677,69 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
           }
         };
 
-    // The state of a virtual block is the max of the states
-    // of its predecessors.
-    // Dry runs are needed for loops. Because the predecessor of a virtual block
-    // does not dominate it, we first calculate all other predecessors and then
-    // process the target in a dry run to compute the state. Then we process the
-    // target a second time, considering the result of the first pass in its
-    // state computation.
-    SmallVector<VirtualBlock> dryRuns;
+    int j = 0;
+    DenseSet<Operation *> unterminatedLoops;
+    DenseSet<Operation *> terminatedLoops;
     while (!paths.empty()) {
+      if (j > 10000) {
+        assert(false && "infinite loop");
+      }
+      j++;
       VirtualBlock virtualBlock = paths.front();
       paths.erase(paths.begin());
 
-      // If this is a visited dry run node, proceed to re-processing it.
-      // Otherwise, skip.
-      if (visited.back().contains(virtualBlock)) {
-        if (dryRuns.empty() || dryRuns.back() != virtualBlock)
-          continue;
-      }
-
       bool allPredsHaveProcessed = true;
-      bool isCurrentDryRunNode =
-          !dryRuns.empty() && dryRuns.back() == virtualBlock;
       auto myInitState = opToState.find(virtualBlock);
-      int maxState = myInitState == opToState.end() ? 0 : myInitState->second;
-      bool needsDryRun = false;
+      bool notExists = myInitState == opToState.end();
+      int maxState = notExists ? 0 : myInitState->second;
+      int currState = notExists ? -1 : maxState;
+      bool inLoop = false;
       for (VirtualBlock predecessor : predecessors[virtualBlock]) {
         auto predMaybe = opToState.find(predecessor);
         // A dry run is needed if the predecessor does not dominate the
         // successor, which is the case in a loop.
-        needsDryRun =
-            needsDryRun || (virtualBlock->getParentRegion() ==
-                                predecessor->getParentRegion() &&
-                            domInfo.dominates(virtualBlock, predecessor));
-        bool predIsProcessed = predMaybe != opToState.end();
-        if (!predIsProcessed) {
-          allPredsHaveProcessed = false;
-          // We assume only one dry run is needed to calculate the state. If it
-          // is visited we have already performed a dry run and we don't need to
-          // add it to the dry run list. If it is the current dry run and there
-          // are multiple predecessors (i.e. multiple continue statements in a
-          // loop) we assume all predecessors have the virtual block successor
-          // as a predecessor and thus will be visited again so we can skip
-          // processing this node by marking it as not needing a dry run.
-          if (needsDryRun) {
-            if (visited.back().contains(virtualBlock) || isCurrentDryRunNode) {
-              needsDryRun = false;
-              break;
-            }
-            visited.back().insert(virtualBlock);
-            visited.emplace_back();
-            dryRuns.push_back(virtualBlock);
-          }
+        inLoop = inLoop || domInfo.dominates(virtualBlock, predecessor);
+        allPredsHaveProcessed = predMaybe != opToState.end();
+        if (!allPredsHaveProcessed)
           break;
-        }
         int stateFromPred = predMaybe->getSecond();
         if (stateFromPred > maxState)
           maxState = stateFromPred;
       }
-
-      // We have encountered a dry run node and all its predecessors have
-      // processed. Time to pop and re-process.
-      if (needsDryRun && allPredsHaveProcessed) {
-        if (isCurrentDryRunNode) {
-          visited.pop_back();
-          dryRuns.pop_back();
+      if (inLoop) {
+        if (unterminatedLoops.contains(virtualBlock)) {
+          if (!allPredsHaveProcessed) {
+            continue;
+          } else {
+            if (terminatedLoops.contains(virtualBlock))
+              continue;
+            // This is first time within this iteration that this loop is
+            // ready to process.
+            unterminatedLoops.erase(virtualBlock);
+            for (auto terminatedLoop : terminatedLoops) {
+              if (virtualBlock->getParentOfType<HLCF::LoopOp>()->isAncestor(
+                      terminatedLoop->getParentOfType<HLCF::LoopOp>())) {
+                terminatedLoops.erase(terminatedLoop);
+              }
+            }
+            terminatedLoops.insert(virtualBlock);
+          }
+        } else {
+          if (terminatedLoops.contains(virtualBlock))
+            continue;
+          unterminatedLoops.insert(virtualBlock);
         }
+      }
+
+      // We have already processed this node and it remains unchanged.
+      if (currState == maxState) {
+        if (!isa<SuspendEndOp>(virtualBlock))
+          continue;
       }
 
       // Another predecessor of this region needs to process before we can
       // process this region.
-      if (!allPredsHaveProcessed && !needsDryRun)
+      if (!allPredsHaveProcessed && !inLoop)
         continue;
 
       // Iterate through each op in this virtual block to register its state.
@@ -792,8 +783,8 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
           break;
         }
       }
-      visited.back().insert(virtualBlock);
     }
+    assert(unterminatedLoops.empty() && "all loops have been terminated");
   }
 
   // Calculate the frame. Whenever there is a use whose def lives in another

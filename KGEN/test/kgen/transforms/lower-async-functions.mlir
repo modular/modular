@@ -1611,3 +1611,86 @@ kgen.func @bar(%arg0: index, %arg1: index) -> index {
 }
 }
 
+// -----
+
+// COM: All Successors Must Be Updated After Dry Run
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+    kgen.func @foo(%arg0: !kgen.pointer<pointer<none>>, %arg1: i1, %arg2: index) async no_inline {
+      %idx0 = index.constant 0
+      %idx1 = index.constant 1
+      hlcf.loop "_loop_0" {
+        %0 = pop.stack_allocation 1 x struct<(pointer<none>, pointer<none>) memoryOnly> marked
+        %1 = pop.load %arg0 : !kgen.pointer<pointer<none>>
+        kgen.call @"CBatch::__init__"(%0, %1) : (!kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> init_self, !kgen.pointer<none>) -> ()
+        co.suspend (%hdl) {
+          co.suspend.end
+        }
+        hlcf.loop "_loop_1" (%arg3 = %arg2 : index) {
+          %3 = index.cmp sgt(%arg3, %idx0)
+          hlcf.if %3 {
+            hlcf.yield
+          } else {
+            hlcf.break "_loop_1"
+          }
+          %4 = index.sub %arg2, %idx1
+          hlcf.continue %4 : index
+        }
+        // CHECK:        hlcf.continue %
+        // CHECK-NEXT: }
+        // CHECK:      [[V8:%.*]] = kgen.struct.gep %arg0[[[#FRAME11:]]]
+        // CHECK-NEXT: [[V9:%.*]] = kgen.call @batch_size([[V8]])
+        %2 = kgen.call @batch_size(%0) : (!kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> borrow_in_mem) -> index
+        hlcf.continue
+      }
+      kgen.return
+    }
+}
+
+// -----
+
+// COM: Nested Loops With Parent Suspend
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+    kgen.func @foo(%arg0: index, %arg1: index, %arg2: index, %arg3: i1, %arg4: i1) async {
+    // CHECK:      [[V2:%.*]] = kgen.call @foo3
+    // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep %arg0[[[#FRAME8:]]]
+    // CHECK-NEXT: pop.store [[V2]], [[V3]] : !kgen.pointer<index>
+      %0 = kgen.call @foo3(%arg2) : (index) -> index
+      %1:3 = hlcf.loop "_loop_2" (%arg5 = %arg0 : index, %arg6 = %arg1 : index, %arg7 = %arg1 : index, %arg8 = %arg1 : index) -> (index, index, index) {
+        %2 = hlcf.loop "_loop_0" (%arg9 = %arg2 : index, %arg10 = %arg2 : index) -> index {
+          %3 = kgen.call @bar1(%arg9) : (index) -> i1
+          // CHECK: hlcf.loop "_loop_1"
+          // CHECK-NEXT: [[V25:%.*]] = kgen.struct.gep %arg0[[[#FRAME8]]]
+          // CHECK-NEXT: [[V26:%.*]] = pop.load [[V25]] : !kgen.pointer<index>
+          // CHECK-NEXT: [[V27:%.*]] kgen.call @bar2([[V26]]) : (index) -> i1
+          %4 = hlcf.loop "_loop_1" (%arg11 = %arg1 : index, %arg12 = %arg1 : index) -> index {
+            %5 = kgen.call @bar2(%0) : (index) -> i1
+            hlcf.if %5 {
+              hlcf.continue %arg1, %arg1 : index, index
+            } else {
+              hlcf.break "_loop_1" %arg11 : index
+            }
+            kgen.unreachable
+          }
+          hlcf.if %arg3 {
+            hlcf.break "_loop_0" %arg9 : index
+          } else {
+            hlcf.yield
+          }
+          hlcf.continue %arg1, %arg1 : index, index
+        }
+        co.suspend (%hdl) {
+          co.suspend.end
+        }
+        hlcf.if %arg3 {
+          hlcf.break "_loop_2" %arg1, %arg6, %arg7 : index, index, index
+        } else {
+          hlcf.continue %arg1, %arg6, %arg7, %arg8 : index, index, index, index
+        }
+        kgen.unreachable
+      }
+      kgen.return
+    }
+}
+
