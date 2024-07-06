@@ -5,13 +5,11 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENObjectCompiler
+  CXXHeaderGen.cpp
   KGENToLLVMPipeline.cpp
-  LowerToLLVM.cpp
-  LowerToObject.cpp
   LLVMIRUtils.cpp
   LLVMPassesPipeline.cpp
-  StandaloneObject.cpp
-  ProduceFunctionDecls.cpp
+  ObjectCompiler.cpp
 
   DEPENDS
   KGENVersion
