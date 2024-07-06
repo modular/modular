@@ -43,7 +43,7 @@ from random import rand, randn
 from algorithm.functional import elementwise, vectorize
 from algorithm.reduction import argmax, argmin
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim
+from buffer.dimlist import Dim
 from memory import memset_zero
 from memory.unsafe import bitcast
 

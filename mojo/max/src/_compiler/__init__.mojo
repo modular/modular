@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max._driver.tensor_slice import UnsafeTensorSlice
-from buffer.list import DimList
+from buffer.dimlist import DimList
 import algorithm.functional
 
 
