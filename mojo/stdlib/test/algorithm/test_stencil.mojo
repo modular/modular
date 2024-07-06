@@ -8,7 +8,7 @@
 
 from algorithm.functional import stencil
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 
 from utils.numerics import min_or_neg_inf
 

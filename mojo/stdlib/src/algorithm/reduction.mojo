@@ -20,7 +20,7 @@ from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from builtin.math import min as _min
 from gpu.host import DeviceContext
 from memory.unsafe import bitcast

@@ -19,7 +19,7 @@ from algorithm import (
 )
 from algorithm.reduction import _reduce_generator, max, min
 from buffer import Buffer, NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
 
