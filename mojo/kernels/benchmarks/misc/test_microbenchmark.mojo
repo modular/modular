@@ -11,7 +11,7 @@ from time import now
 
 import microbenchmark
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from memory.unsafe import DTypePointer, bitcast
 from microbenchmark import Benchmarkable

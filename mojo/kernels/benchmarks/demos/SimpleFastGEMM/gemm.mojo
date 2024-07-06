@@ -11,7 +11,7 @@ from sys.intrinsics import PrefetchOptions
 
 import benchmark
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,

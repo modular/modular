@@ -12,7 +12,7 @@ from sys.info import triple_is_nvidia_cuda
 from algorithm.functional import _elementwise_impl_gpu
 from benchmark._cuda import run
 from buffer import DimList, NDBuffer
-from buffer.list import _make_tuple
+from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

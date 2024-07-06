@@ -16,7 +16,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from utils import StaticIntTuple, StaticTuple
 from utils.index import product
 from internal_utils import DeviceNDBuffer
-from buffer.list import DimList, _make_tuple
+from buffer.dimlist import DimList, _make_tuple
 
 
 fn alignof_simd[type: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:

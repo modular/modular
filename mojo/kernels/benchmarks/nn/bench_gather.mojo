@@ -12,7 +12,7 @@ from random import rand, randint
 
 from benchmark import *
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index

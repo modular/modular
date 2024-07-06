@@ -13,7 +13,7 @@ from random import randn
 from algorithm.functional import _elementwise_impl_gpu
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
 
 

@@ -11,7 +11,7 @@ from random import rand
 
 from benchmark import *
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from nn.flash_attention import flash_attention
 from nn.mha import fused_attention
 

@@ -14,7 +14,7 @@ from sys.param_env import env_get_int, env_get_string
 from benchmark import *
 from benchmark import keep
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
