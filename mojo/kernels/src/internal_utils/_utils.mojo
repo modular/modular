@@ -7,7 +7,7 @@
 from sys.info import alignof
 
 from buffer import DimList, NDBuffer
-from buffer.list import _make_tuple
+from buffer.dimlist import _make_tuple
 from testing import assert_equal, assert_true
 
 from utils import InlineArray
