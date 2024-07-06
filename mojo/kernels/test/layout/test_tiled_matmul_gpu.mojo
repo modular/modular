@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from gpu import AddressSpace
 from gpu.host import Context, Function, synchronize
 from gpu.host.memory import _malloc_managed

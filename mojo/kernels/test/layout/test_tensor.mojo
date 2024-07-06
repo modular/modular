@@ -8,7 +8,7 @@
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import product
 from layout.layout import Layout

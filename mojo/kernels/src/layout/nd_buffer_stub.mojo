@@ -6,7 +6,7 @@
 from collections.optional import OptionalReg
 
 from buffer import NDBuffer
-from buffer.list import Dim, DimList
+from buffer.dimlist import Dim, DimList
 from gpu.id import ThreadIdx
 from gpu.memory import async_copy
 from layout import Layout, LayoutTensor

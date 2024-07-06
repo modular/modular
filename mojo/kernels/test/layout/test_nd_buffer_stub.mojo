@@ -8,7 +8,7 @@
 import math
 
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.dimlist import DimList
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import LayoutList
 from layout.nd_buffer_stub import (
