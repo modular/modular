@@ -12,6 +12,7 @@
 #ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
+#include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -39,6 +40,7 @@ class ParserListener;
 class StructDeclOp;
 class CallOperands;
 struct ParserConfig;
+class CachedTypeLifetimeFinder;
 enum class CallSyntax : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
@@ -102,6 +104,9 @@ public:
   ParserListener *parserListener;
 
   const mlir::StringAttr bufferNameIdentifier;
+
+  /// This is used to efficiently walk MLIR types to find embedded lifetimes.
+  CachedTypeLifetimeFinder cachedLifetimeFinder;
 
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }

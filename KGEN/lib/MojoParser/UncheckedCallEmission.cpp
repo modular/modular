@@ -18,7 +18,6 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 
@@ -730,9 +729,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     argTypes.push_back(value.getType());
   }
 
-  // TODO: Move to shared state.
-  CachedTypeLifetimeFinder finder;
-
+  CachedTypeLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
   TypedAttr destLifetime =
       cast<RefType>(underlyingDest.getType()).getLifetime();
 
@@ -1112,13 +1109,15 @@ shouldEmitParameterCall(LITSignatureType calleeSig,
 
 /// Compute the union of all references lifetimes in a set of function call
 /// arguments.
-static TypedAttr computeArgumentsLifetime(AsyncCallOp call) {
+static TypedAttr
+computeArgumentsLifetime(AsyncCallOp call,
+                         CachedTypeLifetimeFinder &lifetimeFinder) {
   SmallVector<std::pair<Value, OperandEffect>> operands;
   SmallVector<ResultEffect> results;
   SmallVector<TypedAttr> lifetimes;
   // Check lifetime accesses on the types. We need to forward this to the
   // coroutine since it is a transitive capture.
-  LIT::getOperationEffects(*call, operands, results, lifetimes);
+  LIT::getOperationEffects(*call, operands, results, lifetimes, lifetimeFinder);
   // Collect the implicit lifetimes of the arguments.
   for (Value value : call.getOperands())
     if (auto ref = dyn_cast<RefType>(value.getType()))
@@ -1368,7 +1367,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       auto call = builder->create<AsyncCallOp>(loc, target.get(),
                                                implicitLifetimes, callArgs);
       ASTType coroType = getBoundCoroutineType(
-          getScopeInfo(), callExpr, calleeSig, computeArgumentsLifetime(call));
+          getScopeInfo(), callExpr, calleeSig,
+          computeArgumentsLifetime(call, shared.cachedLifetimeFinder));
       if (!coroType) {
         dest.resetForError();
         return {};
