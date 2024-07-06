@@ -24,7 +24,7 @@ def TypeSignatureType : DialectType<(type
 
 def UnpackedType : DialectType<(type)>;
 
-def DeclRefType : DialectType<(type
+def StructType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
   Type:$metaType
@@ -76,7 +76,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     UnresolvedType,
     TypeSignatureType,
     UnpackedType,
-    DeclRefType,
+    StructType,
     AnyStructType,
     TraitType,
     LifetimeType,
@@ -181,7 +181,7 @@ def LITStructAttr : DialectAttribute<(attr
   WithParser<"succeeded(readStructValues($_reader, $_var))",
   WithPrinter<"writeStructValues($_writer, $_getter)",
   WithType<"SmallVector<std::tuple<StringAttr, TypedAttr>>">>>:$values,
-  ConcreteType<"DeclRefType">:$type
+  ConcreteType<"StructType">:$type
 )>;
 
 def WrappedStructExtractAttr : DialectAttribute<(attr

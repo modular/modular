@@ -35,7 +35,7 @@ void LITDialect::registerTypes() {
   dialect->registerMnemonicType<LifetimeType>();
   dialect->registerMnemonicType<LifetimeSetType>();
 
-  // Register the DeclRefType parser.
+  // Register the StructType parser.
   getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
       [&](AsmParser &p, SymbolRefAttr symbol) -> FailureOr<Type> {
         SmallVector<TypedAttr> values;
@@ -49,7 +49,7 @@ void LITDialect::registerTypes() {
           metatype = AnyStructType::get(symbol, values,
                                         TypeSignatureType::get(p.getContext()));
         }
-        return DeclRefType::get(symbol, values, metatype);
+        return StructType::get(symbol, values, metatype);
       });
 }
 
@@ -128,11 +128,11 @@ ArrayRef<TypedAttr> TypeSignatureType::getDefaultKwOnlyParams() const {
 }
 
 //===----------------------------------------------------------------------===//
-// DeclRefType
+// StructType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult DeclRefType::parseValue(AsmParser &p,
-                                            TypedAttr &value) const {
+OptionalParseResult LIT::StructType::parseValue(AsmParser &p,
+                                                TypedAttr &value) const {
   if (failed(p.parseOptionalLBrace()))
     return {};
 
@@ -175,7 +175,8 @@ OptionalParseResult DeclRefType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult DeclRefType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult LIT::StructType::printValue(AsmPrinter &p,
+                                          TypedAttr value) const {
   auto attr = ::dyn_cast<LITStructAttr>(value);
   if (!attr)
     return failure();
@@ -197,25 +198,28 @@ LogicalResult DeclRefType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
-DeclRefType DeclRefType::get(SymbolRefAttr name,
-                             ArrayRef<TypedAttr> paramValues, Type metatype) {
+LIT::StructType LIT::StructType::get(SymbolRefAttr name,
+                                     ArrayRef<TypedAttr> paramValues,
+                                     Type metatype) {
   return get(name.getContext(), SymbolAttr::get(name), paramValues, metatype);
 }
 
-DeclRefType DeclRefType::get(SymbolRefAttr name, Type metatype) {
+LIT::StructType LIT::StructType::get(SymbolRefAttr name, Type metatype) {
   return get(name, {}, metatype);
 }
 
-SymbolRefAttr DeclRefType::getSymbol() const { return getValue().getValue(); }
+SymbolRefAttr LIT::StructType::getSymbol() const {
+  return getValue().getValue();
+}
 
-std::optional<StringRef> DeclRefType::getAliasName() {
+std::optional<StringRef> LIT::StructType::getAliasName() {
   // Don't alias types with parameter references.
   if (!getParamValues().empty())
     return {};
   return getAliasName(getSymbol());
 }
 
-std::optional<StringRef> DeclRefType::getAliasName(SymbolRefAttr symbol) {
+std::optional<StringRef> LIT::StructType::getAliasName(SymbolRefAttr symbol) {
   // Use the leaf name as the alias name.
   StringRef leaf = symbol.getLeafReference().getValue();
   unsigned offset = leaf.size();
@@ -228,9 +232,9 @@ std::optional<StringRef> DeclRefType::getAliasName(SymbolRefAttr symbol) {
 }
 
 LogicalResult
-DeclRefType::verifySymbolUses(Operation *module,
-                              mlir::LockedSymbolTableCollection &symtab,
-                              Location loc) const {
+LIT::StructType::verifySymbolUses(Operation *module,
+                                  mlir::LockedSymbolTableCollection &symtab,
+                                  Location loc) const {
   DeclInterface decl = ::dyn_cast_or_null<DeclInterface>(
       symtab.lookupSymbolIn(module, getSymbol()));
   if (!decl) {
@@ -249,7 +253,7 @@ DeclRefType::verifySymbolUses(Operation *module,
         ::cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
 
   return verifyParamDeclsMatch(
-      "input parameter", "!lit.declref symbol use", getParamValues(), loc,
+      "input parameter", "!lit.struct symbol use", getParamValues(), loc,
       getSymbol().getLeafReference(), specializedDecls, decl.getLoc());
 }
 
@@ -271,7 +275,7 @@ static void printParameterizedSymbol(AsmPrinter &p, SymbolAttr symbol,
   printParameterValues(p, paramValues);
 }
 
-void DeclRefType::printSymbol(AsmPrinter &p) const {
+void LIT::StructType::printSymbol(AsmPrinter &p) const {
   // Use the alias printer if suitable.
   if (succeeded(p.printAlias(*this)))
     return;
@@ -307,7 +311,7 @@ static void printOptionalMetaType(AsmPrinter &p, Type metatype,
 }
 
 /// Get the name of the referenced type, ignoring packages.
-StringAttr DeclRefType::getName() {
+StringAttr LIT::StructType::getName() {
   auto symbol = getSymbol();
   if (symbol.getNestedReferences().empty())
     return symbol.getRootReference();
@@ -334,7 +338,7 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
       if (succeeded(p.parseOptionalColon()))
         if (parseKGENType(p, declRefMetaType))
           return failure();
-      typeValue = DeclRefType::get(symbol, values, declRefMetaType);
+      typeValue = LIT::StructType::get(symbol, values, declRefMetaType);
     } else {
       result = parseOptionalKGENType(p, typeValue);
     }
@@ -346,7 +350,7 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
 static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
                                     Type metatype) {
   auto typePrinter = [metatype](AsmPrinter &p, Type type) {
-    if (auto ref = ::dyn_cast<DeclRefType>(type)) {
+    if (auto ref = ::dyn_cast<LIT::StructType>(type)) {
       // Use the alias printer if suitable.
       if (failed(p.printAlias(ref))) {
         p << ref.getSymbol();
@@ -381,8 +385,8 @@ LogicalResult AnyStructType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 /// Return the struct type this metatype corresponds to.
-DeclRefType AnyStructType::getStructType() {
-  return DeclRefType::get(getSymbol(), getParamValues(), *this);
+LIT::StructType AnyStructType::getStructType() {
+  return LIT::StructType::get(getSymbol(), getParamValues(), *this);
 }
 
 AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {

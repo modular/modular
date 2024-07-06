@@ -128,9 +128,9 @@ lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> 
 
 // CHECK-LABEL: lit.struct.decl @HasMemFields
 lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field a : !lit.declref<@S>
-  lit.struct.field stole : !lit.declref<@S>
-  lit.struct.field uninitialized : !lit.declref<@S>
+  lit.struct.field a : !lit.struct<@S>
+  lit.struct.field stole : !lit.struct<@S>
+  lit.struct.field uninitialized : !lit.struct<@S>
   lit.struct.field register : index
 
   lit.func @__del__[mut dellife](%self: !lit.ref<@HasMemFields, mut dellife> owned_in_mem) -> !kgen.none {
@@ -189,7 +189,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
   kgen.return %1 : !kgen.none
 }
 
-lit.globalvar.decl @x : !lit.declref<@MyStruct> {}, {}
+lit.globalvar.decl @x : !lit.struct<@MyStruct> {}, {}
 
 // CHECK-LABEL: lit.func @byref_result_global_ref
 lit.func @byref_result_global_ref() {
@@ -210,14 +210,14 @@ lit.func @global_ref_no_use() {
 
 // -----
 
-lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyRegStruct::@__del__> : !lit.signature<(!lit.declref<@MyRegStruct>) -> !kgen.none>} {
+lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyRegStruct::@__del__> : !lit.signature<(!lit.struct<@MyRegStruct>) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
-lit.globalvar.decl @y : !lit.declref<@MyRegStruct> {}, {}
+lit.globalvar.decl @y : !lit.struct<@MyRegStruct> {}, {}
 
 // CHECK-LABEL: lit.func @global_ref_reg_store
-lit.func @global_ref_reg_store(%x: !lit.declref<@MyRegStruct> owned) {
+lit.func @global_ref_reg_store(%x: !lit.struct<@MyRegStruct> owned) {
   // CHECK-NEXT: %0 = lit.globalvar.ref @y
   %0 = lit.globalvar.ref @y : <@MyRegStruct, mut #lit.lifetime>
   // CHECK-NEXT: %1 = lit.ref.load %0
@@ -258,7 +258,7 @@ lit.struct.decl @SomeData {
 }
 
 lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field str : !lit.declref<@SomeData>
+  lit.struct.field str : !lit.struct<@SomeData>
 }
 
 // CHECK-LABEL: lit.func @init
@@ -274,7 +274,7 @@ lit.func @init(%self: !lit.ref<@MyStruct, mut #lit.lifetime> init_self) {
 
 // COM: Test that destructors are inserted for error instances.
 
-!Error = !lit.declref<@Error>
+!Error = !lit.struct<@Error>
 
 // CHECK-LABEL: lit.struct.decl @Error
 lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error) -> !kgen.none>} {
@@ -369,7 +369,7 @@ lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
 // COM: Copy-del elision of register-passable value, where the argument is an
 // COM: owned register-passable letreg decl.
 
-!Reg = !lit.declref<@Reg>
+!Reg = !lit.struct<@Reg>
 lit.struct.decl @Reg register_passable attributes {
     copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg) -> !Reg>,
     destructor = #kgen.symbol.constant<@Reg::@__del__> : !lit.signature<(!Reg) -> !kgen.none>
@@ -402,7 +402,7 @@ lit.func @copy_del_reg_value() {
 
 // -----
 
-!Thing = !lit.declref<@Thing>
+!Thing = !lit.struct<@Thing>
 lit.struct.decl @Box<T: trait<@AnyType>>  {
   lit.struct.field x : !kgen.paramref<:trait<@AnyType> T>
 }
@@ -509,7 +509,7 @@ lit.struct.decl @S attributes {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
-  lit.func @__bool__(%self: !lit.ref<!lit.declref<@S>, imm #lit.lifetime> borrow_in_mem) -> i1 {
+  lit.func @__bool__(%self: !lit.ref<!lit.struct<@S>, imm #lit.lifetime> borrow_in_mem) -> i1 {
     %0 = kgen.param.constant: i1 = <0>
     kgen.return %0 : i1
   }
@@ -529,7 +529,7 @@ lit.func @elifNeedsDestructorInCond(%takeMeAfter: !lit.ref<@S, mut #lit.lifetime
                 %D: !lit.ref<@S, mut #lit.lifetime> owned_in_mem,
                 %cond: i1) -> !kgen.none {
   hlcf.elif {
-    %0 = lit.call @S::@__bool__(%takeMeInThens) : !lit.signature<("self": !lit.ref<!lit.declref<@S>, mut #lit.lifetime> borrow_in_mem) -> i1>
+    %0 = lit.call @S::@__bool__(%takeMeInThens) : !lit.signature<("self": !lit.ref<!lit.struct<@S>, mut #lit.lifetime> borrow_in_mem) -> i1>
     hlcf.elif.yield %0 : i1
     // CHECK: [[V2:%*.]] = lit.call @S::@__bool__(%takeMeInThens)
     // CHECK-NEXT:   lit.call @S::@__del__[mut #lit.lifetime](%takeMeInThens)
@@ -603,7 +603,7 @@ lit.struct.decl @S attributes {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
-  lit.func @__bool__(%self: !lit.ref<!lit.declref<@S>, imm #lit.lifetime> borrow_in_mem) -> i1 {
+  lit.func @__bool__(%self: !lit.ref<!lit.struct<@S>, imm #lit.lifetime> borrow_in_mem) -> i1 {
     %0 = kgen.param.constant: i1 = <0>
     kgen.return %0 : i1
   }
@@ -713,7 +713,7 @@ lit.func @breakAndContinueInElifParamFor(
 
 // -----
 
-!S = !lit.declref<@S>
+!S = !lit.struct<@S>
 lit.struct.decl @S attributes {
   destructor =
     #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
@@ -728,7 +728,7 @@ lit.struct.decl @S attributes {
   }
 }
 
-!HasMemFields = !lit.declref<@HasMemFields>
+!HasMemFields = !lit.struct<@HasMemFields>
 
 lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field x : !S
@@ -766,12 +766,12 @@ lit.func @destroyField(%s2: i1, %A: !lit.ref<@HasMemFields, mut #lit.lifetime> o
 
 // COM: Test Error/Success Region in Fully Initialized Value
 
-!Error = !lit.declref<@Error>
+!Error = !lit.struct<@Error>
 lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__> : !lit.signature<[1](!lit.ref<@Error, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
-!S = !lit.declref<@S>
+!S = !lit.struct<@S>
 lit.struct.decl @S attributes {
   destructor =
     #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
@@ -786,7 +786,7 @@ lit.struct.decl @S attributes {
   }
 }
 
-!ThrowingSelfInit = !lit.declref<@ThrowingSelfInit>
+!ThrowingSelfInit = !lit.struct<@ThrowingSelfInit>
 
 lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant<@ThrowingSelfInit::@__del__> : !lit.signature<[1](!lit.ref<@ThrowingSelfInit, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field x : !S
@@ -851,26 +851,26 @@ lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant
 
 // COM: Track Result References
 
-!Int = !lit.declref<@Int>
+!Int = !lit.struct<@Int>
 lit.struct.decl @Int register_passable_trivial {
   lit.struct.field value : index
 }
 
-!Node = !lit.declref<@Node>
+!Node = !lit.struct<@Node>
 lit.struct.decl @Node attributes {
   destructor =
     #kgen.symbol.constant<@Node::@__del__> : !lit.signature<[1](!lit.ref<@Node, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
-!Container = !lit.declref<@Container>
+!Container = !lit.struct<@Container>
 lit.struct.decl @Container attributes {
   destructor =
     #kgen.symbol.constant<@Container::@__del__> : !lit.signature<[1](!lit.ref<@Container, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field z : !Node
 }
 
-!Wrapper = !lit.declref<@Wrapper>
+!Wrapper = !lit.struct<@Wrapper>
 lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper::@__del__> : !lit.signature<[1](!lit.ref<@Wrapper, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field tail : !Int
   lit.struct.field y : !kgen.pointer<!Container>
@@ -905,9 +905,9 @@ lit.func @indirectReferences[mut mylife](%s2: i1, %wrapper: !lit.ref<@Wrapper, m
 
 // COM: Test Error/Success Region in Partially Initialized Value
 
-!DestructSome = !lit.declref<@DestructSome>
-!Error = !lit.declref<@Error>
-!Field = !lit.declref<@Field>
+!DestructSome = !lit.struct<@DestructSome>
+!Error = !lit.struct<@Error>
+!Field = !lit.struct<@Field>
 
 
 lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@"__del__"> : !lit.signature<("self": !Error, |) -> !kgen.none>} {
@@ -970,11 +970,11 @@ lit.struct.decl @DestructSome  attributes {destructor = #kgen.symbol.constant<@D
 
 // COM: Verify that unreachable code is ignored.
 
-!Error = !lit.declref<@Error>
-!FileHandle = !lit.declref<@FileHandle>
-!GGUFFile = !lit.declref<@GGUFFile>
-!Int = !lit.declref<@Int>
-!iter = !lit.declref<@my_iter>
+!Error = !lit.struct<@Error>
+!FileHandle = !lit.struct<@FileHandle>
+!GGUFFile = !lit.struct<@GGUFFile>
+!Int = !lit.struct<@Int>
+!iter = !lit.struct<@my_iter>
 
 lit.struct.decl @Error register_passable
   destructor :!lit.signature<("self": !Error, |) -> !kgen.none> @stdlib::@builtin::@stubs::@Error::@"__del__(stdlib::builtin::stubs::Error)"{
@@ -1044,11 +1044,11 @@ lit.struct.decl @GGUFFile
 
 // COM: Verify that only fields destroyed in the region are corrected for full object initialization.
 
-!Error = !lit.declref<@Error>
-!Int = !lit.declref<@Int>
-!FileHandle = !lit.declref<@FileHandle>
-!iter = !lit.declref<@my_iter>
-!GGUFFile = !lit.declref<@GGUFFile>
+!Error = !lit.struct<@Error>
+!Int = !lit.struct<@Int>
+!FileHandle = !lit.struct<@FileHandle>
+!iter = !lit.struct<@my_iter>
+!GGUFFile = !lit.struct<@GGUFFile>
 
 lit.struct.decl @GGUFFile
  destructor :!lit.signature<[1]("self": !lit.ref<!GGUFFile, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @GGUFFile::@__del__{
@@ -1133,23 +1133,23 @@ copy :!lit.signature<[2]("self": !lit.ref<!iter, mut *[0,0]> init_self, |, "exis
 
 // COM: Verify that lifetimes are respected.
 
-!Int = !lit.declref<@Int>
+!Int = !lit.struct<@Int>
 lit.struct.decl @Int register_passable_trivial {
   lit.struct.field value : index
 }
-!Reference = !lit.declref<@Reference>
+!Reference = !lit.struct<@Reference>
 lit.struct.decl @Reference register_passable_trivial {
   lit.struct.field value : !kgen.pointer<index>
 }
 
-!MyStruct = !lit.declref<@MyStruct>
+!MyStruct = !lit.struct<@MyStruct>
 lit.struct.decl @MyStruct attributes {
   destructor =
     #kgen.symbol.constant<@MyStruct::@__del__> : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !Int
 }
 
-!Wrapper = !lit.declref<@Wrapper>
+!Wrapper = !lit.struct<@Wrapper>
 lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper::@__del__> : !lit.signature<[1](!lit.ref<@Wrapper, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field y : !kgen.pointer<!Int>
 }
@@ -1179,19 +1179,19 @@ lit.func @respectLifetimes[mut mylife](%s2: i1) -> !kgen.none {
 
 // -----
 
-!Error = !lit.declref<@Error>
+!Error = !lit.struct<@Error>
 lit.struct.decl @Error {
   lit.struct.field a : index
 }
 
-!PythonObject = !lit.declref<@PythonObject>
+!PythonObject = !lit.struct<@PythonObject>
 lit.struct.decl @PythonObject attributes {
   destructor =
     #kgen.symbol.constant<@PythonObject::@__del__> : !lit.signature<[1](!lit.ref<@PythonObject, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
-!Context = !lit.declref<@Context>
+!Context = !lit.struct<@Context>
 lit.struct.decl @Context attributes {destructor = #kgen.symbol.constant<@Context::@__del__> : !lit.signature<[1](!lit.ref<@Context, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field __new_repl_var : !kgen.pointer<pointer<!PythonObject>>
   lit.struct.field __new_repl_var2 : !kgen.pointer<pointer<!PythonObject>>
@@ -1273,12 +1273,12 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
 
 // COM: Verify that unreachable code is ignored in the context of error handling.
 
-!Error = !lit.declref<@Error>
-!FileHandle = !lit.declref<@FileHandle>
-!LegacyPointer = !lit.declref<@LegacyPointer>
-!GGUFFile = !lit.declref<@GGUFFile>
-!Int = !lit.declref<@Int>
-!iter = !lit.declref<@my_iter>
+!Error = !lit.struct<@Error>
+!FileHandle = !lit.struct<@FileHandle>
+!LegacyPointer = !lit.struct<@LegacyPointer>
+!GGUFFile = !lit.struct<@GGUFFile>
+!Int = !lit.struct<@Int>
+!iter = !lit.struct<@my_iter>
 
 lit.struct.decl @Error register_passable
   destructor :!lit.signature<("self": !Error, |) -> !kgen.none> @stdlib::@builtin::@stubs::@Error::@"__del__(stdlib::builtin::stubs::Error)"{

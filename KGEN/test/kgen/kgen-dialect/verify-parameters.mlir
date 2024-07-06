@@ -50,7 +50,7 @@ kgen.generator @pass_index<t>(%arg0: index) -> !pop.array<t, i1> {
 // CHECK-LABEL: kgen.generator @apply_result
 // CHECK-SAME: @TakeArrayStruct<t, :array<t, i1> apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)>
 kgen.generator @apply_result<t>(
-  %arg0: !lit.declref<@TakeArrayStruct<
+  %arg0: !lit.struct<@TakeArrayStruct<
     t,
     :array<t, i1> apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)
   >>
@@ -62,13 +62,13 @@ kgen.generator @apply_result<t>(
 
 lit.struct.decl @Int {}
 
-kgen.generator @make(%arg0: index) -> !lit.declref<@Int> {
+kgen.generator @make(%arg0: index) -> !lit.struct<@Int> {
   kgen.unreachable
 }
 
 lit.struct.decl @List<l: @Int> {}
 
-kgen.generator @create<l: @Int>() -> !lit.declref<@List<:@Int l>> {
+kgen.generator @create<l: @Int>() -> !lit.struct<@List<:@Int l>> {
   kgen.unreachable
 }
 
@@ -76,23 +76,23 @@ lit.struct.decl @Buf<r: @Int, s: @List<:@Int r>> {}
 
 // CHECK-LABEL: kgen.generator @buffer
 kgen.generator @buffer<rank>() ->
-  !lit.declref<@Buf<
-    :@Int apply(:(index) -> !lit.declref<@Int> @make, rank),
-    :@List<:@Int apply(:(index) -> !lit.declref<@Int> @make, rank)>
-      apply(:() -> !lit.declref<@List<:@Int apply(:(index) -> !lit.declref<@Int> @make, rank)>>
-              @create<:@Int apply(:(index) -> !lit.declref<@Int> @make, rank)>)>> {
+  !lit.struct<@Buf<
+    :@Int apply(:(index) -> !lit.struct<@Int> @make, rank),
+    :@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, rank)>
+      apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, rank)>>
+              @create<:@Int apply(:(index) -> !lit.struct<@Int> @make, rank)>)>> {
   kgen.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @ref_it
 kgen.generator @ref_it() {
-  // CHECK-NEXT: apply(:() -> !lit.declref<@List<:@Int apply(:(index) -> !lit.declref<@Int> @make, *(1,0))
+  // CHECK-NEXT: apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(1,0))
   kgen.param.declare fn: <index>() ->
-     !lit.declref<@Buf<
-       :@Int apply(:(index) -> !lit.declref<@Int> @make, *(0,0)),
-       :@List<:@Int apply(:(index) -> !lit.declref<@Int> @make, *(0,0))>
-         apply(:() -> !lit.declref<@List<:@Int apply(:(index) -> !lit.declref<@Int> @make, *(1,0))>>
-                 @create<:@Int apply(:(index) -> !lit.declref<@Int> @make, *(0,0))>)>>
+     !lit.struct<@Buf<
+       :@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0)),
+       :@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0))>
+         apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(1,0))>>
+                 @create<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0))>)>>
     = <@buffer>
   kgen.return
 }

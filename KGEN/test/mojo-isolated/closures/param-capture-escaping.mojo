@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.signature<() capturing -> !Int>
-# CHECK:      lit.struct.field param_capture : !lit.declref<#ParameterClosureCaptureList{{.*}}__call__
+# CHECK:      lit.struct.field param_capture : !lit.struct<#ParameterClosureCaptureList{{.*}}__call__
 # CHECK-NEXT: lit.struct.field field0 : !Int
 
 # CHECK: lit.func @"__call__

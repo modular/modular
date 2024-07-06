@@ -31,14 +31,14 @@ static void annotateTypes(LIT::FuncOp func) {
   auto getAsDeclRefOrNull = [&](Type t) {
     auto asLitRef = dyn_cast<LIT::RefType>(t);
     if (asLitRef)
-      return dyn_cast<LIT::DeclRefType>(asLitRef.getElementType());
-    return dyn_cast<LIT::DeclRefType>(t);
+      return dyn_cast<LIT::StructType>(asLitRef.getElementType());
+    return dyn_cast<LIT::StructType>(t);
   };
 
   // Anything taking a tensor needs the annotation.
   bool takesTensor = false;
   for (Type litType : func.getArgumentTypes()) {
-    if (LIT::DeclRefType asDeclRef = getAsDeclRefOrNull(litType)) {
+    if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
       takesTensor |= isMOGGTensor(asDeclRef);
       takesTensor |= isExtensibilityTensor(asDeclRef);
     }
@@ -56,7 +56,7 @@ static void annotateTypes(LIT::FuncOp func) {
 
   // Extract the source name any of the lit argument.
   auto litTypeToSourceName = [&](Type litType) -> Attribute {
-    LIT::DeclRefType asDeclRef = getAsDeclRefOrNull(litType);
+    LIT::StructType asDeclRef = getAsDeclRefOrNull(litType);
     if (!asDeclRef)
       return emptyAttr;
 
@@ -72,7 +72,7 @@ static void annotateTypes(LIT::FuncOp func) {
 
   // Extract the used parameters from the lit type.
   auto litTypeToParams = [&](Type litType) -> Attribute {
-    LIT::DeclRefType asDeclRef = getAsDeclRefOrNull(litType);
+    LIT::StructType asDeclRef = getAsDeclRefOrNull(litType);
 
     // We still need to have one entry per argument even if it is empty.
     if (!asDeclRef || asDeclRef.getParamValues().empty())

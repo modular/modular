@@ -22,7 +22,7 @@ lit.struct.decl @Int register_passable_trivial {
   lit.struct.field value : index
 }
 
-lit.func @ger_load(%a: !lit.declref<@Int>) -> index {
+lit.func @ger_load(%a: !lit.struct<@Int>) -> index {
   %x = lit.var.decl "x" var : !lit.ref<@Int, mut lt>
   lit.ref.store %a, %x : <@Int, mut lt>
   %0 = lit.ref.struct.ger %x[value] : <index, mut lt> from @Int
@@ -33,7 +33,7 @@ lit.func @ger_load(%a: !lit.declref<@Int>) -> index {
 // CHECK-LABEL: lit.func @interpret_ger
 lit.func @interpret_ger() {
   // CHECK-NEXT: constant = <42>
-  kgen.param.constant = <apply(:!lit.signature<("a": !lit.declref<@Int>) -> index> @ger_load, { 42 })>
+  kgen.param.constant = <apply(:!lit.signature<("a": !lit.struct<@Int>) -> index> @ger_load, { 42 })>
   kgen.return
 }
 
@@ -51,8 +51,8 @@ lit.func @interpret_undef_var() {
 }
 
 lit.struct.decl @Pair register_passable_trivial {
-  lit.struct.field first : !lit.declref<@Int>
-  lit.struct.field second : !lit.declref<@Int>
+  lit.struct.field first : !lit.struct<@Int>
+  lit.struct.field second : !lit.struct<@Int>
 }
 
 lit.func @load_undef_ger() -> index {
@@ -69,16 +69,16 @@ lit.func @interpret_undef_ger_load() {
   kgen.return
 }
 
-lit.func @double_ger_store_load(%a: index) -> !lit.declref<@Int> {
+lit.func @double_ger_store_load(%a: index) -> !lit.struct<@Int> {
   %x = lit.var.decl "x" var : !lit.ref<@Pair, mut lt>
   %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
   %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
   lit.ref.store %a, %1 : <index, mut lt>
   %2 = lit.ref.load %0 : <@Int, mut lt>
-  kgen.return %2 : !lit.declref<@Int>
+  kgen.return %2 : !lit.struct<@Int>
 }
 
-lit.func @initialize_pair(%a: index, %b: index) -> !lit.declref<@Pair> {
+lit.func @initialize_pair(%a: index, %b: index) -> !lit.struct<@Pair> {
   %x = lit.var.decl "x" var : !lit.ref<@Pair, mut lt>
   %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
   %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
@@ -87,19 +87,19 @@ lit.func @initialize_pair(%a: index, %b: index) -> !lit.declref<@Pair> {
   %3 = lit.ref.struct.ger %2[value] : <index, mut lt> from @Int
   lit.ref.store %b, %3 : <index, mut lt>
   %4 = lit.ref.load %x : <@Pair, mut lt>
-  kgen.return %4 : !lit.declref<@Pair>
+  kgen.return %4 : !lit.struct<@Pair>
 }
 
 // CHECK-LABEL: lit.func @interpret_ger_store
 lit.func @interpret_ger_store() {
   // CHECK-NEXT: constant: @Int = <{42}>
-  kgen.param.constant: @Int = <apply(:!lit.signature<("a": index) -> !lit.declref<@Int>> @double_ger_store_load, 42)>
+  kgen.param.constant: @Int = <apply(:!lit.signature<("a": index) -> !lit.struct<@Int>> @double_ger_store_load, 42)>
   // CHECK-NEXT: constant: @Pair = <{first: @Int = {11}, second: @Int = {22}}>
-  kgen.param.constant: @Pair = <apply(:!lit.signature<("a": index, "b": index) -> !lit.declref<@Pair>> @initialize_pair, 11, 22)>
+  kgen.param.constant: @Pair = <apply(:!lit.signature<("a": index, "b": index) -> !lit.struct<@Pair>> @initialize_pair, 11, 22)>
   kgen.return
 }
 
-lit.func @partial_ger_store(%i: index) -> !lit.declref<@Pair> {
+lit.func @partial_ger_store(%i: index) -> !lit.struct<@Pair> {
   %x = lit.var.decl "x" arg : !lit.ref<@Pair, mut lt>
   %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
   %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
@@ -108,12 +108,12 @@ lit.func @partial_ger_store(%i: index) -> !lit.declref<@Pair> {
   lit.ref.store %i, %1 : <index, mut lt>
   lit.ref.store %i, %3 : <index, mut lt>
   %4 = lit.load.consume %x : !lit.ref<@Pair, mut lt>
-  kgen.return %4 : !lit.declref<@Pair>
+  kgen.return %4 : !lit.struct<@Pair>
 }
 
 // CHECK-LABEL: lit.func @interpret_partial_ger_store
 lit.func @interpret_partial_ger_store() {
   // CHECK-NEXT: @Pair = <{first: @Int = {22}, second: @Int = {22}}>
-  kgen.param.constant: @Pair = <apply(:!lit.signature<("i": index) -> !lit.declref<@Pair>> @partial_ger_store, 22)>
+  kgen.param.constant: @Pair = <apply(:!lit.signature<("i": index) -> !lit.struct<@Pair>> @partial_ger_store, 22)>
   kgen.return
 }

@@ -413,7 +413,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     StringAttr getDeclName() { return getSymNameAttr(); }
 
     /// Get a bound reference to the struct type.
-    DeclRefType bindReference(ArrayRef<TypedAttr> paramValues = {});
+    StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
@@ -463,7 +463,7 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
   let extraClassDeclaration = [{
     /// Given a struct base value type that may have bound parameters,
     /// substitute those bound parameters into our type and return the result.
-    Type getReboundType(DeclRefType structSelfType);
+    Type getReboundType(StructType structSelfType);
   }];
 }
 
@@ -490,13 +490,13 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
 
     %0 = lit.struct.create(a=%a, b=%b, c=%c) :
       (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
-      -> !lit.declref<@MyStruct<T: dtype = type>>
+      -> !lit.struct<@MyStruct<T: dtype = type>>
     ```
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands,
                        StringArrayAttr:$fields);
-  let results = (outs LIT_DeclRefType:$result);
+  let results = (outs LIT_StructType:$result);
   let hasFolder = 1;
   let assemblyFormat = [{
     `` custom<OperandsAndFields>($operands,$fields) attr-dict `:`
@@ -525,13 +525,13 @@ def LIT_StructInsertOp : LITOp<"struct.insert", [Pure,
     }
 
     %0 = lit.struct.insert %fieldVal, %struct[a]
-      : !pop.scalar<f64> into !lit.declref<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> into !lit.struct<@MyStruct<T: dtype = f64>>
     ```
   }];
 
   let arguments = (ins StrAttr:$field, AnyType:$value,
-                       LIT_DeclRefType:$container);
-  let results = (outs LIT_DeclRefType:$result);
+                       LIT_StructType:$container);
+  let results = (outs LIT_StructType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `into` qualified(type($container))
@@ -559,11 +559,11 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     }
 
     %0 = lit.struct.extract %struct[a]
-      : !pop.scalar<f64> from !lit.declref<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> from !lit.struct<@MyStruct<T: dtype = f64>>
     ```
   }];
 
-  let arguments = (ins LIT_DeclRefType:$container, StrAttr:$field);
+  let arguments = (ins LIT_StructType:$container, StrAttr:$field);
   let results = (outs AnyType:$value);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
@@ -656,9 +656,9 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
 
     ```mlir
     lit.try {
-      %0 = kgen.call @maybeRaises() : () throws -> !lit.declref<@Int>
+      %0 = kgen.call @maybeRaises() : () throws -> !lit.struct<@Int>
       lit.try.yield
-    } except (%err: !lit.declref<@Error>) {
+    } except (%err: !lit.struct<@Error>) {
       lit.try.yield
     } else {
       lit.try.yield
@@ -867,7 +867,7 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
     Example:
 
     ```mlir
-    lit.globalvar.decl @global_var : !lit.declref<@String> isVar {
+    lit.globalvar.decl @global_var : !lit.struct<@String> isVar {
       %0 = lit.globalvar.ref @global_var : @String
       kgen.call @String::@__init__(%0)
     }, {
@@ -1104,9 +1104,9 @@ def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator, ReturnLike,
 
     ```mlir
     lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
-      %1 = lit.struct.create(a=%0) : (index) -> !lit.declref<@Error>
+      %1 = lit.struct.create(a=%0) : (index) -> !lit.struct<@Error>
       %2 = kgen.variant.create %1 :
-        !lit.declref<@Error> -> !kgen.variant<@Error, none>
+        !lit.struct<@Error> -> !kgen.variant<@Error, none>
       lit.error_return %2 : !kgen.variant<@Error, none>
     }
     ```
@@ -1675,7 +1675,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, RefOf<LIT_DeclRefType>:$container);
+  let arguments = (ins StrAttr:$field, RefOf<LIT_StructType>:$container);
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`

@@ -726,7 +726,7 @@ struct MyPointer[T: AnyType]:
 
 # CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
 struct HasMyPointerSelf(AnyType):
-    # CHECK: lit.struct.field x : !lit.declref<#MyPointer <:!AnyType
+    # CHECK: lit.struct.field x : !lit.struct<#MyPointer <:!AnyType
     var x: MyPointer[Self]
     # CHECK: lit.func @"__del__
 
@@ -999,7 +999,7 @@ struct RegPassableParamTrait[a: int](DependentParam):
         pass
 
     # CHECK: lit.func @"bar{{.*}}_thunk"
-    # CHECK-SAME: <x, y>(%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.declref<#ParamType <x>>) -> !lit.declref<#ParamType <y>>
+    # CHECK-SAME: <x, y>(%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.struct<#ParamType <x>>) -> !lit.struct<#ParamType <y>>
     fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
         # CHECK: call {{.*}}<a, x, y>
         pass

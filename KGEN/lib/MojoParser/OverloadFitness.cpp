@@ -756,7 +756,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         // argument that failed to be inferred.
         mlir::AttrTypeWalker walker;
         size_t idx;
-        walker.addWalk([&](DeclRefType type) {
+        walker.addWalk([&](StructType type) {
           for (auto [i, value] : llvm::enumerate(type.getParamValues())) {
             if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value);
                 indexRef && !indexRef.getDepth() &&

@@ -47,7 +47,7 @@ lit.struct.decl @StructDuplicate {
 lit.struct.decl @SomeType<v, b> {}
 
 // expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "c"}}
-kgen.generator @InvalidTypeParamValue<a>(%arg0: !lit.declref<@SomeType<a, c>>) {
+kgen.generator @InvalidTypeParamValue<a>(%arg0: !lit.struct<@SomeType<a, c>>) {
   kgen.return
 }
 
@@ -59,7 +59,7 @@ lit.struct.decl @Bar<a: type> {
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
-  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !lit.declref<@Bar<:type index>>
+  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !lit.struct<@Bar<:type index>>
   kgen.return
 }
 
@@ -71,7 +71,7 @@ lit.struct.decl @Baz {
 
 kgen.generator @invalid_field_name(%a: i32) {
   // expected-error @below {{'lit.struct.create' op the field name "y" at the position #0 did not match the name "x" in the op declaration}}
-  %0 = lit.struct.create(y=%a) : (i32) -> !lit.declref<@Baz>
+  %0 = lit.struct.create(y=%a) : (i32) -> !lit.struct<@Baz>
   kgen.return
 }
 
@@ -82,7 +82,7 @@ lit.struct.decl @Bar {
 
 kgen.generator @invalid_num_fields(%a: index) {
   // expected-error @below {{'lit.struct.create' op expected 0 operands but got 1}}
-  %0 = lit.struct.create(a=%a) : (index) -> !lit.declref<@Bar>
+  %0 = lit.struct.create(a=%a) : (index) -> !lit.struct<@Bar>
   kgen.return
 }
 
@@ -90,9 +90,9 @@ kgen.generator @invalid_num_fields(%a: index) {
 
 lit.struct.decl @Bar {}
 
-kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = lit.struct.insert %a, %container[a] : index into !lit.declref<@Bar>
+  %0 = lit.struct.insert %a, %container[a] : index into !lit.struct<@Bar>
   kgen.return
 }
 
@@ -102,9 +102,9 @@ lit.struct.decl @Bar {
   lit.struct.field a : i32
 }
 
-kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
   // expected-error @below {{cannot insert value of type 'index' into struct field "a" which expected 'i32'}}
-  %0 = lit.struct.insert %a, %container[a] : index into !lit.declref<@Bar>
+  %0 = lit.struct.insert %a, %container[a] : index into !lit.struct<@Bar>
   kgen.return
 }
 
@@ -112,9 +112,9 @@ kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
 
 lit.struct.decl @Bar {}
 
-kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = lit.struct.extract %container[a] : index from !lit.declref<@Bar>
+  %0 = lit.struct.extract %container[a] : index from !lit.struct<@Bar>
   kgen.return
 }
 
@@ -292,8 +292,8 @@ lit.func @unbound_region() {
 // -----
 
 lit.func @no_struct_decl(%a: index) {
-  // expected-error @below {{expected to find a struct decl for '!lit.declref<@Bar<:type index>>'}}
-  %0 = lit.struct.create(x=%a) : (index) -> !lit.declref<@Bar<:type index>>
+  // expected-error @below {{expected to find a struct decl for '!lit.struct<@Bar<:type index>>'}}
+  %0 = lit.struct.create(x=%a) : (index) -> !lit.struct<@Bar<:type index>>
   lit.end_func
 }
 

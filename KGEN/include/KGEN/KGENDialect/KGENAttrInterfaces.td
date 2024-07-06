@@ -94,8 +94,8 @@ def IndexRefAttrInterface : AttrInterface<"IndexRefAttrInterface"> {
 
 def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
   let description = [{
-    This interface provides a mechanism for attributes of `!lit.declref` type
-    to implement a verifier hook. `DeclRefType` is a reference to an out-of-line
+    This interface provides a mechanism for attributes of `!lit.struct` type
+    to implement a verifier hook. `StructType` is a reference to an out-of-line
     type definition and values of this type require a symbol table to lookup the
     definition for verification.
   }];

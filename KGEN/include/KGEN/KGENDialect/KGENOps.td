@@ -943,7 +943,7 @@ def KGEN_UndefOp : KGENOp<"undef", [ConstantLike, Pure]> {
     Example:
 
     ```mlir
-    %0 = kgen.undef : !lit.declref<@Int>
+    %0 = kgen.undef : !lit.struct<@Int>
     %1 = kgen.undef : !kgen.struct<(array<2, index>)>
     ```
   }];

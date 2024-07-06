@@ -1047,7 +1047,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     // We build OwnedKwargsDict[ValType].
     ASTType dictType = shared.getOwnedKwargsDictType(arg.loc);
 
-    auto dictDecl = cast<DeclRefType>(dictType.mlirType);
+    auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
     auto dictMetatype = cast<AnyStructType>(dictDecl.getMetaType());
     ArrayRef<Type> inputTypes =
         dictMetatype.getSignature().getInputParamTypes();

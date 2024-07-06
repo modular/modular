@@ -763,19 +763,19 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
     Example:
 
     ```mlir
-    #lit.struct<{foo = 5, bar: dtype = dt}> : !lit.declref<@Struct>
+    #lit.struct<{foo = 5, bar: dtype = dt}> : !lit.struct<@Struct>
     ```
   }];
 
   let parameters = (ins
     ArrayRefParameter<"std::tuple<StringAttr, TypedAttr>">:$values,
-    AttributeSelfTypeParameter<"", "DeclRefType">:$type);
+    AttributeSelfTypeParameter<"", "StructType">:$type);
   let assemblyFormat = "`<` custom<StructElements>($values) `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
         "ArrayRef<std::tuple<StringAttr, TypedAttr>>":$values,
-        "DeclRefType":$type), [{
+        "StructType":$type), [{
       return $_get(type.getContext(), values, type);
     }]>
   ];

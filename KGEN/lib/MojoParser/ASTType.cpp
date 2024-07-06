@@ -47,7 +47,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
-  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
+  if (auto declRef = dyn_cast<StructType>(mlirType))
     return declRef.getMetaType();
   if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
     return paramRef.getParam().getType();
@@ -97,7 +97,7 @@ ArrayRef<Type> ASTType::getParameters() const {
 ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)
     return {};
-  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
+  if (auto declRef = dyn_cast<StructType>(mlirType))
     return cast<StructDeclOp>(getDecl(shared)).bindReference();
   if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
     return AnyStructType::get(metaType.getSymbol(), metaType.getSignature());
@@ -579,7 +579,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     });
     os << ']';
   };
-  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+  if (auto declRef = dyn_cast<StructType>(type)) {
     printUserType(declRef.getSymbol(), declRef.getParamValues());
   } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
     os << "AnyStruct[";
@@ -858,7 +858,7 @@ private:
 ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
   // If this is a struct type, try unbinding just the parameters that have
   // parameter references in it.
-  if (auto drt = dyn_cast<DeclRefType>(*this)) {
+  if (auto drt = dyn_cast<StructType>(*this)) {
     ParamIndexRefAttrFinder finder;
 
     // Otherwise, check each bound parameter to see if it is unknown.  If so,

@@ -138,21 +138,21 @@ def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
 }
 
 //===----------------------------------------------------------------------===//
-// DeclRefType
+// StructType
 //===----------------------------------------------------------------------===//
 
-def LIT_DeclRefType : LITType<"DeclRef", "declref", [
-    DeclareTypeInterfaceMethods<DeclRefTypeInterface>,
+def LIT_StructType : LITType<"Struct", "struct", [
+    DeclareTypeInterfaceMethods<StructTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
-    A `!lit.declref` type references a type declaration and binds parameter
+    A `!lit.struct` type references a type declaration and binds parameter
     values to the type.
 
     Example:
 
     ```mlir
-    !lit.declref<@MyStruct<size = 1, T:dtype = fooType>>
+    !lit.struct<@MyStruct<size = 1, T:dtype = fooType>>
     ```
   }];
 
@@ -180,7 +180,7 @@ def LIT_DeclRefType : LITType<"DeclRef", "declref", [
     /// Get the name of the referenced type, ignoring packages.
     StringAttr getName();
 
-    /// Return an alias name if the DeclRefType should be printed with an alias.
+    /// Return an alias name if the StructType should be printed with an alias.
     std::optional<StringRef> getAliasName();
     static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
   }];
@@ -212,7 +212,7 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
 
     ```mlir
     // Concrete type value.
-    #kgen.type<!lit.declref<@SomeStruct>> : !lit.anystruct<@SomeStruct>
+    #kgen.type<!lit.struct<@SomeStruct>> : !lit.anystruct<@SomeStruct>
 
     // Parametric type value.
     #kgen.param.decl.ref<"some_type"> : !lit.anystruct<@SomeStruct>
@@ -244,7 +244,7 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
     SymbolRefAttr getSymbol() const;
 
     /// Return the struct type this metatype corresponds to.
-    DeclRefType getStructType();
+    StructType getStructType();
 
     /// Bind parameter values to the metatype.
     AnyStructType bind(ArrayRef<TypedAttr> values) const;
@@ -319,7 +319,7 @@ def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
 
     ```mlir
     // Concrete type value for 'Int' converted for use as Stringable value.
-    #kgen.type<!lit.declref<@Int>> : !lit.anytrait<@Stringable>
+    #kgen.type<!lit.struct<@Int>> : !lit.anytrait<@Stringable>
 
     // Parametric type value.
     #kgen.param.decl.ref<"some_type"> : !lit.anytrait<@Stringable>

@@ -7,7 +7,7 @@
 lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
-!structTest = !lit.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
+!structTest = !lit.struct<@SmallVector<2, :type !pop.simd<4, f32>>>
 
 // CHECK-DAG: ![[LLDATA:.*]] = !debuginfo.member<lldata: index>
 // CHECK-DAG: ![[NONE_PTR_TYPE:.*]] = !debuginfo.ti.ptr<!kgen.none>
@@ -15,9 +15,9 @@ lit.struct.decl @SmallVector<N, T: type> register_passable {
 // CHECK-DAG: ![[RECURSIVE_STRUCT:.*]] = !debuginfo.struct<"struct RecursiveStruct"(![[LLDATA]], ![[RECURSIVE_FIELD]])>
 lit.struct.decl @RecursiveStruct register_passable {
   lit.struct.field lldata: index
-  lit.struct.field ptr: !kgen.pointer<!lit.declref<@RecursiveStruct>>
+  lit.struct.field ptr: !kgen.pointer<!lit.struct<@RecursiveStruct>>
 }
-!structTestRecursive = !lit.declref<@RecursiveStruct>
+!structTestRecursive = !lit.struct<@RecursiveStruct>
 
 // CHECK-DAG: ![[MEMBER_A:.*]] = !debuginfo.member<a: !kgen.paramref<Int>>
 // CHECK-DAG: ![[MEMBER_B:.*]] = !debuginfo.member<b: !pop.simd<4, f32>>
@@ -27,7 +27,7 @@ lit.struct.decl @"$test::ComplexStruct"<A: type, B: type> attributes {sourceName
   lit.struct.field a: !kgen.paramref<A>
   lit.struct.field b: !kgen.paramref<B>
 }
-!structTestComplex = !lit.declref<@"$test::ComplexStruct"<:type Int, :type !pop.simd<4, f32>>>
+!structTestComplex = !lit.struct<@"$test::ComplexStruct"<:type Int, :type !pop.simd<4, f32>>>
 
 // This is only possible in mlir tests. Mojo parser will guarantee all structs have SourceNames.
 // CHECK-DAG: ![[COMPLEX_STRUCT_NOSOURCENAME:.*]] = !debuginfo.struct<"struct `$test::ComplexStructNoSourceName`<`:type Int`,`:type simd<4, f32>`>"(![[MEMBER_A]], ![[MEMBER_B]])>
@@ -35,7 +35,7 @@ lit.struct.decl @"$test::ComplexStructNoSourceName"<A: type, B: type> attributes
   lit.struct.field a: !kgen.paramref<A>
   lit.struct.field b: !kgen.paramref<B>
 }
-!structTestComplexNoSourceName = !lit.declref<@"$test::ComplexStructNoSourceName"<:type Int, :type !pop.simd<4, f32>>>
+!structTestComplexNoSourceName = !lit.struct<@"$test::ComplexStructNoSourceName"<:type Int, :type !pop.simd<4, f32>>>
 
 // CHECK-DAG: ![[COMPLEX_STRUCT_REF:.*]] = !debuginfo.ti.ptr<![[COMPLEX_STRUCT]]>
 !structTestComplexRef = !lit.ref<!structTestComplex, imm *"mystruct`">

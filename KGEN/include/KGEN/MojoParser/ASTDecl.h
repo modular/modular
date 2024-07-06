@@ -24,7 +24,7 @@ class ParamDeclAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-class DeclRefType;
+class StructType;
 class DocStringAttr;
 class DocString;
 

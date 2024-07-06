@@ -1,7 +1,7 @@
 // RUN: kgen-opt -check-lifetimes -split-input-file -mlir-print-debuginfo %s | FileCheck %s
 
-// CHECK: ![[DI_PTR_TYPE:.*]] = !debuginfo.ti.ptr<!lit.declref<@S>>
-// CHECK: ![[DI_S_TYPE:.*]] = !debuginfo.unresolved<!lit.declref<@S>>
+// CHECK: ![[DI_PTR_TYPE:.*]] = !debuginfo.ti.ptr<!lit.struct<@S>>
+// CHECK: ![[DI_S_TYPE:.*]] = !debuginfo.unresolved<!lit.struct<@S>>
 // CHECK: #[[DIEXPR_IRVALUE:.*]] = #debuginfo.expr.irvalue : ![[DI_PTR_TYPE]]
 // CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_S_TYPE]]
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>

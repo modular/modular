@@ -606,13 +606,13 @@ static AnyStructType getBindTypeResultType(TypedAttr typeValue,
 static TypedAttr getOrFoldBindType(TypedAttr typeValue,
                                    ArrayRef<TypedAttr> values,
                                    AnyStructType type) {
-  // Assume the inputs are verified. If the type value is a `DeclRefType` then
+  // Assume the inputs are verified. If the type value is a `StructType` then
   // bind it and return a type constant.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(typeValue)) {
-    if (auto decl = dyn_cast<DeclRefType>(typeCst.getMlirType())) {
+    if (auto decl = dyn_cast<LIT::StructType>(typeCst.getMlirType())) {
       auto bound =
-          DeclRefType::get(decl.getSymbol(), type.getParamValues(), type);
-      // DeclRefType has identical type/value representation.
+          LIT::StructType::get(decl.getSymbol(), type.getParamValues(), type);
+      // StructType has identical type/value representation.
       return TypeConstantAttr::get(bound, bound, type);
     }
   }
@@ -991,7 +991,7 @@ bool LITStructAttr::isConstant() const {
 
 ErrorOr<TypedAttr> LIT::createUninitializedValueOf(Type type,
                                                    InterpreterState &state) {
-  auto declRef = dyn_cast<DeclRefType>(type);
+  auto declRef = dyn_cast<StructType>(type);
   if (!declRef)
     return {UnknownAttr::get(type)};
   SmallVector<std::tuple<StringAttr, TypedAttr>> values;
@@ -1022,7 +1022,7 @@ LIT::StructExtractAttr::getFromBytecode(TypedAttr structValue, StringAttr field,
 
 TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue,
                                       StructFieldOp fieldOp) {
-  auto structType = ::cast<DeclRefType>(structValue.getType());
+  auto structType = ::cast<StructType>(structValue.getType());
   ParameterEvaluator evaluator(fieldOp.getParentOp().getInputParams(),
                                structType.getParamValues());
   auto resultType = evaluator.getReboundType(fieldOp.getType());

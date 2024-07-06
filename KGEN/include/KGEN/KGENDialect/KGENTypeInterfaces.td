@@ -73,10 +73,10 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
 }
 
 //===----------------------------------------------------------------------===//
-// DeclRefTypeInterface
+// StructTypeInterface
 //===----------------------------------------------------------------------===//
 
-def DeclRefTypeInterface : TypeInterface<"DeclRefTypeInterface"> {
+def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
   let description = [{
     This interface provides mechanisms for types that refer to a KGEN
     declaration to verify the referenced declaration.
