@@ -671,9 +671,10 @@ struct Device(StringableRaising):
             ).__str__()
             + "\n"
         )
+        res += String("SM count: ") + str(self.multiprocessor_count()) + "\n"
         res += (
-            String("SM count: ")
-            + str(self._query(DeviceAttribute.MULTIPROCESSOR_COUNT))
+            String("Max threads per SM: ")
+            + str(self.max_threads_per_sm())
             + "\n"
         )
 
