@@ -1223,6 +1223,19 @@ StackAllocLifetimeEndOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// AlignedFreeOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult AlignedFreeOp::canonicalize(AlignedFreeOp op,
+                                          PatternRewriter &b) {
+  auto bitcast = op.getPtr().getDefiningOp<PointerBitcastOp>();
+  if (!bitcast)
+    return failure();
+  b.modifyOpInPlace(op, [&] { op.getPtrMutable().set(bitcast.getInput()); });
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // AlignedAllocOp
 //===----------------------------------------------------------------------===//
 

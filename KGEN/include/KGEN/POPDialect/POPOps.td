@@ -1224,6 +1224,7 @@ def POP_AlignedFreeOp : POPOp<"aligned_free",
   let arguments = (ins Arg<PointerType, "", [MemFree]>:$ptr);
 
   let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
