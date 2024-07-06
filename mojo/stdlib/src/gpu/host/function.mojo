@@ -260,7 +260,6 @@ struct Function[
             cuda_function_cache=ctx.cuda_function_cache,
         )
 
-    @always_inline
     fn __init__(
         inout self,
         debug: Bool = False,
@@ -303,7 +302,6 @@ struct Function[
         if not self.info.func_handle:
             raise "Unable to load the CUDA function"
 
-    @always_inline
     fn __init__(
         inout self,
         module: Module,
@@ -356,10 +354,6 @@ struct Function[
                     f.write(StringRef(llvm))
             else:
                 print(llvm)
-
-    @always_inline
-    fn __del__(owned self):
-        pass
 
     @always_inline
     fn __bool__(self) -> Bool:

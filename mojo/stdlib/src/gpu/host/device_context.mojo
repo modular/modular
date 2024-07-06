@@ -143,14 +143,13 @@ struct DeviceBuffer[type: DType](Sized):
         existing.size = 0
         existing.owning = False
 
+    @always_inline
     fn __del__(owned self):
         try:
             if self.owning and self.ptr:
                 self.ctx_ptr[].cuda_context.free(self.ptr)
-                self.ptr = DTypePointer[type]()
-                self.size = 0
         except e:
-            print("something went wrong", e)
+            abort(e)
 
     fn __len__(self) -> Int:
         return self.size
