@@ -287,8 +287,11 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
     CallOperands callOperands(operands);
-    if (operands.hasSelfOperand && func.getIsStatic())
+    callOperands.hasSelfOperand = operands.hasSelfOperand;
+    if (callOperands.hasSelfOperand && func.getIsStatic()) {
       callOperands.posOperands = callOperands.posOperands.drop_front();
+      callOperands.hasSelfOperand = false;
+    }
 
     evaluations.push_back(
         OverloadFitness::evaluate(func.getFullSignature(), candidate, *this,

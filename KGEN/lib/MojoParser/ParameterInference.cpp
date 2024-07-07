@@ -5,10 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/ParameterInference.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/LITDialect/LITTypes.h"
-#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
@@ -16,6 +12,12 @@
 #include "KGEN/MojoParser/ParamBindings.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
+
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 
 #include "MojoUtils.h"
 
@@ -885,6 +887,9 @@ static bool hasInferredParams(PogListAttr paramListAttr) {
          params.front().getPassingKind() == PassingKind::Inferred;
 }
 
+/// Given an incomplete parameter binding set for a parameter list, try to
+/// infer the value of the next parameter. We only do this if there are any
+/// inferred parameters present.
 void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
                                     PogListAttr paramListAttr) {
   // If the parameter list has any inferred parameters, then we have to infer
@@ -1113,4 +1118,68 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
   // We succeed iff we inferred a value for this parameter.
   return success();
+}
+
+/// Given an incomplete parameter binding set, try to infer parameters on Self
+/// of a method from the first argument.
+LogicalResult
+ParameterInferenceState::inferCTADParams(LITSignatureType signature,
+                                         const CallOperands &callOperands) {
+  // Consider "conditional conformance" cases like:
+  //     struct X[A: AnyType]:
+  //       fn foo[B: Movable](self: X[B]): ...
+  //
+  // When resolving a function call like `someX.foo()`, we install the
+  // bindings for 'A' from the typeof(someX) when resolving the
+  // AttributeRefExpr and then infer 'B' from someX again.
+  //
+  // However, when we have something like `X.foo(someX)` we cannot install the
+  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
+  // bound by parameter inference to 'B'.  Notice this and infer the parameter
+  // directly from A.  This is also important for operator resolution, which
+  // works effectively the same way.
+  //
+  // TODO: Provide a first class representation for conditional conformance
+  // that doesn't have us shadowing parameters like this!
+
+  // We can only do this if we have an argument.
+  if (callOperands.posOperands.empty() ||
+      // TODO: This happens due to `-> Self` initializers.  Turn this into
+      // an assertion when kInitReg initializers are removed.
+      signature.getArgConventions().empty())
+    return success();
+
+  auto selfConvention = signature.getArgConventions()[0];
+  ASTType declaredSelfType = signature.getArguments()[0];
+  if (SignatureType::hasAddress(selfConvention))
+    declaredSelfType = declaredSelfType.getReferenceElementType();
+
+  // Get the ASTDecl for the declared self type.  This will give us the struct
+  // that we are referring to without bound parameters.
+  ASTDecl *decl = declaredSelfType.getDecl(shared);
+  if (!decl)
+    return success();
+
+  // Get the Self type, with parameters bound to the structs CTAD parameters.
+  ASTType selfType = decl->getTypeDeclSelf();
+  if (!selfType)
+    return success();
+
+  // We need to convert named parameters like "T", which are ParamDeclRefAttr
+  // into ParamIndexRefAttr(0) style of representation.
+  if (auto structDecl = dyn_cast<StructDeclOp>(decl)) {
+    IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
+    selfType = remapper.replace(selfType.mlirType);
+  }
+
+  // If passing self by reference, wrap the Self type with the RefType
+  // paraphernalia like lifetimes.
+  if (SignatureType::hasAddress(selfConvention)) {
+    auto selfRefType = cast<RefType>(signature.getArguments()[0]);
+    selfType = selfRefType.getWithElement(selfType);
+  }
+
+  // Infer the first operand against this type - it was presumably already
+  // inferred against the methods declared type of 'self' as well.
+  return inferOneOperand(callOperands.posOperands[0], selfType, selfConvention);
 }

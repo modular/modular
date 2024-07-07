@@ -604,6 +604,12 @@ OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
                             fitness.hasVariadicParams}};
 }
 
+/// Determine whether the specified signature can be invoked with the
+/// parameter bindings specified in `callable` and the arguments specified in
+/// `callOperands`.
+///
+/// The 'funcIfDirect' member is set if this is a direct call, or null if
+/// indirect.  It can be used to tune diagnostics.
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
@@ -804,6 +810,32 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // See if we inferred information about the next value.
     if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
       return PValue(result);
+
+    // Check to see if this is a CTAD parameter - a parameter on the struct
+    // that encloses the method.  Consider "conditional conformance" cases like:
+    //     struct X[A: AnyType]:
+    //       fn foo[B: Movable](self: X[B]): ...
+    // When resolving a function call like `someX.foo()`, we install the
+    // bindings for 'A' from the typeof(someX) when resolving the
+    // AttributeRefExpr and then infer 'B' from someX again.
+    //
+    // However, when we have something like `X.foo(someX)` we cannot install the
+    // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
+    // bound by parameter inference to 'B'.  Notice this and infer the parameter
+    // directly from A.  This is also important for operator resolution, which
+    // works effectively the same way.
+    //
+    // TODO: Provide a first class representation for conditional conformance
+    // that doesn't have us shadowing parameters like this!
+    if (funcIfDirect) {
+      auto func = cast<LIT::FuncOp>(*funcIfDirect);
+      if (!func.getIsStatic() && isa<StructDeclOp>(func->getParentOp())) {
+        if (failed(inferrence.inferCTADParams(signature, callOperands)))
+          return PValue();
+        if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
+          return PValue(result);
+      }
+    }
 
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.

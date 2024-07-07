@@ -19,10 +19,6 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/TinyPtrVector.h"
 
-namespace M::KGEN {
-class ParamDeclAttr;
-} // namespace M::KGEN
-
 namespace M::KGEN::LIT {
 class StructType;
 class DocStringAttr;
