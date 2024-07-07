@@ -67,6 +67,10 @@ public:
   }
 
   void deallocateBytes(void *ptr, size_t size) override {
+    // Tolerate deallocating null.
+    if (!ptr)
+      return;
+
     [[maybe_unused]] ssize_t num = numAllocations--;
     assert(num > 0 && "calls to deallocateBytes not balanced by allocateBytes");
     size_t storedSize;
