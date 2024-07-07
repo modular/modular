@@ -182,7 +182,7 @@ public:
   /// about overload resolution when 'shouldPrintOverloadErrors' is true.
   static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
                                  ASTType type, StringRef methodName,
-                                 const CallOperands &callOperands,
+                                 CallOperands &callOperands,
                                  const ExprNode *callExpr, CallSyntax syntax,
                                  function_ref<void()> lookupFailureErrorHandler,
                                  bool shouldPrintOverloadErrors);
@@ -190,7 +190,7 @@ public:
   /// Same as the above but a convenience when never emitting an error.
   static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
                                  ASTType type, StringRef methodName,
-                                 const CallOperands &callOperands,
+                                 CallOperands &callOperands,
                                  const ExprNode *callExpr, CallSyntax syntax) {
     return lookupAndResolve(scopeInfo, type, methodName, callOperands, callExpr,
                             syntax, {}, false);
@@ -216,9 +216,13 @@ public:
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
-  /// arguments.  If so, return the single entry that works.  If not, generate a
-  /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
-  PValue filterOverloadSet(const CallOperands &operands,
+  /// arguments.  If so, return the single entry that works and potentially
+  /// mutate the operand list (when calling a static method that doesn't need
+  /// a self value)).
+  ///
+  /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
+  /// return null.
+  PValue filterOverloadSet(CallOperands &operands,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure) const;
 

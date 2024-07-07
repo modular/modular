@@ -754,12 +754,20 @@ struct StructExample:
     fn __init__(inout self):
         pass
 
-    # CHECK: lit.func @"static({{.*}}Int)"(%x: !Int) -> !kgen.none attributes {{.*}}isStatic
+    # CHECK: lit.func @"maybe_static({{.*}}Int)"(%x: !Int) {{.*}}isStatic
     @staticmethod
-    fn static(x: Int):
+    fn maybe_static(x: Int):
         # CHECK: %0 = {{.*}}{4}
-        # CHECK: lit.call @decls::@StructExample::@"static{{.*}}"(%0)
-        StructExample.static(4)
+        # CHECK: lit.call @decls::@StructExample::@"maybe_static{{.*}}"(%0)
+        StructExample.maybe_static(4)
+        pass
+
+    # This isn't static.
+    # CHECK: lit.func @"maybe_static
+    fn maybe_static(self, x: EmptyStruct):
+        # CHECK: %0 = {{.*}}{4}
+        # CHECK: lit.call @decls::@StructExample::@"maybe_static{{.*}}"(%0)
+        StructExample.maybe_static(4)
         pass
 
     # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> inout) -> !kgen.none
@@ -767,15 +775,27 @@ struct StructExample:
         pass
 
 
-# CHECK: lit.func @"callStatic{{.*}}(%a: !Int)
-fn callStatic(a: Int):
-    # CHECK: lit.call @decls::@StructExample::@"static{{.*}}(%a)
-    StructExample.static(a)
+# CHECK-LABEL: lit.func @"callMaybeStatic{{.*}}(%a: !Int, %b: !EmptyStruct)
+fn callMaybeStatic(a: Int, b: EmptyStruct):
+    # CHECK-NEXT: lit.call @decls::@StructExample::@"maybe_static{{.*}}(%a)
+    StructExample.maybe_static(a)
 
-    # CHECK: %anonymous2A = lit.var.decl
-    # CHECK: lit.call @decls::@StructExample::@"__init__{{.*}}(%anonymous2A)
-    # CHECK: lit.call @decls::@StructExample::@"static{{.*}}(%a)
-    StructExample().static(a)
+    # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}@StructExample::@"__init__{{.*}}([[ANONSE]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[ANONSE]]
+    # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
+    StructExample.maybe_static(StructExample(), b)
+
+    # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}([[ANONSE]])
+    # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}(%a)
+    StructExample().maybe_static(a)
+
+    # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}@StructExample::@"__init__{{.*}}([[ANONSE]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[ANONSE]]
+    # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
+    StructExample().maybe_static(b)
 
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem
