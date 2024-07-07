@@ -962,8 +962,28 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
            << cast<StringLiteralNode>(exprOperands[0].expr)->getValue() << "'";
   };
 
-  // This gets each of the operand expressions, which will be passed to the
-  // __getitem__ / __setitem__ calls.
+  // Look up the getter and setter candidate list on the self type.
+  StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
+  OverloadSet getterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+                                              getterName, node, syntax);
+  if (getterSet.isErroneous())
+    return {}; // Ignore already emitted errors.
+
+  StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
+  OverloadSet setterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+                                              setterName, node, syntax);
+  if (setterSet.isErroneous())
+    return {}; // Ignore already emitted errors.
+
+  // If there is no getter or setter, then we need to fail.
+  if (!setterSet && !getterSet) {
+    lookupError();
+    return {};
+  }
+
+  // Otherwise we'll be calling the getter and/or setter.  Let's emit any index
+  // operands and determine whether they are arguments or parameters (e.g. for
+  // indexing into Tuple with parameter for the index).
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   KeywordOperands kwOperands;
 
@@ -971,84 +991,77 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   posOperands.reserve(exprOperands.size() + 1);
   posOperands.push_back(base);
 
-  // This is called when we have found the first accessor we're going to use,
-  // it emits the operands to posOperands/kwOperands and can bind parameters
-  // into the overload set if they correspond to parameters instead of operands.
-  bool emittedOperands = false;
-  auto emitOperands = [&](OverloadSet &set, bool isSetter) -> LogicalResult {
-    assert(set && "overload set shouldn't be empty");
+  // We emit the operands with one of the sets so we can detect whether we're
+  // emitting the operands as parameters or dynamic values.
+  bool isGetterPresent = (bool)getterSet;
+  OverloadSet *nonemptySet = isGetterPresent ? &getterSet : &setterSet;
+  assert(*nonemptySet && "at least one of the two should be nonempty");
 
-    // Only do this once, even if there is both a getter and setter.
-    if (emittedOperands)
-      return success();
-    emittedOperands = true;
-
-    // The exprOperands provided may be binding either to parameters or to
-    // arguments, and may even be mixed in the theoretical future.  For now, we
-    // keep things simple and just decide to bind all of the expressions to
-    // parameters if no candidates have an argument (other than the set value if
-    // this is a setter list).
-    bool shouldBindParameters = true;
-    for (ASTDecl *elt : set.fnDecls) {
-      // TODO: This is really naive: it doesn't account for default arguments,
-      // variadic, byref_result, etc etc etc.
-      if (cast<LIT::FuncOp>(*elt).getSignature().getArguments().size() !=
-          size_t(isSetter) + /*self*/ 1) {
-        shouldBindParameters = false;
-        break;
-      }
+  // The exprOperands provided may be binding either to parameters or to
+  // arguments, and may even be mixed in the theoretical future.  For now, we
+  // keep things simple and just decide to bind all of the expressions to
+  // parameters if no candidates have an argument (other than the set value if
+  // this is a setter list).
+  bool shouldBindParameters = true;
+  for (ASTDecl *elt : nonemptySet->fnDecls) {
+    // TODO: This is really naive: it doesn't account for default arguments,
+    // variadic, byref_result, etc etc etc.
+    if (cast<LIT::FuncOp>(*elt).getSignature().getArguments().size() !=
+        size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
+      shouldBindParameters = false;
+      break;
     }
+  }
 
-    // If we're binding these indices to parameters, do so and leave the
-    // arguments lists empty.
-    if (shouldBindParameters) {
-      // Start the parameter set with the parameters from the base type of the
-      // method we're invoking, so we set additional parameters.
-      //
-      // FIXME: This is incorrect!  The overload set can contain members of
-      // types that baseType implicitly converts to, and they will take
-      // different parameters that should be inferred from the actual arguments
-      // passed to the call.  We should bind to the functions parameters
-      // somehow, e.g. keyword parameters or something?
-      set.paramBindings =
-          ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseType);
-
-      return bindParamValuesToDirectCall(set, exprOperands, emitter);
-    }
-
-    // Otherwise we're passing these exprOperands as normal arguments.
+  // If we're binding these indices to parameters, do so and leave the
+  // arguments lists empty.
+  if (shouldBindParameters) {
+    // Start the parameter set with the parameters from the base type of the
+    // method we're invoking, so we set additional parameters.
+    //
+    // FIXME: This is incorrect!  The overload set can contain members of
+    // types that baseType implicitly converts to, and they will take
+    // different parameters that should be inferred from the actual arguments
+    // passed to the call.  We need ParameterizedType() to represent unbound
+    // self parameters but bound function parameters.
+    //
+    // FIXME2: What about the other set?  This seems like it only handles
+    // getitem.
+    nonemptySet->paramBindings =
+        ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseType);
+    if (failed(
+            bindParamValuesToDirectCall(*nonemptySet, exprOperands, emitter)))
+      return {};
+  } else {
+    // Otherwise we're passing these exprOperands as normal dynamic arguments.
     for (const Operand &operand : exprOperands) {
       ExprNode *expr = operand.expr;
       AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
       if (!exprVal)
-        return failure();
-
+        return {};
       if (operand.isKeywordOrUnpackedKeyword())
         kwOperands.try_emplace(operand.name,
                                ASTExprAnd<AnyValue>{exprVal, expr});
       else
         posOperands.push_back({exprVal, expr});
     }
-    return success();
-  };
+  }
 
-  // Otherwise if we have no refitem, try the getter and setter.
-  StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
-  StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
+  // If we /just/ have a getter, emit this as a call to the getter, allowing
+  // us to get nice tuned diagnostics.
+  if (!setterSet)
+    return getterSet.emitCall(CallOperands(posOperands, &kwOperands), dest,
+                              emitter);
 
-  OverloadSet getterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
-                                              getterName, node, syntax);
-  if (getterSet.isErroneous())
-    return {}; // Ignore already emitted errors.
+  // Okay, we definitely have a setter, and we might have a getter.  The problem
+  // is that we don't know in which context this expression will be used - it
+  // could be loaded from, stored to, or both (with an inout argument), and it
+  // might even have computed contextual parameters.
 
   // If we have a getter, resolve it and get the element type from it.
   ASTType elementType;
   PValue getter;
   if (getterSet) {
-    // If we have at least one getter, then we expect one of them to work.
-    // Emit the operands however required and then filter with them.
-    if (failed(emitOperands(getterSet, /*isSetter=*/false)))
-      return {};
     CallOperands getOperands(posOperands, &kwOperands);
     getter = getterSet.filterOverloadSet(getOperands,
                                          /*allowImplicitConversions=*/true,
@@ -1057,26 +1070,6 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       return {};
     // ElementType is the result of the getter.
     elementType = getter.getType().getSignatureUserResultType();
-  }
-
-  // If we don't have a getter then check to see if we have a setter.  This
-  // is tricky: get an unfiltered candidate set and try to sort it out.
-  OverloadSet setterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
-                                              setterName, node, syntax);
-  if (setterSet.isErroneous())
-    return {}; // Ignore already emitted errors.
-
-  // If there is no getter or setter, then we need to fail.
-  if (!setterSet && !getter) {
-    lookupError();
-    return {};
-  }
-
-  if (setterSet) {
-    // Emit the operands required by the setter if necessary so we can filter
-    // them.
-    if (failed(emitOperands(setterSet, /*isSetter=*/true)))
-      return {};
   }
 
   // We need to figure out which setter to use, but can't just filter the set
@@ -1124,69 +1117,63 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       elementType = elementType.getReferenceElementType();
   }
 
-  // Ok, now that we know the element type, we can look up any setter.
-  PValue setter;
-  StringAttr setterValueName;
-  if (setterSet) {
-    // If the accessors are defined with the new value as a keyword-only
-    // argument (eg because the indices are variadic), then we need to pass as a
-    // keyword, otherwise we can pass as a positional argument.  This is a bit
-    // awkward for overload resolution because we don't know what name each
-    // overload might use.  It seems reasonable to require that all overloads of
-    // __setitem__ use the same name for their value argument, so we just sniff
-    // at the first entry of the set to see what it uses and assume the rest use
-    // the same name.
-    auto firstFnSig =
-        cast<LIT::FuncOp>(*setterSet.fnDecls.front()).getSignature();
+  // Ok, now that we know the elementType, we can look up any setter that we
+  // need to use.
 
-    // Find the last user declared argument.
-    auto argNo = firstFnSig.getNumArguments();
-    do {
-      --argNo;
-      // Can't use the self argument as the new value.
-      if (argNo == 0) {
-        auto diag = emitter.emitError(setterSet.fnDecls.front()->getLoc())
-                    << setterName
-                    << " must take at least one argument for the value to set"
-                    << node->getRange();
-        diag.attachNote(node->getLoc())
-            << "used in an expression here" << node->getRange();
-        return {};
-      }
-      // Ignore the byref return and error arguments.
-    } while (SignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
+  // If the accessors are defined with the new value as a keyword-only
+  // argument (eg because the indices are variadic), then we need to pass as a
+  // keyword, otherwise we can pass as a positional argument.  This is a bit
+  // awkward for overload resolution because we don't know what name each
+  // overload might use.  It seems reasonable to require that all overloads of
+  // __setitem__ use the same name for their value argument, so we just sniff
+  // at the first entry of the set to see what it uses and assume the rest use
+  // the same name.
+  auto firstFnSig =
+      cast<LIT::FuncOp>(*setterSet.fnDecls.front()).getSignature();
 
-    setterValueName = firstFnSig.getArgName(argNo);
-    if (kwOperands.contains(setterValueName)) {
-      auto diag = emitter.emitError(node->getLoc())
-                  << "keyword argument " << setterValueName
-                  << " may not be specified in the index list, it is needed "
-                     "for the new value"
+  // Find the last user declared argument.
+  auto argNo = firstFnSig.getNumArguments();
+  do {
+    --argNo;
+    // Can't use the self argument as the new value.
+    if (argNo == 0) {
+      auto diag = emitter.emitError(setterSet.fnDecls.front()->getLoc())
+                  << setterName
+                  << " must take at least one argument for the value to set"
                   << node->getRange();
+      diag.attachNote(node->getLoc())
+          << "used in an expression here" << node->getRange();
       return {};
     }
+    // Ignore the byref return and error arguments.
+  } while (SignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
 
-    kwOperands.try_emplace(
-        setterValueName,
-        ASTExprAnd<AnyValue>{PValue(UnknownAttr::get(elementType)), node});
-
-    // This needs to emit an error if we had no getter so we get diagnostics
-    // about why nothing in the setter set work out.
-    bool emitDiags = !getter;
-    CallOperands setOperands(posOperands, &kwOperands);
-    setter = setterSet.filterOverloadSet(setOperands,
-                                         /*allowImplicitConversions=*/true,
-                                         /*emitDiagnosticOnFailure*/ emitDiags);
-    if (!setter && emitDiags)
-      return {};
-
-    kwOperands.pop_back();
+  StringAttr setterValueName = firstFnSig.getArgName(argNo);
+  if (kwOperands.contains(setterValueName)) {
+    auto diag = emitter.emitError(node->getLoc())
+                << "keyword argument " << setterValueName
+                << " may not be specified in the index list, it is needed "
+                   "for the new value"
+                << node->getRange();
+    return {};
   }
 
-  // If we /just/ have a getter, emit this as a call to the getter immediately.
-  if (!setter)
-    return emitter.emitIndirectCall(
-        getter, CallOperands(posOperands, &kwOperands), dest, node);
+  kwOperands.try_emplace(
+      setterValueName,
+      ASTExprAnd<AnyValue>{PValue(UnknownAttr::get(elementType)), node});
+
+  // This needs to emit an error if we had no getter so we get diagnostics
+  // about why nothing in the setter set work out.
+  bool emitDiags = !getter;
+  CallOperands setOperands(posOperands, &kwOperands);
+  PValue setter =
+      setterSet.filterOverloadSet(setOperands,
+                                  /*allowImplicitConversions=*/true,
+                                  /*emitDiagnosticOnFailure*/ emitDiags);
+  if (!setter && emitDiags)
+    return {};
+
+  kwOperands.pop_back();
 
   // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
