@@ -1149,6 +1149,16 @@ struct NDBuffer[
         self.store[width=1](idx, val)
 
     @always_inline
+    fn __setitem__(self, *idx: Int, val: Scalar[type]):
+        """Stores a single value into the buffer at the specified index.
+
+        Args:
+            idx: Index of the element to retrieve.
+            val: The value to store.
+        """
+        self.store[width=1](StaticIntTuple[rank](idx), val)
+
+    @always_inline
     fn store[
         *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
