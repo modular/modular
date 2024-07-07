@@ -991,7 +991,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     bool shouldBindParameters = true;
     for (ASTDecl *elt : set.fnDecls) {
       // TODO: This is really naive: it doesn't account for default arguments,
-      // variadic etc etc etc.
+      // variadic, byref_result, etc etc etc.
       if (cast<LIT::FuncOp>(*elt).getSignature().getArguments().size() !=
           size_t(isSetter) + /*self*/ 1) {
         shouldBindParameters = false;
@@ -1126,8 +1126,49 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Ok, now that we know the element type, we can look up any setter.
   PValue setter;
+  StringAttr setterValueName;
   if (setterSet) {
-    posOperands.push_back({PValue(UnknownAttr::get(elementType)), node});
+    // If the accessors are defined with the new value as a keyword-only
+    // argument (eg because the indices are variadic), then we need to pass as a
+    // keyword, otherwise we can pass as a positional argument.  This is a bit
+    // awkward for overload resolution because we don't know what name each
+    // overload might use.  It seems reasonable to require that all overloads of
+    // __setitem__ use the same name for their value argument, so we just sniff
+    // at the first entry of the set to see what it uses and assume the rest use
+    // the same name.
+    auto firstFnSig =
+        cast<LIT::FuncOp>(*setterSet.fnDecls.front()).getSignature();
+
+    // Find the last user declared argument.
+    auto argNo = firstFnSig.getNumArguments();
+    do {
+      --argNo;
+      // Can't use the self argument as the new value.
+      if (argNo == 0) {
+        auto diag = emitter.emitError(setterSet.fnDecls.front()->getLoc())
+                    << setterName
+                    << " must take at least one argument for the value to set"
+                    << node->getRange();
+        diag.attachNote(node->getLoc())
+            << "used in an expression here" << node->getRange();
+        return {};
+      }
+      // Ignore the byref return and error arguments.
+    } while (SignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
+
+    setterValueName = firstFnSig.getArgName(argNo);
+    if (kwOperands.contains(setterValueName)) {
+      auto diag = emitter.emitError(node->getLoc())
+                  << "keyword argument " << setterValueName
+                  << " may not be specified in the index list, it is needed "
+                     "for the new value"
+                  << node->getRange();
+      return {};
+    }
+
+    kwOperands.try_emplace(
+        setterValueName,
+        ASTExprAnd<AnyValue>{PValue(UnknownAttr::get(elementType)), node});
 
     // This needs to emit an error if we had no getter so we get diagnostics
     // about why nothing in the setter set work out.
@@ -1138,7 +1179,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
                                          /*emitDiagnosticOnFailure*/ emitDiags);
     if (!setter && emitDiags)
       return {};
-    posOperands.pop_back();
+
+    kwOperands.pop_back();
   }
 
   // If we /just/ have a getter, emit this as a call to the getter immediately.
@@ -1148,8 +1190,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
-      getter, setter, std::move(posOperands), std::move(kwOperands),
-      elementType, node));
+      getter, setter, setterValueName, std::move(posOperands),
+      std::move(kwOperands), elementType, node));
   return emitter.emitResult(result, node, dest);
 }
 
@@ -1825,9 +1867,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
-  // Support subscripting a variadic in a parameter list.  This enables us to
-  // work with parameter backs in a more natural way, e.g.
-  // fn thing[*Ts: CollectionElement]():
+  // Support subscripting a !kgen.variadic value, which are used in parameter
+  // lists.  This enables us to work with parameter backs in a more natural way,
+  // e.g. fn thing[*Ts: CollectionElement]():
   //      type = Ts[123]
   // We should really remove this when going to a better parameter pack rep.
   //
