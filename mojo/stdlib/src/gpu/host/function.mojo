@@ -391,17 +391,18 @@ struct Function[
         shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
+        alias num_args = len(VariadicList(Ts))
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
         var args_stack = stack_allocation[
-            num_captures + args.__len__(), UnsafePointer[NoneType]
+            num_captures + num_args, UnsafePointer[NoneType]
         ]()
 
         populate(args_stack.bitcast[NoneType]())
 
         @parameter
-        for i in range(args.__len__()):
+        for i in range(num_args):
             alias arg_offset = num_captures + i
             var elt_addr = UnsafePointer.address_of(args[i])
             args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
