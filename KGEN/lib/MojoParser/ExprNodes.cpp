@@ -1050,7 +1050,6 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     if (failed(emitOperands(getterSet, /*isSetter=*/false)))
       return {};
     CallOperands getOperands(posOperands, &kwOperands);
-
     getter = getterSet.filterOverloadSet(getOperands,
                                          /*allowImplicitConversions=*/true,
                                          /*emitDiagnosticOnFailure*/ true);
@@ -1133,7 +1132,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // This needs to emit an error if we had no getter so we get diagnostics
     // about why nothing in the setter set work out.
     bool emitDiags = !getter;
-    setter = setterSet.filterOverloadSet(CallOperands(posOperands, &kwOperands),
+    CallOperands setOperands(posOperands, &kwOperands);
+    setter = setterSet.filterOverloadSet(setOperands,
                                          /*allowImplicitConversions=*/true,
                                          /*emitDiagnosticOnFailure*/ emitDiags);
     if (!setter && emitDiags)
@@ -1271,7 +1271,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   shared.notifyListenerOnRef(memberDecls, spelling, this);
 
   // Handle method references, which might be overloaded.
-  if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
+  if (isa<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
     auto result = OverloadSetUValue::create(
         spelling, memberDecls,
@@ -1281,11 +1281,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
     // bind the base value and the symbol together into a callable.
-    // FIXME: This isn't handling overloaded static/non-static methods
-    // correctly.  What is the actual behavior we want for static methods?
-    // Maybe we don't allow overloading static and non-static methods with
-    // the same name?
-    if (!fnOp.getIsStatic() && !hasTypeBase) {
+    if (!hasTypeBase) {
       result->baseValue = {baseVal, base};
       result->syntax = CallSyntax::kMethodCall;
     }

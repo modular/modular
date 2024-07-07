@@ -205,6 +205,10 @@ static CallKind getCallKind(CallSyntax syntax) {
   llvm_unreachable("invalid call syntax");
 }
 
+/// Evaluate the fnDecls candidates and see if there is an unambiguous
+/// candidate that works with the specified parameter bindings on the overload
+/// set. If so, return the single entry that works.  If not, generate a
+/// diagnostic and return null.
 PValue OverloadSet::filterOverloadSetForParamBindings(
     bool allowImplicitConversions) const {
   SmallVector<OverloadFitness> evaluations;
@@ -271,7 +275,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   return {};
 }
 
-PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
+PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure) const {
   // Evaluate the fitness of each candidate in our overload set.
@@ -283,7 +287,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
     CallOperands callOperands(operands);
-    if (func.getIsStatic() && operands.hasSelfOperand)
+    if (operands.hasSelfOperand && func.getIsStatic())
       callOperands.posOperands = callOperands.posOperands.drop_front();
 
     evaluations.push_back(
@@ -410,6 +414,15 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
+
+    // If the target is static and there is a self operand, remove it from the
+    // operand list so it doesn't get passed.
+    if (operands.hasSelfOperand &&
+        cast<LIT::FuncOp>(newFnDecls[0]).getIsStatic()) {
+      operands.posOperands = operands.posOperands.drop_front();
+      operands.hasSelfOperand = false;
+    }
+
     return getCallee(getShared(), newFnDecls[0], baseName, newBindings, expr);
   }
 
@@ -664,11 +677,12 @@ OverloadSet OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo,
 /// Lookup of a named named method on the specified type, filtered to match a
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
-PValue OverloadSet::lookupAndResolve(
-    const TypeCheckScopeInfo &scopeInfo, ASTType type, StringRef methodName,
-    const CallOperands &callOperands, const ExprNode *callExpr,
-    CallSyntax syntax, function_ref<void()> lookupFailureErrorHandler,
-    bool shouldPrintOverloadErrors) {
+PValue
+OverloadSet::lookupAndResolve(const TypeCheckScopeInfo &scopeInfo, ASTType type,
+                              StringRef methodName, CallOperands &callOperands,
+                              const ExprNode *callExpr, CallSyntax syntax,
+                              function_ref<void()> lookupFailureErrorHandler,
+                              bool shouldPrintOverloadErrors) {
   auto ovSet = OverloadSet::lookup(scopeInfo, type, methodName, callExpr,
                                    syntax, lookupFailureErrorHandler);
 

@@ -1506,9 +1506,11 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
+  FuncOperand enterOperand = {contextVal, contextExp};
+  CallOperands enterOperands({enterOperand});
+  enterOperands.hasSelfOperand = true;
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
-          getScopeInfo(), contextRVType, "__enter__",
-          CallOperands({{contextVal, contextExp}}), contextExp,
+          getScopeInfo(), contextRVType, "__enter__", enterOperands, contextExp,
           CallSyntax::kMethodCall)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self inout.
@@ -1538,6 +1540,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         // Make the emission work even if the type isn't copyable.
         contextVal = MRValue(contextMgrDecl);
       }
+      enterOperand.ir = contextVal;
     }
   }
 
@@ -1568,9 +1571,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
-  CValue enterResult = getEmitter().emitNamedMethodCall(
-      "__enter__", CallOperands({{contextVal, contextExp}}), enterDest,
-      CallSyntax::kMethodCall, contextExp);
+  CValue enterResult =
+      getEmitter().emitNamedMethodCall("__enter__", enterOperands, enterDest,
+                                       CallSyntax::kMethodCall, contextExp);
 
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
@@ -1667,11 +1670,14 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Check if the context manager provides an `__exit__` overload that accepts
   // an error. If it doesn't, then we know the exit is unconditional.
+  FuncOperand exitOperands[] = {
+      {contextVal, contextExp},
+      {PValue(UnknownAttr::get(errorType)), contextExp}};
+  CallOperands exitCallOperands(exitOperands);
+  exitCallOperands.hasSelfOperand = true;
   PValue conditionalExit = OverloadSet::lookupAndResolve(
-      getScopeInfo(), contextRVType, "__exit__",
-      CallOperands({{contextVal, contextExp},
-                    {PValue(UnknownAttr::get(errorType)), contextExp}}),
-      contextExp, CallSyntax::kMethodCall);
+      getScopeInfo(), contextRVType, "__exit__", exitCallOperands, contextExp,
+      CallSyntax::kMethodCall);
 
   // Otherwise, we have to emit a conditional finally. PEP343 states that the
   // general 'with' statement corresponds to:
@@ -1735,11 +1741,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
     ValueDest exitResultDest(EC_WithExitResult);
+    exitOperands[0].ir = MLValue(contextMgrDecl);
+    exitOperands[1].ir = MBValue(nestedErrDecl);
     CValue exitResult = getEmitter().emitIndirectCall(
-        conditionalExit,
-        CallOperands({{MLValue(contextMgrDecl), contextExp},
-                      {MBValue(nestedErrDecl), contextExp}}),
-        exitResultDest, contextExp);
+        conditionalExit, exitOperands, exitResultDest, contextExp);
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =
