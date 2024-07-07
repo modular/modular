@@ -1273,6 +1273,19 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (isa<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
+    //
+    // TODO(ParameterizedType): This representation is subtly wrong.  We should
+    // be inferring Self parameters from the expression later rather than
+    // installing "getForDeclaredType", because this won't work correctly with
+    // non-materializable types that need an implicit conversion.
+    //
+    // We currently need to bind the Self parameters here so that subsequent
+    // parameters are bound correctly.  Consider something like:
+    //     foo.dyn_cast[Int]()
+    // If typeof(foo) has parameters A and B, we need to form a parameter list
+    // of `[A, B, Int]`.  If we had ParameterizedType then we could model this
+    // correctly as have an unspecified first set of bindings for the type,
+    // and the Int binding could go in a subsequent parameter list.
     auto result = OverloadSetUValue::create(
         spelling, memberDecls,
         ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseRVType),

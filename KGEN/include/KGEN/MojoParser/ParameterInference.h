@@ -105,6 +105,11 @@ public:
                       const CallOperands &callOperands,
                       const KeywordOperands &variadicKwOperands);
 
+  /// Given an incomplete parameter binding set, try to infer parameters on Self
+  /// of a method from the first argument.
+  LogicalResult inferCTADParams(LITSignatureType signature,
+                                const CallOperands &callOperands);
+
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
     return idx < inferredParams.size() ? inferredParams[idx] : TypedAttr();

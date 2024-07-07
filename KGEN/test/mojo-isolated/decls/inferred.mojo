@@ -106,3 +106,30 @@ fn test_inferred_params[x: int, y: ParamType[x], z: DependentParam[x, y]]():
 
     # CHECK-NEXT: InferredStructConversion<x, :type !Int, :[[PARAMTYPE]]<x> y>
     var inferred_type: InferredStructConversion[Int, y]
+
+##===----------------------------------------------------------------------===##
+# Inferred Self parameters
+##===----------------------------------------------------------------------===##
+
+trait FancyTrait(CollectionElement):
+    fn __eq__(self, other: Self) -> Bool: pass
+
+@value
+struct MyOptional[T: CollectionElement]:
+
+    fn __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
+        pass
+
+  # CHECK-LABEL: lit.func @"__ne__
+    fn __ne__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
+        # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%self, %rhs)
+        return not (self == rhs)
+
+# CHECK-LABEL: lit.func @"testMyOptional
+fn testMyOptional(a: MyOptional[Int]):
+    # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
+    _ = a.__eq__(a)
+    # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
+    _ = MyOptional.__eq__(a, a)
+    # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
+    _ = a == a

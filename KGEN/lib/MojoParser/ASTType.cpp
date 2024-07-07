@@ -84,6 +84,7 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
+/// Get the types of any unbound parameters of the type.
 ArrayRef<Type> ASTType::getParameters() const {
   // Query the metatype for the parameter signature.
   if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
