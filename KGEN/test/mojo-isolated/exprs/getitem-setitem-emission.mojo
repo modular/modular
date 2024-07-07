@@ -188,3 +188,27 @@ fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
   # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
   _ = b[2, 4]
 
+# ===----------------------------------------------------------------------=== #
+# Keyword arguments in setters
+
+@value
+struct VariadicIndexList:
+    fn __getitem__(inout self, *indices: Int) -> Int:
+        pass
+
+    fn __setitem__(inout self, *indices: Int, val: Int):
+        pass
+
+# CHECK-LABEL: lit.func @"testVariadicIndexList
+# MOCO-696: Support variadic length keys in __setitem__
+fn testVariadicIndexList(inout foo: VariadicIndexList, i: Int, the_value: Int):
+    # Getter is straight-forward.
+    # CHECK: [[VARIADIC:%.*]] = pop.variadic.splat 2, %i
+    # CHECK: lit.call {{.*}}VariadicIndexList::@"__getitem__{{.*}}(%foo, [[VARIADIC]])
+    _ = foo[i, i]
+
+    # Setter needs to pass the new value as 'val', not in the variadics.
+    # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.splat 4, %i
+    # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, [[VARIADIC]], %the_value)
+    foo[i, i, i, i] = the_value
+

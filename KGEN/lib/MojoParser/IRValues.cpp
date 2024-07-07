@@ -368,12 +368,13 @@ RefType StoredAttributeRefDLValue::getMBValueTypeFromDefArgument() const {
 //===----------------------------------------------------------------------===//
 
 SubscriptDLValue::SubscriptDLValue(PValue getter, PValue setter,
+                                   StringAttr setterValueName,
                                    SmallVectorImpl<FuncOperand> &&posOperands,
                                    KeywordOperands &&kwOperands,
                                    ASTType elementType, const ExprNode *expr)
     : BaseDLValue(elementType), getter(getter), setter(setter),
-      posOperands(std::move(posOperands)), kwOperands(std::move(kwOperands)),
-      expr(expr) {}
+      setterValueName(setterValueName), posOperands(std::move(posOperands)),
+      kwOperands(std::move(kwOperands)), expr(expr) {}
 
 /// Return true if this is a subscript, false if this is an attribute access.
 bool SubscriptDLValue::isSubscript() const {

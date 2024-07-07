@@ -2119,12 +2119,13 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
     return;
   }
 
-  // Add the set value to the positional operand list.
-  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithValue(posOperands);
-  posOperandsWithValue.push_back(value);
+  // Add the set value to the keyword arguments list.
+  KeywordOperands kwOperandsWithValue(kwOperands);
+  kwOperandsWithValue.try_emplace(setterValueName, value);
+
   ValueDest storeDest(EC_Assignment);
   emitter.emitIndirectCall(
-      setter, CallOperands(posOperandsWithValue, &kwOperands), storeDest, expr);
+      setter, CallOperands(posOperands, &kwOperandsWithValue), storeDest, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
