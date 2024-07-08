@@ -46,6 +46,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Formattable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @no_inline
     fn __str__(self) -> String:
         """Get the complex as a string.
 
