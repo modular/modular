@@ -1158,27 +1158,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     return {};
   }
 
-  kwOperands.try_emplace(
-      setterValueName,
-      ASTExprAnd<AnyValue>{PValue(UnknownAttr::get(elementType)), node});
-
-  // This needs to emit an error if we had no getter so we get diagnostics
-  // about why nothing in the setter set work out.
-  bool emitDiags = !getter;
-  CallOperands setOperands(posOperands, &kwOperands);
-  PValue setter =
-      setterSet.filterOverloadSet(setOperands,
-                                  /*allowImplicitConversions=*/true,
-                                  /*emitDiagnosticOnFailure*/ emitDiags);
-  if (!setter && emitDiags)
-    return {};
-
-  kwOperands.pop_back();
-
   // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
-      getter, setter, setterValueName, std::move(posOperands),
-      std::move(kwOperands), elementType, node));
+      getter, setterValueName, std::move(posOperands), std::move(kwOperands),
+      elementType, node));
   return emitter.emitResult(result, node, dest);
 }
 

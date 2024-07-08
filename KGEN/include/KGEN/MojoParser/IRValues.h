@@ -749,7 +749,7 @@ public:
 class SubscriptDLValue : public BaseDLValue {
 public:
   /// The getter and setter to use; these may both be null.
-  PValue getter, setter;
+  PValue getter;
   /// They keyword argument name for the newValue.
   StringAttr setterValueName;
 
@@ -763,7 +763,7 @@ public:
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
-  SubscriptDLValue(PValue getter, PValue setter, StringAttr setterValueName,
+  SubscriptDLValue(PValue getter, StringAttr setterValueName,
                    SmallVectorImpl<FuncOperand> &&posOperands,
                    KeywordOperands &&kwOperands, ASTType elementType,
                    const ExprNode *expr);

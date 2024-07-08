@@ -58,8 +58,6 @@ fn test_setitem_overload(b: MultiSetItem, x: int):
     b[x] = x
 
 
-
-
 @value
 struct VariadicIndexList:
     fn __getitem__(inout self, *indices: Int) -> Int:
@@ -80,4 +78,13 @@ fn testVariadicIndexList(inout foo: VariadicIndexList, i: Int, the_value: Int):
     # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.splat 4, %i
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, [[VARIADIC]], %the_value)
     foo[i, i, i, i] = the_value
+
+struct Issue3142IntList:
+    fn __getitem__[idx: Int](self) -> Int: pass
+    # expected-note @+1 {{function declared here}}
+    fn __setitem__[idx: Int](inout self, value: Int): pass
+
+fn test(lst: Issue3142IntList):
+    # expected-error @+1 {{invalid call to '__setitem__': could not deduce parameter 'idx' of callee '__setitem__'}}
+    lst[0] = 0
 
