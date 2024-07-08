@@ -166,14 +166,14 @@ def bench_attention[
 
 def main():
     var specs = List[AttentionSpec](
-        # bert-base-uncased-seqlen-16.yaml
+        # bert-base-uncased-seqlen-16-onnx.yaml
         AttentionSpec(
             batch_size=12,
             seq_len=16,
             kv_seq_len=16,
             depth_dim=64,
         ),
-        # BERT/bert-base-uncased-seqlen-128.yaml
+        # BERT/bert-base-uncased-seqlen-128-onnx.yaml
         # GPT-2/gpt2-small-seqlen-128.yaml
         # RoBERTa/roberta-base-hf-onnx.yaml
         AttentionSpec(
