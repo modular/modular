@@ -140,16 +140,22 @@ def layer_norm[
     g = input.graph()
     epsilon_constant = g.constant(Tensor[dtype](TensorShape(1), epsilon))
 
-    return g.op(
+    # We need input to be rank2 since the GPU kernel only supports this case right now
+    var input_shape = input.shape()
+    var input_rank2 = input.reshape(-1, input_shape[len(input_shape) - 1])
+    var result = g.op(
         "mo.layer_norm",
         List[Symbol](
-            input,
+            input_rank2,
             gamma,
             beta,
             epsilon_constant,
         ),
-        input.type(),
+        input_rank2.type(),
     )
+
+    # reshape back to the old shape
+    return reshape_like(result, input)
 
 
 def range_fill(start: Symbol, limit: Symbol, step: Symbol) -> Symbol:
