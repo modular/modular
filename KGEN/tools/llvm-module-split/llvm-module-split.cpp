@@ -139,13 +139,22 @@ int main(int argc, char **argv) {
   };
 
   if (clOptions.perFunctionSplit) {
-    splitPerFunction(*module, 1,
-                     [&](llvm::Module *subModule, int64_t idx, bool) {
-                       if (subModule)
-                         outputLambda(*subModule, idx);
-                     });
+    splitPerFunction(
+        std::move(module), 1,
+        [&](std::unique_ptr<llvm::Module> subModule, int64_t idx, bool) {
+          if (subModule)
+            outputLambda(*subModule, idx);
+        });
   } else {
-    splitPerExported(*module, outputLambda);
+    SmallVector<std::unique_ptr<llvm::Module>> modules =
+        splitPerExported(*module);
+    if (modules.empty()) {
+      outputLambda(*module, -1);
+    } else {
+      for (auto [idx, module] :
+           llvm::enumerate(llvm::make_pointee_range(modules)))
+        outputLambda(module, idx);
+    }
   }
 
   if (output)

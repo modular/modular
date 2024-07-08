@@ -19,15 +19,15 @@ namespace M::KGEN {
 /// support for splitting an LLVM module into multiple parts using exported
 /// functions as anchors, and pull in all dependency on the call stack into one
 /// module.
-void splitPerExported(
-    llvm::Module &module,
-    function_ref<void(llvm::Module &, int64_t idx)> processFn);
+SmallVector<std::unique_ptr<llvm::Module>>
+splitPerExported(llvm::Module &module);
 
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
 void splitPerFunction(
-    llvm::Module &module, size_t parallelismLevel,
-    function_ref<void(llvm::Module *, int64_t idx, bool)> processFn);
+    std::unique_ptr<llvm::Module> module, size_t parallelismLevel,
+    function_ref<void(std::unique_ptr<llvm::Module>, int64_t idx, bool)>
+        processFn);
 
 } // namespace M::KGEN
 
