@@ -7,43 +7,51 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from benchmark import Bench, Bencher, BenchId
-from benchmark._cuda import time_async_cuda_kernel
-from gpu.host import Context, Dim, Function, Stream
+from gpu.host import DeviceContext, Dim
 
 
 fn empty_kernel():
     pass
 
 
-@parameter
-fn bench_empty_async(inout b: Bencher) raises:
-    var func = Function[empty_kernel]()
-    var stream = Stream()
+fn test_bench_empty_async(inout m: Bench, ctx: DeviceContext) raises:
+    var func = ctx.compile_function[empty_kernel]()
 
     @parameter
-    fn launch(stream: Stream) raises:
-        func(grid_dim=Dim(1), block_dim=Dim(1), stream=stream)
+    @always_inline
+    fn bench_empty_async(inout b: Bencher) raises:
+        @parameter
+        @always_inline
+        fn launch(ctx: DeviceContext) raises:
+            ctx.enqueue_function(func, grid_dim=Dim(1), block_dim=Dim(1))
 
-    b.iter_custom[time_async_cuda_kernel[launch]]()
+        b.iter_custom[launch](ctx)
+
+    m.bench_function[bench_empty_async](BenchId("bench_empty_async"))
 
 
-@parameter
-fn bench_empty_sync(inout b: Bencher) raises:
-    var func = Function[empty_kernel]()
+fn test_bench_empty_sync(inout m: Bench, ctx: DeviceContext) raises:
+    var func = ctx.compile_function[empty_kernel]()
 
     @parameter
-    fn launch() raises:
-        func(grid_dim=Dim(1), block_dim=Dim(1))
+    @always_inline
+    fn bench_empty_sync(inout b: Bencher) raises:
+        @parameter
+        @always_inline
+        fn launch() raises:
+            ctx.enqueue_function(func, grid_dim=Dim(1), block_dim=Dim(1))
 
-    b.iter[launch]()
+        b.iter[launch]()
+
+    m.bench_function[bench_empty_sync](BenchId("bench_empty_sync"))
 
 
 def main():
-    with Context():
-        var m = Bench()
-        m.bench_function[bench_empty_async](BenchId("bench_empty_async"))
-        m.bench_function[bench_empty_sync](BenchId("bench_empty_sync"))
-        m.dump_report()
+    var m = Bench()
+    with DeviceContext() as ctx:
+        test_bench_empty_async(m, ctx)
+        test_bench_empty_sync(m, ctx)
+    m.dump_report()
 
 
 # CHECK: bench_empty_async
