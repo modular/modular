@@ -1059,8 +1059,12 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
           << "internal compiler error: OwnedKwargsDict type has unexpected "
              "parameter signature; please file a bug";
       arg.isErroneous = true;
-      return;
     }
+
+    // If anything is wrong with the argument, we terminate before emitting a
+    // type for the variadic keyword arguments.
+    if (arg.isErroneous)
+      return;
 
     auto collectionElement = cast<TraitType>(inputTypes[0]);
     PValue binding = typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
