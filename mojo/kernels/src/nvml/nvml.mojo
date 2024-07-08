@@ -177,6 +177,7 @@ struct Result(Stringable, EqualityComparable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Result.SUCCESS:
             return "SUCCESS"
@@ -562,12 +563,15 @@ struct Device(Formattable):
 
         raise "unable to set max gpu clock for " + str(device)
 
+    @no_inline
     fn __str__(self) -> String:
         return self.__repr__()
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         writer.write("Device(", self.idx, ")")
 
+    @no_inline
     fn __repr__(self) -> String:
         return String.format_sequence(self)
 
