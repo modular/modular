@@ -107,6 +107,7 @@ struct ScatterSpec(Stringable):
     var n1: Int
     var n2: Int
 
+    @no_inline
     fn __str__(self) -> String:
         return (
             "axis="

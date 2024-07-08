@@ -216,6 +216,7 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
     var pad: StaticIntTuple[2 * static_info.rank]
     var num_groups: Int
 
+    @no_inline
     fn __str__(self) -> String:
         # fmt: off
         return (

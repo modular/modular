@@ -221,6 +221,7 @@ struct GemvSpec(Stringable):
     var n: Int
     var k: Int
 
+    @no_inline
     fn __str__(self) -> String:
         return "m=" + str(self.m) + ";n=" + str(self.n) + ";k=" + str(self.k)
 

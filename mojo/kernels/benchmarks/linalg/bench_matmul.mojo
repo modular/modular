@@ -144,6 +144,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](Stringable):
     var n: Int
     var k: Int
 
+    @no_inline
     fn __str__(self) -> String:
         return (
             "m="

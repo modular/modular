@@ -18,6 +18,7 @@ struct Direction:
     alias DEVICE_TO_HOST = Self(0)
     alias HOST_TO_DEVICE = Self(1)
 
+    @no_inline
     fn __str__(self) -> String:
         if self is Self.DEVICE_TO_HOST:
             return "device_to_host"

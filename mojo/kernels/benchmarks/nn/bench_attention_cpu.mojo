@@ -25,6 +25,7 @@ struct AttentionSpec(Stringable):
     var kv_seq_len: Int
     var depth_dim: Int
 
+    @no_inline
     fn __str__(self) -> String:
         return (
             "batch_size="

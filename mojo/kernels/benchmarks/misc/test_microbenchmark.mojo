@@ -70,6 +70,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
             self.c_ptr, Index(self.m, self.n)
         )
 
+    @no_inline
     fn __str__(self) -> String:
         return (
             "m = "
@@ -153,6 +154,7 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
             self.c_ptr, Index(self.m, self.n)
         )
 
+    @no_inline
     fn __str__(self) -> String:
         return (
             "m = "
