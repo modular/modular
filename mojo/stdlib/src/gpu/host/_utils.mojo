@@ -132,6 +132,7 @@ struct CudaHandle(Boolable, Stringable):
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
+    @no_inline
     fn __str__(self) -> String:
         return str(self.handle)
 

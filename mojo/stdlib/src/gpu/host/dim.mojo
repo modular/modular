@@ -28,6 +28,7 @@ struct Dim(Stringable):
     fn __getitem__(self, idx: Int) -> Int:
         return self._value[idx]
 
+    @no_inline
     fn __str__(self) -> String:
         var res = String("(x=") + str(self.x()) + ", "
         if self.y() != 1 or self.z() != 1:

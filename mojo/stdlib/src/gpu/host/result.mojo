@@ -551,6 +551,7 @@ struct Result(Stringable, EqualityComparable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Result.SUCCESS:
             return "SUCCESS"
@@ -656,6 +657,7 @@ struct Result(Stringable, EqualityComparable):
             return self._str_shard()
 
     # Shard the long if-elif-else chain in __str__ to work around #23478.
+    @no_inline
     fn _str_shard(self) -> String:
         if self == Result.LAUNCH_INCOMPATIBLE_TEXTURING:
             return "LAUNCH_INCOMPATIBLE_TEXTURING"

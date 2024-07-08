@@ -164,6 +164,7 @@ struct Order:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.COL:
             return "COL"
@@ -384,6 +385,7 @@ struct ClusterShape:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.SHAPE_AUTO:
             return "SHAPE_AUTO"
@@ -629,6 +631,7 @@ struct MatmulAlgorithmCapability:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.SPLITK_SUPPORT:
             return "SPLITK_SUPPORT"
@@ -712,6 +715,7 @@ struct PointerMode:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.HOST:
             return "HOST"
@@ -857,6 +861,7 @@ struct Search:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.BEST_FIT:
             return "BEST_FIT"
@@ -909,6 +914,7 @@ struct ReductionScheme:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.NONE:
             return "NONE"
@@ -1286,6 +1292,7 @@ struct cublasLtMatmulDescAttributes_t:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.CUBLASLT_MATMUL_DESC_COMPUTE_TYPE:
             return "CUBLASLT_MATMUL_DESC_COMPUTE_TYPE"
@@ -1676,6 +1683,7 @@ struct Preference:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.SEARCH_MODE:
             return "SEARCH_MODE"
@@ -1783,6 +1791,7 @@ struct AlgorithmConfig:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.ID:
             return "ID"
@@ -1910,6 +1919,7 @@ struct InnerShape:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.UNDEFINED:
             return "UNDEFINED"
@@ -2008,6 +2018,7 @@ struct LayoutAttribute:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.TYPE:
             return "TYPE"
@@ -2184,6 +2195,7 @@ struct Stages:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.STAGES_UNDEFINED:
             return "STAGES_UNDEFINED"
@@ -2483,6 +2495,7 @@ struct Epilogue:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.DEFAULT:
             return "DEFAULT"
@@ -2681,6 +2694,7 @@ struct Tile:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.TILE_UNDEFINED:
             return "TILE_UNDEFINED"
@@ -3022,6 +3036,7 @@ struct TransformDescriptor:
     fn __ne__(self, other: Self) raises -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) raises -> String:
         if self == Self.SCALE_TYPE:
             return "SCALE_TYPE"

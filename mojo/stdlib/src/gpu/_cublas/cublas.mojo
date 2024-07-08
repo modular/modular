@@ -765,6 +765,7 @@ struct cublasPointerMode_t:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.CUBLAS_POINTER_MODE_HOST:
             return "CUBLAS_POINTER_MODE_HOST"
@@ -928,6 +929,7 @@ struct cublasMath_t:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.CUBLAS_DEFAULT_MATH:
             return "CUBLAS_DEFAULT_MATH"
@@ -2076,6 +2078,7 @@ struct Algorithm:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.DEFAULT:
             return "DEFAULT"
@@ -2596,6 +2599,7 @@ struct cublasDiagType_t:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.CUBLAS_DIAG_NON_UNIT:
             return "CUBLAS_DIAG_NON_UNIT"
@@ -2632,6 +2636,7 @@ struct ComputeType:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.COMPUTE_16F:
             return "COMPUTE_16F"
@@ -6068,6 +6073,7 @@ struct cublasAtomicsMode_t:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.CUBLAS_ATOMICS_NOT_ALLOWED:
             return "CUBLAS_ATOMICS_NOT_ALLOWED"
@@ -6368,6 +6374,7 @@ struct cublasSideMode_t:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.CUBLAS_SIDE_LEFT:
             return "CUBLAS_SIDE_LEFT"
@@ -6997,6 +7004,7 @@ struct cublasOperation_t:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.CUBLAS_OP_N:
             return "CUBLAS_OP_N"

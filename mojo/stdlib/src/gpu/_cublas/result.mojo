@@ -29,9 +29,11 @@ struct Result(Formattable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         if self == Self.SUCCESS:
             writer.write("SUCCESS")

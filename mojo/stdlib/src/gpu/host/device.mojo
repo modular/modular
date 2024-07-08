@@ -621,6 +621,7 @@ struct Device(StringableRaising):
         self.id = id
         self.cuda_dll = cuda_instance.cuda_dll
 
+    @no_inline
     fn __str__(self) raises -> String:
         var res = "name: " + self._name() + "\n"
         res += String("memory: ") + _human_memory(self._total_memory()) + "\n"

@@ -22,6 +22,7 @@ struct Property:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.MAJOR_VERSION:
             return "MAJOR_VERSION"
@@ -79,6 +80,7 @@ struct DataType:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    @no_inline
     fn __str__(self) -> String:
         if self == Self.R_16F:
             return "R_16F"
