@@ -1506,8 +1506,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  FuncOperand enterOperand = {contextVal, contextExp};
-  CallOperands enterOperands({enterOperand});
+  FuncOperand enterOperand[] = {{contextVal, contextExp}};
+  CallOperands enterOperands(enterOperand, /*kwOperands=*/nullptr);
   enterOperands.hasSelfOperand = true;
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
           getScopeInfo(), contextRVType, "__enter__", enterOperands, contextExp,
@@ -1540,7 +1540,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         // Make the emission work even if the type isn't copyable.
         contextVal = MRValue(contextMgrDecl);
       }
-      enterOperand.ir = contextVal;
+      enterOperand[0].ir = contextVal;
     }
   }
 
