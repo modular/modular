@@ -10,7 +10,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from builtin._location import __call_location
+from builtin._location import __call_location, _SourceLocation
 from math import floor
 from .result import Result as DriverResult
 
@@ -20,10 +20,15 @@ from .result import Result as DriverResult
 
 
 @always_inline
-fn _check_error(err: DriverResult) raises:
+fn _check_error(
+    err: DriverResult,
+    *,
+    msg: String = "",
+    location: Optional[_SourceLocation] = None,
+) raises:
     if err != DriverResult.SUCCESS:
-        var loc = __call_location()
-        raise Error(loc.prefix(str(err)))
+        var loc = location.or_else(__call_location())
+        raise Error(loc.prefix(str(err) + " " + msg))
 
 
 fn _pretty_print_float(val: Float64) -> String:

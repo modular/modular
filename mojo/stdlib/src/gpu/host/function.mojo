@@ -19,6 +19,7 @@ from utils.lock import BlockingSpinLock, BlockingScopedLock
 from utils.variant import Variant
 
 from ._compile import _compile_code, _get_nvptx_fn_name
+from builtin._location import __call_location
 from ._utils import _check_error, _FunctionHandle, _ModuleHandle, _StreamHandle
 from .context import Context
 from .dim import Dim
@@ -440,7 +441,9 @@ struct Function[
                 stream_value.stream,
                 args,
                 DTypePointer[DType.invalid](),
-            )
+            ),
+            msg=Self._impl.function_name,
+            location=__call_location(),
         )
         # if we created the stream, we should sync
         if not stream:
