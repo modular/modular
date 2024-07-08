@@ -20,9 +20,6 @@ modular_py_test(
         "BAZEL": "true",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_IS_CUDA_AVAILABLE": "$(location //CUDASupport/tools/is-cuda-available)",
-        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_MOJO_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
-        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_PATH": ".",
     },
     mojo_deps = [
