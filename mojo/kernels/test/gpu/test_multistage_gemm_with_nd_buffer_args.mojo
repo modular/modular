@@ -6,7 +6,6 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
-from collections.optional import OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path
 from sys import argv
