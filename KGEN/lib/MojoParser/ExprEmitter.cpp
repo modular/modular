@@ -2112,20 +2112,21 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
-  // We got an elementType, so we know it has at least a getter or a setter.
-  if (!setter) {
-    emitter.emitError(expr->getLoc(), "cannot store to get-only value of type ")
-        << elementType << expr->getRange();
-    return;
-  }
-
   // Add the set value to the keyword arguments list.
   KeywordOperands kwOperandsWithValue(kwOperands);
   kwOperandsWithValue.try_emplace(setterValueName, value);
+  CallOperands setterCallOperands(posOperands, &kwOperandsWithValue);
 
   ValueDest storeDest(EC_Assignment);
-  emitter.emitIndirectCall(
-      setter, CallOperands(posOperands, &kwOperandsWithValue), storeDest, expr);
+
+  // We got an elementType, so we know it has at least a setter, so if we
+  // couldn't resolve a setter, emit it to the named method so we can balk
+  // with something more specific.
+  // if (!setter) {
+  StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
+
+  emitter.emitNamedMethodCall(setterName, setterCallOperands, storeDest,
+                              CallSyntax::kMethodCall, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.

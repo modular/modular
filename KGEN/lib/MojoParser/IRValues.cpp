@@ -367,12 +367,11 @@ RefType StoredAttributeRefDLValue::getMBValueTypeFromDefArgument() const {
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(PValue getter, PValue setter,
-                                   StringAttr setterValueName,
+SubscriptDLValue::SubscriptDLValue(PValue getter, StringAttr setterValueName,
                                    SmallVectorImpl<FuncOperand> &&posOperands,
                                    KeywordOperands &&kwOperands,
                                    ASTType elementType, const ExprNode *expr)
-    : BaseDLValue(elementType), getter(getter), setter(setter),
+    : BaseDLValue(elementType), getter(getter),
       setterValueName(setterValueName), posOperands(std::move(posOperands)),
       kwOperands(std::move(kwOperands)), expr(expr) {}
 
