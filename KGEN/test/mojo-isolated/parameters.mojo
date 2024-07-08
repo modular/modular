@@ -857,6 +857,47 @@ fn signature_inference[dt: DType, rank: Int]():
     # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!Int *(0,0)>>
     implicit_signature[func]()
 
+
+trait ToInt:
+    fn to_int(self) -> Int:
+        pass
+
+@value
+@register_passable("trivial")
+struct HasToInt(ToInt):
+    var inner: Int
+    @always_inline("nodebug")
+    fn to_int(self) -> Int:
+        return self.inner
+
+# COM: https://linear.app/modularml/issue/MOCO-885/crash-when-using-autoparam-in-parametrized-structs
+@value
+@register_passable("trivial")
+struct MixedInferAndPosParam[size: Int]:
+    var f0: Int
+
+    # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt]({{.*}}::MixedInferAndPosParam
+    # CHECK-SAME: T0: !ToInt, T1: !ToInt
+    fn __init__[T0: ToInt, T1: ToInt, //](inout self, a: T0, b: T1):
+        self.f0 = a.to_int()
+
+@value
+@register_passable("trivial")
+struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
+    var f0: Int
+
+    # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt]({{.*}}::MixedInferAndPosParam
+    # CHECK-SAME: T0: !ToInt, T1: !ToInt
+    fn __init__[T0: ToInt, T1: ToInt, //](inout self, z: ST, a: T0, b: T1):
+        self.f0 = a.to_int()
+
+# CHECK-LABEL: lit.func @"useMixedInferAndPosParam()"
+fn useMixedInferAndPosParam():
+    # CHECK: lit.call {{.*}}::@MixedInferAndPosParam::@"__init__{{.*}}<:!Int {27}, :!ToInt [!HasToInt, {{.*}}], :!ToInt [!HasToInt, {{.*}}]
+    _ = MixedInferAndPosParam[27](HasToInt(37), HasToInt(47))
+    # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt [!HasToInt, {{.*}}], :!Int {27}, :!ToInt [!HasToInt, {{.*}}], :!ToInt [!HasToInt, {{.*}}]
+    _ = MixedInferAndPosParamWithInferredOnStruct[27](HasToInt(99), HasToInt(37), HasToInt(47))
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##
