@@ -8,9 +8,9 @@
 
 from pathlib import Path
 
-from benchmark._cuda import run as benchmark_run
+
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Dim, Function
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
