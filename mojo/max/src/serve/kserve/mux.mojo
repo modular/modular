@@ -53,8 +53,8 @@ struct MuxInferenceService(InferenceService):
             var name = model[].name
             if name not in self._model_dict:
                 self._version_dicts.append(Self.versions_dict_type())
-                var back = self._version_dicts.__get_ref(-1)
-                self._model_dict[name] = UnsafePointer.address_of(back[])
+                var back = self._version_dicts[-1]
+                self._model_dict[name] = UnsafePointer.address_of(back)
 
             var version = model[].version
             var versioned = self._model_dict[name]
@@ -64,8 +64,8 @@ struct MuxInferenceService(InferenceService):
                         model[].path, input_specs=model[].input_specs
                     )
                 )
-                var back = self._models.__get_ref(-1)
-                versioned[][version] = UnsafePointer.address_of(back[])
+                var back = self._models[-1]
+                versioned[][version] = UnsafePointer.address_of(back)
             else:
                 raise Error(
                     "Cannot add duplicate version: "
