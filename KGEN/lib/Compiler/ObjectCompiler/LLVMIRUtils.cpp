@@ -74,13 +74,6 @@ private:
     llvm::SmallPtrSet<const llvm::Value *, 4> users;
   };
 
-  // TODO(#33945) Special functions to handle wrt coroutines.
-  llvm::DenseSet<llvm::StringRef> coroCalledNamesCache{
-      "llvm.coro.id.async", "llvm.coro.end.async", "llvm.coro.prepare.async",
-      "llvm.coro.async.resume", "llvm.coro.suspend.async.sl_p0p0p0s"};
-  llvm::DenseSet<llvm::StringRef> kgenCoroNamesCache{
-      "__kgen_coro_end_fn", "__kgen_coro_ctxt_proj_fn"};
-
   /// Collect all of the immediate global value users of `value`.
   void collectValueUsers(const llvm::Value *value);
 
@@ -422,30 +415,6 @@ void LLVMModulePerFunctionSplitterImpl::split(
     return processFn(std::move(mainModule), -1, true);
 }
 
-// TODO(#33945) Special handling of coroutine related globals (hack, hack).
-// They and their users cannot split and duplicate into different modules,
-// otherwise coroutine related pointer offset will be wrong and causes crash.
-// These globals have names like:
-// xxx_async_closure_0_af, or xxx_async_closure_1_afp.
-// Hardcode the name matching pattern here as a hack.
-// Resolve this properly with #33945.
-static bool isAsyncClosureDependency(llvm::StringRef name) {
-  std::pair<StringRef, StringRef> p1 = name.rsplit('_');
-  if (p1.second != "af" || p1.second != "afp")
-    return false;
-  p1 = p1.first.rsplit('_');
-  size_t asyncClosureNo = 0;
-  if (!llvm::to_integer<size_t>(p1.second, asyncClosureNo))
-    return false;
-  p1 = p1.first.rsplit('_');
-  if (p1.second != "closure")
-    return false;
-  p1 = p1.first.rsplit('_');
-  if (p1.second != "async")
-    return false;
-  return true;
-}
-
 /// Collect all of the immediate global value users of `value`.
 void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
     const llvm::Value *value) {
@@ -464,28 +433,6 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
       const llvm::Function *func = inst->getParent()->getParent();
       valueInfos[value].users.insert(func);
       valueInfos[func];
-      if (const auto *callBase = dyn_cast<llvm::CallBase>(userIt)) {
-        if (!callBase->getCalledFunction())
-          continue;
-        StringRef calledFuncName = callBase->getCalledFunction()->getName();
-        if (coroCalledNamesCache.contains(calledFuncName)) {
-          for (unsigned i = 0; i < callBase->arg_size(); i++) {
-            if (auto argFunc =
-                    dyn_cast<llvm::Function>(callBase->getArgOperand(i))) {
-
-              // Add these functions as true dependency so that
-              // llvm::CoroSplit won't fail.
-              valueInfos[argFunc].canBeSplit = false;
-            }
-          }
-        } else if (isAsyncClosureDependency(calledFuncName)) {
-          valueInfos[userIt].canBeSplit = false;
-        } else if (kgenCoroNamesCache.contains(calledFuncName)) {
-          valueInfos[callBase->getCalledFunction()].canBeSplit = false;
-          valueInfos[userIt].dependencies.insert(callBase->getCalledFunction());
-        }
-      }
-
     } else if (const auto *globalVal = dyn_cast<llvm::GlobalValue>(userIt)) {
       valueInfos[value].users.insert(globalVal);
       valueInfos[globalVal];
@@ -496,14 +443,8 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
 
   // If the current value is a mutable global variable, then it can't be
   // split.
-  if (auto *global = dyn_cast<llvm::GlobalVariable>(value)) {
-    if (!global->isConstant()) {
-      valueInfos[value].canBeSplit = false;
-    } else {
-      bool isAsyncDep = isAsyncClosureDependency(global->getName());
-      valueInfos[value].canBeSplit = !isAsyncDep;
-    }
-  }
+  if (auto *global = dyn_cast<llvm::GlobalVariable>(value))
+    valueInfos[value].canBeSplit = global->isConstant();
 }
 
 /// Propagate use information through the module.
