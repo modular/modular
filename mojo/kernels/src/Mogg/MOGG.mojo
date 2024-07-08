@@ -667,7 +667,7 @@ fn simd_load[
     ](buffer, index)
     var stride = buffer.dynamic_stride[rank - 1]
 
-    if buffer.dynamic_stride[rank - 1] == 0:
+    if stride == 0:
         return Scalar.load(buffer.data, flat_index)
     elif stride > 1:
 
