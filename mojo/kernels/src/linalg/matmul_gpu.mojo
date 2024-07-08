@@ -349,16 +349,12 @@ fn gemv_kernel[
     if warpId < m:
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k, WARP_SIZE)):
-            var idx: UInt = UInt(i.value) * WARP_SIZE + UInt(
-                int(lane_id()).value
-            )
+            var idx: UInt = i * WARP_SIZE + UInt(int(lane_id()))
             var val = SIMD[s_type, 1]()
             if idx < k:
                 val = (
-                    Scalar.load(a, Int(warpId.value) * k + Int(idx.value)).cast[
-                        s_type
-                    ]()
-                    * Scalar.load(b, Int(idx.value)).cast[s_type]()
+                    Scalar.load(a, Int(warpId) * k + Int(idx)).cast[s_type]()
+                    * Scalar.load(b, Int(idx)).cast[s_type]()
                 )
 
             @parameter
@@ -379,7 +375,7 @@ fn gemv_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(Int(warpId.value), 0), accum.cast[c_type]()
+                    Index(Int(warpId), 0), accum.cast[c_type]()
                 )
             else:
                 c[warpId] = accum.cast[c_type]()
@@ -411,7 +407,7 @@ fn gemv_tc_kernel[
             var val = Scalar[a_type]()
             if idx < k:
                 val = (
-                    Scalar.load(a, warpId.value * k + idx)
+                    Scalar.load(a, warpId * k + idx)
                     * Scalar.load(b, idx).cast[a_type]()
                 )
 
@@ -427,7 +423,7 @@ fn gemv_tc_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(Int(warpId.value), 0), accum.cast[c_type]()
+                    Index(Int(warpId), 0), accum.cast[c_type]()
                 )
             else:
                 c[warpId] = accum.cast[c_type]()
@@ -452,7 +448,7 @@ fn gevm_kernel[
     var warpsPerBlock: UInt = BlockDim.x() // WARP_SIZE
     var warpId: UInt = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[s_type, 1]()
-    var col: UInt = BlockIdx.x() * WARP_SIZE + UInt(int(lane_id()).value)
+    var col: UInt = BlockIdx.x() * WARP_SIZE + UInt(int(lane_id()))
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var globalWarpId: UInt = x // WARP_SIZE
 
@@ -463,13 +459,13 @@ fn gevm_kernel[
     ]()
 
     # Every block computes warp size length of output values
-    for i in range(ceildiv(UInt(k.value), warpsPerBlock)):
+    for i in range(ceildiv(UInt(k), warpsPerBlock)):
         var row: UInt = i * warpsPerBlock + warpId
         var lhs = Scalar.load(a, row)
-        var rhs = Scalar.load(b, row * n.value + col)
+        var rhs = Scalar.load(b, row * n + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[UInt(int(lane_id()).value) * WARP_SIZE + warpId] = accum
+    x_shared[UInt(int(lane_id())) * WARP_SIZE + warpId] = accum
     barrier()
 
     @parameter
@@ -565,31 +561,31 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[row.value, offset + localCol.value] if (
-                row < m and offset.value + localCol < k
+            a_val = a[row, offset + localCol] if (
+                row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = a[row.value, offset + localCol.value] if row < m else 0.0
-        a_shared[localRow.value * tile_size + localCol.value] = a_val
+            a_val = a[row, offset + localCol] if row < m else 0.0
+        a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: SIMD[b_type, 1]
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow.value, col.value] if (
-                col < n and offset + localRow.value < k
+            b_val = b[offset + localRow, col] if (
+                col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = b[offset + localRow.value, col.value] if col < n else 0.0
-        b_shared[localRow * tile_size.value + localCol] = b_val
+            b_val = b[offset + localRow, col] if col < n else 0.0
+        b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for kk in range(tile_size):
             result += (
-                a_shared[localRow * tile_size.value + kk.value].cast[s_type]()
-                * b_shared[kk * tile_size + localCol.value].cast[s_type]()
+                a_shared[localRow * tile_size + kk].cast[s_type]()
+                * b_shared[kk * tile_size + localCol].cast[s_type]()
             )
 
         barrier()
@@ -643,8 +639,8 @@ fn sgemm_double_buffer_kernel[
     var lane_id = lane_id()
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n.value
-    var warp_y = warp_id // num_warps_n.value
+    var warp_x = warp_id % num_warps_n
+    var warp_y = warp_id // num_warps_n
 
     # Warp shape in 2D.
     alias warp_dim_x = WN // TN
@@ -676,9 +672,9 @@ fn sgemm_double_buffer_kernel[
 
     # Global memory tile.
     alias a_gmem_layout = Layout(IntTuple(BM, BK), IntTuple(K, 1))
-    var a_offset: UInt = BlockIdx.y() * BM.value * K.value
+    var a_offset: UInt = BlockIdx.y() * BM * K
     var a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset))
-    var b_gmem_tile = b.tile[BK, BN](0, BlockIdx.x().value)
+    var b_gmem_tile = b.tile[BK, BN](0, BlockIdx.x())
 
     # Load A tile from global memory to shared.
     # Row major thread layout for coalesced access.
@@ -706,10 +702,8 @@ fn sgemm_double_buffer_kernel[
     barrier()
 
     # Advance A and B to next k tile.
-    a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](
-        a.offset(a_offset + BK.value)
-    )
-    b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x().value)
+    a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset + BK))
+    b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x())
 
     # Double buffer in registers (fragments in nvidia terms).
     var a_reg = InlineArray[_, 2](
@@ -737,14 +731,14 @@ fn sgemm_double_buffer_kernel[
     )
 
     # Load A fragments to the first buffer.
-    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y.value)
+    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
     copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
         a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
     )
 
     # Load B fragments to the first buffer.
-    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x.value)
+    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
     copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
         b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
@@ -771,10 +765,10 @@ fn sgemm_double_buffer_kernel[
                 barrier()
 
                 a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
-                    0, warp_y.value
+                    0, warp_y
                 )
                 b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
-                    0, warp_x.value
+                    0, warp_x
                 )
 
             # Fill the other A fragments buffer using the next row in A.
@@ -798,8 +792,8 @@ fn sgemm_double_buffer_kernel[
             if k == 0 and k_tile_id < num_k_tiles - 1:
                 a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](
                     a.offset(
-                        BlockIdx.y() * UInt(BM.value) * UInt(K.value)
-                        + (k_tile_id + 1).value * UInt(BK.value)
+                        BlockIdx.y() * UInt(BM) * UInt(K)
+                        + (k_tile_id + 1) * UInt(BK)
                     )
                 )
                 copy_dram_to_sram_async[
@@ -807,7 +801,7 @@ fn sgemm_double_buffer_kernel[
                     dst_thread_layout=thread_storea_smem_layout,
                 ](a_smem_tile[prefetch_id], a_gmem_tile)
 
-                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x().value)
+                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x())
                 copy_dram_to_sram_async[
                     src_thread_layout=thread_layout_loadb,
                     dst_thread_layout=thread_layout_loadb,
@@ -819,12 +813,12 @@ fn sgemm_double_buffer_kernel[
             outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
 
     # Map global memory tile down to thread.
-    var c_offset: UInt = BlockIdx.y() * BM.value * N.value + BlockIdx.x() * BN.value
+    var c_offset: UInt = BlockIdx.y() * BM * N + BlockIdx.x() * BN
     alias c_gmem_layout = Layout(IntTuple(BM, BN), IntTuple(N, 1))
     var c_gmem_tile = LayoutTensor[c_type, c_gmem_layout](
-        c.offset(Int(c_offset.value))
+        c.offset(Int(c_offset))
     )
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y.value, warp_x.value)
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     # Copy results to global memory.
     # Vectorize by [simd_size, simd_size] because the outer product results are
@@ -871,7 +865,7 @@ fn matmul_kernel_naive[
     var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
-    if x >= m.value or y >= n.value:
+    if x >= m or y >= n:
         return
 
     var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
@@ -881,20 +875,12 @@ fn matmul_kernel_naive[
     if transpose_b:
         var b = NDBuffer[b_type, 2](b_ptr, Index(n, k))
         for i in range(k):
-            accum = (
-                a[x.value, i.value].cast[s_type]()
-                * b[y.value, i.value].cast[s_type]()
-                + accum
-            )
+            accum = a[x, i].cast[s_type]() * b[y, i].cast[s_type]() + accum
 
     else:
         var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
         for i in range(k):
-            accum = (
-                a[x.value, i.value].cast[s_type]()
-                * b[i.value, y.value].cast[s_type]()
-                + accum
-            )
+            accum = a[x, i].cast[s_type]() * b[i, y].cast[s_type]() + accum
 
     var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
