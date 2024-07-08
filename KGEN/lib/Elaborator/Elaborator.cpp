@@ -48,6 +48,10 @@ std::string KGEN::mangleParameterValues(GeneratorOp generator,
   auto inputParamDecls = generator.getInputParamsAttr();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
     os << ',' << inputDecl.getName().str() << '=' << getParamAsString(value);
+
+  // Having "@" in mangled names is invalid for ELF files and triggers error at
+  // linking stage, so replace them.
+  std::replace(result.begin(), result.end(), '@', '_');
   return result;
 }
 
