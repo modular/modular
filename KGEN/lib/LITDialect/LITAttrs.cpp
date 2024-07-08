@@ -326,11 +326,28 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
       });
 
   PogListAttr oldParamListAttr = getParamListAttrs();
-  llvm::append_range(newPogs, oldParamListAttr.getPogs());
+  SmallVector<PogMetadataAttr> mergedPogs;
+  for (size_t iNew = 0, iOld = 0, eOld = oldParamListAttr.getPogs().size(),
+              eNew = newPogs.size();
+       iOld < eOld || iNew < eNew;) {
+    // Put inferred parameters first.
+    if (iOld < eOld && oldParamListAttr.getPogs()[iOld].getPassingKind() ==
+                           PassingKind::Inferred) {
+      mergedPogs.push_back(oldParamListAttr.getPogs()[iOld]);
+      iOld++;
+    } else if (iNew < eNew) {
+      mergedPogs.push_back(newPogs[iNew]);
+      iNew++;
+    } else {
+      mergedPogs.push_back(oldParamListAttr.getPogs()[iOld]);
+      iOld++;
+    }
+  }
 
   assert(oldParamListAttr.getPackIndex() && "no param packs");
-  auto newParamListAttr = PogListAttr::get(
-      getContext(), newPogs, getDefaultPosParams(), getDefaultKwOnlyParams());
+  auto newParamListAttr =
+      PogListAttr::get(getContext(), mergedPogs, getDefaultPosParams(),
+                       getDefaultKwOnlyParams());
   return get(getArgListAttrs(), newParamListAttr,
              getNumImplicitLifetimeDecls());
 }
