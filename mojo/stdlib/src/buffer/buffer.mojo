@@ -65,7 +65,9 @@ struct Buffer[
     var dtype: DType
     """The dynamic data type of the buffer."""
 
-    alias _default_alignment = alignof[type]() if triple_is_nvidia_cuda() else 1
+    @staticmethod
+    fn _default_alignment[width: Int = 1]() -> Int:
+        return alignof[SIMD[type, width]]() if triple_is_nvidia_cuda() else 1
 
     @always_inline
     fn __init__(inout self):
@@ -193,7 +195,7 @@ struct Buffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -236,7 +238,7 @@ struct Buffer[
 
     @always_inline
     fn store[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -581,7 +583,9 @@ struct NDBuffer[
     var is_contiguous: Bool
     """True if the contents of the buffer are contiguous in memory."""
 
-    alias _default_alignment = alignof[type]() if triple_is_nvidia_cuda() else 1
+    @staticmethod
+    fn _default_alignment[width: Int = 1]() -> Int:
+        return alignof[SIMD[type, width]]() if triple_is_nvidia_cuda() else 1
 
     @always_inline
     fn __init__(inout self):
@@ -1044,7 +1048,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1066,7 +1070,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1092,7 +1096,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1114,7 +1118,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1160,7 +1164,7 @@ struct NDBuffer[
 
     @always_inline
     fn store[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -1179,7 +1183,7 @@ struct NDBuffer[
 
     @always_inline
     fn store[
-        *, width: Int = 1, alignment: Int = Self._default_alignment
+        *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
