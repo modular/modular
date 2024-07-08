@@ -27,6 +27,12 @@ fn takes_int_variadic_kwargs(**kwargs: int):
     pass
 
 
+fn takes_int_variadic_kwargs_multiline(
+    **kwargs: int,
+):
+    pass
+
+
 # CHECK-LABEL: lit.func @"test_variadic_kwargs
 fn test_variadic_kwargs():
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
