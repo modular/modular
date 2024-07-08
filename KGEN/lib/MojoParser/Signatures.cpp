@@ -1067,8 +1067,16 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       return;
 
     auto collectionElement = cast<TraitType>(inputTypes[0]);
-    PValue binding = typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
-                                            collectionElement);
+    PValue binding;
+    if (isDef) {
+      // If we're in a `def` function, we need a synthetic type expression.
+      SyntheticNode typeExpr(arg.loc);
+      binding = typeEmitter.emitPValue({fullType, typeExpr}, EC_Type,
+                                       collectionElement);
+    } else {
+      binding = typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
+                                       collectionElement);
+    }
     if (!binding) {
       shared.emitError(arg.loc)
           << "argument type must conform to 'CollectionElement' to be used in "
