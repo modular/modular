@@ -211,8 +211,8 @@ fn layer_norm_gpu_warp_tiling_vector[
     alias align = alignof[SIMD[type, simd_width]]()
     var num_rows = data.dim[0]()
     var num_cols = data.dim[1]()
-    var tid: UInt = UInt(ThreadIdx.x().value)
-    var row: UInt = UInt(BlockIdx.x().value)
+    var tid: UInt = ThreadIdx.x()
+    var row: UInt = BlockIdx.x()
 
     var vec_data = SIMD[type, simd_width]()
 

@@ -868,12 +868,12 @@ fn _online_softmax_kernel[
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
     # corrected with the right rowmax.
-    var input_warp_tile0 = input.tile[WM, WN](0, warp_id.value)
+    var input_warp_tile0 = input.tile[WM, WN](0, int(warp_id))
     var input_warp_tile1 = input.tile[WM, WN](
         0, warp_id.value + num_rowwise_warps
     )
 
-    var output_warp_tile0 = output.tile[WM, WN](0, warp_id.value)
+    var output_warp_tile0 = output.tile[WM, WN](0, int(warp_id))
     var output_warp_tile1 = output.tile[WM, WN](
         0, warp_id.value + num_rowwise_warps
     )
