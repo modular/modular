@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from collections.optional import OptionalReg
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional, OptionalReg
+from collections.optional import Optional
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
