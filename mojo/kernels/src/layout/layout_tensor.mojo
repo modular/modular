@@ -24,6 +24,8 @@ from utils.numerics import max_finite
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
 
+from .runtime_layout import RuntimeLayout
+
 
 # Distribute thread_layout into data_layout, if axis is provided
 # distribute into threads_layout projected into this axis.
@@ -131,6 +133,8 @@ struct LayoutTensor[
 ](CollectionElement, CollectionElementNew):
     var ptr: DTypePointer[dtype, address_space]
 
+    var runtime_layout: RuntimeLayout[layout]
+
     # When LayoutTensor is masked, we need to store three quantities:
     # To specify the per dim original coordinates bounds.
     var max_dim: StaticIntTuple[rank]
@@ -151,7 +155,22 @@ struct LayoutTensor[
         inout self,
         ptr: DTypePointer[dtype, address_space],
     ):
+        constrained[layout.all_dims_known(), "Layout must be fully static"]()
         self.ptr = ptr
+        self.runtime_layout = RuntimeLayout[layout]()
+
+        self.max_dim = StaticIntTuple[rank](Int.MAX)
+        self.dim_offset = StaticIntTuple[rank](0)
+        self.dim_stride = StaticIntTuple[rank](1)
+
+    @always_inline
+    fn __init__(
+        inout self,
+        ptr: DTypePointer[dtype, address_space],
+        runtime_layout: RuntimeLayout[layout],
+    ):
+        self.ptr = ptr
+        self.runtime_layout = runtime_layout
 
         self.max_dim = StaticIntTuple[rank](Int.MAX)
         self.dim_offset = StaticIntTuple[rank](0)
@@ -171,6 +190,7 @@ struct LayoutTensor[
         self.max_dim = existing.max_dim
         self.dim_offset = existing.dim_offset
         self.dim_stride = existing.dim_stride
+        self.runtime_layout = existing.runtime_layout
 
     @always_inline
     fn bitcast[
@@ -203,12 +223,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __getitem__(self, *dims: Int) -> Self.element_type:
-        # FIXME: Enable debug_assert, now fails with INVALID_PTX
-        # debug_assert(
-        #     dims.__len__() == Self.rank(),
-        #     "getitem should have same number of indices as the rank",
-        # )
-        alias strides = Self._toStatic[flatten(layout.stride)]()
+        var strides = self.runtime_layout.stride.value
         var vec_res = SIMD[dtype, Self.element_size]()
 
         # TODO: We should vectorize the reads of contiguous loads this just stash
@@ -225,7 +240,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __setitem__(self, d0: Int, val: Self.element_type):
-        alias strides = Self._toStatic[flatten(layout.stride)]()
+        var strides = self.runtime_layout.stride.value
 
         # TODO: We should vectorize contiguous stores this just stash scalars.
         @parameter
@@ -240,7 +255,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
-        alias strides = Self._toStatic[flatten(layout.stride)]()
+        var strides = self.runtime_layout.stride.value
 
         @parameter
         for i in range(Self.element_size):
@@ -254,7 +269,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
-        alias strides = Self._toStatic[flatten(layout.stride)]()
+        var strides = self.runtime_layout.stride.value
 
         @parameter
         for i in range(Self.element_size):
@@ -270,7 +285,7 @@ struct LayoutTensor[
     fn __setitem__(
         self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
     ):
-        alias strides = Self._toStatic[flatten(layout.stride)]()
+        var strides = self.runtime_layout.stride.value
 
         @parameter
         for i in range(Self.element_size):
@@ -313,6 +328,7 @@ struct LayoutTensor[
     @staticmethod
     @always_inline("nodebug")
     fn stack_allocation[*, alignment: Int = alignof[dtype]()]() -> Self:
+        constrained[layout.all_dims_known(), "Requires fully static layout"]()
         return stack_allocation[
             layout.size(),
             dtype,
@@ -419,6 +435,7 @@ struct LayoutTensor[
         address_space=address_space,
         masked=__need_mask,
     ]:
+        constrained[layout.all_dims_known(), "Requires fully static layout"]()
         alias num_tiles = __get_len[tile_sizes]()
 
         constrained[
@@ -585,6 +602,9 @@ struct LayoutTensor[
         This is useful when threads load same vectors from a row in A matrix and
         some threads share the same vector.
         """
+
+        constrained[layout.all_dims_known(), "Requires fully static layout"]()
+
         alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
         alias threads_layout_shape = flatten(threads_layout.shape)
@@ -661,6 +681,7 @@ struct LayoutTensor[
         address_space=address_space,
         element_layout = coalesce(__tiled_layout[0]),
     ]:
+        constrained[layout.all_dims_known(), "Requires fully static layout"]()
         return LayoutTensor[
             dtype,
             coalesce(__tiled_layout[1], keep_rank=True),
@@ -1160,23 +1181,29 @@ struct LayoutTensor[
     fn linspace(self):
         @parameter
         if len(layout) == 1:
-            for m in range(Self.dim[0]()):
+            for m in range(self.runtime_layout.shape[0].value[0]):
                 self.ptr[m] = m
 
         elif len(layout) == 2:
-            for m in range(Self.dim[0]()):
-                for n in range(Self.dim[1]()):
-                    self[m, n] = m * Self.dim[1]() + n
+            for m in range(self.runtime_layout.shape[0].value[0]):
+                for n in range(self.runtime_layout.shape[1].value[0]):
+                    self[m, n] = m * self.runtime_layout.shape[1].value[0] + n
         else:
             abort("LayoutTensor linspace only support rank 1-2 layouts.")
 
     @always_inline
     fn fill(self, val: Scalar[dtype]):
-        alias num_elements = layout.size() * Self.element_size
-
         @parameter
-        for i in range(num_elements):
-            self.ptr[i] = val
+        if layout.all_dims_known():
+            alias num_elements = layout.size() * Self.element_size
+
+            @parameter
+            for i in range(num_elements):
+                self.ptr[i] = val
+        else:
+            var num_elements = self.runtime_layout.size() * Self.element_size
+            for i in range(num_elements):
+                self.ptr[i] = val
 
     fn print(self):
         """Print 2D tensor in 2D, otherwise print all values in column major
@@ -1196,13 +1223,13 @@ struct LayoutTensor[
         # printed elementwise.
         @parameter
         if is_2d_print(layout) or is_2d_print(coalesce(layout)):
-            for m in range(Self.dim[0]()):
-                for n in range(Self.dim[1]()):
+            for m in range(self.runtime_layout.shape[0].value[0]):
+                for n in range(self.runtime_layout.shape[1].value[0]):
                     print(self[m, n], end=" ")
                 print("")
         else:
             for i in range(layout.size()):
-                var vec_offset = layout(i)
+                var vec_offset = self.runtime_layout(i)
                 var vec = SIMD[dtype, Self.element_size]()
 
                 @parameter
