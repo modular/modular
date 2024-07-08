@@ -206,6 +206,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         """
         return not self == rhs
 
+    @no_inline
     fn __str__(self) -> String:
         """Converts the Dim to a String. If the value is unknown, then the
         string "?" is returned.
@@ -215,6 +216,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         """
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         """
         Formats this DimList to the provided formatter.
