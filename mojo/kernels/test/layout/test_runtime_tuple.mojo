@@ -12,6 +12,7 @@ from layout.runtime_tuple import (
     is_tuple,
     idx2crd,
     crd2idx,
+    UNKNOWN_VALUE,
 )
 
 from layout.int_tuple import IntTuple
@@ -29,6 +30,9 @@ def test_construct():
 
     var t2 = RuntimeTuple[IntTuple(33, IntTuple(44, IntTuple(55, 202)))]()
     assert_equal(str(t2), "(33, (44, (55, 202)))")
+
+    var t3 = RuntimeTuple[IntTuple(UNKNOWN_VALUE, 1)]()
+    assert_equal(str(t3), "(-1, 1)")
 
 
 # CHECK-LABEL: test_concat
@@ -91,6 +95,12 @@ def test_crd2idx():
                 ),
                 str(crd2idx_int_tuple(IntTuple(i, j), shape_t, stride_t)),
             )
+
+
+def test_shape_div():
+    print("== test_shape_div")
+    alias shape_a = IntTuple(4, 4)
+    alias stride_b = IntTuple(2, 1)
 
 
 def main():

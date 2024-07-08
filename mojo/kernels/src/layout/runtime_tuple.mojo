@@ -36,6 +36,8 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
             @parameter
             if v != UNKNOWN_VALUE:
                 self.value[i] = v
+            else:
+                self.value[i] = UNKNOWN_VALUE
 
     @always_inline
     fn __init__(inout self, *values: Int):
