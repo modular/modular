@@ -402,12 +402,19 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
   // This parses either an argument or a keyword argument specifier.
   bool foundName = false;
+  bool foundKwargs = false;
   auto parseArgument = [&]() -> ParseResult {
     auto marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
     if (arg.parse(p, marker, kind))
       return failure();
+
+    // If we have a **arg then it must be the last argument.
+    if (foundKwargs) {
+      return p.emitError(arg.loc, "'**' marker must be at end of ")
+             << argOrParam << " list";
+    }
 
     // If this argument is just a marker, process it.
     if (marker == KWArgMarkerInfo::kSlashSlash) {
@@ -440,13 +447,9 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
       if (failed(handleStarMarker(arg.loc, /*isMarker=*/false)))
         return failure();
 
-    // If we have a **arg then it must be the last argument.
-    if (arg.vararg == VarArgKind::KWVarArg && p.getToken().isNot(stopTokens)) {
-      return p.emitError(arg.loc, "'**' marker must be at end of ")
-             << argOrParam << " list";
-    }
-
     if (arg.vararg == VarArgKind::KWVarArg) {
+      foundKwargs = true;
+
       if (kind == ArgListKind::kParamList ||
           kind == ArgListKind::kFnTypeParamList) {
         return p.emitError(arg.loc,
