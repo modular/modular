@@ -165,7 +165,11 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[3]](idx0)
 
-        out_buffer.store(idx, in_buffer_transposed.load[width=simd_width](idx))
+        # We need to perform unaligned loads because the non-uniform strides
+        # being used for in_buffer.
+        out_buffer.store(
+            idx, in_buffer_transposed.load[width=simd_width, alignment=1](idx)
+        )
 
     _elementwise_impl_gpu[func, 4](
         StaticIntTuple[3](4, 2, 5),
