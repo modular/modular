@@ -10,8 +10,7 @@ Benchmarking Utility Library
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-
-from modular.utils.typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, Optional
 
 
 @dataclass

@@ -5,11 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path, PosixPath, WindowsPath
-
-from ruamel import yaml
-from ruamel.yaml.compat import StringIO
-
-from modular.utils.typing import (
+from typing import (
     IO,
     Any,
     BinaryIO,
@@ -19,6 +15,9 @@ from modular.utils.typing import (
     TypeVar,
     Union,
 )
+
+from ruamel import yaml
+from ruamel.yaml.compat import StringIO
 
 StreamType = Union[BinaryIO, IO[str], StringIO]
 

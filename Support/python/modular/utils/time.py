@@ -11,8 +11,7 @@ Utility Library for Parsing Output from /usr/bin/time
 from dataclasses import dataclass
 from pathlib import Path
 from platform import system
-
-from modular.utils.typing import Iterable, Optional
+from typing import Iterable, Optional
 
 THIS_OS = system()
 

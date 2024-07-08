@@ -6,9 +6,9 @@
 
 import subprocess
 from pathlib import Path
+from typing import Any, Iterable, Union
 
 from modular.utils import logging
-from modular.utils.typing import Any, Iterable, Union
 
 ShellCommand = Iterable[Union[str, Path]]
 

@@ -17,8 +17,7 @@ of third-party libraries (e.g. TensorFlow).
 from logging import *  # type: ignore # noqa: F403
 from logging import getLogger as _getLogger
 from types import TracebackType
-
-from modular.utils.typing import Any, Optional, Type
+from typing import Any, Optional, Type
 
 
 def getLogger(name: Optional[str] = None) -> Logger:
