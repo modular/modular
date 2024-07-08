@@ -83,7 +83,7 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
         alias offset = Self.offset_until[i]()
         self.value[offset] = val
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 

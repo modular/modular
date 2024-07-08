@@ -198,9 +198,11 @@ struct Layout(
     # Methods
     # ===------------------------------------------------------------------===#
 
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         # FIXME(#38125):
         #   The following variadic invocation of `write_to` failed with a

@@ -161,9 +161,11 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                         self.element_data[i + j * dim_1].store(ptr, offset)
 
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         # TODO: Avoid intermediate string allocation.
         writer.write(self.element_data.__str__())

@@ -326,9 +326,11 @@ struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
     fn __moveinit__(inout self, owned exisiting: Self):
         self.stride = exisiting.stride
 
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         writer.write(shape, ":", self.stride)
 

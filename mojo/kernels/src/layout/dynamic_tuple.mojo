@@ -129,10 +129,11 @@ struct DynamicTupleBase[
                 return True
         return False
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         Self.format_element_to(writer, self)
 

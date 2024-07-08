@@ -40,9 +40,11 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     fn size(self) -> Int:
         return product(self.shape)
 
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
+    @no_inline
     fn format_to(self, inout f: Formatter):
         f.write_str["("]()
         self.shape.format_to(f)

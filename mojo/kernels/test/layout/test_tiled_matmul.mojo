@@ -22,6 +22,7 @@ struct Dim(Stringable):
             self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
         )
 
+    @no_inline
     fn __str__(self) -> String:
         return (
             "m: " + str(self.m) + ", n: " + str(self.n) + ", k: " + str(self.k)

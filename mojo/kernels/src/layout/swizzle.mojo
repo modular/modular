@@ -268,6 +268,7 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
     fn has_shape() -> Bool:
         return False
 
+    @no_inline
     fn format_to(self, inout writer: Formatter):
         write_to(writer, "(")
         write_to(writer, str(bits))
@@ -277,6 +278,7 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
         write_to(writer, str(shift))
         write_to(writer, ")")
 
+    @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
