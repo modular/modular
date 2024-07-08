@@ -6,7 +6,7 @@
 !unresolved = !debuginfo.unresolved<!kgen.paramref<ty>>
 
 // CHECK-DAG: #takeFnContextualType_name = #debuginfo.source_name<"takeFnContextualType"<":type index", ":() -> index @sillyFn">>
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = #takeFnContextualType_name, linkageName = "takeFnContextualType,ty=index,fn=@sillyFn",
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = #takeFnContextualType_name, linkageName = "takeFnContextualType,ty=index,fn=_sillyFn",
 #callerSp = #debuginfo.subprogram<file = #file, name = <"takeFnContextualType">> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0"
@@ -16,7 +16,7 @@
 // CHECK-DAG: #[[LOC_TRY:.*]] = loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])
 #locTry = loc("silly.mlir":17:3)
 
-// CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=@sillyFn"() -> index
+// CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=_sillyFn"() -> index
 kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> {
   // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC:.*]])
   %0 = kgen.call_param[() -> !kgen.paramref<ty>: fn]() loc(#loc11)
