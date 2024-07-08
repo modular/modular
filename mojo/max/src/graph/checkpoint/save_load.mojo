@@ -9,15 +9,7 @@ from max.engine import TensorMap
 from pathlib import Path
 
 from .tensor_dict import TensorDict, _CheckpointTensor
-
-# 0x93 🔥 + + 0x93
-alias _SERIALIZATION_HEADER = InlineArray[Int8, 8](
-    0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B, 0x2B, 0x93
-)
-
-# Serialization constants
-alias _SERIALIZATION_MAJOR_FORMAT: UInt32 = 0
-alias _SERIALIZATION_MINOR_FORMAT: UInt32 = 1
+from .metadata import current_version, _read_version, _serialization_header
 
 
 @always_inline
@@ -27,7 +19,7 @@ fn _write_int[type: Intable](ref [_]object: type, f: FileHandle) raises:
     f._write(ptr, sizeof[type]())
 
 
-def save(tensor_dict: TensorDict, path: Path):
+def save[PathLike: PathLike](tensor_dict: TensorDict, path: PathLike):
     """Saves a collection of tensors to a file.
 
     The file is saved in a binary format that's specific to MAX. You can then
@@ -53,13 +45,9 @@ def save(tensor_dict: TensorDict, path: Path):
               filename and file extension you want.
     """
     # Write header and metadata
-    # TODO: Using _SERIALIZATION_HEADER raises errors.
-    var header_buf = List[UInt8](
-        0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B, 0x2B, 0x93, 0x0
-    )
+    var header_buf = _serialization_header()
     var header = String(header_buf)
-    var major_format: UInt32 = _SERIALIZATION_MAJOR_FORMAT
-    var minor_format: UInt32 = _SERIALIZATION_MINOR_FORMAT
+    var version = current_version()
 
     # Compute metadata size and tensor offsets.
     # Each entry of the metadata consists of:
@@ -109,8 +97,8 @@ def save(tensor_dict: TensorDict, path: Path):
     with open(path, "wb") as f:
         # Write header.
         f.write(header)
-        _write_int(major_format, f)
-        _write_int(minor_format, f)
+        _write_int(version.major_version, f)
+        _write_int(version.minor_version, f)
         _write_int(metadata_size, f)
 
         # Write out metadata (key, spec and offset).
@@ -166,15 +154,7 @@ struct _KeysAndSpecs:
     var spec: TensorSpec
 
 
-@always_inline
-def _version_to_string(
-    major_version: UInt32 = _SERIALIZATION_MAJOR_FORMAT,
-    minor_version: UInt32 = _SERIALIZATION_MAJOR_FORMAT,
-) -> String:
-    return str(major_version) + "." + str(minor_version)
-
-
-def load(path: Path) -> TensorDict:
+def load[PathLike: PathLike](path: PathLike) -> TensorDict:
     """Reads tensors from saved checkpoint file.
 
     This supports only MAX checkpoint files saved with
@@ -200,27 +180,17 @@ def load(path: Path) -> TensorDict:
     Raises:
         If the checkpoint file was saved with an older serialization format.
     """
-    # TODO: Using _SERIALIZATION_HEADER raises errors.
-    var header_buf = List[UInt8](
-        0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B, 0x2B, 0x93, 0x0
-    )
+
     with open(path, "rb") as f:
-        var header = f.read_bytes(8)
-        if len(header) != 8:
-            raise "Invalid checkpoint file: " + str(path)
-        for i in range(8):
-            if header[i] != header_buf[i]:
-                raise "Given file is not a max.graph checkpoint."
+        version = current_version()
+        file_version = _read_version(path, f)
 
-        var major_version = _read_int[DType.uint32](f)
-        var minor_version = _read_int[DType.uint32](f)
-
-        if major_version > _SERIALIZATION_MAJOR_FORMAT:
+        if file_version.major_version > version.major_version:
             raise (
                 "Cannot read from checkpoint version "
-                + _version_to_string(major_version, minor_version)
+                + str(file_version)
                 + ". Current version: "
-                + _version_to_string()
+                + str(version)
             )
         var metadata_size = _read_int[DType.uint64](f)
 
