@@ -39,9 +39,12 @@ public:
             typename = std::enable_if_t<
                 !std::is_same_v<OperandsT, ArrayRef<OperandType>> &&
                 std::is_convertible_v<OperandsT, ArrayRef<OperandType>>>>
-  OperandContainer(OperandsT &&posOperands)
+  OperandContainer(
+      OperandsT &&posOperands,
+      const KeywordOperandContainer<OperandType> *kwOperands = nullptr)
       : OperandContainer(
-            ArrayRef<OperandType>(std::forward<OperandsT>(posOperands))) {}
+            ArrayRef<OperandType>(std::forward<OperandsT>(posOperands)),
+            kwOperands) {}
 
   /// Form a reference from parameter bindings.
   OperandContainer(const ParamBindings &bindings)
