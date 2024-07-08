@@ -275,6 +275,9 @@ struct Module(Stringable, Formattable):
     fn as_op(self) -> Operation:
         return Operation(_c.IR.mlirModuleGetOperation(self.c))
 
+    fn debug_str(self, pretty_print: Bool = False) -> String:
+        return self.as_op().debug_str(pretty_print)
+
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
@@ -588,6 +591,15 @@ struct Operation(CollectionElement, Stringable, Formattable):
         name._strref_keepalive()
         return result
 
+    fn debug_str(self, pretty_print: Bool = False) -> String:
+        var flags = _c.IR.mlirOpPrintingFlagsCreate()
+        _c.IR.mlirOpPrintingFlagsEnableDebugInfo(flags, True, pretty_print)
+        return _to_string[
+            Self.cType,
+            _c.IR.MlirOpPrintingFlags,
+            _c.IR.mlirOperationPrintWithFlags,
+        ](self.c, flags)
+
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
@@ -807,6 +819,25 @@ fn _to_string[
     var string = String()
     call(
         t,
+        _to_string_callback,
+        UnsafePointer.address_of(string).bitcast[NoneType](),
+    )
+    string._buffer.append(0)  # null terminate
+    return string
+
+
+@always_inline
+fn _to_string[
+    T: AnyTrivialRegType,
+    U: AnyTrivialRegType,
+    call: fn (
+        T, U, _c.Support.MlirStringCallback, UnsafePointer[NoneType]
+    ) -> NoneType,
+](t: T, u: U) -> String:
+    var string = String()
+    call(
+        t,
+        u,
         _to_string_callback,
         UnsafePointer.address_of(string).bitcast[NoneType](),
     )

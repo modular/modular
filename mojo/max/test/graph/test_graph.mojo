@@ -92,8 +92,8 @@ def test_layer():
             g.output(x)
 
     g.verify()
-    # CHECK: layer = "foo.bar"
-    print(g)
+    # CHECK: loc("foo.bar":0:0)
+    print(g.debug_str())
 
 
 def _layer_context_return(g: Graph) -> Symbol:
@@ -108,8 +108,8 @@ def test_layer_context_return():
     x = _layer_context_return(g)
     g.output(x)
     g.verify()
-    # CHECK: layer = "cheese.wheel"
-    print(g)
+    # CHECK: loc("cheese.wheel":0:0)
+    print(g.debug_str())
 
 
 def test_current_layer():

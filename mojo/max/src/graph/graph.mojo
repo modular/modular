@@ -24,10 +24,24 @@ from max.tensor import Tensor, TensorShape
 # TODO: Add examples throughout.
 
 
+@value
+struct LayerInfo:
+    """Name and Location information for a layer."""
+
+    var name: String
+    """The name of the layer."""
+
+    var op_count: Int
+    """The current number of ops in this layer.
+
+    Note: a sublayer is considered a single op.
+    """
+
+
 struct _OwnedGraph(Movable):
     var ctx: _mlir.Context
     var op: _mlir.Operation
-    var layers: List[String]
+    var layers: List[LayerInfo]
     var parameters: Set[String]
 
     fn __init__(
@@ -38,7 +52,7 @@ struct _OwnedGraph(Movable):
     ):
         self.ctx = ctx
         self.op = op
-        self.layers = List[String]()
+        self.layers = List[LayerInfo](LayerInfo("", 0))
         self.parameters = Set[String]()
         for type in in_types:
             for dim in type[].dims():
@@ -49,11 +63,29 @@ struct _OwnedGraph(Movable):
 
     fn current_layer(self) -> String:
         var layer: String = ""
-        for layer_name in self.layers:
+        for layer_info in self.layers:
             if layer:
                 layer += "."
-            layer += layer_name[]
+            layer += layer_info[].name
         return layer^
+
+    fn current_location(self) -> _mlir.Location:
+        var full_name = self.current_layer()
+        var current_layer = self.layers[-1]
+
+        var layer_op_num = 0
+        if len(self.layers) >= 2:
+            layer_op_num = self.layers[-2].op_count
+
+        return _mlir.Location(
+            self.ctx,
+            full_name,
+            layer_op_num,
+            current_layer.op_count,
+        )
+
+    fn inc_op_count(inout self):
+        self.layers[-1].op_count += 1
 
     @no_inline
     fn module(self) -> _mlir.Module:
@@ -83,10 +115,11 @@ struct _GraphLayerContext:
     var name: String
 
     fn __enter__(inout self):
-        self.graph[].layers.append(self.name)
+        self.graph[].layers.append(LayerInfo(self.name, 0))
 
     fn __exit__(inout self):
-        var name = self.graph[].layers.pop()
+        var name = self.graph[].layers.pop().name
+        self.graph[].inc_op_count()
         debug_assert(name == self.name, "non-hiercharchical graph layers")
 
 
@@ -213,6 +246,9 @@ struct Graph(CollectionElement, Stringable, Formattable):
         )
 
         self._graph = Arc(_OwnedGraph(ctx, op, in_types))
+
+    fn debug_str(self, pretty_print: Bool = False) -> String:
+        return self._module().debug_str(pretty_print)
 
     fn __str__(self) -> String:
         """Returns a `String` representation of this `Graph`.
@@ -389,16 +425,13 @@ struct Graph(CollectionElement, Stringable, Formattable):
 
         var op = _mlir.Operation(
             name=name,
-            location=_mlir.Location.unknown(ctx),
+            location=self._graph[].current_location(),
             operands=operands,
             results=out_types_mlir,
             attributes=attrs,
             enable_result_type_inference=enable_result_type_inference,
         )
-
-        var layer = self._graph[].current_layer()
-        if layer:
-            op.set_discardable_attr("layer", StringAttr(ctx, layer^))
+        self._graph[].inc_op_count()
 
         var output_op = self._body().terminator()
         if output_op:
