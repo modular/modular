@@ -9,13 +9,13 @@ import shutil
 import string
 import subprocess
 from pathlib import Path
+from typing import Dict, Optional, Sequence, Set
 
 from modular.utils.subprocess import (
     CalledProcessError,
     get_command_output,
     run_shell_command,
 )
-from modular.utils.typing import Dict, Optional, Sequence, Set
 
 
 class GitError(Exception):

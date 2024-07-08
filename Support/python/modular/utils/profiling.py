@@ -16,9 +16,9 @@ from copy import deepcopy as dcopy
 from functools import cached_property
 from pathlib import Path
 from re import sub
+from typing import Any, Callable, Dict, List, Optional
 
 from modular.utils.logging import warning
-from modular.utils.typing import Any, Callable, Dict, List, Optional
 
 EventDict = Dict[str, Any]
 TraceDict = Dict[str, Any]

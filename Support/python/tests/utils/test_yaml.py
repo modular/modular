@@ -7,10 +7,10 @@
 
 from enum import Enum
 from pathlib import Path, PosixPath, WindowsPath
+from typing import Any
 
 from ruamel.yaml.compat import StringIO
 
-from modular.utils.typing import Any
 from modular.utils.yaml import YAML, represent_as_string
 
 

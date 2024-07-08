@@ -6,8 +6,8 @@
 
 import os
 from pathlib import Path
+from typing import Optional
 
-from modular.utils.typing import Optional
 from modular.utils.pythonpath import (
     get_lib_path,
     get_libtorch_python_path,
