@@ -10,7 +10,6 @@ from math import sqrt, rsqrt, log, sin, tanh, exp, erf
 from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl_gpu
-from benchmark._cuda import run
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceContext
