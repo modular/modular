@@ -120,8 +120,8 @@ fn _small_batched_matmul[
             # each trailing batch dimension.
             var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
 
-            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, (K))
-            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, (K))
+            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, K)
+            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, K)
 
             @always_inline
             @__copy_capture(a_view, b_view)
@@ -400,7 +400,7 @@ fn _batched_matmul_cpu[
 
             var batch_coords = _get_start_indices_of_nth_subvolume_uint[
                 rank, UInt(2)
-            ](UInt(batch.value), c_buf.get_shape())
+            ](batch, c_buf.get_shape())
 
             @parameter
             fn elementwise_lambda_2d[
@@ -463,10 +463,10 @@ fn batched_matmul_kernel[
     b_buff: NDBuffer[b_type, 3, b_shape],
     c_buff_nd_shape: StaticIntTuple[rank],
 ) -> None:
-    var batch_size: UInt = c_buff.dim(0).value
-    var m: UInt = c_buff.dim(1).value
-    var n: UInt = c_buff.dim(2).value
-    var k: UInt = a_buff.dim(2).value
+    var batch_size: UInt = c_buff.dim(0)
+    var m: UInt = c_buff.dim(1)
+    var n: UInt = c_buff.dim(2)
+    var k: UInt = a_buff.dim(2)
 
     var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
@@ -477,8 +477,8 @@ fn batched_matmul_kernel[
     var val = Scalar[accum_type](0.0)
     for ki in range(k):
         val += (
-            a_buff[z.value, y.value, ki.value].cast[accum_type]()
-            * b_buff[z.value, ki.value, x.value].cast[accum_type]()
+            a_buff[z, y, ki].cast[accum_type]()
+            * b_buff[z, ki, x].cast[accum_type]()
         )
 
     @parameter
@@ -487,11 +487,11 @@ fn batched_matmul_kernel[
         var nd_corrds = _get_start_indices_of_nth_subvolume_uint[rank, 2](
             z, c_buff_nd_shape
         )
-        nd_corrds[rank - 1] = x.value
-        nd_corrds[rank - 2] = y.value
+        nd_corrds[rank - 1] = x
+        nd_corrds[rank - 2] = y
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[(Int(z.value), Int(y.value), Int(x.value))] = val.cast[c_type]()
+        c_buff[(Int(z), Int(y), Int(x))] = val.cast[c_type]()
 
 
 @always_inline
