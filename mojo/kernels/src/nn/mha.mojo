@@ -616,15 +616,15 @@ fn flash_attention_kernel[
     alias warp_dim_y = 1
     alias num_warps_m = BM // (warp_dim_y * TM)
     alias num_warps_n = depth // (warp_dim_x * TN)
-    var warpx: UInt = UInt(warpid.value) % num_warps_n.value
-    var warpy: UInt = warpid // num_warps_n.value
+    var warpx = warpid % num_warps_n
+    var warpy = warpid // num_warps_n
     # Thread index mapping in MxN matrix.
     # Each warp handles TM rows of output matrix, applicable to both bmms.
-    var tx_in_warp: UInt = lane % warp_dim_x
-    var ty_in_warp: UInt = lane // warp_dim_x
+    var tx_in_warp = lane % warp_dim_x
+    var ty_in_warp = lane // warp_dim_x
     # Thread tile's start row and column in output matrix.
-    var mm_row: UInt = (ty_in_warp + warpy * warp_dim_y) * TM
-    var mm_col: UInt = (tx_in_warp + warpx * warp_dim_x) * TN
+    var mm_row = (ty_in_warp + warpy * warp_dim_y) * TM
+    var mm_col = (tx_in_warp + warpx * warp_dim_x) * TN
 
     var q_tile = stack_allocation[
         BM * depth,
@@ -683,17 +683,16 @@ fn flash_attention_kernel[
         alignment=float_alignment,
     ]()
 
-    var batch_idx: UInt = BlockIdx.z()
-    var head_idx: UInt = BlockIdx.y()
-    var q_tile_idx: UInt = BlockIdx.x()
+    var batch_idx = BlockIdx.z()
+    var head_idx = BlockIdx.y()
+    var q_tile_idx = BlockIdx.x()
 
-    var global_mask_offset: UInt = batch_idx * seq_len.value * seq_len.value
+    var global_mask_offset = batch_idx * seq_len * seq_len
 
     # Load Q.
     # Offset in global Q buffer, BSHD layout
-    var global_q_offset: UInt = UInt(depth.value) * (
-        head_idx
-        + num_heads.value * (q_tile_idx * BM.value + seq_len.value * batch_idx)
+    var global_q_offset = depth * (
+        head_idx + num_heads * (q_tile_idx * BM + seq_len * batch_idx)
     )
     # We transpose Q BSHD -> BHSD. 2 subsequenet rows in q tile have stride
     # != depth in global Q array because the stride is based on BSHD.
@@ -728,9 +727,7 @@ fn flash_attention_kernel[
     _fill[TM](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
-    var global_kv_offset: UInt = UInt(depth.value) * (
-        head_idx + UInt(num_heads.value) * seq_len.value * batch_idx
-    )
+    var global_kv_offset = depth * (head_idx + num_heads * seq_len * batch_idx)
 
     # K tile has shape [BN, depth] and is divided sub-tiles [BN, BK].
     # 1st row and col in k sub-tile loaded by current thread.
@@ -738,9 +735,7 @@ fn flash_attention_kernel[
     # V tile has shape [BN, depth] and is divided sub-tiles [BK, depth].
     # 1st row and col in v sub-tile loaded by current thread.
 
-    for kv_tile_start_row in range(
-        UInt(0), UInt(seq_len.value), UInt(BN.value)
-    ):
+    for kv_tile_start_row in range(0, seq_len, BN):
         # Clear thread tile results.
         _fill[TM * TN](reg_result, 0)
 
@@ -774,8 +769,8 @@ fn flash_attention_kernel[
             _mm[BM, BN_padded, BK, depth, TM, TN, transpose_a=False](
                 q_ptr,
                 kv_tile,
-                mm_row.value,
-                mm_col.value,
+                mm_row,
+                mm_col,
                 reg_m,
                 reg_n,
                 reg_result,
@@ -790,8 +785,8 @@ fn flash_attention_kernel[
         # Mask has shape [seq_len, seq_len]. p_tile correlates to a mask tile
         # starting at (q_tile_idx * BM, kv_tile_start_row).
         var mask_offset = global_mask_offset + (
-            q_tile_idx * BM.value + mm_row.value
-        ) * seq_len.value + kv_tile_start_row + mm_col
+            q_tile_idx * BM + mm_row
+        ) * seq_len + kv_tile_start_row + mm_col
 
         @parameter
         for i in range(TM):
@@ -800,7 +795,7 @@ fn flash_attention_kernel[
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = SIMD[size=simd_size].load(reg_result, idx)
-                var mask_idx = mask_offset.value + i * seq_len + j
+                var mask_idx = mask_offset + i * seq_len + j
                 var mask_vec = SIMD[size=simd_size].load[alignment=alignment](
                     mask_ptr, mask_idx
                 )
@@ -862,10 +857,7 @@ fn flash_attention_kernel[
         var storep_col_start = 0
         for subtile_start_row in range(0, BN, BK):
             # Store thread register tile to p sub-tile.
-            if (
-                mm_col >= storep_col_start.value
-                and mm_col < storep_col_start + BK
-            ):
+            if mm_col >= storep_col_start and mm_col < storep_col_start + BK:
 
                 @parameter
                 for i in range(TM):
@@ -874,10 +866,7 @@ fn flash_attention_kernel[
                     for j in range(0, TN, simd_size):
                         SIMD[size=simd_size].store[alignment=alignment](
                             p_tile,
-                            (Int(mm_row.value) + i) * BK
-                            + Int(mm_col.value)
-                            - storep_col_start
-                            + j,
+                            (mm_row + i) * BK + mm_col - storep_col_start + j,
                             SIMD[size=simd_size].load(reg_result, i * TN + j),
                         )
             storep_col_start += BK
@@ -904,8 +893,8 @@ fn flash_attention_kernel[
             _mm[BM, depth, BK, BK, TM, TN, transpose_a=False](
                 p_tile,
                 kv_tile,
-                mm_row.value,
-                mm_col.value,
+                mm_row,
+                mm_col,
                 reg_m,
                 reg_n,
                 o_thread_tile,
@@ -919,7 +908,7 @@ fn flash_attention_kernel[
     # Write the output from register to global memory.
     # The output tile [BM, depth] is divided into each thread's TMxTN registers.
     # Current thread's tile starts at (mm_row, mm_col).
-    var o_global_row_offset: UInt = global_q_offset + mm_row * row_stride.value
+    var o_global_row_offset = global_q_offset + mm_row * row_stride
 
     @parameter
     for i in range(TM):
@@ -933,10 +922,10 @@ fn flash_attention_kernel[
 
             SIMD[size=simd_size].store[alignment=alignment](
                 output_ptr,
-                o_global_row_offset + mm_col + UInt(offset.value),
+                o_global_row_offset + mm_col + offset,
                 vec,
             )
-        o_global_row_offset += row_stride.value
+        o_global_row_offset += row_stride
 
 
 @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
@@ -976,15 +965,15 @@ fn flash_attention_kernel_flexible_seqlen[
     alias warp_dim_y = 1
     alias num_warps_m = BM // (warp_dim_y * TM)
     alias num_warps_n = depth // (warp_dim_x * TN)
-    var warpx: UInt = warpid % num_warps_n.value
-    var warpy: UInt = warpid // num_warps_n.value
+    var warpx = warpid % num_warps_n
+    var warpy = warpid // num_warps_n
     # Thread index mapping in MxN matrix.
     # Each warp handles TM rows of output matrix, applicable to both bmms.
-    var tx_in_warp: UInt = lane % warp_dim_x
-    var ty_in_warp: UInt = lane // warp_dim_x
+    var tx_in_warp = lane % warp_dim_x
+    var ty_in_warp = lane // warp_dim_x
     # Thread tile's start row and column in output matrix.
-    var mm_row: UInt = (ty_in_warp + warpy * warp_dim_y) * TM
-    var mm_col: UInt = (tx_in_warp + warpx * warp_dim_x) * TN
+    var mm_row = (ty_in_warp + warpy * warp_dim_y) * TM
+    var mm_col = (tx_in_warp + warpx * warp_dim_x) * TN
 
     var q_tile = stack_allocation[
         BM * depth,
@@ -1043,47 +1032,46 @@ fn flash_attention_kernel_flexible_seqlen[
         alignment=float_alignment,
     ]()
 
-    var batch_idx: UInt = BlockIdx.z()
-    var head_idx: UInt = BlockIdx.y()
-    var q_tile_idx: UInt = BlockIdx.x()
+    var batch_idx = BlockIdx.z()
+    var head_idx = BlockIdx.y()
+    var q_tile_idx = BlockIdx.x()
 
-    var global_mask_offset: UInt = batch_idx * seq_len.value * seq_len.value
+    var global_mask_offset = batch_idx * seq_len * seq_len
 
     # Load Q.
     # Offset in global Q buffer, BSHD layout
-    var global_q_start_row = q_tile_idx * BM.value
-    var global_q_offset: UInt = depth.value * (
-        head_idx
-        + num_heads.value * (q_tile_idx * BM.value + seq_len.value * batch_idx)
+    var global_q_start_row = q_tile_idx * BM
+    var global_q_offset = depth * (
+        head_idx + num_heads * (q_tile_idx * BM + seq_len * batch_idx)
     )
-    alias loadq_num_rows_per_iter: UInt = (num_threads * simd_size) // depth
-    var loadq_num_rows: UInt = min(BM.value, seq_len.value - global_q_start_row)
+    alias loadq_num_rows_per_iter = ((num_threads * simd_size) // depth)
+    var loadq_num_rows = min(BM, seq_len - global_q_start_row)
     var loadq_num_iters = ceildiv(loadq_num_rows, loadq_num_rows_per_iter)
     # alias loadq_num_iters = BM // loadq_num_rows_per_iter
     # We transpose Q BSHD -> BHSD. 2 subsequenet rows in q tile have stride
     # != depth in global Q array because the stride is based on BSHD.
-    alias row_stride: UInt = num_heads * depth
+    alias row_stride = (num_heads * depth)
     # Index of the 1st row and col loaded by current thread.
     var loadq_row = (tid * simd_size) // depth
     var loadq_col = (tid * simd_size) % depth
 
     ##
     for i in range(loadq_num_iters):
-        var row_in_tile: UInt = loadq_row + i * loadq_num_rows_per_iter
+        var row_in_tile = loadq_row + i * loadq_num_rows_per_iter
         # The a row from Q in global memory.
         if row_in_tile + global_q_start_row < seq_len:
-            var global_q_idx = global_q_offset + row_in_tile * row_stride.value + loadq_col
+            var global_q_idx = global_q_offset + row_in_tile * row_stride + loadq_col
             var vec = SIMD[size=simd_size].load[alignment=alignment](
                 q_ptr, global_q_idx
             )
             SIMD[size=simd_size].store[alignment=alignment](
-                q_tile, row_in_tile * depth.value + loadq_col, vec
+                q_tile, row_in_tile * depth + loadq_col, vec
             )
         # The Q tile exceeds global Q buffer, pad with zeros.
         else:
             SIMD[size=simd_size].store[alignment=alignment](
                 q_tile,
-                row_in_tile * depth.value + loadq_col,
+                row_in_tile * depth + loadq_col,
                 SIMD[DType.float32, simd_size](0.0),
             )
     ##
@@ -1095,44 +1083,32 @@ fn flash_attention_kernel_flexible_seqlen[
     _fill[TM](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
-    var global_kv_offset: UInt = depth.value * (
-        head_idx + UInt(num_heads.value) * seq_len.value * batch_idx
-    )
+    var global_kv_offset = depth * (head_idx + num_heads * seq_len * batch_idx)
 
     # K tile has shape [BN, depth] and is divided sub-tiles [BN, BK].
     # 1st row and col in k sub-tile loaded by current thread.
-    var loadk_row: UInt = (tid * simd_size) // BK.value
-    var loadk_col: UInt = (tid * simd_size) % BK.value
+    var loadk_row = (tid * simd_size) // BK
+    var loadk_col = (tid * simd_size) % BK
 
     # V tile has shape [BN, depth] and is divided sub-tiles [BK, depth].
     # 1st row and col in v sub-tile loaded by current thread.
-    var loadv_row: UInt = (tid * simd_size) // depth.value
-    var loadv_col: UInt = (tid * simd_size) % depth.value
+    var loadv_row = (tid * simd_size) // depth
+    var loadv_col = (tid * simd_size) % depth
 
-    for kv_tile_start_row in range(
-        UInt(0), UInt(num_keys.value), UInt(BN.value)
-    ):
+    for kv_tile_start_row in range(0, num_keys, BN):
         # Clear thread tile results.
         _fill[TM * TN](reg_result, 0)
 
         # K tile has shape [BN, depth]. Load sub-tile [BN, BK] each time and
         # multiply with the corresponding Q slice of shape [BM, BK].
-        alias loadk_num_rows_per_iter: UInt = UInt(
-            (num_threads * simd_size)
-        ) // BK
-        var loadk_num_rows: UInt = min(
-            BN.value, UInt(num_keys.value) - kv_tile_start_row
-        )
-        var loadk_num_iters: UInt = ceildiv(
-            loadk_num_rows, loadk_num_rows_per_iter
-        )
+        alias loadk_num_rows_per_iter = (num_threads * simd_size) // BK
+        var loadk_num_rows = min(BN, num_keys - kv_tile_start_row)
+        var loadk_num_iters = ceildiv(loadk_num_rows, loadk_num_rows_per_iter)
         alias BN_padded = BN + smem_pad
-        for subtile_start_col in range(
-            UInt(0), UInt(depth.value), UInt(BK.value)
-        ):
+        for subtile_start_col in range(0, depth, BK):
             ##
             for i in range(loadk_num_iters):
-                var row_in_tile: UInt = loadk_row + i * loadk_num_rows_per_iter
+                var row_in_tile = loadk_row + i * loadk_num_rows_per_iter
                 if row_in_tile + kv_tile_start_row < num_keys:
                     var global_idx = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
                     var vec = SIMD[size=simd_size].load[alignment=alignment](
@@ -1143,17 +1119,13 @@ fn flash_attention_kernel_flexible_seqlen[
                     @parameter
                     for j in range(4):
                         kv_tile[
-                            (loadk_col + j.value) * BN_padded.value
-                            + row_in_tile
+                            (loadk_col + j) * BN_padded + row_in_tile
                         ] = vec[j]
                 else:
 
                     @parameter
                     for j in range(4):
-                        kv_tile[
-                            (loadk_col + j.value) * BN_padded.value
-                            + row_in_tile
-                        ] = 0
+                        kv_tile[(loadk_col + j) * BN_padded + row_in_tile] = 0
 
             # Gaurd write of q_tile and kv_tile.
             barrier()
@@ -1162,8 +1134,8 @@ fn flash_attention_kernel_flexible_seqlen[
             _mm[BM, BN_padded, BK, depth, TM, TN, transpose_a=False](
                 q_ptr,
                 kv_tile,
-                mm_row.value,
-                mm_col.value,
+                mm_row,
+                mm_col,
                 reg_m,
                 reg_n,
                 reg_result,
@@ -1182,26 +1154,25 @@ fn flash_attention_kernel_flexible_seqlen[
         # within the mask.
         ##
         var mask_offset = global_mask_offset + (
-            q_tile_idx * BM.value + mm_row
-        ) * seq_len.value + kv_tile_start_row + mm_col
-
-        var mask_row = q_tile_idx * BM.value + mm_row
+            q_tile_idx * BM + mm_row
+        ) * seq_len + kv_tile_start_row + mm_col
+        var mask_row = q_tile_idx * BM + mm_row
         var mask_col = kv_tile_start_row + mm_col
         if mask_row < seq_len and mask_col < num_keys:
 
             @parameter
             for i in range(TM):
                 # Scalar load in case mask dimension is not multiple of simd_size.
-                if mask_row + i.value < seq_len:
+                if mask_row + i < seq_len:
 
                     @parameter
                     for j in range(TN):
-                        if mask_col + j.value < num_keys:
+                        if mask_col + j < num_keys:
                             var idx = i * TN + j
                             var val = reg_result[idx]
                             var mask_idx = global_mask_offset + (
-                                mask_row + i.value
-                            ) * num_keys.value + mask_col.value + j.value
+                                mask_row + i
+                            ) * num_keys + mask_col + j
                             var mask_val = mask_ptr[mask_idx]
                             reg_result[idx] = val * scale + mask_val
         ##
@@ -1212,9 +1183,9 @@ fn flash_attention_kernel_flexible_seqlen[
             var curr_rowmax = rowmax[i]
 
             # Reset result that exceeds num_keys
-            var exceed: UInt = kv_tile_start_row + mm_col + TN.value - num_keys.value
+            var exceed = kv_tile_start_row + mm_col + TN - num_keys
             if exceed > 0:
-                for j in range(TN - exceed.value, TN):
+                for j in range(TN - exceed, TN):
                     reg_result[i * TN + j] = neg_inf[DType.float32]()
 
             # Shuffle TN elemnents per thread and choose the max among them.
@@ -1234,7 +1205,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 reg_result[idx] = exp(reg_result[idx] - curr_rowmax)
 
             if exceed > 0:
-                for j in range(TN - exceed.value, TN):
+                for j in range(TN - exceed, TN):
                     reg_result[i * TN + j] = 0.0
 
             var curr_rowsum = Float32(0.0)
@@ -1255,7 +1226,7 @@ fn flash_attention_kernel_flexible_seqlen[
             for j in range(0, TN, simd_size):
                 SIMD[size=simd_size].store[alignment=alignment](
                     p_tile,
-                    UInt(((mm_row + i) * BN + mm_col + j).value),
+                    (mm_row + i) * BN + mm_col + j,
                     SIMD[size=simd_size].load(reg_result, i * TN + j),
                 )
 
@@ -1270,9 +1241,9 @@ fn flash_attention_kernel_flexible_seqlen[
             ##
             @parameter
             for i in range(loadv_num_iters):
-                var row_in_tile = loadv_row.value + i * loadv_num_rows_per_iter
+                var row_in_tile = loadv_row + i * loadv_num_rows_per_iter
                 if (
-                    row_in_tile + kv_tile_start_row.value + subtile_start_row
+                    row_in_tile + kv_tile_start_row + subtile_start_row
                     < num_keys
                 ):
                     var global_idx = global_kv_offset + int(
@@ -1282,12 +1253,12 @@ fn flash_attention_kernel_flexible_seqlen[
                         v_ptr, global_idx
                     )
                     SIMD[size=simd_size].store[alignment=alignment](
-                        kv_tile, row_in_tile * depth + loadv_col.value, vec
+                        kv_tile, row_in_tile * depth + loadv_col, vec
                     )
                 else:
                     SIMD[size=simd_size].store[alignment=alignment](
                         kv_tile,
-                        row_in_tile * depth + loadv_col.value,
+                        row_in_tile * depth + loadv_col,
                         SIMD[DType.float32, simd_size](0.0),
                     )
             ##
@@ -1299,8 +1270,8 @@ fn flash_attention_kernel_flexible_seqlen[
             _mm[BM, depth, BK, BN, TM, TN, transpose_a=False](
                 p_ptr,
                 kv_tile,
-                mm_row.value,
-                mm_col.value,
+                mm_row,
+                mm_col,
                 reg_m,
                 reg_n,
                 reg_result,
@@ -1320,7 +1291,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 )
 
         # Point to  next tile
-        global_kv_offset += UInt(BN.value) * num_heads.value * depth.value
+        global_kv_offset += BN * num_heads * depth
 
     # Write the output from register to global memory.
     # The output tile [BM, depth] is divided into each thread's TMxTN registers.
@@ -1329,7 +1300,7 @@ fn flash_attention_kernel_flexible_seqlen[
 
     @parameter
     for i in range(TM):
-        if global_q_start_row + mm_row + i.value < seq_len:
+        if global_q_start_row + mm_row + i < seq_len:
 
             @parameter
             for offset in range(0, TN, simd_size):
@@ -1339,7 +1310,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 ) / Scalar.load(rowsum, i)
 
                 SIMD[size=simd_size].store[alignment=alignment](
-                    output_ptr, o_global_row_offset + mm_col + offset.value, vec
+                    output_ptr, o_global_row_offset + mm_col + offset, vec
                 )
         o_global_row_offset += row_stride
 
@@ -1596,22 +1567,22 @@ fn mha_single_batch[
 
     alias simd_size = simdwidthof[q_type]()
 
-    alias num_warps_m: UInt = BM // WM
-    alias num_warps_n: UInt = BN // WN
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
 
     constrained[
         num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt = ThreadIdx.x()
-    var warp_id: UInt = tid // WARP_SIZE
+    var tid = ThreadIdx.x()
+    var warp_id = (tid // WARP_SIZE)
     var lane = lane_id()
 
     # Coordinates of the current warp.
     var warp_x: UInt
     var warp_y: UInt
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
@@ -1630,8 +1601,8 @@ fn mha_single_batch[
         k_type, Layout.row_major(BN, BK), AddressSpace.SHARED, circular=True
     ](k_smem, k_smem_size)
 
-    var head_idx = int(BlockIdx.y())
-    var q_tile_idx = int(BlockIdx.x())
+    var head_idx = BlockIdx.y()
+    var q_tile_idx = BlockIdx.x()
 
     # Query global memory iterator
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
@@ -1672,7 +1643,7 @@ fn mha_single_batch[
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
         accum_type,
-        Layout.row_major(num_warps_n.value, BM),
+        Layout.row_major(num_warps_n, BM),
         address_space = AddressSpace.SHARED,
     ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
 
@@ -1685,7 +1656,7 @@ fn mha_single_batch[
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y.value, warp_x.value)
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
     var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
 
     # Share memory tile for Value.
@@ -1697,8 +1668,8 @@ fn mha_single_batch[
 
     # Mask global memory iterator.
     var mask_offset = q_tile_idx * BM * seq_len
-    var warp_offset = int(warp_y * WM * seq_len + warp_x * WN)
-    var mask_warp_ptr = mask_ptr + mask_offset + warp_offset
+    var warp_offset = warp_y * WM * seq_len + warp_x * WN
+    var mask_warp_ptr = mask_ptr + Int(mask_offset) + Int(warp_offset)
 
     # Key global memory iterator
     # For group query
@@ -1795,11 +1766,11 @@ fn mha_single_batch[
         mask_warp_ptr += BN
 
         _online_softmax_iter_for_mma_output[
-            num_m_mmas, num_n_mmas, num_warps_n.value, mma_shape
+            num_m_mmas, num_n_mmas, num_warps_n, mma_shape
         ](
             output_reg_tile,
             p_reg_tile,
-            warp_scratch.tile[num_warps_n.value, WM](0, warp_y.value),
+            warp_scratch.tile[num_warps_n, WM](0, warp_y),
             rowmax,
             rowsum,
         )
@@ -1857,9 +1828,7 @@ fn mha_single_batch[
         output_type,
         Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1)),
     ](output_ptr + q_offset)
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        warp_y.value, warp_x.value
-    )
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     # Write to global memory.
     @parameter
@@ -1870,9 +1839,7 @@ fn mha_single_batch[
             Layout.row_major(BM, depth),
             address_space = AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[accum_type]]())
-        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-            warp_y.value, warp_x.value
-        )
+        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](warp_y, warp_x)
         copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
@@ -2013,15 +1980,15 @@ fn _bmm0[
     seq_len: Int,
     num_keys: Int,
 ):
-    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    if x >= UInt(num_keys.value) or y >= UInt(seq_len.value):
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    if x >= num_keys or y >= seq_len:
         return
 
-    var batch_head: UInt = BlockIdx.z()
+    var batch_head = BlockIdx.z()
     var batch: UInt
     var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads.value))
+    batch, head = divmod(batch_head, UInt(num_heads))
 
     var q_offset = int(depth * (head + num_heads * seq_len * batch))
     var q = q_ptr + q_offset
@@ -2032,23 +1999,22 @@ fn _bmm0[
     )
     var k = k_ptr + kv_offset
 
-    var p_offset = batch_head * UInt(seq_len.value) * num_keys.value
-    var p = p_ptr + Int(p_offset.value)
+    var p_offset = batch_head * seq_len * num_keys
+    var p = p_ptr + Int(p_offset)
 
-    var mask_offset = batch * seq_len.value * num_keys.value
-    var mask = mask_ptr + Int(mask_offset.value)
+    var mask_offset = batch * seq_len * num_keys
+    var mask = mask_ptr + Int(mask_offset)
 
     var accum = SIMD[p_type, 1](0.0)
 
-    for d in range(UInt(depth.value)):
+    for d in range(UInt(depth)):
         accum += (
             q[y * num_heads * depth + d].cast[k_type]()
             * k[x * kv_num_heads * depth + d]
         ).cast[p_type]()
 
-    p[y * UInt(num_keys.value) + x] = (
-        accum * scale.cast[p_type]()
-        + mask[y * UInt(num_keys.value) + x].cast[p_type]()
+    p[y * num_keys + x] = (
+        accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
     )
 
 
@@ -2067,18 +2033,18 @@ fn _bmm1[
     seq_len: Int,
     num_keys: Int,
 ):
-    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    if x >= UInt(depth.value) or y >= UInt(seq_len.value):
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    if x >= depth or y >= seq_len:
         return
 
-    var batch_head: UInt = BlockIdx.z()
+    var batch_head = BlockIdx.z()
     var batch: UInt
     var head: UInt
-    batch, head = divmod(batch_head, num_heads.value)
+    batch, head = divmod(batch_head, UInt(num_heads))
 
-    var p_offset = batch_head * seq_len.value * num_keys.value
-    var p = p_ptr + Int(p_offset.value)
+    var p_offset = batch_head * seq_len * num_keys
+    var p = p_ptr + Int(p_offset)
 
     alias kv_num_heads = num_heads // group
     var kv_offset = int(
@@ -2086,14 +2052,12 @@ fn _bmm1[
     )
     var v = v_ptr + kv_offset
 
-    var output_offset = UInt(depth.value) * (
-        head + UInt(num_heads.value) * UInt(seq_len.value) * batch
-    )
-    var output = output_ptr + Int(output_offset.value)
+    var output_offset = depth * (head + num_heads * seq_len * batch)
+    var output = output_ptr + Int(output_offset)
 
     var accum = SIMD[DType.float32, 1](0.0)
 
-    for i in range(UInt(num_keys.value)):
+    for i in range(num_keys):
         accum += (
             p[y * num_keys + i].cast[v_type]() * v[i * kv_num_heads * depth + x]
         ).cast[DType.float32]()
