@@ -107,6 +107,8 @@ fn missing_arg_type_or_default(
     # expected-error @+2 {{required positional argument follows optional positional argument}}
     # expected-error @+1 {{'fn' argument type must be specified}}
     e,
+    # expected-error @+1 {{'fn' argument type must be specified}}
+    **kwargs,
 ):
     pass
 
