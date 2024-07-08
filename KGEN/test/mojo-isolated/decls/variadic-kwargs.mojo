@@ -13,6 +13,7 @@
 
 # CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.type<index,
 # CHECK-DAG: #[[MEM_ONLY:.*]] = #kgen.type<!MemOnly,
+# CHECK-DAG: #[[OBJECT:.*]] = #kgen.type<!object,
 
 
 # CHECK-LABEL: lit.func @"variadic_kwargs
@@ -20,6 +21,12 @@
 # CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> var, *, %c: index, %d: index,
 # CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
 fn variadic_kwargs(a: int, b: int, *args: int, c: int, d: int, **kwargs: int):
+    pass
+
+
+# CHECK-LABEL: lit.func @"variadic_kwargs_without_type
+# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[OBJECT]]>, mut [[LT]]> owned_in_mem|var,
+def variadic_kwargs_without_type(**kwargs):
     pass
 
 
