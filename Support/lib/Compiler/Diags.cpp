@@ -294,8 +294,7 @@ void InflightDiag::emitSourceMgrDiagnostic() {
   SourceMgr::DiagKind kind =
       isWarning ? SourceMgr::DK_Warning : SourceMgr::DK_Error;
   for (auto &message : messages) {
-    auto loc =
-        diags->sourceMgrMapper->convertLocToSMLoc(sourceMgr, message.loc);
+    auto loc = diags->convertLocToSMLoc(message.loc);
 
     // If we have an exotic MLIR location, give up.  Mojo shouldn't be producing
     // these, so just pick a weird-but-valid location.
