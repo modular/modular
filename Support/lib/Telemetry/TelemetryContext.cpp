@@ -214,7 +214,6 @@ TelemetryContext::TelemetryContext(
 #endif
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
-
   // -------- Resources --------
   // Get the map of resources for the full host info.
   ResourceAttributes attrs;
@@ -286,7 +285,6 @@ TelemetryContext::TelemetryContext(
     enabled = true;
     telemetryLevel = Level::L0;
   }
-
   // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() {

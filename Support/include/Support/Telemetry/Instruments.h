@@ -81,6 +81,62 @@ private:
 
 #endif // MODULAR_ENABLE_TELEMETRY
 
+// -------- Gauges ---------
+#ifndef MODULAR_ENABLE_TELEMETRY
+
+template <typename T>
+class Gauge {
+public:
+  void add(T value) {}
+
+private:
+  friend class TelemetryContext;
+
+  Gauge() {}
+};
+
+#else // MODULAR_ENABLE_TELEMETRY
+
+template <typename T>
+class Gauge {
+public:
+  void
+  add(T value,
+      std::initializer_list<std::pair<llvm::StringRef, MetricAttributeValue>>
+          additionalAttributes = {}) {
+    std::unordered_map<std::string, opentelemetry::common::AttributeValue>
+        attrs;
+    for (auto &attr : owned_attributes) {
+      std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
+    }
+
+    for (auto &attr : additionalAttributes) {
+      std::visit([&](auto &v) { attrs[attr.first.str()] = v; }, attr.second);
+    }
+
+    gauge->Add(value, attrs);
+  }
+
+  Gauge(Gauge &&) = default;
+  Gauge &operator=(Gauge &&) = default;
+
+private:
+  friend class TelemetryContext;
+
+  Gauge(std::unique_ptr<opentelemetry::metrics::UpDownCounter<T>> counter,
+        const llvm::StringMap<MetricAttributeValue> &additionalAttributes)
+      : gauge(std::move(counter)) {
+    for (auto &attr : additionalAttributes) {
+      owned_attributes[attr.first().str()] = attr.second;
+    }
+  }
+
+  std::unique_ptr<opentelemetry::metrics::UpDownCounter<T>> gauge;
+  MetricAttributeMap owned_attributes;
+};
+
+#endif // MODULAR_ENABLE_TELEMETRY
+
 // -------- Histogram and Timer --------
 
 #ifndef MODULAR_ENABLE_TELEMETRY

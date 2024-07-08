@@ -124,32 +124,20 @@ public:
                                  unit);
   }
 
-  template <typename T>
-  Counter<T>
-  createCounter(StringRef name, Level instrumentLevel,
-                const llvm::StringMap<MetricAttributeValue> &attributes = {},
-                StringRef description = "", StringRef unit = "") {
-    // TODO: If the name is invalid, it looks like OTel logs the error and
-    // returns a NOOP counter. Instead, we should probably try to assert that
-    // the name is valid or that the returned counter is not NOOP. Same for
-    // other instruments.
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (isUserMetric(instrumentLevel)) {
-      if (userMeter)
-        return createCounterImpl<T>(userMeter, name, description, unit,
-                                    attributes);
-      else
-        return createCounterImpl<T>(noopMeter, name, description, unit,
-                                    attributes);
-    }
-    if (isInstrumentEnabled(instrumentLevel))
-      return createCounterImpl<T>(meter, name, description, unit, attributes);
-    else
-      return createCounterImpl<T>(noopMeter, name, description, unit,
-                                  attributes);
-#else
-    return Counter<T>();
-#endif
+  Gauge<int64_t>
+  createInt64Gauge(StringRef name, Level instrumentLevel,
+                   const llvm::StringMap<MetricAttributeValue> &attributes = {},
+                   StringRef description = "", StringRef unit = "") {
+    return createGauge<int64_t>(name, instrumentLevel, attributes, description,
+                                unit);
+  }
+
+  Gauge<double> createDoubleGauge(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
+    return createGauge<double>(name, instrumentLevel, attributes, description,
+                               unit);
   }
 
   /// Create a Histogram<uint64_t>.
@@ -168,31 +156,6 @@ public:
       StringRef description = "", StringRef unit = "") {
     return createHistogram<double>(name, instrumentLevel, attributes,
                                    description, unit);
-  }
-
-  /// Create a Histogram<uint64_t
-  template <typename T>
-  Histogram<T>
-  createHistogram(StringRef name, Level instrumentLevel,
-                  const llvm::StringMap<MetricAttributeValue> &attributes = {},
-                  StringRef description = "", StringRef unit = "") {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (isUserMetric(instrumentLevel)) {
-      if (userMeter)
-        return createHistogramImpl<T>(userMeter, name, description, unit,
-                                      attributes);
-      else
-        return createHistogramImpl<T>(noopMeter, name, description, unit,
-                                      attributes);
-    }
-    if (isInstrumentEnabled(instrumentLevel))
-      return createHistogramImpl<T>(meter, name, description, unit, attributes);
-    else
-      return createHistogramImpl<T>(noopMeter, name, description, unit,
-                                    attributes);
-#else
-    return Histogram<T>();
-#endif
   }
 
   /// Create a Timer. If unit is omitted, the method will implicitly set
@@ -299,6 +262,68 @@ private:
 #endif
 
 #ifdef MODULAR_ENABLE_TELEMETRY
+
+  bool isValidInstrumentName(StringRef name) {
+    // TODO: SERV-138 - If the name is invalid, it looks like OTel logs the
+    // error and returns a NOOP counter. Instead, we should probably try to
+    // assert that the name is valid or that the returned counter is not NOOP.
+    // Same for other instruments.
+    return !name.empty();
+  }
+
+  template <typename T>
+  Gauge<T>
+  createGauge(StringRef name, Level instrumentLevel,
+              const llvm::StringMap<MetricAttributeValue> &attributes = {},
+              StringRef description = "", StringRef unit = "") {
+    assert(isValidInstrumentName(name) && "instrument name is invalid");
+#ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel) && userMeter)
+      return createGaugeImpl<T>(userMeter, name, description, unit, attributes);
+    if (isInstrumentEnabled(instrumentLevel))
+      return createGaugeImpl<T>(meter, name, description, unit, attributes);
+    else
+      return createGaugeImpl<T>(noopMeter, name, description, unit, attributes);
+#else
+    return Gauge<T>();
+#endif
+  }
+  // Utility function to help make code cleaner
+  template <typename T>
+  Gauge<T>
+  createGaugeImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
+                  StringRef name, StringRef description, StringRef unit,
+                  const llvm::StringMap<MetricAttributeValue> &attributes) {
+    if constexpr (std::is_same_v<T, int64_t>) {
+      return Gauge<int64_t>(m->CreateInt64UpDownCounter(
+                                name.data(), description.data(), unit.data()),
+                            attributes);
+    } else if constexpr (std::is_same_v<T, double>) {
+      return Gauge<double>(m->CreateDoubleUpDownCounter(
+                               name.data(), description.data(), unit.data()),
+                           attributes);
+    }
+  }
+
+  template <typename T>
+  Counter<T>
+  createCounter(StringRef name, Level instrumentLevel,
+                const llvm::StringMap<MetricAttributeValue> &attributes = {},
+                StringRef description = "", StringRef unit = "") {
+    assert(isValidInstrumentName(name) && "instrument name is invalid");
+#ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel) && userMeter)
+      return createCounterImpl<T>(userMeter, name, description, unit,
+                                  attributes);
+    if (isInstrumentEnabled(instrumentLevel))
+      return createCounterImpl<T>(meter, name, description, unit, attributes);
+    else
+      return createCounterImpl<T>(noopMeter, name, description, unit,
+                                  attributes);
+#else
+    return Counter<T>();
+#endif
+  }
   // Utility function to help make code cleaner
   template <typename T>
   Counter<T>
@@ -316,6 +341,25 @@ private:
     }
   }
 
+  /// Create a Histogram
+  template <typename T>
+  Histogram<T>
+  createHistogram(StringRef name, Level instrumentLevel,
+                  const llvm::StringMap<MetricAttributeValue> &attributes = {},
+                  StringRef description = "", StringRef unit = "") {
+    assert(isValidInstrumentName(name) && "instrument name is invalid");
+#ifdef MODULAR_ENABLE_TELEMETRY
+    if (isUserMetric(instrumentLevel) && userMeter)
+      return createHistogramImpl<T>(userMeter, name, description, unit,
+                                    attributes);
+    if (isInstrumentEnabled(instrumentLevel))
+      return createHistogramImpl<T>(meter, name, description, unit, attributes);
+    return createHistogramImpl<T>(noopMeter, name, description, unit,
+                                  attributes);
+#else
+    return Histogram<T>();
+#endif
+  }
   // Utility function to help make code cleaner
   template <typename T>
   Histogram<T>
