@@ -192,6 +192,68 @@ struct SixArgCallable[
         return self.func(arg1, arg2, arg3, arg4, arg5, arg6)
 
 
+@value
+@register_passable("trivial")
+struct SevenArgCallable[
+    ResultTy: AnyTrivialRegType,
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+    Arg7Ty: AnyTrivialRegType,
+]:
+    var func: fn (
+        Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty, Arg7Ty
+    ) -> ResultTy
+
+    @always_inline("nodebug")
+    fn __call__(
+        self,
+        arg1: Arg1Ty,
+        arg2: Arg2Ty,
+        arg3: Arg3Ty,
+        arg4: Arg4Ty,
+        arg5: Arg5Ty,
+        arg6: Arg6Ty,
+        arg7: Arg7Ty,
+    ) -> ResultTy:
+        return self.func(arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+
+
+@value
+@register_passable("trivial")
+struct EightArgCallable[
+    ResultTy: AnyTrivialRegType,
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+    Arg7Ty: AnyTrivialRegType,
+    Arg8Ty: AnyTrivialRegType,
+]:
+    var func: fn (
+        Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty, Arg7Ty, Arg8Ty
+    ) -> ResultTy
+
+    @always_inline("nodebug")
+    fn __call__(
+        self,
+        arg1: Arg1Ty,
+        arg2: Arg2Ty,
+        arg3: Arg3Ty,
+        arg4: Arg4Ty,
+        arg5: Arg5Ty,
+        arg6: Arg6Ty,
+        arg7: Arg7Ty,
+        arg8: Arg8Ty,
+    ) -> ResultTy:
+        return self.func(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+
+
 @always_inline("nodebug")
 fn call_dylib_func[
     ResultTy: AnyTrivialRegType
@@ -355,6 +417,31 @@ fn call_dylib_func[
 
 @always_inline("nodebug")
 fn call_dylib_func[
+    ResultTy: AnyTrivialRegType,
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+](
+    lib: DLHandle,
+    name: StringRef,
+    arg1: Arg1Ty,
+    arg2: Arg2Ty,
+    arg3: Arg3Ty,
+    arg4: Arg4Ty,
+    arg5: Arg5Ty,
+    arg6: Arg6Ty,
+) -> ResultTy:
+    """Call function `name` in dylib with one result and six arguments."""
+    return lib.get_function[
+        SixArgCallable[ResultTy, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty]
+    ](name)(arg1, arg2, arg3, arg4, arg5, arg6)
+
+
+@always_inline("nodebug")
+fn call_dylib_func[
     Arg1Ty: AnyTrivialRegType,
     Arg2Ty: AnyTrivialRegType,
     Arg3Ty: AnyTrivialRegType,
@@ -375,6 +462,74 @@ fn call_dylib_func[
     return lib.get_function[
         SixArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty]
     ](name)(arg1, arg2, arg3, arg4, arg5, arg6)
+
+
+@always_inline("nodebug")
+fn call_dylib_func[
+    ResultTy: AnyTrivialRegType,
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+    Arg7Ty: AnyTrivialRegType,
+](
+    lib: DLHandle,
+    name: StringRef,
+    arg1: Arg1Ty,
+    arg2: Arg2Ty,
+    arg3: Arg3Ty,
+    arg4: Arg4Ty,
+    arg5: Arg5Ty,
+    arg6: Arg6Ty,
+    arg7: Arg7Ty,
+) -> ResultTy:
+    """Call function `name` in dylib with one result and seven arguments."""
+    return lib.get_function[
+        SevenArgCallable[
+            ResultTy, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty, Arg7Ty
+        ]
+    ](name)(arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+
+
+@always_inline("nodebug")
+fn call_dylib_func[
+    ResultTy: AnyTrivialRegType,
+    Arg1Ty: AnyTrivialRegType,
+    Arg2Ty: AnyTrivialRegType,
+    Arg3Ty: AnyTrivialRegType,
+    Arg4Ty: AnyTrivialRegType,
+    Arg5Ty: AnyTrivialRegType,
+    Arg6Ty: AnyTrivialRegType,
+    Arg7Ty: AnyTrivialRegType,
+    Arg8Ty: AnyTrivialRegType,
+](
+    lib: DLHandle,
+    name: StringRef,
+    arg1: Arg1Ty,
+    arg2: Arg2Ty,
+    arg3: Arg3Ty,
+    arg4: Arg4Ty,
+    arg5: Arg5Ty,
+    arg6: Arg6Ty,
+    arg7: Arg7Ty,
+    arg8: Arg8Ty,
+) -> ResultTy:
+    """Call function `name` in dylib with one result and eight arguments."""
+    return lib.get_function[
+        EightArgCallable[
+            ResultTy,
+            Arg1Ty,
+            Arg2Ty,
+            Arg3Ty,
+            Arg4Ty,
+            Arg5Ty,
+            Arg6Ty,
+            Arg7Ty,
+            Arg8Ty,
+        ]
+    ](name)(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 
 
 struct OwningVector[T: Movable](Sized):

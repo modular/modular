@@ -149,3 +149,120 @@ struct ServerStats(ServerCallbacks):
                 total_request_ns / total_requests / divisor,
             )
             print()
+
+
+from max.serve.metrics import (
+    TelemetryContext,
+    PrometheusMetricsEndPoint,
+    Counter,
+    Histogram,
+)
+from max.engine import InferenceSession
+
+
+struct ServerMetrics(ServerCallbacks):
+    """Tracks various statistics about server performance."""
+
+    var options: ServerStatsOptions
+    """The options for printing server stats."""
+    var lock: BlockingSpinLock
+    """A blocking spin lock to ensure atomic updates of the statistics."""
+
+    var tctx: TelemetryContext
+    """The telemetry context for telemetry data."""
+    var metrics_end_point: PrometheusMetricsEndPoint
+    """The prometheus metrics end point."""
+    var total_batches: Counter[DType.uint64]
+    """The total number of batches processed."""
+    var total_requests: Counter[DType.uint64]
+    """The total number of requests processed."""
+    var total_ok_requests: Counter[DType.uint64]
+    """The total number of requests succesfully processed."""
+    var total_failed_requests: Counter[DType.uint64]
+    """The total number requests that were not processed succesfully."""
+    var total_request_us: Histogram[DType.uint64]
+    """The total time spent in microseconds spent processing requests."""
+
+    fn __init__(
+        inout self,
+        session: InferenceSession,
+        end_point: String = "localhost:9464",
+        owned options: ServerStatsOptions = ServerStatsOptions(),
+    ):
+        """Initialize the server stats with the given options.
+
+        Args:
+            session: Inference session to be used to gather statistics for.
+            end_point: The prometheus end-point to be used to export metrics.
+            options: The ServerStatsOptions to be used to configure printing the statistics.
+        """
+        self.lock = BlockingSpinLock()
+        self.options = options
+        self.tctx = TelemetryContext(session)
+        self.metrics_end_point = PrometheusMetricsEndPoint(end_point)
+        if not self.tctx.init_custom_metrics_prometheus_endpoint(
+            self.metrics_end_point
+        ):
+            print("Unable to set prometheus end-point for custom metrics")
+
+        self.total_batches = self.tctx.create_counter[DType.uint64](
+            "total_batches", "total batches processed", "batches"
+        )
+        self.total_requests = self.tctx.create_counter[DType.uint64](
+            "total_requests", "total requests processed", "requests"
+        )
+        self.total_ok_requests = self.tctx.create_counter[DType.uint64](
+            "total_ok_requests", "successfull requests", "requests"
+        )
+        self.total_failed_requests = self.tctx.create_counter[DType.uint64](
+            "total_failed_requests", "failed requests", "requests"
+        )
+        self.total_request_us = self.tctx.create_histogram[DType.uint64](
+            "total_request_us", "time spent in requests", "micros"
+        )
+
+    fn __moveinit__(inout self: Self, owned existing: Self):
+        """Move initialize the server stats from a given ServerStats instance.
+
+        Args:
+            existing: The existin ServerStats isntance.
+        """
+        self.options = existing.options^
+        self.lock = BlockingSpinLock()
+        self.total_batches = existing.total_batches
+        self.total_requests = existing.total_requests
+        self.total_ok_requests = existing.total_ok_requests
+        self.total_failed_requests = existing.total_failed_requests
+        self.total_request_us = existing.total_request_us
+        self.tctx = existing.tctx
+        self.metrics_end_point = existing.metrics_end_point^
+
+    fn on_server_start(inout self):
+        pass
+
+    fn on_server_stop(inout self):
+        pass
+
+    fn on_batch_receive(inout self, batch_size: Int):
+        with BlockingScopedLock(self.lock):
+            self.total_batches.add(1)
+
+    fn on_batch_complete(inout self, start_ns: Int, batch_size: Int):
+        with BlockingScopedLock(self.lock):
+            self.total_request_us.record((perf_counter_ns() - start_ns) / 1000)
+
+    fn on_request_receive(inout self):
+        with BlockingScopedLock(self.lock):
+            self.total_requests.add(1)
+
+    fn on_request_ok(
+        inout self,
+        start_ns: Int,
+    ):
+        with BlockingScopedLock(self.lock):
+            self.total_request_us.record((perf_counter_ns() - start_ns) / 1000)
+            self.total_ok_requests.add(1)
+
+    fn on_request_fail(inout self, error: String):
+        with BlockingScopedLock(self.lock):
+            self.total_failed_requests.add(1)

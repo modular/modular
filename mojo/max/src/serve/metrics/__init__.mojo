@@ -5,4 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 """Implements the MAX serve package."""
-from ._telemetry import TelemetryContext, Counter, PrometheusMetricsEndPoint
+from ._telemetry import (
+    TelemetryContext,
+    Instrument,
+    Counter,
+    Histogram,
+    Gauge,
+    PrometheusMetricsEndPoint,
+)
