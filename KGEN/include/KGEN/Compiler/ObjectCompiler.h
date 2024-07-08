@@ -92,10 +92,9 @@ private:
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
-  SmallVector<LLCL::AnyAsyncValueRef>
-  lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
-                           MLIRContext *mlirContext, bool parLLC,
-                           std::optional<size_t> moduleIdx = std::nullopt);
+  LLCL::AsyncValueRef<SmallVector<BufferRef>>
+  lowerLLVMModuleToObjects(std::unique_ptr<llvm::Module> module, Location loc,
+                           bool parLLC, std::optional<size_t> moduleIdx);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
@@ -111,7 +110,11 @@ private:
   /// PassManager configuration options.
   PassManagerConfigOptions pmOptions;
 
-  mlir::MLIRContext &context;
+  /// The MLIR context.
+  MLIRContext &context;
+
+  /// The LLCL runtime.
+  LLCL::Runtime &runtime;
 
   friend class ObjectCompilerLayer;
 };
