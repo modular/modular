@@ -54,3 +54,18 @@ TEST(Permutation, permuteReverse) {
   SmallVector<int64_t> expected{4, 2, 6, 3, 0, 1, 5};
   EXPECT_EQ(permutationTestResult, expected);
 }
+
+TEST(Permutation, permuteSolve) {
+  SmallVector<int64_t> data = {0, 1, 2, 3, 4, 5, 6};
+  SmallVector<int64_t> identityPermutation = {0, 1, 2, 3, 4, 5, 6};
+  SmallVector<int64_t> permutationTest = {4, 5, 1, 3, 0, 6, 2};
+
+  SmallVector<int64_t> expectedIdentityPermutationResult =
+      solvePermutation(data, data);
+  EXPECT_EQ(expectedIdentityPermutationResult, identityPermutation);
+
+  SmallVector<int64_t> permutationTestResult =
+      solvePermutation(data, permutationTest);
+  SmallVector<int64_t> expected{4, 2, 6, 3, 0, 1, 5};
+  EXPECT_EQ(permutationTestResult, expected);
+}
