@@ -349,7 +349,7 @@ fn gemv_kernel[
     if warpId < m:
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k, WARP_SIZE)):
-            var idx: UInt = i * WARP_SIZE + UInt(int(lane_id()))
+            var idx = i * WARP_SIZE + lane_id()
             var val = SIMD[s_type, 1]()
             if idx < k:
                 val = (
@@ -403,7 +403,7 @@ fn gemv_tc_kernel[
     if warpId < m:
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k, WARP_SIZE)):
-            var idx = i * WARP_SIZE + int(lane_id())
+            var idx = i * WARP_SIZE + lane_id()
             var val = Scalar[a_type]()
             if idx < k:
                 val = (
@@ -448,7 +448,7 @@ fn gevm_kernel[
     var warpsPerBlock: UInt = BlockDim.x() // WARP_SIZE
     var warpId: UInt = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[s_type, 1]()
-    var col: UInt = BlockIdx.x() * WARP_SIZE + UInt(int(lane_id()))
+    var col: UInt = BlockIdx.x() * WARP_SIZE + lane_id()
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var globalWarpId: UInt = x // WARP_SIZE
 
@@ -465,7 +465,7 @@ fn gevm_kernel[
         var rhs = Scalar.load(b, row * n + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[UInt(int(lane_id())) * WARP_SIZE + warpId] = accum
+    x_shared[lane_id() * WARP_SIZE + warpId] = accum
     barrier()
 
     @parameter

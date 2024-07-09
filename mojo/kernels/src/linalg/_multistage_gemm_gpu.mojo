@@ -380,7 +380,7 @@ fn multistage_gemm[
     ]()
 
     var tid: UInt32 = ThreadIdx.x()
-    var ln_id = UInt(int(lane_id()).value)
+    var ln_id = lane_id()
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
