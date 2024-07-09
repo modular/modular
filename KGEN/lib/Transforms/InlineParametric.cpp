@@ -199,7 +199,7 @@ private:
 bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
                                const llvm::SetVector<StringAttr> &calleeDecls,
                                const ParameterUseDefGraph &topLevelGraph) {
-  CompilerTimeTraceScope traceScope("AttrTypeMangler::populate");
+  VerboseCompilerTimeTraceScope traceScope("AttrTypeMangler::populate");
 
   // `curScope` contains all declarations visible in the scope of the call,
   // including those defined in higher scopes. When the function is inlined,
@@ -353,8 +353,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                 const llvm::SetVector<StringAttr> &calleeDecls,
                                 AttrTypeMangler::Cache &manglerCache,
                                 bool updateDebugInfo, bool debugCallsite) {
-  CompilerTimeTraceScope traceScope("inlineGeneratorCall",
-                                    [&] { return callee.getSymName().str(); });
+  VerboseCompilerTimeTraceScope traceScope(
+      "inlineGeneratorCall", [&] { return callee.getSymName().str(); });
 
   StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
 
@@ -627,7 +627,7 @@ void InliningGraphBase<DerivedT, NodeT>::complete(NodeT *node) {
 
 template <typename DerivedT, typename NodeT>
 void InliningGraphBase<DerivedT, NodeT>::process() {
-  CompilerTimeTraceScope traceScope("InliningGraphBase::process");
+  VerboseCompilerTimeTraceScope traceScope("InliningGraphBase::process");
 
   // Populate the worklist with root nodes.
   for (auto &[func, node] : this->nodes) {

@@ -576,7 +576,7 @@ void AutomaticInline::runOnOperation() {
 
   // If we deferred debuginfo update, do that now.
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
-    CompilerTimeTraceScope traceScope("updateDebugInfo");
+    VerboseCompilerTimeTraceScope traceScope("updateDebugInfo");
     LLCL::ForkJoin state(runtime);
     for (auto &[func, node] : graph.nodes) {
       if (node.isFunctionDead() || node.callsites.empty())

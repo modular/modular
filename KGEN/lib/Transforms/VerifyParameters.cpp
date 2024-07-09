@@ -320,7 +320,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     interp = true;
 #endif
 
-    CompilerTimeTraceScope traceScope("propagateTrivialParameters");
+    VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
       propagateTrivialParameters(

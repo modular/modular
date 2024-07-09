@@ -259,7 +259,8 @@ SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ArgConvention> argConventions,
     FnEffects effects, FnMetadataAttrInterface metadata) {
-  CompilerTimeTraceScope traceScope("SignatureType::getSpecializedSignature");
+  VerboseCompilerTimeTraceScope traceScope(
+      "SignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there are no substitutions to
   // perform.

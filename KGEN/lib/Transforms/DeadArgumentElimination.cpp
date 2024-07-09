@@ -652,7 +652,7 @@ void DeadArgumentElimination::run() {
 }
 
 void DeadArgumentEliminationPass::runOnOperation() {
-  CompilerTimeTraceScope traceScope(
+  VerboseCompilerTimeTraceScope traceScope(
       "DeadArgumentEliminationPass::runOnOperation");
 
   const SymbolTable &symtab =

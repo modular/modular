@@ -281,10 +281,11 @@ int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op,
 LogicalResult SCCPAnalysis::processControlFlowNode(
     ControlFlowNode node, AnalysisStateType &state,
     SmallVector<bool> &shouldContinue, int64_t loopLevel) {
-  CompilerTimeTraceScope traceScope("SCCPAnalysis::processControlFlowNode",
-                                    [name = node.getOperation()->getName()] {
-                                      return name.getStringRef().str();
-                                    });
+  VerboseCompilerTimeTraceScope traceScope(
+      "SCCPAnalysis::processControlFlowNode",
+      [name = node.getOperation()->getName()] {
+        return name.getStringRef().str();
+      });
 
   // TODO: Add support for other ControlFlowNode, e.g. kgen.try, etc.
   // TODO: issue #23376, this function should work more generally for
@@ -417,10 +418,11 @@ void SCCPAnalysis::updateParentOpOutputState(
 
 void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
                                                 AnalysisStateType &termState) {
-  CompilerTimeTraceScope traceScope("SCCPAnalysis::processControlTerminator",
-                                    [name = term.getOperation()->getName()] {
-                                      return name.getStringRef().str();
-                                    });
+  VerboseCompilerTimeTraceScope traceScope(
+      "SCCPAnalysis::processControlTerminator",
+      [name = term.getOperation()->getName()] {
+        return name.getStringRef().str();
+      });
 
   // TODO: Add support for other ControlFlowTerminators, e.g. kgen.return, etc.
   if (auto breakOp = dyn_cast<BreakOp>(term.getOperation())) {
@@ -580,7 +582,7 @@ LogicalResult SCCPAnalysis::replaceWithConstant(OpBuilder &builder,
 /// many newly dead operations.
 LogicalResult SCCPAnalysis::rewrite(MLIRContext *context,
                                     MutableArrayRef<Region> initialRegions) {
-  CompilerTimeTraceScope traceScope("SCCPAnalysis::rewrite");
+  VerboseCompilerTimeTraceScope traceScope("SCCPAnalysis::rewrite");
 
   SmallVector<Block *> worklist;
   auto addToWorklist = [&](MutableArrayRef<Region> regions) {
@@ -664,7 +666,7 @@ struct SCCP : impl::SCCPBase<SCCP> {
 } // namespace
 
 void SCCP::runOnOperation() {
-  CompilerTimeTraceScope traceScope("SCCP::runOnOperation");
+  VerboseCompilerTimeTraceScope traceScope("SCCP::runOnOperation");
 
   SCCPAnalysis analysis;
 

@@ -204,7 +204,7 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
 }
 
 void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
-  CompilerTimeTraceScope updateScopeDebugInfo(
+  VerboseCompilerTimeTraceScope updateScopeDebugInfo(
       "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
   func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (!isa<HLCF::LoopOp, FunctionLike>(op))

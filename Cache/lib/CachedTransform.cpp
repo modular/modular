@@ -46,6 +46,7 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 
 LogicalResult Cache::writeOperationToCacheKey(Operation *op,
                                               const WriteableBufferRef &key) {
+  TimeTraceScope scope(CacheProfilerEntry::create("writeOperationToCacheKey"));
   // Use bytecode when writing cache keys to ensure determinism across different
   // builds.
   return mlir::writeBytecodeToFile(op, *key);

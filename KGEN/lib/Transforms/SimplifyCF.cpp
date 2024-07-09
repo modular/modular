@@ -239,13 +239,13 @@ void SimplifyCF::runOnOperation() {
   // as jumps in this context - we only care about control flow transfers that
   // move us out of this loop.
   {
-    CompilerTimeTraceScope traceScope("cfgAnalysis");
+    VerboseCompilerTimeTraceScope traceScope("cfgAnalysis");
     walkPreorder(getOperation().getBodyRegion());
   }
 
   // Try to remove trivial loops. Process in reverse to make sure later ops are
   // visited first.
-  CompilerTimeTraceScope traceScope("eraseOps");
+  VerboseCompilerTimeTraceScope traceScope("eraseOps");
   numErasedLoops = 0;
   numErasedTry = 0;
   for (LoopOp loop : llvm::reverse(loopsInOrder))

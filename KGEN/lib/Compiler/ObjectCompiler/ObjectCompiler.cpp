@@ -135,10 +135,10 @@ public:
 
 private:
   static void runBeforePass(StringRef passID, llvm::Any &ir) {
-    CompilerProfilerEntry::createAndPush(passID, getLLVMIRName(ir));
+    VerboseCompilerProfilerEntry::createAndPush(passID, getLLVMIRName(ir));
   }
 
-  static void runAfterPass() { CompilerProfilerEntry::endAndPop(); }
+  static void runAfterPass() { VerboseCompilerProfilerEntry::endAndPop(); }
 };
 } // namespace
 
@@ -230,10 +230,12 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   TargetLibraryInfoImpl targetLibInfo(Triple(module.getTargetTriple()));
   passMgr.add(new TargetLibraryInfoWrapperPass(targetLibInfo));
 
+#ifndef MODULAR_PRODUCTION
   // Verify module immediately to catch problems before doInitialization() is
   // called on any passes.
   if (verifyModule(module, &errs()))
     return failure();
+#endif
 
   LLVMTargetMachine &llvmTargetMachine =
       static_cast<LLVMTargetMachine &>(targetMachine);
@@ -604,6 +606,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
     moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
 
   // Translate the operation into an LLVM module.
+  CompilerTimeTraceScope mlirScope("mlir-to-llvmir");
   std::unique_ptr<llvm::Module> llvmModule =
       mlir::translateModuleToLLVMIR(module, ctx, moduleName);
   if (!llvmModule)
@@ -973,6 +976,7 @@ LLCL::AsyncValueRef<SmallVector<BufferRef>>
 ObjectCompiler::lowerLLVMModuleToObjects(std::unique_ptr<llvm::Module> module,
                                          Location loc, bool parLLC,
                                          std::optional<size_t> moduleIdx) {
+  CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjects");
   auto result = LLCL::AsyncValueRef<SmallVector<BufferRef>>::allocate(runtime);
 
   // Create the target machine.
@@ -988,12 +992,16 @@ ObjectCompiler::lowerLLVMModuleToObjects(std::unique_ptr<llvm::Module> module,
 
   std::string str;
   llvm::raw_string_ostream os(str);
-  llvm::WriteBitcodeToFile(*module, os);
+  {
+    CompilerTimeTraceScope traceScope("WriteBitcodeToFile");
+    llvm::WriteBitcodeToFile(*module, os);
+  }
 
   runtime.getWorkQueue()->addTask([result = result.copy(),
                                    moduleStr = std::move(str), loc,
                                    tm = std::move(*machineOr), this, moduleIdx,
                                    parLLC]() mutable {
+    CompilerTimeTraceScope traceScope("optimizeLLVMTask");
     llvm::LLVMContext ctx;
     llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
         llvm::parseBitcodeFile(

@@ -1789,7 +1789,7 @@ LogicalResult
 KGEN::verifyDeclSignaturesMatch(StringRef lhsName, SignatureType lhsSig,
                                 Location lhsLoc, StringRef rhsName,
                                 SignatureType rhsSig, Location rhsLoc) {
-  CompilerTimeTraceScope traceScope("verifyDeclSignaturesMatch");
+  VerboseCompilerTimeTraceScope traceScope("verifyDeclSignaturesMatch");
 
   FunctionType lhsType = lhsSig.getValues();
   FunctionType rhsType = rhsSig.getValues();
