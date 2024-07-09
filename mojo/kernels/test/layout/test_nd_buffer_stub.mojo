@@ -133,12 +133,12 @@ fn test_copy_from_nd_buffer_scalars():
     layout_tensor.fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.distribute[
             threads_layout
         ](th_id)
         copy_from_nd_buffer[thread_layout=threads_layout](
-            thread_local_layout_tensor, buff, th_id.value
+            thread_local_layout_tensor, buff, th_id
         )
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -165,12 +165,12 @@ fn test_copy_to_nd_buffer_scalars():
     zero_fill(buff)
 
     alias threads_layout = Layout.row_major(4, 4)
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.distribute[
             threads_layout
         ](th_id)
         copy_to_nd_buffer[thread_layout=threads_layout](
-            buff, thread_local_layout_tensor, th_id.value
+            buff, thread_local_layout_tensor, th_id
         )
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -198,12 +198,12 @@ fn test_copy_from_nd_buffer_vectors():
     layout_tensor.fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             1, 4
         ]().distribute[threads_layout](th_id)
         copy_from_nd_buffer[thread_layout=threads_layout](
-            thread_local_layout_tensor, buff, th_id.value
+            thread_local_layout_tensor, buff, th_id
         )
     # [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0] [8.0, 9.0, 10.0, 11.0] [12.0, 13.0, 14.0, 15.0]
     # [16.0, 17.0, 18.0, 19.0] [20.0, 21.0, 22.0, 23.0] [24.0, 25.0, 26.0, 27.0] [28.0, 29.0, 30.0, 31.0]
@@ -225,12 +225,12 @@ fn test_copy_from_nd_buffer_vectors():
 
     layout_tensor.fill(0)
 
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             4, 4
         ]().distribute[threads_layout](th_id)
         copy_from_nd_buffer[thread_layout=threads_layout](
-            thread_local_layout_tensor, buff, th_id.value
+            thread_local_layout_tensor, buff, th_id
         )
 
     # CHECK: [0.0, 16.0, 32.0, 48.0, 1.0, 17.0, 33.0, 49.0, 2.0, 18.0, 34.0, 50.0, 3.0, 19.0, 35.0, 51.0] [4.0, 20.0, 36.0, 52.0, 5.0, 21.0, 37.0, 53.0, 6.0, 22.0, 38.0, 54.0, 7.0, 23.0, 39.0, 55.0] [8.0, 24.0, 40.0, 56.0, 9.0, 25.0, 41.0, 57.0, 10.0, 26.0, 42.0, 58.0, 11.0, 27.0, 43.0, 59.0] [12.0, 28.0, 44.0, 60.0, 13.0, 29.0, 45.0, 61.0, 14.0, 30.0, 46.0, 62.0, 15.0, 31.0, 47.0, 63.0]
@@ -258,12 +258,12 @@ fn test_copy_to_nd_buffer_vectors():
     zero_fill(buff)
 
     alias threads_layout = Layout.row_major(4, 4)
-    for th_id in range(UInt(threads_layout.size().value)):
+    for th_id in range(threads_layout.size()):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             1, 4
         ]().distribute[threads_layout](th_id)
         copy_to_nd_buffer[thread_layout=threads_layout](
-            buff, thread_local_layout_tensor, th_id.value
+            buff, thread_local_layout_tensor, th_id
         )
 
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -285,12 +285,12 @@ fn test_copy_to_nd_buffer_vectors():
     print_buff(buff)
     zero_fill(buff)
 
-    for th_id in range(UInt(threads_layout.size().value)):
+    for th_id in range(threads_layout.size()):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             4, 4
         ]().distribute[threads_layout](th_id)
         copy_to_nd_buffer[thread_layout=threads_layout](
-            buff, thread_local_layout_tensor, th_id.value
+            buff, thread_local_layout_tensor, th_id
         )
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -1195,9 +1195,9 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
             )
 
             alias thread_layout = Layout.row_major(2, 2)
-            for th_i in range(UInt(4)):
+            for th_i in range(4):
                 var buff_thread_local = distribute[thread_layout=thread_layout](
-                    buff_tile_4x4, th_i.value
+                    buff_tile_4x4, th_i
                 )
                 var tensor_thread_local = tensor_tile_4x4.distribute[
                     thread_layout
@@ -1205,7 +1205,7 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
 
                 var distribute_mask = _distribute_mask[
                     thread_layout=thread_layout
-                ](tile_mask, th_i.value)
+                ](tile_mask, th_i)
                 _copy_nd_buffer_to_layout_tensor_masked(
                     tensor_thread_local,
                     buff_thread_local,
@@ -1270,12 +1270,12 @@ fn test_copy_from_nd_buffer_masked_scalar():
             )
 
             alias thread_layout = Layout.row_major(2, 2)
-            for th_id in range(UInt(4)):
+            for th_id in range(4):
                 copy_from_nd_buffer_masked[thread_layout=thread_layout](
-                    tensor_tile_4x4.distribute[thread_layout](th_id.value),
+                    tensor_tile_4x4.distribute[thread_layout](th_id),
                     buff_tile_4x4,
                     tile_mask,
-                    th_id.value,
+                    th_id,
                 )
 
             tensor_tile_4x4.print()
@@ -1304,12 +1304,12 @@ fn test_copy_to_nd_buffer_masked_scalar():
             )
 
             alias thread_layout = Layout.row_major(2, 2)
-            for th_id in range(UInt(4)):
+            for th_id in range(4):
                 copy_to_nd_buffer_masked[thread_layout=thread_layout](
                     buff_tile_4x4,
-                    tensor_tile_4x4.distribute[thread_layout](th_id.value),
+                    tensor_tile_4x4.distribute[thread_layout](th_id),
                     tile_mask,
-                    th_id.value,
+                    th_id,
                 )
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0
     # CHECK: 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0 20.0
