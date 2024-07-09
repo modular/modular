@@ -257,8 +257,8 @@ fn flash_attention[
         (1) depth per head is 128 (or 256, set TN=8).
         (2) seqlen is multiple of 32 and 128.
     """
-    constrained[target == "cuda", "only valid on CUDA GPUs"]()
-    constrained[rank == 4, "only support rank 4 used in llama 2."]()
+    constrained[target == "cuda", "only valid on Nvidia GPUs"]()
+    constrained[rank == 4, "only support rank 4 inputs."]()
     constrained[
         q_type == k_type == v_type == output_type,
         "Q, K, V, output should have same type.",
@@ -267,46 +267,67 @@ fn flash_attention[
         q_type == DType.float32 or q_type.is_half_float(),
         "Only support single and half precision.",
     ]()
-    constrained[
-        q_shape.all_known[2, 4](),
-        "Only support static head (H) and depth (D) dimensions",
-    ]()
+
     var ctx = context.get_cuda_device()
 
-    alias num_heads = q_shape.get[2]()
-    alias depth = q_shape.get[3]()
-    alias k_num_heads = k_shape.get[2]()
-    alias group = num_heads // k_num_heads
-
+    # Runtime dimensions.
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
 
-    flash_attention_impl[
-        rank,
-        q_type,
-        k_type,
-        v_type,
-        mask_type,
-        output_type,
-        depth,
-        num_heads,
-        group,
-        add_attn_mask,
-        target,
-        use_tensor_core,
-    ](
-        output.data,
-        q.data,
-        k.data,
-        v.data,
-        mask.data,
-        scale,
-        batch_size,
-        seq_len,
-        num_keys,
-        ctx,
-    )
+    @parameter
+    if q_shape.all_known[2, 4]() and k_shape.has_value[2]():
+        alias num_heads = q_shape.get[2]()
+        alias depth = q_shape.get[3]()
+        alias k_num_heads = k_shape.get[2]()
+        alias group = num_heads // k_num_heads
+
+        flash_attention_impl[
+            rank,
+            q_type,
+            k_type,
+            v_type,
+            mask_type,
+            output_type,
+            depth,
+            num_heads,
+            group,
+            add_attn_mask,
+            target,
+            use_tensor_core,
+        ](
+            output.data,
+            q.data,
+            k.data,
+            v.data,
+            mask.data,
+            scale,
+            batch_size,
+            seq_len,
+            num_keys,
+            ctx,
+        )
+
+    else:
+        var num_heads = q.dim[2]()
+        var depth = q.dim[3]()
+        var group = q.dim[2]() // k.dim[2]()
+
+        mha_gpu_naive[q_type, k_type, v_type, mask_type, output_type](
+            q.data,
+            k.data,
+            v.data,
+            mask.data,
+            output.data,
+            scale,
+            batch_size,
+            seq_len,
+            num_keys,
+            num_heads,
+            depth,
+            group,
+            ctx,
+        )
 
 
 fn flash_attention_impl[
@@ -468,7 +489,7 @@ fn flash_attention_impl[
 
                 return
 
-        mha_gpu_naive[depth=depth, num_heads=num_heads, group=group,](
+        mha_gpu_naive(
             q,
             k,
             v,
@@ -478,6 +499,9 @@ fn flash_attention_impl[
             batch_size,
             seq_len,
             num_keys,
+            num_heads,
+            depth,
+            group,
             ctx,
         )
 
@@ -1879,9 +1903,6 @@ fn mha_gpu_naive[
     v_type: DType,
     mask_type: DType,
     output_type: DType,
-    depth: Int,
-    num_heads: Int,
-    group: Int = 1,
 ](
     q_ptr: DTypePointer[q_type],
     k_ptr: DTypePointer[k_type],
@@ -1892,6 +1913,9 @@ fn mha_gpu_naive[
     batch_size: Int,
     seq_len: Int,
     num_keys: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
     ctx: DeviceContext,
 ) raises:
     alias p_type = get_accum_type[q_type]()
@@ -1904,7 +1928,7 @@ fn mha_gpu_naive[
     )
 
     var bmm0_func = ctx.compile_function[
-        _bmm0[q_type, k_type, p_type, mask_type, num_heads, depth, group]
+        _bmm0[q_type, k_type, p_type, mask_type]
     ]()
     ctx.enqueue_function(
         bmm0_func,
@@ -1916,6 +1940,9 @@ fn mha_gpu_naive[
         batch_size,
         seq_len,
         num_keys,
+        num_heads,
+        depth,
+        group,
         grid_dim=(
             ceildiv(num_keys, 32),
             ceildiv(seq_len, 16),
@@ -1940,9 +1967,8 @@ fn mha_gpu_naive[
         ctx,
     )
 
-    var bmm1_func = ctx.compile_function[
-        _bmm1[p_type, v_type, output_type, num_heads, depth, group]
-    ]()
+    var bmm1_func = ctx.compile_function[_bmm1[p_type, v_type, output_type]]()
+
     ctx.enqueue_function(
         bmm1_func,
         output_ptr,
@@ -1950,6 +1976,9 @@ fn mha_gpu_naive[
         v_ptr,
         seq_len,
         num_keys,
+        num_heads,
+        depth,
+        group,
         grid_dim=(
             ceildiv(depth, 32),
             ceildiv(seq_len, 16),
@@ -1967,9 +1996,6 @@ fn _bmm0[
     k_type: DType,
     p_type: DType,
     mask_type: DType,
-    num_heads: Int,
-    depth: Int,
-    group: Int = 1,
 ](
     p_ptr: DTypePointer[p_type],
     q_ptr: DTypePointer[q_type],
@@ -1979,6 +2005,9 @@ fn _bmm0[
     batch_size: Int,
     seq_len: Int,
     num_keys: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
@@ -1993,7 +2022,7 @@ fn _bmm0[
     var q_offset = int(depth * (head + num_heads * seq_len * batch))
     var q = q_ptr + q_offset
 
-    alias kv_num_heads = num_heads // group
+    var kv_num_heads = num_heads // group
     var kv_offset = int(
         depth * (head // group + kv_num_heads * num_keys * batch)
     )
@@ -2023,15 +2052,15 @@ fn _bmm1[
     p_type: DType,
     v_type: DType,
     output_type: DType,
-    num_heads: Int,
-    depth: Int,
-    group: Int = 1,
 ](
     output_ptr: DTypePointer[output_type],
     p_ptr: DTypePointer[p_type],
     v_ptr: DTypePointer[v_type],
     seq_len: Int,
     num_keys: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
@@ -2046,7 +2075,7 @@ fn _bmm1[
     var p_offset = batch_head * seq_len * num_keys
     var p = p_ptr + Int(p_offset)
 
-    alias kv_num_heads = num_heads // group
+    var kv_num_heads = num_heads // group
     var kv_offset = int(
         depth * (head // group + kv_num_heads * num_keys * batch)
     )
