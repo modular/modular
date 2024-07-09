@@ -11,7 +11,7 @@ from .tensor import (
     _slice_to_tuple,
     _row_major_strides,
 )
-from utils import StaticTuple
+from utils import InlineArray
 from math import ceil
 from max.tensor import TensorSpec
 from sys.intrinsics import strided_load, strided_store
@@ -19,7 +19,6 @@ from sys.info import triple_is_nvidia_cuda
 
 
 @value
-@register_passable
 struct TensorSlice[
     is_mutable: Bool, //,
     type: DType,
@@ -31,7 +30,7 @@ struct TensorSlice[
     var _unsafe_slice: UnsafeTensorSlice[type, rank]
 
     fn __init__(
-        inout self, tensor: Self._ref_type, slices: StaticTuple[Slice, rank]
+        inout self, tensor: Self._ref_type, slices: InlineArray[Slice, rank]
     ):
         self = Self(
             tensor,
@@ -81,7 +80,6 @@ struct TensorSlice[
 
 
 @value
-@register_passable
 struct UnsafeTensorSlice[
     type: DType,
     rank: Int,
@@ -99,7 +97,7 @@ struct UnsafeTensorSlice[
     fn __init__(
         inout self,
         ptr: DTypePointer[type],
-        slices: StaticTuple[Slice, rank],
+        slices: InlineArray[Slice, rank],
         slicer_spec: StaticTensorSpec[type, rank],
     ):
         @parameter

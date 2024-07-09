@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice, UnsafeTensorSlice
-from utils import StaticTuple
+from utils import InlineArray
 from max.tensor import TensorSpec, TensorShape
 
 
@@ -24,7 +24,7 @@ fn _dot_prod[
 @always_inline
 fn _slice_to_tuple[
     func: fn (Slice) capturing -> Int, rank: Int
-](slices: StaticTuple[Slice, rank]) -> StaticIntTuple[rank]:
+](slices: InlineArray[Slice, rank]) -> StaticIntTuple[rank]:
     """Takes a tuple of `Slice`s and returns a tuple of Ints.
     `func` is used to extract the appropriate field (i.e. start, stop or end)
     of the Slice.
@@ -177,19 +177,19 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
 
     fn _canonicalize_slices(
         self, slices: VariadicList[Slice]
-    ) -> StaticTuple[Slice, rank]:
-        var slice_tuple = StaticTuple[Slice, rank]()
+    ) -> InlineArray[Slice, rank]:
+        var slice_array = InlineArray[Slice, rank](unsafe_uninitialized=True)
         for i in range(len(slices)):
-            slice_tuple[i] = slices[i]
-            slice_tuple[i].start = (slice_tuple[i].start or 0).value()
-            slice_tuple[i].end = (slice_tuple[i].end or self._spec[i]).value()
+            slice_array[i] = slices[i]
+            slice_array[i].start = (slice_array[i].start or 0).value()
+            slice_array[i].end = (slice_array[i].end or self._spec[i]).value()
         # pads any unspecified Slices with default values
         for i in range(len(slices), rank):
-            slice_tuple[i].start = 0
-            slice_tuple[i].end = self._spec[i]
-            slice_tuple[i].step = 1
+            slice_array[i].start = 0
+            slice_array[i].end = self._spec[i]
+            slice_array[i].step = 1
 
-        return slice_tuple
+        return slice_array
 
     @always_inline
     fn __getitem__(
