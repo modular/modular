@@ -16,7 +16,7 @@ fn import_of_import(arg: Float64):
 import builtin
 
 
-# CHECK-LABEL: lit.func @"test_function_calls(stdlib::builtin::int::Int)"
+# CHECK-LABEL: lit.func @"test_function_calls(::Int)"
 fn test_function_calls(arg: builtin.int.Int):
     pass
 

@@ -792,7 +792,7 @@ fn infer_with_default_arg[T: AnyTrivialRegType](a: T, b: Int = 7):
 
 # CHECK-LABEL: lit.func @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,{{.*}}::Int)"<:type !Int>
+    # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,::Int)"<:type !Int>
     infer_with_default_arg(128)
 
 fn fn_with_param[x: Int](y: Abstraction[x]):
@@ -962,15 +962,15 @@ fn default_params[a: Int, b: Int = 7, c: StringLiteral = "woof"]():
 
 # CHECK-LABEL: lit.func @"test_default_params()"
 fn test_default_params():
-    # CHECK: lit.call @{{.*}}@"default_params[{{.*}}::Int,{{.*}}::Int,{{.*}}::StringLiteral]()"
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::StringLiteral]()"
     # CHECK-SAME: <:!Int {1}, :!Int {7}, :!StringLiteral {:string "woof"}>
     default_params[1]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[{{.*}}::Int,{{.*}}::Int,{{.*}}::StringLiteral]()"
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::StringLiteral]()"
     # CHECK-SAME: <:!Int {2}, :!Int {8}, :!StringLiteral {:string "woof"}>
     default_params[2, 8]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[{{.*}}::Int,{{.*}}::Int,{{.*}}::StringLiteral]()"
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::StringLiteral]()"
     # CHECK-SAME: <:!Int {4}, :!Int {9}, :!StringLiteral {:string "meow"}>
     default_params[4, 9, "meow"]()
 

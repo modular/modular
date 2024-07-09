@@ -37,7 +37,7 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
 
 
 # Test mangling:
-# CHECK-LABEL: lit.func @"takeOwnedAnyTypePack[*stdlib::builtin::stubs::AnyType](*$0)"
+# CHECK-LABEL: lit.func @"takeOwnedAnyTypePack[*::AnyType](*$0)"
 
 # Test implicit lifetimes / param list.
 # CHECK-SAME: [mut *"rest`"]<Ts: variadic<!AnyType> var>

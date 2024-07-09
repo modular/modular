@@ -264,7 +264,7 @@ fn precedence_associativity(a: Int):
   z = -2**z
   # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}{1}
-  # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}int::Int,{{.*}}int::Int)"(%[[Z]], %[[ONE]])
+  # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__(::Int,::Int)"(%[[Z]], %[[ONE]])
   # CHECK-NEXT: lit.ref.store %[[RES]], %z
   z = Int(1).value + z
 
@@ -277,40 +277,40 @@ fn precedence_associativity(a: Int):
 
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
-  # CHECK: lit.call {{.*}}Int::@"__radd__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__radd__(::Int,::Int)"
   var z = Int(1).value + a
 
-  # CHECK: lit.call {{.*}}Int::@"__rsub__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rsub__(::Int,::Int)"
   z = Int(2).value - z
 
-  # CHECK: lit.call {{.*}}Int::@"__rmul__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rmul__(::Int,::Int)"
   z = Int(3).value * z
 
   # div tests
   # CHECK: lit.call {{.*}}__rtruediv__
-  # CHECK: lit.call {{.*}}Int::@"__rfloordiv__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rfloordiv__(::Int,::Int)"
   var r1 = 33.0 / Float32(42.0)
   z = Int(33).value // z
 
-  # CHECK: lit.call {{.*}}Int::@"__rmod__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rmod__(::Int,::Int)"
   var i0 = Int(10).value % z
 
-# CHECK: lit.call {{.*}}Int::@"__rpow__({{.*}}int::Int,{{.*}}int::Int)"
+# CHECK: lit.call {{.*}}Int::@"__rpow__(::Int,::Int)"
   var i1 = Int(3).value ** z
 
-  # CHECK: lit.call {{.*}}Int::@"__rlshift__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rlshift__(::Int,::Int)"
   var i2 = Int(1).value << z
 
-  # CHECK: lit.call {{.*}}Int::@"__rrshift__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rrshift__(::Int,::Int)"
   var i3 = Int(1).value >> z
 
-  # CHECK: lit.call {{.*}}Int::@"__rand__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rand__(::Int,::Int)"
   z = Int(1).value & z
 
-  # CHECK: lit.call {{.*}}Int::@"__ror__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__ror__(::Int,::Int)"
   z = Int(2).value | z
 
-  # CHECK: lit.call {{.*}}Int::@"__rxor__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rxor__(::Int,::Int)"
   z = Int(3).value ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
@@ -372,7 +372,7 @@ fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   # CHECK: %1 = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"(%0)
   _ = not a
 
-  # CHECK: [[EQ:%.*]] = lit.call {{.*}}Int::@"__eq__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: [[EQ:%.*]] = lit.call {{.*}}Int::@"__eq__(::Int,::Int)"
   # CHECK: [[EQBOOL:%.*]] = lit.call {{.*}}Bool::@"__bool__({{.*}}Bool)"([[EQ]])
   # CHECK:  = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"([[EQBOOL]])
   _ = not b == 0
@@ -561,7 +561,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
   return i
 
-# CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}::Int, /) -> {{.*}}::Int]({{.*}}::Int)"
+# CHECK-LABEL: lit.func @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.signature<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call[!lit.signature<(!Int, |) -> !Int>: callable](%a)
@@ -587,7 +587,7 @@ fn returnIndex2() -> Int:
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}::Int]({{.*}}::Int, /) -> {{.*}}::Int]()"
+# CHECK-LABEL: lit.func @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.signature<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, {1}), {1})>()
@@ -641,7 +641,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}int::Int,{{.*}}int::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> inout) -> !kgen.none
+# CHECK-LABEL: lit.func @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> inout) -> !kgen.none
 fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: [[BI:%.*]] = kgen.rebind %b {{.*}}#lit.invalid.ref.lifetime
   # CHECK-NEXT: lit.ref.store %a, [[BI]]

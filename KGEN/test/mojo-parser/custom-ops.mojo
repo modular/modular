@@ -35,8 +35,8 @@ fn main():
 
 # Check that the custom ops are registered with `custom.op_impls`
 # CHECK: kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.a",
-# CHECK-SAME:                    @"custom-ops"::@CustomOpA::@"impl(stdlib::builtin::simd::SIMD[{int32}, {1}],stdlib::builtin::simd::SIMD[{int32}, {1}])">,
+# CHECK-SAME:                    @"custom-ops"::@CustomOpA::@"impl(::SIMD[{int32}, {1}],::SIMD[{int32}, {1}])">,
 # CHECK-SAME:                  <"custom.b",
-# CHECK-SAME:                    @"custom-ops"::@CustomOpB::@"impl(stdlib::builtin::simd::SIMD[{int32}, {1}],stdlib::builtin::simd::SIMD[{int32}, {1}])">,
+# CHECK-SAME:                    @"custom-ops"::@CustomOpB::@"impl(::SIMD[{int32}, {1}],::SIMD[{int32}, {1}])">,
 # CHECK-SAME:                  <"custom.c",
-# CHECK-SAME:                    @"custom-ops"::@CustomOpC::@"impl(stdlib::builtin::simd::SIMD[{int32}, {1}],stdlib::builtin::simd::SIMD[{int32}, {1}])">]
+# CHECK-SAME:                    @"custom-ops"::@CustomOpC::@"impl(::SIMD[{int32}, {1}],::SIMD[{int32}, {1}])">]
