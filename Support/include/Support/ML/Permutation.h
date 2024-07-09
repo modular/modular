@@ -71,6 +71,37 @@ static SmallVector<T> permuteReverse(const SmallVector<T> &data,
   return permuteReverse(dataRef, permutation);
 }
 
+/// Returns a permutation where applying to `input` returns `output`.
+/// `input` and `output` must be composed of the same unique elements.
+///
+/// Example:
+///   input       : [a, b, c, d]
+///   permutation : [3, 1, 2, 0] <-- returns `permutation`
+///   output      : [d, b, c, a]
+template <typename T>
+static SmallVector<int64_t> solvePermutation(ArrayRef<T> output,
+                                             ArrayRef<T> input) {
+  SmallVector<int64_t> answer;
+  answer.reserve(output.size());
+
+  DenseMap<T, int64_t> inputsToIndex;
+  for (auto [i, ele] : llvm::enumerate(input)) {
+    inputsToIndex[ele] = i;
+  }
+  for (auto ele : output) {
+    answer.push_back(inputsToIndex[ele]);
+  }
+  return answer;
+}
+
+template <typename T>
+static SmallVector<int64_t> solvePermutation(const SmallVector<T> &output,
+                                             const SmallVector<T> &input) {
+  ArrayRef<int64_t> outputRef(output);
+  ArrayRef<int64_t> inputRef(input);
+  return solvePermutation(outputRef, inputRef);
+}
+
 } // namespace M
 
 #endif // SUPPORT_ML_PERMUTATION_H
