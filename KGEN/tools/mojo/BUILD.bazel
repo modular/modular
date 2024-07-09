@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@pip_deps//:requirements.bzl", "requirement")
 load(
     "//bazel:api.bzl",
     "driver_option_tablegen",
@@ -155,6 +156,7 @@ rpath_shim(
 run_tool(
     name = "mojo-standalone",
     data = [
+        "//:libpython",
         "//GenericML:DeviceDriver",
         "//GenericML:modular-framework-common",
         "//KGEN:CompilerRT",
@@ -187,6 +189,8 @@ run_tool(
         "//open-source/mojo/stdlib/stdlib",
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
+        requirement("transformers"),
+        requirement("torch"),
     ],
     env = {
         "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
