@@ -186,21 +186,30 @@ fn test[
         for ho in range(HO):
             for wo in range(WO):
                 for f in range(F):
-                    if not isclose(
-                        output_ref[n, ho, wo, f],
-                        output[n, ho, wo, f],
-                        atol=1e-4,  # absolute error tolerance
-                        rtol=1e-5,  # relative error tolerance
-                    ):
-                        print("Input shape NHWC: ", Index(N, H, W, C))
-                        print("filter shape RSCF: ", Index(R, S, C, F))
-                        print("filter packed", filter_packed)
-                        print("Test failed at index: ", Index(n, ho, wo, f))
-                        print("Golden value: ", output_ref[n, ho, wo, f])
-                        print("Actual value: ", output[n, ho, wo, f])
-                        output_ptr.free()
-                        output_ref_ptr.free()
-                        return
+                    var failed: Bool
+
+                    @parameter
+                    if output_type.is_floating_point():
+                        if isclose(
+                            output_ref[n, ho, wo, f],
+                            output[n, ho, wo, f],
+                            atol=1e-4,  # absolute error tolerance
+                            rtol=1e-5,  # relative error tolerance
+                        ):
+                            continue
+                    else:
+                        if output_ref[n, ho, wo, f] == output[n, ho, wo, f]:
+                            continue
+
+                    print("Input shape NHWC: ", Index(N, H, W, C))
+                    print("filter shape RSCF: ", Index(R, S, C, F))
+                    print("filter packed", filter_packed)
+                    print("Test failed at index: ", Index(n, ho, wo, f))
+                    print("Golden value: ", output_ref[n, ho, wo, f])
+                    print("Actual value: ", output[n, ho, wo, f])
+                    output_ptr.free()
+                    output_ref_ptr.free()
+                    return
 
     output_ptr.free()
     output_ref_ptr.free()

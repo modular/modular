@@ -2699,7 +2699,7 @@ fn pack_filter[
                 # Load remainder elements and pad with zero to
                 # to fill a simd vector.
                 var filter_vec = partial_simd_load[simd_size](
-                    filter_ptr, 0, residual, 0.0
+                    filter_ptr, 0, residual, 0
                 ).cast[packed_filter.type]()
                 SIMD.store(packed_filter_ptr, filter_vec)
 
