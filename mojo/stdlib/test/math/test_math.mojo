@@ -79,8 +79,8 @@ def test_copysign():
 
 
 def test_isclose():
-    assert_true(isclose(Int64(2), Int64(2)))
-    assert_false(isclose(Int64(2), Int64(3)))
+    assert_true(isclose(Int64(2), Int64(2), atol=0, rtol=0))
+    assert_false(isclose(Int64(2), Int64(3), atol=0, rtol=0))
 
     assert_true(isclose(Float32(2), Float32(2)))
     assert_true(isclose(Float32(2), Float32(2), rtol=1e-9))
