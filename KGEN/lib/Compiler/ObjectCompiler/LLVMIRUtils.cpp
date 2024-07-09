@@ -50,69 +50,18 @@ private:
   /// The value info for each global value in the module.
   llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
 };
-
-/// This class provides support for splitting an LLVM module into multiple
-/// parts.
-/// TODO: Clean up the splitters here (some code duplication) when we can move
-/// to per function llvm compilation.
-class LLVMModulePerFunctionSplitterImpl {
-public:
-  explicit LLVMModulePerFunctionSplitterImpl(
-      std::unique_ptr<llvm::Module> module, size_t parallelismLevel);
-
-  /// Split the LLVM module into multiple modules using the provided process
-  /// function.
-  void split(
-      llvm::function_ref<void(std::unique_ptr<llvm::Module>, size_t idx, bool)>
-          processFn);
-
-private:
-  struct ValueInfo {
-    const llvm::Value *value = nullptr;
-    bool canBeSplit = true;
-    llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
-    llvm::SmallPtrSet<const llvm::Value *, 4> users;
-  };
-
-  /// Collect all of the immediate global value users of `value`.
-  void collectValueUsers(const llvm::Value *value);
-
-  /// Propagate use information through the module.
-  void propagateUseInfo();
-
-  /// The main LLVM module being split.
-  std::unique_ptr<llvm::Module> mainModule;
-
-  /// The value info for each global value in the module.
-  llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
-
-  /// Parallelism level to help guide control splitting concurrency.
-  size_t parallelismLevel;
-};
 } // namespace
 
-namespace M::KGEN {
 /// support for splitting an LLVM module into multiple parts using exported
 /// functions as anchors, and pull in all dependency on the call stack into one
 /// module.
 SmallVector<std::unique_ptr<llvm::Module>>
-splitPerExported(llvm::Module &module) {
+KGEN::splitPerExported(llvm::Module &module) {
   LLVMModuleSplitterImpl impl(module);
   SmallVector<std::unique_ptr<llvm::Module>> results;
   impl.split(results);
   return results;
 }
-
-/// support for splitting an LLVM module into multiple parts with each part
-/// contains only one function (with exception for coroutine related functions.)
-void splitPerFunction(
-    std::unique_ptr<llvm::Module> module, size_t parallelismLevel,
-    function_ref<void(std::unique_ptr<llvm::Module>, int64_t idx, bool)>
-        processFn) {
-  LLVMModulePerFunctionSplitterImpl impl(std::move(module), parallelismLevel);
-  impl.split(processFn);
-}
-} // namespace M::KGEN
 
 LLVMModuleSplitterImpl::LLVMModuleSplitterImpl(llvm::Module &module)
     : mainModule(module) {}
@@ -280,6 +229,57 @@ void LLVMModuleSplitterImpl::propagateUseInfo() {
         worklist.push_back(&depInfo);
     }
   }
+}
+
+namespace {
+/// This class provides support for splitting an LLVM module into multiple
+/// parts.
+/// TODO: Clean up the splitters here (some code duplication) when we can move
+/// to per function llvm compilation.
+class LLVMModulePerFunctionSplitterImpl {
+public:
+  explicit LLVMModulePerFunctionSplitterImpl(
+      std::unique_ptr<llvm::Module> module, size_t parallelismLevel);
+
+  /// Split the LLVM module into multiple modules using the provided process
+  /// function.
+  void split(
+      llvm::function_ref<void(std::unique_ptr<llvm::Module>, size_t idx, bool)>
+          processFn);
+
+private:
+  struct ValueInfo {
+    const llvm::Value *value = nullptr;
+    bool canBeSplit = true;
+    llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
+    llvm::SmallPtrSet<const llvm::Value *, 4> users;
+  };
+
+  /// Collect all of the immediate global value users of `value`.
+  void collectValueUsers(const llvm::Value *value);
+
+  /// Propagate use information through the module.
+  void propagateUseInfo();
+
+  /// The main LLVM module being split.
+  std::unique_ptr<llvm::Module> mainModule;
+
+  /// The value info for each global value in the module.
+  llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
+
+  /// Parallelism level to help guide control splitting concurrency.
+  size_t parallelismLevel;
+};
+} // namespace
+
+/// support for splitting an LLVM module into multiple parts with each part
+/// contains only one function (with exception for coroutine related functions.)
+void KGEN::splitPerFunction(
+    std::unique_ptr<llvm::Module> module, size_t parallelismLevel,
+    function_ref<void(std::unique_ptr<llvm::Module>, int64_t idx, bool)>
+        processFn) {
+  LLVMModulePerFunctionSplitterImpl impl(std::move(module), parallelismLevel);
+  impl.split(processFn);
 }
 
 LLVMModulePerFunctionSplitterImpl::LLVMModulePerFunctionSplitterImpl(
