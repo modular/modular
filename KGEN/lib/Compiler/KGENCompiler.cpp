@@ -312,14 +312,12 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       return Error("failed to run the pass manager");
     if (failed(writeCaptureArgs(cast<ModuleOp>(op), name, buffer.copy())))
       return Error("failed to generate capture stub");
-    llvm::LLVMContext llvmCtx;
-    ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
-        compiler->lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
+    LLVMModuleAndContext llvmModule;
+    if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
+          return compiler->lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
+        }))
+      return err.takeError();
 
-    if (llvmModuleOr)
-      return Error(Twine("failed to lower to LLVM ") + llvmModuleOr.getError());
-
-    std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
     if (emissionKind == EmissionKind::LLVM) {
       llvmModule->print(*buffer, nullptr);
       return success();
@@ -327,8 +325,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
     LLCL::Runtime &runtime =
         *loadContext(pm.getContext())->get<LLCL::Runtime>();
-    if (failed(compileLLVMToObject(*llvmModule, *tm, *buffer, options, runtime,
-                                   /*emitAssembly=*/true)))
+    if (failed(compileLLVMToAssembly(std::move(llvmModule), *tm, *buffer,
+                                     options, runtime)))
       return Error("failed to emit assembly");
     return success();
   };

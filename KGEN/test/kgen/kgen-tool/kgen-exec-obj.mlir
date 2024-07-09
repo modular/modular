@@ -22,8 +22,8 @@ kgen.global export @exported_global : i32 [@noop, @noop](0)
 // OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.2.o):
 // OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.3.o):
 // OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.4.o):
-// OBJ: my_exported_kernel
-// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.5.o):
 // OBJ: exported_global
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.5.o):
+// OBJ: my_exported_kernel
 
 // HDR-LABEL: extern float my_exported_kernel(float);

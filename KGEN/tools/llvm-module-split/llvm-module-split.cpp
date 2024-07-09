@@ -99,10 +99,18 @@ int main(int argc, char **argv) {
   // Enable command line options for various MLIR internals.
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  LLVMContext Context;
-  std::unique_ptr<Module> module = readModule(Context, clOptions.inputFilename);
-  if (!module)
-    return 1;
+  LLVMModuleAndContext module;
+  ErrorOrSuccess err = module.create(
+      [&](LLVMContext &ctx) -> M::ErrorOr<std::unique_ptr<Module>> {
+        if (std::unique_ptr<Module> module =
+                readModule(ctx, clOptions.inputFilename))
+          return module;
+        return M::Error("could not load LLVM file");
+      });
+  if (err) {
+    llvm::errs() << err.getError() << "\n";
+    return -1;
+  }
 
   std::unique_ptr<llvm::ToolOutputFile> output = nullptr;
   if (clOptions.outputPrefix == "-") {
@@ -115,46 +123,37 @@ int main(int argc, char **argv) {
                                          "':" + error.message()));
   }
 
-  auto outputLambda = [&](llvm::Module &subModule, int64_t idx) {
+  auto outputLambda = [&](LLVMModuleAndContext subModule,
+                          std::optional<int64_t> idx) {
     if (clOptions.outputPrefix == "-") {
       output->os() << "##############################################\n";
-      output->os() << "# [LLVM Module Split: submodule " << idx << "]\n";
+      if (idx)
+        output->os() << "# [LLVM Module Split: submodule " << *idx << "]\n";
+      else
+        output->os() << "# [LLVM Module Split: main module]\n";
       output->os() << "##############################################\n";
-      output->os() << subModule;
+      output->os() << *subModule;
       output->os() << "\n";
     } else {
       std::string outPath;
-      if (idx == -1)
+      if (!idx)
         outPath = clOptions.outputPrefix + ".ll";
       else
-        outPath = clOptions.outputPrefix + "." + std::to_string(idx) + ".ll";
+        outPath = (clOptions.outputPrefix + "." + Twine(*idx) + ".ll").str();
       auto outFile = mlir::openOutputFile(outPath);
       if (!outFile)
         exit(clOptions.options.reportError("Cannot open output file: '" +
                                            outPath + "."));
-      outFile->os() << subModule;
+      outFile->os() << *subModule;
       outFile->keep();
       llvm::outs() << "Write llvm module to " << outPath << "\n";
     }
   };
 
   if (clOptions.perFunctionSplit) {
-    splitPerFunction(
-        std::move(module), 1,
-        [&](std::unique_ptr<llvm::Module> subModule, int64_t idx, bool) {
-          if (subModule)
-            outputLambda(*subModule, idx);
-        });
+    splitPerFunction(std::move(module), 1, outputLambda, [] {});
   } else {
-    SmallVector<std::unique_ptr<llvm::Module>> modules =
-        splitPerExported(*module);
-    if (modules.empty()) {
-      outputLambda(*module, -1);
-    } else {
-      for (auto [idx, module] :
-           llvm::enumerate(llvm::make_pointee_range(modules)))
-        outputLambda(module, idx);
-    }
+    splitPerExported(std::move(module), outputLambda);
   }
 
   if (output)
