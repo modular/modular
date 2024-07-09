@@ -185,7 +185,7 @@ fn test[
         var output_ref_device_ptr = ctx.create_buffer[type](o_size)
         ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
 
-        mha_gpu_naive[depth=depth, num_heads=num_heads, group=group](
+        mha_gpu_naive(
             q_device_ptr.ptr,
             k_device_ptr.ptr,
             v_device_ptr.ptr,
@@ -195,6 +195,9 @@ fn test[
             batch_size,
             seq_len,
             num_keys,
+            num_heads,
+            depth,
+            group,
             ctx,
         )
 
