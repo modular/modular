@@ -36,25 +36,25 @@ struct Result(Formattable):
     @no_inline
     fn format_to(self, inout writer: Formatter):
         if self == Self.SUCCESS:
-            writer.write("SUCCESS")
+            return writer.write("SUCCESS")
         if self == Self.NOT_INITIALIZED:
-            writer.write("NOT_INITIALIZED")
+            return writer.write("NOT_INITIALIZED")
         if self == Self.ALLOC_FAILED:
-            writer.write("ALLOC_FAILED")
+            return writer.write("ALLOC_FAILED")
         if self == Self.INVALID_VALUE:
-            writer.write("INVALID_VALUE")
+            return writer.write("INVALID_VALUE")
         if self == Self.ARCH_MISMATCH:
-            writer.write("ARCH_MISMATCH")
+            return writer.write("ARCH_MISMATCH")
         if self == Self.MAPPING_ERROR:
-            writer.write("MAPPING_ERROR")
+            return writer.write("MAPPING_ERROR")
         if self == Self.EXECUTION_FAILED:
-            writer.write("EXECUTION_FAILED")
+            return writer.write("EXECUTION_FAILED")
         if self == Self.INTERNAL_ERROR:
-            writer.write("INTERNAL_ERROR")
+            return writer.write("INTERNAL_ERROR")
         if self == Self.NOT_SUPPORTED:
-            writer.write("NOT_SUPPORTED")
+            return writer.write("NOT_SUPPORTED")
         if self == Self.LICENSE_ERROR:
-            writer.write("LICENSE_ERROR")
+            return writer.write("LICENSE_ERROR")
 
         return abort("unreachable: invalid Result entry")
 
