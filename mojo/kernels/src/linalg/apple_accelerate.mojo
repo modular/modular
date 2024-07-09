@@ -293,26 +293,30 @@ fn apple_gemv[
             @always_inline
             @parameter
             fn compute_fn[width: Int](k: Int):
+                var a_val = a.load[width=width](0, k).cast[c.type]()
+                var b_val = b.load[width=width](n, k).cast[
+                    c.type
+                ]() if b_packed or (
+                    not b_packed and transpose_b
+                ) else transposed_b.load[
+                    width=width
+                ](
+                    n, k
+                ).cast[
+                    c.type
+                ]()
+
                 @parameter
                 if width == 1:
-                    acc_scalar += (
-                        a[0, k].cast[c.type]()
-                        * b[n, k].cast[c.type]() if b_packed
-                        or (not b_packed and transpose_b) else transposed_b[
-                            n, k
-                        ].cast[c.type]()
+                    acc_scalar = fma(
+                        rebind[Scalar[c_type]](a_val),
+                        rebind[Scalar[c_type]](b_val),
+                        acc_scalar,
                     )
                 else:
                     acc_vector = fma(
-                        a.load[width=simd_width](0, k).cast[c.type](),
-                        b.load[width=simd_width](n, k).cast[
-                            c.type
-                        ]() if b_packed
-                        or (
-                            not b_packed and transpose_b
-                        ) else transposed_b.load[width=simd_width](n, k).cast[
-                            c.type
-                        ](),
+                        rebind[SIMD[c_type, simd_width]](a_val),
+                        rebind[SIMD[c_type, simd_width]](b_val),
                         acc_vector,
                     )
 

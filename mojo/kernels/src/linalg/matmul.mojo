@@ -528,7 +528,7 @@ fn _matmul_cpu_impl[
         # apple_gemv handles cases with M=1 (where apple_matmul is suboptimal).
         @parameter
         if use_apple_accelerate_lib[c.type, a.type, b.type]():
-            if n == 1:
+            if m == 1:
                 apple_gemv[
                     c.shape,
                     c.type,
