@@ -632,7 +632,7 @@ fn flash_attention_kernel[
     alias num_warps = num_threads // WARP_SIZE
 
     var tid = ThreadIdx.x()
-    var lane = int(lane_id())
+    var lane = lane_id()
     var warpid = tid // WARP_SIZE
 
     # Warp index mapping for 2nd gemm.
@@ -981,7 +981,7 @@ fn flash_attention_kernel_flexible_seqlen[
     alias num_warps = num_threads // WARP_SIZE
 
     var tid = ThreadIdx.x()
-    var lane = int(lane_id())
+    var lane = lane_id()
     var warpid = tid // WARP_SIZE
 
     # Warp index mapping for 2nd gemm.

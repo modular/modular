@@ -864,7 +864,7 @@ fn _online_softmax_kernel[
     alias frag_size = get_fragment_size[mma_shape]()[2]
 
     var warp_id: UInt = ThreadIdx.x() // WARP_SIZE
-    var lane: UInt = int(lane_id()).value
+    var lane = lane_id()
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
     # corrected with the right rowmax.
