@@ -353,20 +353,40 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
   return name;
 }
 
+// If we are a builtin symbol, then just strip everything but the name of the
+// type. E.g. Print ::Int instead of stdlib::builtin::int::Int.
+static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
+  StringRef prettyName(nestedSymbolName);
+
+  if (prettyName.starts_with("stdlib::builtin::")) {
+    size_t lastSeperatorLoc = prettyName.rfind("::");
+    if (lastSeperatorLoc != StringRef::npos)
+      return prettyName.drop_front(lastSeperatorLoc);
+  }
+
+  return prettyName;
+}
+
 /// Pretty print a symbol reference.
 static void printSymbol(raw_ostream &os, StringRef name, SymbolRefAttr symbol) {
   // For constructors, print the type name instead.
   // TODO: Handle other dunder methods.
   if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
     name = symbol.getNestedReferences().drop_back().back().getAttr();
-  os << name;
+  os << trimBuiltinNamespace(name);
 }
+
 static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
                         bool isFunc) {
-  if (!forDiag)
-    printNestedSymbolReference(os, symbol);
-  else
+  if (forDiag) {
     printSymbol(os, getNameFromSymbolRef(symbol, isFunc), symbol);
+    return;
+  }
+
+  std::string nestedSymbolName;
+  llvm::raw_string_ostream buff(nestedSymbolName);
+  printNestedSymbolReference(buff, symbol);
+  os << trimBuiltinNamespace(nestedSymbolName);
 }
 
 /// Try to extract a symbol reference from the given parameter. Returns nullptr

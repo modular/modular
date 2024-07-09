@@ -8,9 +8,9 @@
 // RUN: mojo test --co %S/inputs/unit_suffix_test.mojo | FileCheck %s --check-prefix=CHECK-FILE
 // RUN: mojo test --co %S/inputs/package | FileCheck %s --check-prefix=CHECK-PACKAGE
 // RUN: mojo test --co "%S/inputs/test_unit_prefix.mojo::test_fn()" | FileCheck %s --check-prefix=CHECK-TEST
-// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
-// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
-// RUN: mojo test --co --diagnostic-format json "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-JSON
+// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
+// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
+// RUN: mojo test --co --diagnostic-format json "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-JSON
 
 // RUN: not mojo test --co "%S/inputs/doc.mojo@doc_fn.::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-0
 // RUN: not mojo test --co "%S/inputs/doc.mojo@.doc_fn::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-1
@@ -63,8 +63,8 @@
 // CHECK-SUITE:  inputs/doc.mojo@doc_fn({{.*}}).__doc__>
 // CHECK-SUITE:    inputs/doc.mojo@doc_fn({{.*}}).__doc__::0>
 
-// CHECK-SUITE-AND-TEST: doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0
+// CHECK-SUITE-AND-TEST: doc.mojo@doc_fn(\3A\3AInt).__doc__::0
 
 // CHECK-JSON:   "children":
-// CHECK-JSON:       "id": "{{.*}}inputs/doc.mojo@doc_fn(stdlib\\3A\\3Abuiltin\\3A\\3Aint\\3A\\3AInt).__doc__::0"
-// CHECK-JSON:   "id": "{{.*}}inputs/doc.mojo@doc_fn(stdlib\\3A\\3Abuiltin\\3A\\3Aint\\3A\\3AInt).__doc__"
+// CHECK-JSON:       "id": "{{.*}}inputs/doc.mojo@doc_fn(\\3A\\3AInt).__doc__::0"
+// CHECK-JSON:   "id": "{{.*}}inputs/doc.mojo@doc_fn(\\3A\\3AInt).__doc__"
