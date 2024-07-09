@@ -1068,8 +1068,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
     auto collectionElement = cast<TraitType>(inputTypes[0]);
     PValue binding;
-    if (isDef) {
-      // If we're in a `def` function, we need a synthetic type expression.
+    if (!arg.typeExpr) {
+      assert(isDef);
+      // If we're in a `def` function without an explicit argument type, we need
+      // a synthetic type expression.
       SyntheticNode typeExpr(arg.loc);
       binding = typeEmitter.emitPValue({fullType, typeExpr}, EC_Type,
                                        collectionElement);

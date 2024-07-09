@@ -24,12 +24,18 @@ fn variadic_kwargs(a: int, b: int, *args: int, c: int, d: int, **kwargs: int):
     pass
 
 
-# CHECK-LABEL: lit.func @"variadic_kwargs_without_type
+# CHECK-LABEL: lit.func @"variadic_kwargs_def_without_type
 # CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[OBJECT]]>, mut [[LT]]> owned_in_mem|var,
-def variadic_kwargs_without_type(**kwargs):
+def variadic_kwargs_def_without_type(**kwargs):
     pass
 
 
+# CHECK-LABEL: lit.func @"variadic_kwargs_def_with_type
+def variadic_kwargs_def_with_type(**kwargs: int):
+    pass
+
+
+# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var,
 fn takes_int_variadic_kwargs(**kwargs: int):
     pass
 
