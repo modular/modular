@@ -661,9 +661,10 @@ OverallOpValueEffect LIT::getOperationEffects(
 //===----------------------------------------------------------------------===//
 
 /// Unpack the specified value of LifetimeType into a set of referenced
-/// lifetimes.
-static void handleLifetimeAttr(TypedAttr attr,
+/// lifetimes. Returns true if any lifetimes were found.
+static bool handleLifetimeAttr(TypedAttr attr,
                                SmallVector<TypedAttr> &results) {
+  size_t oldNumResults = results.size();
   // FIXME: Track mutability correctly.
   attr = LifetimeMutCastAttr::strip(attr);
 
@@ -675,27 +676,28 @@ static void handleLifetimeAttr(TypedAttr attr,
   } else {
     results.push_back(attr);
   }
+  return oldNumResults != results.size();
 }
 
 template <typename TypeOrAttr>
-static void
-scanForLifetimes(TypeOrAttr pvalue,
-                 llvm::DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
-                 SmallVector<TypedAttr> &results) {
+static bool scanForLifetimes(
+    TypeOrAttr pvalue, DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
+    DenseMap<const void *, bool> &visited, SmallVector<TypedAttr> &results) {
   const void *pvaluePtr = pvalue.getAsOpaquePointer();
 
   // Ignore types we have already scanned.
-  if (typesAndAttrsWithoutLifetimes.count(pvaluePtr))
-    return;
-
-  size_t oldNumResults = results.size();
+  if (typesAndAttrsWithoutLifetimes.contains(pvaluePtr))
+    return false;
+  if (auto it = visited.find(pvaluePtr); it != visited.end())
+    return it->second;
 
   // If this has lifetime type, process it.
   bool handled = false;
+  bool hasLifetimes = false;
   if constexpr (std::is_base_of_v<Attribute, TypeOrAttr>)
     if (auto typedAttr = dyn_cast<TypedAttr>(pvalue))
       if (isa<LifetimeType>(typedAttr.getType())) {
-        handleLifetimeAttr(typedAttr, results);
+        hasLifetimes |= handleLifetimeAttr(typedAttr, results);
         handled = true;
       }
 
@@ -704,17 +706,25 @@ scanForLifetimes(TypeOrAttr pvalue,
     // function type, types like !pop.scalar<ty> etc.
     pvalue.walkImmediateSubElements(
         [&](Attribute attr) {
-          scanForLifetimes(attr, typesAndAttrsWithoutLifetimes, results);
+          hasLifetimes |= scanForLifetimes(attr, typesAndAttrsWithoutLifetimes,
+                                           visited, results);
         },
         [&](Type type) {
-          scanForLifetimes(type, typesAndAttrsWithoutLifetimes, results);
+          hasLifetimes |= scanForLifetimes(type, typesAndAttrsWithoutLifetimes,
+                                           visited, results);
         });
   }
 
   // If we can prove that this subtree doesn't contain lifetimes, then remember
   // this so we don't revisit this type/attribute in the future.
-  if (oldNumResults == results.size())
+  if (!hasLifetimes)
     typesAndAttrsWithoutLifetimes.insert(pvaluePtr);
+  else
+    // We don't need to visit the same attribute more than once to find lifetime
+    // references. This is required to prevent splatting the parameter
+    // expression tree.
+    visited.try_emplace(pvaluePtr, hasLifetimes);
+  return hasLifetimes;
 }
 
 SmallVector<TypedAttr>
@@ -723,7 +733,8 @@ CachedTypeLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
 
   // Scan each type, accumulating the results; the set avoid revisiting nodes
   // that we know cannot have lifetimes.
-  for (auto type : types)
-    scanForLifetimes(type, typesAndAttrsWithoutLifetimes, results);
+  DenseMap<const void *, bool> visited;
+  for (Type type : types)
+    scanForLifetimes(type, typesAndAttrsWithoutLifetimes, visited, results);
   return results;
 }
