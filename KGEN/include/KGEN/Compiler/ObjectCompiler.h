@@ -9,6 +9,7 @@
 
 #include "Cache/BlobCache.h"
 #include "Cache/CachedTransform.h"
+#include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -29,6 +30,7 @@ class ExecutionSession;
 } // namespace llvm
 
 namespace M::KGEN {
+
 //===----------------------------------------------------------------------===//
 // ObjectCompiler
 //===----------------------------------------------------------------------===//
@@ -93,7 +95,7 @@ private:
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
   LLCL::AsyncValueRef<SmallVector<BufferRef>>
-  lowerLLVMModuleToObjects(std::unique_ptr<llvm::Module> module, Location loc,
+  lowerLLVMModuleToObjects(LLVMModuleAndContext module, Location loc,
                            bool parLLC, std::optional<size_t> moduleIdx);
 
   /// The caches needed for compilation.
@@ -124,15 +126,16 @@ ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
 
 //===----------------------------------------------------------------------===//
-// compileLLVMToObject
+// compileLLVMToAssembly
 //===----------------------------------------------------------------------===//
+
 /// Compile the given LLVM module to an object file and write it to objStream.
-LogicalResult
-compileLLVMToObject(llvm::Module &module, llvm::TargetMachine &targetMachine,
-                    llvm::raw_pwrite_stream &objStream,
-                    CompilationOptions &options, LLCL::Runtime &runtime,
-                    bool emitAssembly = false,
-                    std::optional<size_t> moduleIdx = std::nullopt);
+LogicalResult compileLLVMToAssembly(LLVMModuleAndContext module,
+                                    llvm::TargetMachine &targetMachine,
+                                    llvm::raw_pwrite_stream &objStream,
+                                    CompilationOptions &options,
+                                    LLCL::Runtime &runtime);
+
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_OBJECTCOMPILER_H
