@@ -221,7 +221,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Initialize the timing manager.
   std::unique_ptr<mlir::TimingManager> timingManager;
   if (clOptions.timeTrace) {
-    timingManager = std::make_unique<TimeProfilerTimingManager>();
+    if constexpr (KGEN::kIsTracingEnabled)
+      timingManager = std::make_unique<TimeProfilerTimingManager>();
+    else
+      llvm::errs() << "-time-trace specified but tracing isn't coded on";
   } else {
     auto defaultManager = std::make_unique<mlir::DefaultTimingManager>();
     applyDefaultTimingManagerCLOptions(*defaultManager);

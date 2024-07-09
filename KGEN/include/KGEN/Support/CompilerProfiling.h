@@ -16,9 +16,11 @@ namespace M::KGEN {
 // TimeTraceScope
 //===----------------------------------------------------------------------===//
 
+constexpr bool kIsTracingEnabled = Trace::EnableTrace(Trace::kCompiler, 1);
+
 /// Profiler entry for Mojo compilation passes.
 using CompilerProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1), Trace::kCompiler>;
+    ProfilerEntry<kIsTracingEnabled, Trace::kCompiler>;
 
 /// Verbose profiler entry for Mojo compilation passes.
 using VerboseCompilerProfilerEntry =

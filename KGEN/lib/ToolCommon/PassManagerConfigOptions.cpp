@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ToolCommon/PassManagerConfigOptions.h"
+#include "KGEN/Support/CompilerProfiling.h"
+#include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/Config.h"
 #include "mlir/Pass/Pass.h"
 
@@ -20,12 +22,8 @@ PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
       return Error("applyPassManagerCLOptions failed during configuring");
   }
 
-  if (enableTiming) {
-    if (timingScope)
-      pm.enableTiming(*timingScope);
-    else
-      pm.enableTiming();
-  }
+  if constexpr (KGEN::kIsTracingEnabled)
+    pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
 
   if (crashReproducerOptions.enable) {
     pm.enableCrashReproducerGeneration(
