@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .int_tuple import IntTuple
-from .layout import Layout
+from . import IntTuple, Layout
 from .runtime_tuple import RuntimeTuple, product, crd2idx
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
@@ -51,3 +50,13 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
         f.write_str[":"]()
         self.stride.format_to(f)
         f.write_str[")"]()
+
+    fn sublayout[i: Int](self) -> RuntimeLayout[layout[i]]:
+        return RuntimeLayout[layout[i]](
+            rebind[RuntimeTuple[layout[i].shape]](self.shape[i]),
+            rebind[RuntimeTuple[layout[i].stride]](self.stride[i]),
+        )
+
+    @staticmethod
+    fn __len__() -> Int:
+        return len(layout)

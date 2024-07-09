@@ -19,7 +19,7 @@ from testing import assert_equal
 def test_runtime_layout_const():
     print("== test_runtime_layout_const")
 
-    alias shape = IntTuple(-1, 8)
+    alias shape = IntTuple(UNKNOWN_VALUE, 8)
     alias stride = IntTuple(8, 1)
 
     alias layout = Layout(shape, stride)
@@ -51,7 +51,10 @@ def test_tiled_layout_indexing():
     alias shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
     alias stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
 
-    alias d_tuple = IntTuple(IntTuple(-1, -1), IntTuple(-1, -1))
+    alias d_tuple = IntTuple(
+        IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
+        IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    )
     alias d_layout = Layout(d_tuple, d_tuple)
 
     var layout = RuntimeLayout[d_layout](
@@ -80,7 +83,10 @@ def test_tiled_layout_indexing_linear_idx():
     alias shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
     alias stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
 
-    alias d_tuple = IntTuple(IntTuple(-1, -1), IntTuple(-1, -1))
+    alias d_tuple = IntTuple(
+        IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
+        IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    )
     alias d_layout = Layout(d_tuple, d_tuple)
 
     var layout = RuntimeLayout[d_layout](
@@ -99,8 +105,20 @@ def test_tiled_layout_indexing_linear_idx():
         )
 
 
+# CHECK-LABEL: test_sublayout_indexing
+def test_sublayout_indexing():
+    print("== test_sublayout_indexing")
+    alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    alias layout = RuntimeLayout[layout_t](
+        RuntimeTuple[layout_t.shape](8, 4), RuntimeTuple[layout_t.stride](4, 1)
+    )
+    assert_equal(str(layout.sublayout[0]()), "(8:4)")
+    assert_equal(str(layout.sublayout[1]()), "(4:1)")
+
+
 def main():
     test_runtime_layout_const()
     test_static_and_dynamic_size()
     test_tiled_layout_indexing()
     test_tiled_layout_indexing_linear_idx()
+    test_sublayout_indexing()

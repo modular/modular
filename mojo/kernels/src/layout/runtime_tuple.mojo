@@ -251,6 +251,9 @@ fn crd2idx[
             return int_crd * to_int(stride)
 
 
+# TODO: This isn't necessarily needed. We need to revisit and simplify
+# the implementation. We are keeping it here to be consistent with IntTuple
+# shape_div.
 @always_inline
 fn signum(a: Int) -> Int:
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
