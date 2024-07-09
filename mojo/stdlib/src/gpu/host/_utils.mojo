@@ -27,8 +27,21 @@ fn _check_error(
     location: Optional[_SourceLocation] = None,
 ) raises:
     if err != DriverResult.SUCCESS:
-        var loc = location.or_else(__call_location())
-        raise Error(loc.prefix(str(err) + " " + msg))
+        _check_error_impl(
+            err, msg=msg, location=location.or_else(__call_location())
+        )
+
+
+@no_inline
+fn _check_error_impl(
+    err: DriverResult,
+    *,
+    msg: String,
+    location: _SourceLocation,
+) raises:
+    """We do not want to inline this code since we want to make sure that the
+    stringification of the error is not duplicated many times."""
+    raise Error(location.prefix(str(err) + " " + msg))
 
 
 fn _pretty_print_float(val: Float64) -> String:
