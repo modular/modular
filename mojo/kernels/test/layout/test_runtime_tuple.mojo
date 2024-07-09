@@ -12,12 +12,17 @@ from layout.runtime_tuple import (
     is_tuple,
     idx2crd,
     crd2idx,
+    shape_div,
     UNKNOWN_VALUE,
 )
 
-from layout.int_tuple import IntTuple
-from layout.int_tuple import idx2crd as idx2crd_int_tuple, fill_like
-from layout.int_tuple import crd2idx as crd2idx_int_tuple
+from layout.int_tuple import (
+    IntTuple,
+    idx2crd as idx2crd_int_tuple,
+    fill_like,
+    crd2idx as crd2idx_int_tuple,
+    shape_div as shape_div_int_tuple,
+)
 
 from testing import assert_equal, assert_true, assert_false
 
@@ -97,10 +102,28 @@ def test_crd2idx():
             )
 
 
+# CHECK-LABEL: test_shape_div
 def test_shape_div():
     print("== test_shape_div")
-    alias shape_a = IntTuple(4, 4)
-    alias stride_b = IntTuple(2, 1)
+    alias shape_a_1 = IntTuple(4, 4)
+    alias shape_b_1 = IntTuple(2, 1)
+    var shape_a_r_1 = RuntimeTuple[fill_like(shape_a_1, UNKNOWN_VALUE)](4, 4)
+    var shape_b_r_1 = RuntimeTuple[fill_like(shape_b_1, UNKNOWN_VALUE)](2, 1)
+    assert_equal(
+        str(shape_div(shape_a_r_1, shape_b_r_1)),
+        str(shape_div_int_tuple(shape_a_1, shape_b_1)),
+    )
+    assert_equal(str(shape_div(shape_a_r_1, shape_b_r_1).S), "(-1, -1)")
+
+    alias shape_a_2 = IntTuple(3, 4)
+    alias shape_b_2 = 6
+    var shape_a_r_2 = RuntimeTuple[fill_like(shape_a_2, UNKNOWN_VALUE)](3, 4)
+    var shape_b_r_2 = RuntimeTuple[fill_like(shape_b_2, UNKNOWN_VALUE)](6)
+    assert_equal(
+        str(shape_div(shape_a_r_2, shape_b_r_2)),
+        str(shape_div_int_tuple(shape_a_2, shape_b_2)),
+    )
+    assert_equal(str(shape_div(shape_a_r_2, shape_b_r_2).S), "(-1, -1)")
 
 
 def main():
@@ -110,3 +133,4 @@ def main():
     test_prefix_product()
     test_idx2crd()
     test_crd2idx()
+    test_shape_div()

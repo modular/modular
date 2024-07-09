@@ -6,8 +6,12 @@
 
 from layout.int_tuple import IntTuple, flatten
 
-from layout.int_tuple import prefix_product as prefix_product_int_tuple
-from layout.int_tuple import idx2crd as idx2crd_int_tuple, UNKNOWN_VALUE
+from layout.int_tuple import (
+    idx2crd as idx2crd_int_tuple,
+    prefix_product as prefix_product_int_tuple,
+    shape_div as shape_div_int_tuple,
+    UNKNOWN_VALUE,
+)
 
 from utils.static_tuple import InlineArray
 
@@ -245,3 +249,60 @@ fn crd2idx[
             )
         else:  # "int" "int" "int"
             return int_crd * to_int(stride)
+
+
+@always_inline
+fn signum(a: Int) -> Int:
+    return 1 if (a > 0) else (-1 if (a < 0) else 0)
+
+
+fn shape_div[
+    a_t: IntTuple, b_t: IntTuple
+](a: RuntimeTuple[a_t], b: RuntimeTuple[b_t]) -> RuntimeTuple[
+    shape_div_int_tuple(a_t, b_t)
+]:
+    @parameter
+    if a_t.is_tuple():
+
+        @parameter
+        if b_t.is_tuple():
+            constrained[
+                len(a_t) == len(b_t), "shape and stride length musth match"
+            ]()
+            var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
+
+            @parameter
+            for i in range(len(a_t)):
+                var res_i = shape_div(a[i], b[i])
+
+                @parameter
+                for j in range(res_i.scalar_length):
+                    res.value[i + j] = res_i.value[j]
+            return res
+        else:
+            var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
+            var vb = to_int(b)
+
+            @parameter
+            for i in range(len(a_t)):
+                var res_i = shape_div(a[i], vb)
+
+                @parameter
+                for j in range(res_i.scalar_length):
+                    res.value[i + j] = res_i.value[j]
+
+                vb = to_int(shape_div(vb, product(a[i])))
+            return res
+    else:
+
+        @parameter
+        if b_t.is_tuple():
+            return shape_div(a, b)
+        else:
+            var va = to_int(a)
+            var vb = to_int(b)
+
+            if not (va % vb == 0 or vb % va == 0):
+                abort("Incompatible shape values: " + str(va) + " " + str(vb))
+
+            return va // vb if va % vb == 0 else signum(va * vb)

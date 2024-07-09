@@ -410,6 +410,9 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             var va = to_int(a)
             var vb = to_int(b)
 
+            if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
+                return UNKNOWN_VALUE
+
             if not (va % vb == 0 or vb % va == 0):
                 abort("Incompatible shape values: " + str(va) + " " + str(vb))
 
