@@ -90,7 +90,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     SmallVector<ParamDeclRefAttr> uses;
     bool hasConstExpr;
     {
-      CompilerTimeTraceScope traceScope("collectParameters");
+      VerboseCompilerTimeTraceScope traceScope("collectParameters");
       collector.collectUsesFromAttr(op, uses, hasConstExpr);
     }
 

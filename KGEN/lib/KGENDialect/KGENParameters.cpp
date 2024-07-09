@@ -303,7 +303,7 @@ private:
 
 void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
 #ifndef MODULAR_PRODUCTION
-  CompilerTimeTraceScope traceScope("verifyRefAttr");
+  VerboseCompilerTimeTraceScope traceScope("verifyRefAttr");
 
   // We only check this during the op verification phase.
   if (!symtab)
@@ -319,7 +319,7 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
 
 void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
 #ifndef MODULAR_PRODUCTION
-  CompilerTimeTraceScope traceScope("verifyRefType");
+  VerboseCompilerTimeTraceScope traceScope("verifyRefType");
 
   // We only check this during the op verification phase.
   if (!symtab)
@@ -459,7 +459,7 @@ struct GraphTraits<ParameterUseDefGraph *> {
 void impl::scanAllAttrsAndTypes(Operation *op,
                                 function_ref<void(Attribute)> scanAttr,
                                 function_ref<void(Type)> scanType) {
-  CompilerTimeTraceScope traceScope("scanAllAttrsAndTypes");
+  VerboseCompilerTimeTraceScope traceScope("scanAllAttrsAndTypes");
   llvm::for_each(op->getResultTypes(), scanType);
   for (Region &region : op->getRegions())
     llvm::for_each(region.getArgumentTypes(), scanType);
@@ -474,18 +474,18 @@ void impl::scanAllAttrsAndTypes(Operation *op,
 /// parametric.
 static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
                         Operation *op, bool isDefOrDecl) {
-  CompilerTimeTraceScope traceScope("collectUses");
+  VerboseCompilerTimeTraceScope traceScope("collectUses");
 
   // Track whether parameter uses or expressions were found.
   bool hasConstExpr = false;
   SmallVector<ParamDeclRefAttr> uses;
 
   auto scanAttr = [&](Attribute attr) {
-    CompilerTimeTraceScope traceScope("collectParameters");
+    VerboseCompilerTimeTraceScope traceScope("collectParameters");
     c.collectUsesFromAttr(attr, uses, hasConstExpr);
   };
   auto scanType = [&](Type type) {
-    CompilerTimeTraceScope traceScope("collectParameters");
+    VerboseCompilerTimeTraceScope traceScope("collectParameters");
     c.collectUsesFromType(type, uses, hasConstExpr);
   };
 
@@ -624,7 +624,7 @@ static void emitCycleError(ParameterUseDefGraph &g,
 LogicalResult ParameterUseDefGraph::calculateOrVerify(
     ModuleOp module, mlir::LockedSymbolTableCollection *symtab,
     ParameterCollector::Analysis &cache) {
-  CompilerTimeTraceScope traceScope(
+  VerboseCompilerTimeTraceScope traceScope(
       "ParameterUseDefGraph::calculateOrVerify", [&] {
         if (auto symbol =
                 dyn_cast<mlir::SymbolOpInterface>(scope->getParentOp()))
@@ -639,7 +639,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
   VerifyingParameterCollector c(module, symtab, cache);
 
   auto processOp = [&](Operation *op) -> WalkResult {
-    CompilerTimeTraceScope traceScope("processOp");
+    VerboseCompilerTimeTraceScope traceScope("processOp");
 
     // Set the operation for which we are collecting parameters. It will be used
     // to report errors.
@@ -706,7 +706,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         (*def)->index = index++;
         bool unused;
         for (Attribute expr : value.exprs) {
-          CompilerTimeTraceScope traceScope("collectParameters");
+          VerboseCompilerTimeTraceScope traceScope("collectParameters");
           c.collectUsesFromAttr(expr, (*def)->uses, unused);
         }
         // If the definition of this parameter depends on a region, defer
@@ -856,7 +856,7 @@ ParameterUseDefGraph::verify(mlir::LockedSymbolTableCollection &symtab,
 }
 
 ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
-  CompilerTimeTraceScope traceScope("ParameterUseDefGraph::copy");
+  VerboseCompilerTimeTraceScope traceScope("ParameterUseDefGraph::copy");
 
   // Note that we use map.lookupOrDefault here because only a subgraph might
   // have been copied, so we don't necessarily have the op/block in the

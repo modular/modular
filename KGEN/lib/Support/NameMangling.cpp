@@ -93,8 +93,8 @@ static SmallString<1024> replaceInvalidCharacter(StringRef name) {
 }
 
 StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
-  CompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
-                                    [name] { return name.str(); });
+  VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
+                                           [name] { return name.str(); });
   if (name.size() > charToKeep) {
     auto rawNameBytes =
         ArrayRef<uint8_t>((const uint8_t *)name.data(), name.size());

@@ -205,7 +205,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       requiredPromises;
   unsigned curNumPromises = node->requiredPromises.size();
 
-  CompilerTimeTraceScope traceScope(
+  VerboseCompilerTimeTraceScope traceScope(
       "resolvePromises", [func]() mutable { return func.getSymName().str(); });
 
   // This functor will, given an operation that points to another node, create
@@ -416,7 +416,7 @@ struct ResolveCompilerPromisesPass
 } // namespace
 
 void ResolveCompilerPromisesPass::runOnOperation() {
-  CompilerTimeTraceScope traceScope(
+  VerboseCompilerTimeTraceScope traceScope(
       "ResolveCompilerPromisesPass::runOnOperation");
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();

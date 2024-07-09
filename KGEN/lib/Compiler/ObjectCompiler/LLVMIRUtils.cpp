@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/StringExtras.h"
@@ -57,6 +58,7 @@ private:
 /// module.
 SmallVector<std::unique_ptr<llvm::Module>>
 KGEN::splitPerExported(llvm::Module &module) {
+  CompilerTimeTraceScope traceScope("splitPerExported");
   LLVMModuleSplitterImpl impl(module);
   SmallVector<std::unique_ptr<llvm::Module>> results;
   impl.split(results);
@@ -278,6 +280,7 @@ void KGEN::splitPerFunction(
     std::unique_ptr<llvm::Module> module, size_t parallelismLevel,
     function_ref<void(std::unique_ptr<llvm::Module>, int64_t idx, bool)>
         processFn) {
+  CompilerTimeTraceScope traceScope("splitPerFunction");
   LLVMModulePerFunctionSplitterImpl impl(std::move(module), parallelismLevel);
   impl.split(processFn);
 }

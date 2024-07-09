@@ -443,13 +443,14 @@ LogicalResult
 SymbolConstantAttr::verifySymbolUses(Operation *module,
                                      mlir::LockedSymbolTableCollection &symtab,
                                      Location loc) const {
-  CompilerTimeTraceScope traceScope("SymbolConstantAttr::verifySymbolUses");
+  VerboseCompilerTimeTraceScope traceScope(
+      "SymbolConstantAttr::verifySymbolUses");
 
   // Build the signature of the referenced symbol.
   SymbolRefAttr symbol = getSymbol();
   SmallVector<Operation *> symbolOps;
   {
-    CompilerTimeTraceScope traceScope("lookupSymbolIn");
+    VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
     if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
       return emitError(loc)
              << symbol << " does not reference a KGEN declaration";

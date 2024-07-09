@@ -118,7 +118,7 @@ void OutlineClosuresPass::runOnOperation() {
       for (Value capture : captures) {
         bool unused;
         {
-          CompilerTimeTraceScope traceScope("collectParameters");
+          VerboseCompilerTimeTraceScope traceScope("collectParameters");
           collector.collectUsesFromType(capture.getType(), capturedUses,
                                         unused);
         }

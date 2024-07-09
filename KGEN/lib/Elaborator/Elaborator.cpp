@@ -362,7 +362,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
 //===----------------------------------------------------------------------===//
 
 void Elaborator::finalizeFunction(ImplNode *node) {
-  CompilerTimeTraceScope traceScope("finalizeFunction");
+  VerboseCompilerTimeTraceScope traceScope("finalizeFunction");
   // Erase everything but the entry blocks of each region.
   FuncOp func = node->func;
   func.walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
@@ -1154,7 +1154,7 @@ LogicalResult Elaborator::processImplNode(ImplNode *inode) {
   if (inode->stack.empty())
     return success();
 
-  CompilerTimeTraceScope traceScope(
+  VerboseCompilerTimeTraceScope traceScope(
       "processImplNode", [inode] { return inode->func.getSymName().str(); });
 
   while (!inode->stack.empty()) {
@@ -1313,8 +1313,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
 
-  CompilerTimeTraceScope traceScope("specializeGenerator: " +
-                                    gen.getSymName().str());
+  VerboseCompilerTimeTraceScope traceScope("specializeGenerator: " +
+                                           gen.getSymName().str());
 
   // Get a partial ordering of parameter definitions and uses that are listed
   // "top down" in our evaluation order, if we don't have one already. This
@@ -1590,7 +1590,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
 
   // Process all current work.
   {
-    CompilerTimeTraceScope traceScope("doElaboration");
+    VerboseCompilerTimeTraceScope traceScope("doElaboration");
     unsigned cycleGeneration = 0;
     while (true) {
       signalWorklist();
@@ -1651,7 +1651,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   }
   for (ParamNode &node :
        llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
-    CompilerTimeTraceScope traceScope(
+    VerboseCompilerTimeTraceScope traceScope(
         "processGen", [name = node.gen.getSymName()] { return name.str(); });
     // Erase all erroneous functions.
     if (node.impl->error) {
@@ -1783,7 +1783,7 @@ public:
                                       maxDepth, elaborateDebugInfo,
                                       diagAllFailures};
 
-    CompilerTimeTraceScope traceScope("elaborate-generators");
+    VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
 
     // Now, construct and run the elaborator.
     Elaborator impl(symtab.getTopLevelSymbolTable(), paramCache, target,

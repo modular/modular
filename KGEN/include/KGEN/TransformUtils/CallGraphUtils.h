@@ -118,7 +118,7 @@ template <typename... NodeArgTs>
 void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
                                            const SymbolTable &symtab,
                                            NodeArgTs &&...args) {
-  CompilerTimeTraceScope traceScope("CallGraphBase::build");
+  VerboseCompilerTimeTraceScope traceScope("CallGraphBase::build");
 
   // Instantiate the nodes for each generator first.
   for (auto func : llvm::make_early_inc_range(module.getOps<FuncOpT>())) {
