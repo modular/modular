@@ -105,8 +105,8 @@ struct TensorCore[
         ) else (layout_tf32)
 
         var mat_a = a.reshape[layout_a]()
-        var group_id = int(lane_id()) >> 2
-        var group_lane_id = int(lane_id()) % 4
+        var group_id = lane_id() >> 2
+        var group_lane_id = lane_id() % 4
 
         @parameter
         if in_type is DType.float32:
@@ -177,8 +177,8 @@ struct TensorCore[
         ) else (layout_tf32)
 
         var mat_b = b.transpose().reshape[layout_b]()
-        var group_id = int(lane_id()) >> 2
-        var group_lane_id = int(lane_id()) % 4
+        var group_id = lane_id() >> 2
+        var group_lane_id = lane_id() % 4
 
         @parameter
         if in_type is DType.float32:
@@ -230,8 +230,8 @@ struct TensorCore[
         alias layout_c = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
 
         var mat_c = c.reshape[layout_c]()
-        var group_id = int(lane_id()) >> 2
-        var group_lane_id = int(lane_id()) % 4
+        var group_id = lane_id() >> 2
+        var group_lane_id = lane_id() % 4
 
         @parameter
         if out_type is DType.float32:
@@ -271,8 +271,8 @@ struct TensorCore[
         alias layout_d = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
 
         var mat_d = d.reshape[layout_d]()
-        var group_id = int(lane_id()) >> 2
-        var group_lane_id = int(lane_id()) % 4
+        var group_id = lane_id() >> 2
+        var group_lane_id = lane_id() % 4
 
         @parameter
         if out_type is DType.float32:
@@ -420,7 +420,7 @@ struct TensorCore[
                         mma_tile_coordk, i
                     )
                     var frag = mma_tile.distribute[Layout.col_major(4, 8)](
-                        int(lane_id()).value
+                        lane_id()
                     )
                     fragments[i, 0] = rebind[frag_type](
                         SIMD[type0, 2](
