@@ -1,5 +1,5 @@
 load("@pip_deps//:requirements.bzl", "requirement")
-load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests")
 
 filegroup(
     name = "pytest_inputs",
