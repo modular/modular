@@ -11,4 +11,5 @@ add_modular_tool(llvm-module-split
   KGENToolCommon
   KGENObjectCompiler
   LLVMSupport
+  MSupportGlobals
 )
