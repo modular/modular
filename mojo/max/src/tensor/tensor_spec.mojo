@@ -15,8 +15,6 @@ from max.tensor import TensorSpec
 
 from collections import List
 
-from builtin.dtype import _get_runtime_dtype_size
-
 from .tensor_shape import TensorShape, _as_rep16
 
 # ===----------------------------------------------------------------------===#
@@ -193,7 +191,7 @@ struct TensorSpec(
         Returns:
           The total byte count.
         """
-        return self.num_elements() * _get_runtime_dtype_size(self.dtype())
+        return self.num_elements() * self.dtype().sizeof()
 
     @always_inline
     fn __repr__(self) -> String:

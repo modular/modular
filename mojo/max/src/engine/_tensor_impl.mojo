@@ -8,7 +8,6 @@ from buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
 from python import Python, PythonObject
 from sys.ffi import DLHandle
-from builtin.dtype import _get_runtime_dtype_size
 from max._utils import call_dylib_func, exchange
 
 from .session import InferenceSession
@@ -105,7 +104,7 @@ struct EngineTensor(Sized):
 
     fn buffer(self) -> Buffer[DType.invalid]:
         return Buffer[DType.invalid](
-            self.unsafe_ptr(), len(self) * _get_runtime_dtype_size(self.dtype())
+            self.unsafe_ptr(), len(self) * self.dtype().sizeof()
         )
 
     fn tensor[type: DType](self) raises -> Tensor[type]:
