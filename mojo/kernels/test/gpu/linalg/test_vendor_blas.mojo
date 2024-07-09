@@ -23,7 +23,7 @@ from gpu.host.memory import (
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory.unsafe import DTypePointer, Pointer
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
 
@@ -105,8 +105,15 @@ fn test_cublas() raises:
     _ = stream^
 
 
+def test_cublas_result_format():
+    assert_equal(str(Result.SUCCESS), "SUCCESS")
+    assert_equal(str(Result.LICENSE_ERROR), "LICENSE_ERROR")
+
+
 # CHECK-NOT: CUDA_ERROR
 def main():
+    test_cublas_result_format()
+
     try:
         with Context() as ctx:
             test_cublas()
