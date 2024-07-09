@@ -336,7 +336,7 @@ fn check_ldmatrix(
 def main():
     try:
         with Context() as ctx:
-            check_ldmatrix(16, 8, 8, -1e2, 1e2)
+            check_ldmatrix(16, 8, 8, -100, 100)
             check_ldmatrix_transposed_bf16[DType.bfloat16, DType.bfloat16]()
 
     except e:
