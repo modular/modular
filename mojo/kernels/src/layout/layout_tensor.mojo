@@ -1178,6 +1178,104 @@ struct LayoutTensor[
 
                 async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
 
+    @always_inline
+    fn copy_from_async_masked_src[
+        src_layout: Layout,
+        src_addr_space: AddressSpace,
+        src_element_layout: Layout,
+        src_mask: Bool,
+    ](
+        self,
+        src: LayoutTensor[
+            dtype,
+            src_layout,
+            address_space=src_addr_space,
+            element_layout=src_element_layout,
+            masked=src_mask,
+        ],
+        offset: Int,
+        rows: Int,
+        cols: Int,
+    ):
+        constrained[
+            self.address_space == _GPUAddressSpace.SHARED,
+            "Async is only supported for destinations in shared memory",
+        ]()
+
+        alias dst_size = layout.size()
+        alias src_size = src_layout.size()
+        constrained[
+            dst_size == src_size,
+            "copy_from_async should move data of the same size",
+        ]()
+
+        alias dst_element_size = int(self.element_size)
+        alias src_element_size = int(src.element_size)
+        constrained[
+            dst_element_size == src_element_size,
+            "copy_from_async should move data of the same element size",
+        ]()
+
+        # Eligibility for 4, 8, 16 bytes async load.
+        alias element_size_bytes = sizeof[dtype]() * src_element_size
+        constrained[
+            element_size_bytes == 4
+            or element_size_bytes == 8
+            or element_size_bytes == 16,
+            "copy_from_async only allows 4, 8, 16 bytes element",
+        ]()
+
+        var dst_ptr = self.ptr.bitcast[
+            address_space = _GPUAddressSpace.SHARED
+        ]()
+        var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
+
+        @parameter
+        if (
+            src_element_layout.rank() == 1
+            and src_element_layout.stride[0] == 1
+            and self.element_layout.rank() == 1
+            and self.element_layout.stride[0] == 1
+        ):
+
+            @parameter
+            for i in range(dst_size):
+                alias src_idx = make_layout(src.element_layout, src_layout)(
+                    i * src_element_size
+                )
+                alias dst_idx = make_layout(self.element_layout, self.layout)(
+                    i * dst_element_size
+                )
+
+                var m: Int
+                var n: Int
+                m, n = divmod(offset + src_idx, cols)
+                if m < rows:
+                    async_copy[element_size_bytes](
+                        src_ptr + src_idx, dst_ptr + dst_idx
+                    )
+                # else:
+                #     async_copy[element_size_bytes](
+                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
+                #     )
+
+        else:
+
+            @parameter
+            for i in range(dst_size * dst_element_size):
+                alias src_idx = make_layout(src.element_layout, src_layout)(i)
+                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
+
+                var m: Int
+                var n: Int
+                m, n = divmod(offset + src_idx, cols)
+                if m < rows:
+                    async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                # else:
+                #     async_copy[element_size_bytes](
+                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
+                #     )
+
     fn linspace(self):
         @parameter
         if len(layout) == 1:
