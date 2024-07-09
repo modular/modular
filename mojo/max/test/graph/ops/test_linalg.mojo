@@ -66,7 +66,7 @@ fn test_range_fill() raises:
     )
     g.verify()
 
-    var x = Tensor[DType.int32](TensorShape(1, 4, 4, 1), 0.0)
+    var x = Tensor[DType.int32](TensorShape(1, 4, 4, 1), 0)
 
     # fmt: off
     var expected = Tensor[DType.int32](
