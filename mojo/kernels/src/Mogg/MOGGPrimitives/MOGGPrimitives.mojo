@@ -9,7 +9,6 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from builtin.dtype import _get_runtime_dtype_size
 from extensibility import Tensor as ExtensibilityTensor
 from gpu.host import Context as CudaContext
 from gpu.host import (
@@ -67,7 +66,7 @@ struct StaticTensorSpec[rank: Int]():
         Returns:
             The byte size of the tensor-spec.
         """
-        return len(self) * _get_runtime_dtype_size(self.dType)
+        return len(self) * self.dType.sizeof()
 
     @always_inline
     fn __eq__(self, rhs: StaticTensorSpec[rank]) -> Bool:
