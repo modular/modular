@@ -134,38 +134,38 @@ fn _top_k[
 
                 @parameter
                 @always_inline
-                fn _val_greater_than_eq[
+                fn _val_greater_than[
                     ty: AnyTrivialRegType
                 ](lhs: ty, rhs: ty) -> Bool:
-                    return indices_to_val(rebind[Int64](lhs)) >= indices_to_val(
+                    return indices_to_val(rebind[Int64](lhs)) > indices_to_val(
                         rebind[Int64](rhs)
                     )
 
                 if sorted:
-                    _quicksort[Int64, _val_greater_than_eq](
+                    _quicksort[Int64, _val_greater_than](
                         rebind[Pointer[Int64]](idxs.data), len(idxs)
                     )
                 else:
-                    _ = partition[Int64, _val_greater_than_eq](
+                    _ = partition[Int64, _val_greater_than](
                         rebind[Pointer[Int64]](idxs.data), k, len(idxs)
                     )
             else:
 
                 @parameter
                 @always_inline
-                fn _val_less_than_eq[
+                fn _val_less_than[
                     ty: AnyTrivialRegType
                 ](lhs: ty, rhs: ty) -> Bool:
-                    return indices_to_val(rebind[Int64](lhs)) <= indices_to_val(
+                    return indices_to_val(rebind[Int64](lhs)) < indices_to_val(
                         rebind[Int64](rhs)
                     )
 
                 if sorted:
-                    _quicksort[Int64, _val_less_than_eq](
+                    _quicksort[Int64, _val_less_than](
                         rebind[Pointer[Int64]](idxs.data), len(idxs)
                     )
                 else:
-                    _ = partition[Int64, _val_less_than_eq](
+                    _ = partition[Int64, _val_less_than](
                         rebind[Pointer[Int64]](idxs.data), k, len(idxs)
                     )
 
