@@ -3,4 +3,5 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""APIs to build inference graphs for MAX."""
+
+from ._mlir_libs._mlir import *
