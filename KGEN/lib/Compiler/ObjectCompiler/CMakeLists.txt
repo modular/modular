@@ -39,4 +39,5 @@ add_modular_library(KGENObjectCompiler
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter
   MLIRBytecodeReader
+  LLVMCore
   )

@@ -7,7 +7,9 @@
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/Support/LLVM.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetOperations.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/LLVMContext.h"
@@ -34,22 +36,42 @@ public:
 
 private:
   struct ValueInfo {
-    bool canBeSplit = true;
-    llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
-    llvm::SmallPtrSet<const llvm::Value *, 4> users;
+    /// The immediate global value dependencies of a value.
+    SmallVector<const llvm::GlobalValue *> dependencies;
   };
 
-  /// Collect all of the immediate global value users of `value`.
-  void collectValueUsers(const llvm::Value *value);
+  struct TransitiveDeps {
+    /// The transitive dependencies.
+    llvm::SetVector<const llvm::GlobalValue *> deps;
+    /// Whether this global value is included in the transitive deps of another.
+    bool included = false;
+    /// True if computation is complete.
+    bool complete = false;
+    /// The assigned module index.
+    std::optional<unsigned> mutIdx;
+    /// These are the mutable globals transitively used.
+    SmallVector<const llvm::GlobalVariable *> mutGlobals;
+  };
 
-  /// Propagate use information through the module.
-  void propagateUseInfo();
+  /// Collect the immediate global value dependencies of `value`. `orig` is the
+  /// original transitive value, which is not equal to `value` when it is used
+  /// in a constant.
+  void collectImmediateDependencies(const llvm::Value *value,
+                                    const llvm::GlobalValue *orig);
 
   /// The main LLVM module being split.
   llvm::Module &mainModule;
 
   /// The value info for each global value in the module.
-  llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
+  llvm::DenseMap<const llvm::Value *, ValueInfo> infos;
+
+  /// The transitive dependencies of each global value.
+  llvm::MapVector<const llvm::GlobalValue *, TransitiveDeps> transitiveDeps;
+
+  /// Users of mutable global variables.
+  llvm::MapVector<const llvm::GlobalVariable *,
+                  llvm::SetVector<TransitiveDeps *>>
+      mutGlobalUsers;
 };
 } // namespace
 
@@ -68,40 +90,121 @@ KGEN::splitPerExported(llvm::Module &module) {
 LLVMModuleSplitterImpl::LLVMModuleSplitterImpl(llvm::Module &module)
     : mainModule(module) {}
 
-/// Split the LLVM module into multiple modules using the provided process
-/// function.
 void LLVMModuleSplitterImpl::split(
     SmallVectorImpl<std::unique_ptr<llvm::Module>> &splitModules) {
-  // Compute the value info for each global in the module.
-  auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
-  llvm::for_each(mainModule.functions(), computeUsers);
-  llvm::for_each(mainModule.globals(), computeUsers);
-  llvm::for_each(mainModule.aliases(), computeUsers);
+  // The use-def list is sparse. Use it to build a sparse dependency graph
+  // between global values.
+  auto computeDeps = [&](const llvm::GlobalValue &value) {
+    collectImmediateDependencies(&value, &value);
+  };
+  llvm::for_each(mainModule.aliases(), computeDeps);
+  for (const llvm::Function &fn : mainModule.functions()) {
+    computeDeps(fn);
+    if (!fn.isDeclaration() && (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
+      transitiveDeps[&fn];
+  }
+  for (const llvm::GlobalVariable &global : mainModule.globals()) {
+    computeDeps(global);
+    if (!global.hasInternalLinkage())
+      transitiveDeps[&global];
+  }
 
-  // With use information collected, propagate it to the dependencies.
-  propagateUseInfo();
+  // Now for each export'd global value, compute the transitive set of
+  // dependencies using DFS.
+  SmallVector<const llvm::GlobalValue *> worklist;
+  for (auto &[value, deps] : transitiveDeps) {
+    worklist.clear();
 
-  // Now we can split the module. We do this using this by anchoring on the
-  // exports of the module, and cloning any necessary dependencies.
-  // Realistically we shouldn't be cloning, but we currently depend on LLVM to
-  // do various LTO style optimizations for us, which means that each export
-  // needs its full callstack present. When this isn't necessary, we should be
-  // to define much more fine grained splitting, which would enable
-  // significantly higher levels of parallelism (and smaller generated
-  // artifacts).
-  llvm::DenseSet<const llvm::Value *> splitValues;
-  auto splitValue = [&](const llvm::Value *root) {
-    // If the function is already split, e.g. if it was a dependency of
-    // another function, skip it.
-    if (splitValues.count(root))
-      return;
+    // If this value got picked up in the transitive dependency set of another
+    // value, skip it.
+    if (deps.included)
+      continue;
 
-    auto &valueInfo = valueInfos[root];
-    llvm::ValueToValueMapTy valueMap;
+    worklist.push_back(value);
+    while (!worklist.empty()) {
+      const llvm::GlobalValue *it = worklist.pop_back_val();
+
+      if (!deps.deps.insert(it)) {
+        // Already visited.
+        continue;
+      }
+
+      // If this is another value to be split, we can include it as part of our
+      // current split.
+      if (it != value) {
+        if (auto depIt = transitiveDeps.find(it);
+            depIt != transitiveDeps.end()) {
+          TransitiveDeps &other = depIt->second;
+          // Mark it as included so it doesn't create a split.
+          other.included = true;
+          // If we finished computing this set of transitive deps, just copy
+          // them over and don't recurse.
+          if (other.complete) {
+            deps.deps.insert(other.deps.begin(), other.deps.end());
+            llvm::append_range(deps.mutGlobals, other.mutGlobals);
+            for (const llvm::GlobalVariable *mutGlobal : other.mutGlobals)
+              mutGlobalUsers[mutGlobal].insert(&deps);
+            continue;
+          }
+        }
+      }
+
+      // If this value depends on a mutable global, keep track of it. We have to
+      // put all users of a mutable global in the same module.
+      if (auto *global = dyn_cast<llvm::GlobalVariable>(it);
+          global && !global->isConstant()) {
+        mutGlobalUsers[global].insert(&deps);
+        deps.mutGlobals.push_back(global);
+      }
+
+      // Recursive on dependencies.
+      const ValueInfo &info = infos[it];
+      llvm::append_range(worklist, info.dependencies);
+    }
+
+    deps.complete = true;
+  }
+
+  // For each mutable global, grab all the transitive users and put them in one
+  // module. If global A has user set A* and global B has user set B* where
+  // A* and B* have an empty intersection, all values in A* will be assigned 0
+  // and all values in B* will be assigned 1. If global C has user set C* that
+  // overlaps both A* and B*, it will overwrite both to 2.
+  SmallVector<SmallVector<TransitiveDeps *>> bucketing(mutGlobalUsers.size());
+  for (auto [curMutIdx, bucket, users] :
+       llvm::enumerate(bucketing, llvm::make_second_range(mutGlobalUsers))) {
+    for (TransitiveDeps *deps : users) {
+      if (deps->mutIdx && *deps->mutIdx != curMutIdx) {
+        auto &otherBucket = bucketing[*deps->mutIdx];
+        for (TransitiveDeps *other : otherBucket) {
+          bucket.push_back(other);
+          other->mutIdx = curMutIdx;
+        }
+        otherBucket.clear();
+        assert(*deps->mutIdx == curMutIdx);
+      } else {
+        bucket.push_back(deps);
+        deps->mutIdx = curMutIdx;
+      }
+    }
+  }
+
+  // Now that we have assigned buckets to each value, merge the transitive
+  // dependency sets of all values belonging to the same set.
+  SmallVector<llvm::SetVector<const llvm::GlobalValue *>> buckets(
+      bucketing.size());
+  for (auto [deps, bucket] : llvm::zip(bucketing, buckets)) {
+    for (TransitiveDeps *dep : deps)
+      bucket.insert(dep->deps.begin(), dep->deps.end());
+  }
+
+  // Functor to split a module containing the global values satisfying a
+  // predicate.
+  llvm::ValueToValueMapTy valueMap;
+  auto splitModuleWhere = [&](auto &&pred) {
+    valueMap.clear();
     std::unique_ptr<llvm::Module> splitModule(llvm::CloneModule(
-        mainModule, valueMap, [&](const llvm::GlobalValue *globalVal) {
-          return globalVal == root || valueInfo.dependencies.count(globalVal);
-        }));
+        mainModule, valueMap, std::forward<decltype(pred)>(pred)));
     if (splitModule->empty())
       splitModule->setModuleInlineAsm("");
 
@@ -111,30 +214,30 @@ void LLVMModuleSplitterImpl::split(
     for (auto &func : llvm::make_early_inc_range(*splitModule))
       if (func.isDeclaration() && func.use_empty())
         func.eraseFromParent();
-    for (auto &globalVar : llvm::make_early_inc_range(splitModule->globals())) {
+    for (auto &globalVar : llvm::make_early_inc_range(splitModule->globals()))
       if (globalVar.isDeclaration() && globalVar.use_empty())
         globalVar.eraseFromParent();
-    }
 
     splitModules.emplace_back(std::move(splitModule));
-
-    // Record the split values.
-    splitValues.insert(root);
-    splitValues.insert(valueInfo.dependencies.begin(),
-                       valueInfo.dependencies.end());
   };
 
-  for (auto &global : mainModule.globals()) {
-    if (global.hasInternalLinkage())
+  // Clone each mutable global bucket into its own module.
+  for (auto &bucket : buckets) {
+    if (bucket.empty())
       continue;
-    // TODO: Add special handling for `llvm.global_ctors` and
-    // `llvm.global_dtors`, because otherwise they end up tying almost all
-    // symbols into the same split.
-    splitValue(&global);
+    splitModuleWhere(
+        [&](const llvm::GlobalValue *value) { return bucket.contains(value); });
   }
-  for (auto &fn : mainModule.functions())
-    if (!fn.isDeclaration() && (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
-      splitValue(&fn);
+
+  for (auto &[root, deps] : transitiveDeps) {
+    // Skip values included in another transitive dependency set and values
+    // included in mutable global sets.
+    if (deps.included || deps.mutIdx)
+      continue;
+    splitModuleWhere([&deps = deps.deps](const llvm::GlobalValue *value) {
+      return deps.contains(value);
+    });
+  }
 
   // If we had no functions to split, just process the main module.
   if (splitModules.empty())
@@ -148,87 +251,22 @@ void LLVMModuleSplitterImpl::split(
   });
 }
 
-/// Collect all of the immediate global value users of `value`.
-void LLVMModuleSplitterImpl::collectValueUsers(const llvm::Value *value) {
-
-  llvm::SmallVector<const llvm::User *> worklist(value->users());
-
-  while (!worklist.empty()) {
-    const llvm::User *userIt = worklist.pop_back_val();
-
+void LLVMModuleSplitterImpl::collectImmediateDependencies(
+    const llvm::Value *value, const llvm::GlobalValue *orig) {
+  for (const llvm::Value *user : value->users()) {
     // Recurse into pure constant users.
-    if (isa<llvm::Constant>(userIt) && !isa<llvm::GlobalValue>(userIt)) {
-      worklist.append(userIt->user_begin(), userIt->user_end());
+    if (isa<llvm::Constant>(user) && !isa<llvm::GlobalValue>(user)) {
+      collectImmediateDependencies(user, orig);
       continue;
     }
 
-    if (const auto *inst = dyn_cast<llvm::Instruction>(userIt)) {
+    if (auto *inst = dyn_cast<llvm::Instruction>(user)) {
       const llvm::Function *func = inst->getParent()->getParent();
-      valueInfos[value].users.insert(func);
-      valueInfos[func];
-    } else if (const auto *globalVal = dyn_cast<llvm::GlobalValue>(userIt)) {
-      valueInfos[value].users.insert(globalVal);
-      valueInfos[globalVal];
+      infos[func].dependencies.push_back(orig);
+    } else if (auto *globalVal = dyn_cast<llvm::GlobalValue>(user)) {
+      infos[globalVal].dependencies.push_back(orig);
     } else {
       llvm_unreachable("unexpected user of global value");
-    }
-  }
-
-  // If the current value is a mutable global variable, then it can't be
-  // split.
-  if (auto *global = dyn_cast<llvm::GlobalVariable>(value))
-    if (!global->isConstant())
-      valueInfos[value].canBeSplit = false;
-}
-
-/// Propagate use information through the module.
-void LLVMModuleSplitterImpl::propagateUseInfo() {
-  std::vector<ValueInfo *> worklist;
-  // Each value depends on itself. Seed the iteration with that.
-  for (auto &[value, info] : valueInfos) {
-    info.dependencies.insert(value);
-    worklist.push_back(&info);
-    // If a value cannot be split, its users are also its dependencies.
-    if (!info.canBeSplit)
-      llvm::set_union(info.dependencies, info.users);
-  }
-
-  while (!worklist.empty()) {
-    ValueInfo *info = worklist.back();
-    worklist.pop_back();
-
-    // Propagate the dependencies of this value to its users.
-    for (const llvm::Value *user : info->users) {
-      ValueInfo &userInfo = valueInfos.find(user)->second;
-      if (info == &userInfo)
-        continue;
-      bool changed = false;
-      // If there is a change, add the user info to the worklist.
-      if (llvm::set_union(userInfo.dependencies, info->dependencies))
-        changed = true;
-
-      // If the value cannot be split, its users cannot be split either.
-      if (!info->canBeSplit && userInfo.canBeSplit) {
-        userInfo.canBeSplit = false;
-        changed = true;
-        // If a value cannot be split, its users are also its dependencies.
-        llvm::set_union(userInfo.dependencies, userInfo.users);
-      }
-
-      if (changed)
-        worklist.push_back(&userInfo);
-    }
-
-    if (info->canBeSplit)
-      continue;
-    // If a value cannot be split, propagate its dependencies up to its
-    // dependencies.
-    for (const llvm::Value *dep : info->dependencies) {
-      ValueInfo &depInfo = valueInfos.find(dep)->second;
-      if (info == &depInfo)
-        continue;
-      if (llvm::set_union(depInfo.dependencies, info->dependencies))
-        worklist.push_back(&depInfo);
     }
   }
 }
