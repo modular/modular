@@ -386,8 +386,8 @@ fn multistage_gemm[
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle_by_scale[3](
-        Index(Int(BlockIdx.x().value), Int(BlockIdx.y().value)), Index(N // BN, M // BM)
-    ) if swizzle_block else Index(Int(BlockIdx.x().value), Int(BlockIdx.y().value))
+        Index(Int(BlockIdx.x()), Int(BlockIdx.y())), Index(N // BN, M // BM)
+    ) if swizzle_block else Index(Int(BlockIdx.x()), Int(BlockIdx.y()))
 
     # Coordinates of the current warp.
     var warp_x: Int
