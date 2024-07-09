@@ -134,7 +134,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             # Worst case we allocate the memory on the heap.
             new.length = length
             new.data = Pointer[Int].alloc(length)
-            memset_zero(new.data, length)
+            memset_zero(new.data.address, length)
         return new
 
     @staticmethod
