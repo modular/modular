@@ -47,7 +47,7 @@ fn MLIR_func[name: StringLiteral, T: AnyTrivialRegType]() -> T:
     var f = _get_dylib_function[
         "MOF_LIB", name, _init_dylib, _destroy_dylib, T
     ]()
-    var ptr = LegacyPointer.address_of(f).bitcast[LegacyPointer[NoneType]]()[]
+    var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
     if not ptr:
         abort("cannot load " + String(name) + " from graph library")
     return f

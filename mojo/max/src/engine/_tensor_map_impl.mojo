@@ -125,8 +125,10 @@ struct CTensorMap:
         if status:
             raise str(status)
 
-    fn keys(self, size_ptr: Pointer[Int64], lib: DLHandle) -> Pointer[CString]:
-        return call_dylib_func[Pointer[CString]](
+    fn keys(
+        self, size_ptr: UnsafePointer[Int64], lib: DLHandle
+    ) -> UnsafePointer[CString]:
+        return call_dylib_func[UnsafePointer[CString]](
             lib, Self.KeysFnName, self, size_ptr
         )
 
