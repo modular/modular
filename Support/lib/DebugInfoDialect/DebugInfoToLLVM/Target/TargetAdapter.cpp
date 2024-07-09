@@ -517,8 +517,9 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                 /*basePtr=*/storeToPointer, LLVM::GEPArg(offsetInBytes));
             storeToPointer = uglyGep;
           }
-          storeBuilder.create<LLVM::StoreOp>(storeLoc, oldValue,
-                                             storeToPointer);
+          storeBuilder.create<LLVM::StoreOp>(storeLoc, oldValue, storeToPointer,
+                                             /*alignment=*/0,
+                                             /*isVolatile=*/true);
         };
 
         // Store into the alloca at the place where the value was defined.
