@@ -21,6 +21,7 @@
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -288,6 +289,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   mlir::PassManager pm(target.getContext());
+  if constexpr (KGEN::kIsTracingEnabled)
+    pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   configurePassManager(pm);
 
   pm.addPass(createElaborateGenerators(

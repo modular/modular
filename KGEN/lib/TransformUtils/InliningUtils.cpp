@@ -276,7 +276,8 @@ mlir::PassManager &PerThreadPassManagers::getPassManager() {
   buildFuncPasses(pm);
   pm.enableVerifier(false);
   // Enable time tracing on the nested pass manager.
-  pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
+  if constexpr (KGEN::kIsTracingEnabled)
+    pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   return pm;
 }
 
