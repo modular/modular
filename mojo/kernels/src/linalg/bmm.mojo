@@ -474,7 +474,7 @@ fn batched_matmul_kernel[
 
     if z >= batch_size or x >= n or y >= m:
         return
-    var val = Scalar[accum_type](0.0)
+    var val = Scalar[accum_type](0)
     for ki in range(k):
         val += (
             a_buff[z, y, ki].cast[accum_type]()

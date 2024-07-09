@@ -20,7 +20,7 @@ from linalg.packing import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index, StaticIntTuple
 
@@ -167,10 +167,8 @@ def test_matmul[
 
     for i in range(m):
         for j in range(n):
-            assert_almost_equal(
-                c[i, j],
-                golden[i, j],
-                msg="values do not agree for "
+            var msg = (
+                "values do not agree for "
                 + str(m)
                 + "x"
                 + str(n)
@@ -181,8 +179,14 @@ def test_matmul[
                 + ","
                 + str(b_type)
                 + ","
-                + str(c_type),
+                + str(c_type)
             )
+
+            @parameter
+            if c_type.is_floating_point():
+                assert_almost_equal(c[i, j], golden[i, j], msg)
+            else:
+                assert_equal(c[i, j], golden[i, j], msg)
 
     a_ptr.free()
     b_ptr.free()

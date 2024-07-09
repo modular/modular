@@ -348,7 +348,15 @@ struct _Accumulator[
     # ===----------------------------------------------------------------------===#
 
     @always_inline
-    fn init(inout self, val: Scalar[type] = 0.0):
+    fn init(inout self):
+        @parameter
+        if type.is_floating_point():
+            self.init(0.0)
+        else:
+            self.init(0)
+
+    @always_inline
+    fn init(inout self, val: Scalar[type]):
         # TODO: refactor with _transfer
         @parameter
         for m in range(num_rows):
@@ -888,7 +896,7 @@ fn _simd_load_maybe_partial[
     @parameter
     if partial_load:
         return partial_simd_load[simd_width](
-            ptr + offset, 0, partial_load_size.value(), 0.0
+            ptr + offset, 0, partial_load_size.value(), 0
         )
     else:
         return SIMD[size=simd_width].load(ptr, offset)
