@@ -545,6 +545,8 @@ struct Function[
                 Self.init_fn[func_type, func],
             ](UnsafePointer.address_of(payload))
 
+            _ = payload
+
             return info_ptr[]
         else:
             var info_ptr = _get_global[
