@@ -652,6 +652,11 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
     return
 
 
+# ===----------------------------------------------------------------------===#
+# MGP Device Context Primitives
+# ===----------------------------------------------------------------------===#
+
+
 @mogg_register("mgp.device.context.create")
 @always_inline
 @export
@@ -678,11 +683,6 @@ fn mgp_device_context_create[
             mgp_device_context_destroy,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
         )
-
-
-# ===----------------------------------------------------------------------===#
-# MGP Device Context Primitives
-# ===----------------------------------------------------------------------===#
 
 
 @export
