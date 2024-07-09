@@ -1,0 +1,32 @@
+load("//bazel:api.bzl", "copy_files", "modular_pybind_extension")
+
+copy_files(
+    name = "copy_srcs",
+    srcs = ["//:_mlir_libs_srcs"],
+    outs = [
+        "_mlir_libs/__init__.py",
+        "ir.py",
+    ],
+)
+
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["*.py"]) + [
+        ":copy_srcs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+modular_pybind_extension(
+    name = "_mlir_libs/_mlir",
+    srcs = ["//:pybind_mlir_srcs"],
+    pybind_deps = [
+        "//:MLIRBindingsPythonHeaders",
+    ],
+    deps = [
+        "@llvm-project//mlir:CAPIDebug",
+        "@llvm-project//mlir:CAPIIR",
+        "@llvm-project//mlir:CAPIInterfaces",
+        "@llvm-project//mlir:CAPITransforms",
+    ],
+)
