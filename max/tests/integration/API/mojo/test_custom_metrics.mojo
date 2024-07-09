@@ -28,7 +28,7 @@ from max.serve.metrics import (
 fn test_custom_prometheus[
     T: Instrument, Fn: fn (inout T) capturing -> None
 ](
-    counter_name: String,
+    instrument_name: String,
     desc: String,
     units: String,
     expected_msg: List[String],
@@ -48,9 +48,9 @@ fn test_custom_prometheus[
     assert_true(initialized)
 
     # note otel converts . to _, so we just use a simple name below
-    # var counter_name = "modular_test_gauge_" + str(rand_val)
+    # var instrument_name = "modular_test_gauge_" + str(rand_val)
     var gauge = tctx.create_instrument[T](
-        counter_name, desc, units, custom_attributes
+        instrument_name, desc, units, custom_attributes
     )
     # Call the user supplied function.
     Fn(gauge)
@@ -64,7 +64,12 @@ fn test_custom_prometheus[
     # print(text)
     for msg in expected_msg:
         assert_true(
-            msg[] in str(text), String("Could not find entry: ") + msg[]
+            msg[] in str(text),
+            String("Could not find entry: ")
+            + msg[]
+            + " in "
+            + desc
+            + " with seed ",
         )
 
     # test second initialization
@@ -91,7 +96,7 @@ fn dictToAttributeString(custom_attributes: Dict[String, String]) -> String:
     return attribute_string
 
 
-fn main() raises:
+fn test_custom_metrics() raises:
     random.seed()
     var rand_val = random.random_ui64(1, 200)
 
@@ -108,12 +113,16 @@ fn main() raises:
         for _ in range(rand_val):
             counter.add(inc)
 
-    var counter_name = "test_modular_counter"
+    var instrument_name = "test_modular_counter"
     var expected_msg = List[String](
-        counter_name + "_foos_total" + attribute_string + " " + str(rand_val),
+        instrument_name
+        + "_foos_total"
+        + attribute_string
+        + " "
+        + str(rand_val),
     )
     test_custom_prometheus[Counter[DType.uint64], CounterTest[DType.uint64]](
-        counter_name,
+        instrument_name,
         "uint test counter",
         "foos",
         expected_msg,
@@ -121,12 +130,16 @@ fn main() raises:
     )
 
     rand_val = random.random_ui64(1, 200)
-    counter_name = "test_modular_counter"
+    instrument_name = "test_modular_counter"
     expected_msg = List[String](
-        counter_name + "_foos_total" + attribute_string + " " + str(rand_val),
+        instrument_name
+        + "_foos_total"
+        + attribute_string
+        + " "
+        + str(rand_val),
     )
     test_custom_prometheus[Counter[DType.float64], CounterTest[DType.float64]](
-        counter_name,
+        instrument_name,
         "float64 test counter",
         "foos",
         expected_msg,
@@ -140,36 +153,41 @@ fn main() raises:
             var v = Int64(i).cast[T]()
             histogram.record(v)
 
-    counter_name = "test_modular_histogram"
+    instrument_name = "test_modular_histogram"
     expected_msg = List[String](
-        counter_name + '_foos_bucket{le="0"} 1',
-        counter_name + '_foos_bucket{le="+Inf"} ' + str(rand_val),
+        instrument_name + '_foos_bucket{le="0"} 1',
+        instrument_name + '_foos_bucket{le="+Inf"} ' + str(rand_val),
     )
     test_custom_prometheus[
         Histogram[DType.uint64], HistogramTest[DType.uint64]
     ](
-        counter_name,
-        "uint test counter",
+        instrument_name,
+        "uint test histogram",
         "foos",
         expected_msg,
     )
 
     rand_val = random.random_ui64(1, 200)
-    counter_name = "test_modular_histogram"
+    instrument_name = "test_modular_histogram"
     expected_msg = List[String](
-        counter_name + '_foos_bucket{le="0"} 1',
-        counter_name + '_foos_bucket{le="+Inf"} ' + str(rand_val),
+        instrument_name + '_foos_bucket{le="0"} 1',
+        instrument_name + '_foos_bucket{le="+Inf"} ' + str(rand_val),
     )
     test_custom_prometheus[
         Histogram[DType.float64], HistogramTest[DType.float64]
     ](
-        counter_name,
-        "float64 test counter",
+        instrument_name,
+        "float64 test histogram",
         "foos",
         expected_msg,
     )
 
     # GAUGES
+
+    # For gauges, the seed needs to be greater than 2 since the formula used
+    # >     (rand_val * (rand_val - 1) / 2) - rand_val
+    # for verification would lead to an invalid value for rand_val<=2.
+    rand_val = random.random_ui64(3, 200)
 
     @parameter
     fn GaugeTest[T: DType](inout gauge: Gauge[T]):
@@ -182,29 +200,33 @@ fn main() raises:
             var v = Int64(-1).cast[T]()
             gauge.add(v)
 
-    counter_name = "test_modular_gauge"
+    var instrument_name_s = str("test_modular_gauge_") + str(rand_val)
     expected_msg = List[String](
-        counter_name
+        instrument_name_s
         + "_foos "
         + str((rand_val * (rand_val - 1) / 2) - rand_val),
     )
     test_custom_prometheus[Gauge[DType.int64], GaugeTest[DType.int64]](
-        counter_name,
-        "uint test counter",
+        instrument_name_s,
+        "test gauge int",
         "foos",
         expected_msg,
     )
 
-    rand_val = random.random_ui64(1, 200)
-    counter_name = "test_modular_gauge"
+    rand_val = random.random_ui64(3, 200)
+    instrument_name_s = str("test_modular_gauge") + str(rand_val)
     expected_msg = List[String](
-        counter_name
+        instrument_name_s
         + "_foos "
         + str((rand_val * (rand_val - 1) / 2) - rand_val),
     )
     test_custom_prometheus[Gauge[DType.float64], GaugeTest[DType.float64]](
-        counter_name,
-        "float64 test counter",
+        instrument_name_s,
+        "float64 test gauge",
         "foos",
         expected_msg,
     )
+
+
+def main():
+    test_custom_metrics()
