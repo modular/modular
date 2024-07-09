@@ -261,8 +261,6 @@ private:
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
 #endif
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-
   bool isValidInstrumentName(StringRef name) {
     // TODO: SERV-138 - If the name is invalid, it looks like OTel logs the
     // error and returns a NOOP counter. Instead, we should probably try to
@@ -288,6 +286,7 @@ private:
     return Gauge<T>();
 #endif
   }
+#ifdef MODULAR_ENABLE_TELEMETRY
   // Utility function to help make code cleaner
   template <typename T>
   Gauge<T>
@@ -304,6 +303,7 @@ private:
                            attributes);
     }
   }
+#endif
 
   template <typename T>
   Counter<T>
@@ -324,6 +324,7 @@ private:
     return Counter<T>();
 #endif
   }
+#ifdef MODULAR_ENABLE_TELEMETRY
   // Utility function to help make code cleaner
   template <typename T>
   Counter<T>
@@ -340,6 +341,7 @@ private:
           attributes);
     }
   }
+#endif
 
   /// Create a Histogram
   template <typename T>
@@ -360,6 +362,7 @@ private:
     return Histogram<T>();
 #endif
   }
+#ifdef MODULAR_ENABLE_TELEMETRY
   // Utility function to help make code cleaner
   template <typename T>
   Histogram<T>
@@ -378,7 +381,6 @@ private:
                                attributes);
     }
   }
-
 #endif
 };
 
