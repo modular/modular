@@ -34,10 +34,10 @@ using namespace KGEN;
 namespace LLVM = mlir::LLVM;
 
 /// Get the LLVM linkage kind for an export kind.
-static LLVM::Linkage getLinkageKind(ExportKind exportKind, bool isExternFunc) {
+static LLVM::Linkage getLinkageKind(ExportKind exportKind) {
   switch (exportKind) {
   case ExportKind::NotExported:
-    return isExternFunc ? LLVM::Linkage::External : LLVM::Linkage::Internal;
+    return LLVM::Linkage::Internal;
   case ExportKind::Exported:
   case ExportKind::CExported:
   case ExportKind::PackageExported:
@@ -337,9 +337,9 @@ public:
     TargetInfoAttr target = getTypeConverter()->getTarget();
 
     // Mark all functions as internal for now - we'll clean this up later.
-    auto funcOp = createLLVMFunc(
-        b, target, func.getLoc(), func.getNameAttr(), funcType,
-        getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
+    auto funcOp =
+        createLLVMFunc(b, target, func.getLoc(), func.getNameAttr(), funcType,
+                       getLinkageKind(func.getExportKind()));
     if (failed(convertLLVMMetadata(funcOp, func.getSignature(),
                                    func.getLLVMMetadataAttr(), ids)))
       return failure();
@@ -880,8 +880,8 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
     bool isExported = global.isExported();
     auto llvmGlobal = b.replaceOpWithNewOp<LLVM::GlobalOp>(
         global, type, /*constant=*/false,
-        getLinkageKind(global.getExportKind(), /*isExternFunc=*/false),
-        global.getSymName(), /*value=*/Attribute());
+        getLinkageKind(global.getExportKind()), global.getSymName(),
+        /*value=*/Attribute());
 
     // If the global is not exported, then no need to initialize it.
     if (!isExported)
