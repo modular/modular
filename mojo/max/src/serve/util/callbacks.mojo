@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Provides callback utilities."""
 
+from utils import unroll
+
 
 trait ServerCallbacks(Movable):
     """A trait for containers of server lifecycle callbacks."""
