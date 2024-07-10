@@ -15,7 +15,7 @@ from sys.param_env import is_defined
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import Context as CudaContext
 from gpu.host import CudaInstance, DeviceContext, Stream, KernelProfilingInfo
-from memory.unsafe import DTypePointer, Pointer
+from memory import DTypePointer, Pointer, UnsafePointer
 
 from utils import StringRef
 
@@ -31,13 +31,13 @@ struct Chain(Boolable):
     """A proxy for the C++ runtime's AsyncValueRef<Chain> type."""
 
     # Actually an AsyncValueRef<Chain>, which is just an AsyncValue*
-    var storage: Pointer[Int]
+    var storage: UnsafePointer[Int]
 
     fn __init__(inout self):
-        self.storage = Pointer[Int]()
+        self.storage = UnsafePointer[Int]()
 
     fn __bool__(self) -> Bool:
-        return self.storage != Pointer[Int]()
+        return self.storage != UnsafePointer[Int]()
 
 
 @register_passable("trivial")
