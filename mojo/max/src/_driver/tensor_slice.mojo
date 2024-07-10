@@ -19,6 +19,7 @@ from sys.info import triple_is_nvidia_cuda
 
 
 @value
+@register_passable
 struct TensorSlice[
     is_mutable: Bool, //,
     type: DType,
@@ -54,7 +55,7 @@ struct TensorSlice[
         return rebind[DTypePointer[__type]](self._unsafe_slice._ptr)
 
     @always_inline
-    fn __getitem__(inout self, *indices: Int) -> ref [lifetime] Scalar[type]:
+    fn __getitem__(self, *indices: Int) -> ref [lifetime] Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -80,6 +81,7 @@ struct TensorSlice[
 
 
 @value
+@register_passable
 struct UnsafeTensorSlice[
     type: DType,
     rank: Int,
@@ -151,7 +153,7 @@ struct UnsafeTensorSlice[
         return self._spec
 
     @always_inline
-    fn __getitem__(inout self, indices: StaticIntTuple[rank]) -> Scalar[type]:
+    fn __getitem__(self, indices: StaticIntTuple[rank]) -> Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -164,7 +166,7 @@ struct UnsafeTensorSlice[
         return self._ptr[offset]
 
     @always_inline
-    fn __getitem__(inout self, *indices: Int) -> Scalar[type]:
+    fn __getitem__(self, *indices: Int) -> Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -179,7 +181,7 @@ struct UnsafeTensorSlice[
         return self[indices]
 
     @always_inline
-    fn __setitem__(inout self, *indices: Int, val: Scalar[type]):
+    fn __setitem__(self, *indices: Int, val: Scalar[type]):
         """Stores the value at the specified indices.
 
         Args:
@@ -193,9 +195,7 @@ struct UnsafeTensorSlice[
         self[indices] = val
 
     @always_inline
-    fn __setitem__(
-        inout self, indices: StaticIntTuple[rank], val: Scalar[type]
-    ):
+    fn __setitem__(self, indices: StaticIntTuple[rank], val: Scalar[type]):
         """Stores the value at the specified indices.
 
         Args:

@@ -125,13 +125,18 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         var dt = device.allocate(spec)
         self = Self(dt)
 
+    fn __init__(inout self, shape: Tuple, device: Device) raises:
+        var spec = TensorSpec(type, shape)
+        var dt = device.allocate(spec)
+        self = Self(dt)
+
     fn __init__(inout self, shape: TensorShape) raises:
         var device = cpu_device()
         var spec = TensorSpec(type, shape)
         var dt = device.allocate(spec)
         self = Self(dt)
 
-    fn __init__(inout self, shape: Tuple, device: Device) raises:
+    fn __init__(inout self, shape: TensorShape, device: Device) raises:
         var spec = TensorSpec(type, shape)
         var dt = device.allocate(spec)
         self = Self(dt)
