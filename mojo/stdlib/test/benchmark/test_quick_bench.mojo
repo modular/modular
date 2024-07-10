@@ -100,7 +100,7 @@ fn dummy(
 fn test_overloaded() raises:
     var qb = QuickBench()
 
-    qb.run[T_out=NoneType](
+    qb.run[T_out = NoneType._mlir_type](
         dummy,
         bench_id=BenchId("dummy_none"),
         measures=List[ThroughputMeasure](
