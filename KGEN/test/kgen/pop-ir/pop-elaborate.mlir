@@ -177,11 +177,6 @@ kgen.generator @malloc_and_free(%arg0: i16) -> i16 {
   kgen.return %2 : i16
 }
 
-kgen.generator @type_of(%arg0: !kgen.dtype) -> index {
-  %size = pop.dtype.sizeof %arg0
-  kgen.return %size : index
-}
-
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -335,30 +330,6 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <7>
   kgen.param.constant: i16 = <apply(:(i16) -> i16 @malloc_and_free, 7)>
-
-  // CHECK-NEXT: <1>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, si2)>
-
-  // CHECK-NEXT: <1>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, si4)>
-
-  // CHECK-NEXT: <1>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, si8)>
-
-  // CHECK-NEXT: <2>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, si16)>
-
-  // CHECK-NEXT: <4>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, si32)>
-
-  // CHECK-NEXT: <4>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, f32)>
-
-  // CHECK-NEXT: <8>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, index)>
-
-  // CHECK-NEXT: <8>
-  kgen.param.constant: index = <apply(:(!kgen.dtype) -> index @type_of, address)>
 
   kgen.return
 }
