@@ -14,4 +14,4 @@ fn main():
     if False:
         pass
     else:
-        from memory import Pointer
+        from memory import UnsafePointer
