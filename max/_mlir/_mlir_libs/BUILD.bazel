@@ -4,7 +4,10 @@ package(default_visibility = ["//visibility:public"])
 
 copy_files(
     name = "copy_srcs",
-    srcs = ["//:_mlir_libs_srcs"],
+    srcs = [
+        "@llvm-project//mlir/python:IRPyFiles",
+        "@llvm-project//mlir/python:MlirLibsPyFiles",
+    ],
     outs = [
         "_mlir_libs/__init__.py",
         "ir.py",
