@@ -6,9 +6,15 @@
 # UNSUPPORTED: asan
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout.runtime_layout import RuntimeLayout, Layout, RuntimeTuple, IntTuple
+from layout.runtime_layout import (
+    RuntimeLayout,
+    Layout,
+    RuntimeTuple,
+    IntTuple,
+    coalesce,
+)
 
-from layout.layout import print_layout, crd2idx
+from layout.layout import print_layout, crd2idx, coalesce as coalesce_layout
 
 from layout.int_tuple import UNKNOWN_VALUE
 
@@ -116,9 +122,32 @@ def test_sublayout_indexing():
     assert_equal(str(layout.sublayout[1]()), "(4:1)")
 
 
+def test_coalesce():
+    print("== test_coalesce")
+    alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var layout = RuntimeLayout[layout_t](
+        RuntimeTuple[layout_t.shape](8, 1), RuntimeTuple[layout_t.stride](1, 1)
+    )
+    assert_equal(str(coalesce(layout)), "((8, 1):(1, 1))")
+    assert_equal(str(coalesce_layout(layout_t)), "((-1, -1):(-1, 1))")
+
+    alias layout_t_2 = Layout(
+        IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 8, 1),
+        IntTuple(UNKNOWN_VALUE, 8, 1, 1),
+    )
+    var layout_2 = RuntimeLayout[layout_t_2](
+        RuntimeTuple[layout_t_2.shape](32, 16, 8, 1),
+        RuntimeTuple[layout_t_2.stride](16, 8, 1, 1),
+    )
+
+    assert_equal(str(coalesce(layout_2)), "((32, 16, 8):(16, 8, 1))")
+    assert_equal(str(coalesce_layout(layout_t_2)), "((-1, -1, 8):(-1, 8, 1))")
+
+
 def main():
     test_runtime_layout_const()
     test_static_and_dynamic_size()
     test_tiled_layout_indexing()
     test_tiled_layout_indexing_linear_idx()
     test_sublayout_indexing()
+    test_coalesce()

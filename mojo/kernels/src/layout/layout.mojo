@@ -338,8 +338,15 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
         elif result_shape[-1] == 1:
             result_shape[-1] = shape
             result_stride[-1] = stride
-        # merge modes if the shape*stride match
-        elif to_int(result_shape[-1]) * to_int(result_stride[-1]) == stride:
+        # merge modes if the shape*stride match and computable.
+        elif to_int(result_shape[-1]) * to_int(
+            result_stride[-1]
+        ) == stride and UNKNOWN_VALUE not in (
+            shape,
+            stride,
+            to_int(result_shape[-1]),
+            to_int(result_stride[-1]),
+        ):
             result_shape[-1] = to_int(result_shape[-1]) * shape
         # append a new mode
         else:
