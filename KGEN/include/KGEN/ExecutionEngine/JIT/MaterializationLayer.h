@@ -38,7 +38,6 @@ class MaterializationLayer {
 public:
   enum LayerKind {
     kStaticArchiveLayer,
-    kObjectCompilerLayer,
   };
   virtual ~MaterializationLayer() = default;
 

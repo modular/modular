@@ -7,7 +7,6 @@
 add_modular_library(KGENJIT
   JITSupport.cpp
   MaterializationLayer.cpp
-  ObjectCompilerLayer.cpp
   StaticArchiveLayer.cpp
 
   DEPENDS
