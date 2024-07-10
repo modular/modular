@@ -9,7 +9,7 @@ from buffer.dimlist import DimList
 import algorithm.functional
 
 
-fn register(name: StringLiteral, priority: Int = 0):
+fn register(name: StringLiteral):
     return
 
 
