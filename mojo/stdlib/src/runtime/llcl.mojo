@@ -411,7 +411,8 @@ struct TaskGroup[lifetimes: LifetimeSet]:
 
     fn create_task(
         inout self,
-        owned task: Coroutine[NoneType],
+        # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
+        owned task: Coroutine[NoneType._mlir_type],
         desired_worker_id: Int = -1,
     ):
         # TODO(MOCO-771): Enforce that `task.lifetimes` is a subset of
