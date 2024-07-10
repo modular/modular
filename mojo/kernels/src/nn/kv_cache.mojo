@@ -13,6 +13,7 @@ from utils.numerics import min_finite, isnan
 from nn.flash_attention import flash_attention
 from register import mogg_register
 from buffer import NDBuffer, DimList
+from collections import OptionalReg
 from utils import Index
 from .types import ContiguousKVCache, ContiguousKVCacheCollection, KVCacheLayout
 from runtime.llcl import (
