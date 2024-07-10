@@ -18,168 +18,198 @@ from gpu.host.memory import _copy_host_to_device, _free, _malloc
 from linalg.matmul_gpu import gemv_kernel, gemv_tc_kernel, matmul_kernel_naive
 from memory import memset
 from memory.unsafe import DTypePointer
+from gpu.host.device_context import DeviceContext
+from gpu.host._compile import _get_nvptx_target
+from internal_utils import DeviceNDBuffer
+from buffer import DimList, NDBuffer
+from utils.index import Index
 
 
-@parameter
-fn no_raise[
-    func: fn (inout Bencher, GemvSpec) raises -> None
-](inout m: Bencher, spec: GemvSpec):
-    try:
-        func(m, spec)
-    except e:
-        abort(e)
-
-
-fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
-    var M = spec.m
-    var N = spec.n
-    var K = spec.k
+fn bench_gemv_tc[
+    type: DType
+](
+    inout m: Bench, fn_name: String, dims: StaticIntTuple[3], ctx: DeviceContext
+) raises:
+    var M = dims[0]
+    var N = dims[1]
+    var K = dims[2]
     var stream = Stream()
-    var a_host = DTypePointer[DType.bfloat16].alloc(M * K)
-    var b_host = DTypePointer[DType.bfloat16].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var rand_min = -1000
-    var rand_max = 1000
+    var a_host = DTypePointer[type].alloc(M * K)
+    var b_host = DTypePointer[type].alloc(K * N)
+    var c_host = DTypePointer[type].alloc(M * N)
+
     randn(a_host, M * K)
     randn(b_host, K * N)
     memset(c_host, 0, M * N)
 
-    var a_device = _malloc[BFloat16](M * K)
-    var b_device = _malloc[BFloat16](K * N)
-    var c_device = _malloc[Float32](M * N)
+    var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
+    var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
+    var c_buf_h = NDBuffer[type, 2](c_host, StaticIntTuple[2](M, N))
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    var a_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, K), ctx=ctx)
+    var b_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](K, N), ctx=ctx)
+    var c_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, N), ctx=ctx)
 
+    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data)
+    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data)
+
+    alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
         gemv_tc_kernel[
-            DType.float32,
-            DType.bfloat16,
-            DType.bfloat16,
+            type,
+            type,
+            type,
         ]
     ]()
 
     @always_inline
     @__copy_capture(M, N, K)
     @parameter
-    fn bench_fn() raises:
-        func_gemv(
-            c_device,
-            a_device,
-            b_device,
-            M,
-            N,
-            K,
-            grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            stream=stream,
-        )
+    fn bench_fn(inout b: Bencher) raises:
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            func_gemv(
+                c_buf.buffer.ptr,
+                a_buf.buffer.ptr,
+                b_buf.buffer.ptr,
+                M,
+                N,
+                K,
+                grid_dim=ceildiv(M, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            )
 
-    bencher.iter[bench_fn]()
-    stream.synchronize()
+        b.iter_custom[kernel_launch](ctx)
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    m.bench_function[bench_fn](
+        BenchId("gemv", input_id=fn_name + "/" + str(type) + "/" + str(dims)),
+    )
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
+    ctx.synchronize()
+
+    _ = a_buf
+    _ = b_buf
+    _ = c_buf
+
+    a_host.free()
+    b_host.free()
+    c_host.free()
 
     _ = func_gemv^
-    _ = stream^
 
 
-fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
-    var M = spec.m
-    var N = spec.n
-    var K = spec.k
+fn bench_gemv_ws[
+    type: DType
+](
+    inout m: Bench, fn_name: String, dims: StaticIntTuple[3], ctx: DeviceContext
+) raises:
+    var M = dims[0]
+    var N = dims[1]
+    var K = dims[2]
     var stream = Stream()
-    var a_host = DTypePointer[DType.bfloat16].alloc(M * K)
-    var b_host = DTypePointer[DType.bfloat16].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var rand_min = -1000
-    var rand_max = 1000
+    var a_host = DTypePointer[type].alloc(M * K)
+    var b_host = DTypePointer[type].alloc(K * N)
+    var c_host = DTypePointer[type].alloc(M * N)
+
     randn(a_host, M * K)
     randn(b_host, K * N)
     memset(c_host, 0, M * N)
 
-    var a_device = _malloc[BFloat16](M * K)
-    var b_device = _malloc[BFloat16](K * N)
-    var c_device = _malloc[Float32](M * N)
+    var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
+    var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
+    var c_buf_h = NDBuffer[type, 2](c_host, StaticIntTuple[2](M, N))
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    var a_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, K), ctx=ctx)
+    var b_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](K, N), ctx=ctx)
+    var c_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, N), ctx=ctx)
 
+    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data)
+    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data)
+
+    alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
         gemv_kernel[
-            DType.float32,
-            DType.bfloat16,
-            DType.bfloat16,
+            type,
+            type,
+            type,
         ]
     ]()
 
     @always_inline
     @__copy_capture(M, N, K)
     @parameter
-    fn bench_fn() raises:
-        func_gemv(
-            c_device,
-            a_device,
-            b_device,
-            M,
-            N,
-            K,
-            grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            stream=stream,
-        )
+    fn bench_fn(inout b: Bencher) raises:
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            func_gemv(
+                c_buf.buffer.ptr,
+                a_buf.buffer.ptr,
+                b_buf.buffer.ptr,
+                M,
+                N,
+                K,
+                grid_dim=ceildiv(M, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            )
 
-    bencher.iter[bench_fn]()
-    stream.synchronize()
+        b.iter_custom[kernel_launch](ctx)
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    m.bench_function[bench_fn](
+        BenchId("gemv", input_id=fn_name + "/" + str(type) + "/" + str(dims)),
+    )
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
+    ctx.synchronize()
+
+    _ = a_buf
+    _ = b_buf
+    _ = c_buf
+
+    a_host.free()
+    b_host.free()
+    c_host.free()
 
     _ = func_gemv^
-    _ = stream^
 
 
-fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
-    var M = spec.m
-    var N = spec.n
-    var K = spec.k
+fn bench_gemv_naive[
+    type: DType
+](
+    inout m: Bench, fn_name: String, dims: StaticIntTuple[3], ctx: DeviceContext
+) raises:
+    var M = dims[0]
+    var N = dims[1]
+    var K = dims[2]
     var stream = Stream()
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var rand_min = -1000
-    var rand_max = 1000
+    var a_host = DTypePointer[type].alloc(M * K)
+    var b_host = DTypePointer[type].alloc(K * N)
+    var c_host = DTypePointer[type].alloc(M * N)
+
     randn(a_host, M * K)
     randn(b_host, K * N)
     memset(c_host, 0, M * N)
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
+    var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
+    var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
+    var c_buf_h = NDBuffer[type, 2](c_host, StaticIntTuple[2](M, N))
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    var a_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, K), ctx=ctx)
+    var b_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](K, N), ctx=ctx)
+    var c_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, N), ctx=ctx)
+
+    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data)
+    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data)
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
         matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            type,
+            type,
+            type,
             BLOCK_DIM,
         ]
     ]()
@@ -187,32 +217,38 @@ fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
     @always_inline
     @__copy_capture(M, N, K)
     @parameter
-    fn bench_fn() raises:
-        func_gemv(
-            c_device,
-            a_device,
-            b_device,
-            M,
-            N,
-            K,
-            grid_dim=(ceildiv(M, WARPS_PER_BLOCK), ceildiv(N, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
-        )
+    fn bench_fn(inout b: Bencher) raises:
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            func_gemv(
+                c_buf.buffer.ptr,
+                a_buf.buffer.ptr,
+                b_buf.buffer.ptr,
+                M,
+                N,
+                K,
+                grid_dim=(ceildiv(M, WARPS_PER_BLOCK), ceildiv(N, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            )
 
-    bencher.iter[bench_fn]()
-    stream.synchronize()
+        b.iter_custom[kernel_launch](ctx)
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    m.bench_function[bench_fn](
+        BenchId("gemv", input_id=fn_name + "/" + str(type) + "/" + str(dims)),
+    )
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
+    ctx.synchronize()
+
+    _ = a_buf
+    _ = b_buf
+    _ = c_buf
+
+    a_host.free()
+    b_host.free()
+    c_host.free()
 
     _ = func_gemv^
-    _ = stream^
 
 
 @value
@@ -230,25 +266,18 @@ struct GemvSpec(Stringable):
 
 
 def main():
-    with Context() as ctx:
+    with DeviceContext() as ctx:
         var m = Bench(BenchConfig(num_repetitions=1))
 
-        fn bench_gemv_impls(spec: GemvSpec) raises:
-            m.bench_with_input[GemvSpec, no_raise[bench_gemv_tc]](
-                BenchId("gemv_tc", str(spec)), spec
-            )
-            m.bench_with_input[GemvSpec, no_raise[bench_gemv_ws]](
-                BenchId("gemv_ws", str(spec)), spec
-            )
-            m.bench_with_input[GemvSpec, no_raise[bench_gemv_naive]](
-                BenchId("gemv_naive", str(spec)), spec
-            )
+        var shape_list = List[StaticIntTuple[3]](
+            StaticIntTuple[3](256, 1, 256),
+        )
 
-        bench_gemv_impls(GemvSpec(m=4096, n=1, k=4096))
-        # TODO: bench_gemv_tc, bench_gemv_ws, and bench_gemv_naive
-        # all do really large allocations and scalar fills of the same buffers
-        # Needs be merged into a common function before uncommenting below
-        # bench_gemv_impls(GemvSpec(m=8192, n=1, k=8192))
-        # bench_gemv_impls(GemvSpec(m=16834, n=1, k=16834))
+        for s in range(len(shape_list)):
+            bench_gemv_naive[DType.bfloat16](
+                m, "gemv_naive", shape_list[s], ctx
+            )
+            bench_gemv_ws[DType.bfloat16](m, "gemv_ws", shape_list[s], ctx)
+            bench_gemv_tc[DType.bfloat16](m, "gemv_tc", shape_list[s], ctx)
 
         m.dump_report()
