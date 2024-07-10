@@ -44,7 +44,7 @@ alias cblas_gemm_type = fn (
     Float32,
     DTypePointer[DType.float32],
     Int32,
-) -> NoneType
+) -> None
 
 # ===----------------------------------------------------------------------===#
 # Constants
