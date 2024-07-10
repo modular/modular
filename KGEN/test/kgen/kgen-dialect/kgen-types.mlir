@@ -47,6 +47,10 @@ kgen.generator @type_printing() {
   kgen.param.declare btype: type = <[struct<()>, {}]>
   // CHECK: type = <[struct<()>, {"method" : () -> () = @method}]>
   kgen.param.declare btype: type = <[struct<()>, {"method" : () -> () = @method}]>
+  // CHECK: type = <[source_struct<"Foo">, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: type = <[source_struct<"Foo">, {"method" : () -> () = @method}]>
+  // CHECK: type = <[source_struct<"Bar"[elemT: dtype, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: type = <[source_struct<"Bar"[elemT: dtype, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>, {"method" : () -> () = @method}]>
   kgen.return
 }
 

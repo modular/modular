@@ -10,6 +10,24 @@
 include "Support/Compiler/Bytecode.td"
 
 //===----------------------------------------------------------------------===//
+// KGENDialect Helper Attributes
+//===----------------------------------------------------------------------===//
+
+def ParamDeclAttr : DialectAttribute<(attr
+  StringAttr:$name,
+  Type:$type
+)>;
+
+def ParamDeclArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"ParamDeclAttr">:$value
+)>;
+
+def SourceStructFieldAttr : DialectAttribute<(attr
+  StringAttr:$name,
+  Type:$type
+)>;
+
+//===----------------------------------------------------------------------===//
 // KGENDialect Types
 //===----------------------------------------------------------------------===//
 
@@ -60,6 +78,14 @@ def StructType : DialectType<(type
   Bool:$isMemoryOnly
 )>;
 
+def SourceStructType : DialectType<(type
+  StringAttr:$name,
+  ParamDeclArrayAttr:$paramDecls,
+  TypedAttrArray:$paramValues,
+  ConcreteAttrArray<"SourceStructFieldAttr">:$fields,
+  Bool:$isMemoryOnly
+)>;
+
 def PackType : DialectType<(type
   TypedAttr:$variadic
 )>;
@@ -97,15 +123,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
 
 def ParameterExprArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$value
-)>;
-
-def ParamDeclAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  Type:$type
-)>;
-
-def ParamDeclArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"ParamDeclAttr">:$value
 )>;
 
 def VariadicAttr : DialectAttribute<(attr
@@ -230,9 +247,10 @@ def PreservedAttr : DialectAttribute<(attr
 
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
-    ParameterExprArrayAttr,
     ParamDeclAttr,
     ParamDeclArrayAttr,
+    SourceStructFieldAttr,
+    ParameterExprArrayAttr,
     VariadicAttr,
     UnknownAttr,
     UnboundAttr,

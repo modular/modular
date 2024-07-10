@@ -569,6 +569,34 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SourceStructFieldAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_SourceStructFieldAttr : KGENAttr<"SourceStructField",
+    "source_struct.field"> {
+  let summary = "A single source struct field declaration.";
+  let description = [{
+    The `#kgen.source_struct.field` attribute represents a field declared in a
+    mojo struct. It keeps track of the name and type of the field.
+
+    Example:
+
+    ```mlir
+    #kgen.source_struct.field<"num" : Int>
+    ```
+  }];
+
+  let parameters = (ins "StringAttr":$name, "Type":$type);
+  let assemblyFormat = " `<` $name `:` $type `>` ";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type), [{
+      return get(name.getContext(), name, type);
+    }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 
