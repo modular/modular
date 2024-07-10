@@ -308,6 +308,19 @@ struct DeviceContext:
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
     ) raises:
+        self._enqueue_function(f, args, grid_dim, block_dim, shared_mem_bytes)
+
+    @parameter
+    fn _enqueue_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        args: VariadicPack[_, _, AnyType, Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        shared_mem_bytes: Int = 0,
+    ) raises:
         var kernel_time: Int
         var stream = self.cuda_stream
 
