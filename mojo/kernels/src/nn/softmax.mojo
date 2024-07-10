@@ -988,7 +988,7 @@ fn _online_softmax_iter_for_mma_output[
 
     @parameter
     for i in range(2 * num_m_mmas):
-        p_frag_rowmax[i] = min_or_neg_inf[type]()
+        p_frag_rowmax[i] = rowmax[i]
         p_frag_rowsum[i] = 0.0
 
     # Online softmax
