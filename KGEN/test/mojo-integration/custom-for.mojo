@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory.unsafe import Pointer
+from memory import UnsafePointer
 
 
 struct my_iter:
@@ -36,14 +36,14 @@ struct my_iter:
 
 
 struct MyList:
-    var start: Pointer[Int]
+    var start: UnsafePointer[Int]
     var size: Int
 
     fn __copyinit__(inout self, existing: Self):
         self.start = existing.start
         self.size = existing.size
 
-    fn __init__(inout self, ptr: Pointer[Int], size: Int):
+    fn __init__(inout self, ptr: UnsafePointer[Int], size: Int):
         self.start = ptr
         self.size = size
 
@@ -68,7 +68,7 @@ fn main():
         count = Int(3).value,
         _type = __mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
-    var my_pointer = Pointer[Int](buffer)
+    var my_pointer = UnsafePointer[Int](buffer)
 
     var my_list = MyList(my_pointer, 3)
     my_list[0] = 25

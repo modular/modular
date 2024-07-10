@@ -14,4 +14,4 @@ fn main():
     vector.append(1)
     vector.append(2)
 
-    var ptr = rebind[Pointer[Int]](vector.data)
+    var ptr = rebind[UnsafePointer[Int]](vector.data)

@@ -8,7 +8,7 @@
 
 # CHECK: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]
 @no_inline
-fn agnostic_user[T: AnyTrivialRegType](b: Pointer[T]):
+fn agnostic_user[T: AnyType](b: UnsafePointer[T]):
     print(bool(b.bitcast[UInt32]()))
 
 
@@ -19,8 +19,8 @@ fn agnostic_user[T: AnyTrivialRegType](b: Pointer[T]):
 fn main():
     var x: Int = 8
     var y: Float64 = 42.5
-    agnostic_user(Pointer[Int].address_of(x))
-    agnostic_user(Pointer[Float64].address_of(y))
+    agnostic_user(UnsafePointer[Int].address_of(x))
+    agnostic_user(UnsafePointer[Float64].address_of(y))
 
 
 # The arg type for `agnostic_user` should be an unspecified type.
