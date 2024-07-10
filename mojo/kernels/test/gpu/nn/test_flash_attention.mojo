@@ -33,7 +33,8 @@ fn is_benchmark() -> Bool:
 
 
 fn test[
-    type: DType,
+    qkv_type: DType,
+    mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
@@ -50,7 +51,7 @@ fn test[
 
     # Query, key, value dimensions.
     alias batch_size = 1
-    alias scale = Float32(0.0125)  # rsqrt[type, 1](Float32(depth))
+    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
@@ -60,12 +61,12 @@ fn test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = DTypePointer[type].alloc(q_size)
-    var k_ptr = DTypePointer[type].alloc(k_size)
-    var v_ptr = DTypePointer[type].alloc(v_size)
-    var mask_ptr = DTypePointer[type].alloc(seq_len * num_keys)
-    var output_ptr = DTypePointer[type].alloc(o_size)
-    var flash_output_ptr = DTypePointer[type].alloc(o_size)
+    var q_ptr = DTypePointer[qkv_type].alloc(q_size)
+    var k_ptr = DTypePointer[qkv_type].alloc(k_size)
+    var v_ptr = DTypePointer[qkv_type].alloc(v_size)
+    var mask_ptr = DTypePointer[mask_type].alloc(seq_len * num_keys)
+    var output_ptr = DTypePointer[qkv_type].alloc(o_size)
+    var flash_output_ptr = DTypePointer[qkv_type].alloc(o_size)
 
     # Q, K, V are randomly initalized.
     if use_index_input:
@@ -87,43 +88,46 @@ fn test[
                     (seq_len - i) * num_keys + num_keys - j
                 )
     else:
-        rand[type](q_ptr, q_size)
-        rand[type](k_ptr, k_size)
-        rand[type](v_ptr, v_size)
-        rand[type](mask_ptr, seq_len * num_keys)
+        rand[qkv_type](q_ptr, q_size)
+        rand[qkv_type](k_ptr, k_size)
+        rand[qkv_type](v_ptr, v_size)
+        rand[mask_type](mask_ptr, seq_len * num_keys)
 
     # Contruct buffers.
-    var q = NDBuffer[type, 4](
+    var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
-    var k = NDBuffer[type, 4](
+    var k = NDBuffer[qkv_type, 4](
         k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
     )
-    var v = NDBuffer[type, 4](
+    var v = NDBuffer[qkv_type, 4](
         v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
     )
-    var mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, num_keys))
-    var output = NDBuffer[type, 4](
+    var mask = NDBuffer[mask_type, 2](mask_ptr, Index(seq_len, num_keys))
+    var output = NDBuffer[qkv_type, 4](
         output_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
 
     @parameter
     if not against_gpu_naive:
-        _naive_attention_with_transpose[type](
-            rebind[NDBuffer[type, 4]](output),
-            rebind[NDBuffer[type, 4]](q),
-            rebind[NDBuffer[type, 4]](k),
-            rebind[NDBuffer[type, 4]](v),
-            rebind[NDBuffer[type, 2]](mask),
+        constrained[
+            qkv_type == mask_type, "expect qkv and mask have same type for CPU."
+        ]()
+        _naive_attention_with_transpose[qkv_type](
+            rebind[NDBuffer[qkv_type, 4]](output),
+            rebind[NDBuffer[qkv_type, 4]](q),
+            rebind[NDBuffer[qkv_type, 4]](k),
+            rebind[NDBuffer[qkv_type, 4]](v),
+            rebind[NDBuffer[qkv_type, 2]](mask),
             scale,
         )
 
     # Device pointers
-    var q_device_ptr = ctx.create_buffer[type](q_size)
-    var k_device_ptr = ctx.create_buffer[type](k_size)
-    var v_device_ptr = ctx.create_buffer[type](v_size)
-    var mask_device_ptr = ctx.create_buffer[type](seq_len * num_keys)
-    var output_device_ptr = ctx.create_buffer[type](o_size)
+    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
+    var mask_device_ptr = ctx.create_buffer[mask_type](seq_len * num_keys)
+    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
@@ -139,11 +143,11 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         flash_attention_impl[
             4,
-            type,
-            type,
-            type,
-            type,
-            type,
+            qkv_type,
+            qkv_type,
+            qkv_type,
+            mask_type,
+            qkv_type,
             depth,
             num_heads,
             group=group,
@@ -182,7 +186,7 @@ fn test[
 
     @parameter
     if against_gpu_naive:
-        var output_ref_device_ptr = ctx.create_buffer[type](o_size)
+        var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
         ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
 
         mha_gpu_naive(
@@ -237,24 +241,27 @@ def main():
     try:
         with DeviceContext() as ctx:
             # fp32 depth = 128, legacy impl. llama2 shape.
-            test[DType.float32, 128, 32](1024, 1024, ctx, is_benchmark())
+            test[DType.float32, DType.float32, 128, 32](
+                1024, 1024, ctx, is_benchmark()
+            )
 
             # fp32 depth = 128, seqlen % 128 != 0, legacy impl
-            test[DType.float32, 128, 1](100, 100, ctx)
-            test[DType.float32, 128, 1](1, 1, ctx)
-            test[DType.float32, 128, 1](1, 7, ctx)
-            test[DType.float32, 128, 1](1, 13, ctx)
-            test[DType.float32, 128, 1](1, 200, ctx)
+            test[DType.float32, DType.float32, 128, 1](100, 100, ctx)
+            test[DType.float32, DType.float32, 128, 1](1, 1, ctx)
+            test[DType.float32, DType.float32, 128, 1](1, 7, ctx)
+            test[DType.float32, DType.float32, 128, 1](1, 13, ctx)
+            test[DType.float32, DType.float32, 128, 1](1, 200, ctx)
 
             # fp32 arbitrary depth and num_heads, baseline impl.
-            test[DType.float32, 127, 2](111, 121, ctx)
-            test[DType.float32, 25, 3](1, 1, ctx)
-            test[DType.float32, 200, 4](1, 20, ctx)
-            test[DType.float32, 97, 5](1, 17, ctx)
-            test[DType.float32, 13, 6](1, 100, ctx)
+            test[DType.float32, DType.float32, 127, 2](111, 121, ctx)
+            test[DType.float32, DType.float32, 25, 3](1, 1, ctx)
+            test[DType.float32, DType.float32, 200, 4](1, 20, ctx)
+            test[DType.float32, DType.float32, 97, 5](1, 17, ctx)
+            test[DType.float32, DType.float32, 13, 6](1, 100, ctx)
 
             # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
             test[
+                DType.float32,
                 DType.float32,
                 128,
                 32,
@@ -265,6 +272,7 @@ def main():
             # bf16 depth == 128, bf16-fp32 mma
             test[
                 DType.bfloat16,
+                DType.bfloat16,
                 128,
                 1,
                 against_gpu_naive=True,
@@ -272,6 +280,7 @@ def main():
             ](128, 128, ctx, use_index_input=True)
 
             test[
+                DType.bfloat16,
                 DType.bfloat16,
                 128,
                 1,
@@ -281,6 +290,7 @@ def main():
 
             test[
                 DType.bfloat16,
+                DType.bfloat16,
                 128,
                 32,
                 against_gpu_naive=True,
@@ -289,6 +299,7 @@ def main():
 
             test[
                 DType.bfloat16,
+                DType.float32,
                 128,
                 24,
                 group=3,
