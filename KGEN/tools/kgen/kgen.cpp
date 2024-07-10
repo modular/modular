@@ -8,7 +8,7 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
-#include "KGEN/ExecutionEngine/JIT/ObjectCompilerLayer.h"
+#include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -28,17 +28,10 @@
 #include "Support/Process.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/Timing.h"
-#include "mlir/Transforms/InliningUtils.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/Process.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Target/TargetMachine.h"
 
 using namespace M;
 using namespace KGEN;
@@ -344,23 +337,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return emitModuleIR(*theModule, clOptions);
   }
 
-  ExecutionEngineOptions eeOptions;
-  if (options.debugLevel != CompilationOptions::kNoDebug)
-    eeOptions.registerDebugPlugins = true;
-  // Detect cross-compilation by checking whether the target CPU is the same as
-  // the host CPU.
-  eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
-
-  auto engineOr = initializeExecutionEngine(
-      *ctx, options, std::move(eeOptions),
-      /*isJIT=*/clOptions.cmd == Command::kExecute, pmOptions);
-
-  if (failed(engineOr))
-    return failure(clOptions.reportError(engineOr.getError()));
-
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-  auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
-  ObjectCompiler &objCompiler = objectCompilerLayer.getRawCompiler();
+  auto compilerOr = ObjectCompiler::create(".mojo_cache", options,
+                                           clOptions.cmd == Command::kExecute,
+                                           *ctx, pmOptions);
+  if (failed(compilerOr))
+    return failure(clOptions.reportError(compilerOr.getError()));
+  ObjectCompiler &objCompiler = **compilerOr;
 
   // Compiles the module through KGEN compiler pipeline.
   // We don't need to try to look anything up.
@@ -442,10 +424,54 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // If there are no exported symbols, there's nothing to codegen. Report this
   // as an error.
-  if (exportedSymbols.empty())
+  if (exportedSymbols.empty()) {
     return failure(
         clOptions.reportError("module does not `@export` any symbols or define "
                               "a `main` function; nothing to codegen"));
+  }
+
+  // If we need to execute, grab the function metadata before the module is
+  // consumed.
+  struct FunctionExecution {
+    StringAttr name;
+    Location loc;
+    FunctionType type;
+    CommandLineFunc clFunc;
+  };
+  SmallVector<FunctionExecution> funcExecs;
+  StringSet<> foundFuncs;
+  if (clOptions.cmd == Command::kExecute) {
+    for (auto fn : theModule->getOps<FuncOp>()) {
+      StringAttr name = fn.getSymNameAttr();
+      // See if we were asked to execute this function.
+      if (std::optional<CommandLineFunc> clFunc =
+              clOptions.shouldExecuteFunc(name)) {
+        funcExecs.push_back(FunctionExecution{name, fn.getLoc(),
+                                              fn.getFunctionType(), *clFunc});
+        foundFuncs.insert(name);
+        if (auto err = clFunc->verifyFuncSignature(funcExecs.back().type)) {
+          mlir::emitError(fn.getLoc(), err.getError());
+          if (!clOptions.ignoreFailures)
+            return failure();
+        }
+      }
+    }
+    // If we didn't find a function the user asked to execute, emit an error.
+    for (const auto &fn : clOptions.funcs) {
+      if (!foundFuncs.count(fn.name)) {
+        return mlir::emitError(theModule->getLoc(),
+                               "could not find func '@" + fn.name + "'");
+      }
+    }
+  }
+
+  // -emit and -execute both require compiled objects.
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(*theModule);
+  if (failed(archiveOr)) {
+    return failure(clOptions.reportError("failed to emit archive: " +
+                                         Twine(archiveOr.getError())));
+  }
+  BufferRef archive = archiveOr.takeValue();
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == Command::kEmit) {
@@ -455,75 +481,52 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .o output file"));
 
-    auto standaloneOr = objCompiler.emitArchive(*theModule);
-    if (failed(standaloneOr))
-      return failure(
-          clOptions.reportError("could not produce standalone asm: " +
-                                Twine(standaloneOr.getError())));
-    outFile->os() << standaloneOr.get()->getBuffer();
+    outFile->os() << archive->getBuffer();
     outFile->keep();
     return mlir::success();
   }
 
+  ExecutionEngineOptions eeOptions;
+  if (options.debugLevel != CompilationOptions::kNoDebug)
+    eeOptions.registerDebugPlugins = true;
+  // Detect cross-compilation by checking whether the target CPU is the same as
+  // the host CPU.
+  eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
+
+  auto engineOr = initializeExecutionEngine(*ctx, options, std::move(eeOptions),
+                                            /*isJIT=*/true, pmOptions);
+  if (failed(engineOr))
+    return failure(clOptions.reportError(engineOr.getError()));
+  ExecutionEngine &engine = **engineOr;
+
   // Helper to execute a func.
-  auto execFunc = [&](FuncOp theFunc, StringAttr name,
+  auto execFunc = [&](const FunctionExecution &func, StringAttr name,
                       const CommandLineFunc &clFunc) -> LogicalResult {
     CompilerTimeTraceScope traceScope("execute-function", name);
     // Trigger compilation so we can pull out the archive.
-    ErrorOr<CompiledFunc> funcOr = engine->lookup(name);
+    ErrorOr<CompiledFunc> funcOr = engine.lookup(name);
     if (failed(funcOr))
       return failure(clOptions.reportError(funcOr.getError()));
 
-    if (auto err = clFunc.verifyFuncSignature(theFunc.getFunctionType())) {
-      mlir::emitError(theFunc.getLoc(), err.getError());
-      return failure(!clOptions.ignoreFailures);
-    }
-
     if (auto err = clFunc.executeAndPrint(*funcOr)) {
-      mlir::emitError(theFunc.getLoc(), err.getError());
+      mlir::emitError(func.loc, err.getError());
       return failure(!clOptions.ignoreFailures);
     }
     return mlir::success();
   };
 
-  // Add theModule to ObjectCompilerLayer for compiling to binary and ORC JIT
-  // management when we need to do some lookups.
-  if (ErrorOrSuccess err = objectCompilerLayer.add("exec", *theModule))
+  // Pass the compiled archive to the execution engine.
+  if (ErrorOrSuccess err =
+          engine.addIfAbsent<StaticArchiveLayer>("exec", std::move(archive)))
     return failure(clOptions.reportError(err.getError()));
 
   // Loop over the functions, executing as necessary.
-  llvm::DenseSet<StringRef> foundFuncs;
-  for (auto fn : theModule->getOps<FuncOp>()) {
-    StringAttr name = fn.getSymNameAttr();
-
-    // If we were asked to handle this func, do so.
-    if (std::optional<CommandLineFunc> clFunc =
-            clOptions.shouldExecuteFunc(name)) {
-      switch (clOptions.cmd) {
-      case Command::kGenLibraryFile:
-      case Command::kElaborate:
-      case Command::kEmitLLVM:
-      case Command::kEmitAssembly:
-      case Command::kEmit:
-      case Command::kEmitHeader:
-        break;
-      case Command::kExecute: {
-        if (failed(execFunc(fn, name, *clFunc)))
-          return failure(
-              clOptions.reportError("failed to execute " + name.getValue()));
-      }
-      }
+  for (const FunctionExecution &func : funcExecs) {
+    if (failed(execFunc(func, func.name, func.clFunc))) {
+      return failure(
+          clOptions.reportError("failed to execute " + func.name.strref()));
     }
-    foundFuncs.insert(name);
   }
-
-  // Validate that the user didn't pass in any funcs we don't have. This would
-  // be super confusing if the user simply gets no response for something that
-  // isn't defined, so put up an actual error.
-  for (const auto &fn : clOptions.funcs)
-    if (!foundFuncs.count(fn.name))
-      return mlir::emitError(theModule->getLoc(),
-                             "could not find func '@" + fn.name + "'");
 
   return mlir::success();
 }
