@@ -409,8 +409,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   ASTType valueType = value.getRValueType();
 
   // Return true if the specified type can be implicitly ignored.
-  // TODO: Should have a better way to say that it is safe to implicitly ignore
-  // a value of a type (e.g. a type decorator)
+  // TODO(MOCO-32):
+  //  Should have a better way to say that it is safe to
+  //  implicitly ignore a value of a type (e.g. a type decorator)
   auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
     if (type.isNoneType() || type.isEqualCanon(shared.getTypeCheckErrorType()))
       return true;
@@ -424,7 +425,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     // object is implicitly returned by 'def's, PythonObject is pervasive in
     // interop.
     StringRef name = declRef.getName().getValue();
-    return name == "object" || name == "PythonObject";
+
+    return name == "object" || name == "PythonObject" || name == "NoneType";
   };
 
   if (isImplicitlyIgnorableType(valueType) ||
