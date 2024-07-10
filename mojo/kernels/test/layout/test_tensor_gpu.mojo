@@ -19,8 +19,6 @@ from gpu.memory import (
 )
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from testing import assert_true
-
-
 from builtin.io import _printf
 
 
@@ -31,9 +29,14 @@ def test_copy_dram_to_sram_async():
     var tensor = ManagedLayoutGPUTensor[DType.float32, tensor_layout]()
     tensor.tensor.linspace()
 
+    var check_state = True
+
     fn copy_to_sram_test_kernel[
         layout: Layout,
-    ](dram_tensor: LayoutTensor[DType.float32, layout]):
+    ](
+        dram_tensor: LayoutTensor[DType.float32, layout],
+        flag: UnsafePointer[Bool],
+    ):
         var dram_tile = dram_tensor.tile[4, 4](0, BlockIdx.x().value)
         var sram_tensor = LayoutTensor[
             DType.float32,
@@ -45,38 +48,24 @@ def test_copy_dram_to_sram_async():
         async_copy_commit_group()
         async_copy_wait_group(0)
 
-        _printf[
-            "Block : %lu [%g %g %g %g ; %g %g %g %g ; %g %g %g %g ; %g %g %g"
-            " %g]\n"
-        ](
-            BlockIdx.x(),
-            sram_tensor[0, 0].cast[DType.float64](),
-            sram_tensor[0, 1].cast[DType.float64](),
-            sram_tensor[0, 2].cast[DType.float64](),
-            sram_tensor[0, 3].cast[DType.float64](),
-            sram_tensor[1, 0].cast[DType.float64](),
-            sram_tensor[1, 1].cast[DType.float64](),
-            sram_tensor[1, 2].cast[DType.float64](),
-            sram_tensor[1, 3].cast[DType.float64](),
-            sram_tensor[2, 0].cast[DType.float64](),
-            sram_tensor[2, 1].cast[DType.float64](),
-            sram_tensor[2, 2].cast[DType.float64](),
-            sram_tensor[2, 3].cast[DType.float64](),
-            sram_tensor[3, 0].cast[DType.float64](),
-            sram_tensor[3, 1].cast[DType.float64](),
-            sram_tensor[3, 2].cast[DType.float64](),
-            sram_tensor[3, 3].cast[DType.float64](),
-        )
+        var col_offset = BlockIdx.x() * 4
+
+        for r in range(4):
+            for c in range(4):
+                if sram_tensor[r, c] != r * 16 + col_offset + c:
+                    flag[] = False
 
     var copy_to_sram_test_launch = Function[
         copy_to_sram_test_kernel[tensor_layout]
     ]()
 
-    # CHECK-DAG: Block : 2 [8 9 10 11 ; 24 25 26 27 ; 40 41 42 43 ; 56 57 58 59]
-    # CHECK-DAG: Block : 3 [12 13 14 15 ; 28 29 30 31 ; 44 45 46 47 ; 60 61 62 63]
-    # CHECK-DAG: Block : 1 [4 5 6 7 ; 20 21 22 23 ; 36 37 38 39 ; 52 53 54 55]
-    # CHECK-DAG: Block : 0 [0 1 2 3 ; 16 17 18 19 ; 32 33 34 35 ; 48 49 50 51]
-    copy_to_sram_test_launch(tensor.tensor, grid_dim=(4), block_dim=(1))
+    copy_to_sram_test_launch(
+        tensor.tensor,
+        Pointer.address_of(check_state),
+        grid_dim=(4),
+        block_dim=(1),
+    )
+    assert_true(check_state, "Inconsistent values in shared memory")
 
 
 # CHECK-LABEL: test_copy_from_async_masked_src
@@ -85,9 +74,8 @@ def test_copy_from_async_masked_src():
     alias tensor_layout = Layout.row_major(31, 32)
     var tensor = ManagedLayoutGPUTensor[DType.int32, tensor_layout]()
     tensor.tensor.linspace()
-    var check_state = _malloc_managed[Bool](1)
 
-    check_state[] = True
+    var check_state = True
 
     fn copy_to_sram_masked_src_test_kernel[
         layout: Layout,
@@ -137,10 +125,12 @@ def test_copy_from_async_masked_src():
     ]()
 
     copy_to_sram_test_launch(
-        tensor.tensor, check_state, grid_dim=(2, 2, 1), block_dim=(64, 1, 1)
+        tensor.tensor,
+        Pointer.address_of(check_state),
+        grid_dim=(2, 2, 1),
+        block_dim=(64, 1, 1),
     )
-    assert_true(check_state[], "Shared memory value mismatches")
-    _free(check_state)
+    assert_true(check_state, "Shared memory value mismatches")
 
 
 def main():
