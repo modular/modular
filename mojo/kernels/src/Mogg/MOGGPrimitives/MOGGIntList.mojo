@@ -7,7 +7,7 @@
 
 
 from buffer.dimlist import DimList, _make_tuple
-
+from memory import UnsafePointer
 from utils.index import StaticIntTuple
 
 
@@ -22,14 +22,14 @@ struct IntList[static_values: DimList = DimList()](Sized):
         Self._safe_len
     ]()
 
-    var data: Pointer[Int]
+    var data: UnsafePointer[Int]
     var stack_alloc_data: StaticIntTuple[Self._safe_len]
     var length: Int
 
     @always_inline
     fn __init__(inout self):
         self.length = Self._length
-        self.data = Pointer[Int]()
+        self.data = UnsafePointer[Int]()
         self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
     # Should not be copy constructable, i.e passed by value, but can be cloned.
@@ -37,7 +37,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
     fn __init__(inout self, other: IntList):
         var num_elements = len(other)
         self.length = Self._length
-        self.data = Pointer[Int]()
+        self.data = UnsafePointer[Int]()
         self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
         @parameter
@@ -55,7 +55,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         else:
             # Worst case we allocate the memory on the heap.
             self.length = num_elements
-            self.data = Pointer[Int].alloc(num_elements)
+            self.data = UnsafePointer[Int].alloc(num_elements)
             for i in range(num_elements):
                 self.data[i] = other[i]
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
@@ -65,7 +65,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         var num_elements = len(elems)
 
         self.length = Self._length
-        self.data = Pointer[Int]()
+        self.data = UnsafePointer[Int]()
         self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
         @parameter
@@ -85,7 +85,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         else:
             # Worst case we allocate the memory on the heap.
             self.length = num_elements
-            self.data = Pointer[Int].alloc(num_elements)
+            self.data = UnsafePointer[Int].alloc(num_elements)
             for i in range(num_elements):
                 self.data[i] = elems[i]
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
@@ -94,7 +94,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
     fn __init__[rank: Int](inout self, shape: StaticIntTuple[rank]):
         constrained[rank == len(static_values)]()
         self.length = rank
-        self.data = Pointer[Int]()
+        self.data = UnsafePointer[Int]()
         self.stack_alloc_data = rebind[StaticIntTuple[Self._safe_len]](shape)
 
     @always_inline
@@ -102,17 +102,17 @@ struct IntList[static_values: DimList = DimList()](Sized):
         self.data = existing.data
         self.stack_alloc_data = existing.stack_alloc_data
         self.length = existing.length
-        existing.data = Pointer[Int]()
+        existing.data = UnsafePointer[Int]()
 
     @always_inline
     fn __copyinit__(inout self, existing: Self):
         self.stack_alloc_data = existing.stack_alloc_data
         self.length = existing.length
-        self.data = Pointer[Int]()
+        self.data = UnsafePointer[Int]()
 
         @parameter
         if not Self.has_static_length():
-            self.data = Pointer[Int].alloc(self.length)
+            self.data = UnsafePointer[Int].alloc(self.length)
             for i in range(self.length):
                 self.data[i] = existing[i]
 
@@ -133,7 +133,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         else:
             # Worst case we allocate the memory on the heap.
             new.length = length
-            new.data = Pointer[Int].alloc(length)
+            new.data = UnsafePointer[Int].alloc(length)
             memset_zero(new.data.address, length)
         return new
 
@@ -233,7 +233,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
         @parameter
         if not Self.has_static_length():
-            x.data = Pointer[Int].alloc(length)
+            x.data = UnsafePointer[Int].alloc(length)
             for i in range(length):
                 x.data[i] = 0
         return x^
@@ -258,5 +258,5 @@ struct IntList[static_values: DimList = DimList()](Sized):
     fn __del__(owned self):
         @parameter
         if not Self.has_static_length():
-            if self.data != Pointer[Int]():
+            if self.data != UnsafePointer[Int]():
                 self.data.free()

@@ -39,8 +39,8 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import GemmShape
-from memory import memset_zero
-from memory.unsafe import DTypePointer, Pointer, bitcast
+from memory import memset_zero, UnsafePointer
+from memory.unsafe import DTypePointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
@@ -184,7 +184,7 @@ fn MOGGExport():
 
 # NOTE the layout must match `CompiledKernelABI::Tensor`
 struct ABI_Tensor:
-    var dims: Pointer[Int]
+    var dims: UnsafePointer[Int]
     var data: UnsafePointer[NoneType]
 
 
@@ -343,7 +343,7 @@ fn extensibility_tensor_to_ndbuffer[
 @always_inline
 fn to_buffer[
     type: DType, rank: Int
-](data: DTypePointer[type], shape: Pointer[Int],) -> NDBuffer[type, rank]:
+](data: DTypePointer[type], shape: UnsafePointer[Int],) -> NDBuffer[type, rank]:
     var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
 
@@ -362,7 +362,7 @@ fn to_buffer[
 
 @mogg_register("to_shape")
 @always_inline
-fn to_shape[rank: Int](shape: Pointer[Int]) -> StaticIntTuple[rank]:
+fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> StaticIntTuple[rank]:
     var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
 
@@ -437,7 +437,7 @@ fn to_buffer_list[
 ) -> InlinedFixedVector[
     NDBuffer[type, rank]
 ]:
-    # Cast input list pointer
+    # Cast input list Unsafepointer
     var abi_list_ptr = raw_list_ptr.bitcast[ABI_List]()
     var elems_ptr = abi_list_ptr[].elements
     var abi_tensors_ptr = elems_ptr.bitcast[ABI_Tensor]()
@@ -530,7 +530,7 @@ fn to_tensor[
     static_strides: DimList = DimList(),
 ](
     data: DTypePointer[type],
-    raw_shape_ptr: Pointer[Int],
+    raw_shape_ptr: UnsafePointer[Int],
     length: Int,
 ) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
     var shape_ptr = raw_shape_ptr
@@ -573,7 +573,7 @@ fn to_extensibility_tensor[
     type: DType, rank: Int
 ](
     data: DTypePointer[type],
-    shape: Pointer[Int],
+    shape: UnsafePointer[Int],
 ) -> ExtensibilityTensor[
     type, rank
 ]:
