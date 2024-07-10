@@ -13,6 +13,7 @@ from extensibility import empty_tensor
 from register import *
 from runtime.llcl import MojoCallContextPtr
 
+from utils import unroll
 from utils.index import StaticIntTuple
 
 # ===----------------------------------------------------------------------===#
