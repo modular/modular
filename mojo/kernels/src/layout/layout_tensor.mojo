@@ -754,10 +754,12 @@ struct LayoutTensor[
         ]()
         alias stride_m = to_int(__slice_layout.stride[0])
         alias stride_n = to_int(__slice_layout.stride[1])
-        var offset = (
-            (d0_slice.start or 0).value() * stride_m
-            + (d1_slice.start or 0).value() * stride_n
-        )
+
+        alias d0_slice_start = d0_slice.start.or_else(0)
+        alias d1_slice_start = d1_slice.start.or_else(0)
+
+        var offset = d0_slice_start * stride_m + d1_slice_start * stride_n
+
         return LayoutTensor[
             dtype,
             __slice_layout,
@@ -794,9 +796,10 @@ struct LayoutTensor[
         alias stride_0 = to_int(__slice_layout.stride[0])
         alias stride_1 = to_int(__slice_layout.stride[1])
 
-        var slice_offset = (d0_slice.start or 0).value() * stride_0 + (
-            d1_slice.start or 0
-        ).value() * stride_1
+        alias d0_slice_start = d0_slice.start.or_else(0)
+        alias d1_slice_start = d1_slice.start.or_else(0)
+
+        var slice_offset = d0_slice_start * stride_0 + d1_slice_start * stride_1
 
         var idx = 0
 
@@ -844,7 +847,9 @@ struct LayoutTensor[
 
         alias stride_0 = to_int(__slice_layout.stride[0])
 
-        var slice_offset = (d0_slice.start or 0).value() * stride_0
+        alias d0_slice_start = d0_slice.start.or_else(0)
+
+        var slice_offset = d0_slice_start * stride_0
 
         var idx = 0
 
