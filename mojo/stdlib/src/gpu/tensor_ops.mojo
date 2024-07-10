@@ -40,8 +40,7 @@ fn tc_reduce[
 
         mma(d_reg, a_reg, b_reg, c_reg)
         b_reg = SIMD[in_type, 2](1)
-        var x_reg = SIMD[in_type, 4]()
-        x_reg[0] = (d_reg[0] + d_reg[1]).cast[in_type]()
+        var x_reg = d_reg.cast[in_type]()
         mma(d_reg, x_reg, b_reg, c_reg)
 
         return d_reg[0]
