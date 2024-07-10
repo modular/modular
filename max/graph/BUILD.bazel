@@ -4,11 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "py_srcs",
-    srcs = glob(["*.py"]) + [
+    srcs = glob(["**/*.py"]) + [
         "//SDK/lib/GraphAPI/python/max/graph/mlir:py_srcs",
     ],
 )
 
+# max.graph.core C extension module.
 modular_pybind_extension(
     name = "max-graph-core",
     srcs = ["//SDK/lib/GraphAPI/python:cpp_bindings_srcs"],
