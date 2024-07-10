@@ -240,7 +240,7 @@ fn vectorize[
 
 @always_inline
 fn _perfect_vectorized_impl[
-    func: fn[width: Int] (Int) capturing -> NoneType,
+    func: fn[width: Int] (Int) capturing -> None,
     /,
     *,
     simd_width: Int,
