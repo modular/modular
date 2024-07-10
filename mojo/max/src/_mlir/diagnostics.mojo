@@ -100,7 +100,7 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
 struct DiagnosticHandlerWithData[
     UserDataType: AnyType,
     handler: fn (Diagnostic, inout UserDataType) -> Bool,
-    delete_user_data: fn (UnsafePointer[UserDataType]) -> NoneType,
+    delete_user_data: fn (UnsafePointer[UserDataType]) -> None,
 ]:
     """Deals with attaching and detaching diagnostic funcions along with user data to an MLIRContext.
 

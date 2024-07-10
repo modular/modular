@@ -95,7 +95,7 @@ struct AnyTensor:
 struct _CMojoValue:
     var _ptr: UnsafePointer[NoneType]
 
-    alias _destroy_func_type = fn (UnsafePointer[NoneType]) -> NoneType
+    alias _destroy_func_type = fn (UnsafePointer[NoneType]) -> None
     var _destroy_func: Self._destroy_func_type
 
     fn __init__(inout self):

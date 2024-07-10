@@ -57,6 +57,17 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = static
         self._name = String()
 
+    # TODO(MSTDL-715):
+    #   This initializer should not be necessary, we should need
+    #   only the initilaizer from a `NoneType`.
+    fn __init__(inout self, unnamed: NoneType._mlir_type):
+        """Create an unnamed dynamic shape element.
+
+        Args:
+            unnamed: None.
+        """
+        self = Self(NoneType(unnamed))
+
     fn __init__(inout self, unnamed: NoneType):
         """Create an unnamed dynamic shape element.
 

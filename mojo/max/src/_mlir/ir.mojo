@@ -68,9 +68,7 @@ struct DialectRegistry:
         _c.IR.mlirDialectHandleInsertDialect(handle.c, self.c)
 
     fn load_modular_dialects(self):
-        MLIR_func["MAXG_loadModularDialects", fn (Self.cType) -> NoneType]()(
-            self.c
-        )
+        MLIR_func["MAXG_loadModularDialects", fn (Self.cType) -> None]()(self.c)
 
 
 @value
@@ -800,7 +798,7 @@ struct Region(CollectionElement):
         return block
 
 
-alias _ToStringCallback = fn (StringRef, UnsafePointer[String]) -> NoneType
+alias _ToStringCallback = fn (StringRef, UnsafePointer[String]) -> None
 
 
 fn _to_string_callback(chunk: StringRef, data: UnsafePointer[NoneType]):
@@ -814,7 +812,7 @@ fn _to_string[
     T: AnyTrivialRegType,
     call: fn (
         T, _c.Support.MlirStringCallback, UnsafePointer[NoneType]
-    ) -> NoneType,
+    ) -> None,
 ](t: T) -> String:
     var string = String()
     call(
@@ -832,7 +830,7 @@ fn _to_string[
     U: AnyTrivialRegType,
     call: fn (
         T, U, _c.Support.MlirStringCallback, UnsafePointer[NoneType]
-    ) -> NoneType,
+    ) -> None,
 ](t: T, u: U) -> String:
     var string = String()
     call(

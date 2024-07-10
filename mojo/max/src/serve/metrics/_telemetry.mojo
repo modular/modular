@@ -297,7 +297,7 @@ struct TelemetryContext:
         self.context = existing.context
         self.lib = existing.lib
 
-    fn flush(self) -> NoneType:
+    fn flush(self) -> None:
         call_dylib_func(
             self.lib, Self.FlushTelemetryContextFnName, self.context
         )

@@ -345,7 +345,7 @@ fn call_dylib_func[
 ):
     """Call function `name` in dylib with no result and four arguments."""
     return lib.get_function[
-        FourArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty]
+        FourArgCallable[NoneType._mlir_type, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty]
     ](name)(arg1, arg2, arg3, arg4)
 
 
@@ -388,7 +388,9 @@ fn call_dylib_func[
 ):
     """Call function `name` in dylib with no result and five arguments."""
     return lib.get_function[
-        FiveArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty]
+        FiveArgCallable[
+            NoneType._mlir_type, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty
+        ]
     ](name)(arg1, arg2, arg3, arg4, arg5)
 
 
@@ -460,7 +462,9 @@ fn call_dylib_func[
 ):
     """Call function `name` in dylib with no result and six arguments."""
     return lib.get_function[
-        SixArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty]
+        SixArgCallable[
+            NoneType._mlir_type, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty, Arg6Ty
+        ]
     ](name)(arg1, arg2, arg3, arg4, arg5, arg6)
 
 
