@@ -150,11 +150,10 @@ int main(int argc, char **argv) {
     }
   };
 
-  if (clOptions.perFunctionSplit) {
-    splitPerFunction(std::move(module), 1, outputLambda, [] {});
-  } else {
+  if (clOptions.perFunctionSplit)
+    splitPerFunction(std::move(module), outputLambda);
+  else
     splitPerExported(std::move(module), outputLambda);
-  }
 
   if (output)
     output->keep();
