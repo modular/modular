@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %bare-mojo %s | FileCheck %s
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

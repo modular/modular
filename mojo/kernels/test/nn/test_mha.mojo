@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %bare-mojo %s
 
 from math import isclose, rsqrt
 from random import rand
