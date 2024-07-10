@@ -139,39 +139,27 @@ fn _top_k[
 
                 @parameter
                 @always_inline
-                fn _val_greater_than[
-                    ty: AnyTrivialRegType
-                ](lhs: ty, rhs: ty) -> Bool:
-                    return indices_to_val(rebind[Int64](lhs)) > indices_to_val(
-                        rebind[Int64](rhs)
-                    )
+                fn _val_greater_than(lhs: Int64, rhs: Int64) -> Bool:
+                    return indices_to_val(lhs) > indices_to_val(rhs)
 
                 if sorted:
-                    _quicksort[Int64, _val_greater_than](
-                        rebind[Pointer[Int64]](idxs.data), len(idxs)
-                    )
+                    sort[DType.int64, _val_greater_than](idxs)
                 else:
-                    _ = partition[Int64, _val_greater_than](
-                        rebind[Pointer[Int64]](idxs.data), k, len(idxs)
+                    _ = partition[DType.int64, _val_greater_than](
+                        idxs.data, k, len(idxs)
                     )
             else:
 
                 @parameter
                 @always_inline
-                fn _val_less_than[
-                    ty: AnyTrivialRegType
-                ](lhs: ty, rhs: ty) -> Bool:
-                    return indices_to_val(rebind[Int64](lhs)) < indices_to_val(
-                        rebind[Int64](rhs)
-                    )
+                fn _val_less_than(lhs: Int64, rhs: Int64) -> Bool:
+                    return indices_to_val(lhs) < indices_to_val(rhs)
 
                 if sorted:
-                    _quicksort[Int64, _val_less_than](
-                        rebind[Pointer[Int64]](idxs.data), len(idxs)
-                    )
+                    sort[DType.int64, _val_less_than](idxs)
                 else:
-                    _ = partition[Int64, _val_less_than](
-                        rebind[Pointer[Int64]](idxs.data), k, len(idxs)
+                    _ = partition[DType.int64, _val_less_than](
+                        idxs.data, k, len(idxs)
                     )
 
             if sorted:
@@ -192,7 +180,7 @@ fn _top_k[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = rebind[Pointer[Int64]](idxs.data + i)
+                        var ptr = idxs.data + i
                         sort[DType.int64](ptr, num_equal)
                     i += num_equal
 
