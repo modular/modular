@@ -9,7 +9,9 @@ Defines the `Model` type that holds a model ready for execution.
 
 from max._utils import call_dylib_func, exchange
 from max._driver import (
+    AnyMemory,
     AnyTensor,
+    AnyMojoValue,
     Device,
     DeviceMemory,
     DeviceTensor,
@@ -308,53 +310,71 @@ struct Model:
         input_map.borrow(name3, EngineNumpyView(input3))
         return self.execute(input_map)
 
-    fn _execute(self, owned *inputs: AnyTensor) raises -> List[AnyTensor]:
+    fn _execute(self, owned *inputs: AnyMemory) raises -> List[AnyTensor]:
         """Execute model with the given inputs.
 
         Arguments:
-            inputs: Input tensors, which may be located on any Device. This
-            API will automatically copy the input tensors to the Device set in
-            the InferenceSession's SessionConfig.
+            inputs: Inputs can either be tensors or mojo objects for opaque
+            types defined in the graph, which may be located on any Device. If
+            inputs are tensors, API will automatically copy the input tensors
+            to the Device set in the InferenceSession's SessionConfig.
         Returns:
             A list of output tensors, which are located on the Device set in the
             InferenceSession's SessionConfig.
         """
         var on_device_inputs = List[AnyTensor]()
-
+        var values_impl = List[AnyMojoValue.c_type]()
         for input in inputs:
-            if input[]._device == self._session._ptr[].device:
-                on_device_inputs.append(input[].take())
+            if input[].is_tensor():
+                var tensor = input[].take_tensor()
+                if tensor._device == self._session._ptr[].device:
+                    on_device_inputs.append(tensor^)
+                else:
+                    var input_dt = (
+                        tensor.to_device_tensor().copy_to(
+                            self._session._ptr[].device
+                        )
+                    )
+                    on_device_inputs.append(input_dt)
             else:
-                var input_dt = (
-                    input[]
-                    .take()
-                    .to_device_tensor()
-                    .copy_to(self._session._ptr[].device)
-                )
-                on_device_inputs.append(input_dt)
+                values_impl.append(input[].take_value().release())
 
         var on_device_inputs_impl = List[UnsafePointer[NoneType]]()
         var inputs_spec = List[TensorSpec]()
         for input in on_device_inputs:
             inputs_spec.append(input[]._spec)
-            on_device_inputs_impl.append(_steal_device_memory_impl_ptr(input[]))
+            on_device_inputs_impl.append(
+                _steal_device_memory_impl_ptr(input[].take())
+            )
 
         alias execute_func_name = "M_executeDeviceTensor"
 
+        # TODO: This should return AnyMemory to support returning
+        # opaque types.
         var output_list = List[AnyTensor]()
         var output_list_address = UnsafePointer.address_of(output_list)
         var status = Status(self._lib)
 
+        # FIXME: This has too many arguments now. Refactor this into something
+        # cleaner.
         var execute_func = self._lib.get_function[
             fn (
                 CRuntimeContext,
                 CModel,
-                UnsafePointer[UnsafePointer[NoneType]],
-                UnsafePointer[TensorSpec],
-                Int,
-                __type_of(Self._add_to_output_list),
-                UnsafePointer[Self],
-                UnsafePointer[NoneType],
+                UnsafePointer[
+                    UnsafePointer[NoneType]
+                ],  # Pointer to input tensors
+                UnsafePointer[TensorSpec],  # Pointer to input specs
+                Int,  # Number of input specs
+                UnsafePointer[
+                    AnyMojoValue.c_type
+                ],  # Pointer to opaque mojo values
+                Int,  # Number of opaque mojo values
+                __type_of(
+                    Self._add_to_output_list
+                ),  # Function pointer to add output
+                UnsafePointer[Self],  # Calling context
+                UnsafePointer[NoneType],  # Pointer to output list
                 CStatus,
             ) -> Int
         ](execute_func_name)
@@ -364,6 +384,8 @@ struct Model:
             on_device_inputs_impl.unsafe_ptr(),
             inputs_spec.unsafe_ptr(),
             len(on_device_inputs_impl),
+            values_impl.unsafe_ptr(),
+            len(values_impl),
             Self._add_to_output_list,
             UnsafePointer.address_of(self),
             output_list_address.bitcast[NoneType](),
@@ -379,6 +401,7 @@ struct Model:
         # Make sure inputs are alive
         _ = on_device_inputs_impl^
         _ = inputs_spec^
+        _ = values_impl^
         return output_list
 
     fn num_model_inputs(self) raises -> Int:

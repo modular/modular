@@ -7,6 +7,7 @@ from .device_memory import DeviceMemory
 from .tensor import Tensor
 from .device import Device
 from max.tensor import TensorSpec
+from max._utils import exchange
 
 
 struct AnyTensor:
@@ -87,3 +88,110 @@ struct AnyTensor:
         _ = DeviceMemory(
             self._device_memory_impl_ptr, self._spec.bytecount(), self._device
         )
+
+
+@value
+@register_passable("trivial")
+struct _CMojoValue:
+    var _ptr: UnsafePointer[NoneType]
+
+    alias _destroy_func_type = fn (UnsafePointer[NoneType]) -> NoneType
+    var _destroy_func: Self._destroy_func_type
+
+    fn __init__(inout self):
+        self._ptr = UnsafePointer[NoneType]()
+        self._destroy_func = Self._destroy_pointee_wrapper[NoneType]
+
+    fn __init__[T: Movable](inout self, ptr: UnsafePointer[T]):
+        self._ptr = ptr.bitcast[NoneType]()
+        self._destroy_func = Self._destroy_pointee_wrapper[T]
+
+    @staticmethod
+    fn _destroy_pointee_wrapper[T: AnyType](ptr: UnsafePointer[NoneType]):
+        ptr.bitcast[T]().destroy_pointee()
+
+    @staticmethod
+    fn _free(ptr: UnsafePointer[NoneType]):
+        external_call["KGEN_CompilerRT_MojoValueFreeBuffer", NoneType](ptr)
+
+    fn destroy(self):
+        if self._ptr:
+            self._destroy_func(self._ptr)
+            self._free(self._ptr)
+
+
+struct AnyMojoValue:
+    """Type erased representation of a mojo object. This is useful for passing
+    opaque type as input for graph executution."""
+
+    alias c_type = _CMojoValue
+
+    var _impl: Self.c_type
+
+    fn __init__(inout self):
+        self._impl = _CMojoValue()
+
+    fn __init__[T: Movable](inout self, owned val: T):
+        var ptr = external_call[
+            "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[T]
+        ](sizeof[T](), alignof[T]())
+        ptr.init_pointee_move(val^)
+        self._impl = _CMojoValue(ptr)
+
+    fn __copyinit__(inout self, existing: Self):
+        constrained[False, "AnyMojoValue is not copyable"]()
+        self._impl = existing._impl
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._impl = existing._impl
+
+    fn take(inout self) -> Self:
+        """Returns the current value and initializes this object to default state.
+        """
+        var tmp = Self()
+        swap(tmp, self)
+        return tmp^
+
+    fn release(owned self) -> Self.c_type:
+        """Release the underlying Mojo Value pointer. Caller is responsible for
+        destroying the object."""
+        var impl = exchange(self._impl, _CMojoValue())
+        return impl
+
+    fn __del__(owned self):
+        self._impl.destroy()
+
+
+struct AnyMemory:
+    """A generic representation which can either be a Driver Tensor or Mojo object.
+    """
+
+    var _value: Variant[AnyTensor, AnyMojoValue]
+
+    fn __init__(inout self, owned device_tensor: DeviceTensor):
+        self._value = AnyTensor(device_tensor^)
+
+    fn __init__[
+        type: DType, rank: Int
+    ](inout self, owned tensor: Tensor[type, rank]) raises:
+        self._value = AnyTensor(tensor^)
+
+    fn __init__(inout self, owned tensor: AnyTensor):
+        self._value = tensor^
+
+    fn __init__(inout self, owned value: AnyMojoValue):
+        self._value = value^
+
+    fn is_tensor(self) -> Bool:
+        """Check whether this contains a tensor."""
+        return self._value.isa[AnyTensor]()
+
+    fn take_tensor(inout self) raises -> AnyTensor:
+        """Take tensor from object. Further access to this object is undefined behavior.
+        """
+        return self._value[AnyTensor].take()
+
+    fn take_value(inout self) -> AnyMojoValue:
+        """Take value from object. Further access to this object is undefined behavior.
+        """
+        return self._value[AnyMojoValue].take()

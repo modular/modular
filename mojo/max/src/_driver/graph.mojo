@@ -70,7 +70,7 @@ struct ExecutableGraph:
         var inputs_spec = List[TensorSpec]()
         for input in inputs:
             inputs_spec.append(input[]._spec)
-            inputs_impl.append(_steal_device_memory_impl_ptr(input[]))
+            inputs_impl.append(_steal_device_memory_impl_ptr(input[].take()))
 
         alias execute_func_name = "M_executeGraph"
 

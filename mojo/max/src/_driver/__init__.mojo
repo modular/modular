@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .anytensor import AnyTensor
+from .anytensor import AnyTensor, AnyMemory, AnyMojoValue
 from .cuda import cuda_device
 from .device import Device, CPUDescriptor, cpu_device
 from .device_memory import DeviceMemory, DeviceTensor

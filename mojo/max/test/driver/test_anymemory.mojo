@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
-from max._driver import AnyTensor, cpu_device, Tensor
-from testing import assert_equal
+from max._driver import AnyTensor, cpu_device, Tensor, AnyMemory, AnyMojoValue
+from testing import assert_equal, assert_true, assert_false
 from max.tensor import TensorSpec
 
 
@@ -55,7 +55,43 @@ def test_implicit_conversion():
     assert_equal(str(_function_that_takes_anytensor(tensor^, dt2^)), str(4))
 
 
+@value
+struct Foo:
+    pass
+
+
+@value
+@register_passable
+struct RegFoo:
+    pass
+
+
+def test_any_memory():
+    dev = cpu_device()
+
+    tensor = Tensor[DType.float32, 2]((2, 2))
+
+    dt2 = dev.allocate(
+        TensorSpec(DType.float32, 2, 2),
+    )
+
+    memory = AnyMemory(dt2^)
+
+    assert_true(memory.is_tensor())
+
+    foo = Foo()
+    foo_memory = AnyMemory(AnyMojoValue(foo^))
+
+    assert_false(foo_memory.is_tensor())
+
+    reg_foo = RegFoo()
+    reg_foo_memory = AnyMemory(AnyMojoValue(reg_foo))
+
+    assert_false(reg_foo_memory.is_tensor())
+
+
 def main():
     test_from_device_memory()
     test_from_tensor()
     test_implicit_conversion()
+    test_any_memory()
