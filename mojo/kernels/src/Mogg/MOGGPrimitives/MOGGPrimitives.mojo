@@ -678,7 +678,10 @@ fn mgp_device_context_create[
             )
         except e:
             abort(e)
-        return external_call["KGEN_CompilerRT_CudaContextSetDevice", NoneType,](
+        return external_call[
+            "KGEN_CompilerRT_CudaContextSetDevice",
+            NoneType._mlir_type,
+        ](
             dev_ctx,
             mgp_device_context_destroy,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
