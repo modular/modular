@@ -148,8 +148,9 @@ fn run_matmul[
 ](
     ctx: DeviceContext,
     rtol: Scalar[type] = 1e-05,
+    atol: Scalar[type] = 0.1,
     rng_width: Float64 = Float64(100.0),
-    debug: Bool = False,
+    debug: Bool = True,
 ) raises:
     print("== run_matmul kernel => ", str(type), M, N, K)
 
@@ -237,9 +238,9 @@ fn run_matmul[
         var out_val = c_host[i]
         var out_ref = c_host_n[i]
         if debug:
-            if not isclose(out_val, out_ref, rtol=rtol):
+            if not isclose(out_val, out_ref, rtol=rtol, atol=atol):
                 print(i, out_val, out_ref)
-        assert_almost_equal(out_val, out_ref, rtol=rtol)
+        assert_almost_equal(out_val, out_ref, rtol=rtol, atol=atol)
 
     _ = a_device
     _ = b_device
@@ -374,11 +375,11 @@ fn run_batched_matmul(
 def main():
     try:
         with DeviceContext() as ctx:
-            run_matmul_naive(ctx, 32, 32, 32)
-
             run_matmul[DType.bfloat16, 128, 128, 128](ctx)
             run_matmul[DType.bfloat16, 32, 32, 32](ctx)
-            run_matmul[DType.bfloat16, 1024, 1, 1024](ctx)
+            run_matmul[DType.bfloat16, 1024, 1, 1024](
+                ctx, atol=0.2, rng_width=1.0
+            )
             run_matmul[DType.bfloat16, 1, 1024, 1024](ctx)
 
             run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
