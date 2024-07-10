@@ -362,6 +362,25 @@ def test_take():
         consume_and_check(tensor[].take())
 
 
+fn mutate_slice_in_fn(inout x: TensorSlice[is_mutable=True]):
+    x[0] = 2
+
+
+def mutate_slice(x: TensorSlice[is_mutable=True]):
+    x[0] = 1
+
+
+def test_slice_mutability():
+    x = Tensor[DType.float32, 1]((1,))
+    x[0] = 0
+    assert_equal(x[0], 0)
+    mutate_slice(x[:])
+    assert_equal(x[0], 1)
+    s = x[:]
+    mutate_slice_in_fn(s)
+    assert_equal(x[0], 2)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -379,3 +398,4 @@ def main():
     test_raw_data()
     test_take()
     test_unsafe_slice_simd()
+    test_slice_mutability()
