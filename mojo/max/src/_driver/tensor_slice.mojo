@@ -55,7 +55,7 @@ struct TensorSlice[
         return rebind[DTypePointer[__type]](self._unsafe_slice._ptr)
 
     @always_inline
-    fn __getitem__(self, *indices: Int) -> ref [lifetime] Scalar[type]:
+    fn __getitem__(self, *indices: Int) -> Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -71,13 +71,25 @@ struct TensorSlice[
             "CPU" in str(self._ref[]._device) or triple_is_nvidia_cuda(),
             "Cannot index into non-CPU Tensor from host",
         )
-        # cannot use UnsafeTensorSlice.__getitem__ because this function returns
-        # a Reference
-        var coords = StaticIntTuple[rank](indices)
-        var offset = self._unsafe_slice._start_offset + _dot_prod(
-            coords, self._unsafe_slice._strides
+        return self._unsafe_slice[indices]
+
+    @always_inline
+    fn __setitem__(self, *indices: Int, val: Scalar[type]):
+        """Sets the value at the specified indices.
+
+        Args:
+          indices: The indices of the value to retrieve.
+          val: The value to store at the specified indices.
+        """
+
+        debug_assert(
+            len(indices) == rank, "mismatch between requested index and rank"
         )
-        return self._unsafe_slice._ptr[offset]
+        debug_assert(
+            "CPU" in str(self._ref[]._device) or triple_is_nvidia_cuda(),
+            "Cannot index into non-CPU Tensor from host",
+        )
+        self._unsafe_slice[indices] = val
 
 
 @value

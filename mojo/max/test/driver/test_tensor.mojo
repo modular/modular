@@ -362,11 +362,11 @@ def test_take():
         consume_and_check(tensor[].take())
 
 
-fn mutate_slice_in_fn(inout x: TensorSlice[is_mutable=True]):
+fn mutate_slice_in_fn(x: TensorSlice):
     x[0] = 2
 
 
-def mutate_slice(x: TensorSlice[is_mutable=True]):
+def mutate_slice(x: TensorSlice):
     x[0] = 1
 
 
