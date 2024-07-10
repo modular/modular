@@ -404,15 +404,15 @@ fn gemv_tc_kernel[
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + lane_id()
-            var val = Scalar[a_type]()
+            var val = Scalar[s_type]()
             if idx < k:
                 val = (
-                    Scalar.load(a, warpId * k + idx)
-                    * Scalar.load(b, idx).cast[a_type]()
+                    Scalar.load(a, warpId * k + idx).cast[s_type]()
+                    * Scalar.load(b, idx).cast[s_type]()
                 )
 
             var out_val = Scalar[s_type]()
-            out_val = tc_reduce[s_type, a_type](val)
+            out_val = tc_reduce[s_type, a_type](val.cast[a_type]())
 
             if lane_id() == 0:
                 accum += out_val
@@ -1138,26 +1138,50 @@ fn _matmul_gpu_dispatch[
                 block_dim=(NUM_THREADS),
             )
         elif n == 1:
-            alias WARPS_PER_BLOCK = 32
-            var gpu_func = ctx.compile_function[
-                gemv_kernel[
-                    c_type,
-                    a_type,
-                    b_type,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            )
+
+            @parameter
+            if a_type == DType.bfloat16:
+                alias WARPS_PER_BLOCK = 32
+                var gpu_func = ctx.compile_function[
+                    gemv_tc_kernel[
+                        c_type,
+                        a_type,
+                        b_type,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                )
+            else:
+                alias WARPS_PER_BLOCK = 32
+                var gpu_func = ctx.compile_function[
+                    gemv_kernel[
+                        c_type,
+                        a_type,
+                        b_type,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                )
         elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
             # k should be a multiple of warps per block
             alias WARPS_PER_BLOCK = 32
