@@ -1435,11 +1435,11 @@ fn copy_dram_to_sram[
         masked=src_mask,
     ],
 ):
-    var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
-    dst_framgents.copy_from(src_framgents)
+    dst_fragments.copy_from(src_fragments)
 
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
@@ -1515,11 +1515,11 @@ fn copy_dram_to_sram_async[
         masked=src_mask,
     ],
 ):
-    var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
-    dst_framgents.copy_from_async(src_framgents)
+    dst_fragments.copy_from_async(src_fragments)
 
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
@@ -1701,8 +1701,8 @@ fn copy_local_to_dram[
         masked=src_mask,
     ],
 ):
-    var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
-    dst_framgents.copy_from(src)
+    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    dst_fragments.copy_from(src)
 
 
 @always_inline
