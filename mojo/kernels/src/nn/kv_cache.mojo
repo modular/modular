@@ -3,29 +3,34 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from buffer import DimList, NDBuffer, Dim
+from collections import OptionalReg
+from math import rsqrt
+from sys.info import _current_target
+from utils import Index
+from utils.numerics import min_finite, isnan
 
-from buffer import DimList, NDBuffer
-from gpu.host import Stream, DeviceContext
+from algorithm.functional import _elementwise_impl
+from gpu.host import Stream, DeviceContext, DeviceBuffer
+from gpu.host._compile import _get_nvptx_target
+from linalg import transpose
 from linalg.matmul_gpu import _matmul_gpu
 from linalg.matmul import matmul
+from nn.flash_attention import flash_attention as cpu_flash_attention
+from nn.mha import flash_attention as gpu_flash_attention
 from register import mogg_register, mogg_register_shape_func
-from utils.numerics import min_finite, isnan
-from nn.flash_attention import flash_attention
-from register import mogg_register
-from buffer import NDBuffer, DimList
-from collections import OptionalReg
-from utils import Index
-from .types import ContiguousKVCache, ContiguousKVCacheCollection, KVCacheLayout
 from runtime.llcl import (
     MojoCallContextPtr,
 )
+
+from .types import ContiguousKVCache, ContiguousKVCacheCollection, KVCacheLayout
 
 
 @mogg_register("kv_cache_length")
 @export
 fn kv_cache_length(
     kv_collection: ContiguousKVCacheCollection[
-        DType.float32, KVCacheLayout.BHSD
+        DType.float32, KVCacheLayout.BSHD
     ],
     output: NDBuffer[DType.int64, 1],
 ):
@@ -41,9 +46,9 @@ fn kv_cache_length(
 fn key_cache_for_layer(
     layer_idx: Int64,
     kv_collection: ContiguousKVCacheCollection[
-        DType.float32, KVCacheLayout.BHSD
+        DType.float32, KVCacheLayout.BSHD
     ],
-) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BSHD]:
     """Retrieves the Key cache for the given layer."""
     return kv_collection.get_key_cache(int(layer_idx))
 
@@ -53,9 +58,9 @@ fn key_cache_for_layer(
 fn value_cache_for_layer(
     layer_idx: Int64,
     kv_collection: ContiguousKVCacheCollection[
-        DType.float32, KVCacheLayout.BHSD
+        DType.float32, KVCacheLayout.BSHD
     ],
-) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BSHD]:
     """Retrieves the Value cache for the given layer."""
     return kv_collection.get_value_cache(int(layer_idx))
 
@@ -63,12 +68,15 @@ fn value_cache_for_layer(
 @mogg_register("matmul_kv_cache")
 @export
 fn matmul_kv_cache[
-    target: StringLiteral = "cpu"
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[DType.float32, 3],
-    weight: NDBuffer[DType.float32, 2],
-    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
+    hidden_state: NDBuffer[DType.float32, 3, hidden_state_shape],
+    weight: NDBuffer[DType.float32, 2, weight_shape],
+    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    ctx: MojoCallContextPtr,
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BSHD]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -76,41 +84,37 @@ fn matmul_kv_cache[
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         cache: The historical ContiguousKVCache, with logical shape:
             (batch_size, num_kv_heads, max_seq_len, head_size).
+        ctx: The call context pointer, passed by the graph compiler.
     """
-    return _matmul_kv_cache[target=target](hidden_state, weight, cache)
+    return _matmul_kv_cache[hidden_state_shape, weight_shape, target=target](
+        hidden_state, weight, cache, ctx
+    )
 
 
-@mogg_register("matmul_kv_cache_with_rope")
+@mogg_register("rope_kv_cache")
 @export
-fn matmul_kv_cache_with_rope[
-    target: StringLiteral = "cpu"
+fn rope_kv_cache[
+    freqs_shape: DimList, target: StringLiteral = "cpu"
 ](
-    hidden_state: NDBuffer[DType.float32, 3],
-    weight: NDBuffer[DType.float32, 2],
-    freqs: NDBuffer[DType.float32, 2],
-    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
-    """Performs a matmul, writing the output w/ rope embeddings into a
-    mutable ContiguousKVCache object.
-    Args:
-        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        freqs: RoPE embeddings with shape (seq_len, head_size).
-        cache: The historical ContiguousKVCache, with logical shape:
-            (batch_size, num_kv_heads, max_seq_len, head_size).
-    """
+    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    freqs: NDBuffer[DType.float32, 2, freqs_shape],
+    ctx: MojoCallContextPtr,
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BSHD]:
+    var valid_len = int(cache.get_valid_lengths()[0])
 
     @always_inline
     @parameter
-    @__copy_capture(freqs)
-    fn rope_fn[
-        type: DType, width: Int
-    ](idx: StaticIntTuple[4], val: SIMD[type, width]) -> SIMD[type, width]:
+    @__copy_capture(freqs, valid_len)
+    fn rope_fn[width: Int, rank: Int](idx: StaticIntTuple[rank]):
         @parameter
         if width == 1:
             print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
-            return val
         else:
+            var bs = idx[0]
+            var head_idx = idx[1]
+            var t_cache_idx = idx[2] + valid_len
+            var hd_idx = idx[3]
+            var val = cache.load[width=width](bs, head_idx, t_cache_idx, hd_idx)
             var val_cast = rebind[SIMD[DType.float32, width]](val)
 
             var x_c = val_cast.deinterleave()
@@ -127,12 +131,16 @@ fn matmul_kv_cache_with_rope[
             var r_re = (x_re * f_re) - (x_im * f_im)
             var r_im = (x_re * f_im) + (x_im * f_re)
 
-            var r_c = r_re.interleave(r_im)
-            return rebind[SIMD[type, width]](r_c)
+            var r_c = rebind[SIMD[DType.float32, width]](r_re.interleave(r_im))
+            cache.store[width=width](bs, head_idx, t_cache_idx, hd_idx, r_c)
 
-    return _matmul_kv_cache[target=target, elemwise_fn=rope_fn](
-        hidden_state, weight, cache
+    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
+    alias simd_width = simdwidthof[DType.float32, target=compile_target]()
+    var launch_shape = StaticIntTuple[4](
+        cache.batch_size, cache.num_heads, freqs.dim[0](), freqs.dim[1]()
     )
+    _elementwise_impl[rope_fn, simd_width, 4, target=target](launch_shape, ctx)
+    return cache
 
 
 alias elementwise_fn_type = fn[type: DType, width: Int] (
@@ -142,21 +150,22 @@ alias elementwise_fn_type = fn[type: DType, width: Int] (
 
 @always_inline
 fn _matmul_kv_cache[
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
     *,
     target: StringLiteral = "cpu",
-    elemwise_fn: OptionalReg[elementwise_fn_type] = None,
 ](
-    hidden_state: NDBuffer[DType.float32, 3],
-    weight: NDBuffer[DType.float32, 2],
-    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
+    hidden_state: NDBuffer[DType.float32, 3, hidden_state_shape],
+    weight: NDBuffer[DType.float32, 2, weight_shape],
+    cache: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
     context: MojoCallContextPtr = MojoCallContextPtr(),
-) -> ContiguousKVCache[DType.float32, KVCacheLayout.BHSD]:
+) -> ContiguousKVCache[DType.float32, KVCacheLayout.BSHD]:
     """Helper for performing matmul with custom ContiguousKVCache types.
 
     Parameters:
+        hidden_state_shape: The static shapes for the hidden_state tensor
+        weight_shape: The static shapes for the weight tensor
         target: StringLiteral identifying the device target (cpu vs cuda)
-        elemwise_fn: An optional functor to execute before writing output to
-            cache.
 
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size)
@@ -171,8 +180,10 @@ fn _matmul_kv_cache[
     var N = weight.dim[1]()
     var K = weight.dim[0]()
 
+    var valid_len = int(cache.get_valid_lengths()[0])
+
     @parameter
-    @__copy_capture(cache, SEQ_LEN)
+    @__copy_capture(cache, SEQ_LEN, valid_len)
     fn write_to_cache[
         type_: DType, width: Int
     ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
@@ -183,32 +194,30 @@ fn _matmul_kv_cache[
         var h_idx = head_and_dim[0]
         var hd_idx = head_and_dim[1]
 
-        var result = val
-
-        @parameter
-        if elemwise_fn:
-            alias func = elemwise_fn.value()
-            result = func(
-                StaticIntTuple[4](b_idx, h_idx, t_idx, hd_idx), result
-            )
-
-        var cache_t_idx = t_idx + int(cache.get_valid_lengths()[b_idx])
+        var cache_t_idx = t_idx + valid_len
         cache.store[width](
             b_idx,
             h_idx,
             cache_t_idx,
             hd_idx,
-            rebind[SIMD[DType.float32, width]](result),
+            rebind[SIMD[DType.float32, width]](val),
         )
 
-    var hidden_state_2d = NDBuffer[DType.float32, 2](
+    var hidden_state_2d = NDBuffer[
+        DType.float32, 2, DimList(Dim(), hidden_state.shape.get[2]())
+    ](
         hidden_state.data,
         StaticIntTuple[2](BS * SEQ_LEN, K),
     )
 
-    # TODO figure out how to avoid this malloc.
-    var c_nd = NDBuffer[DType.float32, 2](
-        DTypePointer[DType.float32].alloc(BS * SEQ_LEN * N),
+    var c_ptr = DTypePointer[DType.float32].alloc(
+        BS * SEQ_LEN * N
+    ) if target == "cpu" else DTypePointer[DType.float32]()
+
+    var c_nd = NDBuffer[
+        DType.float32, 2, DimList(Dim(), weight.shape.get[1]())
+    ](
+        c_ptr,
         StaticIntTuple[2](BS * SEQ_LEN, N),
     )
     matmul[
@@ -221,7 +230,7 @@ fn _matmul_kv_cache[
         transpose_b=False,
         elementwise_lambda_fn=write_to_cache,
         target=target,
-    ](c_nd, hidden_state_2d, weight)
+    ](c_nd, hidden_state_2d, weight, ctx=context)
     c_nd.data.free()
     return cache
 
@@ -229,13 +238,16 @@ fn _matmul_kv_cache[
 @mogg_register_shape_func("flash_attention_kv_cache")
 @export
 fn flash_attention_kv_cache_shape_func[
-    single_thread_blocking_override: Bool
+    q_shape: DimList,
+    mask_shape: DimList,
+    scale_shape: DimList,
+    single_thread_blocking_override: Bool,
 ](
-    q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    mask: NDBuffer[DType.float32, 2],
-    scale: NDBuffer[DType.float32, 1],
+    q: NDBuffer[DType.float32, 4, q_shape],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    mask: NDBuffer[DType.float32, 2, mask_shape],
+    scale: NDBuffer[DType.float32, 1, scale_shape],
 ) -> StaticIntTuple[4]:
     return q.dynamic_shape
 
@@ -243,15 +255,19 @@ fn flash_attention_kv_cache_shape_func[
 @mogg_register("flash_attention_kv_cache")
 @export
 fn flash_attention_kv_cache[
+    q_shape: DimList,
+    mask_shape: DimList,
+    scale_shape: DimList,
+    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    mask: NDBuffer[DType.float32, 2],
-    scale: NDBuffer[DType.float32, 1],
-    output: NDBuffer[DType.float32, 4],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    q: NDBuffer[DType.float32, 4, q_shape],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    mask: NDBuffer[DType.float32, 2, mask_shape],
+    scale: NDBuffer[DType.float32, 1, scale_shape],
+    output: NDBuffer[DType.float32, 4, output_shape],
+    context: MojoCallContextPtr,
 ):
     """Performs flash attention using k and v caches from ContiguousKVCache custom types.
 
@@ -268,22 +284,33 @@ fn flash_attention_kv_cache[
 
     @parameter
     if target == "cpu":
-        return _flash_attention_kv_cache_cpu(
-            q, k, v, mask, scale, output, context
-        )
+        return _flash_attention_kv_cache_cpu[
+            q_shape,
+            mask_shape,
+            scale_shape,
+            output_shape,
+        ](q, k, v, mask, scale, output, context)
     else:
-        return _flash_attention_kv_cache_gpu(
-            q, k, v, mask, scale, output, context
-        )
+        return _flash_attention_kv_cache_gpu[
+            q_shape,
+            mask_shape,
+            scale_shape,
+            output_shape,
+        ](q, k, v, mask, scale, output, context)
 
 
-fn _flash_attention_kv_cache_cpu(
-    q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    mask: NDBuffer[DType.float32, 2],
-    scale: NDBuffer[DType.float32, 1],
-    output: NDBuffer[DType.float32, 4],
+fn _flash_attention_kv_cache_cpu[
+    q_shape: DimList,
+    mask_shape: DimList,
+    scale_shape: DimList,
+    output_shape: DimList,
+](
+    q: NDBuffer[DType.float32, 4, q_shape],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    mask: NDBuffer[DType.float32, 2, mask_shape],
+    scale: NDBuffer[DType.float32, 1, scale_shape],
+    output: NDBuffer[DType.float32, 4, output_shape],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     @parameter
@@ -327,7 +354,7 @@ fn _flash_attention_kv_cache_cpu(
     var fa_k_shape = StaticIntTuple[4](batch_size, num_heads, seq_len, depth)
     var fa_v_shape = StaticIntTuple[4](batch_size, num_heads, seq_len, depth)
 
-    flash_attention[
+    cpu_flash_attention[
         DType.float32,
         4,
         input_k_fn,
@@ -343,13 +370,56 @@ fn _flash_attention_kv_cache_cpu(
     )
 
 
-fn _flash_attention_kv_cache_gpu(
-    q: NDBuffer[DType.float32, 4],
-    k: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    v: ContiguousKVCache[DType.float32, KVCacheLayout.BHSD],
-    mask: NDBuffer[DType.float32, 2],
-    scale: NDBuffer[DType.float32, 1],
-    output: NDBuffer[DType.float32, 4],
+fn _flash_attention_kv_cache_gpu[
+    q_shape: DimList,
+    mask_shape: DimList,
+    scale_shape: DimList,
+    output_shape: DimList,
+](
+    q: NDBuffer[DType.float32, 4, q_shape],
+    k: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    v: ContiguousKVCache[DType.float32, KVCacheLayout.BSHD],
+    mask: NDBuffer[DType.float32, 2, mask_shape],
+    scale: NDBuffer[DType.float32, 1, scale_shape],
+    output: NDBuffer[DType.float32, 4, output_shape],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
-    pass
+    # TODO fix scale, right now it's passed in as GPU buffer but it's needed as a scalar
+    # GRA-750
+    var k_nd = NDBuffer[DType.float32, 4, DimList(Dim(), Dim(), 4, 16)](
+        k.block.data, q.dynamic_shape
+    )
+    var v_nd = NDBuffer[DType.float32, 4, DimList(Dim(), Dim(), 4, 16)](
+        v.block.data, q.dynamic_shape
+    )
+    var mask_nd = NDBuffer[DType.float32, 3, DimList(Dim(), Dim(), Dim()),](
+        mask.data,
+        StaticIntTuple[3](q.dim[0](), mask.dim[0](), mask.dim[1]()),
+    )
+    try:
+        gpu_flash_attention[
+            4,
+            q.shape,
+            k_nd.shape,
+            v_nd.shape,
+            mask_nd.shape,
+            output.shape,
+            q.type,
+            k_nd.type,
+            v_nd.type,
+            mask_nd.type,
+            output.type,
+            add_attn_mask=True,
+            target="cuda",
+        ](
+            output,
+            q,
+            k_nd,
+            v_nd,
+            mask_nd,
+            # TODO take scale from argument GRA-750
+            rsqrt(Float32(k.head_size)),
+            context,
+        )
+    except e:
+        print("Error in GPU Flash Attention:", e)
