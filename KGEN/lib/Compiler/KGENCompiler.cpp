@@ -447,7 +447,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
-    mlir::MLIRContext &context, const CompilationOptions &compilationOptions,
+    MLIRContext &context, const CompilationOptions &compilationOptions,
     ExecutionEngineOptions executionEngineOptions, bool isJIT,
     PassManagerConfigOptions pmOptions) {
 

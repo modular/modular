@@ -73,11 +73,10 @@ private:
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles
 /// initializing the target machine, the cache backends, and the execution
 /// engine itself. On success, the execution engine is returned.
-ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
-initializeExecutionEngine(mlir::MLIRContext &context,
-                          const KGEN::CompilationOptions &compilationOptions,
-                          KGEN::ExecutionEngineOptions executionEngineOptions,
-                          bool isJIT, PassManagerConfigOptions pmOptions);
+ErrorOr<std::unique_ptr<ExecutionEngine>> initializeExecutionEngine(
+    MLIRContext &context, const KGEN::CompilationOptions &compilationOptions,
+    ExecutionEngineOptions executionEngineOptions, bool isJIT,
+    PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that

@@ -65,14 +65,10 @@ private:
   struct TransitiveDeps {
     /// The transitive dependencies.
     llvm::SetVector<const llvm::GlobalValue *> deps;
-    /// Whether this global value is included in the transitive deps of another.
-    bool included = false;
     /// True if computation is complete.
     bool complete = false;
     /// The assigned module index.
     std::optional<unsigned> mutIdx;
-    /// These are the mutable globals transitively used.
-    SmallVector<const llvm::GlobalVariable *> mutGlobals;
   };
 
   /// Collect the immediate global value dependencies of `value`. `orig` is the
@@ -90,10 +86,11 @@ private:
   /// The transitive dependencies of each global value.
   llvm::MapVector<const llvm::GlobalValue *, TransitiveDeps> transitiveDeps;
 
-  /// Users of mutable global variables.
-  llvm::MapVector<const llvm::GlobalVariable *,
-                  llvm::SetVector<TransitiveDeps *>>
-      mutGlobalUsers;
+  /// Users of split "anchors". These are global values where we don't want
+  /// their users to be split into different modules because it will cause the
+  /// symbol to be duplicated.
+  llvm::MapVector<const llvm::GlobalValue *, llvm::SetVector<TransitiveDeps *>>
+      splitAnchorUsers;
 };
 } // namespace
 
@@ -137,12 +134,6 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   SmallVector<const llvm::GlobalValue *> worklist;
   for (auto &[value, deps] : transitiveDeps) {
     worklist.clear();
-
-    // If this value got picked up in the transitive dependency set of another
-    // value, skip it.
-    if (deps.included)
-      continue;
-
     worklist.push_back(value);
     while (!worklist.empty()) {
       const llvm::GlobalValue *it = worklist.pop_back_val();
@@ -152,33 +143,25 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
         continue;
       }
 
-      // If this is another value to be split, we can include it as part of our
-      // current split.
+      // If this value depends on another value that is going to be split, we
+      // don't want to duplicate the symbol. Keep all the users together.
       if (it != value) {
         if (auto depIt = transitiveDeps.find(it);
             depIt != transitiveDeps.end()) {
-          TransitiveDeps &other = depIt->second;
-          // Mark it as included so it doesn't create a split.
-          other.included = true;
-          // If we finished computing this set of transitive deps, just copy
-          // them over and don't recurse.
-          if (other.complete) {
-            deps.deps.insert(other.deps.begin(), other.deps.end());
-            llvm::append_range(deps.mutGlobals, other.mutGlobals);
-            for (const llvm::GlobalVariable *mutGlobal : other.mutGlobals)
-              mutGlobalUsers[mutGlobal].insert(&deps);
-            continue;
-          }
+          auto &users = splitAnchorUsers[it];
+          users.insert(&deps);
+          // Make sure to include the other value in its own user list.
+          users.insert(&depIt->second);
+          // We don't have to recurse since the subgraph will get processed.
+          continue;
         }
       }
 
       // If this value depends on a mutable global, keep track of it. We have to
       // put all users of a mutable global in the same module.
       if (auto *global = dyn_cast<llvm::GlobalVariable>(it);
-          global && !global->isConstant()) {
-        mutGlobalUsers[global].insert(&deps);
-        deps.mutGlobals.push_back(global);
-      }
+          global && !global->isConstant())
+        splitAnchorUsers[global].insert(&deps);
 
       // Recursive on dependencies.
       const ValueInfo &info = infos[it];
@@ -193,9 +176,9 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // A* and B* have an empty intersection, all values in A* will be assigned 0
   // and all values in B* will be assigned 1. If global C has user set C* that
   // overlaps both A* and B*, it will overwrite both to 2.
-  SmallVector<SmallVector<TransitiveDeps *>> bucketing(mutGlobalUsers.size());
+  SmallVector<SmallVector<TransitiveDeps *>> bucketing(splitAnchorUsers.size());
   for (auto [curMutIdx, bucket, users] :
-       llvm::enumerate(bucketing, llvm::make_second_range(mutGlobalUsers))) {
+       llvm::enumerate(bucketing, llvm::make_second_range(splitAnchorUsers))) {
     for (TransitiveDeps *deps : users) {
       if (deps->mutIdx && *deps->mutIdx != curMutIdx) {
         auto &otherBucket = bucketing[*deps->mutIdx];
@@ -234,9 +217,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   for (auto &[root, deps] : transitiveDeps) {
     // Skip values included in another transitive dependency set and values
     // included in mutable global sets.
-    if (deps.included || deps.mutIdx)
-      continue;
-    setsToProcess.push_back(&deps.deps);
+    if (!deps.mutIdx)
+      setsToProcess.push_back(&deps.deps);
   }
 
   // Sort the sets by to schedule the larger modules first.

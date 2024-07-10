@@ -10,7 +10,7 @@
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
-#include "KGEN/ExecutionEngine/JIT/ObjectCompilerLayer.h"
+#include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
@@ -198,22 +198,11 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 // Mojo program execution
 //===----------------------------------------------------------------------===//
 
-/// Returns whether the given module exports a `main` function.
-static bool moduleExportsMain(ModuleOp theModule, const SymbolTable &symtab) {
-  for (auto funcOp : theModule.getOps<ExportInterface>())
-    if (funcOp.getLinkageNameAttr() == "main")
-      return true;
-  return false;
-}
-
 /// Executes the given module's `main` function, or returns an error indicating
 /// why it could not be executed.
-static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
-                                  ExecutionEngine *engine,
+static ErrorOrSuccess executeMain(ExecutionEngine &engine,
                                   LLCL::Runtime &runtime,
                                   ArrayRef<const char *> arguments) {
-  if (!moduleExportsMain(moduleOp, symtab))
-    return Error("could not find a 'main' function to execute");
   [[maybe_unused]] auto timeScope =
       runtime.context->get<M::Telemetry::TelemetryContext>()
           ->createUInt64Timer<std::chrono::milliseconds>(
@@ -226,7 +215,7 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
       return Error("execution exited with a non-zero result: " + Twine(result));
     return M::success();
   };
-  return engine->runProgram("exec", "main", runFn);
+  return engine.runProgram("exec", "main", runFn);
 }
 
 /// Inserts the `M::Context` in the KGEN globals table so that Mojo code can
@@ -272,55 +261,55 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          TargetInfoAttr target,
                          ArrayRef<const char *> arguments,
                          M::Context &maxContext) {
+  // Compile the Mojo module to the end of the KGEN pipeline.
   KGENCompiler compiler(context, options);
-
-  ExecutionEngineOptions eeOptions;
-  if (options.debugLevel != CompilationOptions::kNoDebug)
-    eeOptions.registerDebugPlugins = true;
-
-  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(context, options, std::move(eeOptions),
-                                /*isJIT=*/true, PassManagerConfigOptions());
-
-  if (failed(execEngineOr))
-    return state.reportError(execEngineOr.getError());
-  std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
-
-  // Insert the `M::Context` into the KGENCompilerRT globals.
-  // The MAX engine uses this mechanism to share globals with Mojo code.
-  if (auto errOr = insertMaxContextInGlobals(*engine, maxContext))
-    return state.reportError(errOr.getError());
-
-  auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
-
-  // Compile the moduleOp down to the post-elaboration phase,
-  // because before that phase we don't have flat symbols.
   if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, target))
     return state.reportError(err.getError());
 
-  if (ErrorOrSuccess err = objectCompilerLayer.add("exec", moduleOp))
-    return state.reportError(err.getError());
-
-  // Generate a symbol table and an export map for the module post-compile.
+  // Validate that `main` was defined in the module.
   SymbolTable symtab(moduleOp);
   ExportMap exports = getExportedSymbols(moduleOp);
-  if (exports.empty())
+  if (exports.find(StringAttr::get(&context, "main")) == exports.end())
     return state.reportError("module does not define a `main` function");
 
-  // Trigger compilation so we can pull out the archive.
-  // Start with `main` because mojo-run should always have `main`, and this
-  // sets up ORC JIT first query to be pending on the root of the function call
-  // stack so that materialization ordering is correct.
-  if (exports.find(StringAttr::get(&context, Twine("main"))) == exports.end())
-    return state.reportError("module does not define a `main` function");
-  ErrorOr<CompiledFunc> funcOr = engine->lookup("main");
+  // Create the object compiler and compile the module to an archive.
+  auto objCompilerOr =
+      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, context);
+  if (failed(objCompilerOr))
+    return state.reportError(objCompilerOr.getError());
+  ObjectCompiler &objCompiler = **objCompilerOr;
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(moduleOp);
+  if (failed(archiveOr))
+    return state.reportError(archiveOr.getError());
+
+  // Setup the execution engine.
+  ExecutionEngineOptions eeOptions;
+  if (options.debugLevel != CompilationOptions::kNoDebug)
+    eeOptions.registerDebugPlugins = true;
+  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
+      initializeExecutionEngine(context, options, std::move(eeOptions),
+                                /*isJIT=*/true);
+  if (failed(execEngineOr))
+    return state.reportError(execEngineOr.getError());
+  ExecutionEngine &engine = **execEngineOr;
+
+  // Insert the `M::Context` into the KGENCompilerRT globals.
+  // The MAX engine uses this mechanism to share globals with Mojo code.
+  if (auto errOr = insertMaxContextInGlobals(engine, maxContext))
+    return state.reportError(errOr.getError());
+
+  // Load the compiled archive into the execution engine.
+  if (ErrorOrSuccess err =
+          engine.addIfAbsent<StaticArchiveLayer>("exec", archiveOr.takeValue()))
+    return state.reportError(err.getError());
+
+  ErrorOr<CompiledFunc> funcOr = engine.lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
-  ErrorOrSuccess result =
-      executeMain(moduleOp, symtab, engine.get(), runtime, arguments);
+  ErrorOrSuccess result = executeMain(engine, runtime, arguments);
   if (failed(result))
     return state.reportError(result.getError());
 
