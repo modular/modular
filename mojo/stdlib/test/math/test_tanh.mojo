@@ -14,8 +14,6 @@ from internal_utils import compare
 from test_utils import libm_call
 from testing import assert_almost_equal
 
-alias alignment = 64
-
 
 fn tanh_libm[
     type: DType, simd_width: Int
@@ -23,9 +21,7 @@ fn tanh_libm[
     return libm_call[type, simd_width, "tanhf", "tanh"](arg)
 
 
-# CHECK-LABEL: test_tanh_tfvals_fp32
-fn test_tanh_tfvals_fp32() raises:
-    print("== test_tanh_tfvals_fp32")
+def test_tanh_tfvals_fp32():
     alias dtype = DType.float32
 
     # The following input values for x are taken from
@@ -63,9 +59,7 @@ fn test_tanh_tfvals_fp32() raises:
     assert_almost_equal(err, abs_rel_err)
 
 
-# CHECK-LABEL: test_tanh_tfvals_fp64
-fn test_tanh_tfvals_fp64() raises:
-    print("== test_tanh_tfvals_fp64")
+def test_tanh_tfvals_fp64():
     alias dtype = DType.float64
 
     # The following input values for x are taken from
@@ -99,8 +93,6 @@ fn test_tanh_tfvals_fp64() raises:
         ),
     )
 
-    # CHECK: AbsErr-Min/Max 7.2062200651146213e-09 1.2149700800989649e-08
-    # CHECK: RelErr-Min/Max 8.3577847290501252e-09 1.4283624095774667e-08
     # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
     var abs_rel_err = SIMD[dtype, 4](
         7.2062200651146213e-09,
@@ -115,10 +107,7 @@ fn test_tanh_tfvals_fp64() raises:
     assert_almost_equal(err, abs_rel_err)
 
 
-# CHECK-LABEL: test_tanh_libm
-# CHECK: For N=8192 randomly generated vals; mean=0.0, var=9.0
-fn test_tanh_libm[N: Int = 8192]() raises:
-    print("== test_tanh_libm")
+def test_tanh_libm[N: Int = 8192]():
     seed(0)
     alias test_dtype = DType.float32
     var x32 = DTypePointer[test_dtype].alloc(N)
@@ -138,10 +127,6 @@ fn test_tanh_libm[N: Int = 8192]() raises:
     var libm_out = DTypePointer[test_dtype].alloc(N)
     for i in range(N):
         libm_out[i] = tanh_libm(x32[i])
-
-    # CHECK: Compare Mojo vs. LibM
-    # CHECK: AbsErr-Min/Max 0.0 2.384185791015625e-07
-    # CHECK: RelErr-Min/Max 0.0 2.5438197326366208e-07
 
     # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
     var abs_rel_err = SIMD[test_dtype, 4](
