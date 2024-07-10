@@ -8,15 +8,12 @@
 #define KGEN_LIB_MOJO_LSP_LSPSERVER_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "mlir/Support/LogicalResult.h"
 #include <memory>
 
-namespace mlir {
-struct LogicalResult;
-
-namespace lsp {
+namespace mlir::lsp {
 class JSONTransport;
-} // namespace lsp
-} // namespace mlir
+} // namespace mlir::lsp
 
 namespace M::LLCL {
 class WorkQueue;

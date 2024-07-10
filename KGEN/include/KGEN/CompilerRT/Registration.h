@@ -9,6 +9,7 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
+#include <vector>
 
 /// This file includes at least one declaration from each .cpp file in the
 /// CompilerRT directory. This is used to ensure that the functions defined are

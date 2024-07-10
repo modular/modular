@@ -199,7 +199,7 @@ static LogicalResult runLLVMOptPasses(llvm::Module &module,
 
   // Now that we have all of the passes ready, run them.
   modulePassMgr.run(module, moduleAnalysisMgr);
-  return success();
+  return mlir::success();
 }
 
 /// Run the default llc passes required to generate object code.
@@ -248,7 +248,7 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
       ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
 
   passMgr.run(module);
-  return success();
+  return mlir::success();
 }
 
 /// Compile optimized llvm::Module module to object through the llc pipeline

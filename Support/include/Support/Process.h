@@ -8,6 +8,7 @@
 #define SUPPORT_PROCESS_H
 
 #include "Support/LLVMForwardDecls.h"
+#include <vector>
 
 namespace M {
 /// Set the environment variable `name` to `value`. If `overwrite` is false, the
