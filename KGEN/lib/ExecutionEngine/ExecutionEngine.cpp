@@ -8,7 +8,6 @@
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
 #include "KGEN/ExecutionEngine/JIT/MaterializationLayer.h"
-#include "KGEN/ExecutionEngine/JIT/ObjectCompilerLayer.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/Support/Configuration.h"

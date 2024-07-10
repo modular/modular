@@ -7,7 +7,6 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
-#include "KGEN/ExecutionEngine/JIT/ObjectCompilerLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -456,22 +455,8 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
   if (tmOr.isError())
     return tmOr.takeError();
 
-  auto engineOr = ExecutionEngine::createWithStandardLayers(
+  return ExecutionEngine::createWithStandardLayers(
       std::move(executionEngineOptions), **tmOr);
-  if (failed(engineOr))
-    return engineOr.takeError();
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-
-  // Add the object compiler layer.
-  auto compiler = ObjectCompiler::create(".mojo_cache", compilationOptions,
-                                         isJIT, context, std::move(pmOptions));
-  if (failed(compiler))
-    return compiler.takeError();
-
-  engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
-                                        engine->getLinkingLayer());
-
-  return std::move(engine);
 }
 
 //===----------------------------------------------------------------------===//

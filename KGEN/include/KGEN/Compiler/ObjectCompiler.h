@@ -117,8 +117,6 @@ private:
 
   /// The LLCL runtime.
   LLCL::Runtime &runtime;
-
-  friend class ObjectCompilerLayer;
 };
 
 /// Setup the machine properties from the provided target.
