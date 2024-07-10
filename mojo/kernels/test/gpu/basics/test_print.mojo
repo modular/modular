@@ -42,6 +42,14 @@ fn test_gpu_print_formattable() raises:
         # CHECK: Hello I got 42 7.2
         print("Hello I got", x, y)
 
+        # CHECK: Printing Int zero  = 0
+        # CHECK: Printing UInt zero = 0
+        print("Printing Int zero  =", Int(0))
+        print("Printing UInt zero =", UInt(0))
+
+        # CHECK UInt values are: 1 99 18446744073709551615 0
+        print("UInt values are:", UInt(1), UInt(99), UInt.MAX, UInt.MIN)
+
         #
         # Test printing SIMD values
         #
