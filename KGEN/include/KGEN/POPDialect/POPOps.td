@@ -2037,30 +2037,4 @@ def POP_DTypeFromUI8 : POPOp<"dtype.from_ui8", [Pure]> {
   let hasFolder = 1;
 }
 
-//===----------------------------------------------------------------------===//
-// DTypeSizeOf
-//===----------------------------------------------------------------------===//
-
-def POP_DTypeSizeOf : POPOp<"dtype.sizeof", [
-    Pure, DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "Gets the sizeof the dtype (in bytes).";
-  let description = [{
-    The `pop.dtype.sizeof` operation gets the size of the dtype (in bytes) for
-    the current architecture.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.param.constant: dtype = <ui8>
-    %1 = pop.dtype.sizeof %0  // result = 1
-    ```
-  }];
-
-  let arguments = (ins KGEN_DTypeType:$dType);
-  let results = (outs Index:$result);
-  let assemblyFormat = "$dType attr-dict";
-
-  let hasFolder = 1;
-}
-
 #endif // KGEN_POPDIALECT_POPOPS_TD
