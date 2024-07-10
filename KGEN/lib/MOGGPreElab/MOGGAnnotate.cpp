@@ -44,7 +44,7 @@ static void annotateTypes(LIT::FuncOp func) {
     }
   }
 
-  if (!(isKernel(func) || isV1ShapeFunc(func) || takesTensor))
+  if (!isKernel(func) && !isV1ShapeFunc(func) && !takesTensor)
     return;
 
   OpBuilder builder{func.getContext()};

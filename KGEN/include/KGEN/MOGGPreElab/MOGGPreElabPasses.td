@@ -87,3 +87,11 @@ def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "mlir::ModuleOp"> {
     also takes a spec and gets the right spec.
   }];
 }
+
+def MOGGIdentifyKernels : Pass<"mogg-identify-kernels", "mlir::ModuleOp"> {
+  let summary = "Identifies kernels and labels them";
+  let description = [{
+    A mogg domain specific pass which will identify kernels and label execute
+    and shape functions (if present).
+  }];
+}
