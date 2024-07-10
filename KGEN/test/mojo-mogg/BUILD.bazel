@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "mojo-mogg",
+    srcs = glob(["*.mojo"]),
+    data = glob(["max_stub/**/*.mojo"]) + [
+        "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
+    ],
+    env = {
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
+    },
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//KGEN/tools/kgen-opt",
+        "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/mojo",
+    ],
+)

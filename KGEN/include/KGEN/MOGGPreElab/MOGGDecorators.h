@@ -92,6 +92,9 @@ constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
 
 } // namespace Decorators
 
+static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
+static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H

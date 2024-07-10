@@ -12,6 +12,7 @@ add_modular_library(MOGGPreElabPasses
   MOGGPreElabPipeline.cpp
   SliceMOGGFuncs.cpp
   UserLibraryChecker.cpp
+  MOGGIdentifyKernels.cpp
 
   DEPENDS
   MLIRKGENMOGGPreElabPasses
