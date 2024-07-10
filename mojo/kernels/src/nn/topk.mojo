@@ -116,8 +116,13 @@ fn _top_k[
     @__copy_capture(shape)
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
-        var idxs = List[Int64](capacity=shape[axis])
-        idxs.resize(shape[axis])
+        # Allocate the index list without initializing its elements.
+        var idxs = List(
+            unsafe_pointer=UnsafePointer[Int64].alloc(shape[axis]),
+            size=shape[axis],
+            capacity=shape[axis],
+        )
+
         for row_idx in range(start_row, end_row):
             var indices = _get_nd_indices_from_flat_index[rank](
                 row_idx, shape, axis
