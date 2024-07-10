@@ -84,6 +84,10 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
           os << *aliasName;
           return AliasResult::OverridableAlias;
         }
+      } else if (auto sourceStruct =
+                     dyn_cast<SourceStructType>(typeCst.getTypeValue())) {
+        os << sourceStruct.getName().getValue();
+        return AliasResult::OverridableAlias;
       }
 
       os << "type_value";

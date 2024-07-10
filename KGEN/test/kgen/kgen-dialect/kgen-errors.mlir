@@ -690,3 +690,13 @@ kgen.generator export @top() {
   kgen.param.constant: string = <compile_assembly(current_target(), something, 0, :() -> () @kernel)>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{!kgen.source_struct parameter type mismatch at index 0. Expected '!kgen.dtype', got 'index'}}
+kgen.func @illegal_source_struct_param_type(%arg0: !kgen.source_struct<"Foo"[dt: dtype]<:index 8>>) {}
+
+// -----
+
+// expected-error @below {{!kgen.source_struct parameter decl and parameter value length mismatch. Expected 1, got 0}}
+kgen.func @illegal_source_struct_param_length(%arg0: !kgen.source_struct<"Foo"[dt: dtype]>) {}

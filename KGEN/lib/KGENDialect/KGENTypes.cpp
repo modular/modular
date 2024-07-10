@@ -55,6 +55,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<TargetType>();
   registerMnemonicType<BuildInfoType>();
   registerMnemonicType<StructType>();
+  registerMnemonicType<SourceStructType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
 }
@@ -1080,6 +1081,78 @@ TypedAttr KGEN::createUninitializedValueOf(Type type) {
   for (Type type : structType.getElementTypes())
     values.push_back(createUninitializedValueOf(type));
   return StructAttr::get(values, structType);
+}
+
+//===----------------------------------------------------------------------===//
+// SourceStructType
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseSourceStructFields(AsmParser &p,
+                        SmallVector<SourceStructFieldAttr> &fields) {
+  MLIRContext *ctx = p.getContext();
+  return p.parseCommaSeparatedList([&]() {
+    StringAttr name;
+    Type type;
+    if (parseParamName(p, name) || p.parseColon() || parseKGENType(p, type))
+      return failure();
+    fields.push_back(SourceStructFieldAttr::get(ctx, name, type));
+    return mlir::success();
+  });
+}
+
+static void printSourceStructFields(AsmPrinter &p,
+                                    ArrayRef<SourceStructFieldAttr> fields) {
+  llvm::interleaveComma(fields, p, [&](SourceStructFieldAttr field) {
+    printParamName(p, field.getName());
+    p << ": ";
+    printKGENType(p, field.getType());
+  });
+}
+
+SourceStructType SourceStructType::get(StringAttr name,
+                                       ArrayRef<ParamDeclAttr> paramDeclsArray,
+                                       ArrayRef<TypedAttr> paramValues,
+                                       ArrayRef<SourceStructFieldAttr> fields,
+                                       bool isMemoryOnly) {
+  // Leave decls null if array is empty for cleaner asm.
+  ParamDeclArrayAttr decls;
+  if (!paramDeclsArray.empty())
+    decls = ParamDeclArrayAttr::get(name.getContext(), paramDeclsArray);
+  return get(name.getContext(), name, decls, paramValues, fields, isMemoryOnly);
+}
+
+StructType SourceStructType::getStructType() const {
+  SmallVector<Type> types(
+      llvm::map_range(getFields(), [](SourceStructFieldAttr field) -> Type {
+        return field.getType();
+      }));
+  return StructType::get(types);
+}
+
+/// Verify that all parameter declarations are bound by the parameter values.
+LogicalResult SourceStructType::verify(
+    function_ref<InFlightDiagnostic()> emitError, StringAttr name,
+    ParamDeclArrayAttr paramDecls, ::llvm::ArrayRef<TypedAttr> paramValues,
+    ::llvm::ArrayRef<SourceStructFieldAttr> fields, bool isMemoryOnly) {
+  ArrayRef<ParamDeclAttr> paramDeclArray =
+      paramDecls ? paramDecls.getValue() : ArrayRef<ParamDeclAttr>();
+  if (paramDeclArray.size() != paramValues.size()) {
+    return emitError() << "!kgen.source_struct parameter decl and parameter "
+                          "value length mismatch. Expected "
+                       << paramDeclArray.size() << ", got "
+                       << paramValues.size();
+  }
+
+  for (auto [idx, decl, value] : llvm::enumerate(paramDeclArray, paramValues)) {
+    if (decl.getType() != value.getType()) {
+      return emitError()
+             << "!kgen.source_struct parameter type mismatch at index " << idx
+             << ". Expected " << decl.getType() << ", got " << value.getType()
+             << "\n";
+    }
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
