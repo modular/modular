@@ -39,8 +39,7 @@ void buildGenerateLibraryPipeline(mlir::PassManager &pm,
 /// means it runs the elaborator and any dependent passes.
 void buildElaborateModulePipeline(mlir::PassManager &pm, TargetInfoAttr target,
                                   const CompilationOptions &options,
-                                  ElaboratorCompileAsmFn compileAsmFn,
-                                  PackageGenLibraryFn packageGenLibraryFn);
+                                  ElaboratorCompileAsmFn compileAsmFn);
 
 //===----------------------------------------------------------------------===//
 // populateElaborateModulePasses

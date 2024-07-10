@@ -79,6 +79,4 @@ void KGEN::registerDefaultKGENPasses() {
 
   // Register passes that require other arguments.
   KGEN::CompilationOptions options;
-  mlir::registerPass(
-      [=] { return KGEN::createMaterializePackagesWithDefaultGen(options); });
 }

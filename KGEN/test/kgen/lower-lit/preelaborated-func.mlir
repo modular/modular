@@ -1,3 +1,5 @@
+// REQUIRES: DISABLED
+// (FIXME) clean up this test as follow up to simplify lower-lit for removing extern.generator.
 // RUN: kgen-opt -test-generate-elaborated-body %s -o %t.0.mlir
 // RUN: cat %t.0.mlir | FileCheck %s --check-prefix=ATTACH
 // RUN: kgen-opt %t.0.mlir -lower-lit -o %t.1.mlir

@@ -61,28 +61,6 @@ struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
 };
 } // namespace
 
-/// Returns true if the given function can be externalized.
-static bool canExternalize(LIT::FuncOp func) {
-  // If the function is marked as always inline, we can't externalize it.
-  if (func.getInlineLevel() == InlineLevel::Always ||
-      func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
-    return false;
-
-  // Check for parameters.
-  SignatureType signature = func.getSignature();
-  if (!signature.getInputParamTypes().empty() ||
-      !signature.getResultParamTypes().empty())
-    return false;
-  // Check if a parent has parameters.
-  LIT::StructDeclOp parentStruct = func->getParentOfType<LIT::StructDeclOp>();
-  while (parentStruct) {
-    if (!parentStruct.getInputParams().empty())
-      return false;
-    parentStruct = parentStruct->getParentOfType<LIT::StructDeclOp>();
-  }
-  return true;
-}
-
 /// This function takes a parsed `lit.package` op and creates  a new
 /// `lit.package` op. This new `lit.package` op is one that can be serialized
 /// into MLIR bytecode and written to disk, as a `.mojopkg` file. The generated
@@ -129,7 +107,6 @@ buildPackageModule(LIT::PackageOp parsedPackageOp) {
   LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
-  auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
   while (!worklist.empty()) {
     auto listFront = worklist.top();
     worklist.pop();
@@ -144,41 +121,6 @@ buildPackageModule(LIT::PackageOp parsedPackageOp) {
               cloneWithoutRegions(op);
               pushOpsOntoWorklist(op.getOps());
             })
-        // It's a func? OK - non-parametric funcs get elided, parametric funcs
-        // are cloned as-is.
-        .Case([&](LIT::FuncOp func) {
-          // Map the function to the alias it will have. Otherwise, use the
-          // mangled version of the original func, because that's what its name
-          // will be post-elaboration.
-          StringAttr preElaborationName = func.getLinkageNameAttr();
-          if (!preElaborationName)
-            preElaborationName = LIT::MangledSymbol::mangle(func).mangled;
-
-          // If the function is non-parametric, drop its body.
-          LIT::FuncOp clonedFunc;
-          if (canExternalize(func)) {
-            // This will reset the insertion point to where it was before we
-            // entered the function.
-            OpBuilder::InsertionGuard guard(b);
-
-            Block *bodyBlock = new Block();
-            for (BlockArgument arg : func.getArguments())
-              bodyBlock->addArgument(arg.getType(), arg.getLoc());
-
-            // Add a block that only contains a lit.extern_func in it.
-            clonedFunc = b.cloneWithoutRegions(func);
-            clonedFunc.getBodyRegion().push_back(bodyBlock);
-            b.setInsertionPointToStart(clonedFunc.getBody());
-            b.create<LIT::ExternFuncOp>(clonedFunc.getLoc());
-
-            // The function's been externalized; set attributes that point to
-            // its pre-compiled bytecode.
-            clonedFunc.setPreCompiledModuleRefAttr(packageName);
-            clonedFunc.setPreElaborationNameAttr(preElaborationName);
-          } else {
-            clonedFunc = cast<LIT::FuncOp>(b.clone(*func));
-          }
-        })
         .Case([&](LIT::UnresolvedImportOp op) {
           // Drop unresolved imports within packages that were used to lazily
           // pull in nested modules. These aren't needed during packaging
@@ -338,14 +280,6 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   }
 
   auto [packageModule, thePackage] = buildPackageModule(parsedPackageOp);
-
-  // For now we implicilty export everything in the package, so add exports to
-  // the main module for the contents of the module.
-  parsedPackageOp.walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
-    if (canExternalize(func))
-      func.setPackageExported();
-    return WalkResult::skip();
-  });
 
   // Attach the post-parse module to the package.
   auto postParseModuleAttr = writeModuleToBytecodeAttr(theModule);

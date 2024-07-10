@@ -13,8 +13,8 @@
 // CHECK:       lit.func @"parametric{{.*}}<{{.*}}>
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
-// CHECK:       lit.func @"foo{{.*}}"{{.*}}preCompiledModuleRef = {{.*}}
-// CHECK-NEXT:    lit.extern_func
+// CHECK:       lit.func @"foo{{.*}}"{{.*}}sourceName = {{.*}}
+// CHECK:         lit.end_func
 
 // CHECK: lit.struct.decl @ParametricStruct<{{.*}}: !Int>
 // CHECK:       lit.func @"foo(
@@ -23,8 +23,8 @@
 
 // CHECK: lit.package @inner2
 // CHECK:   lit.file_module @myfile2
-// CHECK:     lit.func export @"bar()"{{.*}}linkageName = "bar", preCompiledModuleRef = {{.*}}
-// CHECK-NEXT: lit.extern_func
+// CHECK:     lit.func export @"bar()"{{.*}}linkageName = "bar", sourceName = {{.*}}
+// CHECK: lit.end_func
 
 // CHECK-DAG: !subroutine{{[0-9]+}} =
 
