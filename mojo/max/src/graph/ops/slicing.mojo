@@ -183,8 +183,10 @@ def _slice_size(s: Slice, length: Optional[Int64]) -> Optional[Int]:
     if length:
         start, stop, step = s.indices(int(length.value()))
         return len(range(start, stop, step))
-    elif s.end and sign((s.start or 0).value()) == sign(s.end.value()):
-        return s.unsafe_indices()
+    else:
+        startval = (s.start or 0).value()
+        if s.end and sign(startval) == sign(s.end.value()):
+            return len(range(startval, s.end.value(), s.step))
     return None
 
 
@@ -221,7 +223,7 @@ def slice(
 @always_inline
 def slice(
     input: Symbol,
-    slices: VariadicList[Slice],
+    slices: VariadicListMem[Slice, _, _],
     out_dims: List[Dim] = List[Dim](),
     location: Optional[_SourceLocation] = None,
 ) -> Symbol:

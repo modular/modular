@@ -29,12 +29,12 @@ struct KernelSpec:
 
 
 @no_inline
-fn shapeof(tensor_name: StringLiteral) -> OptionalReg[DimList]:
+fn shapeof(tensor_name: StringLiteral) -> Optional[DimList]:
     return None
 
 
 @no_inline
-fn stridesof(tensor_name: StringLiteral) -> OptionalReg[DimList]:
+fn stridesof(tensor_name: StringLiteral) -> Optional[DimList]:
     return None
 
 
@@ -42,7 +42,7 @@ fn stridesof(tensor_name: StringLiteral) -> OptionalReg[DimList]:
 fn output_lambda[
     type: DType = DType.invalid,
     rank: Int = 0,
-](tensor_name: StringLiteral) -> OptionalReg[
+](tensor_name: StringLiteral) -> Optional[
     fn[width: Int] (StaticIntTuple[rank], SIMD[type, width]) capturing -> None
 ]:
     return None
