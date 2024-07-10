@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t | FileCheck %s
+# RUN: %bare-mojo %s -t | FileCheck %s
 # CHECK: Benchmark results
 
 from collections.vector import InlinedFixedVector

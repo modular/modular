@@ -52,4 +52,20 @@ if has_gpu():
 tool_dirs = [config.modular_tools_dir]
 tools = ["mojo", "cuda-query"]
 
+# Insert at 0th position to intentionally override
+# %mojo from the global utils/build/llvm-lit/lit.common.cfg.py
+# (only matters internally).
+# In the future, we can do other fancy things like with sanitizers
+# and build type.
+if bool(int(os.environ.get("MOJO_ENABLE_ASSERTIONS_IN_TESTS", 1))):
+    base_mojo_command = "mojo -D MOJO_ENABLE_ASSERTIONS"
+else:
+    print("Running tests with assertions disabled.")
+    base_mojo_command = "mojo"
+config.substitutions.insert(0, ("%mojo", base_mojo_command))
+
+# Mojo without assertions.  Only use this for known tests that do not work
+# with assertions enabled.
+config.substitutions.insert(1, ("%bare-mojo", "mojo"))
+
 llvm_config.add_tool_substitutions(tools, tool_dirs)
