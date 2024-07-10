@@ -41,9 +41,7 @@ public:
   /// Run the library generation pipeline on the given module. If
   /// `materializeDependencies` is true, the pipeline will ensure all
   /// dependencies are materialized in the final module.
-  ErrorOrSuccess
-  runGenerateLibraryPipeline(ModuleOp module,
-                             bool materializeDependencies = false);
+  ErrorOrSuccess runGenerateLibraryPipeline(ModuleOp module);
 
   /// Run post-parser pipeline that checks and lowers source-level
   /// LIT constructs.
@@ -80,11 +78,6 @@ initializeExecutionEngine(mlir::MLIRContext &context,
                           const KGEN::CompilationOptions &compilationOptions,
                           KGEN::ExecutionEngineOptions executionEngineOptions,
                           bool isJIT, PassManagerConfigOptions pmOptions);
-
-/// This creates the materialize packages pass with the default library
-/// generation pipeline, i.e. `runGenerateLibraryPipeline`.
-std::unique_ptr<Pass>
-createMaterializePackagesWithDefaultGen(const CompilationOptions &options);
 
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that

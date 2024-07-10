@@ -152,36 +152,6 @@ def LowerLITTypes : Pass<"lower-lit-types", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// MaterializePackages
-//===----------------------------------------------------------------------===//
-
-def MaterializePackages : Pass<"materialize-packages", "ModuleOp"> {
-  let summary = "Materialize precompiled IR into the module.";
-  let description = [{
-    The `materialize-packages` pass pulls in precompiled IR into the module.
-    It finds referenced external symbols via `kgen.extern.generator` operations
-    and pulls in their bodies from `kgen.package.link` operations.
-
-    If the current module does not specify a target or specifies a target for
-    which post-elaboration IR is not available, the pass falls back to pulling
-    in pre-elaboration IR.
-  }];
-
-  // FIXME(#15949): Should not require all these dialects to be loaded.
-  let dependentDialects = [
-    "KGENDialect",
-    "LIT::LITDialect",
-    "DebugInfo::DebugInfoDialect",
-    "HLCF::HLCFDialect",
-    "MDialect",
-    "Custom::CustomDialect",
-    "mlir::LLVM::LLVMDialect",
-    "mlir::NVVM::NVVMDialect",
-    "mlir::index::IndexDialect",
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerClosures
 //===----------------------------------------------------------------------===//
 
