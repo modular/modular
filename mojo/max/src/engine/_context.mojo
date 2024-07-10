@@ -54,7 +54,7 @@ struct CRuntimeConfig:
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
 
     fn set_max_context(
-        self, lib: DLHandle, max_context: Pointer[NoneType]
+        self, lib: DLHandle, max_context: UnsafePointer[NoneType]
     ) -> None:
         call_dylib_func(lib, Self.SetMaxContextFnName, self, max_context)
 
@@ -70,7 +70,7 @@ struct RuntimeConfig:
         lib: DLHandle,
         device: Device,
         allocator_type: AllocatorType = AllocatorType.CACHING,
-        max_context: Pointer[NoneType] = Pointer[NoneType](),
+        max_context: UnsafePointer[NoneType] = UnsafePointer[NoneType](),
     ):
         self.ptr = call_dylib_func[CRuntimeConfig](
             lib, Self.NewRuntimeConfigFnName

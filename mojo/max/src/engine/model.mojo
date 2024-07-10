@@ -363,18 +363,18 @@ struct Model:
                 CModel,
                 UnsafePointer[
                     UnsafePointer[NoneType]
-                ],  # Pointer to input tensors
-                UnsafePointer[TensorSpec],  # Pointer to input specs
+                ],  # UnsafePointer to input tensors
+                UnsafePointer[TensorSpec],  # UnsafePointer to input specs
                 Int,  # Number of input specs
                 UnsafePointer[
                     AnyMojoValue.c_type
-                ],  # Pointer to opaque mojo values
+                ],  # UnsafePointer to opaque mojo values
                 Int,  # Number of opaque mojo values
                 __type_of(
                     Self._add_to_output_list
                 ),  # Function pointer to add output
                 UnsafePointer[Self],  # Calling context
-                UnsafePointer[NoneType],  # Pointer to output list
+                UnsafePointer[NoneType],  # UnsafePointer to output list
                 CStatus,
             ) -> Int
         ](execute_func_name)

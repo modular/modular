@@ -13,7 +13,7 @@ from collections.optional import Optional
 from os.atomic import Atomic
 from pathlib import Path
 from sys.ffi import _get_global_or_null
-from memory import Arc
+from memory import Arc, UnsafePointer
 from max._utils import call_dylib_func
 from max._driver import cpu_device, Device
 
@@ -366,7 +366,7 @@ struct _TorchLoadOptions(CollectionElement):
             graph: MAX Graph.
         """
         self._source = ModelSource(
-            LegacyPointer(graph._module().c.ptr.address),
+            UnsafePointer(graph._module().c.ptr.address),
             FrameworkFormat.MAXGraph,
         )
 

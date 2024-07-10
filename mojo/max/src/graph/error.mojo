@@ -96,7 +96,7 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
         The system stack trace as a formatted string, with one indented
         call per line.
     """
-    call_stack = stack_allocation[MAX_STACK_SIZE, Pointer[NoneType]]()
+    call_stack = stack_allocation[MAX_STACK_SIZE, UnsafePointer[NoneType]]()
     frames = external_call["backtrace", Int](call_stack, MAX_STACK_SIZE)
     frame_strs = external_call[
         "backtrace_symbols", UnsafePointer[UnsafePointer[C_char]]

@@ -6,7 +6,6 @@
 
 from builtin._startup import _get_current_or_global_runtime
 from memory import UnsafePointer
-from memory.unsafe import Pointer
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
 from pathlib import Path
 from utils import StringRef
@@ -34,7 +33,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(mof_lib_path).exists():
         abort("cannot load graph library from " + mof_lib_path)
 
-    var ptr = Pointer[DLHandle].alloc(1)
+    var ptr = UnsafePointer[DLHandle].alloc(1)
     ptr[] = DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
     mof_lib_path._strref_keepalive()
     return ptr.bitcast[NoneType]().address
@@ -178,12 +177,12 @@ fn attr_new_param_decl_array(
         "MAXG_attrNewParamDeclArray",
         fn (
             _mlir.Context.cType,
-            Pointer[_mlir.Attribute.cType],
+            UnsafePointer[_mlir.Attribute.cType],
             Int32,
         ) -> _mlir.Attribute.cType,
     ]()(
         ctx.c,
-        Pointer[_mlir.Attribute](params.data.address).bitcast[
+        UnsafePointer[_mlir.Attribute](params.data.address).bitcast[
             _mlir.Attribute.cType
         ](),
         len(params),
@@ -199,12 +198,12 @@ fn attr_new_shape(
         "MAXG_attrNewShape",
         fn (
             _mlir.Context.cType,
-            Pointer[_mlir.Attribute.cType],
+            UnsafePointer[_mlir.Attribute.cType],
             Int32,
         ) -> _mlir.Attribute.cType,
     ]()(
         ctx.c,
-        Pointer[_mlir.Attribute](dims.data.address).bitcast[
+        UnsafePointer[_mlir.Attribute](dims.data.address).bitcast[
             _mlir.Attribute.cType
         ](),
         len(dims),
@@ -239,14 +238,14 @@ fn tensor_type_new(
             _mlir.Context.cType,
             _mlir.Type.cType,
             Bool,
-            Pointer[_mlir.Attribute.cType],
+            UnsafePointer[_mlir.Attribute.cType],
             Int32,
         ) -> _mlir.Type.cType,
     ]()(
         ctx.c,
         dtype.c,
         ranked,
-        Pointer[_mlir.Attribute](dims.data.address).bitcast[
+        UnsafePointer[_mlir.Attribute](dims.data.address).bitcast[
             _mlir.Attribute.cType
         ](),
         len(dims),

@@ -53,7 +53,7 @@ struct Batch[Input: Batchable, Output: Batchable]:
         self.outputs = existing.outputs^
         self.deadline = existing.deadline
         self.started = existing.started.load()
-        existing.chain.storage = Pointer[Int]()
+        existing.chain.storage = UnsafePointer[Int]()
 
     fn _complete(inout self: Self):
         _async_complete(UnsafePointer[Chain].address_of(self.chain))
@@ -92,7 +92,7 @@ struct Batch[Input: Batchable, Output: Batchable]:
             return self._start()
 
     fn __del__(owned self):
-        if self.chain.storage != Pointer[Int]():
+        if self.chain.storage != UnsafePointer[Int]():
             _del_llcl_chain(UnsafePointer[Chain].address_of(self.chain))
 
 

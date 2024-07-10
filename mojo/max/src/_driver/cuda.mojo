@@ -37,7 +37,7 @@ fn alloc_device_buffer(
             bytes, ctx[].cuda_stream
         )
     except e:
-        return abort[Pointer[UInt8]]()
+        return abort[UnsafePointer[UInt8]]()
 
 
 fn copy_device_to_host(

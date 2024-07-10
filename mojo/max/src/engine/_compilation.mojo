@@ -40,7 +40,7 @@ struct ModelSource(CollectionElement):
     """Model source representation that is ABI compatible with the C API's `M_ModelSource`.
     """
 
-    var source: Pointer[NoneType]
+    var source: UnsafePointer[NoneType]
     var format: FrameworkFormat
 
 
@@ -102,7 +102,7 @@ struct CCompileConfig:
 struct CTorchInputSpec(CollectionElement):
     """C API ABI compatible M_TorchInputSpec."""
 
-    alias ptr_type = Pointer[NoneType]
+    alias ptr_type = UnsafePointer[NoneType]
     var ptr: Self.ptr_type
 
     alias FreeTorchInputSpecFnName = "M_freeTorchInputSpec"
@@ -194,7 +194,7 @@ struct TorchInputSpec(Movable):
             lib,
             Self.NewTorchInputSpecFnName,
             CTorchInputSpec.ptr_type(),
-            Pointer[NoneType](),
+            UnsafePointer[NoneType](),
             CTensorSpec.get_dynamic_rank_value(engine_lib),
             EngineDType(self.dtype),
             status.ptr,
@@ -217,7 +217,7 @@ struct TorchInputSpec(Movable):
 struct CompileConfig:
     """Memory managed version of Engine's Compile Config."""
 
-    var ptr: Pointer[CCompileConfig]
+    var ptr: UnsafePointer[CCompileConfig]
     var lib: DLHandle
     var torch_lib: Optional[DLHandle]
     var input_specs: OwningVector[TorchInputSpec]
@@ -225,7 +225,7 @@ struct CompileConfig:
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
     fn __init__(inout self, lib: DLHandle):
-        self.ptr = Pointer[CCompileConfig].alloc(1)
+        self.ptr = UnsafePointer[CCompileConfig].alloc(1)
         __get_address_as_uninit_lvalue(self.ptr.address) = call_dylib_func[
             CCompileConfig
         ](lib, Self.NewCompileConfigFnName)
@@ -307,12 +307,12 @@ struct CompileConfig:
             )
         )
 
-    fn borrow_ptr(self) -> Pointer[CCompileConfig]:
+    fn borrow_ptr(self) -> UnsafePointer[CCompileConfig]:
         return self.ptr
 
-    fn take_ptr(inout self) -> Pointer[CCompileConfig]:
+    fn take_ptr(inout self) -> UnsafePointer[CCompileConfig]:
         var ptr = self.ptr
-        self.ptr = Pointer[CCompileConfig]()
+        self.ptr = UnsafePointer[CCompileConfig]()
         return ptr
 
     fn __del__(owned self):

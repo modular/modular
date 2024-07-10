@@ -33,7 +33,7 @@ struct CTensorView:
     alias _FreeValueFnName = "M_freeTensorView"
 
     @staticmethod
-    fn free(lib: DLHandle, ptr: Pointer[CTensorView]):
+    fn free(lib: DLHandle, ptr: UnsafePointer[CTensorView]):
         call_dylib_func(lib, Self._FreeValueFnName, ptr)
 
 
@@ -82,7 +82,7 @@ fn _get_tensors[
     var map = session.new_tensor_map()
     var size = call_dylib_func[Int64](lib, size_fn, ptr)
     for i in range(size):
-        var view_ptr = Pointer[CTensorView]()
+        var view_ptr = UnsafePointer[CTensorView]()
         call_dylib_func(
             lib,
             get_tensor_fn,

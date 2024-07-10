@@ -23,7 +23,7 @@ struct _CheckpointTensor:
         """Creates a _CheckpointTensor.
 
         Args:
-            ptr: Pointer to tensor data.
+            ptr: UnsafePointer to tensor data.
             spec: Tensor's spec.
         """
         self.ptr = ptr

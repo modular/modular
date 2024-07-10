@@ -16,7 +16,7 @@ from ._types import CInferenceRequest, CInferenceResponse
 
 
 struct ClientResult:
-    """Corresponds to the M_ClientResult C type; should only be used as a Pointer.
+    """Corresponds to the M_ClientResult C type; should only be used as a UnsafePointer.
     """
 
     var response: DTypePointer[DType.invalid]
