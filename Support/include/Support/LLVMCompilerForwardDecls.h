@@ -122,7 +122,6 @@ class VectorType;
 class WalkResult;
 enum class RegionKind;
 struct CallInterfaceCallable;
-struct LogicalResult;
 struct MemRefAccess;
 struct OperationState;
 
