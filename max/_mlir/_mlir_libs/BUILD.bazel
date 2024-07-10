@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "copy_files", "modular_pybind_extension")
 
+package(default_visibility = ["//visibility:public"])
+
 copy_files(
     name = "copy_srcs",
     srcs = ["//:_mlir_libs_srcs"],
