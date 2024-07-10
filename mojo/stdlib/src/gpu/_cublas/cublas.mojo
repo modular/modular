@@ -1071,9 +1071,9 @@ fn cublasSgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasXerbla(sr_name: Pointer[Int8], info: Int16) -> NoneType:
+fn cublasXerbla(sr_name: Pointer[Int8], info: Int16) -> None:
     return _get_dylib_function[
-        "cublasXerbla", fn (Pointer[Int8], Int16) -> NoneType
+        "cublasXerbla", fn (Pointer[Int8], Int16) -> None
     ]()(sr_name, info)
 
 
@@ -1736,11 +1736,11 @@ fn cublasDsyr2k(
 
 
 fn cublasSetLoggerCallback(
-    user_callback: fn (Pointer[Int8]) -> NoneType,
+    user_callback: fn (Pointer[Int8]) -> None,
 ) -> Result:
     return _get_dylib_function[
         "cublasSetLoggerCallback",
-        fn (fn (Pointer[Int8]) -> NoneType) -> Result,
+        fn (fn (Pointer[Int8]) -> None) -> Result,
     ]()(user_callback)
 
 
@@ -3551,7 +3551,7 @@ fn cublasCherk3mEx(
     )
 
 
-alias cublasLogCallback = fn (Pointer[Int8]) -> NoneType
+alias cublasLogCallback = fn (Pointer[Int8]) -> None
 
 
 fn cublasDtrmv(
@@ -4485,9 +4485,9 @@ fn cublasDsyrk(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn cublasDestroy(handle: Pointer[cublasContext]) -> Result:
+fn cublasDestroy(handle: UnsafePointer[cublasContext]) -> Result:
     return _get_dylib_function[
-        "cublasDestroy_v2", fn (Pointer[cublasContext]) -> Result
+        "cublasDestroy_v2", fn (UnsafePointer[cublasContext]) -> Result
     ]()(handle)
 
 

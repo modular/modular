@@ -400,7 +400,9 @@ struct Function[
             num_captures + num_args, UnsafePointer[NoneType]
         ]()
 
-        populate(args_stack.bitcast[NoneType]())
+        populate(
+            rebind[LegacyPointer[NoneType]](args_stack.bitcast[NoneType]())
+        )
 
         @parameter
         for i in range(num_args):

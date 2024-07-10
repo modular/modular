@@ -933,7 +933,7 @@ struct ReductionScheme:
 
 
 fn cublasLtLoggerSetCallback(
-    callback: fn (Int16, Pointer[Int8], Pointer[NoneType]) raises -> NoneType
+    callback: fn (Int16, Pointer[Int8], Pointer[NoneType]) raises -> None
 ) raises -> Result:
     """Experimental: Logger callback setter.
 
@@ -944,7 +944,7 @@ fn cublasLtLoggerSetCallback(
     return _get_dylib_function[
         "cublasLtLoggerSetCallback",
         fn (
-            fn (Int16, Pointer[Int8], Pointer[NoneType]) raises -> NoneType
+            fn (Int16, Pointer[Int8], Pointer[NoneType]) raises -> None
         ) raises -> Result,
     ]()(callback)
 
