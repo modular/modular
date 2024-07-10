@@ -92,15 +92,6 @@ struct GRPCServer[
     fn serve[
         service_type: InferenceService
     ](inout self, inout service: service_type) raises -> None:
-        @parameter
-        fn _serve_start_NoOp() -> NoneType:
-            pass
-
-        self.serve[service_type, _serve_start_NoOp](service)
-
-    fn serve[
-        service_type: InferenceService, start_fn: fn () capturing -> NoneType
-    ](inout self, inout service: service_type) raises -> None:
         @always_inline
         @parameter
         fn add_models(models: List[Model]) raises -> None:
@@ -118,7 +109,6 @@ struct GRPCServer[
             service.infer(request, response)
 
         service.init[add_models]()
-        start_fn()
         self.serve[handle]()
 
     fn serve[handle_fn: Self.handle_fn_type](inout self) -> None:
