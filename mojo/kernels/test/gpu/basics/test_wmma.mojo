@@ -233,12 +233,12 @@ fn run_mma_fp32_tf32(
     print("== run_matmul fp32.tf32 tensor core kernel")
 
     var stream = Stream()
-    var a_host = Pointer[Float32].alloc(M * K)
-    var b_host = Pointer[Float32].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var a_host_ref = Pointer[Float32].alloc(M * K)
-    var b_host_ref = Pointer[Float32].alloc(K * N)
-    var c_host_ref = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
+    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -389,12 +389,12 @@ fn run_mma_fp32_bf16(
     print("== run_matmul fp32.bf16 1688 tensor core kernel")
 
     var stream = Stream()
-    var a_host = Pointer[BFloat16].alloc(M * K)
-    var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var a_host_ref = Pointer[Float32].alloc(M * K)
-    var b_host_ref = Pointer[Float32].alloc(K * N)
-    var c_host_ref = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[BFloat16].alloc(M * K)
+    var b_host = UnsafePointer[BFloat16].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
+    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -545,12 +545,12 @@ fn run_mma_fp32_bf16_2(
     print("== run_matmul fp32.bf16 16816 tensor core kernel")
 
     var stream = Stream()
-    var a_host = Pointer[BFloat16].alloc(M * K)
-    var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var a_host_ref = Pointer[Float32].alloc(M * K)
-    var b_host_ref = Pointer[Float32].alloc(K * N)
-    var c_host_ref = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[BFloat16].alloc(M * K)
+    var b_host = UnsafePointer[BFloat16].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
+    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -701,12 +701,12 @@ fn run_mma_fp32_fp16(
     print("== run_matmul fp32.fp16 tensor core kernel")
 
     var stream = Stream()
-    var a_host = Pointer[Float16].alloc(M * K)
-    var b_host = Pointer[Float16].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var a_host_ref = Pointer[Float32].alloc(M * K)
-    var b_host_ref = Pointer[Float32].alloc(K * N)
-    var c_host_ref = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[Float16].alloc(M * K)
+    var b_host = UnsafePointer[Float16].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
+    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -857,12 +857,12 @@ fn run_mma_fp16_fp16(
     print("== run_matmul fp16.fp16 tensor core kernel")
 
     var stream = Stream()
-    var a_host = Pointer[Float16].alloc(M * K)
-    var b_host = Pointer[Float16].alloc(K * N)
-    var c_host = Pointer[Float16].alloc(M * N)
-    var a_host_ref = Pointer[Float32].alloc(M * K)
-    var b_host_ref = Pointer[Float32].alloc(K * N)
-    var c_host_ref = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[Float16].alloc(M * K)
+    var b_host = UnsafePointer[Float16].alloc(K * N)
+    var c_host = UnsafePointer[Float16].alloc(M * N)
+    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
+    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)

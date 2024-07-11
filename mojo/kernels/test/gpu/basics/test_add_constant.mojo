@@ -27,8 +27,8 @@ def run_add_constant(ctx: Context):
     alias length = 1024
     var stream = Stream(ctx)
 
-    var in_host = Pointer[Float32].alloc(length)
-    var out_host = Pointer[Float32].alloc(length)
+    var in_host = UnsafePointer[Float32].alloc(length)
+    var out_host = UnsafePointer[Float32].alloc(length)
 
     for i in range(length):
         in_host[i] = i

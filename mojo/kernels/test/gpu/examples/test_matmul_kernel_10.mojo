@@ -137,10 +137,10 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
         "TN must be a multiple of 4",
     ]()
 
-    var a_host = Pointer[Float32].alloc(M * K)
-    var b_host = Pointer[Float32].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var c_host_naive = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_naive = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         a_host[i] = i

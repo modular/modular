@@ -10,7 +10,7 @@ from gpu.host import Context, Function
 from gpu.host.memory import _malloc_managed
 
 
-fn kernel_with_list(res: Pointer[Float32]):
+fn kernel_with_list(res: UnsafePointer[Float32]):
     var list = List[Float32](10)
     for i in range(4):
         list.append(i + 1)

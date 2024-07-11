@@ -23,12 +23,12 @@ from utils.index import Index
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     print("== run_matmul naive kernel")
 
-    var a_host = Pointer[BFloat16].alloc(M * K)
-    var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[BFloat16].alloc(M * N)
-    var a_host_n = Pointer[Float32].alloc(M * K)
-    var b_host_n = Pointer[Float32].alloc(K * N)
-    var c_host_n = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[BFloat16].alloc(M * K)
+    var b_host = UnsafePointer[BFloat16].alloc(K * N)
+    var c_host = UnsafePointer[BFloat16].alloc(M * N)
+    var a_host_n = UnsafePointer[Float32].alloc(M * K)
+    var b_host_n = UnsafePointer[Float32].alloc(K * N)
+    var c_host_n = UnsafePointer[Float32].alloc(M * N)
 
     var rand_min = -1.0
     var rand_max = 1.0
@@ -154,12 +154,12 @@ fn run_matmul[
 ) raises:
     print("== run_matmul kernel => ", str(type), M, N, K)
 
-    var a_host = Pointer[Scalar[type]].alloc(M * K)
-    var b_host = Pointer[Scalar[type]].alloc(K * N)
-    var c_host = Pointer[Scalar[type]].alloc(M * N)
-    var a_host_n = Pointer[Scalar[type]].alloc(M * K)
-    var b_host_n = Pointer[Scalar[type]].alloc(K * N)
-    var c_host_n = Pointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host_n = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host_n = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -266,12 +266,12 @@ fn run_batched_matmul(
 ) raises:
     print("== test_batched_matmul")
 
-    var a_host = Pointer[BFloat16].alloc(B * M * K)
-    var b_host = Pointer[BFloat16].alloc(B * K * N)
-    var c_host = Pointer[BFloat16].alloc(B * M * N)
-    var a_host_n = Pointer[Float32].alloc(B * M * K)
-    var b_host_n = Pointer[Float32].alloc(B * K * N)
-    var c_host_n = Pointer[Float32].alloc(B * M * N)
+    var a_host = UnsafePointer[BFloat16].alloc(B * M * K)
+    var b_host = UnsafePointer[BFloat16].alloc(B * K * N)
+    var c_host = UnsafePointer[BFloat16].alloc(B * M * N)
+    var a_host_n = UnsafePointer[Float32].alloc(B * M * K)
+    var b_host_n = UnsafePointer[Float32].alloc(B * K * N)
+    var c_host_n = UnsafePointer[Float32].alloc(B * M * N)
 
     var rand_min = -100.0
     var rand_max = 100.0

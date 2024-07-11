@@ -40,10 +40,10 @@ fn run_layer_norm_block_vector[
     print("== run_layer_norm_gpu block kernel")
 
     alias rank = 2
-    var data_h = Pointer[Scalar[type]].alloc(rows * cols)
-    var res = Pointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = Pointer[Scalar[type]].alloc(cols)
-    var beta_h = Pointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
 
     for i in range(rows * cols):
         var val = Scalar[type](i)
@@ -130,10 +130,10 @@ fn run_layer_norm_block_scalar[
     print("== run_layer_norm_gpu block kernel")
 
     alias rank = 2
-    var data_h = Pointer[Scalar[type]].alloc(rows * cols)
-    var res = Pointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = Pointer[Scalar[type]].alloc(cols)
-    var beta_h = Pointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
 
     for i in range(rows * cols):
         var val = Scalar[type](i)
@@ -220,10 +220,10 @@ fn run_layer_norm_warp_tiling_vector[
     print("== run_layer_norm_gpu warp tiling kernel")
 
     alias rank = 2
-    var data_h = Pointer[Scalar[type]].alloc(rows * cols)
-    var res = Pointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = Pointer[Scalar[type]].alloc(cols)
-    var beta_h = Pointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
 
     for i in range(rows * cols):
         var val = Scalar[type](i)
@@ -309,10 +309,10 @@ fn run_layer_norm_warp_tiling_scalar[
     print("== run_layer_norm_gpu warp tiling kernel")
 
     alias rank = 2
-    var data_h = Pointer[Scalar[type]].alloc(rows * cols)
-    var res = Pointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = Pointer[Scalar[type]].alloc(cols)
-    var beta_h = Pointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
 
     for i in range(rows * cols):
         var val = Scalar[type](i)

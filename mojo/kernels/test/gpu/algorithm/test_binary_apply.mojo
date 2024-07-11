@@ -45,9 +45,9 @@ fn run_binary_add(ctx: Context, capture: Float32) raises:
 
     var stream = Stream(ctx)
 
-    var in0_host = Pointer[Float32].alloc(length)
-    var in1_host = Pointer[Float32].alloc(length)
-    var out_host = Pointer[Float32].alloc(length)
+    var in0_host = UnsafePointer[Float32].alloc(length)
+    var in1_host = UnsafePointer[Float32].alloc(length)
+    var out_host = UnsafePointer[Float32].alloc(length)
 
     for i in range(length):
         in0_host[i] = i

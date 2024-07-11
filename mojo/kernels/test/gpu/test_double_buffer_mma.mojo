@@ -211,8 +211,8 @@ fn sgemm_double_buffer[
     # Find the this tile's coordinates in C and set the offsets in A, B.
     var c_row = BlockIdx.y() * BM
     var c_col = BlockIdx.x() * BN
-    var a_gmem_tile = a_gmem_ptr + c_row * K
-    var b_gmem_tile = b_gmem_ptr + c_col
+    var a_gmem_tile = a_gmem_ptr + int(c_row * K)
+    var b_gmem_tile = b_gmem_ptr + int(c_col)
 
     # Point to the current buffer
     var storea_smem_ptr = a_tile
@@ -232,8 +232,8 @@ fn sgemm_double_buffer[
     # Shifts for switching buffer
     alias a_gmem_shift = BK
     var b_gmem_shift = N * BK
-    a_gmem_tile += a_gmem_shift
-    b_gmem_tile += b_gmem_shift
+    a_gmem_tile += int(a_gmem_shift)
+    b_gmem_tile += int(b_gmem_shift)
 
     # Alternate share memory buffer for loading.
     storea_smem_ptr += a_smem_size
@@ -306,8 +306,8 @@ fn sgemm_double_buffer[
                 # fmt: on
 
                 # Advance to the next k tile.
-                a_gmem_tile += BK
-                b_gmem_tile += BK * N
+                a_gmem_tile += int(BK)
+                b_gmem_tile += int(BK * N)
 
             # Fill the other A fragments buffer.
             @parameter

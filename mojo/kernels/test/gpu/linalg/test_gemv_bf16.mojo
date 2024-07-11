@@ -28,12 +28,12 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
 
     var iterations = 100
     var stream = Stream()
-    var a_host = Pointer[BFloat16].alloc(M * K)
-    var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var a_host_n = Pointer[Float32].alloc(M * K)
-    var b_host_n = Pointer[Float32].alloc(K * N)
-    var c_host_n = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[BFloat16].alloc(M * K)
+    var b_host = UnsafePointer[BFloat16].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var a_host_n = UnsafePointer[Float32].alloc(M * K)
+    var b_host_n = UnsafePointer[Float32].alloc(K * N)
+    var c_host_n = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         a_host[i] = i

@@ -232,10 +232,10 @@ fn check_ldmatrix(
     print("== test ldmatrix instruction")
 
     var stream = Stream()
-    var a_host = Pointer[Float32].alloc(M * K)
-    var b_host = Pointer[Float32].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
-    var c_host_ref = Pointer[Float32].alloc(M * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)

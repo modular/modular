@@ -55,7 +55,7 @@ from layout.tensor_core import (
 from linalg.cublas import cublas_matmul
 from linalg._multistage_gemm_gpu import multistage_mma
 from memory.reference import _GPUAddressSpace as AddressSpace
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 from memory import UnsafePointer
 from random import rand
 from testing import assert_almost_equal

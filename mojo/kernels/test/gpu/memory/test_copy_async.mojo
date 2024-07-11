@@ -9,7 +9,7 @@ from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import mbarrier, mbarrier_init, mbarrier_test_wait
 from memory import stack_allocation
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 from testing import *
 
 
@@ -25,10 +25,10 @@ fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
 
 
 fn test_mbarrier(
-    addr0: Pointer[Int8],
+    addr0: UnsafePointer[Int8],
     addr1: DTypePointer[DType.uint8],
-    addr2: Pointer[Float32, AddressSpace.GLOBAL],
-    addr3: Pointer[Float32, AddressSpace.SHARED],
+    addr2: UnsafePointer[Float32, AddressSpace.GLOBAL],
+    addr3: UnsafePointer[Float32, AddressSpace.SHARED],
     addr4: DTypePointer[DType.float64, AddressSpace.GLOBAL],
     addr5: DTypePointer[DType.float64, AddressSpace.SHARED],
 ):

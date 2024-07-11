@@ -9,6 +9,7 @@
 from pathlib import Path
 from gpu import *
 from gpu.host import DeviceContext, Dim
+from memory import UnsafePointer
 
 
 fn vec_func(
@@ -31,9 +32,9 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     alias length = 1024
 
-    var in0_host = Pointer[Float32].alloc(length)
-    var in1_host = Pointer[Float32].alloc(length)
-    var out_host = Pointer[Float32].alloc(length)
+    var in0_host = UnsafePointer[Float32].alloc(length)
+    var in1_host = UnsafePointer[Float32].alloc(length)
+    var out_host = UnsafePointer[Float32].alloc(length)
 
     for i in range(length):
         in0_host[i] = i
