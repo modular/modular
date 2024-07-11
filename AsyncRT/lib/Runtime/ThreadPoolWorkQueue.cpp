@@ -59,10 +59,10 @@ constexpr size_t kMaxWorkers = 1024;
 //===----------------------------------------------------------------------===//
 
 namespace {
-#if LLCL_WORKER_STATS
-#define LLCL_PRINT_WORKER_STATS(X) X;
+#if ASYNCRT_WORKER_STATS
+#define ASYNCRT_PRINT_WORKER_STATS(X) X;
 #else
-#define LLCL_PRINT_WORKER_STATS(X)
+#define ASYNCRT_PRINT_WORKER_STATS(X)
 #endif
 /// Tracks the overall shutdown progress for the work queue.
 enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
@@ -303,7 +303,7 @@ struct WorkQueueThread {
 #endif
   // The thread identifier prefix used to name the threads
   std::string_view poolName;
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
   uint64_t affinityAccessCount = 0;
   uint64_t globalAccessCount = 0;
   std::chrono::duration<double, std::micro> affinityListAccessTime =
@@ -356,13 +356,13 @@ struct WorkQueueThread {
 
   ~WorkQueueThread() {
     if (workerID == 0) {
-      LLCL_PRINT_WORKER_STATS(
+      ASYNCRT_PRINT_WORKER_STATS(
           llvm::dbgs() << "WorkerID,schedulerTasks(us),affinityQueueAccess(us),"
                           "affinityQueueWork(us),affinityAccessCount,"
                           "globalAccess(us),globalWork("
                           "us),globalAccessCount,sleep+wakeup(us)\n");
     }
-    LLCL_PRINT_WORKER_STATS(
+    ASYNCRT_PRINT_WORKER_STATS(
         llvm::dbgs()
         << "Thread" << workerID << "," << (localWorkTime).count() << ","
         << (affinityListAccessTime - affinityWorkTime).count() +
@@ -409,7 +409,7 @@ struct WorkQueueThread {
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
   void doWork(WorkItem &&workItem, WorkType type) {
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     auto start = std::chrono::high_resolution_clock::now();
 #endif
 #if MODULAR_PARANOID
@@ -426,7 +426,7 @@ struct WorkQueueThread {
           IsWaiter ? "llcl.waiter" : "llcl.doWork"));
       workItem.task();
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
 
     if (type == kLocal)
@@ -571,7 +571,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     }
     localTaskList.clear();
     nextLocalTaskListIndex = 0;
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
     localListAccessTime +=
         std::chrono::duration<double, std::micro>(end - start);
@@ -580,14 +580,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // Check for tasks in local taskId affinitized queue.
     if (auto workItem = affinityTaskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(workItem), kAffinity);
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       affinityListAccessTime += (end - start);
       affinityAccessCount++;
 #endif
       goto KeepRunning;
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     end = std::chrono::high_resolution_clock::now();
     affinityListAccessTime += (end - start);
     start = std::chrono::high_resolution_clock::now();
@@ -596,14 +596,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     if (WorkItem workItem = taskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(workItem), kGlobal);
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       taskListAccessTime += (end - start);
       globalAccessCount++;
 #endif
       goto KeepRunning;
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     end = std::chrono::high_resolution_clock::now();
     taskListAccessTime += (end - start);
 #endif
@@ -631,14 +631,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
         if (auto workItem = affinityTaskList.dequeue()) {
           doWork</*IsWaiter=*/true>(std::move(workItem), kAffinity);
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
           spinAffinityListAccessTime += (end - start);
           affinityAccessCount++;
 #endif
           goto KeepRunning;
         }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
         end = std::chrono::high_resolution_clock::now();
         spinAffinityListAccessTime += (end - start);
         start = std::chrono::high_resolution_clock::now();
@@ -646,14 +646,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
         if (WorkItem workItem = taskList.dequeue()) {
           doWork</*IsWaiter=*/true>(std::move(workItem), kGlobal);
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
           globalAccessCount++;
           spinTaskListAccessTime += (end - start);
 #endif
           goto KeepRunning;
         }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
         end = std::chrono::high_resolution_clock::now();
         spinTaskListAccessTime += (end - start);
 #endif
@@ -721,14 +721,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     start = std::chrono::high_resolution_clock::now();
     if (auto labelledTask = affinityTaskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(labelledTask), kAffinity);
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       affinityAccessCount++;
       affinityListAccessTime += (end - start);
 #endif
       goto KeepRunning;
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     end = std::chrono::high_resolution_clock::now();
     affinityListAccessTime += (end - start);
     start = std::chrono::high_resolution_clock::now();
@@ -743,14 +743,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     if (auto labelledTask = taskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       globalAccessCount++;
       taskListAccessTime += (end - start);
 #endif
       goto KeepRunning;
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     end = std::chrono::high_resolution_clock::now();
     taskListAccessTime += (end - start);
 #endif
@@ -765,7 +765,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       TimeTraceScope scope(
           InternalProfilerEntry::create(sleepingLabel, (uint64_t)workerID));
       sema.wait();
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       sleepTime += (end - start);
 #endif
@@ -893,7 +893,7 @@ private:
   /// Log2(number of threads per bit of SuspendedThreadsBitvec)
   size_t multicastFactor = 0;
   std::string poolName;
-#ifdef LLCL_WORKER_STATS
+#ifdef ASYNCRT_WORKER_STATS
   AlignedAtomic<double> affinityEnqueueTime = 0.0f;
   AlignedAtomic<double> taskListEnqueueTime = 0.0f;
   AlignedAtomic<uint64_t> taskListEnqueCount = 0;
@@ -939,7 +939,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 // Note we can't assert state == kShutdown since queue may be created
 // and destroyed without ever being included in a runtime.
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
   llvm::dbgs() << "affinityEnqueueTime,affinityEnqueCount,taskListEnqueueTime,"
                   "taskListEnqueCount\n";
   llvm::dbgs() << affinityEnqueueTime << "," << affinityEnqueCount << ","
@@ -1030,7 +1030,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     workItem.use = callerWorker->useStack.back().copy();
   }
 #endif
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
   auto start = std::chrono::high_resolution_clock::now();
 #endif
   if (taskId >= 0) {
@@ -1052,7 +1052,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
       // Nevertheless profile and check.
       workThread->sema.post();
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
     atomicAdd(affinityEnqueCount, (uint64_t)1);
     atomicAdd(affinityEnqueueTime,
@@ -1077,7 +1077,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
         }
       }
     }
-#if LLCL_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
     atomicAdd(taskListEnqueCount, (uint64_t)1);
     atomicAdd(taskListEnqueueTime,
@@ -1290,9 +1290,9 @@ std::unique_ptr<WorkQueue> M::AsyncRT::createThreadPoolWorkQueue(
     llvm::dbgs() << "CAUTION: The paranoid flag is ignored in non "
                     "MODULAR_PARANOID builds\n";
 #endif // MODULAR_PARANOID
-#if LLCL_NO_AFFINITY
+#if ASYNCRT_NO_AFFINITY
   withAffinity = false;
-#endif // LLCL_NO_AFFINITY
+#endif // ASYNCRT_NO_AFFINITY
   // Using numThreads as a hint, figure out a CPU for each worker thread and
   // the main thread. The CPU ids may end up as kNoAffinity, but the vector
   // size will still guide the construction of worker threads.

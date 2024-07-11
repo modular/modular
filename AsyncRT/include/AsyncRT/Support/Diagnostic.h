@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_DIAGNOSTIC_H
-#define LLCL_SUPPORT_DIAGNOSTIC_H
+#ifndef ASYNCRT_SUPPORT_DIAGNOSTIC_H
+#define ASYNCRT_SUPPORT_DIAGNOSTIC_H
 
 #include "AsyncRT/Support/Location.h"
 #include "Support/Error.h"
@@ -63,4 +63,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_DIAGNOSTIC_H
+#endif // ASYNCRT_SUPPORT_DIAGNOSTIC_H

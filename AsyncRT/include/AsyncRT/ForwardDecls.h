@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_FORWARD_DECLS_H
-#define LLCL_FORWARD_DECLS_H
+#ifndef ASYNCRT_FORWARD_DECLS_H
+#define ASYNCRT_FORWARD_DECLS_H
 
 //===----------------------------------------------------------------------===//
 // Forward Declarations
@@ -53,4 +53,4 @@ using AsyncRT::AsyncValueRef;
 using AsyncRT::Runtime;
 } // namespace M
 
-#endif // LLCL_FORWARD_DECLS_H
+#endif // ASYNCRT_FORWARD_DECLS_H

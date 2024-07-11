@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_FORKJOIN_H
-#define LLCL_SUPPORT_FORKJOIN_H
+#ifndef ASYNCRT_SUPPORT_FORKJOIN_H
+#define ASYNCRT_SUPPORT_FORKJOIN_H
 
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Runtime.h"
@@ -60,4 +60,4 @@ private:
 };
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_FORKJOIN_H
+#endif // ASYNCRT_SUPPORT_FORKJOIN_H

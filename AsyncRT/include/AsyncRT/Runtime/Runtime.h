@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_H
-#define LLCL_RUNTIME_H
+#ifndef ASYNCRT_RUNTIME_H
+#define ASYNCRT_RUNTIME_H
 
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
@@ -486,4 +486,4 @@ inline void checkKnownCallingThread(const Runtime &runtime) {
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_RUNTIME_H
+#endif // ASYNCRT_RUNTIME_H

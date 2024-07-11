@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_ASYNCVALUE_H
-#define LLCL_RUNTIME_ASYNCVALUE_H
+#ifndef ASYNCRT_RUNTIME_ASYNCVALUE_H
+#define ASYNCRT_RUNTIME_ASYNCVALUE_H
 
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
@@ -886,4 +886,4 @@ inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_RUNTIME_ASYNCVALUE_H
+#endif // ASYNCRT_RUNTIME_ASYNCVALUE_H

@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_SEMAPHORE_H
-#define LLCL_SUPPORT_SEMAPHORE_H
+#ifndef ASYNCRT_SUPPORT_SEMAPHORE_H
+#define ASYNCRT_SUPPORT_SEMAPHORE_H
 
 #include <memory>
 #if defined(_WIN64) || defined(_WIN32)
@@ -53,4 +53,4 @@ private:
 };
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_SEMAPHORE_H
+#endif // ASYNCRT_SUPPORT_SEMAPHORE_H

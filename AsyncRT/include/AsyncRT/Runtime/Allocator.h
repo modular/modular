@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_ALLOCATOR_H
-#define LLCL_RUNTIME_ALLOCATOR_H
+#ifndef ASYNCRT_RUNTIME_ALLOCATOR_H
+#define ASYNCRT_RUNTIME_ALLOCATOR_H
 
 #include "Support/AlignedAlloc.h"
 #include "Support/Profiling/TimeProfiler.h"
@@ -123,4 +123,4 @@ void profiledMemcpy(void *dst, const void *src, size_t size);
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_RUNTIME_ALLOCATOR_H
+#endif // ASYNCRT_RUNTIME_ALLOCATOR_H

@@ -8,8 +8,8 @@
 // builds.
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_RESOURCE_H
-#define LLCL_SUPPORT_RESOURCE_H
+#ifndef ASYNCRT_SUPPORT_RESOURCE_H
+#define ASYNCRT_SUPPORT_RESOURCE_H
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
@@ -326,4 +326,4 @@ inline void swap(M::AsyncRT::ResourceUse &lhs, M::AsyncRT::ResourceUse &rhs) {
 
 } // namespace std
 
-#endif // LLCL_SUPPORT_RESOURCE_H
+#endif // ASYNCRT_SUPPORT_RESOURCE_H

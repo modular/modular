@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_WORKQUEUE_H
-#define LLCL_RUNTIME_WORKQUEUE_H
+#ifndef ASYNCRT_RUNTIME_WORKQUEUE_H
+#define ASYNCRT_RUNTIME_WORKQUEUE_H
 
 #include "AsyncRT/ForwardDecls.h"
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
@@ -261,4 +261,4 @@ createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, size_t numThreads,
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_RUNTIME_WORKQUEUE_H
+#endif // ASYNCRT_RUNTIME_WORKQUEUE_H

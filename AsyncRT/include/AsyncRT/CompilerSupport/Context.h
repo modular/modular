@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_COMPILERSUPPORT_CONTEXT_H
-#define LLCL_COMPILERSUPPORT_CONTEXT_H
+#ifndef ASYNCRT_COMPILERSUPPORT_CONTEXT_H
+#define ASYNCRT_COMPILERSUPPORT_CONTEXT_H
 
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -25,4 +25,4 @@ ContextRef loadContext(mlir::MLIRContext *ctx);
 
 } // namespace M
 
-#endif // LLCL_COMPILERSUPPORT_CONTEXT_H
+#endif // ASYNCRT_COMPILERSUPPORT_CONTEXT_H

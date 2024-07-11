@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_UNKNOWNLOCATIONDECODER_H
-#define LLCL_SUPPORT_UNKNOWNLOCATIONDECODER_H
+#ifndef ASYNCRT_SUPPORT_UNKNOWNLOCATIONDECODER_H
+#define ASYNCRT_SUPPORT_UNKNOWNLOCATIONDECODER_H
 
 #include "AsyncRT/Support/Location.h"
 #include "Support/LLVMForwardDecls.h"
@@ -40,4 +40,4 @@ public:
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_UNKNOWNLOCATIONDECODER_H
+#endif // ASYNCRT_SUPPORT_UNKNOWNLOCATIONDECODER_H

@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_UTILS_H
-#define LLCL_RUNTIME_UTILS_H
+#ifndef ASYNCRT_RUNTIME_UTILS_H
+#define ASYNCRT_RUNTIME_UTILS_H
 
 #include "AsyncRT/Runtime/AsyncValue.h"
 #include "AsyncRT/Runtime/RuntimeCLOptions.h"
@@ -51,4 +51,4 @@ auto runWithLeakCheckedRuntime(const char *testName, BodyFn bodyFn) {
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_RUNTIME_UTILS_H
+#endif // ASYNCRT_RUNTIME_UTILS_H
