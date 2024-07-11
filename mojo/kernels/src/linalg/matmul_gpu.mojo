@@ -342,8 +342,8 @@ fn gemv_kernel[
     n: Int,
     k: Int,
 ):
-    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warpId: UInt = x // WARP_SIZE
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var warpId = x // WARP_SIZE
     var accum = SIMD[s_type, 1]()
 
     if warpId < m:
@@ -445,12 +445,12 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warpsPerBlock: UInt = BlockDim.x() // WARP_SIZE
-    var warpId: UInt = ThreadIdx.x() // WARP_SIZE
+    var warpsPerBlock = BlockDim.x() // WARP_SIZE
+    var warpId = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[s_type, 1]()
-    var col: UInt = BlockIdx.x() * WARP_SIZE + lane_id()
+    var col = BlockIdx.x() * WARP_SIZE + lane_id()
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var globalWarpId: UInt = x // WARP_SIZE
+    var globalWarpId = x // WARP_SIZE
 
     var x_shared = stack_allocation[
         tile_size,
@@ -460,7 +460,7 @@ fn gevm_kernel[
 
     # Every block computes warp size length of output values
     for i in range(ceildiv(UInt(k), warpsPerBlock)):
-        var row: UInt = i * warpsPerBlock + warpId
+        var row = i * warpsPerBlock + warpId
         var lhs = Scalar.load(a, row)
         var rhs = Scalar.load(b, row * n + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
@@ -538,8 +538,8 @@ fn matmul_kernel[
     var row = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
     # Local index in the c sub-matrix updated by current block.
-    var localCol: UInt = ThreadIdx.x()
-    var localRow: UInt = ThreadIdx.y()
+    var localCol = ThreadIdx.x()
+    var localRow = ThreadIdx.y()
 
     # Result of current thread in C.
     var result = SIMD[s_type, 1](0.0)
@@ -634,7 +634,7 @@ fn sgemm_double_buffer_kernel[
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
 
-    var tid: UInt = ThreadIdx.x()
+    var tid = ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
     var lane_id = lane_id()
 
@@ -672,7 +672,7 @@ fn sgemm_double_buffer_kernel[
 
     # Global memory tile.
     alias a_gmem_layout = Layout(IntTuple(BM, BK), IntTuple(K, 1))
-    var a_offset: UInt = BlockIdx.y() * BM * K
+    var a_offset = BlockIdx.y() * BM * K
     var a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset))
     var b_gmem_tile = b.tile[BK, BN](0, BlockIdx.x())
 
@@ -813,7 +813,7 @@ fn sgemm_double_buffer_kernel[
             outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
 
     # Map global memory tile down to thread.
-    var c_offset: UInt = BlockIdx.y() * BM * N + BlockIdx.x() * BN
+    var c_offset = BlockIdx.y() * BM * N + BlockIdx.x() * BN
     alias c_gmem_layout = Layout(IntTuple(BM, BN), IntTuple(N, 1))
     var c_gmem_tile = LayoutTensor[c_type, c_gmem_layout](
         c.offset(Int(c_offset))
@@ -862,8 +862,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
     if x >= m or y >= n:
         return
