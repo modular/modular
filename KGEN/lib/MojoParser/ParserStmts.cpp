@@ -863,6 +863,27 @@ static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
   return {TryOp(), false};
 }
 
+/// Inject a call to a special method that the debugger stops at when
+/// supporting exception/error breakpoints.
+static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
+                                                 ExprEmitter &&emitter,
+                                                 ASTDecl &declContext,
+                                                 llvm::SMLoc loc,
+                                                 ExprNode *node) {
+  ArrayRef<ASTDecl *> raiseHookFns = shared.getBuiltinFunction(
+      declContext, "builtin.error", "__mojo_debugger_raise_hook", loc);
+  if (raiseHookFns.empty())
+    return failure();
+
+  ParamBindings bindings(
+      TypeCheckScopeInfo{declContext, /*isParamContext=*/false, shared});
+  OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
+                   std::move(bindings), node, CallSyntax::kDirectCall);
+  ValueDest raseHookDest(EC_RaiseValue);
+  call.emitCall({}, raseHookDest, emitter);
+  return success();
+}
+
 ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   llvm::SMRange loc = consumeToken(Token::kw_raise).getLocRange();
 
@@ -923,6 +944,16 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     getEmitter().emitResult(MRValue(tryOp.getErr()), SyntheticNode(loc.Start),
                             dest);
   }
+
+  // If we are in a debug build, we inject a call to a stop hook for the
+  // debugger right before a RaiseOp.
+  if (shared.options.debugLevel !=
+      CompilationOptions::DebugInfoLevel::kNoDebug) {
+    if (failed(injectDebuggerRaiseHookCall(
+            shared, getEmitter(), getParentDecl(), loc.Start, errorExpr)))
+      return failure();
+  }
+
   builder.create<LIT::RaiseOp>(translateLocation(loc.Start));
   return success();
 }

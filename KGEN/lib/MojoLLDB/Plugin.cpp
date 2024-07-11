@@ -10,11 +10,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoLLDB/Plugin.h"
-#include "./Language/MojoLanguage.h"
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
 #include "LLCL/Init/Init.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Language/MojoLanguage.h"
+#include "Language/MojoLanguageRuntime.h"
 #include "REPL/MojoREPL.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/SymbolExport.h"
@@ -83,6 +84,7 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   MojoTypeSystem::Initialize(&getGlobalContext);
   MojoREPL::Initialize();
   MojoLanguage::Initialize();
+  MojoLanguageRuntime::Initialize();
   return true;
 }
 

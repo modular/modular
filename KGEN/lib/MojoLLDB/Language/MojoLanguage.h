@@ -72,7 +72,7 @@ public:
   bool DemangledNameContainsPath(
       llvm::StringRef path,
       lldb_private::ConstString demangled) const override {
-    return false;
+    return demangled.GetStringRef().contains(path);
   }
 
   lldb_private::ConstString GetDemangledFunctionNameWithoutArguments(
