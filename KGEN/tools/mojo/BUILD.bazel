@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@pip_deps//:requirements.bzl", "requirement")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
     "driver_option_tablegen",
@@ -92,6 +93,25 @@ driver_option_tablegen(
         ":Run.td_library",
         ":Test.td_library",
     ],
+)
+
+pkg_files(
+    name = "docs",
+    srcs = [
+        ":Build.man_files",
+        # TODO: Feature gated by MODULAR_MOJO_BUILD_SERVER_PREVIEW
+        # ":BuildProject.man_files",
+        ":Debug.man_files",
+        ":Demangle.man_files",
+        ":Doc.man_files",
+        ":Format.man_files",
+        ":Package.man_files",
+        ":REPL.man_files",
+        ":Run.man_files",
+        ":Test.man_files",
+        ":Index.man_files",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 modular_cc_binary(

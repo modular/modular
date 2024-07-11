@@ -1,3 +1,4 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
@@ -51,4 +52,15 @@ lit_tests(
     tools = [
         "//KGEN/tools/kgen",
     ],
+)
+
+pkg_files(
+    name = "test_python",
+    srcs = [
+        "mojo-build-python.mojo",
+    ],
+    renames = {
+        "mojo-build-python.mojo": "test_python.mojo",
+    },
+    visibility = ["//visibility:public"],
 )
