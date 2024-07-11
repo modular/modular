@@ -212,6 +212,7 @@ fn fused_attention[
 
 fn flash_attention[
     rank: Int,
+    mask_rank: Int,
     q_shape: DimList,
     k_shape: DimList,
     v_shape: DimList,
@@ -231,7 +232,7 @@ fn flash_attention[
     q: NDBuffer[q_type, rank, q_shape],
     k: NDBuffer[k_type, rank, k_shape],
     v: NDBuffer[v_type, rank, v_shape],
-    mask: NDBuffer[mask_type, 3, mask_shape],
+    mask: NDBuffer[mask_type, mask_rank, mask_shape],
     scale: Float32,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -250,15 +251,15 @@ fn flash_attention[
     (1), (2), (3) happens while loading the data into shared memory.
     (8) happens when writing output to global memory.
 
+    All inputs (query, key, and value) must have BSHD layout. The mask can be
+    BSS or BHSS.
+
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
-
-    Assumptions:
-        (1) depth per head is 128 (or 256, set TN=8).
-        (2) seqlen is multiple of 32 and 128.
     """
     constrained[target == "cuda", "only valid on Nvidia GPUs"]()
     constrained[rank == 4, "only support rank 4 inputs."]()
+    constrained[mask_rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
         q_type == k_type == v_type == output_type,
         "Q, K, V, output should have same type.",
@@ -284,6 +285,7 @@ fn flash_attention[
 
         flash_attention_impl[
             rank,
+            mask_rank,
             q_type,
             k_type,
             v_type,
@@ -313,7 +315,9 @@ fn flash_attention[
         var depth = q.dim[3]()
         var group = q.dim[2]() // k.dim[2]()
 
-        mha_gpu_naive[q_type, k_type, v_type, mask_type, output_type](
+        mha_gpu_naive[
+            mask_rank, q_type, k_type, v_type, mask_type, output_type
+        ](
             q.data,
             k.data,
             v.data,
@@ -332,6 +336,7 @@ fn flash_attention[
 
 fn flash_attention_impl[
     rank: Int,
+    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -367,7 +372,12 @@ fn flash_attention_impl[
     try:
         # Legacy impl for FP32
         @parameter
-        if q_type == DType.float32 and depth == 128 and not use_tensor_core:
+        if (
+            q_type == DType.float32
+            and depth == 128
+            and mask_rank == 3
+            and not use_tensor_core
+        ):
             if seq_len == num_keys and seq_len % 128 == 0:
                 var func = ctx.compile_function[
                     flash_attention_kernel[
@@ -440,10 +450,9 @@ fn flash_attention_impl[
         @parameter
         if use_tensor_core:
             if seq_len == num_keys and seq_len % 128 == 0 and depth % 32 == 0:
-                # alias WN = 32  # from cutlass, TODO: tune this parameter
-
                 var func = ctx.compile_function[
                     mha[
+                        mask_rank,
                         q_type,
                         k_type,
                         v_type,
@@ -453,7 +462,7 @@ fn flash_attention_impl[
                         BN=ktile_num_rows,
                         BK = 16 if q_type == DType.float32 else 32,
                         WM=qtile_num_rows,
-                        WN=32,  # WN,
+                        WN=32,  # got from cutlass
                         depth=depth,
                         num_heads=num_heads,
                         num_threads=128,  # (depth // WN) * WARP_SIZE,
@@ -489,7 +498,7 @@ fn flash_attention_impl[
 
                 return
 
-        mha_gpu_naive(
+        mha_gpu_naive[mask_rank](
             q,
             k,
             v,
@@ -1508,6 +1517,7 @@ fn _naive_attention[
 
 
 fn mha[
+    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -1536,9 +1546,12 @@ fn mha[
     var batch_idx = BlockIdx.z()
     var q_batch_offset = depth * num_heads * seq_len * batch_idx
     var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
-    var mask_batch_offset = batch_idx * seq_len * seq_len
+    var mask_batch_offset = batch_idx * seq_len * seq_len * (
+        num_heads if mask_rank == 4 else 1
+    )
 
     mha_single_batch[
+        mask_rank,
         BM=BM,
         BN=BN,
         BK=BK,
@@ -1561,11 +1574,12 @@ fn mha[
 
 
 fn mha_single_batch[
+    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
     mask_type: DType,
-    output_type: DType, //,
+    output_type: DType,
     *,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
@@ -1691,7 +1705,9 @@ fn mha_single_batch[
     ](v_smem, v_smem_size)
 
     # Mask global memory iterator.
-    var mask_offset = q_tile_idx * BM * seq_len
+    var mask_offset = q_tile_idx * BM * seq_len + (
+        Int(head_idx * seq_len * seq_len) if mask_rank == 4 else 0
+    )
     var warp_offset = warp_y * WM * seq_len + warp_x * WN
     var mask_warp_ptr = mask_ptr + Int(mask_offset) + Int(warp_offset)
 
@@ -1898,6 +1914,7 @@ fn mha_single_batch[
 
 
 fn mha_gpu_naive[
+    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -1928,7 +1945,7 @@ fn mha_gpu_naive[
     )
 
     var bmm0_func = ctx.compile_function[
-        _bmm0[q_type, k_type, p_type, mask_type]
+        _bmm0[mask_rank, q_type, k_type, p_type, mask_type]
     ]()
     ctx.enqueue_function(
         bmm0_func,
@@ -1992,6 +2009,7 @@ fn mha_gpu_naive[
 
 @always_inline
 fn _bmm0[
+    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     p_type: DType,
@@ -2031,7 +2049,9 @@ fn _bmm0[
     var p_offset = batch_head * seq_len * num_keys
     var p = p_ptr + Int(p_offset)
 
-    var mask_offset = batch * seq_len * num_keys
+    var mask_offset = (
+        batch if mask_rank == 3 else batch_head
+    ) * seq_len * num_keys
     var mask = mask_ptr + Int(mask_offset)
 
     var accum = SIMD[p_type, 1](0.0)

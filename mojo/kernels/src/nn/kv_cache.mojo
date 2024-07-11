@@ -399,6 +399,7 @@ fn _flash_attention_kv_cache_gpu[
     try:
         gpu_flash_attention[
             4,
+            3,
             q.shape,
             k_nd.shape,
             v_nd.shape,
