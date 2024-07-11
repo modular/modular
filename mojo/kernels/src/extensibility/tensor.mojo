@@ -11,7 +11,7 @@ from sys.intrinsics import strided_load
 from algorithm.functional import elementwise, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import Pointer, bitcast
+from memory.unsafe import bitcast
 from register import *
 
 from utils._serialize import _serialize
