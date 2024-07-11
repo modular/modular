@@ -57,7 +57,7 @@ def test_implicit_conversion():
 
 @value
 struct Foo:
-    pass
+    var val: String
 
 
 @value
@@ -79,10 +79,13 @@ def test_any_memory():
 
     assert_true(memory.is_tensor())
 
-    foo = Foo()
+    foo = Foo("Hello")
     foo_memory = AnyMemory(AnyMojoValue(foo^))
 
     assert_false(foo_memory.is_tensor())
+
+    foo_rt = foo_memory.to[Foo]()
+    assert_equal(foo_rt.val, "Hello")
 
     reg_foo = RegFoo()
     reg_foo_memory = AnyMemory(AnyMojoValue(reg_foo))

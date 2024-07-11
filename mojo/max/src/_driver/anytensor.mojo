@@ -111,6 +111,10 @@ struct _CMojoValue:
         ptr.bitcast[T]().destroy_pointee()
 
     @staticmethod
+    fn _no_op_destructor[T: AnyType](ptr: UnsafePointer[NoneType]):
+        pass
+
+    @staticmethod
     fn _free(ptr: UnsafePointer[NoneType]):
         external_call["KGEN_CompilerRT_MojoValueFreeBuffer", NoneType](ptr)
 
@@ -130,6 +134,9 @@ struct AnyMojoValue:
 
     fn __init__(inout self):
         self._impl = _CMojoValue()
+
+    fn __init__(inout self, impl: _CMojoValue):
+        self._impl = impl
 
     fn __init__[T: Movable](inout self, owned val: T):
         var ptr = external_call[
@@ -158,15 +165,26 @@ struct AnyMojoValue:
         var impl = exchange(self._impl, _CMojoValue())
         return impl
 
+    fn to[T: Movable](owned self) -> T:
+        """Consume this object and produces an instance of T. This doesn't do
+        any type check and assumes this AnyMojoValue was created from T."""
+        var value = self._impl._ptr.bitcast[T]().take_pointee()
+        self._impl._destroy_func = _CMojoValue._no_op_destructor[T]
+        return value^
+
     fn __del__(owned self):
         self._impl.destroy()
 
 
+@value
 struct AnyMemory:
     """A generic representation which can either be a Driver Tensor or Mojo object.
     """
 
     var _value: Variant[AnyTensor, AnyMojoValue]
+
+    fn __init__(inout self):
+        self._value = AnyMojoValue()
 
     fn __init__(inout self, owned device_tensor: DeviceTensor):
         self._value = AnyTensor(device_tensor^)
@@ -190,6 +208,28 @@ struct AnyMemory:
         """Take tensor from object. Further access to this object is undefined behavior.
         """
         return self._value[AnyTensor].take()
+
+    fn take(inout self) -> Self:
+        """The returned value takes self's resources and replaces them with default
+        initialized values."""
+        var tmp = Self()
+        swap(tmp, self)
+        return tmp^
+
+    fn to_device_tensor(owned self) raises -> DeviceTensor:
+        """Consume this object and produces and instance of DeviceTensor.
+        Only valid if this was created from DeviceTensor.
+        """
+        var tmp = self^
+        return tmp.take_tensor().to_device_tensor()
+
+    fn to[T: Movable](owned self) -> T:
+        """Consume this object and produces an instance of T. This doesn't do
+        any type check beyond whether this is a AnyTensor or not,
+        and if not assume this was created from T."""
+        var tmp = self^
+        var value = tmp.take_value()
+        return value.to[T]()
 
     fn take_value(inout self) -> AnyMojoValue:
         """Take value from object. Further access to this object is undefined behavior.
