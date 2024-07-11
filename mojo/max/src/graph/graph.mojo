@@ -329,6 +329,11 @@ struct Graph(CollectionElement, Stringable, Formattable):
         """Returns the `Graph`'s MLIR context."""
         return self._module().context()
 
+    fn _name(self) raises -> String:
+        """Returns the `Graph`'s name."""
+        # Can use str() here because 'name' is a string attribute.
+        return str(self._graph[].op.get_inherent_attr("name"))
+
     def _new_parameters(self, dims: List[Dim]) -> Optional[_mlir.Attribute]:
         """Create an `outputParamDecls` for all newly introduced parameters."""
         ctx = self._context()

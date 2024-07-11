@@ -56,6 +56,7 @@ struct CCompileConfig:
 
     alias FreeCompileConfigFnName = "M_freeCompileConfig"
     alias SetModelSourceFnName = "M_setModelSourceInternal"
+    alias SetPipelineNameFnName = "M_setPipelineName"
     alias SetModelPathFnName = "M_setModelPath"
     alias ReplaceOpsFnName = "M_useKernelsFrom"
     alias SetDeviceFnName = "M_setDevice"
@@ -63,6 +64,11 @@ struct CCompileConfig:
 
     fn set_model_source(self, model_source: ModelSource, lib: DLHandle):
         call_dylib_func(lib, Self.SetModelSourceFnName, self, model_source)
+
+    fn set_pipeline_name(self, name: String, lib: DLHandle):
+        call_dylib_func(
+            lib, Self.SetPipelineNameFnName, self, name.unsafe_ptr()
+        )
 
     fn set_model_path(self, path: String, lib: DLHandle):
         """Sets the path of model to compile."""
@@ -261,6 +267,9 @@ struct CompileConfig:
 
     fn set_model_source(self, model_source: ModelSource):
         self.ptr[].set_model_source(model_source, self.lib)
+
+    fn set_pipeline_name(self, name: String):
+        self.ptr[].set_pipeline_name(name, self.lib)
 
     fn set_model_path(self, path: String):
         """Sets the path of model to compile."""

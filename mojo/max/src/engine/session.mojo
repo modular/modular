@@ -70,6 +70,10 @@ struct _InferenceSessionImpl(Movable):
             compile_config.set_model_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
+        var pipeline_name = config._pipeline_name
+        if pipeline_name:
+            compile_config.set_pipeline_name(pipeline_name.value())
+
         var custom_ops_paths = config._custom_ops_paths
         # TODO: Use a direct for loop (#38478).
         for i in range(len(custom_ops_paths)):
@@ -347,6 +351,7 @@ struct _TorchLoadOptions(CollectionElement):
 
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
+    var _pipeline_name: Optional[String]
     var _custom_ops_paths: List[Path]
     var _input_specs: List[InputSpec]
 
@@ -354,6 +359,7 @@ struct _TorchLoadOptions(CollectionElement):
         """Creates a new _TorchLoadOptions object."""
         self._source = None
         self._model_path = None
+        self._pipeline_name = None
         self._custom_ops_paths = List[Path]()
         self._input_specs = List[InputSpec]()
 
@@ -380,6 +386,15 @@ struct _TorchLoadOptions(CollectionElement):
 
         """
         self._model_path = path
+
+    fn set_pipeline_name(inout self, graph: Graph) raises:
+        """Specifies the given MAX Graph name i.e. llama3.
+        Used for telemetry.
+
+        Args:
+            graph: MAX Graph.
+        """
+        self._pipeline_name = graph._name()
 
     fn set_custom_ops_paths(inout self, paths: List[Path]) raises:
         """Replace Modular kernels in given model with user-defined kernels.
@@ -511,6 +526,7 @@ struct InferenceSession:
         var load_config = _TorchLoadOptions()
         load_config.set_model_source(graph)
         load_config.set_custom_ops_paths(custom_ops_paths)
+        load_config.set_pipeline_name(graph)
         if input_specs:
             load_config.set_input_specs(input_specs.value())
         return self._ptr[].load(load_config^, self)
