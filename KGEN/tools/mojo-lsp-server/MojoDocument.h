@@ -7,12 +7,12 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
 
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "MojoServer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"

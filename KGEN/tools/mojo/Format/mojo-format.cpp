@@ -7,9 +7,9 @@
 #include "mojo-format.h"
 
 #include "../../common/Telemetry.h"
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/Support/Configuration.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "llvm/Option/ArgList.h"

@@ -32,7 +32,7 @@ add_modular_library(KGENObjectCompiler
   MCompilerSupport
   MTelemetry
   MSupport
-  LLCLCompilerSupport
+  AsyncRTCompilerSupport
 
   MLIRReconcileUnrealizedCasts
   MLIRIndexToLLVM

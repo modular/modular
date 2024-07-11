@@ -47,5 +47,5 @@ add_modular_library(KGENTransforms
   LITDialect
   MLIRTransformUtils
   MSupport
-  LLCLCompilerSupport
+  AsyncRTCompilerSupport
 )

@@ -11,10 +11,10 @@ add_modular_tool(mojo-test-executor
   MLIRLspServerSupportLib
   KGENCompilerRT
   KGENSupport
-  LLCLCompilerSupport
-  LLCLRuntimeGlobals
+  AsyncRTCompilerSupport
+  AsyncRTRuntimeGlobals
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MojoJupyter
   MojoParser
   MojoTesting

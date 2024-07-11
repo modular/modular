@@ -16,7 +16,7 @@ add_modular_tool(cache-mgr
   MCache
   MSupport
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MLIRSupport
-  LLCLRuntimeGlobals
+  AsyncRTRuntimeGlobals
   )

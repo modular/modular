@@ -1,0 +1,39 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLCL_SUPPORT_MLIRLOCATIONDECODER_H
+#define LLCL_SUPPORT_MLIRLOCATIONDECODER_H
+
+#include "AsyncRT/Support/Diagnostic.h"
+#include "AsyncRT/Support/Location.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ReferenceCounted.h"
+#include <string>
+
+namespace M::LLCL {
+
+/// This class implements LocationDecoder and reports the MLIR location as
+/// file/line/column when possible, otherwise just reports the printed location.
+class MLIRLocationDecoder final : public ReferenceCounted<MLIRLocationDecoder>,
+                                  public LocationDecoder {
+public:
+  MLIRLocationDecoder() = default;
+
+  static EncodedLocation getEncodedLocation(mlir::Location loc);
+
+  /// Implement the LocationDecoder hooks - the EncodedLocation contains a
+  /// pointer that can be decoded with the context into a full mlir::Location.
+  DecodedLocation decode(const EncodedLocation &loc) const override;
+  void addRef() const override;
+  void dropRef() const override;
+};
+
+/// Given an Error and an mlir::Location, we can create an EncodedDiagnostic.
+EncodedDiagnostic getMLIRDiagnostic(Error e, mlir::Location loc);
+
+} // namespace M::LLCL
+
+#endif // LLCL_SUPPORT_MLIRLOCATIONDECODER_H

@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "./Memory.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/CompilerRT/Registration.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
 
 using namespace M;

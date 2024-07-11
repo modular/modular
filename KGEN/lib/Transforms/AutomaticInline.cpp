@@ -4,6 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/Allocator.h"
+#include "AsyncRT/Runtime/WorkQueue.h"
+#include "AsyncRT/Support/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -11,11 +16,6 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/InliningUtils.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Allocator.h"
-#include "LLCL/Runtime/WorkQueue.h"
-#include "LLCL/Support/ForkJoin.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"

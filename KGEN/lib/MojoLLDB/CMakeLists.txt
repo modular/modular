@@ -38,11 +38,11 @@ add_modular_library(MojoLLDB SHARED
   KGENCompiler
   KGENObjectCompiler
   KGENSupport
-  LLCLCompilerSupport
-  LLCLRuntimeGlobals
+  AsyncRTCompilerSupport
+  AsyncRTRuntimeGlobals
   MCrashReporting
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MVersion
   MojoTooling
 

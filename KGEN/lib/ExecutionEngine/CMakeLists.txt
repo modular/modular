@@ -51,7 +51,7 @@ add_modular_library(KGENExecutionEngine
   LINK_LIBS PUBLIC
   KGENJIT
   KGENSupport
-  LLCLRuntime
+  AsyncRTRuntime
   MCache
   MSupport
 )

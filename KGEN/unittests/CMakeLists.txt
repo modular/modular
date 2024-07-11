@@ -27,8 +27,8 @@ add_modular_unittest(
   test_kernels-headers
 
   LINK_LIBS PRIVATE
-  LLCLRuntime
-  LLCLRuntimeGlobals
+  AsyncRTRuntime
+  AsyncRTRuntimeGlobals
   MSupportML
   MSupportGlobals
   test_kernels

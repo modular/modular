@@ -23,7 +23,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 
-#include "LLCL/Runtime/Runtime.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "ParserDriverImpl.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/Filesystem/Paths.h"

@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/Support/Debugging.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "LSPServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"

@@ -373,7 +373,7 @@ modular_cc_library(
 modular_cc_library(
     name = "Profiling.headers",
     hdrs = glob(["include/Support/Profiling/*.h"]),
-    visibility = ["//LLCL:__subpackages__"],
+    visibility = ["//AsyncRT:__subpackages__"],
     deps = [
         ":Base",
     ],
@@ -595,7 +595,7 @@ modular_cc_library(
         ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
-        "//LLCL:CompilerSupport.headers",
+        "//AsyncRT:CompilerSupport.headers",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Target",
     ],

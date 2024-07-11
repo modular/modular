@@ -52,7 +52,7 @@ add_modular_tool(mojo
 
   LINK_LIBS PRIVATE
   KGENToolCommon
-  LLCLRuntimeGlobals
+  AsyncRTRuntimeGlobals
   MArchTarget
   MCrashReporting
   MojoToolsCommon
@@ -64,7 +64,7 @@ add_modular_tool(mojo
   MSupportFilesystem
   MSupportDriver
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   KGENExecutionEngine
   KGENCompiler
   KGENObjectCompiler

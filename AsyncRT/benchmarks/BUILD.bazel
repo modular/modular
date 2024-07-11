@@ -1,0 +1,10 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+modular_cc_test(
+    name = "QueueBenchmark",
+    srcs = ["QueueBenchmark.cpp"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "@google_benchmark//:benchmark_main",
+    ],
+)

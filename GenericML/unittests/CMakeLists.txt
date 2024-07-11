@@ -31,8 +31,8 @@ add_modular_unittest(
   LINK_LIBS PRIVATE
   GenericMLSupport
   GenericMLSupportGlobals
-  LLCLRuntime
-  LLCLRuntimeGlobals
+  AsyncRTRuntime
+  AsyncRTRuntimeGlobals
   MSupportML
   MSupportGlobals
 )

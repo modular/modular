@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Init/Init.h"
 #include "Helpers.h"
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -11,8 +13,6 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/Walkers.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/Init/Init.h"
 #include "PreOrderRegionIterator.h"
 #include "Support/Context.h"
 #include "mlir/IR/BuiltinOps.h"

@@ -20,7 +20,7 @@ add_modular_library(KGENCompiler
   KGENTransforms
   LowerLIT
   MSupport
-  LLCLCompilerSupport
+  AsyncRTCompilerSupport
 
   KGENDialect
   LITDialect

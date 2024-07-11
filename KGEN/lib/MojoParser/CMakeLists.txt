@@ -42,7 +42,7 @@ add_modular_library(MojoParser
   KGENInitAllDialects
   KGENCompilationOptions
   MTelemetry
-  LLCLRuntime
+  AsyncRTRuntime
 
   MLIRTransformUtils
   MLIRBytecodeReader

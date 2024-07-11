@@ -12,7 +12,7 @@ add_modular_library(MojoTesting
   MojoTooling
   MSupport
   KGENSupport
-  LLCLRuntimeGlobals
+  AsyncRTRuntimeGlobals
   MSupportGlobals
   MLIRLspServerSupportLib
 )

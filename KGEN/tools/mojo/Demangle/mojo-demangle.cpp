@@ -7,11 +7,11 @@
 #include "mojo-demangle.h"
 #include "../../common/Telemetry.h"
 
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 

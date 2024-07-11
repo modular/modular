@@ -10,10 +10,10 @@ add_modular_tool(kgen-translate
   LINK_LIBS PRIVATE
   KGENTranslationRegistry
   MojoParser
-  LLCLCompilerSupport
-  LLCLRuntimeGlobals
+  AsyncRTCompilerSupport
+  AsyncRTRuntimeGlobals
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MSupport
   MArchTarget
   MProfiling

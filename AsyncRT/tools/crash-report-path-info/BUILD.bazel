@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+modular_cc_binary(
+    name = "crash-report-path-info",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//AsyncRT:Init",
+        "//AsyncRT:RuntimeGlobals.static",
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:CrashReporting",
+        "//Support:Globals.static",
+    ],
+)

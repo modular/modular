@@ -4,6 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
+#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Config/Version.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
@@ -16,10 +20,6 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"

@@ -10,10 +10,10 @@ add_modular_library(MCache
   CacheTelemetryContext.cpp
 
   LINK_LIBS PUBLIC
-  LLCLCompilerSupport
-  LLCLRuntime
-  LLCLSupport
-  LLCLCompilerSupport
+  AsyncRTCompilerSupport
+  AsyncRTRuntime
+  AsyncRTSupport
+  AsyncRTCompilerSupport
   LLVMSupport
   MCompilerSupport
   MLIRBytecodeWriter

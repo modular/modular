@@ -7,8 +7,8 @@
 #ifndef KGEN_TOOLCOMMON_CLOPTIONS_H
 #define KGEN_TOOLCOMMON_CLOPTIONS_H
 
+#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/Profiling/TimeProfiler.h"

@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/BlobCache.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Allocator.h"
-#include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Runtime/WorkQueue.h"
-#include "LLCL/Support/UnknownLocationDecoder.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/Allocator.h"
+#include "AsyncRT/Runtime/Runtime.h"
+#include "AsyncRT/Runtime/WorkQueue.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
 #include "Support/RCRef.h"

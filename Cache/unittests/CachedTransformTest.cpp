@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CachedTransform.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/UnknownLocationDecoder.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/Runtime.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
 

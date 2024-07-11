@@ -7,8 +7,8 @@
 #ifndef KGEN_TRANSFORMUTILS_SCCUTILS_H
 #define KGEN_TRANSFORMUTILS_SCCUTILS_H
 
+#include "AsyncRT/Support/ForkJoin.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
-#include "LLCL/Support/ForkJoin.h"
 
 namespace M::KGEN {
 

@@ -19,9 +19,9 @@ add_modular_unittest(
   KeyTest.cpp
 
   LINK_LIBS PRIVATE
-  LLCLRuntime
-  LLCLRuntimeGlobals
-  LLCLSupport
+  AsyncRTRuntime
+  AsyncRTRuntimeGlobals
+  AsyncRTSupport
   MSupport
   MSupportGlobals
   MCache

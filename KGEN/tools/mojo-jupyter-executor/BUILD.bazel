@@ -4,13 +4,13 @@ modular_cc_binary(
     name = "mojo-jupyter-executor",
     srcs = ["main.cpp"],
     deps = [
+        "//AsyncRT:Init",
+        "//AsyncRT:RuntimeGlobals",
         "//KGEN:ExecutionEngine",
         "//KGEN:MojoJupyter",
         "//KGEN:MojoLLDB",
         "//KGEN:MojoLLDBPublicHeaders",
         "//KGEN:liblldb.wrapper",
-        "//LLCL:Init",
-        "//LLCL:RuntimeGlobals",
         "//Support:Globals",
     ],
 )
