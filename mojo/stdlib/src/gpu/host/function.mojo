@@ -459,7 +459,7 @@ struct Function[
         ]()
 
         populate(
-            rebind[LegacyPointer[NoneType]](args_stack.bitcast[NoneType]())
+            rebind[UnsafePointer[NoneType]](args_stack.bitcast[NoneType]())
         )
 
         @parameter
