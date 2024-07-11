@@ -10,7 +10,7 @@
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "AsyncRT/Runtime/AsyncValue.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This class specializes AnyAsyncValueRef to assume the target AsyncValue
 /// is (intended to hold) a T. Thus the get() and emplace() methods don't
@@ -191,6 +191,6 @@ private:
   EncodedLocation loc;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_ASYNCVALUEREF_H

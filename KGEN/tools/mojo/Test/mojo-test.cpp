@@ -76,7 +76,7 @@ static int test(const State &subcommandState) {
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
@@ -110,7 +110,7 @@ static int test(const State &subcommandState) {
     additionalImportPaths.push_back(testIDFilePath);
   }
 
-  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   ErrorOr<std::optional<Test>> testOr =
       Test::discoverFromID(runtime, testID, additionalImportPaths);
   if (testOr.isError())

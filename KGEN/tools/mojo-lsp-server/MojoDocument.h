@@ -88,7 +88,7 @@ public:
   int64_t getVersion() const { return version; }
 
   /// Return the runtime used for this document.
-  LLCL::Runtime &getRuntime() const { return runtime; }
+  AsyncRT::Runtime &getRuntime() const { return runtime; }
 
   /// Return the URIs of this document.
   ArrayRef<mlir::lsp::URIForFile> getURIs() const { return uris; }
@@ -261,8 +261,9 @@ public:
 
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
-               SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
-               LLCL::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs);
+               SendDiagnosticsFnRef sendDiagnosticsFn,
+               AsyncRT::Runtime &runtime, AsyncRT::AnyAsyncValueRef chain,
+               ArrayRef<std::string> includeDirs);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -385,7 +386,7 @@ private:
   SendDiagnosticsFnRef sendDiagnosticsFn;
 
   /// The runtime used when parsing the file.
-  LLCL::Runtime &runtime;
+  AsyncRT::Runtime &runtime;
 
   /// A flag indicating if this document version has been invalidated.
   std::atomic<bool> isInvalidated = false;
@@ -520,7 +521,7 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
+                   AsyncRT::Runtime &runtime, AsyncRT::AnyAsyncValueRef chain,
                    ArrayRef<std::string> includeDirs);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
@@ -631,7 +632,8 @@ public:
                        ArrayRef<mlir::lsp::NotebookCell> cellInfos,
                        ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
                        SendDiagnosticsFnRef sendDiagnosticsFn,
-                       LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
+                       AsyncRT::Runtime &runtime,
+                       AsyncRT::AnyAsyncValueRef chain,
                        ArrayRef<std::string> includeDirs);
   MojoNotebookDocument(const MojoDocument &) = delete;
   MojoNotebookDocument &operator=(const MojoDocument &) = delete;

@@ -15,7 +15,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// Determine the number of threads to use (based on the existing suggestion),
 /// and return a vector of CPU IDs for every such thread. The CPU ids may be
@@ -35,6 +35,6 @@ void runWithThreadAffinity(size_t cpuID, llvm::function_ref<void()> workFn);
 /// Gracefully and silently continue if errors.
 void setThreadAffinity(size_t cpuID);
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_THREADAFFINITY_H

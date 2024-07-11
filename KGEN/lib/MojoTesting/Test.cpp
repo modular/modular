@@ -304,7 +304,7 @@ static bool definesTestSuite(Operation *op) {
 }
 
 /// A type corresponding to an async test discovery result.
-using AsyncOptionalTest = LLCL::AsyncValueRef<std::optional<Test>>;
+using AsyncOptionalTest = AsyncRT::AsyncValueRef<std::optional<Test>>;
 
 /// Await the result of an async result, returning an easier to manipulate
 /// form.
@@ -317,7 +317,7 @@ static ErrorOr<std::optional<Test>> awaitTest(AnyAsyncValueRef result) {
 
 /// This class is used to discover tests from within a specific Mojo file.
 struct Test::TestDiscovery {
-  TestDiscovery(LLCL::Runtime &runtime,
+  TestDiscovery(AsyncRT::Runtime &runtime,
                 ArrayRef<std::string> additionalImportPaths)
       : runtime(runtime), additionalImportPaths(additionalImportPaths) {
     DialectRegistry registry;
@@ -578,15 +578,15 @@ struct Test::TestDiscovery {
   AsyncOptionalTest discoverTestsInMojoSource(const std::filesystem::path &path,
                                               StringRef suiteName = {}) {
     auto asyncResult = AsyncOptionalTest::allocate(runtime);
-    LLCL::addTask(runtime, [this, path, suiteName,
-                            asyncResult = asyncResult.copy()]() mutable {
+    AsyncRT::addTask(runtime, [this, path, suiteName,
+                               asyncResult = asyncResult.copy()]() mutable {
       ErrorOr<std::optional<Test>> result =
           discoverTestsInMojoSourceSync(path, suiteName);
       if (result.isError()) {
         return std::move(asyncResult)
             .setToError(EncodedDiagnostic(
                 result.takeError(),
-                LLCL::UnknownLocationDecoder::getEncodedLocation()));
+                AsyncRT::UnknownLocationDecoder::getEncodedLocation()));
       }
       std::move(asyncResult).emplace(std::move(*result));
     });
@@ -711,7 +711,7 @@ struct Test::TestDiscovery {
       return std::move(asyncChildren.front());
 
     auto result = AsyncOptionalTest::allocate(runtime);
-    LLCL::andThenAsyncMoving(
+    AsyncRT::andThenAsyncMoving(
         asyncChildren,
         [path, hasSourcePackageChild, result = result.copy()](
             MutableArrayRef<AnyAsyncValueRef> asyncChildren) mutable {
@@ -752,13 +752,13 @@ struct Test::TestDiscovery {
     return std::move(result);
   }
 
-  LLCL::Runtime &runtime;
+  AsyncRT::Runtime &runtime;
   mlir::MLIRContext ctx{mlir::MLIRContext::Threading::DISABLED};
   ArrayRef<std::string> additionalImportPaths;
 };
 
 ErrorOr<std::optional<Test>>
-Test::discoverFromID(LLCL::Runtime &runtime, const TestID &testID,
+Test::discoverFromID(AsyncRT::Runtime &runtime, const TestID &testID,
                      ArrayRef<std::string> additionalImportPaths) {
   std::filesystem::path path = testID.getFilePath();
 
@@ -1038,7 +1038,7 @@ executeTests(ArrayRef<Test> tests,
 
 /// Execute the given doc test, returning the result.
 static MaybeResolvedResult
-executeDocTest(LLCL::Runtime &runtime, const Test &test,
+executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
                ArrayRef<std::string> additionalImportPaths) {
   // Doc tests are unique compare to unit tests in that they are execution
   // dependent on the previous tests in the same suite. As a result, we need to
@@ -1066,7 +1066,7 @@ executeDocTest(LLCL::Runtime &runtime, const Test &test,
 
 /// Execute the given test or suite, returning the result.
 static MaybeResolvedResult
-executeTestOrSuite(LLCL::Runtime &runtime, const Test &test,
+executeTestOrSuite(AsyncRT::Runtime &runtime, const Test &test,
                    ArrayRef<std::string> additionalImportPaths) {
   // If this is a test, execute it directly.
   const TestID &testID = test.getTestID();
@@ -1115,7 +1115,7 @@ executeTestOrSuite(LLCL::Runtime &runtime, const Test &test,
 }
 
 TestExecutionResult
-Test::execute(LLCL::Runtime &runtime,
+Test::execute(AsyncRT::Runtime &runtime,
               ArrayRef<std::string> additionalImportPaths) const {
   // Execute this test and wait for it to resolve. We don't block here because
   // resolution of the result may involve communicating with multiple

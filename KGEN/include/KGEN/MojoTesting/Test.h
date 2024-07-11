@@ -17,9 +17,9 @@
 #include <chrono>
 #include <filesystem>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Runtime;
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 namespace M::KGEN::Mojo {
 //===----------------------------------------------------------------------===//
@@ -241,7 +241,7 @@ public:
   /// `additionalImportPaths` is a list of additional include paths to use when
   /// resolving mojo imports.
   static ErrorOr<std::optional<Test>>
-  discoverFromID(LLCL::Runtime &runtime, const TestID &testID,
+  discoverFromID(AsyncRT::Runtime &runtime, const TestID &testID,
                  ArrayRef<std::string> additionalImportPaths);
 
   //===--------------------------------------------------------------------===//
@@ -257,7 +257,7 @@ public:
   /// `additionalImportPaths` is a list of additional include paths to use when
   /// resolving mojo imports.
   TestExecutionResult
-  execute(LLCL::Runtime &runtime,
+  execute(AsyncRT::Runtime &runtime,
           ArrayRef<std::string> additionalImportPaths) const;
 
 private:

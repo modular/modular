@@ -22,7 +22,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace LLCL;
+using namespace AsyncRT;
 using namespace mlir;
 
 namespace {
@@ -112,7 +112,7 @@ TEST(CachedTransformTest, BufferReturn) {
   constexpr StringLiteral keyStr = "hello";
   WriteableBufferRef key = WriteableBuffer::get(0, {}, keyStr.size());
   key->write(keyStr.data(), keyStr.size());
-  EncodedLocation loc = LLCL::UnknownLocationDecoder::getEncodedLocation();
+  EncodedLocation loc = AsyncRT::UnknownLocationDecoder::getEncodedLocation();
   AnyAsyncValueRef output =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain.copy(),
                       key.copy(), transform, hitFn);

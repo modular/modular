@@ -11,7 +11,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This class implements LocationDecoder and returns a filename of `<unknown>`.
 /// This is useful for inner infrastructure that doesn't really have a good way
@@ -38,6 +38,6 @@ public:
   void dropRef() const override;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_UNKNOWNLOCATIONDECODER_H

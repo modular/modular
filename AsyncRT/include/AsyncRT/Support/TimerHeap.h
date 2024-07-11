@@ -16,7 +16,7 @@
 #include <mutex>
 #include <thread>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 class TimerHeap {
 public:
@@ -58,6 +58,6 @@ private:
   std::thread thread;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_SEMAPHORE_H

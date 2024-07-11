@@ -14,7 +14,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This class provides a locking ring buffer for concurrent access.
 template <typename ItemType>
@@ -108,6 +108,6 @@ private:
   uint64_t writeIndex = 0;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_LOCKINGRINGBUFFER_H

@@ -17,7 +17,7 @@
 
 #include "gtest/gtest.h"
 
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 namespace {
 
@@ -32,7 +32,7 @@ protected:
     runtimeOptions.singleThreaded = GetParam() == kSingleThread;
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;
-    return M::LLCL::createUniqueRuntime(runtimeOptions);
+    return M::AsyncRT::createUniqueRuntime(runtimeOptions);
   }
 };
 

@@ -27,7 +27,7 @@ using HTTPContextRef = RCRef<HTTPContext>;
 
 /// Provides a ref-counted HTTP context to create HTTPClients. Initializes and
 /// cleans up the global CURL initialization. Ideally should scope to your
-/// application's main method (similar to the LLCL::Runtime).
+/// application's main method (similar to the AsyncRT::Runtime).
 class HTTPContext : public ReferenceCounted<HTTPContext> {
 public:
   ~HTTPContext();

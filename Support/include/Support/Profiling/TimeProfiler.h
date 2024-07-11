@@ -748,9 +748,9 @@ struct TimeTraceThreadProfiler {
   ///
   /// For example:
   ///
-  /// LLCL::RuntimeOptions rtOpt;
+  /// AsyncRT::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = LLCL::createUniqueRuntime(rtOpt);
+  /// auto rt = AsyncRT::createUniqueRuntime(rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask;

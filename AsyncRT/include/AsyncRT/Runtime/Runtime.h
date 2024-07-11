@@ -33,7 +33,7 @@ namespace M {
 class Error;
 }
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Allocator;
 class WorkQueue;
 
@@ -96,9 +96,9 @@ struct RuntimeOptions {
   ///
   /// For example:
   ///
-  /// LLCL::RuntimeOptions rtOpt;
+  /// AsyncRT::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = LLCL::createUniqueRuntime(rtOpt);
+  /// auto rt = AsyncRT::createUniqueRuntime(rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled;
@@ -159,8 +159,8 @@ struct RuntimeOptions {
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
-  RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType wq =
-                     LLCL::RuntimeOptions::WorkQueueType::kThreadPool)
+  RuntimeOptions(AsyncRT::RuntimeOptions::WorkQueueType wq =
+                     AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool)
       : defaultWorkQueue(wq) {}
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime (for
@@ -484,6 +484,6 @@ inline void checkKnownCallingThread(const Runtime &runtime) {
          "addTask?");
 }
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_H

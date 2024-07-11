@@ -7,7 +7,7 @@
 #include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "AsyncRT/Runtime/Runtime.h"
 
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 std::unique_ptr<Runtime>
 RuntimeOptions::createRuntime(StringRef profileName) const {
@@ -54,5 +54,5 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
   }
   runtimeOptions.profileFilename = profileName;
   runtimeOptions.profilerDebuginfo = profilerDebuginfo;
-  return LLCL::createUniqueRuntime(runtimeOptions);
+  return AsyncRT::createUniqueRuntime(runtimeOptions);
 }

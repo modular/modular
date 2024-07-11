@@ -29,7 +29,7 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace LLCL;
+using namespace AsyncRT;
 
 //===----------------------------------------------------------------------===//
 // mangleParameterValues
@@ -99,10 +99,10 @@ ExpansionGraph::~ExpansionGraph() {
         node->setToError();
     }
   }
-  LLCL::await(quiesce());
+  AsyncRT::await(quiesce());
 }
 
-ParamNode *ExpansionGraph::getOrCreate(LLCL::Runtime &runtime,
+ParamNode *ExpansionGraph::getOrCreate(AsyncRT::Runtime &runtime,
                                        ParameterExprArrayAttr values,
                                        GeneratorOp gen, size_t depth) {
   // TODO: Split this into `get` and `create` methods, so that some can be
@@ -352,7 +352,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
                        const ElaborateGeneratorsOptions &config)
     : target(target), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
-      runtime(*loadContext(target.getContext())->get<LLCL::Runtime>()),
+      runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),
       g(this->runtime),
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
       callbacks(std::move(callbacks)) {}
@@ -1594,7 +1594,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
     unsigned cycleGeneration = 0;
     while (true) {
       signalWorklist();
-      LLCL::await(g.worklistCh);
+      AsyncRT::await(g.worklistCh);
       assert(g.numWorkItems == 0);
 
       // Check if all primary generators are done. If so, break.

@@ -105,17 +105,18 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     std::string profileFilename =
         llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
 
-    LLCL::CompactRuntimePtr runtimePtr = LLCL::CompactRuntimePtr::reserve();
+    AsyncRT::CompactRuntimePtr runtimePtr =
+        AsyncRT::CompactRuntimePtr::reserve();
     std::unique_ptr<Allocator> allocator =
-        LLCL::getAllocator(*options.runtimeOptions);
+        AsyncRT::getAllocator(*options.runtimeOptions);
     if (options.runtimeOptions->leakCheckedAllocator)
       allocator = createLeakCheckAllocator(std::move(allocator));
     if (options.runtimeOptions->profilingAllocator)
       allocator = createProfilingAllocator(std::move(allocator));
-    std::unique_ptr<LLCL::WorkQueue> workQueue =
+    std::unique_ptr<AsyncRT::WorkQueue> workQueue =
         options.runtimeOptions->singleThreaded
-            ? LLCL::createSingleThreadWorkQueue(runtimePtr)
-            : LLCL::createThreadPoolWorkQueue(
+            ? AsyncRT::createSingleThreadWorkQueue(runtimePtr)
+            : AsyncRT::createThreadPoolWorkQueue(
                   runtimePtr, options.runtimeOptions->numThreads,
                   options.runtimeOptions->maxThreads,
                   options.runtimeOptions->mainWillDonate,

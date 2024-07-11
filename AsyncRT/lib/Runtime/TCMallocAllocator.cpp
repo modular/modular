@@ -8,7 +8,7 @@
 #include "Support/AlignedAlloc.h"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 #ifdef USE_TCMALLOC
 #include <gperftools/tcmalloc.h>
@@ -33,7 +33,7 @@ class TCMallocAllocator : public Allocator {
 } // namespace
 #endif // USE_TCMALLOC
 
-std::unique_ptr<Allocator> M::LLCL::createTCMallocAllocator() {
+std::unique_ptr<Allocator> M::AsyncRT::createTCMallocAllocator() {
 #ifdef USE_TCMALLOC
   return std::make_unique<TCMallocAllocator>();
 #else  // USE_TCMALLOC

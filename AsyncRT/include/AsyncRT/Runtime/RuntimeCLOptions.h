@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file exposes a basic set of command line options for setting up and
-// configuring an M::LLCL::Runtime for tools to use.
+// configuring an M::AsyncRT::Runtime for tools to use.
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,7 +22,7 @@
 #include <thread>
 #include <type_traits>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 class Runtime;
 
@@ -173,6 +173,6 @@ private:
       llvm::cl::location(options.onFailure)};
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_RUNTIMECLOPTIONS_H

@@ -24,7 +24,7 @@
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 using namespace M::KGEN;
 using namespace M::CUDA;
 

@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Create our context.
-  LLCL::RuntimeOptions llclOpts;
+  AsyncRT::RuntimeOptions llclOpts;
   llclOpts.withLeakCheckedAllocator();
   if (llclSingleThread)
     llclOpts.withSingleThreaded();
@@ -191,7 +191,7 @@ int main(int argc, char **argv) {
   }
   if (llclSingleThread) {
     // Defend against upstream errors.
-    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<LLCL::Runtime>();
+    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
     assert(runtime.getWorkQueue()->getParallelismLevel() == 1);
   }
   registerContext(registry, *ctxOr);

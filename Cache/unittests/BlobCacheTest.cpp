@@ -21,7 +21,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace LLCL;
+using namespace AsyncRT;
 
 namespace {
 
@@ -44,13 +44,13 @@ static TempDir createTempDir() {
 class BlobCacheTest : public testing::Test {
 protected:
   TempDir tempDir;
-  std::unique_ptr<LLCL::Runtime> runtime;
+  std::unique_ptr<AsyncRT::Runtime> runtime;
   RCRef<BlobCache<StringKeyInfo>> cache;
 
   BlobCacheTest()
       : tempDir(createTempDir()),
         runtime(createUniqueRuntime(
-            LLCL::RuntimeOptions().withLeakCheckedAllocator())),
+            AsyncRT::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
             getLocalDefaultBackendChain(tempDir.getPath()).takeValue())) {}
 };
@@ -240,13 +240,13 @@ static BufferRef makeValue(size_t size, int numThreads, int thread, int run) {
   return std::move(writeableValueBuffer);
 }
 
-static LLCL::EncodedLocation unknownLoc() {
-  return LLCL::UnknownLocationDecoder::getEncodedLocation();
+static AsyncRT::EncodedLocation unknownLoc() {
+  return AsyncRT::UnknownLocationDecoder::getEncodedLocation();
 }
 
 static std::unique_ptr<Runtime> makeRuntime() {
-  return LLCL::createUniqueRuntime(
-      LLCL::RuntimeOptions().withLeakCheckedAllocator());
+  return AsyncRT::createUniqueRuntime(
+      AsyncRT::RuntimeOptions().withLeakCheckedAllocator());
 }
 
 TEST(FilesystemBackend, Hammer) {

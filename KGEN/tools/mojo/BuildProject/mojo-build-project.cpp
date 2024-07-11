@@ -99,7 +99,7 @@ static int buildProject(const State &subcommandState) {
 
   // Initialize crash reporting, etc.
   ErrorOr<ContextRef> ctxOrErr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
   if (ctxOrErr.isError())
     return state.reportError(ctxOrErr.getError());
   ContextRef ctx = std::move(*ctxOrErr);

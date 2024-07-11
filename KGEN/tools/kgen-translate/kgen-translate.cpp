@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen-translate",
       Init::Options().withRuntimeOptions(
-          LLCL::RuntimeOptions().withMainWillNotDonate().withCPUAffinity(
+          AsyncRT::RuntimeOptions().withMainWillNotDonate().withCPUAffinity(
               false)));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
@@ -105,7 +105,7 @@ int main(int argc, char *argv[]) {
         config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
         OwningOpRef<ModuleOp> output = LIT::importMojoFile(
-            *(*ctxOr)->get<LLCL::Runtime>(), sourceMgr, config, ts);
+            *(*ctxOr)->get<AsyncRT::Runtime>(), sourceMgr, config, ts);
 
         if (output && !parserBytecodeOutput.getValue().empty()) {
           std::string message;

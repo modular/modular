@@ -11,7 +11,7 @@
 
 #include <functional>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Runtime;
 class CompactRuntimePtr;
 
@@ -19,9 +19,9 @@ namespace Detail {
 class RuntimeTable;
 } // namespace Detail
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
-namespace M::LLCL::Globals {
+namespace M::AsyncRT::Globals {
 
 /// This is a TLS CompactRuntimePtr pointing to the runtime on behalf of
 /// which the thread is processing work items. That thread may be a 'worker'
@@ -35,6 +35,6 @@ extern MODULAR_CXX_EXPORT CompactRuntimePtr &getCurrentRuntimeInTLS();
 extern MODULAR_CXX_EXPORT Detail::RuntimeTable &
 getRuntimeTableSingleton(const std::function<Detail::RuntimeTable *()> &ctor);
 
-} // namespace M::LLCL::Globals
+} // namespace M::AsyncRT::Globals
 
 #endif

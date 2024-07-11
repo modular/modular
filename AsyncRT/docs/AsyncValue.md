@@ -1,4 +1,4 @@
-# The `M::LLCL::AsyncValue` family of types
+# The `M::AsyncRT::AsyncValue` family of types
 
 This document explains some of the concepts behind `AsyncValue` and related
 types like `AsyncValueRef<T>`.
@@ -46,16 +46,16 @@ types, but all types need to be registered before use with
 storage of the payloads and data, and allows limited type reflection with the
 `->isType<T>()` predicate.
 
-### Access to the `M::LLCL::Runtime` for an `AsyncValue`
+### Access to the `M::AsyncRT::Runtime` for an `AsyncValue`
 
 The LLCL runtime is designed to support multiple instances of a runtime in a
 process at the same time, so some things (for example allocating a new
-`AsyncValue`) require an `M::LLCL::Runtime&` to be handy and around. This can
+`AsyncValue`) require an `M::AsyncRT::Runtime&` to be handy and around. This can
 be awkward, because (like an `MLIRContext`) it is almost global state, and it
 is a pain to pass it around everywhere.
 
 Fortunately, `AsyncValue` instances is that they always know what
-`M::LLCL::Runtime` they came from. You can access this through the
+`M::AsyncRT::Runtime` they came from. You can access this through the
 `asyncVal->getRuntime()` method which returns a
 [`CompactRuntimePtr`](../include/LLCL/Runtime/CompactRuntimePtr.h). A
 `CompactRuntimePtr` is a specialized class that can be used interchangably with

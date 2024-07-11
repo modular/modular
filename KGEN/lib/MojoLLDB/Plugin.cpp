@@ -49,7 +49,7 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   // LLDB driver) is upstream and hard to patch in our build.
   static ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lldb-plugin",
-      Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()
+      Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
                                              .withCPUAffinity(false)
                                              .withMainWillNotDonate()));
   if (ctxOr.isError())

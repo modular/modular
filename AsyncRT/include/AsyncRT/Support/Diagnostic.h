@@ -15,7 +15,7 @@
 #include "Support/Error.h"
 #include <variant>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This is a combination of an `Error` message with an encoded location.  It is
 /// relatively efficient to pass around, but its location must be decoded before
@@ -61,6 +61,6 @@ private:
   std::variant<EncodedDiagnostic, Value> data;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_DIAGNOSTIC_H
