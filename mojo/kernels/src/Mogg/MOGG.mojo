@@ -3759,6 +3759,7 @@ fn reduce_min_and_max_shape_func[
 @export
 fn masked_flash_attention_gpu[
     rank: Int,
+    mask_rank: Int,
     input_0_static_shape: DimList,
     input_1_static_shape: DimList,
     input_2_static_shape: DimList,
@@ -3773,7 +3774,7 @@ fn masked_flash_attention_gpu[
     q: NDBuffer[q_type, rank, input_0_static_shape],
     k: NDBuffer[k_type, rank, input_1_static_shape],
     v: NDBuffer[v_type, rank, input_2_static_shape],
-    mask: NDBuffer[mask_type, 3, input_3_static_shape],
+    mask: NDBuffer[mask_type, mask_rank, input_3_static_shape],
     scale: NDBuffer[DType.float32, 1],
     output: NDBuffer[output_type, rank],
     ctx: MojoCallContextPtr,
@@ -3843,6 +3844,7 @@ fn masked_flash_attention_gpu[
     ) as t:
         gpu_flash_attention[
             rank,
+            mask_rank,
             input_0_static_shape,
             input_1_static_shape,
             input_2_static_shape,
