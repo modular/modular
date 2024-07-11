@@ -61,6 +61,47 @@ def test_set_and_get_items():
     storage.free()
 
 
+#  CHECK-LABEL: test_tile
+def test_tile():
+    print("== test_tile")
+
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var dynamic_layout = RuntimeLayout[layout](
+        RuntimeTuple[layout.shape](4, 4), RuntimeTuple[layout.stride](4, 1)
+    )
+
+    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+
+    var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
+    tensor.linspace()
+
+    # CHECK: ((2, 2):(-1, 1))
+    print(tensor.tile[2, 2](0, 0).layout)
+
+    # CHECK: ((2, 2):(4, 1))
+    print(tensor.tile[2, 2](0, 0).runtime_layout)
+
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0
+    # CHECK: 4.0 5.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 2.0 3.0
+    # CHECK: 6.0 7.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 8.0 9.0
+    # CHECK: 12.0 13.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 10.0 11.0
+    # CHECK: 14.0 15.0
+    for tile_i in range(2):
+        for tile_j in range(2):
+            print("----tile-data[", tile_i, ",", tile_j, "]----")
+            var tile_2x2 = tensor.tile[2, 2](tile_i, tile_j)
+            tile_2x2.print()
+
+
 def main():
     test_fill_and_print()
     test_set_and_get_items()
+    test_tile()

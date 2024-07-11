@@ -25,6 +25,7 @@ from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
 
 from .runtime_layout import RuntimeLayout
+from .runtime_tuple import RuntimeTuple
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -435,7 +436,6 @@ struct LayoutTensor[
         address_space=address_space,
         masked=__need_mask,
     ]:
-        constrained[layout.all_dims_known(), "Requires fully static layout"]()
         alias num_tiles = __get_len[tile_sizes]()
 
         constrained[
@@ -443,33 +443,76 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
-        var offset = 0
-
+        # Static layout tiling
+        # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
-        for i in range(num_tiles):
-            alias stride = to_int(__tiled_layout[1].stride[i])
-            offset += tile_coords[i] * stride
-
-        var res = LayoutTensor[
-            dtype,
-            __tiled_layout[0],
-            address_space=address_space,
-            masked=__need_mask,
-        ](self.ptr.offset(offset))
-
-        # If not masked and tiles are not an integer multiple of the shape,
-        # update the bounds to the pre-tiling shape.
-        @parameter
-        if not Self.masked and __need_mask:
+        if __tiled_layout[0].all_dims_known():
+            var offset = 0
 
             @parameter
-            for i in range(Self.rank):
-                alias shape_i = to_int(Self.layout.shape[i])
-                res.max_dim[i] = shape_i
-                alias tile_size_i = tile_sizes[i]
-                res.dim_offset[i] = tile_size_i * tile_coords[i]
+            for i in range(num_tiles):
+                alias stride = to_int(__tiled_layout[1].stride[i])
+                offset += tile_coords[i] * stride
 
-        return res
+            var res = LayoutTensor[
+                dtype,
+                __tiled_layout[0],
+                address_space=address_space,
+                masked=__need_mask,
+            ](self.ptr.offset(offset))
+
+            # If not masked and tiles are not an integer multiple of the shape,
+            # update the bounds to the pre-tiling shape.
+            @parameter
+            if not Self.masked and __need_mask:
+
+                @parameter
+                for i in range(Self.rank):
+                    alias shape_i = to_int(Self.layout.shape[i])
+                    res.max_dim[i] = shape_i
+                    alias tile_size_i = tile_sizes[i]
+                    res.dim_offset[i] = tile_size_i * tile_coords[i]
+
+            return res
+        else:
+            # Dynamic layout, use strides
+            var offset = 0
+
+            var dynamic_layout_shape = RuntimeTuple[__tiled_layout[0].shape]()
+
+            var dynamic_layout_stride = RuntimeTuple[__tiled_layout[0].stride]()
+
+            @parameter
+            for i in range(num_tiles):
+                var stride = self.runtime_layout.stride.value[i] * tile_sizes[i]
+                dynamic_layout_stride.value[
+                    i
+                ] = self.runtime_layout.stride.value[i]
+                offset += tile_coords[i] * stride
+
+            var res = LayoutTensor[
+                dtype,
+                __tiled_layout[0],
+                address_space=address_space,
+                masked=__need_mask,
+            ](
+                self.ptr.offset(offset),
+                RuntimeLayout(dynamic_layout_shape, dynamic_layout_stride),
+            )
+
+            # If not masked and tiles are not an integer multiple of the shape,
+            # update the bounds to the pre-tiling shape.
+            @parameter
+            if not Self.masked and __need_mask:
+
+                @parameter
+                for i in range(Self.rank):
+                    alias shape_i = to_int(Self.layout.shape[i])
+                    res.max_dim[i] = shape_i
+                    alias tile_size_i = tile_sizes[i]
+                    res.dim_offset[i] = tile_size_i * tile_coords[i]
+
+            return res
 
     @always_inline
     fn tiled_iterator[
