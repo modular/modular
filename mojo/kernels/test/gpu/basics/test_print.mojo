@@ -11,6 +11,7 @@ from gpu.host import Context, Function
 from layout import Layout
 
 from utils.inline_string import _FixedString
+from builtin._location import __source_location
 
 
 # CHECK-LABEL: == test_gpu_printf
@@ -59,6 +60,9 @@ fn test_gpu_print_formattable() raises:
         )
         # CHECK: [0, -1, -inf, 1.79769e+308]
         print("SIMD values are:", simd)
+
+        # CHECK: test_print.mojo:65:32
+        print(__source_location())
 
         # ------------------------------
         # Test printing bfloat16
