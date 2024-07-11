@@ -162,6 +162,14 @@ struct Batch(CollectionElement):
     var _is_significant: Bool
     """This batch contributes to the reporting of this benchmark."""
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
     fn _mark_as_significant(inout self):
         self._is_significant = True
 
@@ -226,6 +234,14 @@ struct Report(CollectionElement):
         self.warmup_iters = 0
         self.warmup_duration = 0
         self.runs = List[Batch]()
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
 
     fn __copyinit__(inout self, existing: Self):
         """
