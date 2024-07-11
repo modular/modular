@@ -320,6 +320,14 @@ struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
     fn __init__(inout self):
         self.stride = StaticIntTuple[rank]()
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
     fn __copyinit__(inout self, exisiting: Self):
         self.stride = exisiting.stride
 

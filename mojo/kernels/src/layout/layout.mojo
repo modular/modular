@@ -130,6 +130,14 @@ struct Layout(
         else:
             self.stride = stride
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
     @always_inline
     fn idx2crd(self, idx: IntTuple) -> IntTuple:
         return idx2crd(idx, self.shape, self.stride)
