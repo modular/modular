@@ -61,7 +61,7 @@ def test_copy_dram_to_sram_async():
 
     copy_to_sram_test_launch(
         tensor.tensor,
-        Pointer.address_of(check_state),
+        UnsafePointer.address_of(check_state),
         grid_dim=(4),
         block_dim=(1),
     )
@@ -126,7 +126,7 @@ def test_copy_from_async_masked_src():
 
     copy_to_sram_test_launch(
         tensor.tensor,
-        Pointer.address_of(check_state),
+        UnsafePointer.address_of(check_state),
         grid_dim=(2, 2, 1),
         block_dim=(64, 1, 1),
     )
