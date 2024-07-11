@@ -268,8 +268,6 @@ buildFunctionSimplificationPipeline(const CompilationOptions &options) {
                /*AllowSpeculation=*/true),
       /*UseMemorySSA=*/true, /*UseBlockFrequencyInfo=*/true));
 
-  FPM.addPass(CoroElidePass());
-
   FPM.addPass(SimplifyCFGPass(
       adjustSimplifyCFGOptions(SimplifyCFGOptions()
                                    .convertSwitchRangeToICmp(true)
@@ -322,7 +320,6 @@ static void addInlinerPasses(ModulePassManager &MPM,
       /*EagerlyInvalidateAnalyses*/ true,
       /*EnableNoRerunSimplificationPipeline*/ true));
 
-  MainCGPipeline.addPass(CoroSplitPass(true));
   MPM.addPass(std::move(MIWP));
 }
 
@@ -385,7 +382,6 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   // Do basic inference of function attributes from known properties of system
   // libraries and other oracles.
   MPM.addPass(InferFunctionAttrsPass());
-  MPM.addPass(CoroEarlyPass());
 
   // Create an early function pass manager to cleanup the output of the
   // frontend.
@@ -423,8 +419,6 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
                                         /*EagerlyInvalidateAnalyses*/ true));
 
   addInlinerPasses(MPM, options);
-
-  MPM.addPass(CoroCleanupPass());
 
   // Optimize globals now that the module is fully simplified.
   MPM.addPass(GlobalDCEPass());
@@ -538,16 +532,6 @@ static ModulePassManager buildO0Pipeline(const CompilationOptions &options) {
   // code generation.
   MPM.addPass(AlwaysInlinerPass(
       /*InsertLifetimeIntrinsics=*/false));
-
-  ModulePassManager CoroPM;
-  CoroPM.addPass(CoroEarlyPass());
-
-  CGSCCPassManager CGPM;
-  CGPM.addPass(CoroSplitPass());
-  CoroPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
-  CoroPM.addPass(CoroCleanupPass());
-  CoroPM.addPass(GlobalDCEPass());
-  MPM.addPass(CoroConditionalWrapper(std::move(CoroPM)));
 
   // Add any relevant sanitizers.
   addSanitizers(MPM, options);
