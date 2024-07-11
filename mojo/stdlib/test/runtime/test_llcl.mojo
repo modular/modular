@@ -8,7 +8,6 @@
 from os.atomic import Atomic
 
 from memory import stack_allocation
-from memory.unsafe import Pointer
 from runtime.llcl import Runtime
 from testing import assert_true
 
