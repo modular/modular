@@ -88,7 +88,7 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
   }
 
   /// Process a single SCC.
-  void doWork(SCC *scc, LLCL::ForkJoin &state) {
+  void doWork(SCC *scc, AsyncRT::ForkJoin &state) {
     // Skip the root node.
     if (!scc->nodes.front()->func)
       return;
@@ -105,7 +105,7 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
 
   /// This runs the analysis on the full call graph in post-order SCC. It starts
   /// by computing the SCCs and then scheduling them for analysis.
-  void run(LLCL::Runtime &runtime) {
+  void run(AsyncRT::Runtime &runtime) {
     // Add every node as a child of the virtual root node.
     for (auto &[func, node] : this->nodes)
       externalNode.callsites.emplace_back(nullptr, &node);
@@ -142,7 +142,7 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
       scc.callers = callers.takeVector();
     }
 
-    LLCL::ForkJoin state(runtime);
+    AsyncRT::ForkJoin state(runtime);
 
     // Because SCCs are visited in reverse topological order by the SCC
     // iterator, this will schedule leaf nodes first, which is good for

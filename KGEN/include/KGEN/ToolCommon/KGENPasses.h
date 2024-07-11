@@ -40,9 +40,9 @@ namespace HLCF {
 class HLCFDialect;
 } // namespace HLCF
 
-namespace LLCL {
+namespace AsyncRT {
 class Runtime;
-} // namespace LLCL
+} // namespace AsyncRT
 
 namespace KGEN {
 class KGENCallOpInterface;

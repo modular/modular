@@ -190,9 +190,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   registerKGENToLLVMTranslation(registry);
 
   // Create our context, with a runtime; this should not fail.
-  LLCL::RuntimeOptions &runtimeOpts = clOptions.parser.options;
+  AsyncRT::RuntimeOptions &runtimeOpts = clOptions.parser.options;
   if (runtimeOpts.workQueueType ==
-      LLCL::RuntimeOptions::WorkQueueType::kSingleThread)
+      AsyncRT::RuntimeOptions::WorkQueueType::kSingleThread)
     runtimeOpts.singleThreaded = true;
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen", Init::Options().withRuntimeOptions(
@@ -201,7 +201,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure();
   if (!clOptions.enableMLIRCrashReproducer)
     registerContext(registry, *ctxOr);
-  LLCL::Runtime &runtime = *(*ctxOr)->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
 
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);

@@ -94,7 +94,7 @@ private:
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
-  LLCL::AsyncValueRef<SmallVector<BufferRef>>
+  AsyncRT::AsyncValueRef<SmallVector<BufferRef>>
   lowerLLVMModuleToObjects(LLVMModuleAndContext module, Location loc,
                            bool parLLC, std::optional<size_t> moduleIdx);
 
@@ -116,7 +116,7 @@ private:
   MLIRContext &context;
 
   /// The LLCL runtime.
-  LLCL::Runtime &runtime;
+  AsyncRT::Runtime &runtime;
 };
 
 /// Setup the machine properties from the provided target.
@@ -132,7 +132,7 @@ LogicalResult compileLLVMToAssembly(LLVMModuleAndContext module,
                                     llvm::TargetMachine &targetMachine,
                                     llvm::raw_pwrite_stream &objStream,
                                     CompilationOptions &options,
-                                    LLCL::Runtime &runtime);
+                                    AsyncRT::Runtime &runtime);
 
 } // namespace M::KGEN
 

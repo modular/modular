@@ -571,7 +571,7 @@ namespace {
 /// be shared between both inliners.
 template <typename DerivedT, typename NodeT>
 struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
-  explicit InliningGraphBase(LLCL::Runtime &runtime)
+  explicit InliningGraphBase(AsyncRT::Runtime &runtime)
       : runtime(runtime), state(runtime) {}
 
   using CallGraphBase<DerivedT, NodeT>::getDerived;
@@ -587,10 +587,10 @@ struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
   void complete(NodeT *node);
 
   /// The runtime to use.
-  LLCL::Runtime &runtime;
+  AsyncRT::Runtime &runtime;
 
   /// The inlining task state.
-  LLCL::ForkJoin state;
+  AsyncRT::ForkJoin state;
   /// The number of nodes that complete processing. If this is not equal to the
   /// number of nodes, then there are cycles in the graph.
   std::atomic<size_t> numProcessed = 0;
@@ -677,7 +677,7 @@ struct ParametricInliningGraphNode
 struct ParametricInliningGraph
     : public InliningGraphBase<ParametricInliningGraph,
                                ParametricInliningGraphNode> {
-  explicit ParametricInliningGraph(InlineLevel level, LLCL::Runtime &runtime,
+  explicit ParametricInliningGraph(InlineLevel level, AsyncRT::Runtime &runtime,
                                    ParameterCollector::Analysis &paramCache,
                                    unsigned optimizationLevel,
                                    bool updateDebugInfo)
@@ -809,7 +809,8 @@ void InlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime =
+      *loadContext(&getContext())->get<AsyncRT::Runtime>();
   ParametricInliningGraph graph(
       nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, runtime,
       paramCache, optimizationLevel, updateDebugInfo);
@@ -843,7 +844,7 @@ void InlineParametricPass::runOnOperation() {
 
   // Note: use the same threadpool as before, because that's what the thread
   // local caches are initialized for.
-  LLCL::ForkJoin state(runtime);
+  AsyncRT::ForkJoin state(runtime);
   for (ParametricInliningGraphNode &caller :
        llvm::make_second_range(graph.nodes))
     state.fork([&] { inlineReadyFn(caller); });

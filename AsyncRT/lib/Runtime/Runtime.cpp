@@ -19,7 +19,7 @@
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}
@@ -80,7 +80,8 @@ Runtime::~Runtime() {
   }
 }
 
-std::unique_ptr<Allocator> LLCL::getAllocator(const RuntimeOptions &options) {
+std::unique_ptr<Allocator>
+AsyncRT::getAllocator(const RuntimeOptions &options) {
   if (options.useAfterFreeAllocator) {
 #ifdef HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
     return createUseAfterFreeAllocator();
@@ -123,7 +124,7 @@ createRuntimeImpl(Context *context, const RuntimeOptions &options) {
 }
 
 std::unique_ptr<Runtime>
-LLCL::createUniqueRuntime(const RuntimeOptions &options) {
+AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
   assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
          "creating a runtime from a thread already associated with an outer "
          "runtime");
@@ -131,7 +132,7 @@ LLCL::createUniqueRuntime(const RuntimeOptions &options) {
 }
 
 std::unique_ptr<Runtime>
-LLCL::createNestedRuntime(const RuntimeOptions &options) {
+AsyncRT::createNestedRuntime(const RuntimeOptions &options) {
   if (auto runtime = Runtime::getCurrentRuntimeOrNull())
     return createRuntimeImpl(runtime->context, options);
   else

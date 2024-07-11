@@ -17,7 +17,7 @@
 #include "llvm/ADT/Twine.h"
 #include <utility>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// Profiling entry for sub-tasks launched by the parallelization helpers.
 using AlgorithmProfilerEntry =
@@ -504,6 +504,6 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
     await(chainResult);
 }
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_ALGORITHMS_H

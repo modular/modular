@@ -16,7 +16,7 @@ namespace M {
 class Error;
 }
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class EncodedLocation;
 class EncodedDiagnostic;
 
@@ -76,6 +76,6 @@ private:
   /// decoded `Location` object.
   RCRef<LocationDecoder> decoder;
 };
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_LOCATION_H

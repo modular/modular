@@ -10,7 +10,7 @@
 #include "mlir/IR/Location.h"
 
 using namespace M;
-using namespace LLCL;
+using namespace AsyncRT;
 
 EncodedLocation MLIRLocationDecoder::getEncodedLocation(mlir::Location loc) {
   return {(intptr_t)loc.getAsOpaquePointer(),
@@ -42,6 +42,6 @@ void MLIRLocationDecoder::dropRef() const {
       const_cast<MLIRLocationDecoder *>(this));
 }
 
-EncodedDiagnostic LLCL::getMLIRDiagnostic(Error e, mlir::Location loc) {
+EncodedDiagnostic AsyncRT::getMLIRDiagnostic(Error e, mlir::Location loc) {
   return {std::move(e), MLIRLocationDecoder::getEncodedLocation(loc)};
 }

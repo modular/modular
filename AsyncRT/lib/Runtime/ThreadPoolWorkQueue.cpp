@@ -28,7 +28,7 @@
 #define DEBUG_TYPE "llcl"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 //
 // Terminology:
@@ -505,7 +505,7 @@ void WorkQueueThread::runOnThread() {
   llvm::set_thread_name(poolName + llvm::Twine(workerID));
 
   // On systems that support it, give the thread affinity for one CPU.
-  LLCL::setThreadAffinity(cpuID);
+  AsyncRT::setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
   runItemsOnOwningThread(
@@ -528,7 +528,7 @@ void WorkQueueThread::runItemsOnOwningThread(
     StringLiteral spinningLabel, StringLiteral sleepingLabel) {
   if (sharedState.mainWillDonate && workerID == 0) {
     // Temporarily set the main thread's affinity while it is processing work.
-    LLCL::runWithThreadAffinity(cpuID, [&]() {
+    AsyncRT::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
           sleepingLabel);
@@ -1266,12 +1266,11 @@ bool ThreadPoolWorkQueue::callerIsForeign() const {
 // createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
 
-std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
-                                   size_t numThreads, size_t maxThreads,
-                                   bool mainWillDonate, bool withAffinity,
-                                   std::chrono::microseconds threadBusyWaitTime,
-                                   std::string_view poolName, bool paranoid) {
+std::unique_ptr<WorkQueue> M::AsyncRT::createThreadPoolWorkQueue(
+    CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
+    bool mainWillDonate, bool withAffinity,
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
+    bool paranoid) {
 
 #if MODULAR_PARANOID
 #ifdef NDEBUG

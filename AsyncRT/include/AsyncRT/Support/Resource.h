@@ -23,7 +23,7 @@
 
 #include <mutex>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 //===----------------------------------------------------------------------===//
 // ResourceSection
@@ -59,35 +59,35 @@ inline bool isAllResourceSection(const ResourceSection &section) {
 void printResourceSection(llvm::raw_ostream &os,
                           const ResourceSection &section);
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 namespace llvm {
 /// Allow ResourceSection to be used as a DenseMap key.
 template <>
-struct DenseMapInfo<M::LLCL::ResourceSection> {
-  static inline M::LLCL::ResourceSection getEmptyKey() {
-    return M::LLCL::ResourceSection(M::LLCL::kReservedResourceOffset1,
-                                    M::LLCL::kReservedResourceOffset1);
+struct DenseMapInfo<M::AsyncRT::ResourceSection> {
+  static inline M::AsyncRT::ResourceSection getEmptyKey() {
+    return M::AsyncRT::ResourceSection(M::AsyncRT::kReservedResourceOffset1,
+                                       M::AsyncRT::kReservedResourceOffset1);
   }
-  static inline M::LLCL::ResourceSection getTombstoneKey() {
-    return M::LLCL::ResourceSection(M::LLCL::kReservedResourceOffset2,
-                                    M::LLCL::kReservedResourceOffset2);
+  static inline M::AsyncRT::ResourceSection getTombstoneKey() {
+    return M::AsyncRT::ResourceSection(M::AsyncRT::kReservedResourceOffset2,
+                                       M::AsyncRT::kReservedResourceOffset2);
   }
-  static unsigned getHashValue(const M::LLCL::ResourceSection &section) {
+  static unsigned getHashValue(const M::AsyncRT::ResourceSection &section) {
     // Mix the start and end values, avoiding collapse due to zeros.
     uint64_t h = (section.start() + 1) * (section.end() + 1);
     // Fold back to 32 bits.
     static_assert(sizeof(unsigned) == 4);
     return static_cast<unsigned>(h >> 32) ^ static_cast<unsigned>(h);
   }
-  static bool isEqual(const M::LLCL::ResourceSection &lhs,
-                      const M::LLCL::ResourceSection &rhs) {
+  static bool isEqual(const M::AsyncRT::ResourceSection &lhs,
+                      const M::AsyncRT::ResourceSection &rhs) {
     return lhs == rhs;
   }
 };
 } // namespace llvm
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// A set of resource sections.
 class ResourceSections : private llvm::AddressRanges {
@@ -314,13 +314,13 @@ private:
   friend ResourceUse;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 namespace std {
 
 // For ADL style swap.
 template <>
-inline void swap(M::LLCL::ResourceUse &lhs, M::LLCL::ResourceUse &rhs) {
+inline void swap(M::AsyncRT::ResourceUse &lhs, M::AsyncRT::ResourceUse &rhs) {
   lhs.swap(rhs);
 }
 

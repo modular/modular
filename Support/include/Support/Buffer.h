@@ -29,7 +29,7 @@ using BufferRef = RCRef<Buffer>;
 /// that can't be deallocated until it's been (asynchronously) stored in the
 /// cache. Buffer is read-only, for writing one should use WriteableBuffer
 /// (defined below).
-// TODO: Should this hold a reference to a LLCL::Allocator and use that to
+// TODO: Should this hold a reference to a AsyncRT::Allocator and use that to
 //       allocate memory?
 class Buffer : public ReferenceCounted<Buffer> {
 public:

@@ -322,8 +322,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       return success();
     }
 
-    LLCL::Runtime &runtime =
-        *loadContext(pm.getContext())->get<LLCL::Runtime>();
+    AsyncRT::Runtime &runtime =
+        *loadContext(pm.getContext())->get<AsyncRT::Runtime>();
     if (failed(compileLLVMToAssembly(std::move(llvmModule), *tm, *buffer,
                                      options, runtime)))
       return Error("failed to emit assembly");
@@ -364,7 +364,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
             return std::move(output).setToError(chain.takeDiagnostic());
           if (ErrorOrSuccess err = func(op, buf.copy()); err.isError())
             return std::move(output).setToError(
-                LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
+                AsyncRT::getMLIRDiagnostic(err.takeError(), op->getLoc()));
           return std::move(output).emplace(std::move(buf));
         });
     return output;
@@ -379,8 +379,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
     return buf.copy();
   };
-  LLCL::Runtime &runtime =
-      *loadContext(target.getContext())->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime =
+      *loadContext(target.getContext())->get<AsyncRT::Runtime>();
   AnyAsyncValueRef result = Cache::cachedTransform(
       *module, compiler->getTransformCache(),
       AsyncValueRef<Chain>::createReady(runtime), std::move(key),
@@ -490,9 +490,9 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
     auto transformCache =
         RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-    LLCL::AnyAsyncValueRef ready = runKGENPipeline(
+    AsyncRT::AnyAsyncValueRef ready = runKGENPipeline(
         theModule, target, transformCache,
-        ctx->get<LLCL::Runtime>()->getReadyChain().copy(),
+        ctx->get<AsyncRT::Runtime>()->getReadyChain().copy(),
         Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
             "KGENCompiler::runKGENPipeline", "mojo.compiler.cache.miss.time",
             {{"pipeline", "KGEN"}}),
@@ -527,9 +527,9 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
 
   ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
   if (configPM) {
-    LLCL::Runtime &runtime = *loadContext(&context)->get<LLCL::Runtime>();
-    auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
-    std::move(output).setToError(LLCL::getMLIRDiagnostic(
+    AsyncRT::Runtime &runtime = *loadContext(&context)->get<AsyncRT::Runtime>();
+    auto output = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
         Error(std::string("configure PassManager in "
                           "KGENCompiler::runKGENPipeline failed, ") +
               configPM.getError()),
@@ -543,12 +543,12 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
 
   // Run the passes as a cached transform.
 
-  LLCL::AnyAsyncValueRef ready =
+  AsyncRT::AnyAsyncValueRef ready =
       Cache::cachedTransform(theModule, transformCache.copy(), std::move(chain),
                              pm, std::move(moreOnMiss), std::move(moreOnHit));
 
   // This await here is important since pm is local in this function.
-  LLCL::await(ready);
+  AsyncRT::await(ready);
   return ready;
 }
 
@@ -572,9 +572,9 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
 
   buildGenerateLibraryPipeline(pm, options);
 
-  LLCL::Runtime &runtime =
-      *loadContext(module.getContext())->get<LLCL::Runtime>();
-  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+  AsyncRT::Runtime &runtime =
+      *loadContext(module.getContext())->get<AsyncRT::Runtime>();
+  AsyncRT::AnyAsyncValueRef ready = Cache::cachedTransform(
       module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
       pm,
       Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
@@ -584,7 +584,7 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
           "KGEN::runGenerateLibraryPipeline"));
 
   // This await here is important since pm is local in this function.
-  LLCL::await(ready);
+  AsyncRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
@@ -618,7 +618,7 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
 /// Returns the same AnyAsyncValueRef for error handling in the caller
 /// if needed.
 AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
-    ModuleOp module, TargetInfoAttr target, LLCL::Runtime &runtime,
+    ModuleOp module, TargetInfoAttr target, AsyncRT::Runtime &runtime,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {
@@ -627,8 +627,8 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
 
   ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
   if (configPM) {
-    auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
-    std::move(output).setToError(LLCL::getMLIRDiagnostic(
+    auto output = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
         Error(std::string("configure PassManager in "
                           "KGENCompiler::runKGENPipeline failed, ") +
               configPM.getError()),
@@ -640,9 +640,9 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
   auto cacheBackend = getMojoCacheBackend();
 
   if (cacheBackend.isError() || !chain) {
-    auto output = LLCL::AsyncValueRef<std::string>::allocate(runtime);
+    auto output = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
     if (failed(pm.run(module))) {
-      std::move(output).setToError(LLCL::getMLIRDiagnostic(
+      std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
           "KGENCompiler::runElaborationPipeline failed", module->getLoc()));
     } else {
       std::move(output).emplace(
@@ -656,7 +656,7 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
       std::move(*chain), pm, std::move(moreOnMiss), std::move(moreOnHit));
 
   // This await here is important since pm is local in this function.
-  LLCL::await(ready);
+  AsyncRT::await(ready);
 
   return ready;
 }

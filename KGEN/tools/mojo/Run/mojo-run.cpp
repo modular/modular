@@ -201,7 +201,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 /// Executes the given module's `main` function, or returns an error indicating
 /// why it could not be executed.
 static ErrorOrSuccess executeMain(ExecutionEngine &engine,
-                                  LLCL::Runtime &runtime,
+                                  AsyncRT::Runtime &runtime,
                                   ArrayRef<const char *> arguments) {
   [[maybe_unused]] auto timeScope =
       runtime.context->get<M::Telemetry::TelemetryContext>()
@@ -241,7 +241,7 @@ static ErrorOrSuccess writeTimeTraceProfile(M::Context &maxContext) {
   // This should be removed when the runtime is properly flushed when the
   // context goes out of scope.
   std::optional<TimeTraceProfiler> &profilerOr =
-      maxContext.get<LLCL::Runtime>()->getProfiler();
+      maxContext.get<AsyncRT::Runtime>()->getProfiler();
   if (profilerOr) {
     auto writeErr = profilerOr->write("-");
     if (writeErr.isError())
@@ -255,7 +255,7 @@ static ErrorOrSuccess writeTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int executeModule(const State &state, LLCL::Runtime &runtime,
+static int executeModule(const State &state, AsyncRT::Runtime &runtime,
                          MLIRContext &context,
                          const CompilationOptions &options, ModuleOp moduleOp,
                          TargetInfoAttr target,
@@ -339,7 +339,7 @@ static int run(const State &subcommandState) {
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
@@ -353,7 +353,7 @@ static int run(const State &subcommandState) {
       /*privateArgs=*/{options::OPT_D, options::OPT_I});
 
   // Lower the input file to an MLIR module.
-  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, runtime,

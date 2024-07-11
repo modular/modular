@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the M::LLCL::WorkQueue interface, which allows clients of
-// LLCL to implement work queues that map onto their systems in a nice way.
+// This file declares the M::AsyncRT::WorkQueue interface, which allows clients
+// of LLCL to implement work queues that map onto their systems in a nice way.
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,7 +29,7 @@
 /// should enqueue to Global queue.
 constexpr int kDefaultTaskId = -1;
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 //===----------------------------------------------------------------------===//
 // Internal helpers
@@ -259,6 +259,6 @@ createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, size_t numThreads,
                           std::chrono::microseconds threadBusyWaitTime,
                           std::string_view poolName, bool paranoid);
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_WORKQUEUE_H

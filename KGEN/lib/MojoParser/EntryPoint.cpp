@@ -226,7 +226,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
 /// resultant IR, and the decl for the module or package. This abstracts away
 /// the shared setup between module and package parsing.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoImpl(LLCL::Runtime &runtime, StringRef moduleIdentifier,
+importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
                SourceMgr &sourceMgr, SharedState &sharedState,
                mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles,
@@ -286,7 +286,7 @@ importMojoImpl(LLCL::Runtime &runtime, StringRef moduleIdentifier,
 /// Parse the specified Mojo file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoFileImpl(LLCL::Runtime &runtime, SourceMgr &sourceMgr,
+importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
                    SharedState &sharedState, mlir::TimingScope &ts,
                    SmallVectorImpl<std::string> *includedFiles = nullptr) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
@@ -324,7 +324,7 @@ importMojoFileImpl(LLCL::Runtime &runtime, SourceMgr &sourceMgr,
 }
 
 std::pair<OwningOpRef<ModuleOp>, PackageOp>
-LIT::importMojoPackage(LLCL::Runtime &runtime, StringRef path,
+LIT::importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
                        StringRef packageName, llvm::SourceMgr &sourceMgr,
                        ParserConfig &config, mlir::TimingScope &ts,
                        SmallVectorImpl<std::string> *includedFiles) {
@@ -363,7 +363,7 @@ LIT::importMojoPackage(LLCL::Runtime &runtime, StringRef path,
 /// level package operation. Returns the dependencies of the package, and its
 /// post parse module.
 static std::pair<LinkDependencyArrayAttr, DenseResourceElementsAttr>
-loadStrippedBinaryPackage(LLCL::Runtime &runtime,
+loadStrippedBinaryPackage(AsyncRT::Runtime &runtime,
                           const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
                           MLIRContext *ctx, StringRef path) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
@@ -397,8 +397,9 @@ loadStrippedBinaryPackage(LLCL::Runtime &runtime,
 }
 
 OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
-    LLCL::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
-    MLIRContext *ctx, StringRef path) {
+    AsyncRT::Runtime &runtime,
+    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
+    StringRef path) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoBinaryPackagePath(path.str())) {
     sourceMgr->PrintMessage(
@@ -458,7 +459,7 @@ OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
 }
 
 OwningOpRef<mlir::ModuleOp>
-LIT::importMojoFile(LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr,
+LIT::importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
                     ParserConfig &config, mlir::TimingScope &ts,
                     SmallVectorImpl<std::string> *includedFiles) {
   SharedState sharedState(sourceMgr, config);

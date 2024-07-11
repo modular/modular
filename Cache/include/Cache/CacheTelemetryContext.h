@@ -11,7 +11,7 @@
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/OpDefinition.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Runtime;
 }
 

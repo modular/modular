@@ -10,7 +10,7 @@
 #include "AsyncRT/Runtime/AsyncValue.h"
 #include "Support/RCRef.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This class holds an (untyped) smart pointer to an AsyncValue, and is the
 /// primary API for working with AsyncValues in the Modular runtime.
@@ -287,15 +287,15 @@ private:
   RCRef<AsyncValue> value;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 namespace llvm {
 
 /// Supports the LLVM casting idiom from AnyAsyncValueRefs to their
 /// containing value.
 template <typename To>
-struct CastInfo<To, const ::M::LLCL::AnyAsyncValueRef> {
-  using From = ::M::LLCL::AnyAsyncValueRef;
+struct CastInfo<To, const ::M::AsyncRT::AnyAsyncValueRef> {
+  using From = ::M::AsyncRT::AnyAsyncValueRef;
 
   static inline bool isPossible(const From &f) { return f.isType<To>(); }
   static inline To *doCast(const From &t) { return &t.get<To>(); }

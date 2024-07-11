@@ -240,11 +240,11 @@ private:
 /// dependencies in order to make that graph explicit.
 struct ParamNode {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(LLCL::Runtime &runtime, GeneratorOp gen,
+  ParamNode(AsyncRT::Runtime &runtime, GeneratorOp gen,
             ParameterExprArrayAttr vals, size_t depth,
             ExpansionGraph *expansionGraph)
       : gen(gen), inputParams(vals), depth(depth),
-        paramCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)),
+        paramCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
         expansionGraph(expansionGraph), isError(false) {
     assert(expansionGraph && "Expansion graph cannot be null");
   }
@@ -318,7 +318,7 @@ struct ParamNode {
 
 private:
   /// The chain to signal when this parameter node is done processing.
-  LLCL::AsyncValueRef<LLCL::Chain> paramCh;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> paramCh;
 
   /// Mutex to prevent race on emplace.
   std::mutex mu;

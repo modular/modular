@@ -13,7 +13,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 /// If true, uses will be printed to llvm::errs() as they begin and end.
 constexpr bool kTraceUsesToErrs = false;
@@ -70,8 +70,8 @@ static void printNames(const llvm::StringMap<size_t> &names,
 // ResourceSection
 //===----------------------------------------------------------------------===//
 
-void M::LLCL::printResourceSection(llvm::raw_ostream &os,
-                                   const ResourceSection &section) {
+void M::AsyncRT::printResourceSection(llvm::raw_ostream &os,
+                                      const ResourceSection &section) {
   if (isAllResourceSection(section)) {
     os << "all";
   } else {
@@ -198,7 +198,7 @@ Resource::~Resource() {
 RCRef<Resource> Resource::allocate(std::string name, bool isInitialized) {
 #ifdef NDEBUG
   llvm::errs()
-      << "CAUTION: Attempting to use LLCL::Resource on a build "
+      << "CAUTION: Attempting to use AsyncRT::Resource on a build "
          "without asserts enabled. That's probably not what you intended.\n";
 #endif
   return RCRef<Resource>::take(new Resource(std::move(name), isInitialized));

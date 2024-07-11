@@ -10,7 +10,7 @@
 
 #include "AsyncRT/Support/Location.h"
 
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 void LocationDecoder::VtableAnchor() {}
 

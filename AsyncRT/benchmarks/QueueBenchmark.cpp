@@ -13,7 +13,7 @@
 #include <thread>
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 class ConcurrentQueueTest {
 public:

@@ -8,7 +8,7 @@
 #include "AsyncRT/Support/Diagnostic.h"
 
 using namespace M;
-using namespace LLCL;
+using namespace AsyncRT;
 
 EncodedDiagnostic UnknownLocationDecoder::getDiagnostic(Error err) {
   return {std::move(err), UnknownLocationDecoder::getEncodedLocation()};

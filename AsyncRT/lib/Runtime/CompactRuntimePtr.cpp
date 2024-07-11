@@ -11,7 +11,7 @@
 #include <mutex>
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 Detail::RuntimeTable::RuntimeTable() {
   freeIndices.resize(kInvalidIndex);

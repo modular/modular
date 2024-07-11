@@ -9,14 +9,14 @@
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 namespace {
 
 std::unique_ptr<Runtime> createRuntime() {
-  return LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
-                                       .withLeakCheckedAllocator()
-                                       .withMainWillNotDonate());
+  return AsyncRT::createUniqueRuntime(AsyncRT::RuntimeOptions()
+                                          .withLeakCheckedAllocator()
+                                          .withMainWillNotDonate());
 }
 
 /// Test to ensure that we can utilize the full range of indices for runtime.
@@ -36,7 +36,7 @@ TEST(RuntimeTest, MaxRuntime) {
 /// add 10 instances again which should succeed.
 TEST(RuntimeTest, MaxRuntimeUtilize) {
   const uint8_t numRuntimes =
-      M::LLCL::Detail::RuntimeTable::getSingleton().numActiveRuntimes();
+      M::AsyncRT::Detail::RuntimeTable::getSingleton().numActiveRuntimes();
 
   std::vector<std::unique_ptr<Runtime>> allRuntimes;
   for (uint8_t i = 0; i < (255 - numRuntimes); ++i) {

@@ -9,7 +9,7 @@
 #include "AsyncRT/Runtime/Runtime.h"
 
 using namespace M;
-using namespace LLCL;
+using namespace AsyncRT;
 using llvm::ThreadPoolTaskGroup;
 using AsyncChain = AsyncValueRef<Chain>;
 
@@ -27,12 +27,12 @@ bool LLVMThreadPool::TurnStile::taskComplete() {
   return false;
 }
 
-void LLVMThreadPool::TurnStile::waitAndReset(LLCL::Runtime &runtime) {
+void LLVMThreadPool::TurnStile::waitAndReset(AsyncRT::Runtime &runtime) {
   // Decrement the counter, and if there are still tasks running, wait.
   if (!taskComplete())
     await(chain);
   counter = 1;
-  chain = LLCL::AsyncValueRef<Chain>::allocate(runtime);
+  chain = AsyncRT::AsyncValueRef<Chain>::allocate(runtime);
 }
 
 LLVMThreadPool::~LLVMThreadPool() {

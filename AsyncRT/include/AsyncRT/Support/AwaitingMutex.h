@@ -9,7 +9,7 @@
 
 #include "AsyncRT/Runtime/Runtime.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 /// This class implements an "awaiting" mutex where threads waiting on a mutex
 /// donate themselves to the workqueue instead of sleeping. This is useful for
 /// parallel programming patterns with LLCL that contain suspension points
@@ -17,7 +17,7 @@ namespace M::LLCL {
 ///
 /// ```c++
 /// mtx.lock();
-/// LLCL::await(ch, /*mayDonate=*/false);
+/// AsyncRT::await(ch, /*mayDonate=*/false);
 /// mtx.unlock();
 /// ```
 ///
@@ -60,7 +60,7 @@ public:
       }
 
       // Wait on the chain.
-      LLCL::await(ch);
+      AsyncRT::await(ch);
     }
   }
 
@@ -87,6 +87,6 @@ public:
   /// An actual mutex guarding `ch`.
   llvm::sys::SmartRWMutex<true> mutex;
 };
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_AWAITINGMUTEX_H

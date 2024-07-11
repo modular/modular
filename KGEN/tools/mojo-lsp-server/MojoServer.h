@@ -12,9 +12,9 @@
 #include "Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class WorkQueue;
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 namespace M::Mojo::LSP {
 using SendDiagnosticsFn =

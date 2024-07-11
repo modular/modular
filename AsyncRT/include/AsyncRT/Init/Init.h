@@ -35,7 +35,7 @@ public:
     resources = v;
     return *this;
   }
-  Options &withRuntimeOptions(const LLCL::RuntimeOptions &v = {}) {
+  Options &withRuntimeOptions(const AsyncRT::RuntimeOptions &v = {}) {
     runtimeOptions.emplace(v);
     return *this;
   }
@@ -48,7 +48,7 @@ private:
   Settings::EntitlementPolicy entitlementPolicy = Settings::kAlwaysSucceed;
   bool forceDisableCrashReporting = false;
   llvm::StringMap<TelemetryContext::AttributeValue> resources = {};
-  std::optional<LLCL::RuntimeOptions> runtimeOptions;
+  std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
   Settings::RefreshPolicy refreshPolicy;
 
   friend ErrorOr<ContextRef> createContext(StringRef, const Options &);

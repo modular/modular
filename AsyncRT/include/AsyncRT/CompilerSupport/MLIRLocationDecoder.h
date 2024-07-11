@@ -13,7 +13,7 @@
 #include "Support/ReferenceCounted.h"
 #include <string>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This class implements LocationDecoder and reports the MLIR location as
 /// file/line/column when possible, otherwise just reports the printed location.
@@ -34,6 +34,6 @@ public:
 /// Given an Error and an mlir::Location, we can create an EncodedDiagnostic.
 EncodedDiagnostic getMLIRDiagnostic(Error e, mlir::Location loc);
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_MLIRLOCATIONDECODER_H

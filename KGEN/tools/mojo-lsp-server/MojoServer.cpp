@@ -643,7 +643,8 @@ static std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
+                           AsyncRT::Runtime &runtime,
+                           AsyncRT::AnyAsyncValueRef chain,
                            ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
@@ -786,7 +787,7 @@ AsyncValueRef<Chain> MojoDocument::newTaskChain() {
   llvm::SmallVector<AnyAsyncValueRef> refs;
   refs.emplace_back(std::move(isQuiescent));
   refs.emplace_back(rval.copy());
-  LLCL::andThenSyncCopying(
+  AsyncRT::andThenSyncCopying(
       llvm::ArrayRef<AnyAsyncValueRef>(refs),
       [n = n.copy()](llvm::ArrayRef<AnyAsyncValueRef> elems) mutable {
         std::move(n).emplace();
@@ -1741,8 +1742,8 @@ MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
 MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    std::string &&contents, int64_t version,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
-                                   LLCL::Runtime &runtime,
-                                   LLCL::AnyAsyncValueRef chain,
+                                   AsyncRT::Runtime &runtime,
+                                   AsyncRT::AnyAsyncValueRef chain,
                                    ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
                    runtime, std::move(chain), includeDirs),
@@ -1870,8 +1871,8 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::URIForFile> notebookAndCellURIs, int64_t version,
     ArrayRef<lsp::NotebookCell> cellInfos,
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
-    SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
-    LLCL::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs)
+    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
+    AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
                    sendDiagnosticsFn, runtime, std::move(chain), includeDirs) {
   for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
@@ -2080,7 +2081,7 @@ struct MojoServer::Impl {
     // synchronously.
     for (auto &[filename, file] : files) {
       if (waitOnShutdown)
-        LLCL::await(file->getDocumentReadyChain());
+        AsyncRT::await(file->getDocumentReadyChain());
       else
         file->invalidate();
     }
@@ -2088,7 +2089,7 @@ struct MojoServer::Impl {
     // We always need to block on outstanding tasks, they may simple have been
     // cancelled above and we can expect them to finish quickly.
     for (auto &[filename, file] : files) {
-      LLCL::await(file->getQuiescentChain());
+      AsyncRT::await(file->getQuiescentChain());
     }
 
     files.clear();
@@ -2152,7 +2153,7 @@ ErrorOr<MojoServer> MojoServer::create(bool singleThreaded, bool waitOnShutdown,
                                        ArrayRef<std::string> includeDirs) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lsp-server",
-      Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()
+      Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
                                              .withSingleThreaded(singleThreaded)
                                              .withMainWillNotDonate()));
   if (ctxOr.isError())
@@ -2185,7 +2186,7 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   auto [it, _] = impl->files.try_emplace(uri.file(), MojoDocumentRef());
 
   // If a document already exists, invalidate that version.
-  LLCL::Runtime &runtime = *impl->ctx->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *impl->ctx->get<AsyncRT::Runtime>();
   AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
   if (it->second) {
     it->second->invalidate();
@@ -2254,7 +2255,7 @@ void MojoServer::addNotebookDocument(
   MojoDocumentRef &file = impl->files[uri.file()];
 
   // If a document already exists, invalidate that version.
-  LLCL::Runtime &runtime = *impl->ctx->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *impl->ctx->get<AsyncRT::Runtime>();
   AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
   if (file) {
     file->invalidate();

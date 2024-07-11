@@ -8,7 +8,7 @@
 #include "Support/AlignedAlloc.h"
 
 using namespace M;
-using namespace M::LLCL;
+using namespace M::AsyncRT;
 
 namespace {
 /// This is an implementation of the Allocator interface that just calls to
@@ -31,11 +31,11 @@ class MallocAllocator : public Allocator {
 };
 } // namespace
 
-std::unique_ptr<Allocator> M::LLCL::createMallocAllocator() {
+std::unique_ptr<Allocator> M::AsyncRT::createMallocAllocator() {
   return std::make_unique<MallocAllocator>();
 }
 
-void M::LLCL::profiledMemcpy(void *dst, const void *src, size_t size) {
+void M::AsyncRT::profiledMemcpy(void *dst, const void *src, size_t size) {
   // Since this profiling entry is on by default we don't include the size to
   // avoid string manipulation.
   TimeTraceScope scope(

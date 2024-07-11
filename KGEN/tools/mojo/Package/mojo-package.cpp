@@ -264,7 +264,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 /// into Mojo programs.
 static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
-             LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
+             LIT::PackageOp parsedPackageOp, AsyncRT::Runtime &runtime) {
   // Add the dependencies of the package to the package itself, and strip out
   // any post parser metadata for other package.
   SmallVector<FlatSymbolRefAttr> dependencies;
@@ -339,7 +339,7 @@ static int package(const State &subcommandState) {
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
@@ -365,7 +365,7 @@ static int package(const State &subcommandState) {
 
   // Parse the input directory as a Mojo package. This returns a module op that
   // wraps the `lit.package` op, which represents the package contents.
-  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &packageArgs.ctx);

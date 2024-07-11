@@ -35,35 +35,35 @@ public:
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  LLCL::AsyncValueRef<LLCL::Chain>
-  insert(LLCL::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+  AsyncRT::AsyncValueRef<AsyncRT::Chain>
+  insert(AsyncRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous insert.
-  virtual LLCL::AsyncValueRef<LLCL::Chain>
-  insertImpl(LLCL::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+  virtual AsyncRT::AsyncValueRef<AsyncRT::Chain>
+  insertImpl(AsyncRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
              std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  LLCL::AsyncValueRef<bool>
-  contains(LLCL::Runtime &runtime, BufferRef keyHash,
+  AsyncRT::AsyncValueRef<bool>
+  contains(AsyncRT::Runtime &runtime, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous contains.
-  virtual LLCL::AsyncValueRef<bool>
-  containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+  virtual AsyncRT::AsyncValueRef<bool>
+  containsImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
                std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
-  LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(LLCL::Runtime &runtime, BufferRef keyHash,
+  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  find(AsyncRT::Runtime &runtime, BufferRef keyHash,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous find.
-  virtual LLCL::AsyncValueRef<std::optional<BufferRef>>
-  findImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+  virtual AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  findImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Subclasses that don't override insert should use this to provide the
@@ -152,18 +152,18 @@ public:
   /// user to use a strong hash function! Returns the cache key on success -
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
-  LLCL::AsyncValueRef<std::string>
-  insert(LLCL::Runtime &runtime, KeyTy key, BufferRef obj,
+  AsyncRT::AsyncValueRef<std::string>
+  insert(AsyncRT::Runtime &runtime, KeyTy key, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
-    LLCL::AsyncValueRef<LLCL::Chain> insertAsync =
+    AsyncRT::AsyncValueRef<AsyncRT::Chain> insertAsync =
         backendList->insert(runtime, Buffer::get(keyHash), std::move(obj));
 
     // Allocate a space for the output.
-    auto out = LLCL::AsyncValueRef<std::string>::allocate(runtime);
+    auto out = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
     std::move(insertAsync)
         .andThenSync([keyHash = std::move(keyHash), out = out.copy()](
-                         AsyncValueRef<LLCL::Chain> &&insertAsync) mutable {
+                         AsyncValueRef<AsyncRT::Chain> &&insertAsync) mutable {
           // If insertion failed, propagate the error. Otherwise, hand over the
           // key hash.
           if (insertAsync.isError())
@@ -183,8 +183,8 @@ public:
   }
 
   /// Check if any of the provided backends have the item.
-  LLCL::AsyncValueRef<bool>
-  contains(LLCL::Runtime &runtime, KeyTy key,
+  AsyncRT::AsyncValueRef<bool>
+  contains(AsyncRT::Runtime &runtime, KeyTy key,
            std::optional<EncodedLocation> loc = std::nullopt) const {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
     return backendList->contains(runtime, std::move(hash), std::move(loc));
@@ -195,8 +195,8 @@ public:
   }
 
   /// Get the item from any of the provided backends.
-  LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(LLCL::Runtime &runtime, KeyTy key,
+  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  find(AsyncRT::Runtime &runtime, KeyTy key,
        std::optional<EncodedLocation> loc = std::nullopt) const {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
     return backendList->find(runtime, std::move(hash), std::move(loc));

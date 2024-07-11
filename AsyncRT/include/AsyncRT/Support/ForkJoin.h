@@ -10,7 +10,7 @@
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Runtime.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 /// This class can be used to track completion of various tasks dispatched to
 /// the workqueue. For example:
 ///
@@ -58,6 +58,6 @@ private:
   /// This is the number of in-flight work items, plus 1 for synchronization.
   std::atomic<size_t> numWorkItems = 1;
 };
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_FORKJOIN_H

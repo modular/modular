@@ -25,7 +25,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace LLCL;
+using namespace AsyncRT;
 
 /// Provides a simple way to get an error given an optional encoded location and
 /// a standard Error.
@@ -63,7 +63,7 @@ static bool checkOrCreateWriteableDirectory(const std::filesystem::path &path) {
 //===----------------------------------------------------------------------===//
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insert(LLCL::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::insert(AsyncRT::Runtime &runtime, BufferRef keyHash,
                          BufferRef obj, std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -107,7 +107,7 @@ ErrorOrSuccess BlobCacheBackend::insertSync(StringRef keyHash, BufferRef obj) {
 }
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insertImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::insertImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
                              BufferRef obj,
                              std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
@@ -125,7 +125,7 @@ BlobCacheBackend::insertImpl(LLCL::Runtime &runtime, BufferRef keyHash,
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::contains(LLCL::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::contains(AsyncRT::Runtime &runtime, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -173,7 +173,7 @@ ErrorOr<bool> BlobCacheBackend::containsSync(StringRef keyHash) {
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::containsImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
                                std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
   auto result = AsyncValueRef<bool>::allocate(runtime);
@@ -190,7 +190,7 @@ BlobCacheBackend::containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(LLCL::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::find(AsyncRT::Runtime &runtime, BufferRef keyHash,
                        std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -268,7 +268,7 @@ BlobCacheBackend::findSync(StringRef keyHash) {
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::findImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::findImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   // Wrap the synchronous execution by default.
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
@@ -604,7 +604,7 @@ struct DylibBackendStub : public BlobCacheBackend {
     llvm::sys::DynamicLibrary::closeLibrary(dylib);
   }
 
-  AsyncValueRef<Chain> insertImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+  AsyncValueRef<Chain> insertImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
                                   BufferRef obj,
                                   std::optional<EncodedLocation> loc) override {
     return backend->insertImpl(runtime, std::move(keyHash), std::move(obj),
@@ -615,7 +615,7 @@ struct DylibBackendStub : public BlobCacheBackend {
   }
 
   AsyncValueRef<bool>
-  containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+  containsImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
                std::optional<EncodedLocation> loc) override {
     return backend->containsImpl(runtime, std::move(keyHash), std::move(loc));
   }
@@ -624,7 +624,7 @@ struct DylibBackendStub : public BlobCacheBackend {
   }
 
   AsyncValueRef<std::optional<BufferRef>>
-  findImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+  findImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
            std::optional<EncodedLocation> loc) override {
     return backend->findImpl(runtime, std::move(keyHash), std::move(loc));
   }

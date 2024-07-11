@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the M::LLCL::Allocator interface, which allows clients of
-// LLCL to implement custom allocation and other fancy policies.
+// This file declares the M::AsyncRT::Allocator interface, which allows clients
+// of LLCL to implement custom allocation and other fancy policies.
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,7 +17,7 @@
 
 #include <memory>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// Profiling entry for uses of memcpy via profiledMemcpy.
 using MemCopyProfilerEntry =
@@ -121,6 +121,6 @@ std::unique_ptr<Allocator> createUseAfterFreeAllocator();
 /// allocated by one of our allocators.
 void profiledMemcpy(void *dst, const void *src, size_t size);
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_ALLOCATOR_H

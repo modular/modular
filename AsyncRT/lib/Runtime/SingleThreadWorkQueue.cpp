@@ -14,7 +14,7 @@
 #define DEBUG_TYPE "llcl"
 
 using namespace M;
-using namespace LLCL;
+using namespace AsyncRT;
 
 namespace {
 
@@ -217,6 +217,6 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
 }
 
 std::unique_ptr<WorkQueue>
-M::LLCL::createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
+M::AsyncRT::createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
   return std::make_unique<SingleThreadWorkQueue>(runtimePtr);
 }

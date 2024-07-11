@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <mutex>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 class Runtime;
 
@@ -149,6 +149,6 @@ private:
   uint8_t index = Detail::RuntimeTable::kInvalidIndex;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H

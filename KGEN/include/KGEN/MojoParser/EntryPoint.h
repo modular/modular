@@ -18,9 +18,9 @@ namespace mlir {
 class TimingScope;
 } // namespace mlir
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Runtime;
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 namespace M::KGEN {
 class CompilationOptions;
 } // namespace M::KGEN
@@ -85,7 +85,7 @@ struct ParserConfig {
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 OwningOpRef<ModuleOp>
-importMojoFile(LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr,
+importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
                ParserConfig &config, mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles = nullptr);
 
@@ -96,17 +96,18 @@ importMojoFile(LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr,
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
-importMojoPackage(LLCL::Runtime &runtime, StringRef path, StringRef packageName,
-                  llvm::SourceMgr &sourceMgr, ParserConfig &config,
-                  mlir::TimingScope &ts,
+importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
+                  StringRef packageName, llvm::SourceMgr &sourceMgr,
+                  ParserConfig &config, mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse the binary Mojo package at the given path as a fully self contained
 /// module, resolving all dependencies into a self contained module. Returns a
 /// module op that contains the package.
 OwningOpRef<ModuleOp> importStandaloneMojoBinaryPackage(
-    LLCL::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
-    MLIRContext *ctx, StringRef path);
+    AsyncRT::Runtime &runtime,
+    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
+    StringRef path);
 
 /// Clone the module containing the given decl, and prepare it for compilation.
 /// This handles stripping out any unused decls, stabilizing value uses, and

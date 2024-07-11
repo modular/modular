@@ -12,7 +12,7 @@
 #include "Support/Threading/Shared.h"
 #include "llvm/Support/ThreadPool.h"
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Runtime;
 
 /// This is an implement of the LLVM thread pool interface that wraps an LLCL
@@ -20,7 +20,7 @@ class Runtime;
 /// implementation inside an MLIR context.
 class LLVMThreadPool : public llvm::ThreadPoolInterface {
 public:
-  LLVMThreadPool(LLCL::Runtime &runtime)
+  LLVMThreadPool(AsyncRT::Runtime &runtime)
       : runtime(runtime), poolTurnStile(runtime) {}
   ~LLVMThreadPool();
 
@@ -32,20 +32,20 @@ public:
 
 private:
   /// The wrapped LLCL runtime.
-  LLCL::Runtime &runtime;
+  AsyncRT::Runtime &runtime;
 
   /// Turnstile for a task group or for the whole queue that can be waited on.
   /// This operates under the assumption that tasks cannot be added to a queue
   /// or group while it is being waited on.
   struct TurnStile {
-    TurnStile(LLCL::Runtime &runtime)
-        : counter(1), chain(LLCL::AsyncValueRef<Chain>::allocate(runtime)) {}
+    TurnStile(AsyncRT::Runtime &runtime)
+        : counter(1), chain(AsyncRT::AsyncValueRef<Chain>::allocate(runtime)) {}
 
     bool taskComplete();
-    void waitAndReset(LLCL::Runtime &runtime);
+    void waitAndReset(AsyncRT::Runtime &runtime);
 
     std::atomic<unsigned> counter;
-    LLCL::AsyncValueRef<Chain> chain;
+    AsyncRT::AsyncValueRef<Chain> chain;
   };
 
   /// Shared table of turnstiles for all active task groups. The elements are
@@ -56,6 +56,6 @@ private:
   /// Turnstile for the whole task group.
   TurnStile poolTurnStile;
 };
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_COMPILERSUPPORT_RUNTIME_H

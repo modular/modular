@@ -36,8 +36,8 @@ std::string mangleParameterValues(GeneratorOp generator,
 
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ExpansionGraph {
-  ExpansionGraph(LLCL::Runtime &runtime)
-      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
+  ExpansionGraph(AsyncRT::Runtime &runtime)
+      : worklistCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
 
   virtual ~ExpansionGraph();
 
@@ -65,7 +65,7 @@ struct ExpansionGraph {
   /// used to starve the workqueue before running evaluators, because evaluation
   /// cannot be reliably performed while the compiler is doing work on other
   /// threads.
-  LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> worklistCh;
 
   /// Concrete functions added directly to the expansion graph.
   std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
@@ -78,8 +78,9 @@ struct ExpansionGraph {
   AsyncValueRef<Chain> quiesceChain;
 
   /// Get or create the node for a generator instantiation.
-  ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
-                         GeneratorOp gen, size_t depth);
+  ParamNode *getOrCreate(AsyncRT::Runtime &runtime,
+                         ParameterExprArrayAttr values, GeneratorOp gen,
+                         size_t depth);
 };
 
 //===----------------------------------------------------------------------===//
@@ -399,7 +400,7 @@ private:
       knownGraphs;
 
   /// The LLCL runtime instance to use.
-  LLCL::Runtime &runtime;
+  AsyncRT::Runtime &runtime;
 
   /// The callgraph being expanded.
   ExpansionGraph g;

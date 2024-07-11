@@ -32,9 +32,9 @@ class SourceNameAttr;
 } // namespace DebugInfo
 } // namespace M
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 class Runtime;
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 namespace M::KGEN::Mojo {
 /// Forward declaration for use below.
@@ -55,7 +55,7 @@ public:
   LIT::SharedState &getSharedState();
 
   /// Return the LLCL runtime for this type system.
-  LLCL::Runtime &getRuntime();
+  AsyncRT::Runtime &getRuntime();
 
   /// Return the Mojo parser context attached to this type system.
   MojoParserContext &getParserContext();

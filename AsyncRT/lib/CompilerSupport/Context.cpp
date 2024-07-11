@@ -18,10 +18,10 @@ void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref) {
         dialect->setInternal(ref.copy());
         if (ctx->isMultithreadingEnabled())
           return;
-        LLCL::LLVMThreadPool *tp = ref->get<LLCL::LLVMThreadPool>();
+        AsyncRT::LLVMThreadPool *tp = ref->get<AsyncRT::LLVMThreadPool>();
         if (!tp) {
-          if (LLCL::Runtime *runtime = ref->get<LLCL::Runtime>())
-            tp = &ref->emplace<LLCL::LLVMThreadPool>(*runtime);
+          if (AsyncRT::Runtime *runtime = ref->get<AsyncRT::Runtime>())
+            tp = &ref->emplace<AsyncRT::LLVMThreadPool>(*runtime);
         }
         // If the runtime is available, enable threading in MLIR with it.
         if (tp)

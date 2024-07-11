@@ -27,8 +27,8 @@
 #define DEBUG_TYPE "llcl"
 
 M::ErrorOr<std::vector<size_t>>
-M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
-                                 size_t maxThreads) {
+M::AsyncRT::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
+                                    size_t maxThreads) {
   size_t performanceCores = M::getNumPerformanceCores();
   size_t physicalCores = M::getNumPhysicalCores();
   ErrorOr<CPULimits> limitsOr = CPULimits::get();
@@ -107,8 +107,8 @@ M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
   return cpuIDs;
 }
 
-void M::LLCL::runWithThreadAffinity(size_t cpuID,
-                                    llvm::function_ref<void()> workFn) {
+void M::AsyncRT::runWithThreadAffinity(size_t cpuID,
+                                       llvm::function_ref<void()> workFn) {
   if (cpuID == kNoAffinity) {
     workFn();
   } else {
@@ -121,7 +121,7 @@ void M::LLCL::runWithThreadAffinity(size_t cpuID,
   }
 }
 
-void M::LLCL::setThreadAffinity(size_t cpuID) {
+void M::AsyncRT::setThreadAffinity(size_t cpuID) {
   if (cpuID != kNoAffinity) {
     ErrorOrSuccess errOr = M::setThreadAffinity(cpuID);
     if (const char *err = errOr.getError()) {

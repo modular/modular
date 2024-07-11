@@ -133,7 +133,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
 static std::optional<int>
-compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
+compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
                        ModuleOp moduleOp, TargetInfoAttr target,
                        BufferRef &archive) {
@@ -377,7 +377,7 @@ static int build(const State &subcommandState) {
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
@@ -391,7 +391,7 @@ static int build(const State &subcommandState) {
       {options::OPT_D, options::OPT_I, options::OPT_o});
 
   // Lower the input file to an MLIR module.
-  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
+  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, runtime,

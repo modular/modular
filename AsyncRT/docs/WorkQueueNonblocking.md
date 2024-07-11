@@ -1,4 +1,4 @@
-# The nonblocking design of `M::LLCL::WorkQueue`
+# The nonblocking design of `M::AsyncRT::WorkQueue`
 
 ## Introduction
 
@@ -71,13 +71,13 @@ grain.  This involves a few things:
    potentially blocking operation on a `WorkQueue`, you should invoke it on the
    foreign thread pool, and have it add a completion handler work-item to the
    `WorkQueue` when it completes.
-3) The top level client of `M::LLCL::Runtime` can then configure the system so the
-   `WorkQueue` is balanced with the foreign runtimes at a granular level.  For
-   example, it is entirely reasonable for some use cases to configure `Runtime`
-   to have N threads on an N CPU system, while also having other foreign
-   runtimes with N (or more) threads for themselves.  The OS kernel will handle
-   context switching.  It won't be ideal situations, but working with legacy
-   code is not ideal.
+3) The top level client of `M::AsyncRT::Runtime` can then configure the system
+   so the `WorkQueue` is balanced with the foreign runtimes at a granular
+   level.  For example, it is entirely reasonable for some use cases to
+   configure `Runtime` to have N threads on an N CPU system, while also having
+   other foreign runtimes with N (or more) threads for themselves.  The OS
+   kernel will handle context switching.  It won't be ideal situations, but
+   working with legacy code is not ideal.
 4) This approach makes it slightly less efficient to use the legacy approach,
    so cases that matter will have pressure to move to the native design.  This
    encourages the legacy code that matters to improve, instead of leaving it
@@ -94,7 +94,7 @@ mix between being very useful for "completely pure" systems which scales down to
 embedded systems where you want to control everything, while still working for
 large scale systems with a lot of legacy.
 
-Many clients of `M::LLCL::Runtime` will themselves be built with blocking
+Many clients of `M::AsyncRT::Runtime` will themselves be built with blocking
 expectations (purely async-safe code is still relatively unusual) so there is a
 top-level `await` call which waits until a specified set of values are complete
 before returning.  It doesn't block: it donates the client thread to running

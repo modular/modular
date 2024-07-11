@@ -13,7 +13,7 @@
 #include <cassert>
 #include <memory>
 
-namespace M::LLCL {
+namespace M::AsyncRT {
 
 /// This class provides a lock-free ring buffer for concurrent access.
 /// NOTE: Currently the size of the ring buffer is fixed at the construction
@@ -158,6 +158,6 @@ private:
   AlignedAtomic<uint64_t> published = 0;
 };
 
-} // namespace M::LLCL
+} // namespace M::AsyncRT
 
 #endif // LLCL_SUPPORT_LOCKFREERINGBUFFER_H

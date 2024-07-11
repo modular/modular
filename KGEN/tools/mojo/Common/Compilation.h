@@ -27,9 +27,9 @@ class TimingScope;
 } // namespace mlir
 
 namespace M {
-namespace LLCL {
+namespace AsyncRT {
 class Runtime;
-} // namespace LLCL
+} // namespace AsyncRT
 
 namespace KGEN::LIT {
 struct ParserConfig;
@@ -67,7 +67,7 @@ ErrorOrSuccess parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    AsyncRT::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
