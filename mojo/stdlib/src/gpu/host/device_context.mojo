@@ -199,7 +199,7 @@ struct DeviceFunction[
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.cuda_function = Function[func, _is_failable=_is_failable](
-            self.ctx_ptr[].cuda_context,
+            self.ctx_ptr,
             debug,
             verbose,
             dump_ptx,

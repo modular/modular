@@ -20,7 +20,13 @@ from utils.variant import Variant
 
 from ._compile import _compile_code, _get_nvptx_fn_name
 from builtin._location import __call_location
-from ._utils import _check_error, _FunctionHandle, _ModuleHandle, _StreamHandle
+from ._utils import (
+    _check_error,
+    _FunctionHandle,
+    _ModuleHandle,
+    _StreamHandle,
+    CudaHandle,
+)
 from .context import Context
 from .dim import Dim
 from .module import Module
@@ -146,6 +152,7 @@ struct _CachedFunctionPayload:
     var threads_per_block: Int32
     var cache_config: Int32
     var func_attribute: FuncAttribute
+    var device_context_ptr: UnsafePointer[DeviceContext]
 
     fn __init__(
         debug: Bool,
@@ -154,6 +161,7 @@ struct _CachedFunctionPayload:
         threads_per_block: Int32,
         cache_config: Int32,
         func_attribute: FuncAttribute,
+        device_context_ptr: UnsafePointer[DeviceContext],
     ) -> Self:
         return Self {
             debug: debug,
@@ -162,6 +170,7 @@ struct _CachedFunctionPayload:
             threads_per_block: threads_per_block,
             cache_config: cache_config,
             func_attribute: func_attribute,
+            device_context_ptr: device_context_ptr,
         }
 
 
@@ -235,6 +244,9 @@ struct Function[
         func, is_failable=_is_failable, emission_kind="asm"
     ]()
 
+    # TODO: KERN-661. This is for backwards compatibility until all tests are
+    #       updated with DeviceContext functions (i.e., no standalone
+    #        Function[]() calls, but calling via ctx.enqueue_function).
     @always_inline
     fn __init__(
         inout self,
@@ -261,6 +273,33 @@ struct Function[
             cuda_function_cache=ctx.cuda_function_cache,
         )
 
+    @always_inline
+    fn __init__(
+        inout self,
+        ctx_ptr: UnsafePointer[DeviceContext],
+        debug: Bool = False,
+        verbose: Bool = False,
+        dump_ptx: Variant[Path, Bool] = False,
+        dump_llvm: Variant[Path, Bool] = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        cache_config: Optional[CacheConfig] = None,
+        func_attribute: Optional[FuncAttribute] = None,
+    ) raises:
+        self.__init__(
+            debug=debug,
+            verbose=verbose,
+            dump_ptx=dump_ptx,
+            dump_llvm=dump_llvm,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cache_config=cache_config,
+            func_attribute=func_attribute,
+            cuda_dll=ctx_ptr[].cuda_context.cuda_dll,
+            cuda_function_cache=ctx_ptr[].cuda_context.cuda_function_cache,
+            device_context_ptr=ctx_ptr,
+        )
+
     fn __init__(
         inout self,
         debug: Bool = False,
@@ -275,6 +314,9 @@ struct Function[
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
+        device_context_ptr: UnsafePointer[DeviceContext] = UnsafePointer[
+            DeviceContext
+        ](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -282,10 +324,10 @@ struct Function[
 
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
-
         Self._dump_rep(dump_ptx, dump_llvm)
 
         var info = Self._get_cached_function_info[func_type, func](
+            device_context_ptr=device_context_ptr,
             debug=debug,
             verbose=verbose,
             max_registers=max_registers.value() if max_registers else -1,
@@ -476,9 +518,14 @@ struct Function[
                 <= 0 else Optional[Int](int(payload.threads_per_block)),
             )
             var func_handle = module.load(fn_name)
-            # FIXME: Figure out a way to get the following through self.cuda_dll
-            var cuFuncSetCacheConfig = cuFuncSetCacheConfig.load()
-            var cuFuncSetAttribute = cuFuncSetAttribute.load()
+
+            # TODO: KERN-661. payload should always have a valid
+            #       device_context_ptr when all tests are updated with
+            #       DeviceContext functions (i.e.,no standalone Function[]()
+            #       calls).
+            var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll if payload.device_context_ptr else None
+            var cuFuncSetCacheConfig = cuda_dll.value().cuFuncSetCacheConfig if cuda_dll else cuFuncSetCacheConfig.load()
+            var cuFuncSetAttribute = cuda_dll.value().cuFuncSetAttribute if cuda_dll else cuFuncSetAttribute.load()
 
             if payload.cache_config != -1:
                 _check_error(
@@ -520,6 +567,7 @@ struct Function[
     fn _get_cached_function_info[
         func_type: AnyTrivialRegType, func: func_type
     ](
+        device_context_ptr: UnsafePointer[DeviceContext],
         debug: Bool = False,
         verbose: Bool = False,
         max_registers: Int = -1,
@@ -539,6 +587,7 @@ struct Function[
             threads_per_block=threads_per_block,
             cache_config=cache_config,
             func_attribute=func_attribute,
+            device_context_ptr=device_context_ptr,
         )
 
         if cuda_function_cache:
