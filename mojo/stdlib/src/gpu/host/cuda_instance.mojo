@@ -328,6 +328,14 @@ struct CudaDLL:
         self.cuModuleUnload = cuModuleUnload.load()
         self.cuModuleGetFunction = cuModuleGetFunction.load()
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
 
 struct CudaInstance:
     var cuda_dll: Optional[CudaDLL]

@@ -55,6 +55,14 @@ struct Stream(CollectionElement):
             cuStreamCreate(UnsafePointer.address_of(self.stream), Int32(flags))
         )
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
     fn __init__(inout self, ctx: Context, flags: Int = 0) raises:
         self.__init__(flags, ctx.cuda_dll)
 

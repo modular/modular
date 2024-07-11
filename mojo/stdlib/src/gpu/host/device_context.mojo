@@ -45,6 +45,14 @@ struct KernelProfilingInfoElement(CollectionElement):
         self.name = name
         self.time = time
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
 
 @value
 struct KernelProfilingInfo:

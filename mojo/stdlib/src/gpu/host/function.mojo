@@ -62,6 +62,14 @@ struct CacheConfig(CollectionElement, EqualityComparable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
 
 # ===----------------------------------------------------------------------===#
 # Function Attribute
@@ -81,6 +89,14 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
     var value: Int32
 
     alias NULL = FuncAttribute(-1, -1)
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
