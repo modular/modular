@@ -23,7 +23,7 @@ class bar:
 # CHECK: (PythonObject) b = {
 # CHECK:   (PyObjectPtr) py_object = {
 # CHECK:     (DTypePointer[int8, {{.*}}]) value = {
-# CHECK:       (LegacyPointer[SIMD[int8, 1], {{.*}}]) address = {
+# CHECK:       (UnsafePointer[SIMD[int8, 1], {{.*}}]) address = {
 # CHECK:         (pointer<{{.*}}>) address = 0x
 # CHECK:       }
 # CHECK:     }
