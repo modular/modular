@@ -44,7 +44,7 @@ lit_tests(
         "//GenericML:DeviceDriver",
         "//GenericML:modular-framework-common",
         "//KGEN:CompilerRT",
-        "//ModelServing:ServeRT",
+        "//ModelServing:ServeRTCAPI",
         "//ModularFramework/tools/mof",
         "//PyTorch:modular-framework-torch-ext",
         "//PyTorch/test/utils:pytorch-generated-tests",
