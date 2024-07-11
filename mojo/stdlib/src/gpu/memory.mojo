@@ -11,7 +11,7 @@ from gpu.host._utils import _check_error
 from gpu.host.result import Result
 from memory import stack_allocation as _generic_stack_allocation
 from memory.reference import _GPUAddressSpace
-from memory.unsafe import DTypePointer, Pointer, bitcast
+from memory.unsafe import DTypePointer, bitcast
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace
@@ -50,10 +50,10 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyTrivialRegType, bypass_L1_16B: Bool = True
+    size: Int, type: AnyType, bypass_L1_16B: Bool = True
 ](
-    src: Pointer[type, AddressSpace.GLOBAL],
-    dst: Pointer[type, AddressSpace.SHARED],
+    src: UnsafePointer[type, AddressSpace.GLOBAL],
+    dst: UnsafePointer[type, AddressSpace.SHARED],
 ):
     """Asynchronously copy `size` amount of bytes from src global memory address
     to shared memory `dst` address.
@@ -78,10 +78,10 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyTrivialRegType, bypass_L1_16B: Bool = True
+    size: Int, type: AnyType, bypass_L1_16B: Bool = True
 ](
-    src: Pointer[type, AddressSpace.GLOBAL],
-    dst: Pointer[type, AddressSpace.SHARED],
+    src: UnsafePointer[type, AddressSpace.GLOBAL],
+    dst: UnsafePointer[type, AddressSpace.SHARED],
     src_size: Int32,
 ):
     """Asynchronously copy `size` amount of bytes from src global memory address
@@ -134,9 +134,9 @@ fn async_copy_wait_all():
 
 @always_inline
 fn dynamic_shared_memory[
-    type: AnyTrivialRegType,
+    type: AnyType,
     alignment: Int,
-]() -> Pointer[type, _GPUAddressSpace.SHARED]:
+]() -> UnsafePointer[type, _GPUAddressSpace.SHARED]:
     """Gets a pointer to dynamic shared memory.
 
     Parameters:
@@ -147,6 +147,6 @@ fn dynamic_shared_memory[
         A pointer to dynamic shared memory.
     """
     return __mlir_op.`pop.extern_ptr_symbol`[
-        _type = Pointer[type, _GPUAddressSpace.SHARED]._mlir_type,
+        _type = UnsafePointer[type, _GPUAddressSpace.SHARED]._mlir_type,
         alignment = alignment.value,
     ]()
