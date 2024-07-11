@@ -47,6 +47,8 @@ add_modular_library(MojoLLDB SHARED
   MojoTooling
 
   liblldb
+  liblldbBreakpoint
+  liblldbUtility
 )
 
 # This is needed to expose the headers of the LLDB plugins, which are based on
