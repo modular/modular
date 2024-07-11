@@ -31,7 +31,7 @@ from linalg.intel_amx_intrinsics import (
 from linalg.matmul import Matrix, naive_matmul
 from linalg.transpose import transpose, transpose_inplace
 from memory import memcmp, memset_zero, UnsafePointer
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from utils.loop import unroll
 
@@ -153,7 +153,7 @@ fn main():
     if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()
-        var ptr = Pointer[tileconfig].address_of(tc)
+        var ptr = UnsafePointer[tileconfig].address_of(tc)
         var tc_ptr = DTypePointer[void](
             ptr.bitcast[__mlir_type.`!pop.scalar<invalid>`]().address
         )
