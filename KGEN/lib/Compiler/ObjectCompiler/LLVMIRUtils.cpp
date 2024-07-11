@@ -6,6 +6,7 @@
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "Support/Buffer.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetOperations.h"
@@ -60,11 +61,14 @@ private:
   struct ValueInfo {
     /// The immediate global value dependencies of a value.
     SmallVector<const llvm::GlobalValue *> dependencies;
+    /// Map each global value to its index in the module. We will use this to
+    /// materialize global values from bitcode.
+    unsigned gvIdx;
   };
 
   struct TransitiveDeps {
     /// The transitive dependencies.
-    llvm::SetVector<const llvm::GlobalValue *> deps;
+    llvm::MapVector<const llvm::GlobalValue *, unsigned> deps;
     /// True if computation is complete.
     bool complete = false;
     /// The assigned module index.
@@ -94,6 +98,52 @@ private:
 };
 } // namespace
 
+static LLVMModuleAndContext readAndMaterializeDependencies(
+    BufferRef buf,
+    const llvm::MapVector<const llvm::GlobalValue *, unsigned> &set) {
+  // First, create a lazy module with an internal bitcode materializer.
+  // TODO: Not sure how to make lazy loading metadata work.
+  LLVMModuleAndContext result;
+  (void)result.create([&](llvm::LLVMContext &ctx) {
+    return llvm::cantFail(llvm::getLazyBitcodeModule(
+        llvm::MemoryBufferRef(buf->getBuffer(), "<split-module>"), ctx,
+        /*ShouldLazyLoadMetadata=*/false));
+  });
+  result->setModuleInlineAsm("");
+
+  SmallVector<unsigned> sortIndices =
+      llvm::to_vector(llvm::make_second_range(set));
+  llvm::sort(sortIndices, std::less<unsigned>());
+  auto idxIt = sortIndices.begin();
+  auto idxEnd = sortIndices.end();
+
+  // The global value indices go from aliases, functions, then globals.
+  unsigned curIdx = 0;
+  auto materializeGlobals = [&](auto origRange) {
+    for (auto &value : llvm::make_early_inc_range(origRange)) {
+      if (idxIt != idxEnd && curIdx == *idxIt) {
+        ++idxIt;
+        llvm::cantFail(value.materialize());
+      } else {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
+                                     llvm::GlobalVariable>)
+          value.setInitializer(nullptr);
+        else
+          value.deleteBody();
+        value.setComdat(nullptr);
+        value.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      }
+      ++curIdx;
+    }
+  };
+  materializeGlobals(result->functions());
+  materializeGlobals(result->globals());
+
+  // Finalize materialization of the module.
+  llvm::cantFail(result->materializeAll());
+  return result;
+}
+
 /// support for splitting an LLVM module into multiple parts using exported
 /// functions as anchors, and pull in all dependency on the call stack into one
 /// module.
@@ -107,10 +157,11 @@ void KGEN::splitPerExported(LLVMModuleAndContext module,
 void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // The use-def list is sparse. Use it to build a sparse dependency graph
   // between global values.
+  unsigned gvIdx = 0;
   auto computeDeps = [&](const llvm::GlobalValue &value) {
+    infos[&value].gvIdx = gvIdx++;
     collectImmediateDependencies(&value, &value);
   };
-  llvm::for_each(mainModule->aliases(), computeDeps);
   for (const llvm::Function &fn : mainModule->functions()) {
     computeDeps(fn);
     if (!fn.isDeclaration() && (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
@@ -138,10 +189,14 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     while (!worklist.empty()) {
       const llvm::GlobalValue *it = worklist.pop_back_val();
 
-      if (!deps.deps.insert(it)) {
+      auto [iter, inserted] = deps.deps.insert({it, -1});
+      if (!inserted) {
         // Already visited.
         continue;
       }
+      // Pay the cost of the name lookup only on a miss.
+      const ValueInfo &info = infos.at(it);
+      iter->second = info.gvIdx;
 
       // If this value depends on another value that is going to be split, we
       // don't want to duplicate the symbol. Keep all the users together.
@@ -164,7 +219,6 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
         splitAnchorUsers[global].insert(&deps);
 
       // Recursive on dependencies.
-      const ValueInfo &info = infos[it];
       llvm::append_range(worklist, info.dependencies);
     }
 
@@ -197,14 +251,17 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
 
   // Now that we have assigned buckets to each value, merge the transitive
   // dependency sets of all values belonging to the same set.
-  SmallVector<llvm::SetVector<const llvm::GlobalValue *>> buckets(
+  SmallVector<llvm::MapVector<const llvm::GlobalValue *, unsigned>> buckets(
       bucketing.size());
   for (auto [deps, bucket] : llvm::zip(bucketing, buckets)) {
-    for (TransitiveDeps *dep : deps)
-      bucket.insert(dep->deps.begin(), dep->deps.end());
+    for (TransitiveDeps *dep : deps) {
+      for (auto &namedValue : dep->deps)
+        bucket.insert(namedValue);
+    }
   }
 
-  SmallVector<const llvm::SetVector<const llvm::GlobalValue *> *> setsToProcess;
+  SmallVector<const llvm::MapVector<const llvm::GlobalValue *, unsigned> *>
+      setsToProcess;
   setsToProcess.reserve(buckets.size() + transitiveDeps.size());
 
   // Clone each mutable global bucket into its own module.
@@ -225,41 +282,13 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   llvm::sort(setsToProcess,
              [](auto *lhs, auto *rhs) { return lhs->size() > rhs->size(); });
 
-  llvm::ValueToValueMapTy valueMap;
-  std::string bitcodeData;
-  llvm::raw_string_ostream bitcodeOs(bitcodeData);
-  for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
-    valueMap.clear();
-    std::unique_ptr<llvm::Module> splitModule = llvm::CloneModule(
-        *mainModule, valueMap, [set = set](const llvm::GlobalValue *value) {
-          return set->contains(value);
-        });
+  // Prepare to materialize slices of the module by first writing the main
+  // module as bitcode to a shared buffer.
+  auto buf = WriteableBuffer::get();
+  llvm::WriteBitcodeToFile(*mainModule, *buf);
 
-    // Module cloning creates stubs for every function and global in the
-    // original module, even if they aren't used in this slice. Kill all of
-    // these off to make the module more self-contained.
-    for (auto &func : llvm::make_early_inc_range(*splitModule))
-      if (func.isDeclaration() && func.use_empty())
-        func.eraseFromParent();
-    for (auto &globalVar : llvm::make_early_inc_range(splitModule->globals()))
-      if (globalVar.isDeclaration() && globalVar.use_empty())
-        globalVar.eraseFromParent();
-
-    // FIXME: We shouldn't be cloning and then roundtripping through bitcode
-    // here! We can lazy load symbols out of bitcode to make this faster.
-    LLVMModuleAndContext bitcloned;
-    (void)bitcloned.create([&](llvm::LLVMContext &ctx) {
-      llvm::WriteBitcodeToFile(*splitModule, bitcodeOs);
-      auto moduleOr = llvm::parseBitcodeFile(
-          llvm::MemoryBufferRef(bitcodeOs.str(), "<split>"), ctx);
-      bitcodeData.clear();
-      // We don't expect roundtripping LLVM bitcode to fail.
-      if (!moduleOr)
-        llvm::report_fatal_error("LLVM bitcode roundtrip failed");
-      return std::move(*moduleOr);
-    });
-    processFn(std::move(bitcloned), idx);
-  };
+  for (auto [idx, set] : llvm::enumerate(setsToProcess))
+    processFn(readAndMaterializeDependencies(buf.copy(), *set), idx);
 }
 
 void LLVMModuleSplitterImpl::collectImmediateDependencies(
@@ -334,7 +363,6 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
   llvm::for_each(mainModule->functions(), computeUsers);
   llvm::for_each(mainModule->globals(), computeUsers);
-  llvm::for_each(mainModule->aliases(), computeUsers);
 
   // With use information collected, propagate it to the dependencies.
   propagateUseInfo();
