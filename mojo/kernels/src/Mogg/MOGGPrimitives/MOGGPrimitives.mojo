@@ -547,7 +547,7 @@ fn fillBuffer[
 @export
 fn mgp_buffer_set_with_index(
     ctx: StateContext, buffer: NDBuffer[DType.uint8, 1], *vals: Int
-):
+) -> Int:
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
     debug_assert(
@@ -562,6 +562,7 @@ fn mgp_buffer_set_with_index(
         fillBuffer[DType.int64](buffer, vals)
     else:
         debug_assert(False, "unsupported element size")
+    return 1
 
 
 # ===----------------------------------------------------------------------===#
@@ -662,7 +663,7 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 @export
 fn mgp_device_context_create[
     aDeviceRuntimeSlot: UInt64, bDevice: StringLiteral
-](dummy_chain: Int, ctx: StateContext):
+](dummy_chain: Int, ctx: StateContext) -> Int:
     @parameter
     if bDevice == "cuda":
         alias dev_ty = Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
@@ -678,7 +679,7 @@ fn mgp_device_context_create[
             )
         except e:
             abort(e)
-        return external_call[
+        external_call[
             "KGEN_CompilerRT_CudaContextSetDevice",
             NoneType._mlir_type,
         ](
@@ -686,6 +687,7 @@ fn mgp_device_context_create[
             mgp_device_context_destroy,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
         )
+    return 1
 
 
 @export
