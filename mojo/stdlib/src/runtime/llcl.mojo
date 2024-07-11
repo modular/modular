@@ -368,6 +368,14 @@ struct _TaskGroupBox(CollectionElement):
         __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(coro))
         self.handle = handle
 
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
     fn __del__(owned self):
         __mlir_op.`co.destroy`(self.handle)
 
