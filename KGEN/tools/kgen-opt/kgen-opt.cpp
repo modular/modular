@@ -8,6 +8,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -17,9 +20,6 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Context.h"
 #include "Support/MDialect/MAttrs.h"

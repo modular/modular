@@ -7,11 +7,11 @@
 #include "mojo-test.h"
 #include "../../common/Telemetry.h"
 
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTesting/Test.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Telemetry.h"

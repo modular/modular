@@ -5,13 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
+#include "AsyncRT/Runtime/Algorithms.h"
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
 #include "KGEN/ExecutionEngine/JIT/MaterializationLayer.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/Support/Configuration.h"
-#include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"

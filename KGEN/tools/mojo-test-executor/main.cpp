@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -13,9 +16,6 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/Filesystem/Paths.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"

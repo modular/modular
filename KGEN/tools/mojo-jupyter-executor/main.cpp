@@ -10,9 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/Init/Init.h"
 #include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/Support/Configuration.h"
-#include "LLCL/Init/Init.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CommandLine.h"

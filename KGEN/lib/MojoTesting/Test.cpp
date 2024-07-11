@@ -5,6 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoTesting/Test.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/Runtime.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
@@ -14,9 +17,6 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"

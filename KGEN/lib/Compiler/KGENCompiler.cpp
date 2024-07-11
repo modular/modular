@@ -5,6 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/KGENCompiler.h"
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -13,10 +17,6 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"

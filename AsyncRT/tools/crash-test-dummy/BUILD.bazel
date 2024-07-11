@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+modular_cc_binary(
+    name = "crash-test-dummy",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//AsyncRT:Init",
+        "//AsyncRT:RuntimeGlobals.static",
+        "//Support:Base",
+        "//Support:CrashReporting",
+        "//Support:Globals.static",
+    ],
+)

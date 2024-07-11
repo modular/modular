@@ -25,7 +25,7 @@ add_modular_library(KGENJIT
   MCompilerSupport
   MTelemetry
   MSupport
-  LLCLCompilerSupport
+  AsyncRTCompilerSupport
 
   MLIRTargetLLVMIRExport
 )

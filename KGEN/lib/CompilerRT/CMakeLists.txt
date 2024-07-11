@@ -28,8 +28,8 @@ add_modular_library(KGENCompilerRT
   LINK_LIBS PUBLIC
   ArraySupport
   CUDASupport
-  LLCLRuntime
-  LLCLRuntimeGlobals
+  AsyncRTRuntime
+  AsyncRTRuntimeGlobals
   MProfiling
   MSupport
   MSupportML
@@ -47,8 +47,8 @@ add_modular_library(KGENCompilerRTShared SHARED
   ArraySupport
   CUDASupport
   CUDASupportGlobals
-  LLCLRuntime
-  LLCLRuntimeGlobals
+  AsyncRTRuntime
+  AsyncRTRuntimeGlobals
   MProfiling
   MSupport
   MSupportGlobals
@@ -103,15 +103,15 @@ string(REPLACE " " "," kgen_system_libs "${kgen_system_libs}")
 set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.MSupportGlobals-static>
   $<TARGET_OBJECTS:obj.CUDASupportGlobals-static>
-  $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
+  $<TARGET_OBJECTS:obj.AsyncRTRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.ArraySupport>
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.MSupportML>
   $<TARGET_OBJECTS:obj.MThreading>
   $<TARGET_OBJECTS:obj.MProfiling>
   $<TARGET_OBJECTS:obj.MVersion>
-  $<TARGET_OBJECTS:obj.LLCLRuntime>
-  $<TARGET_OBJECTS:obj.LLCLSupport>
+  $<TARGET_OBJECTS:obj.AsyncRTRuntime>
+  $<TARGET_OBJECTS:obj.AsyncRTSupport>
   $<TARGET_OBJECTS:obj.CUDASupport>
   $<TARGET_OBJECTS:obj.Runtime>
 )

@@ -22,10 +22,10 @@ add_modular_tool(kgen-opt
   KGENTransforms
   LowerLIT
 
-  LLCLCompilerSupport
-  LLCLRuntimeGlobals
+  AsyncRTCompilerSupport
+  AsyncRTRuntimeGlobals
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MDialect
 
   MLIRIR

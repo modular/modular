@@ -7,9 +7,9 @@
 #include "mojo-build-project.h"
 #include "../../common/Telemetry.h"
 
+#include "AsyncRT/Init/Init.h"
 #include "KGEN/MojoBuild/BSPClient.h"
 #include "KGEN/Support/Configuration.h"
-#include "LLCL/Init/Init.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MDialect/MDialect.h"

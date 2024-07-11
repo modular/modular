@@ -21,11 +21,11 @@ add_modular_tool(kgen
   KGENCompiler
   KGENExecutionEngine
   KGENObjectCompiler
-  LLCLCompilerSupport
-  LLCLRuntimeGlobals
+  AsyncRTCompilerSupport
+  AsyncRTRuntimeGlobals
   MArchTarget
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MVersion
   MojoParser
 

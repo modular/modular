@@ -14,9 +14,9 @@ modular_cc_binary(
     srcs = ["empty.c"],
     deps = [
         ":mojo_build_server",
+        "//AsyncRT:RuntimeGlobals",
         "//KGEN:CompilerRT",
         "//KGEN:MojoBuild",
-        "//LLCL:RuntimeGlobals",
         "//Support:Globals",
     ],
 )

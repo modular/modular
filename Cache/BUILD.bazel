@@ -9,8 +9,8 @@ modular_cc_library(
         '-DMODULAR_DERIVED_DIR=\\"/tmp/modularderived\\"',
     ],
     deps = [
-        "//LLCL:CompilerSupport",
-        "//LLCL:Runtime",
+        "//AsyncRT:CompilerSupport",
+        "//AsyncRT:Runtime",
         "//Support:Base",
         "//Support:Base64",
         "//Support:Buffer",

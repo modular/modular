@@ -4,8 +4,8 @@ modular_cc_binary(
     name = "hash-mlir",
     srcs = glob(["*.cpp"]),
     deps = [
+        "//AsyncRT:RuntimeGlobals",
         "//KGEN:ToolCommon",
-        "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:Globals",
         "@llvm-project//mlir:BytecodeWriter",

@@ -13,8 +13,8 @@ add_modular_tool(mojo-jupyter-executor
   LINK_LIBS PUBLIC
   KGENCompilerRT
   KGENSupport
-  LLCLRuntimeGlobals
+  AsyncRTRuntimeGlobals
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MojoJupyter
 )

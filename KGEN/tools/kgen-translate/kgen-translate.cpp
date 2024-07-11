@@ -4,15 +4,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Init/Init.h"
+#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "LLCL/CompilerSupport/Context.h"
-#include "LLCL/Init/Init.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"

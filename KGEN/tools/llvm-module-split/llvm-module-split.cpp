@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Config/Version.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "KGEN/ToolCommon/CLOptions.h"
-#include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"

@@ -17,10 +17,10 @@ add_modular_tool(kgen-reduce
   KGENTransforms
   LowerLIT
 
-  LLCLCompilerSupport
-  LLCLRuntimeGlobals
+  AsyncRTCompilerSupport
+  AsyncRTRuntimeGlobals
   MSupportGlobals
-  MLLCLInit
+  MAsyncRTInit
   MDialect
 
   MLIRIR

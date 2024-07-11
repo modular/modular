@@ -1,0 +1,112 @@
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
+
+modular_cc_library(
+    name = "CompilerSupport.headers",
+    hdrs = glob([
+        "include/AsyncRT/CompilerSupport/*.h",
+    ]),
+    visibility = ["//Support:__subpackages__"],
+    deps = [
+        ":Runtime.headers",
+        "//Support:Threading",
+    ],
+)
+
+modular_cc_library(
+    name = "Runtime.headers",
+    hdrs = glob([
+        "include/AsyncRT/Runtime/*.h",
+        "include/AsyncRT/Runtime/Globals/*.h",
+    ]) + [
+        "include/AsyncRT/ForwardDecls.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":Support.headers",
+        "//Support:Profiling.headers",
+    ],
+)
+
+modular_cc_library(
+    name = "Support.headers",
+    hdrs = glob(["include/AsyncRT/Support/*.h"]),
+    visibility = ["//visibility:private"],
+)
+
+modular_cc_library(
+    name = "CompilerSupport",
+    srcs = glob(["lib/CompilerSupport/*.cpp"]),
+    hdrs = glob(["include/AsyncRT/CompilerSupport/*.h"]),
+    deps = [
+        ":Runtime",
+    ],
+)
+
+modular_cc_library(
+    name = "Runtime",
+    srcs = glob(["lib/Runtime/*.cpp"]),
+    hdrs = glob([
+        "include/AsyncRT/Runtime/Globals/*.h",
+        "include/AsyncRT/Runtime/*.h",
+    ]) + [
+        "include/AsyncRT/ForwardDecls.h",
+    ],
+    local_defines = select({
+        "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":Runtime.headers",
+        ":Support",
+        "//Support:ADT",
+        "//Support:Profiling",
+    ] + select({
+        "@platforms//os:linux": ["@gperftools//:tcmalloc"],
+        "//conditions:default": [],
+    }),
+)
+
+modular_shared_library(
+    name = "RuntimeGlobals",
+    srcs = glob(["lib/Runtime/Globals/*.cpp"]),
+    output_name = "AsyncRTRuntimeGlobals",
+    deps = [
+        ":CompilerSupport",
+        ":Runtime.headers",
+        ":Support.headers",
+        "//Support:Base",
+        "//Support:Profiling",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "Support",
+    srcs = glob(["lib/Support/*.cpp"]),
+    hdrs = glob(["include/AsyncRT/Support/*.h"]),
+    local_defines = select({
+        "//:llcl_no_affinity_setting": ["LLCL_NO_AFFINITY"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//Support:MArchTarget",
+        "//Support:Threading",
+    ],
+)
+
+modular_cc_library(
+    name = "Init",
+    srcs = [
+        "lib/Init/Init.cpp",
+    ],
+    hdrs = [
+        "include/AsyncRT/Init/Init.h",
+    ],
+    deps = [
+        "Runtime",
+        "//Support:CrashReporting",
+        "//Support:Settings",
+        "//Support:Telemetry",
+    ],
+)

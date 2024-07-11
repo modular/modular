@@ -10,10 +10,10 @@ add_modular_tool(mojo-repl-entry-point
   LINK_LIBS PUBLIC
   KGENCompilerRT
   CUDASupportGlobals
-  LLCLRuntimeGlobals
+  AsyncRTRuntimeGlobals
   MSupportGlobals
   MSupport
-  MLLCLInit
+  MAsyncRTInit
 )
 
 # The entry point is a win32 executable, and uses WinMain instead of main. This

@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/Init/Init.h"
 #include "KGEN/CompilerRT/Registration.h"
-#include "LLCL/Init/Init.h"
 #include "Support/Context.h"
 #include "llvm/Support/raw_ostream.h"
 
