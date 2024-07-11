@@ -646,73 +646,156 @@ struct LayoutTensor[
         some threads share the same vector.
         """
 
-        constrained[layout.all_dims_known(), "Requires fully static layout"]()
-
-        alias fragments_layout_stride = flatten(tiled_layout[0].stride)
-
-        alias threads_layout_shape = flatten(threads_layout.shape)
-        alias threads_layout_stride = flatten(threads_layout.stride)
-
-        # Only extract coordinates in the given axis.
-        # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
-        # coordinates since thread 2 and 3 are getting the same tile.
-        alias thread_projected_stride = flatten(
-            threads_layout.stride[
-                axis._value_copy()
-            ] if axis else threads_layout.stride
-        )
-        alias thread_projected_shape = flatten(
-            threads_layout.shape[
-                axis._value_copy()
-            ] if axis else threads_layout.shape
-        )
-
-        var offset: Scalar[Self.index_type] = 0
-
-        # FIXME: We should set everything once, but its better to fill the
-        # masking data inplace here.
-        var res = LayoutTensor[
-            dtype,
-            tiled_layout[1],
-            address_space=address_space,
-            element_layout=element_layout,
-            masked = Self.masked,
-        ](self.ptr.offset(offset))
-
+        # Static layout tiling
+        # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
-        for i in range(len(fragments_layout_stride)):
-            alias fragments_stride_i: UInt = to_int(
-                fragments_layout_stride[i]
-            ).value
-            alias shape_i: UInt = to_int(thread_projected_shape[i]).value
-            alias stride_i: UInt = to_int(thread_projected_stride[i]).value
-            var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-            offset += thread_coord_i * fragments_stride_i
+        if layout.all_dims_known():
+            alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
-            # Populate data needed for masked access.
-            @parameter
-            if Self.masked:
-                res.max_dim[i] = self.max_dim[i]
-                res.dim_offset[i] = self.dim_offset[i] + Int(
-                    thread_coord_i.value
-                )
-                res.dim_stride[i] = Int(shape_i.value)
+            alias threads_layout_shape = flatten(threads_layout.shape)
+            alias threads_layout_stride = flatten(threads_layout.stride)
 
-        # Swizzling applies to the index of elements rather than scalars because
-        # the former is the unit in distribution.
-        var swizzled_offset = offset
-
-        @parameter
-        if swizzle:
-            alias swizzle_fn = swizzle.value()
-            swizzled_offset = (
-                swizzle_fn[Self.index_type](offset // self.element_size)
-                * self.element_size
+            # Only extract coordinates in the given axis.
+            # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
+            # coordinates since thread 2 and 3 are getting the same tile.
+            alias thread_projected_stride = flatten(
+                threads_layout.stride[
+                    axis._value_copy()
+                ] if axis else threads_layout.stride
+            )
+            alias thread_projected_shape = flatten(
+                threads_layout.shape[
+                    axis._value_copy()
+                ] if axis else threads_layout.shape
             )
 
-        # Adjust to actual offset.
-        res.ptr = res.ptr.offset(swizzled_offset)
-        return res
+            var offset: Scalar[Self.index_type] = 0
+
+            # FIXME: We should set everything once, but its better to fill the
+            # masking data inplace here.
+            var res = LayoutTensor[
+                dtype,
+                tiled_layout[1],
+                address_space=address_space,
+                element_layout=element_layout,
+                masked = Self.masked,
+            ](self.ptr.offset(offset))
+
+            @parameter
+            for i in range(len(fragments_layout_stride)):
+                alias fragments_stride_i: UInt = to_int(
+                    fragments_layout_stride[i]
+                ).value
+                alias shape_i: UInt = to_int(thread_projected_shape[i]).value
+                alias stride_i: UInt = to_int(thread_projected_stride[i]).value
+                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                offset += thread_coord_i * fragments_stride_i
+
+                # Populate data needed for masked access.
+                @parameter
+                if Self.masked:
+                    res.max_dim[i] = self.max_dim[i]
+                    res.dim_offset[i] = self.dim_offset[i] + Int(
+                        thread_coord_i.value
+                    )
+                    res.dim_stride[i] = Int(shape_i.value)
+
+            # Swizzling applies to the index of elements rather than scalars because
+            # the former is the unit in distribution.
+            var swizzled_offset = offset
+
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                swizzled_offset = (
+                    swizzle_fn[Self.index_type](offset // self.element_size)
+                    * self.element_size
+                )
+
+            # Adjust to actual offset.
+            res.ptr = res.ptr.offset(swizzled_offset)
+            return res
+        else:
+            alias fragments_layout_stride = flatten(tiled_layout[0].stride)
+
+            alias threads_layout_shape = flatten(threads_layout.shape)
+            alias threads_layout_stride = flatten(threads_layout.stride)
+
+            # Only extract coordinates in the given axis.
+            # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
+            # coordinates since thread 2 and 3 are getting the same tile.
+            alias thread_projected_stride = flatten(
+                threads_layout.stride[
+                    axis._value_copy()
+                ] if axis else threads_layout.stride
+            )
+            alias thread_projected_shape = flatten(
+                threads_layout.shape[
+                    axis._value_copy()
+                ] if axis else threads_layout.shape
+            )
+
+            var offset: Scalar[Self.index_type] = 0
+
+            var runtime_shape = RuntimeTuple[tiled_layout[1].shape]()
+            var runtime_stride = RuntimeTuple[tiled_layout[1].stride]()
+
+            @parameter
+            for i in range(runtime_shape.scalar_length):
+                alias shape_i = to_int(flatten(layout.shape)[i])
+                alias thread_shape_i = threads_layout[i].size()
+                runtime_shape.value[i] = (
+                    self.runtime_layout.shape.value[i] // shape_i
+                )
+                runtime_stride.value[i] = (
+                    self.runtime_layout.stride.value[i] * thread_shape_i
+                )
+
+            # FIXME: We should set everything once, but its better to fill the
+            # masking data inplace here.
+            var res = LayoutTensor[
+                dtype,
+                tiled_layout[1],
+                address_space=address_space,
+                element_layout=element_layout,
+                masked = Self.masked,
+            ](
+                self.ptr.offset(offset),
+                RuntimeLayout(runtime_shape, runtime_stride),
+            )
+
+            @parameter
+            for i in range(len(flatten(Self.layout.stride))):
+                var fragments_stride_i = self.runtime_layout.stride.value[i]
+                alias shape_i: UInt = to_int(thread_projected_shape[i]).value
+                alias stride_i: UInt = to_int(thread_projected_stride[i]).value
+                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                offset += thread_coord_i * fragments_stride_i
+
+                # Populate data needed for masked access.
+                @parameter
+                if Self.masked:
+                    res.max_dim[i] = self.max_dim[i]
+                    res.dim_offset[i] = self.dim_offset[i] + Int(
+                        thread_coord_i.value
+                    )
+                    res.dim_stride[i] = Int(shape_i.value)
+
+            # Swizzling applies to the index of elements rather than scalars because
+            # the former is the unit in distribution.
+            var swizzled_offset = offset
+
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                swizzled_offset = (
+                    swizzle_fn[Self.index_type](offset // self.element_size)
+                    * self.element_size
+                )
+
+            # Adjust to actual offset.
+            res.ptr = res.ptr.offset(swizzled_offset)
+            return res
 
     @always_inline
     fn vectorize[

@@ -425,7 +425,7 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
         var stride = to_int(z[0])
         var shape = to_int(z[1])
 
-        if stride == 0 or shape == 1:
+        if UNKNOWN_VALUE in (shape, stride) or stride == 0 or shape == 1:
             continue
 
         var in_bound = current_idx <= shape * stride

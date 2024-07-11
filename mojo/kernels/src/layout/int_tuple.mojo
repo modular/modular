@@ -236,6 +236,8 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
         abort("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
+        if UNKNOWN_VALUE in (to_int(a), to_int(b)):
+            return UNKNOWN_VALUE
         return min(to_int(a), to_int(b))
     return apply_zip[tuple_min](a, b)
 
@@ -272,6 +274,8 @@ fn abs(t: IntTuple) -> IntTuple:
 #
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     if is_int(lhs):
+        if UNKNOWN_VALUE in (is_int(lhs), rhs):
+            return UNKNOWN_VALUE
         return to_int(lhs) * rhs
 
     var res = IntTuple()
