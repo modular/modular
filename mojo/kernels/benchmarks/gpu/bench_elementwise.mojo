@@ -130,6 +130,8 @@ fn run_elementwise[
     inout m: Bench,
     fn_name: String,
     dims: StaticIntTuple[rank],
+    *,
+    name: String,
     ctx: DeviceContext,
 ) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
@@ -208,7 +210,7 @@ fn run_elementwise[
             + "/"
             + str(type)
             + "/"
-            + str(dims),
+            + name,
         ),
         ThroughputMeasure(BenchMetric.bytes, num_bytes),
     )
@@ -258,61 +260,73 @@ fn main() raises:
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "sqrt", dims, ctx)
+                        ](m, "sqrt", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
                             rsqrt,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "rsqrt", dims, ctx)
+                        ](
+                            m,
+                            "rsqrt",
+                            dims,
+                            name=str(shape_list[j]),
+                            ctx=ctx,
+                        )
                         run_elementwise[
                             types[i],
                             log,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "log", dims, ctx)
+                        ](m, "log", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
                             sin,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "sin", dims, ctx)
+                        ](m, "sin", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
                             tanh,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "tanh", dims, ctx)
+                        ](m, "tanh", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
                             exp,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "exp", dims, ctx)
+                        ](m, "exp", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
                             erf,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "erf", dims, ctx)
+                        ](m, "erf", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
                             add_const_fn,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "add_const", dims, ctx)
+                        ](
+                            m,
+                            "add_const",
+                            dims,
+                            name=str(shape_list[j]),
+                            ctx=ctx,
+                        )
                         run_elementwise[
                             types[i],
                             copy_fn,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
-                        ](m, "copy", dims, ctx)
+                        ](m, "copy", dims, name=str(shape_list[j]), ctx=ctx)
     m.dump_report()
