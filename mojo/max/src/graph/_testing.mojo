@@ -8,7 +8,7 @@ from pathlib import Path
 from testing import assert_almost_equal, assert_equal
 
 from max.engine import InferenceSession, TensorMap
-from max.tensor import Tensor
+from max.tensor import Tensor, TensorShape
 
 
 @always_inline
@@ -22,7 +22,9 @@ fn assert_tensors_almost_equal[
 ) raises:
     assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
-        assert_almost_equal[dtype](a[i], b[i], atol=atol, rtol=rtol)
+        assert_almost_equal[dtype](
+            a.unsafe_ptr()[i], b.unsafe_ptr()[i], atol=atol, rtol=rtol
+        )
 
 
 @always_inline
@@ -31,7 +33,7 @@ fn assert_tensors_equal[
 ](a: Tensor[dtype], b: Tensor[dtype]) raises:
     assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
-        assert_equal[dtype](a[i], b[i])
+        assert_equal[dtype](a.unsafe_ptr()[i], b.unsafe_ptr()[i])
 
 
 @always_inline
