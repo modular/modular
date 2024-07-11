@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_INIT_INIT_H
-#define LLCL_INIT_INIT_H
+#ifndef ASYNCRT_INIT_INIT_H
+#define ASYNCRT_INIT_INIT_H
 
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Support/Context.h"
@@ -67,4 +67,4 @@ ErrorOr<ContextRef> createContext(StringRef programName,
 } // namespace Init
 } // namespace M
 
-#endif // LLCL_INIT_INIT_H
+#endif // ASYNCRT_INIT_INIT_H

@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_THREADAFFINITY_H
-#define LLCL_SUPPORT_THREADAFFINITY_H
+#ifndef ASYNCRT_SUPPORT_THREADAFFINITY_H
+#define ASYNCRT_SUPPORT_THREADAFFINITY_H
 
 #include "Support/ErrorOr.h"
 #include "Support/Threading/HWInfo.h"
@@ -37,4 +37,4 @@ void setThreadAffinity(size_t cpuID);
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_THREADAFFINITY_H
+#endif // ASYNCRT_SUPPORT_THREADAFFINITY_H

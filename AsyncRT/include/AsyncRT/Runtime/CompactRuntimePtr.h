@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
-#define LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
+#ifndef ASYNCRT_RUNTIME_COMPACT_RUNTIME_PTR_H
+#define ASYNCRT_RUNTIME_COMPACT_RUNTIME_PTR_H
 
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "llvm/ADT/SmallVector.h"
@@ -151,4 +151,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
+#endif // ASYNCRT_RUNTIME_COMPACT_RUNTIME_PTR_H

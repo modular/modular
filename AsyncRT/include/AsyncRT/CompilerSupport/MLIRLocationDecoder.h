@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_MLIRLOCATIONDECODER_H
-#define LLCL_SUPPORT_MLIRLOCATIONDECODER_H
+#ifndef ASYNCRT_SUPPORT_MLIRLOCATIONDECODER_H
+#define ASYNCRT_SUPPORT_MLIRLOCATIONDECODER_H
 
 #include "AsyncRT/Support/Diagnostic.h"
 #include "AsyncRT/Support/Location.h"
@@ -36,4 +36,4 @@ EncodedDiagnostic getMLIRDiagnostic(Error e, mlir::Location loc);
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_MLIRLOCATIONDECODER_H
+#endif // ASYNCRT_SUPPORT_MLIRLOCATIONDECODER_H

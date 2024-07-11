@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_GLOBALS_H
-#define LLCL_RUNTIME_GLOBALS_H
+#ifndef ASYNCRT_RUNTIME_GLOBALS_H
+#define ASYNCRT_RUNTIME_GLOBALS_H
 
 #include "Support/SymbolExport.h"
 

@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_CONCURRENTQUEUE_H
-#define LLCL_SUPPORT_CONCURRENTQUEUE_H
+#ifndef ASYNCRT_SUPPORT_CONCURRENTQUEUE_H
+#define ASYNCRT_SUPPORT_CONCURRENTQUEUE_H
 
 #include <cassert>
 #include <memory>
@@ -78,4 +78,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_CONCURRENTQUEUE_H
+#endif // ASYNCRT_SUPPORT_CONCURRENTQUEUE_H

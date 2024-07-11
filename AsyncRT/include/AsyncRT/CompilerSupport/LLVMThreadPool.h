@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_COMPILERSUPPORT_RUNTIME_H
-#define LLCL_COMPILERSUPPORT_RUNTIME_H
+#ifndef ASYNCRT_COMPILERSUPPORT_RUNTIME_H
+#define ASYNCRT_COMPILERSUPPORT_RUNTIME_H
 
 #include "AsyncRT/Runtime/AsyncValueRef.h"
 #include "Support/LLVMForwardDecls.h"
@@ -58,4 +58,4 @@ private:
 };
 } // namespace M::AsyncRT
 
-#endif // LLCL_COMPILERSUPPORT_RUNTIME_H
+#endif // ASYNCRT_COMPILERSUPPORT_RUNTIME_H

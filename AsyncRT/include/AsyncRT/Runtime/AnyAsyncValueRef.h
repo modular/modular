@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_ANYASYNCVALUEREF_H
-#define LLCL_RUNTIME_ANYASYNCVALUEREF_H
+#ifndef ASYNCRT_RUNTIME_ANYASYNCVALUEREF_H
+#define ASYNCRT_RUNTIME_ANYASYNCVALUEREF_H
 
 #include "AsyncRT/Runtime/AsyncValue.h"
 #include "Support/RCRef.h"
@@ -309,4 +309,4 @@ struct CastInfo<To, const ::M::AsyncRT::AnyAsyncValueRef> {
 
 } // namespace llvm
 
-#endif // LLCL_RUNTIME_ANYASYNCVALUEREF_H
+#endif // ASYNCRT_RUNTIME_ANYASYNCVALUEREF_H

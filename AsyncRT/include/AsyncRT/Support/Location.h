@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_LOCATION_H
-#define LLCL_SUPPORT_LOCATION_H
+#ifndef ASYNCRT_SUPPORT_LOCATION_H
+#define ASYNCRT_SUPPORT_LOCATION_H
 
 #include "Support/RCRef.h"
 
@@ -78,4 +78,4 @@ private:
 };
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_LOCATION_H
+#endif // ASYNCRT_SUPPORT_LOCATION_H

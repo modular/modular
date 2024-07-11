@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_AWAITINGMUTEX_H
-#define LLCL_SUPPORT_AWAITINGMUTEX_H
+#ifndef ASYNCRT_SUPPORT_AWAITINGMUTEX_H
+#define ASYNCRT_SUPPORT_AWAITINGMUTEX_H
 
 #include "AsyncRT/Runtime/Runtime.h"
 
@@ -89,4 +89,4 @@ public:
 };
 } // namespace M::AsyncRT
 
-#endif // LLCL_SUPPORT_AWAITINGMUTEX_H
+#endif // ASYNCRT_SUPPORT_AWAITINGMUTEX_H
