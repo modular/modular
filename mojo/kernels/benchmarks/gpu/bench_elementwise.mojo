@@ -116,7 +116,7 @@ fn simd_store[
         SIMD[size=simd_width].store(buffer.data, flat_index, val)
 
 
-# CHECK-LABEL: run_elementwise
+@no_inline
 fn run_elementwise[
     rank: Int, //,
     type: DType,
@@ -227,16 +227,14 @@ fn main() raises:
 
     alias types = List[DType](DType.bfloat16, DType.float32)
 
-    alias shape_list = List[DimList](
+    var shape_list = List[DimList](
         DimList(1, 1024, 3072),  # baby-replit-CE-kernels
         DimList(1, 8, 3, 1025, 128),  # baby-replit-TG-kernels
     )
 
     with DeviceContext() as ctx:
-
-        @parameter
         for j in range(len(shape_list)):
-            alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
+            var dims = StaticIntTuple[1](shape_list[j].product().get())
 
             @parameter
             for i in range(len(types)):
