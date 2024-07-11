@@ -17,6 +17,50 @@ using namespace M::KGEN::Mojo;
 using namespace lldb;
 
 namespace {
+
+//===----------------------------------------------------------------------===//
+// CommandBreakOnRaise: mojo break-on-raise ([enable|disable])
+//===----------------------------------------------------------------------===//
+class CommandBreakOnRaise : public SBCommandPluginInterface {
+public:
+  bool DoExecute(SBDebugger debugger, char **command,
+                 SBCommandReturnObject &result) override {
+    SmallVector<StringRef> args;
+    for (char **it = command; it && *it; ++it)
+      args.push_back(*it);
+
+    if (args.empty())
+      args.push_back("enable");
+
+    if (args.size() != 1) {
+      result.SetError("invalid number of arguments");
+      return false;
+    }
+
+    if (args[0] == "enable") {
+      getOrCreateBreakpoint(debugger).SetEnabled(true);
+      return true;
+    } else if (args[0] == "disable") {
+      getOrCreateBreakpoint(debugger).SetEnabled(false);
+      return true;
+    } else {
+      result.SetError("invalid argument");
+      return false;
+    }
+  }
+
+private:
+  SBBreakpoint getOrCreateBreakpoint(SBDebugger &debugger) {
+    if (!bp)
+      bp = debugger.GetSelectedTarget().BreakpointCreateForException(
+          lldb::eLanguageTypeMojo, /*catch_bp=*/false, /*throw_bp=*/true);
+
+    return bp;
+  }
+
+  SBBreakpoint bp;
+};
+
 //===----------------------------------------------------------------------===//
 // CommandREPLHelp: mojo help repl
 //===----------------------------------------------------------------------===//
@@ -25,37 +69,6 @@ public:
   bool DoExecute(SBDebugger debugger, char **command,
                  SBCommandReturnObject &result) override {
     result.AppendMessage(MojoREPL::GetHelpPrologue());
-    return true;
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// CommandDebugHelp: mojo help debug
-//===----------------------------------------------------------------------===//
-class CommandDebugHelp : public SBCommandPluginInterface {
-public:
-  bool DoExecute(SBDebugger debugger, char **command,
-                 SBCommandReturnObject &result) override {
-    result.AppendMessage(R"(
-You can use LLDB to debug Mojo programs and its feature set is constantly
-growing.
-
-This is a non-comprehensive list of features currently supported:
-- Source breakpoints
-- Stack frame unwinding
-- Variable printing
-- Stepping
-
-This is a non-comprehensive list of features not yet supported:
-- Symbol breakpoints
-- Capturing return values when stepping out of functions
-- Expression evaluation
-- Conditional breakpoints
-
-Finally, we encourage you to submit feature requests and error reports in
-https://github.com/modularml/mojo/issues.
-)");
-    result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
     return true;
   }
 };
@@ -108,12 +121,16 @@ void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger, ContextRef ctx) {
   SBCommand root = interpreter.AddMultiwordCommand(
       "mojo", "Commands related to the Mojo language support.");
 
+  root.AddCommand("break-on-raise", new CommandBreakOnRaise(),
+                  "Enables or disables breakpoints on raise statements. If no "
+                  "arguments are specified, this feature will be enabled.",
+                  "mojo break-on-raise ([enable|disable])");
   root.AddCommand("statistics", new CommandStats(ctx),
-                  "Commands related to statistics of Mojo");
+                  "Internal commands related to statistics of Mojo");
 
   SBCommand help = root.AddMultiwordCommand(
       "help", "Display help information about various "
               "components of the Mojo support in LLDB.");
-  help.AddCommand("repl", new CommandREPLHelp(), "mojo help repl");
-  help.AddCommand("debug", new CommandDebugHelp(), "mojo help debug");
+  help.AddCommand("repl", new CommandREPLHelp(),
+                  "Show a help message about the Mojo REPL.", "mojo help repl");
 }
