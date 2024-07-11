@@ -18,7 +18,6 @@ from testing import assert_equal
 from utils.index import Index
 
 
-# CHECK-LABEL: run_elementwise
 fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
 
@@ -86,7 +85,6 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-# CHECK-LABEL: run_elementwise_uneven_simd
 fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
     var in_host = NDBuffer[type, 2, DimList(3, 3)].stack_allocation()
