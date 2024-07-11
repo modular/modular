@@ -571,10 +571,6 @@ buildPassesToGenerateNVPTXCode(LLVMTargetMachine &tm, PassManagerBase &pm,
   if (passConfig->addISelPasses())
     return nullptr;
 
-  // Disable MachineSink pass which causes undesirable instruction reordering.
-  // This fixes MOCO-712, MOCO-790 and MOCO-803.
-  passConfig->disablePass(&MachineSinkingID);
-
   passConfig->addMachinePasses();
   passConfig->setInitialized();
   return passConfig;
