@@ -17,7 +17,7 @@ fn test_buffer():
     print("== test_buffer")
 
     alias vec_size = 4
-    var data = Pointer[Float32].alloc(vec_size)
+    var data = UnsafePointer[Float32].alloc(vec_size)
 
     var b1 = Buffer[DType.float32, 4](data)
     var b2 = Buffer[DType.float32, 4](data, 4)

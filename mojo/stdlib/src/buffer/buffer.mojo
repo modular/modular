@@ -20,7 +20,7 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 from buffer.dimlist import Dim, DimList, _make_tuple
 from memory import memset_zero, stack_allocation
 from memory.reference import AddressSpace, _GPUAddressSpace
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
@@ -80,7 +80,7 @@ struct Buffer[
         self.dtype = type
 
     @always_inline
-    fn __init__(inout self, ptr: Pointer[Scalar[type], address_space]):
+    fn __init__(inout self, ptr: UnsafePointer[Scalar[type], address_space]):
         """Constructs a Buffer with statically known size and type.
 
         Constraints:
@@ -114,7 +114,7 @@ struct Buffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: Pointer[Scalar[type], address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
         in_size: Int,
     ):
         """Constructs a Buffer with statically known type.
@@ -601,7 +601,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: Pointer[Scalar[type], address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
     ):
         """Constructs an NDBuffer with statically known rank, shapes and
         type.
@@ -653,7 +653,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: Pointer[
+        ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`], address_space
         ],
         dynamic_shape: StaticIntTuple[rank],
@@ -715,7 +715,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: Pointer[Scalar[type], address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_stride: StaticIntTuple[rank],
     ):
@@ -740,7 +740,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: Pointer[Scalar[type], address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
         dynamic_shape: DimList,
         dynamic_stride: StaticIntTuple[rank],
     ):
