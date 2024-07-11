@@ -392,9 +392,9 @@ fn reduce[
     var w_dynamic = src.dim[reduce_axis]()
     var c_dynamic = prod_dims[reduce_axis + 1, src.rank](src)
 
-    alias h_static = src.shape.product_range[0, reduce_axis]()
+    alias h_static = src.shape.product[reduce_axis]()
     alias w_static = src.shape.at[reduce_axis]()
-    alias c_static = src.shape.product_range[reduce_axis + 1, src.rank]()
+    alias c_static = src.shape.product[reduce_axis + 1, src.rank]()
 
     alias input_3d_shape = DimList(h_static, w_static, c_static)
     alias output_2d_shape = DimList(h_static, c_static)
