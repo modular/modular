@@ -45,13 +45,9 @@ public:
 private:
   llvm::cl::OptionCategory CommonOptionsCategory{"Common command line options"};
 
-  M::cl::MOpt<std::string, true> inputFileOpt{
-      llvm::cl::Positional,
-      llvm::cl::Required,
-      llvm::cl::desc("Input filename"),
-      llvm::cl::value_desc("filename"),
-      llvm::cl::location(inputFilename),
-      llvm::cl::cat(CommonOptionsCategory)};
+  M::cl::MOpt<std::string, true> inputFilenameOpt{
+      llvm::cl::Positional, llvm::cl::desc("<input file>"),
+      llvm::cl::location(inputFilename), llvm::cl::cat(CommonOptionsCategory)};
 
   M::cl::MOpt<std::string, true> outputPrefixOpt{
       "output-prefix", llvm::cl::desc("output prefix"),
