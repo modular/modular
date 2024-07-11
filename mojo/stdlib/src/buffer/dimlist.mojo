@@ -140,6 +140,17 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
             return Dim()
         return Dim(self.get() * rhs.get())
 
+    @always_inline("nodebug")
+    fn __imul__(inout self, rhs: Dim):
+        """Inplace multiplies two dimensions.
+
+        If either are unknown, the result is unknown as well.
+
+        Args:
+            rhs: The other dimension.
+        """
+        self = self * rhs
+
     @always_inline
     fn __floordiv__(self, rhs: Dim) -> Dim:
         """Divide by the given dimension and round towards negative infinity.
@@ -352,16 +363,8 @@ struct DimList(Sized, Stringable, Formattable):
         return self.value[i].__bool__()
 
     @always_inline
-    fn _product_impl[i: Int, end: Int](self) -> Dim:
-        @parameter
-        if i >= end:
-            return Dim(1)
-        else:
-            return self.at[i]() * self._product_impl[i + 1, end]()
-
-    @always_inline
     fn product[length: Int](self) -> Dim:
-        """Computes the product of all the dimensions in the list.
+        """Computes the product of the first `length` dimensions in the list.
 
         If any are dynamic, the result is a dynamic dimension value.
 
@@ -369,12 +372,12 @@ struct DimList(Sized, Stringable, Formattable):
             length: The number of elements in the list.
 
         Returns:
-            The product of all the dimensions.
+            The product of the first `length` dimensions.
         """
-        return self._product_impl[0, length]()
+        return self.product[0, length]()
 
     @always_inline
-    fn product_range[start: Int, end: Int](self) -> Dim:
+    fn product[start: Int, end: Int](self) -> Dim:
         """Computes the product of a range of the dimensions in the list.
 
         If any in the range are dynamic, the result is a dynamic dimension
@@ -387,7 +390,32 @@ struct DimList(Sized, Stringable, Formattable):
         Returns:
             The product of all the dimensions.
         """
-        return self._product_impl[start, end]()
+
+        if not self.all_known[start, end]():
+            return Dim()
+
+        var res = 1
+
+        @parameter
+        for i in range(start, end):
+            res *= self.value[i].get()
+        return res
+
+    @always_inline
+    fn product(self) -> Dim:
+        """Computes the product of all the dimensions in the list.
+
+        If any are dynamic, the result is a dynamic dimension value.
+
+        Returns:
+            The product of all the dimensions.
+        """
+        var res = 1
+        for i in range(len(self)):
+            if not self.value[i]:
+                return Dim()
+            res *= self.value[i].get()
+        return res
 
     @always_inline
     fn _contains_impl[i: Int, length: Int](self, value: Dim) -> Bool:

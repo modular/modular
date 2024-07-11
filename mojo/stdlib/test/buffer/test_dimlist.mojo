@@ -12,7 +12,7 @@ from utils.index import StaticIntTuple
 
 
 # CHECK-LABEL: test_dim_list
-fn test_dim_list():
+def test_dim_list():
     print("== test_dim_list")
 
     var lst0 = DimList(1, 2, 3, 4)
@@ -23,6 +23,8 @@ fn test_dim_list():
 
     # CHECK: 24
     print(lst0.product[4]().get())
+
+    assert_equal(lst0.product[3, 4](), 4)
 
     # CHECK: True
     print(lst0.all_known[4]())
@@ -38,6 +40,10 @@ fn test_dim_list():
 
     # CHECK: True
     print(lst1.has_value[2]())
+
+    assert_equal(lst0.product(), 1 * 2 * 3 * 4)
+
+    assert_equal(lst1.product(), Dim())
 
 
 # CHECK-LABEL: test_dim
