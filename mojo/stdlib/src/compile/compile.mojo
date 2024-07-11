@@ -11,6 +11,7 @@ at an entire file's assembly nor do they want to invoke the kgen tool manually.
 from sys.info import _current_target
 from memory import Pointer
 
+from memory import UnsafePointer
 from .reflection import get_linkage_name
 
 # ===----------------------------------------------------------------------===#
@@ -38,7 +39,7 @@ struct Info:
     var asm: StringLiteral
     var function_name: StringLiteral
     var num_captures: Int
-    var populate: fn (Pointer[NoneType]) capturing -> None
+    var populate: fn (UnsafePointer[NoneType]) capturing -> None
     var error_msg: StringLiteral
     var is_error: Bool
 
@@ -47,7 +48,7 @@ alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
 alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
 
 
-fn _noop_populate(ptr: Pointer[NoneType]) capturing:
+fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
     return
 
 
@@ -79,7 +80,7 @@ fn _compile_info_asm_failable_impl[
         impl.asm,
         get_linkage_name[target, func](),
         impl.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
+        rebind[fn (UnsafePointer[NoneType]) capturing -> None](impl.populate),
         "",
         False,
     )
@@ -112,7 +113,7 @@ fn _compile_info_asm_non_failable_impl[
         cls.asm,
         get_linkage_name[target, func](),
         cls.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+        rebind[fn (UnsafePointer[NoneType]) capturing -> None](cls.populate),
         "",
         False,
     )
@@ -147,7 +148,7 @@ fn _compile_info_llvm_failable_impl[
         impl.asm,
         get_linkage_name[target, func](),
         impl.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
+        rebind[fn (UnsafePointer[NoneType]) capturing -> None](impl.populate),
         "",
         False,
     )
@@ -180,7 +181,7 @@ fn _compile_info_llvm_non_failable_impl[
         cls.asm,
         get_linkage_name[target, func](),
         cls.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+        rebind[fn (UnsafePointer[NoneType]) capturing -> None](cls.populate),
         "",
         False,
     )
