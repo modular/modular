@@ -1334,7 +1334,6 @@ struct Tensor[type: DType](
 
         fn _uint32_from_bytes(data: DTypePointer[DType.uint8]) -> UInt32:
             var ptr = data._as_scalar_pointer().bitcast[UInt32]()
-            # TODO: LegacyPointer :-(
             return UnsafePointer(ptr.address).take_pointee()
 
         var major_format_ptr = bytes.unsafe_ptr() + len(_SERIALIZATION_HEADER)
