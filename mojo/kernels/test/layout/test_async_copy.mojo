@@ -36,7 +36,7 @@ fn async_copy_kernel[
     BM: Int,
     BN: Int,
 ](input: LayoutTensor[DType.float32, input_layout]):
-    var input_tile = input.tile[BM, BN](BlockIdx.y().value, BlockIdx.x().value)
+    var input_tile = input.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
 
     var smem_tile = LayoutTensor[
         DType.float32,
@@ -49,7 +49,7 @@ fn async_copy_kernel[
 
     var tx = ThreadIdx.x()
     var ty = ThreadIdx.y()
-    smem_tile[tx.value, ty.value] += ty
+    smem_tile[tx, ty] += ty
 
     input_tile.copy_from(smem_tile)
 
@@ -121,7 +121,7 @@ fn multistage_copy[
             dst_thread_layout=thread_layout,
         ](
             a_smem_tiles[stage].vectorize[1, simd_size](),
-            a.tile[BM, BK](BlockIdx.x().value, stage).vectorize[1, simd_size](),
+            a.tile[BM, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
         )
 
         async_copy_commit_group()
@@ -136,7 +136,7 @@ fn multistage_copy[
         var stage = k_tile_id % (num_pipeline_stages - 1)
 
         # Write current stage to global memory.
-        var b_gmem_tile = b.tile[BM, BK](BlockIdx.x().value, k_tile_id)
+        var b_gmem_tile = b.tile[BM, BK](BlockIdx.x(), k_tile_id)
         var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
             thread_layout
         ](ThreadIdx.x())
@@ -158,7 +158,7 @@ fn multistage_copy[
         ](
             a_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
             a.tile[BM, BK](
-                BlockIdx.x().value, prefetch_tile_id % num_k_tiles
+                BlockIdx.x(), prefetch_tile_id % num_k_tiles
             ).vectorize[1, simd_size](),
         )
 
@@ -276,14 +276,14 @@ fn swizzle_copy[
         swizzle=xor_2bits_per8T,
     ](
         a_smem_tile.vectorize[1, simd_size](),
-        a.tile[BM, BK](BlockIdx.x().value, 0).vectorize[1, simd_size](),
+        a.tile[BM, BK](BlockIdx.x(), 0).vectorize[1, simd_size](),
     )
 
     async_copy_wait_all()
     barrier()
 
     # Write current stage to global memory.
-    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x().value, 0)
+    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x(), 0)
     var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
         thread_layout
     ](ThreadIdx.x())
