@@ -18,6 +18,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 using namespace M;
 using namespace std::chrono_literals;
