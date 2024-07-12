@@ -710,9 +710,9 @@ fn mgp_device_context_profile_start[
     bDevice: StringLiteral,
     cTag: StringLiteral,
     dFilePath: StringLiteral,
-](ctx: StateContext, callCtx: MojoCallContextPtr):
+](ctx: StateContext, callCtx: MojoCallContextPtr) -> Int:
     # Call into device_context here.
-    pass
+    return 1
 
 
 @mogg_register("mgp.device.context.profile.end")
@@ -723,9 +723,10 @@ fn mgp_device_context_profile_end[
     bDevice: StringLiteral,
     cTag: StringLiteral,
     dFilePath: StringLiteral,
-](ctx: StateContext, callCtx: MojoCallContextPtr):
+](ctx: StateContext, callCtx: MojoCallContextPtr) -> Int:
     # Call into device_context here....
     try:
         callCtx.get_cuda_device().dump_kernel_timing_info()
     except e:
         abort(e)
+    return 1
