@@ -4,7 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "all_srcs",
-    srcs = glob(["**"]),
+    srcs = [
+        "py.typed",
+    ] + glob([
+        "*.py",
+        "*.pyi",
+    ]),
 )
 
 modular_pybind_extension(
