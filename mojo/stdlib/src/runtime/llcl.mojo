@@ -186,31 +186,6 @@ struct Runtime:
         var ptr = _get_current_runtime()
         return Runtime(ptr, owning=False)
 
-    fn __init__(threads: Int) -> Runtime:
-        """Construct an LLCL Runtime with the specified number of threads."""
-
-        # If the request was for a runtime with the default number of threads,
-        # then we can just return the global runtime. Should this be
-        # parallelism_level() instead of num_physical_cores()?
-        if threads == num_physical_cores():
-            return Runtime()
-
-        var ptr = external_call[
-            "KGEN_CompilerRT_AsyncRT_CreateRuntime", Self.ptr_type
-        ](threads)
-        return Runtime(ptr, owning=True)
-
-    fn __init__[T: PathLike](threads: Int, profile_filename: T) -> Runtime:
-        """Construct an LLCL Runtime with the specified number of threads
-        that writes tracing events to profile_filename.
-        """
-        var path = profile_filename.__fspath__()
-        var ptr = external_call[
-            "KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile", Self.ptr_type
-        ](threads, path._strref_dangerous())
-        path._strref_keepalive()
-        return Runtime(ptr, owning=True)
-
     fn __init__(ptr: Self.ptr_type, owning: Bool) -> Runtime:
         return Runtime {ptr: ptr, owning: owning}
 

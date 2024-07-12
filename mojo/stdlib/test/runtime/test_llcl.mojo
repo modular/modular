@@ -77,7 +77,7 @@ fn test_runtime_task():
             test_llcl_add[2](b)
         )
 
-    with Runtime(4) as rt:
+    with Runtime() as rt:
         var task = rt.create_task(test_llcl_add_two_of_them(rt, 10, 20))
         # CHECK: 33
         print(task.wait())
@@ -97,7 +97,7 @@ fn test_runtime_taskgroup():
         var t1 = rt.create_task(return_value[2]())
         return await t0 + await t1
 
-    with Runtime(4) as rt:
+    with Runtime() as rt:
         var t0 = rt.create_task(run_as_group(rt))
         var t1 = rt.create_task(run_as_group(rt))
         # CHECK: 6
