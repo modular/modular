@@ -26,7 +26,7 @@ fn test_sub_matrix():
     ].stack_allocation()
     for i in range(num_row):
         for j in range(num_col):
-            matrix[Index(i, j)] = Float32(i * num_col + j).value
+            matrix[Index(i, j)] = Float32(i * num_col + j)
 
     # Extract a sub-matrix 2x2 at (1,1).
     var sub_matrix0 = NDBuffer[DType.float32, 2, DimList(2, 2)](
