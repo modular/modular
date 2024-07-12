@@ -45,7 +45,7 @@ fn test_sync_parallelize():
     # CHECK-NOT: ERROR
     for i in range(len(vector)):
         var expected_val = i + 2
-        if Int(vector[i].value) != expected_val:
+        if vector[i] != expected_val:
             print("ERROR: Expecting the result to be i + 2")
 
 
