@@ -15,7 +15,7 @@ from ._utils import _check_error, _StreamHandle
 @always_inline
 fn _get_current_stream() -> DTypePointer[DType.invalid]:
     return external_call[
-        "KGEN_CompilerRT_LLCL_GetCurrentStream", DTypePointer[DType.invalid]
+        "KGEN_CompilerRT_AsyncRT_GetCurrentStream", DTypePointer[DType.invalid]
     ]()
 
 
