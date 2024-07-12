@@ -6,6 +6,12 @@
 # UNSUPPORTED: windows
 # RUN: %mojo %s %S/mo_unnamed.mlir
 
+# COM: Test with mojo build
+# RUN: mkdir -p %t
+# RUN: rm -rf %t/engine-device-tensor
+# RUN: mojo build %s -o %t/engine-device-tensor
+# RUN: %t/engine-device-tensor %S/mo_unnamed.mlir
+
 from sys import argv
 from testing import assert_equal, assert_true
 from pathlib import Path
