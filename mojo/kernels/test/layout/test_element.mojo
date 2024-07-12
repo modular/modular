@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %bare-mojo %s | FileCheck %s
+# COM: TODO(KERN-645)
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout.element import Element

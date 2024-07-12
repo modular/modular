@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %bare-mojo %s | FileCheck %s
+# COM: TODO(KERN-645)
 
 from algorithm import parallelize, sync_parallelize, vectorize
 from layout import *

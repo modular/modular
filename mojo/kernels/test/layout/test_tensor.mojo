@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %bare-mojo %s | FileCheck %s
+# COM: TODO(KERN-645)
 
 from math import ceildiv
 
