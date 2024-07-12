@@ -257,9 +257,11 @@ struct InfixInfo {
     case Token::right_right:
       return get(Precedence::kShift, ExprNode::kRShift);
     case Token::kw_if:
-      return get(Precedence::kIfElse, ExprNode::kIfElse);
+      return get(Precedence::kIfElse, ExprNode::kIfElse,
+                 /*isRightAssociative=*/true);
     case Token::star_star:
-      return get(Precedence::kPower, ExprNode::kPow, true);
+      return get(Precedence::kPower, ExprNode::kPow,
+                 /*isRightAssociative=*/true);
     case Token::colon_equal:
       return get(Precedence::kAssignExpr, ExprNode::kWalrus);
     }
@@ -284,22 +286,19 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
     Token::Kind tokKind = getToken().getKind();
     auto binOpLoc = consumeToken().getLoc();
 
+    ExprNode *ifElseCond;
+    SMLoc elseLoc;
     if (tokKind == Token::Kind::kw_if) {
       // Conditional if - else expression.
       // trueExpr 'if' condition 'else' falseExpr.
-      ExprNode *cond;
-      if (parseExpression(cond, Precedence::kBoolOr))
+      // If/else operator needs special handling because it has an expression in
+      // the middle of what can otherwise be parsed like a binary operator.
+      if (parseExpression(ifElseCond, Precedence::kBoolOr))
         return failure();
-
-      ExprNode *falseExpr;
-      auto elseLoc = getToken().getLoc();
+      elseLoc = getToken().getLoc();
       if (parseToken(Token::Kind::kw_else,
-                     "expecting an 'else' followed by an expression") ||
-          parseExpression(falseExpr, Precedence::kBoolOr))
+                     "expecting an 'else' followed by an expression"))
         return failure();
-      result = alloc<IfElseOpNode>(result, binOpLoc, cond, elseLoc, falseExpr);
-      infixInfo = InfixInfo::get(getToken().getKind(), *this);
-      continue;
     }
 
     // rhs 'is' 'not' lhs -> a is not True.
@@ -322,12 +321,15 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
     if (parseExpression(rhs, subExprPrec))
       return failure();
 
-    // Comparison operators get special handling to treat 'a < b < c' as a
-    // ChainedCmpOpNode.
-    if (infixInfo.precedence != Precedence::kComparison)
+    if (infixInfo.precedence == Precedence::kComparison) {
+      // Comparison operators get special handling to treat 'a < b < c' as a
+      // ChainedCmpOpNode.
+      if (parseComparisonExpr(result, rhs, infixInfo.nodeKind, binOpLoc))
+        return failure();
+    } else if (tokKind == Token::Kind::kw_if) {
+      result = alloc<IfElseOpNode>(result, binOpLoc, ifElseCond, elseLoc, rhs);
+    } else
       result = alloc<BinOpNode>(infixInfo.nodeKind, result, binOpLoc, rhs);
-    else if (parseComparisonExpr(result, rhs, infixInfo.nodeKind, binOpLoc))
-      return failure();
     infixInfo = InfixInfo::get(getToken().getKind(), *this);
   }
   return success();
