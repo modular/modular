@@ -72,7 +72,7 @@ struct Model:
         self._compiled_model = existing._compiled_model^
         self._device = existing._device^
 
-    fn _add_to_output_list(
+    fn _add_tensor_to_output_list(
         self,
         list: UnsafePointer[NoneType],
         device_memory_ptr: UnsafePointer[NoneType],
@@ -83,8 +83,16 @@ struct Model:
             DeviceMemory(device_memory_ptr, spec.bytecount(), self._device),
             spec,
         )
-        var typed_list = list.bitcast[List[AnyTensor]]()
+        var typed_list = list.bitcast[List[AnyMemory]]()
         typed_list[].append(device_memory^)
+
+    fn _add_value_to_output_list(
+        self,
+        list: UnsafePointer[NoneType],
+        value: AnyMojoValue.c_type,
+    ) raises:
+        var typed_list = list.bitcast[List[AnyMemory]]()
+        typed_list[].append(AnyMojoValue(value))
 
     fn execute(self, inputs: TensorMap) raises -> TensorMap:
         """Execute model with given inputs.
@@ -310,7 +318,7 @@ struct Model:
         input_map.borrow(name3, EngineNumpyView(input3))
         return self.execute(input_map)
 
-    fn _execute(self, owned *inputs: AnyMemory) raises -> List[AnyTensor]:
+    fn _execute(self, owned *inputs: AnyMemory) raises -> List[AnyMemory]:
         """Execute model with the given inputs.
 
         Arguments:
@@ -319,8 +327,9 @@ struct Model:
             inputs are tensors, API will automatically copy the input tensors
             to the Device set in the InferenceSession's SessionConfig.
         Returns:
-            A list of output tensors, which are located on the Device set in the
-            InferenceSession's SessionConfig.
+            A list of outputs which can either be output tensors, which are
+            located on the Device set in the InferenceSession's SessionConfig,
+            or opaque mojo types as defined in the graph.
         """
         var on_device_inputs = List[AnyTensor]()
         var values_impl = List[AnyMojoValue.c_type]()
@@ -349,9 +358,7 @@ struct Model:
 
         alias execute_func_name = "M_executeDeviceTensor"
 
-        # TODO: This should return AnyMemory to support returning
-        # opaque types.
-        var output_list = List[AnyTensor]()
+        var output_list = List[AnyMemory]()
         var output_list_address = UnsafePointer.address_of(output_list)
         var status = Status(self._lib)
 
@@ -371,8 +378,11 @@ struct Model:
                 ],  # UnsafePointer to opaque mojo values
                 Int,  # Number of opaque mojo values
                 __type_of(
-                    Self._add_to_output_list
-                ),  # Function pointer to add output
+                    Self._add_tensor_to_output_list
+                ),  # Function pointer to add tensor to output
+                __type_of(
+                    Self._add_value_to_output_list
+                ),  # Function pointer to add opaque value to output,
                 UnsafePointer[Self],  # Calling context
                 UnsafePointer[NoneType],  # UnsafePointer to output list
                 CStatus,
@@ -386,7 +396,8 @@ struct Model:
             len(on_device_inputs_impl),
             values_impl.unsafe_ptr(),
             len(values_impl),
-            Self._add_to_output_list,
+            Self._add_tensor_to_output_list,
+            Self._add_value_to_output_list,
             UnsafePointer.address_of(self),
             output_list_address.bitcast[NoneType](),
             status.borrow_ptr(),
