@@ -8,7 +8,7 @@
 #include "Support/CPUCache.h"
 #include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
-#include "Support/MArchTarget/MArchTarget.h"
+#include "Support/MArchTarget/MArchTargetMinimal.h"
 #include "Support/Threading/HWInfo.h"
 #include "Support/Threading/ThreadAffinity.h"
 #include "llvm/ADT/STLExtras.h"

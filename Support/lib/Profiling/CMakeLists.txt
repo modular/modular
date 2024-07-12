@@ -10,7 +10,7 @@ add_modular_library(MProfiling
   TimeProfiler.cpp
 
   LINK_LIBS PUBLIC
-  MArchTarget
+  MArchTargetMinimal
   )
 
 # Only if MODULAR_MALLOC_PROFILER is set: link to malloc override lib.

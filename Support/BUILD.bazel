@@ -366,7 +366,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Globals.headers",
-        ":MArchTarget",
+        ":MArchTargetMinimal",
     ],
 )
 
@@ -379,6 +379,7 @@ modular_cc_library(
     ],
 )
 
+# This is the version used by modular internal targets.
 modular_cc_library(
     name = "MArchTarget",
     srcs = glob(["lib/MArchTarget/*.cpp"]),
@@ -387,6 +388,35 @@ modular_cc_library(
         ":Base",
         ":CPUCache",
         ":MDialect",
+        ":DeviceSpecs",
+        ":Threading",
+
+        # Rerquired for diagnostics.
+        "@llvm-project//clang:basic",
+
+        # Used by target-info.
+        "@llvm-project//llvm:AllTargetsAsmParsers",
+        "@llvm-project//llvm:AllTargetsCodeGens",
+        "@llvm-project//llvm:AllTargetsDisassemblers",
+        "@llvm-project//llvm:AllTargetsMCAs",
+    ],
+)
+
+# This is the version used by KGENCompilerRT-static for linking with external
+# code, and its dependencies are intentionally kept minimal.
+modular_cc_library(
+    name = "MArchTargetMinimal",
+    srcs = [
+        "lib/MArchTarget/Host.cpp",
+        "lib/MArchTarget/MArchTargetMinimal.cpp",
+    ],
+    hdrs = [
+        "include/Support/MArchTarget/Host.h",
+        "include/Support/MArchTarget/MArchTargetMinimal.h",
+    ],
+    deps = [
+        ":Base",
+        ":CPUCache",
         ":DeviceSpecs",
         ":Threading",
 
