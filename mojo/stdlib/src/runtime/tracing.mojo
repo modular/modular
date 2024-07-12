@@ -131,10 +131,7 @@ fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
         return False
 
     return level <= (
-        (
-            max_profiling_level._value_copy()
-            >> (type.value * kProfilingTypeWidthBits)
-        )
+        (max_profiling_level.value() >> (type.value * kProfilingTypeWidthBits))
         & ((1 << kProfilingTypeWidthBits) - 1)
     )
 
