@@ -55,7 +55,7 @@ using LLCLSpinWaiterRef = LLCLWrapper<SpinWaiter<true>>;
 /// Dummy entry point to force loading.
 /// (All the other entry points use LLCLWrapper which we don't want to
 /// have to include in the header).
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Dummy() {}
+COMPILERRT_EXPORT void KGEN_CompilerRT_AsyncRT_Dummy() {}
 
 //===----------------------------------------------------------------------===//
 // Chains
@@ -63,8 +63,8 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Dummy() {}
 
 /// Creates a new AsyncValueRef<Chain> and assigns it to chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
-                                     LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_InitializeChain(LLCLRuntimeRef rt,
+                                        LLCLAsyncChainRef chain) {
   checkUniqueRuntime(unwrap(rt));
   new (&unwrap(chain))
       AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
@@ -72,13 +72,13 @@ KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
 
 /// Destroys the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_DestroyChain(LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_DestroyChain(LLCLAsyncChainRef chain) {
   unwrap(chain).~AsyncValueRef<Chain>();
 }
 
 /// Emplaces the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_Complete(LLCLAsyncChainRef chain) {
 #if MODULAR_PARANOID
   unwrap(chain).getRuntime()->getWorkQueue()->taskIsDone();
 #endif
@@ -87,7 +87,7 @@ KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
 
 /// Blocks until the given chain is ready.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_Wait(LLCLAsyncChainRef chain) {
   await(unwrap(chain));
 }
 
@@ -97,7 +97,7 @@ KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
 /// ready, false is a timeout occurred. Note that the value may be ready by the
 /// time the function returns regardless.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT bool
-KGEN_CompilerRT_LLCL_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
+KGEN_CompilerRT_AsyncRT_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
   static TimerHeap heap;
   AsyncValueRef<Chain> &done = unwrap(chain);
   AsyncValueRef<Chain> expired =
@@ -141,8 +141,8 @@ KGEN_CompilerRT_LLCL_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
 /// Scheduling tasks onto specific workers can avoid some LLCL scheduling
 /// overhead and ensure worker's are balanced.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *), int8_t *hdl,
-                             LLCLRuntimeRef rt, ssize_t desiredWorkerId) {
+KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
+                                LLCLRuntimeRef rt, ssize_t desiredWorkerId) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask(
       [resume, hdl] {
@@ -161,16 +161,16 @@ KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *), int8_t *hdl,
 
 /// Resume a coroutine when the current one completes.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *), LLCLAsyncChainRef chain,
-                             int8_t *hdl) {
+KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
+                                LLCLAsyncChainRef chain, int8_t *hdl) {
   unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Execute a coroutine and block the current routine until it is complete.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
-                                    LLCLRuntimeRef rt,
-                                    LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
+                                       LLCLRuntimeRef rt,
+                                       LLCLAsyncChainRef chain) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   await(unwrap(chain));
@@ -179,9 +179,10 @@ KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
 /// Execute a coroutine. Register a completion handler to resume another
 /// coroutine when the scheduled coroutine completes.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
-                                      LLCLAsyncChainRef chain,
-                                      LLCLRuntimeRef rt, int8_t *resumeHdl) {
+KGEN_CompilerRT_AsyncRT_ExecuteAndResume(void (*resume)(int8_t *),
+                                         int8_t *execHdl,
+                                         LLCLAsyncChainRef chain,
+                                         LLCLRuntimeRef rt, int8_t *resumeHdl) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
   unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
@@ -195,15 +196,15 @@ KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
 /// associated. Returns null if the caller's thread is not managed by any
 /// runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
-KGEN_CompilerRT_LLCL_GetCurrentRuntime() {
+KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
   return wrap(Runtime::getCurrentRuntimeOrNull());
 }
 
 /// Create an LLCL runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
-KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
-                                              const char *profileFilenamePtr,
-                                              ssize_t profileFilenameLen) {
+KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(ssize_t numThreads,
+                                                 const char *profileFilenamePtr,
+                                                 ssize_t profileFilenameLen) {
   StringRef profileFilename{profileFilenamePtr,
                             static_cast<size_t>(profileFilenameLen)};
   // Create non global runtimes from mojo with mainWillDonate=false. Refer to
@@ -217,19 +218,20 @@ KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
 
 /// Create an LLCL runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
-KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
-  return KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(numThreads, nullptr, 0);
+KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
+  return KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(numThreads, nullptr,
+                                                          0);
 }
 
 /// Given a pointer to an LLCL runtime, destroy it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef rt) {
+KGEN_CompilerRT_AsyncRT_DestroyRuntime(LLCLRuntimeRef rt) {
   delete &unwrap(rt);
 }
 
 /// Given a pointer to an LLCL runtime, get the number of threads in it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
-KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef rt) {
+KGEN_CompilerRT_AsyncRT_ParallelismLevel(LLCLRuntimeRef rt) {
   return unwrap(rt).getWorkQueue()->getParallelismLevel();
 }
 
@@ -240,7 +242,7 @@ KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef rt) {
 /// Returns the CUDA stream for the caller's thread, which may have been
 /// established by the C++ runtime for the kernel call, or may be null.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT CUstream
-KGEN_CompilerRT_LLCL_GetCurrentStream() {
+KGEN_CompilerRT_AsyncRT_GetCurrentStream() {
   return CUDA::Globals::getCurrentStreamInTLS();
 }
 
@@ -257,14 +259,14 @@ KGEN_CompilerRT_CudaContextSetDevice(void *devCtx,
 
 /// Emplaces the chain in the given call context.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_MojoCallContext_Complete(
+KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete(
     LLCLMojoCallContextRef callContext) {
   unwrap(callContext).complete();
 }
 
 /// Sets the chain in the given call context to be an error.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
+KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError(
     LLCLMojoCallContextRef callContext, const char *messagePtr,
     ssize_t messageLen) {
   StringRef message(messagePtr, messageLen);
@@ -273,7 +275,7 @@ KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
 
 /// Get the cuda stream from the context. Null for cpu kernels.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream(
+KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream(
     LLCLMojoCallContextRef callContext) {
   auto runtime = unwrap(callContext).deviceRuntime;
   return reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream;
@@ -281,7 +283,7 @@ KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream(
 
 /// Get cuda device from cuda runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_LLCL_MojoCallContext_GetCudaDevice(
+KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice(
     LLCLMojoCallContextRef callContext) {
   return unwrap(callContext).deviceContext;
 }
@@ -492,19 +494,19 @@ KGEN_CompilerRT_GetContextAndSizeFromAsync(
 
 /// Creates a new SpinWaiter instance.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_LLCL_InitializeSpinWaiter() {
+KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter() {
   return new SpinWaiter<true>();
 }
 
 /// Waits on the SpinWaiter
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_SpinWaiter_Wait(LLCLSpinWaiterRef waiter) {
+KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait(LLCLSpinWaiterRef waiter) {
   unwrap(waiter).wait();
 }
 
 /// Destroys the given SpinWaiter.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
+KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
   delete (SpinWaiter<true> *)(waiter.ptr);
 }
 
@@ -514,39 +516,39 @@ KGEN_CompilerRT_LLCL_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
 
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
-                   (void *)&KGEN_CompilerRT_LLCL_InitializeChain});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_DestroyChain",
-                   (void *)&KGEN_CompilerRT_LLCL_DestroyChain});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_Complete",
-                   (void *)&KGEN_CompilerRT_LLCL_Complete});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_InitializeChain",
+                   (void *)&KGEN_CompilerRT_AsyncRT_InitializeChain});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroyChain",
+                   (void *)&KGEN_CompilerRT_AsyncRT_DestroyChain});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_Complete",
+                   (void *)&KGEN_CompilerRT_AsyncRT_Complete});
   funcs.push_back(
-      {"KGEN_CompilerRT_LLCL_Wait", (void *)&KGEN_CompilerRT_LLCL_Wait});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_Wait_Timeout",
-                   (void *)&KGEN_CompilerRT_LLCL_Wait_Timeout});
+      {"KGEN_CompilerRT_AsyncRT_Wait", (void *)&KGEN_CompilerRT_AsyncRT_Wait});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_Wait_Timeout",
+                   (void *)&KGEN_CompilerRT_AsyncRT_Wait_Timeout});
 
-  funcs.push_back(
-      {"KGEN_CompilerRT_LLCL_Execute", (void *)&KGEN_CompilerRT_LLCL_Execute});
-  funcs.push_back(
-      {"KGEN_CompilerRT_LLCL_AndThen", (void *)&KGEN_CompilerRT_LLCL_AndThen});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_ExecuteAndWait",
-                   (void *)&KGEN_CompilerRT_LLCL_ExecuteAndWait});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_ExecuteAndResume",
-                   (void *)&KGEN_CompilerRT_LLCL_ExecuteAndResume});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_Execute",
+                   (void *)&KGEN_CompilerRT_AsyncRT_Execute});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_AndThen",
+                   (void *)&KGEN_CompilerRT_AsyncRT_AndThen});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_ExecuteAndWait",
+                   (void *)&KGEN_CompilerRT_AsyncRT_ExecuteAndWait});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_ExecuteAndResume",
+                   (void *)&KGEN_CompilerRT_AsyncRT_ExecuteAndResume});
 
-  funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentRuntime",
-                   (void *)&KGEN_CompilerRT_LLCL_GetCurrentRuntime});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile",
-                   (void *)&KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_CreateRuntime",
-                   (void *)&KGEN_CompilerRT_LLCL_CreateRuntime});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_DestroyRuntime",
-                   (void *)&KGEN_CompilerRT_LLCL_DestroyRuntime});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_ParallelismLevel",
-                   (void *)&KGEN_CompilerRT_LLCL_ParallelismLevel});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
+                   (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentRuntime});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile",
+                   (void *)&KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateRuntime",
+                   (void *)&KGEN_CompilerRT_AsyncRT_CreateRuntime});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroyRuntime",
+                   (void *)&KGEN_CompilerRT_AsyncRT_DestroyRuntime});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_ParallelismLevel",
+                   (void *)&KGEN_CompilerRT_AsyncRT_ParallelismLevel});
 
-  funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentStream",
-                   (void *)&KGEN_CompilerRT_LLCL_GetCurrentStream});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentStream",
+                   (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentStream});
   funcs.push_back({"KGEN_CompilerRT_CudaContextSetDevice",
                    (void *)&KGEN_CompilerRT_CudaContextSetDevice});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
@@ -573,20 +575,22 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_GetContextPayloadPtr});
   funcs.push_back({"KGEN_CompilerRT_GetContextAndSizeFromAsync",
                    (void *)&KGEN_CompilerRT_GetContextAndSizeFromAsync});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",
-                   (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",
-                   (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_SetToError});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream",
-                   (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete",
+                   (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete});
+  funcs.push_back(
+      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError",
+       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError});
+  funcs.push_back(
+      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream",
+       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream});
 
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncCUDABufferRef",
                    (void *)&KGEN_CompilerRT_CreateAsyncCUDABufferRef});
 
-  funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeSpinWaiter",
-                   (void *)&KGEN_CompilerRT_LLCL_InitializeSpinWaiter});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_SpinWaiter_Wait",
-                   (void *)&KGEN_CompilerRT_LLCL_SpinWaiter_Wait});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_DestroySpinWaiter",
-                   (void *)&KGEN_CompilerRT_LLCL_DestroySpinWaiter});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
+                   (void *)&KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait",
+                   (void *)&KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroySpinWaiter",
+                   (void *)&KGEN_CompilerRT_AsyncRT_DestroySpinWaiter});
 }
