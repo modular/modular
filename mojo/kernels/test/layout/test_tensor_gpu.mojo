@@ -37,7 +37,7 @@ def test_copy_dram_to_sram_async():
         dram_tensor: LayoutTensor[DType.float32, layout],
         flag: UnsafePointer[Bool],
     ):
-        var dram_tile = dram_tensor.tile[4, 4](0, BlockIdx.x().value)
+        var dram_tile = dram_tensor.tile[4, 4](0, BlockIdx.x())
         var sram_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(4, 4),
