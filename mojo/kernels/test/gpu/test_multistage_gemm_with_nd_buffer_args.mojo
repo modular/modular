@@ -158,7 +158,7 @@ fn multistage_gemm[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid = ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -197,9 +197,9 @@ fn multistage_gemm[
         ](
             a_smem_tile.vectorize[1, simd_size]().distribute[
                 thread_async_copy_layout
-            ](ThreadIdx.x().value),
-            a.tile[BM, BK]((Int(BlockIdx.y().value), stage)),
-            ThreadIdx.x().value,
+            ](ThreadIdx.x()),
+            a.tile[BM, BK]((Int(BlockIdx.y()), stage)),
+            ThreadIdx.x(),
         )
 
         copy_from_nd_buffer[
@@ -209,9 +209,9 @@ fn multistage_gemm[
         ](
             b_smem_tile.vectorize[1, simd_size]().distribute[
                 thread_async_copy_layout
-            ](ThreadIdx.x().value),
-            b.tile[BN, BK]((Int(BlockIdx.x().value), stage)),
-            ThreadIdx.x().value,
+            ](ThreadIdx.x()),
+            b.tile[BN, BK]((Int(BlockIdx.x()), stage)),
+            ThreadIdx.x(),
         )
 
         async_copy_commit_group()
@@ -401,11 +401,11 @@ fn multistage_gemm[
                         ]().distribute[thread_async_copy_layout](ThreadIdx.x()),
                         a.tile[BM, BK](
                             StaticIntTuple[2](
-                                BlockIdx.y().value,
+                                BlockIdx.y(),
                                 prefetch_tile_id % num_k_tiles,
                             )
                         ),
-                        ThreadIdx.x().value,
+                        ThreadIdx.x(),
                     )
 
                     copy_from_nd_buffer[
@@ -418,11 +418,11 @@ fn multistage_gemm[
                         ]().distribute[thread_async_copy_layout](ThreadIdx.x()),
                         b.tile[BN, BK](
                             StaticIntTuple[2](
-                                BlockIdx.x().value,
+                                BlockIdx.x(),
                                 prefetch_tile_id % num_k_tiles,
                             )
                         ),
-                        ThreadIdx.x().value,
+                        ThreadIdx.x(),
                     )
 
                 async_copy_commit_group()
@@ -433,7 +433,7 @@ fn multistage_gemm[
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](
-        StaticIntTuple[2](BlockIdx.y().value, BlockIdx.x().value)
+        StaticIntTuple[2](BlockIdx.y(), BlockIdx.x())
     )
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN]((int(warp_y), int(warp_x)))
 

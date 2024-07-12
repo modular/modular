@@ -87,9 +87,9 @@ fn gemm_kernel[
     var num_warps = NUM_THREADS // WARP_SIZE
     var n_warp_n = BN // WN
     var n_warp_m = BM // WM
-    var warp_id: UInt = ThreadIdx.x() // WARP_SIZE
-    var warp_m = Int(warp_id.value) // n_warp_n
-    var warp_n = Int(warp_id.value) % n_warp_n
+    var warp_id = ThreadIdx.x() // WARP_SIZE
+    var warp_m = Int(warp_id) // n_warp_n
+    var warp_n = Int(warp_id) % n_warp_n
 
     # Allocate register tiles.
 
@@ -103,23 +103,23 @@ fn gemm_kernel[
     alias warp_layout = Layout.row_major(8, 4)
 
     for k_i in range(ceildiv(K, BK)):
-        var a_tile_dram = mat_a.tile[BM, BK]((Int(BlockIdx.y().value), k_i))
+        var a_tile_dram = mat_a.tile[BM, BK]((Int(BlockIdx.y()), k_i))
         var a_tile_sram_local = a_tile_sram.distribute[
             Layout.row_major(NUM_THREADS // BK, BK)
         ](ThreadIdx.x())
         copy_from_nd_buffer[
             thread_layout = Layout.row_major(NUM_THREADS // BK, BK),
             is_async=True,
-        ](a_tile_sram_local, a_tile_dram, ThreadIdx.x().value)
+        ](a_tile_sram_local, a_tile_dram, ThreadIdx.x())
 
-        var b_tile_dram = mat_b.tile[BK, BN]((k_i, Int(BlockIdx.x().value)))
+        var b_tile_dram = mat_b.tile[BK, BN]((k_i, Int(BlockIdx.x())))
         var b_tile_sram_local = b_tile_sram.distribute[
             Layout.row_major(NUM_THREADS // BN, BN)
         ](ThreadIdx.x())
         copy_from_nd_buffer[
             thread_layout = Layout.row_major(NUM_THREADS // BN, BN),
             is_async=True,
-        ](b_tile_sram_local, b_tile_dram, ThreadIdx.x().value)
+        ](b_tile_sram_local, b_tile_dram, ThreadIdx.x())
         async_copy_wait_all()
         barrier()
 
@@ -144,11 +144,11 @@ fn gemm_kernel[
         barrier()
 
     var c_warp_tile = mat_c.tile[BM, BN](
-        (Int(BlockIdx.y().value), Int(BlockIdx.x().value))
+        (Int(BlockIdx.y()), Int(BlockIdx.x()))
     ).tile[WM, WN]((warp_m, warp_n))
 
     copy_to_nd_buffer[thread_layout=warp_layout](
-        c_warp_tile, c_reg, ThreadIdx.x().value
+        c_warp_tile, c_reg, ThreadIdx.x()
     )
 
 
