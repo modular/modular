@@ -75,17 +75,19 @@ struct AsyncContext:
 
 
 fn _init_llcl_chain(rt: Runtime, chain: UnsafePointer[Chain]):
-    external_call["KGEN_CompilerRT_LLCL_InitializeChain", NoneType](
+    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         rt.ptr, chain.address
     )
 
 
 fn _del_llcl_chain(chain: UnsafePointer[Chain]):
-    external_call["KGEN_CompilerRT_LLCL_DestroyChain", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
+        chain.address
+    )
 
 
 fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
-    external_call["KGEN_CompilerRT_LLCL_AndThen", NoneType](
+    external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
 
@@ -93,21 +95,21 @@ fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
 fn _async_execute[
     type: AnyType
 ](handle: AnyCoroutine, rt: Runtime, desired_worker_id: Int,):
-    external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
+    external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
         _coro_resume_fn, handle, rt.ptr, desired_worker_id
     )
 
 
 fn _async_wait(chain: UnsafePointer[Chain]):
-    external_call["KGEN_CompilerRT_LLCL_Wait", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
 
 
 fn _async_complete(chain: UnsafePointer[Chain]):
-    external_call["KGEN_CompilerRT_LLCL_Complete", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
 
 
 fn _async_wait_timeout(chain: UnsafePointer[Chain], timeout: Int) -> Bool:
-    return external_call["KGEN_CompilerRT_LLCL_Wait_Timeout", Bool](
+    return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain.address, timeout
     )
 
@@ -151,7 +153,7 @@ fn _get_current_runtime() -> UnsafePointer[NoneType]:
     function.
     """
     return external_call[
-        "KGEN_CompilerRT_LLCL_GetCurrentRuntime", UnsafePointer[NoneType]
+        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", UnsafePointer[NoneType]
     ]()
 
 
@@ -160,7 +162,7 @@ fn parallelism_level() -> Int:
     """Gets the parallelism level of the Runtime."""
     return int(
         external_call[
-            "KGEN_CompilerRT_LLCL_ParallelismLevel",
+            "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
             Int32,
         ](_get_current_runtime())
     )
@@ -194,7 +196,7 @@ struct Runtime:
             return Runtime()
 
         var ptr = external_call[
-            "KGEN_CompilerRT_LLCL_CreateRuntime", Self.ptr_type
+            "KGEN_CompilerRT_AsyncRT_CreateRuntime", Self.ptr_type
         ](threads)
         return Runtime(ptr, owning=True)
 
@@ -204,7 +206,7 @@ struct Runtime:
         """
         var path = profile_filename.__fspath__()
         var ptr = external_call[
-            "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", Self.ptr_type
+            "KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile", Self.ptr_type
         ](threads, path._strref_dangerous())
         path._strref_keepalive()
         return Runtime(ptr, owning=True)
@@ -232,7 +234,7 @@ struct Runtime:
         when the Runtime goes out of the context.
         """
         if self.owning:
-            external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](
+            external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](
                 self.ptr
             )
 
@@ -482,7 +484,7 @@ struct MojoCallContextPtr:
     fn complete(self):
         """Indicates to the C++ runtime that the async kernel has finished."""
         external_call[
-            "KGEN_CompilerRT_LLCL_MojoCallContext_Complete", NoneType
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete", NoneType
         ](
             self.ptr,
         )
@@ -491,7 +493,7 @@ struct MojoCallContextPtr:
     fn get_stream(self) -> Stream:
         """Get the cuda stream."""
         var stream = external_call[
-            "KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream", self.ptr_type
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream", self.ptr_type
         ](
             self.ptr,
         )
@@ -504,7 +506,7 @@ struct MojoCallContextPtr:
         """Get the device context passed in."""
         var stream = self.get_stream()
         var ptr = external_call[
-            "KGEN_CompilerRT_LLCL_MojoCallContext_GetCudaDevice",
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice",
             UnsafePointer[
                 Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
             ],
@@ -524,6 +526,6 @@ struct MojoCallContextPtr:
         var str = err.__str__()
         var strref = str._strref_dangerous()
         external_call[
-            "KGEN_CompilerRT_LLCL_MojoCallContext_SetToError", NoneType
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError", NoneType
         ](self.ptr, strref.data, strref.length)
         str._strref_keepalive()
