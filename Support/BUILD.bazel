@@ -155,14 +155,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "CUDA",
-    srcs = glob(["lib/CUDA/*.cpp"]),
-    hdrs = glob(["include/Support/CUDA/*.h"]),
-    textual_hdrs = glob(["lib/CUDA/*.h"]),
-    deps = [":Base"],
-)
-
-modular_cc_library(
     name = "ASN1",
     srcs = glob(["lib/ASN1/*.cpp"]),
     hdrs = glob(["include/Support/ASN1/*.h"]),
