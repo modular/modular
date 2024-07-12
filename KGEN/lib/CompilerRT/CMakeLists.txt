@@ -118,7 +118,7 @@ set(COMPILER_RT_OBJECT_SRCS
 
 if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
   # For logging HostMachineInfo with profiling results.
-  list(APPEND COMPILER_RT_OBJECT_SRCS $<TARGET_OBJECTS:obj.MArchTarget>)
+  list(APPEND COMPILER_RT_OBJECT_SRCS $<TARGET_OBJECTS:obj.MArchTargetMinimal>)
 endif()
 
 # A fully-staticized version of KGENCompilerRT that we can use for standalone
