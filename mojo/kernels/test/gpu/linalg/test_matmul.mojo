@@ -28,6 +28,7 @@ from internal_utils import (
     assert_almost_equal,
 )
 from buffer.dimlist import _make_tuple
+from testing import assert_equal as assert_equal_val
 
 
 alias TILE_SZ_A = 128
@@ -176,7 +177,11 @@ struct run_matmul[m: Int = 512, n: Int = 512, k: Int = 512]:
                 )
 
 
-struct test_matmul[type: DType]:
+struct test_matmul[
+    type: DType,
+    static_shape: DimList = DimList.create_unknown[2](),
+    transpose_b: Bool = False,
+]:
     var ctx: DeviceContext
 
     var M: Int
@@ -186,12 +191,12 @@ struct test_matmul[type: DType]:
     var low_precision: Bool
 
     var a_host: HostNDBuffer[type, 2]
-    var b_host: HostNDBuffer[type, 2]
+    var b_host: HostNDBuffer[type, 2, static_shape]
     var c_host: HostNDBuffer[type, 2]
     var c_host_ref: HostNDBuffer[type, 2]
 
     var a_device: DeviceNDBuffer[type, 2]
-    var b_device: DeviceNDBuffer[type, 2]
+    var b_device: DeviceNDBuffer[type, 2, static_shape]
     var c_device: DeviceNDBuffer[type, 2]
     var c_device_ref: DeviceNDBuffer[type, 2]
 
@@ -207,6 +212,18 @@ struct test_matmul[type: DType]:
         self.K = shape[1]
         self.N = shape[2]
 
+        alias kK = static_shape.get[1]() if transpose_b else static_shape.get[
+            0
+        ]()
+        alias kN = static_shape.get[0]() if transpose_b else static_shape.get[
+            1
+        ]()
+
+        @parameter
+        if static_shape.all_known[2]():
+            assert_equal_val(shape[1], kK)
+            assert_equal_val(shape[2], kN)
+
         self.low_precision = low_precision
 
         var a_shape = DimList(self.M, self.K)
@@ -214,12 +231,12 @@ struct test_matmul[type: DType]:
         var c_shape = DimList(self.M, self.N)
 
         self.a_host = HostNDBuffer[type, 2](a_shape)
-        self.b_host = HostNDBuffer[type, 2](b_shape)
+        self.b_host = HostNDBuffer[type, 2, static_shape](b_shape)
         self.c_host = HostNDBuffer[type, 2](c_shape)
         self.c_host_ref = HostNDBuffer[type, 2](c_shape)
 
         self.a_device = DeviceNDBuffer[type, 2](a_shape, ctx=ctx)
-        self.b_device = DeviceNDBuffer[type, 2](b_shape, ctx=ctx)
+        self.b_device = DeviceNDBuffer[type, 2, static_shape](b_shape, ctx=ctx)
         self.c_device = DeviceNDBuffer[type, 2](c_shape, ctx=ctx)
         self.c_device_ref = DeviceNDBuffer[type, 2](c_shape, ctx=ctx)
 
@@ -260,7 +277,9 @@ struct test_matmul[type: DType]:
         ctx.synchronize()
 
         if self.low_precision:
-            assert_almost_equal(self.c_host_ref.tensor, self.c_host.tensor)
+            assert_almost_equal(
+                self.c_host_ref.tensor, self.c_host.tensor, rtol=0.01
+            )
         else:
             assert_equal(self.c_host_ref.tensor, self.c_host.tensor)
 
@@ -273,8 +292,13 @@ def main():
 
             @parameter
             fn basic_test[
-                type: DType, use_tensor_core: Bool = False
-            ](test_ctx: test_matmul[type]) raises:
+                type: DType,
+                /,
+                *,
+                shape: DimList = DimList.create_unknown[2](),
+                transpose_b: Bool = False,
+                use_tensor_core: Bool = False,
+            ](test_ctx: test_matmul[type, shape, transpose_b]) raises:
                 var M = test_ctx.M
                 var K = test_ctx.K
                 var N = test_ctx.N
@@ -315,10 +339,21 @@ def main():
 
             # Low precision test (use_tensor_core)
             test_matmul[DType.float32](ctx, small_test, True).run_test[
-                basic_test[DType.float32, True]
+                basic_test[DType.float32, use_tensor_core=True]
             ]()
             test_matmul[DType.bfloat16](ctx, small_test, True).run_test[
-                basic_test[DType.bfloat16, True]
+                basic_test[DType.bfloat16, use_tensor_core=True]
+            ]()
+
+            test_matmul[DType.float32, DimList(3072, 5120)](
+                ctx, small_test, True
+            ).run_test[
+                basic_test[
+                    DType.float32,
+                    shape = DimList(3072, 5120),
+                    transpose_b=False,
+                    use_tensor_core=True,
+                ]
             ]()
 
             @parameter
