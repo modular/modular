@@ -17,6 +17,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace llvm {
 class SourceMgr;

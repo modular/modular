@@ -23,6 +23,7 @@
 #include <iterator>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 namespace M {
 
