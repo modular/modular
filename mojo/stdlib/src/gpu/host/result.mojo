@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the result type."""
 
+from collections.dict import KeyElement
+
 # ===----------------------------------------------------------------------===#
 # Result
 # ===----------------------------------------------------------------------===#
@@ -12,7 +14,7 @@
 
 @value
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable):
+struct Result(Stringable, EqualityComparable, KeyElement):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -551,202 +553,126 @@ struct Result(Stringable, EqualityComparable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    fn __hash__(self) -> Int:
+        return int(self.code)
+
     @no_inline
     fn __str__(self) -> String:
-        if self == Result.SUCCESS:
-            return "SUCCESS"
-        elif self == Result.INVALID_VALUE:
-            return "INVALID_VALUE"
-        elif self == Result.OUT_OF_MEMORY:
-            return "OUT_OF_MEMORY"
-        elif self == Result.NOT_INITIALIZED:
-            return "NOT_INITIALIZED"
-        elif self == Result.DEINITIALIZED:
-            return "DEINITIALIZED"
-        elif self == Result.PROFILER_DISABLED:
-            return "PROFILER_DISABLED"
-        elif self == Result.PROFILER_NOT_INITIALIZED:
-            return "PROFILER_NOT_INITIALIZED"
-        elif self == Result.PROFILER_ALREADY_STARTED:
-            return "PROFILER_ALREADY_STARTED"
-        elif self == Result.PROFILER_ALREADY_STOPPED:
-            return "PROFILER_ALREADY_STOPPED"
-        elif self == Result.STUB_LIBRARY:
-            return "STUB_LIBRARY"
-        elif self == Result.DEVICE_UNAVAILABLE:
-            return "DEVICE_UNAVAILABLE"
-        elif self == Result.NO_DEVICE:
-            return "NO_DEVICE"
-        elif self == Result.INVALID_DEVICE:
-            return "INVALID_DEVICE"
-        elif self == Result.DEVICE_NOT_LICENSED:
-            return "DEVICE_NOT_LICENSED"
-        elif self == Result.INVALID_IMAGE:
-            return "INVALID_IMAGE"
-        elif self == Result.INVALID_CONTEXT:
-            return "INVALID_CONTEXT"
-        elif self == Result.CONTEXT_ALREADY_CURRENT:
-            return "CONTEXT_ALREADY_CURRENT"
-        elif self == Result.MAP_FAILED:
-            return "MAP_FAILED"
-        elif self == Result.UNMAP_FAILED:
-            return "UNMAP_FAILED"
-        elif self == Result.ARRAY_IS_MAPPED:
-            return "ARRAY_IS_MAPPED"
-        elif self == Result.ALREADY_MAPPED:
-            return "ALREADY_MAPPED"
-        elif self == Result.NO_BINARY_FOR_GPU:
-            return "NO_BINARY_FOR_GPU"
-        elif self == Result.ALREADY_ACQUIRED:
-            return "ALREADY_ACQUIRED"
-        elif self == Result.NOT_MAPPED:
-            return "NOT_MAPPED"
-        elif self == Result.NOT_MAPPED_AS_ARRAY:
-            return "NOT_MAPPED_AS_ARRAY"
-        elif self == Result.NOT_MAPPED_AS_POINTER:
-            return "NOT_MAPPED_AS_POINTER"
-        elif self == Result.ECC_UNCORRECTABLE:
-            return "ECC_UNCORRECTABLE"
-        elif self == Result.UNSUPPORTED_LIMIT:
-            return "UNSUPPORTED_LIMIT"
-        elif self == Result.CONTEXT_ALREADY_IN_USE:
-            return "CONTEXT_ALREADY_IN_USE"
-        elif self == Result.PEER_ACCESS_UNSUPPORTED:
-            return "PEER_ACCESS_UNSUPPORTED"
-        elif self == Result.INVALID_PTX:
-            return "INVALID_PTX"
-        elif self == Result.INVALID_GRAPHICS_CONTEXT:
-            return "INVALID_GRAPHICS_CONTEXT"
-        elif self == Result.NVLINK_UNCORRECTABLE:
-            return "NVLINK_UNCORRECTABLE"
-        elif self == Result.JIT_COMPILER_NOT_FOUND:
-            return "JIT_COMPILER_NOT_FOUND"
-        elif self == Result.UNSUPPORTED_PTX_VERSION:
-            return "UNSUPPORTED_PTX_VERSION"
-        elif self == Result.JIT_COMPILATION_DISABLED:
-            return "JIT_COMPILATION_DISABLED"
-        elif self == Result.UNSUPPORTED_EXEC_AFFINITY:
-            return "UNSUPPORTED_EXEC_AFFINITY"
-        elif self == Result.UNSUPPORTED_DEVSIDE_SYNC:
-            return "UNSUPPORTED_DEVSIDE_SYNC"
-        elif self == Result.INVALID_SOURCE:
-            return "INVALID_SOURCE"
-        elif self == Result.FILE_NOT_FOUND:
-            return "FILE_NOT_FOUND"
-        elif self == Result.SHARED_OBJECT_SYMBOL_NOT_FOUND:
-            return "SHARED_OBJECT_SYMBOL_NOT_FOUND"
-        elif self == Result.SHARED_OBJECT_INIT_FAILED:
-            return "SHARED_OBJECT_INIT_FAILED"
-        elif self == Result.OPERATING_SYSTEM:
-            return "OPERATING_SYSTEM"
-        elif self == Result.INVALID_HANDLE:
-            return "INVALID_HANDLE"
-        elif self == Result.ILLEGAL_STATE:
-            return "ILLEGAL_STATE"
-        elif self == Result.NOT_FOUND:
-            return "NOT_FOUND"
-        elif self == Result.NOT_READY:
-            return "NOT_READY"
-        elif self == Result.ILLEGAL_ADDRESS:
-            return "ILLEGAL_ADDRESS"
-        elif self == Result.LAUNCH_OUT_OF_RESOURCES:
-            return "LAUNCH_OUT_OF_RESOURCES"
-        elif self == Result.LAUNCH_TIMEOUT:
-            return "LAUNCH_TIMEOUT"
-        else:
-            return self._str_shard()
-
-    # Shard the long if-elif-else chain in __str__ to work around #23478.
-    @no_inline
-    fn _str_shard(self) -> String:
-        if self == Result.LAUNCH_INCOMPATIBLE_TEXTURING:
-            return "LAUNCH_INCOMPATIBLE_TEXTURING"
-        elif self == Result.PEER_ACCESS_ALREADY_ENABLED:
-            return "PEER_ACCESS_ALREADY_ENABLED"
-        elif self == Result.PEER_ACCESS_NOT_ENABLED:
-            return "PEER_ACCESS_NOT_ENABLED"
-        elif self == Result.PRIMARY_CONTEXT_ACTIVE:
-            return "PRIMARY_CONTEXT_ACTIVE"
-        elif self == Result.CONTEXT_IS_DESTROYED:
-            return "CONTEXT_IS_DESTROYED"
-        elif self == Result.ASSERT:
-            return "ASSERT"
-        elif self == Result.TOO_MANY_PEERS:
-            return "TOO_MANY_PEERS"
-        elif self == Result.HOST_MEMORY_ALREADY_REGISTERED:
-            return "HOST_MEMORY_ALREADY_REGISTERED"
-        elif self == Result.HOST_MEMORY_NOT_REGISTERED:
-            return "HOST_MEMORY_NOT_REGISTERED"
-        elif self == Result.HARDWARE_STACK_ERROR:
-            return "HARDWARE_STACK_ERROR"
-        elif self == Result.ILLEGAL_INSTRUCTION:
-            return "ILLEGAL_INSTRUCTION"
-        elif self == Result.MISALIGNED_ADDRESS:
-            return "MISALIGNED_ADDRESS"
-        elif self == Result.INVALID_ADDRESS_SPACE:
-            return "INVALID_ADDRESS_SPACE"
-        elif self == Result.INVALID_PC:
-            return "INVALID_PC"
-        elif self == Result.LAUNCH_FAILED:
-            return "LAUNCH_FAILED"
-        elif self == Result.COOPERATIVE_LAUNCH_TOO_LARGE:
-            return "COOPERATIVE_LAUNCH_TOO_LARGE"
-        elif self == Result.NOT_PERMITTED:
-            return "NOT_PERMITTED"
-        elif self == Result.NOT_SUPPORTED:
-            return "NOT_SUPPORTED"
-        elif self == Result.SYSTEM_NOT_READY:
-            return "SYSTEM_NOT_READY"
-        elif self == Result.SYSTEM_DRIVER_MISMATCH:
-            return "SYSTEM_DRIVER_MISMATCH"
-        elif self == Result.COMPAT_NOT_SUPPORTED_ON_DEVICE:
-            return "COMPAT_NOT_SUPPORTED_ON_DEVICE"
-        elif self == Result.MPS_CONNECTION_FAILED:
-            return "MPS_CONNECTION_FAILED"
-        elif self == Result.MPS_RPC_FAILURE:
-            return "MPS_RPC_FAILURE"
-        elif self == Result.MPS_SERVER_NOT_READY:
-            return "MPS_SERVER_NOT_READY"
-        elif self == Result.MPS_MAX_CLIENTS_REACHED:
-            return "MPS_MAX_CLIENTS_REACHED"
-        elif self == Result.MPS_MAX_CONNECTIONS_REACHED:
-            return "MPS_MAX_CONNECTIONS_REACHED"
-        elif self == Result.MPS_CLIENT_TERMINATED:
-            return "MPS_CLIENT_TERMINATED"
-        elif self == Result.CDP_NOT_SUPPORTED:
-            return "CDP_NOT_SUPPORTED"
-        elif self == Result.CDP_VERSION_MISMATCH:
-            return "CDP_VERSION_MISMATCH"
-        elif self == Result.STREAM_CAPTURE_UNSUPPORTED:
-            return "STREAM_CAPTURE_UNSUPPORTED"
-        elif self == Result.STREAM_CAPTURE_INVALIDATED:
-            return "STREAM_CAPTURE_INVALIDATED"
-        elif self == Result.STREAM_CAPTURE_MERGE:
-            return "STREAM_CAPTURE_MERGE"
-        elif self == Result.STREAM_CAPTURE_UNMATCHED:
-            return "STREAM_CAPTURE_UNMATCHED"
-        elif self == Result.STREAM_CAPTURE_UNJOINED:
-            return "STREAM_CAPTURE_UNJOINED"
-        elif self == Result.STREAM_CAPTURE_ISOLATION:
-            return "STREAM_CAPTURE_ISOLATION"
-        elif self == Result.STREAM_CAPTURE_IMPLICIT:
-            return "STREAM_CAPTURE_IMPLICIT"
-        elif self == Result.CAPTURED_EVENT:
-            return "CAPTURED_EVENT"
-        elif self == Result.STREAM_CAPTURE_WRONG_THREAD:
-            return "STREAM_CAPTURE_WRONG_THREAD"
-        elif self == Result.TIMEOUT:
-            return "TIMEOUT"
-        elif self == Result.GRAPH_EXEC_UPDATE_FAILURE:
-            return "GRAPH_EXEC_UPDATE_FAILURE"
-        elif self == Result.EXTERNAL_DEVICE:
-            return "EXTERNAL_DEVICE"
-        elif self == Result.INVALID_CLUSTER_SIZE:
-            return "INVALID_CLUSTER_SIZE"
-        elif self == Result.UNKNOWN:
-            return "UNKNOWN"
-        else:
+        try:
+            alias mapping = __result_to_str_mapping()
+            return mapping[self]
+        except e:
             return "<UNKNOWN>"
 
     fn __repr__(self) -> String:
         return self.__str__()
+
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+fn __result_to_str_mapping() -> Dict[Result, String]:
+    var dict = Dict[Result, String]()
+    dict[Result.SUCCESS] = "SUCCESS"
+    dict[Result.INVALID_VALUE] = "INVALID_VALUE"
+    dict[Result.OUT_OF_MEMORY] = "OUT_OF_MEMORY"
+    dict[Result.NOT_INITIALIZED] = "NOT_INITIALIZED"
+    dict[Result.DEINITIALIZED] = "DEINITIALIZED"
+    dict[Result.PROFILER_DISABLED] = "PROFILER_DISABLED"
+    dict[Result.PROFILER_NOT_INITIALIZED] = "PROFILER_NOT_INITIALIZED"
+    dict[Result.PROFILER_ALREADY_STARTED] = "PROFILER_ALREADY_STARTED"
+    dict[Result.PROFILER_ALREADY_STOPPED] = "PROFILER_ALREADY_STOPPED"
+    dict[Result.STUB_LIBRARY] = "STUB_LIBRARY"
+    dict[Result.DEVICE_UNAVAILABLE] = "DEVICE_UNAVAILABLE"
+    dict[Result.NO_DEVICE] = "NO_DEVICE"
+    dict[Result.INVALID_DEVICE] = "INVALID_DEVICE"
+    dict[Result.DEVICE_NOT_LICENSED] = "DEVICE_NOT_LICENSED"
+    dict[Result.INVALID_IMAGE] = "INVALID_IMAGE"
+    dict[Result.INVALID_CONTEXT] = "INVALID_CONTEXT"
+    dict[Result.CONTEXT_ALREADY_CURRENT] = "CONTEXT_ALREADY_CURRENT"
+    dict[Result.MAP_FAILED] = "MAP_FAILED"
+    dict[Result.UNMAP_FAILED] = "UNMAP_FAILED"
+    dict[Result.ARRAY_IS_MAPPED] = "ARRAY_IS_MAPPED"
+    dict[Result.ALREADY_MAPPED] = "ALREADY_MAPPED"
+    dict[Result.NO_BINARY_FOR_GPU] = "NO_BINARY_FOR_GPU"
+    dict[Result.ALREADY_ACQUIRED] = "ALREADY_ACQUIRED"
+    dict[Result.NOT_MAPPED] = "NOT_MAPPED"
+    dict[Result.NOT_MAPPED_AS_ARRAY] = "NOT_MAPPED_AS_ARRAY"
+    dict[Result.NOT_MAPPED_AS_POINTER] = "NOT_MAPPED_AS_POINTER"
+    dict[Result.ECC_UNCORRECTABLE] = "ECC_UNCORRECTABLE"
+    dict[Result.UNSUPPORTED_LIMIT] = "UNSUPPORTED_LIMIT"
+    dict[Result.CONTEXT_ALREADY_IN_USE] = "CONTEXT_ALREADY_IN_USE"
+    dict[Result.PEER_ACCESS_UNSUPPORTED] = "PEER_ACCESS_UNSUPPORTED"
+    dict[Result.INVALID_PTX] = "INVALID_PTX"
+    dict[Result.INVALID_GRAPHICS_CONTEXT] = "INVALID_GRAPHICS_CONTEXT"
+    dict[Result.NVLINK_UNCORRECTABLE] = "NVLINK_UNCORRECTABLE"
+    dict[Result.JIT_COMPILER_NOT_FOUND] = "JIT_COMPILER_NOT_FOUND"
+    dict[Result.UNSUPPORTED_PTX_VERSION] = "UNSUPPORTED_PTX_VERSION"
+    dict[Result.JIT_COMPILATION_DISABLED] = "JIT_COMPILATION_DISABLED"
+    dict[Result.UNSUPPORTED_EXEC_AFFINITY] = "UNSUPPORTED_EXEC_AFFINITY"
+    dict[Result.UNSUPPORTED_DEVSIDE_SYNC] = "UNSUPPORTED_DEVSIDE_SYNC"
+    dict[Result.INVALID_SOURCE] = "INVALID_SOURCE"
+    dict[Result.FILE_NOT_FOUND] = "FILE_NOT_FOUND"
+    dict[
+        Result.SHARED_OBJECT_SYMBOL_NOT_FOUND
+    ] = "SHARED_OBJECT_SYMBOL_NOT_FOUND"
+    dict[Result.SHARED_OBJECT_INIT_FAILED] = "SHARED_OBJECT_INIT_FAILED"
+    dict[Result.OPERATING_SYSTEM] = "OPERATING_SYSTEM"
+    dict[Result.INVALID_HANDLE] = "INVALID_HANDLE"
+    dict[Result.ILLEGAL_STATE] = "ILLEGAL_STATE"
+    dict[Result.NOT_FOUND] = "NOT_FOUND"
+    dict[Result.NOT_READY] = "NOT_READY"
+    dict[Result.ILLEGAL_ADDRESS] = "ILLEGAL_ADDRESS"
+    dict[Result.LAUNCH_OUT_OF_RESOURCES] = "LAUNCH_OUT_OF_RESOURCES"
+    dict[Result.LAUNCH_TIMEOUT] = "LAUNCH_TIMEOUT"
+    dict[Result.LAUNCH_INCOMPATIBLE_TEXTURING] = "LAUNCH_INCOMPATIBLE_TEXTURING"
+    dict[Result.PEER_ACCESS_ALREADY_ENABLED] = "PEER_ACCESS_ALREADY_ENABLED"
+    dict[Result.PEER_ACCESS_NOT_ENABLED] = "PEER_ACCESS_NOT_ENABLED"
+    dict[Result.PRIMARY_CONTEXT_ACTIVE] = "PRIMARY_CONTEXT_ACTIVE"
+    dict[Result.CONTEXT_IS_DESTROYED] = "CONTEXT_IS_DESTROYED"
+    dict[Result.ASSERT] = "ASSERT"
+    dict[Result.TOO_MANY_PEERS] = "TOO_MANY_PEERS"
+    dict[
+        Result.HOST_MEMORY_ALREADY_REGISTERED
+    ] = "HOST_MEMORY_ALREADY_REGISTERED"
+    dict[Result.HOST_MEMORY_NOT_REGISTERED] = "HOST_MEMORY_NOT_REGISTERED"
+    dict[Result.HARDWARE_STACK_ERROR] = "HARDWARE_STACK_ERROR"
+    dict[Result.ILLEGAL_INSTRUCTION] = "ILLEGAL_INSTRUCTION"
+    dict[Result.MISALIGNED_ADDRESS] = "MISALIGNED_ADDRESS"
+    dict[Result.INVALID_ADDRESS_SPACE] = "INVALID_ADDRESS_SPACE"
+    dict[Result.INVALID_PC] = "INVALID_PC"
+    dict[Result.LAUNCH_FAILED] = "LAUNCH_FAILED"
+    dict[Result.COOPERATIVE_LAUNCH_TOO_LARGE] = "COOPERATIVE_LAUNCH_TOO_LARGE"
+    dict[Result.NOT_PERMITTED] = "NOT_PERMITTED"
+    dict[Result.NOT_SUPPORTED] = "NOT_SUPPORTED"
+    dict[Result.SYSTEM_NOT_READY] = "SYSTEM_NOT_READY"
+    dict[Result.SYSTEM_DRIVER_MISMATCH] = "SYSTEM_DRIVER_MISMATCH"
+    dict[
+        Result.COMPAT_NOT_SUPPORTED_ON_DEVICE
+    ] = "COMPAT_NOT_SUPPORTED_ON_DEVICE"
+    dict[Result.MPS_CONNECTION_FAILED] = "MPS_CONNECTION_FAILED"
+    dict[Result.MPS_RPC_FAILURE] = "MPS_RPC_FAILURE"
+    dict[Result.MPS_SERVER_NOT_READY] = "MPS_SERVER_NOT_READY"
+    dict[Result.MPS_MAX_CLIENTS_REACHED] = "MPS_MAX_CLIENTS_REACHED"
+    dict[Result.MPS_MAX_CONNECTIONS_REACHED] = "MPS_MAX_CONNECTIONS_REACHED"
+    dict[Result.MPS_CLIENT_TERMINATED] = "MPS_CLIENT_TERMINATED"
+    dict[Result.CDP_NOT_SUPPORTED] = "CDP_NOT_SUPPORTED"
+    dict[Result.CDP_VERSION_MISMATCH] = "CDP_VERSION_MISMATCH"
+    dict[Result.STREAM_CAPTURE_UNSUPPORTED] = "STREAM_CAPTURE_UNSUPPORTED"
+    dict[Result.STREAM_CAPTURE_INVALIDATED] = "STREAM_CAPTURE_INVALIDATED"
+    dict[Result.STREAM_CAPTURE_MERGE] = "STREAM_CAPTURE_MERGE"
+    dict[Result.STREAM_CAPTURE_UNMATCHED] = "STREAM_CAPTURE_UNMATCHED"
+    dict[Result.STREAM_CAPTURE_UNJOINED] = "STREAM_CAPTURE_UNJOINED"
+    dict[Result.STREAM_CAPTURE_ISOLATION] = "STREAM_CAPTURE_ISOLATION"
+    dict[Result.STREAM_CAPTURE_IMPLICIT] = "STREAM_CAPTURE_IMPLICIT"
+    dict[Result.CAPTURED_EVENT] = "CAPTURED_EVENT"
+    dict[Result.STREAM_CAPTURE_WRONG_THREAD] = "STREAM_CAPTURE_WRONG_THREAD"
+    dict[Result.TIMEOUT] = "TIMEOUT"
+    dict[Result.GRAPH_EXEC_UPDATE_FAILURE] = "GRAPH_EXEC_UPDATE_FAILURE"
+    dict[Result.EXTERNAL_DEVICE] = "EXTERNAL_DEVICE"
+    dict[Result.INVALID_CLUSTER_SIZE] = "INVALID_CLUSTER_SIZE"
+    dict[Result.UNKNOWN] = "UNKNOWN"
+
+    return dict
