@@ -365,34 +365,26 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
   auto resParamsArr = ParamDeclArrayAttr::get(b.getContext(), {});
   auto sigAttr = TypeAttr::get(signature);
-  if (func.isExternal()) {
-    // Replace external functions with `kgen.extern.generator` ops.
-    result = b.create<ExternGeneratorOp>(
-        func.getLoc(), func.getPreElaborationNameAttr(), sigAttr,
-        newFunctionTypeAttr, inputParamsArr, resParamsArr,
-        func.getExportKindAttr(), func.getPreCompiledModuleRefAttr());
-  } else {
-    // Directly lower since these operations are exactly identical right now.
 
-    OperationState state(func.getLoc(), GeneratorOp::getOperationName());
-    GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
-                       newFunctionTypeAttr, inputParamsArr, resParamsArr,
-                       func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-                       func.getExportKindAttr(), func.getLLVMMetadata());
+  // Directly lower since these operations are exactly identical right now.
+  OperationState state(func.getLoc(), GeneratorOp::getOperationName());
+  GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
+                     newFunctionTypeAttr, inputParamsArr, resParamsArr,
+                     func.getDecoratorsAttr(), func.getInlineLevelAttr(),
+                     func.getExportKindAttr(), func.getLLVMMetadata());
 
-    for (const NamedAttribute &attr : func->getDialectAttrs())
-      state.attributes.push_back(attr);
+  for (const NamedAttribute &attr : func->getDialectAttrs())
+    state.attributes.push_back(attr);
 
-    auto newFunc = cast<GeneratorOp>(b.create(state));
-    result = newFunc;
+  auto newFunc = cast<GeneratorOp>(b.create(state));
+  result = newFunc;
 
-    // Move over the body.
-    newFunc.getBodyRegion().takeBody(func.getBodyRegion());
+  // Move over the body.
+  newFunc.getBodyRegion().takeBody(func.getBodyRegion());
 
-    // Revise the inputs for implicit lifetimes.
-    rewriteImplicitLifetimeDeclsAndArgs(newFunc.getBody(), implicitLifetimes,
-                                        newFunctionType, func.getLoc());
-  }
+  // Revise the inputs for implicit lifetimes.
+  rewriteImplicitLifetimeDeclsAndArgs(newFunc.getBody(), implicitLifetimes,
+                                      newFunctionType, func.getLoc());
 
   // Move over the symbol, and we're done.
   Block::iterator genIter = func->getIterator();
