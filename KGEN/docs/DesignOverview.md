@@ -610,7 +610,7 @@ Another nice thing about this approach is that it provides natural ways to
 abstract the runtime interfaces and other concerns. For example, we can express
 a "parallel for loop" kernel and provide implementations defined in terms of
 different runtimes we might want to target, e.g. if we hypothetically want to
-target OpenMP instead of LLCL.
+target OpenMP instead of AsyncRT.
 
 ### Cost Model Directed Search
 

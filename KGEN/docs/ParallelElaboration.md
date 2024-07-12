@@ -452,7 +452,7 @@ is performed in isolation at least in the process of the compiler. That is,
 we cannot benchmark JIT'd code at the same time the elaborator is compiling
 code! This requires the elaborator to ensure that at least with respect to
 elaboration, no other tasks are running. This is called "exhausting the
-workqueue"; the elaborator uses LLCL as a virtual workqueue, but has to track
+workqueue"; the elaborator uses AsyncRT as a virtual workqueue, but has to track
 how many active tasks there are.
 
 Each time a task is scheduled, the number of active tasks is incremented. Each

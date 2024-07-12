@@ -1,30 +1,30 @@
-# LLCL: Low Level Concurrency Library
+# AsyncRT: Asynchronous Runtime
 
 ## Introduction
 
 This library contains low level support for domain independent parallel CPU
 computation.  It is intended to support building high performance runtimes, as
-well as hosting parallel compiler infrastructure like MLIR and LLD.  LLCL
+well as hosting parallel compiler infrastructure like MLIR and LLD.  AsyncRT
 currently contains two major pieces of functionality:
-LLCL/Support and [LLCL/Runtime](LLCLRuntime.md).
+AsyncRT/Support and [AsyncRT/Runtime](AsyncRTRuntime.md).
 
-LLCL/Support provides low-level  concurrent containers, reference counting
+AsyncRT/Support provides low-level  concurrent containers, reference counting
 support, atomics support algorithm helpers etc - which are all dependency free
 (just depending on the C++ standard library like `<atomic>`).  These routines
 are usable for a wide range of concurrent algorithms and applications.
 
-LLCL/Runtime provides a more opinionated low-level concurrency library,
+AsyncRT/Runtime provides a more opinionated low-level concurrency library,
 including a thread pool and machinery for partitioning memory allocation.  It
 is specifically designed as a proper library - it does not assume it has
 complete control over the machine, allowing multiple instances of it can run on
 the same machine, and allowing client control over many policies.  For more
-information on it, see its [dedicated documentation page](LLCLRuntime.md)
+information on it, see its [dedicated documentation page](AsyncRTRuntime.md)
 
-## Introduction to LLCL/Support
+## Introduction to AsyncRT/Support
 
 TO WRITE:
 
-- Browse the API: [include/LLCL/Support](../include/LLCL/Support/)
+- Browse the API: [include/AsyncRT/Support](../include/AsyncRT/Support/)
 
 - `RCRef<>`, `ReferenceCounted<>`.  These compose but RCRef<> works
   with other types as well, including notably `AsyncValue`.
@@ -38,7 +38,7 @@ TO WRITE:
 
 - Location and Diagnostic.
 
-## Introduction to LLCL/Runtime/Algorithms.h
+## Introduction to AsyncRT/Runtime/Algorithms.h
 
 TO WRITE:
 

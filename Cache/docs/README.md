@@ -25,7 +25,7 @@ This ref-counted buffer must be writeable, and for convenience we'd like it to
 implement the `llvm::MemoryBuffer` and `llvm::raw_pwrite_stream` APIs. The
 `Buffer` class provides the `llvm::MemoryBuffer` APIs, and the
 `WriteableBuffer` class provides the `llvm::raw_pwrite_stream` APIs. As
-usual with the LLCL ref-counting infrastructure, `BufferRef` is a
+usual with the AsyncRT ref-counting infrastructure, `BufferRef` is a
 `RCRef` of the `Buffer` class, same for the `WriteableBuffer` class.
 
 `Buffer` interns any data passed to it on construction - it's important to

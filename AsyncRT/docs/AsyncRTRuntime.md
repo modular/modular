@@ -24,10 +24,10 @@ It has three major differentiating factors:
 3) Its key policies (for example how is a thread pool implemented?) are
    abstracted from the code that is working with it.
 
-This is very important: we want LLCL-based technology to compose into existing
+This is very important: we want AsyncRT-based technology to compose into existing
 applications with other things going on.  A high performance console video game
 is effectively its own operating system, talks to accelerators, and has a lot of
-other things going on: we want LLCL-based tech to work in such contexts.
+other things going on: we want AsyncRT-based tech to work in such contexts.
 
 Similarly, many numeric algorithms, compiler algorithms, and other interesting
 concurrent workloads are independent of the underlying execution model.  We want
@@ -39,9 +39,9 @@ On the other hand, we're not providing a virtual machine. If clients of
 machine is open and clients are not prevented from doing quirky and exotic
 things as necessary.
 
-## LLCL `WorkQueue` / Thread Pool Abstraction
+## AsyncRT `WorkQueue` / Thread Pool Abstraction
 
-The [M::AsyncRT::WorkQueue](../include/LLCL/Runtime/WorkQueue.h) class is an
+The [M::AsyncRT::WorkQueue](../include/AsyncRT/Runtime/WorkQueue.h) class is an
 abstract interface for a work queue, which is usually implemented to execute
 the submitted work in parallel with a thread pool. This class is intentionally
 very simple, but has a few important design points:
@@ -67,7 +67,7 @@ facilitate efficient implementation of it for different use-cases.
 
 ### An abstract interface with multiple implementations
 
-`WorkQueue` providing an abstract interface is important for our goals of LLCL
+`WorkQueue` providing an abstract interface is important for our goals of AsyncRT
 as a root technology of various library-based designs. If the bottom of the
 stack doesn't have a proper library-based design, nothing built on top of it
 will either.
@@ -88,7 +88,7 @@ Keeping the interface minimal allows flexibility within the implementation, and
 ensures that client algorithms (for example a "parallel for loop") are kept
 orthogonal from the implementations of the `WorkQueue` implementations.  The
 algorithms that compose onto this interface are implemented separately, in
-[Runtime/Algorithms.h](../include/LLCL/Runtime/Algorithms.h).
+[Runtime/Algorithms.h](../include/AsyncRT/Runtime/Algorithms.h).
 
 ### Designed for non-blocking work
 
@@ -104,9 +104,9 @@ not embrace the non-blocking approach themselves.  As such, there is a top-level
 routines is designed to be used by the client only, and not by items in the work
 queue or other things that are supposed to be non-blocking.
 
-## LLCL `Allocator` Abstraction
+## AsyncRT `Allocator` Abstraction
 
-The [`M::AsyncRT::Allocator`](../include/LLCL/Runtime/Allocator.h) class provides
+The [`M::AsyncRT::Allocator`](../include/AsyncRT/Runtime/Allocator.h) class provides
 an interface for heap allocation. Similar to the `WorkQueue` class, it is an
 abstract interface that allows algorithmic code to be kept independent of
 client specific policies, allowing both to work together.
@@ -117,7 +117,7 @@ the allocation of SIMD vectors and other types that require 16 or 32-byte
 alignment in a composable way, and 2) the deallocation interface also takes a
 size argument (making some allocator algorithms much more efficient).
 
-This abstraction allows for some important opportunities.  For example, LLCL has
+This abstraction allows for some important opportunities.  For example, AsyncRT has
 a leak tracking and profiling allocator interface, which keep track of
 allocation statistics while passing requests to another allocator.  This allows
 our unit test suite to default the leak tracking allocator, which is very handy
