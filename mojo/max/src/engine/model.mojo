@@ -359,6 +359,7 @@ struct Model:
         alias execute_func_name = "M_executeDeviceTensor"
 
         var output_list = List[AnyMemory]()
+        output_list.reserve(self.num_model_outputs())
         var output_list_address = UnsafePointer.address_of(output_list)
         var status = Status(self._lib)
 
