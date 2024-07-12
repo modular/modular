@@ -27,7 +27,7 @@ fn main():
             test_llcl_add[2](b)
         )
 
-    with Runtime(4) as rt:
+    with Runtime() as rt:
         var task = rt.create_task(test_llcl_add_two_of_them(rt, 10, 20))
         # CHECK: 33
         print(task.wait())
