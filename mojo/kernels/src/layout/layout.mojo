@@ -282,6 +282,15 @@ struct Layout(
                 return False
         return True
 
+    # Returns `True` if values in shape are known, otherwise `False`.
+    #
+    @always_inline
+    fn known_shape(self) -> Bool:
+        for shape_i in flatten(self.shape):
+            if to_int(shape_i) == UNKNOWN_VALUE:
+                return False
+        return True
+
 
 fn size(l: Layout) -> Int:
     return l.size()

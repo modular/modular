@@ -136,6 +136,8 @@ struct LayoutTensor[
 
     var runtime_layout: RuntimeLayout[layout]
 
+    var runtime_element_layout: RuntimeLayout[element_layout]
+
     # When LayoutTensor is masked, we need to store three quantities:
     # To specify the per dim original coordinates bounds.
     var max_dim: StaticIntTuple[rank]
@@ -159,6 +161,7 @@ struct LayoutTensor[
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
         self.ptr = ptr
         self.runtime_layout = RuntimeLayout[layout]()
+        self.runtime_element_layout = RuntimeLayout[element_layout]()
 
         self.max_dim = StaticIntTuple[rank](Int.MAX)
         self.dim_offset = StaticIntTuple[rank](0)
@@ -170,8 +173,27 @@ struct LayoutTensor[
         ptr: DTypePointer[dtype, address_space],
         runtime_layout: RuntimeLayout[layout],
     ):
+        constrained[
+            element_layout.all_dims_known(), "Layout must be fully static"
+        ]()
         self.ptr = ptr
         self.runtime_layout = runtime_layout
+        self.runtime_element_layout = RuntimeLayout[element_layout]()
+
+        self.max_dim = StaticIntTuple[rank](Int.MAX)
+        self.dim_offset = StaticIntTuple[rank](0)
+        self.dim_stride = StaticIntTuple[rank](1)
+
+    @always_inline
+    fn __init__(
+        inout self,
+        ptr: DTypePointer[dtype, address_space],
+        runtime_layout: RuntimeLayout[layout],
+        elemnt_runtime_layout: RuntimeLayout[element_layout],
+    ):
+        self.ptr = ptr
+        self.runtime_layout = runtime_layout
+        self.runtime_element_layout = elemnt_runtime_layout
 
         self.max_dim = StaticIntTuple[rank](Int.MAX)
         self.dim_offset = StaticIntTuple[rank](0)
@@ -192,6 +214,7 @@ struct LayoutTensor[
         self.dim_offset = existing.dim_offset
         self.dim_stride = existing.dim_stride
         self.runtime_layout = existing.runtime_layout
+        self.runtime_element_layout = existing.runtime_element_layout
 
     @always_inline
     fn bitcast[
@@ -232,10 +255,18 @@ struct LayoutTensor[
 
         @parameter
         for idx in range(Self.element_size):
-            alias element_offset = self.element_layout(idx)
-            vec_res[idx] = Scalar.load(
-                self.ptr, Self._getOffset(strides, dims) + element_offset
-            )
+
+            @parameter
+            if element_layout.all_dims_known():
+                alias element_offset = self.element_layout(idx)
+                vec_res[idx] = Scalar.load(
+                    self.ptr, Self._getOffset(strides, dims) + element_offset
+                )
+            else:
+                var element_offset = self.runtime_element_layout(idx)
+                vec_res[idx] = Scalar.load(
+                    self.ptr, Self._getOffset(strides, dims) + element_offset
+                )
 
         return vec_res
 
@@ -246,13 +277,24 @@ struct LayoutTensor[
         # TODO: We should vectorize contiguous stores this just stash scalars.
         @parameter
         for i in range(Self.element_size):
-            alias element_offset = self.element_layout(i)
-            SIMD.store(
-                self.ptr,
-                Self._getOffset(strides, VariadicList[Int](d0))
-                + element_offset,
-                val[i],
-            )
+
+            @parameter
+            if element_layout.all_dims_known():
+                alias element_offset = self.element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0))
+                    + element_offset,
+                    val[i],
+                )
+            else:
+                alias element_offset = self.element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0))
+                    + element_offset,
+                    val[i],
+                )
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
@@ -260,13 +302,24 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.element_size):
-            alias element_offset = self.element_layout(i)
-            SIMD.store(
-                self.ptr,
-                Self._getOffset(strides, VariadicList[Int](d0, d1))
-                + element_offset,
-                val[i],
-            )
+
+            @parameter
+            if element_layout.all_dims_known():
+                alias element_offset = self.element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0, d1))
+                    + element_offset,
+                    val[i],
+                )
+            else:
+                var element_offset = self.runtime_element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0, d1))
+                    + element_offset,
+                    val[i],
+                )
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
@@ -274,13 +327,24 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.element_size):
-            alias element_offset = self.element_layout(i)
-            SIMD.store(
-                self.ptr,
-                Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
-                + element_offset,
-                val[i],
-            )
+
+            @parameter
+            if element_layout.all_dims_known():
+                alias element_offset = self.element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
+                    + element_offset,
+                    val[i],
+                )
+            else:
+                var element_offset = self.runtime_element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
+                    + element_offset,
+                    val[i],
+                )
 
     @always_inline
     fn __setitem__(
@@ -290,13 +354,24 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.element_size):
-            alias element_offset = self.element_layout(i)
-            SIMD.store(
-                self.ptr,
-                Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
-                + element_offset,
-                val[i],
-            )
+
+            @parameter
+            if element_layout.all_dims_known():
+                alias element_offset = self.element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
+                    + element_offset,
+                    val[i],
+                )
+            else:
+                var element_offset = self.runtime_element_layout(i)
+                SIMD.store(
+                    self.ptr,
+                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
+                    + element_offset,
+                    val[i],
+                )
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
@@ -807,13 +882,54 @@ struct LayoutTensor[
         address_space=address_space,
         element_layout = coalesce(__tiled_layout[0]),
     ]:
-        constrained[layout.all_dims_known(), "Requires fully static layout"]()
-        return LayoutTensor[
-            dtype,
-            coalesce(__tiled_layout[1], keep_rank=True),
-            address_space=address_space,
-            element_layout = coalesce(__tiled_layout[0]),
-        ](self.ptr)
+        @parameter
+        if layout.all_dims_known():
+            return LayoutTensor[
+                dtype,
+                coalesce(__tiled_layout[1], keep_rank=True),
+                address_space=address_space,
+                element_layout = coalesce(__tiled_layout[0]),
+            ](self.ptr)
+        else:
+            constrained[
+                coalesce(__tiled_layout[0]).known_shape(),
+                "Result element layout should have known shape",
+            ]()
+            var runtime_shape = RuntimeTuple[
+                coalesce(__tiled_layout[1], keep_rank=True).shape
+            ]()
+            var runtime_stride = RuntimeTuple[
+                coalesce(__tiled_layout[1], keep_rank=True).stride
+            ]()
+
+            var runtime_element_layout_shape = RuntimeTuple[
+                coalesce(__tiled_layout[0]).shape
+            ]()
+            var runtime_element_layout_stride = RuntimeTuple[
+                coalesce(__tiled_layout[0]).stride
+            ](self.runtime_layout.stride.value)
+
+            @parameter
+            for i in range(runtime_shape.scalar_length):
+                runtime_shape.value[i] = (
+                    self.runtime_layout.shape.value[i] // tile_sizes[i]
+                )
+                runtime_stride.value[i] = (
+                    self.runtime_layout.stride.value[i] * tile_sizes[i]
+                )
+
+            return LayoutTensor[
+                dtype,
+                coalesce(__tiled_layout[1], keep_rank=True),
+                address_space=address_space,
+                element_layout = coalesce(__tiled_layout[0]),
+            ](
+                self.ptr,
+                RuntimeLayout(runtime_shape, runtime_stride),
+                RuntimeLayout(
+                    runtime_element_layout_shape, runtime_element_layout_stride
+                ),
+            )
 
     @staticmethod
     fn __compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
