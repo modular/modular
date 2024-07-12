@@ -9,7 +9,6 @@ at an entire file's assembly nor do they want to invoke the kgen tool manually.
 """
 
 from sys.info import _current_target
-from memory import Pointer
 
 from memory import UnsafePointer
 from .reflection import get_linkage_name
