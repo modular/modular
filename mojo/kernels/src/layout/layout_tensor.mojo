@@ -41,7 +41,7 @@ fn _compute_distribute_layout[
     @parameter
     if axis:
         return zipped_divide(
-            data_layout, Layout(threads_layout.shape[axis._value_copy()])
+            data_layout, Layout(threads_layout.shape[axis.value()])
         )
 
     for dim in threads_layout.shape:
@@ -60,7 +60,7 @@ fn _project_on_axis[
         return p_t
     var p_t = fill_like(t, 1)
     p_t[axis] = fill_like(t[axis], 0)
-    p_t[axis][submode_axis._value_copy()] = 1
+    p_t[axis][submode_axis.value()] = 1
     return p_t
 
 
@@ -686,7 +686,7 @@ struct LayoutTensor[
         @parameter
         if axis:
             return zipped_divide(
-                data_layout, Layout(threads_layout.shape[axis._value_copy()])
+                data_layout, Layout(threads_layout.shape[axis.value()])
             )
         else:
             for dim in threads_layout.shape:
@@ -735,12 +735,12 @@ struct LayoutTensor[
             # coordinates since thread 2 and 3 are getting the same tile.
             alias thread_projected_stride = flatten(
                 threads_layout.stride[
-                    axis._value_copy()
+                    axis.value()
                 ] if axis else threads_layout.stride
             )
             alias thread_projected_shape = flatten(
                 threads_layout.shape[
-                    axis._value_copy()
+                    axis.value()
                 ] if axis else threads_layout.shape
             )
 
@@ -801,12 +801,12 @@ struct LayoutTensor[
             # coordinates since thread 2 and 3 are getting the same tile.
             alias thread_projected_stride = flatten(
                 threads_layout.stride[
-                    axis._value_copy()
+                    axis.value()
                 ] if axis else threads_layout.stride
             )
             alias thread_projected_shape = flatten(
                 threads_layout.shape[
-                    axis._value_copy()
+                    axis.value()
                 ] if axis else threads_layout.shape
             )
 
@@ -1912,7 +1912,7 @@ fn copy_sram_to_local[
     @parameter
     if axis:
         var src_fragments = src.distribute[
-            src_warp_layout, axis = axis._value_copy()
+            src_warp_layout, axis = axis.value()
         ](ThreadIdx.x())
         dst.copy_from(src_fragments)
     else:
