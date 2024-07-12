@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
-import pytest
 from max.graph import mlir, DType, Graph, TensorType
 
 
