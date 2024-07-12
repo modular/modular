@@ -10,7 +10,8 @@ from sys import external_call
 from sys.ffi import C_char
 from sys.info import os_is_windows
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils import StringRef
 
@@ -18,7 +19,7 @@ from utils import StringRef
 struct _POpenHandle:
     """Handle to an open file descriptor opened via popen."""
 
-    var _handle: Pointer[NoneType]
+    var _handle: UnsafePointer[NoneType]
 
     fn __init__(inout self, cmd: String, mode: String = "r") raises:
         """Construct the _POpenHandle using the command and mode provided.
@@ -34,7 +35,7 @@ struct _POpenHandle:
         if mode != "r" and mode != "w":
             raise "the mode specified `" + mode + "` is not valid"
 
-        self._handle = external_call["popen", Pointer[NoneType]](
+        self._handle = external_call["popen", UnsafePointer[NoneType]](
             cmd.unsafe_ptr(), mode.unsafe_ptr()
         )
 
