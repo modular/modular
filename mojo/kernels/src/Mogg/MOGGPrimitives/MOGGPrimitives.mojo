@@ -545,9 +545,14 @@ fn fillBuffer[
 @mogg_register("mgp.buffer.set_with_index")
 @always_inline
 @export
-fn mgp_buffer_set_with_index(
+fn mgp_buffer_set_with_index[
+    aRuntimeSlot: UInt64, bDevice: StringLiteral
+](
     ctx: StateContext, buffer: NDBuffer[DType.uint8, 1], *vals: Int
-) -> Int:
+) raises -> Int:
+    debug_assert(
+        bDevice == "cpu", "set_with_index can only work on cpu buffers"
+    )
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
     debug_assert(
@@ -561,8 +566,25 @@ fn mgp_buffer_set_with_index(
     elif elSize == 8:
         fillBuffer[DType.int64](buffer, vals)
     else:
-        debug_assert(False, "unsupported element size")
-    return 1
+        raise Error("unsupported element size")
+    return 1  # Dummy int for output chain on DeviceOp.td
+
+
+@mogg_register("mgp.buffer.to_bool")
+@always_inline
+@export
+fn mgp_buffer_to_bool[
+    aRuntimeSlot: UInt64, bDevice: StringLiteral
+](
+    dummy_chain: Int, ctx: StateContext, buffer: NDBuffer[DType.uint8, 1]
+) -> Bool:
+    debug_assert(bDevice == "cpu", "to_bool can only work on cpu buffers")
+    var bufSize = buffer.num_elements()
+    debug_assert(
+        bufSize == 1,
+        "buffer size must be a size of 1",
+    )
+    return buffer[0] != 0
 
 
 # ===----------------------------------------------------------------------===#
