@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from math import align_down, ceildiv
+from math import align_up, align_down, ceildiv
 from sys.info import alignof
 
 from algorithm.functional import tile_and_unswitch
@@ -21,7 +21,7 @@ from gpu.memory import (
 )
 from gpu.mma import ld_matrix, mma
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
-from gpu.tensor_ops import tc_reduce
+from gpu.tensor_ops import tc_reduce, tc_reduce_vector
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -44,6 +44,7 @@ from utils.static_tuple import InlineArray, StaticTuple
 
 from ._multistage_gemm_gpu import multistage_gemm
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
+from gpu.host._compile import _get_nvptx_target
 
 
 @always_inline
@@ -427,6 +428,62 @@ fn gemv_tc_kernel[
                 )
             else:
                 c[warpId] = accum.cast[c_type]()
+
+
+# Matrix-Column Vector Multiplication utilizing Tensor Cores
+fn gemv_tc_kernel_vector[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    simd_width: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
+](
+    c: NDBuffer[c_type, 2],
+    a: NDBuffer[a_type, 2],
+    b: NDBuffer[b_type, 2],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    alias align_a = alignof[SIMD[a_type, simd_width]]()
+    alias align_b = alignof[SIMD[b_type, simd_width]]()
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var warpId = x // WARP_SIZE
+    var accum = SIMD[s_type, 1]()
+
+    if warpId < m:
+        # Every warp processes a single row of the resultant vector
+        for i in range(ceildiv(k // simd_width, WARP_SIZE)):
+            var idx = (i * WARP_SIZE * simd_width) + lane_id() * simd_width
+            var val = SIMD[a_type, simd_width]()
+            if idx < k:
+                var ax = a.load[width=simd_width, alignment=align_a](
+                    Index(warpId, idx)
+                )
+                var bx = b.load[width=simd_width, alignment=align_b](
+                    Index(idx, 0)
+                ).cast[a_type]()
+
+                # Do simd vector loads in ax,bx to multiply element wise for matrix row and vector column
+                val = ax * bx
+
+            # Do a fast tensor core and warp shuffle based reduce operation
+            var out_val = tc_reduce_vector[s_type, a_type, simd_width](val)
+
+            if lane_id() == 0:
+                accum += out_val
+
+        if lane_id() == 0:
+
+            @parameter
+            if elementwise_lambda_fn:
+                alias elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda[c_type, 1](
+                    Index(warpId, 0), accum.cast[c_type]()
+                )
+            else:
+                c.store(Index(warpId, 0), accum.cast[c_type]())
 
 
 # Row Vector-Matrix multiplication
@@ -1142,25 +1199,55 @@ fn _matmul_gpu_dispatch[
             @parameter
             if a_type == DType.bfloat16:
                 alias WARPS_PER_BLOCK = 32
-                var gpu_func = ctx.compile_function[
-                    gemv_tc_kernel[
-                        c_type,
-                        a_type,
-                        b_type,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
+                alias simd_width = simdwidthof[
+                    DType.bfloat16, target = _get_nvptx_target()
                 ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c.data,
-                    a.data,
-                    b.data,
-                    m,
-                    n,
-                    k,
-                    grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                )
+                if k % simd_width == 0:
+                    var block_dim = min(
+                        align_up(k // simd_width, WARP_SIZE),
+                        WARP_SIZE * WARPS_PER_BLOCK,
+                    )
+                    var gpu_func = ctx.compile_function[
+                        gemv_tc_kernel_vector[
+                            c_type,
+                            a_type,
+                            b_type,
+                            simd_width,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                        ]
+                    ]()
+                    ctx.enqueue_function(
+                        gpu_func,
+                        c,
+                        a,
+                        b,
+                        m,
+                        n,
+                        k,
+                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                        block_dim=block_dim,
+                    )
+                else:
+                    alias WARPS_PER_BLOCK = 32
+                    var gpu_func = ctx.compile_function[
+                        gemv_tc_kernel[
+                            c_type,
+                            a_type,
+                            b_type,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                        ]
+                    ]()
+                    ctx.enqueue_function(
+                        gpu_func,
+                        c.data,
+                        a.data,
+                        b.data,
+                        m,
+                        n,
+                        k,
+                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                        block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                    )
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
