@@ -235,20 +235,13 @@ static ErrorOrSuccess insertMaxContextInGlobals(ExecutionEngine &engine,
   return M::success();
 }
 
-/// Writes the time trace profile to a file if the profiler is present.
-static ErrorOrSuccess writeTimeTraceProfile(M::Context &maxContext) {
-  // FIXME(#36219): Write all traces, since the runtime won't be flushed.
-  // This should be removed when the runtime is properly flushed when the
-  // context goes out of scope.
+/// Ensures that the context's profiler, if there is one, copies any outstanding
+/// references into its own arena so that the profiler is fully self-contained.
+static void internTimeTraceProfile(M::Context &maxContext) {
   std::optional<TimeTraceProfiler> &profilerOr =
       maxContext.get<AsyncRT::Runtime>()->getProfiler();
-  if (profilerOr) {
-    auto writeErr = profilerOr->write("-");
-    if (writeErr.isError())
-      return writeErr.takeError();
-  }
-
-  return M::success();
+  if (profilerOr)
+    profilerOr->intern();
 }
 
 /// Given a module representing a Mojo program, and a set of `arguments` to pass
@@ -313,10 +306,9 @@ static int executeModule(const State &state, AsyncRT::Runtime &runtime,
   if (failed(result))
     return state.reportError(result.getError());
 
-  // Write out the time trace profile if the context contains a profiler.
-  if (auto errOr = writeTimeTraceProfile(maxContext))
-    return state.reportError(errOr.getError());
-
+  // If the context contains a profiler, invoke profiler->intern()
+  // before we kill the context.
+  internTimeTraceProfile(maxContext);
   return EXIT_SUCCESS;
 }
 
