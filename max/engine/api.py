@@ -181,7 +181,8 @@ class DType(Enum):
     float16 = 9
     float32 = 10
     float64 = 11
-    unknown = 12
+    bfloat16 = 12
+    unknown = 13
 
     @classmethod
     def _from(cls, dtype: _DType):
