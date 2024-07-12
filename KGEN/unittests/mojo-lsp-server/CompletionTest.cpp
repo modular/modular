@@ -74,7 +74,7 @@ TEST(CompletionTest, testCompletionRelativeImport) {
 TEST(CompletionTest, testCompletionImportMember) {
   Document doc("test:///foo.mojo",
                R"(
-from memory.unsafe import L
+from memory.unsafe import D
 )");
 
   createTestClient()
@@ -84,7 +84,7 @@ from memory.unsafe import L
           [](const lsp::CompletionList &completionList) {
             EXPECT_TRUE(llvm::any_of(
                 completionList.items, [](const lsp::CompletionItem &item) {
-                  return item.label == "LegacyPointer" &&
+                  return item.label == "DTypePointer" &&
                          item.kind == lsp::CompletionItemKind::Struct;
                 }));
           })

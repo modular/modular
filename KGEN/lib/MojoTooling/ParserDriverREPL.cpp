@@ -383,9 +383,8 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOS << "from memory.unsafe import Pointer as __mojo_repl_Pointer\n"
-           << "from memory.unsafe_pointer import UnsafePointer as "
-              "__mojo_repl_UnsafePointer\n"
+    exprOS << "from memory.unsafe_pointer import UnsafePointer as "
+           << "__mojo_repl_UnsafePointer\n"
            << "from python.python import Python as __mojo_repl_Python\n";
   }
 
@@ -406,7 +405,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   for (auto &[name, type] : variables) {
     exprOS << llvm::formatv(
         "  var `{0}`: "
-        "__mojo_repl_Pointer[__mojo_repl_UnsafePointer[{1}]]\n",
+        "__mojo_repl_UnsafePointer[__mojo_repl_UnsafePointer[{1}]]\n",
         name, getPersistentVariableTypeName(name));
   }
   if (variables.empty())
