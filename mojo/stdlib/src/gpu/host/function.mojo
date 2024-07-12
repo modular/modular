@@ -13,7 +13,7 @@ from sys.intrinsics import _mlirtype_is_eq
 
 from gpu.host.device_context import DeviceBuffer
 from memory import stack_allocation
-from memory.unsafe import DTypePointer, LegacyPointer
+from memory.unsafe import DTypePointer
 
 from utils.lock import BlockingSpinLock, BlockingScopedLock
 from utils.variant import Variant
