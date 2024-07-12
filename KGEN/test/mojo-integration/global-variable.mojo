@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo -debug-level full %s | FileCheck %s
-# RUN: %mojo build %s -o %t
+# RUN: %bare-mojo -debug-level full %s | FileCheck %s
+# RUN: %bare-mojo build %s -o %t
 # RUN: %t | FileCheck %s
 
 
