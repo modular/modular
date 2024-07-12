@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: MODULAR_PROFILE_FILENAME="-" %mojo %s | FileCheck %s
 
 from pathlib import Path
 
@@ -11,39 +11,42 @@ from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 
-fn test_tracing[level: TraceLevel]():
+fn test_tracing[level: TraceLevel, prefix: StringLiteral]():
     @parameter
-    async fn test_tracing_add[lhs: Int](rhs: Int) -> Int:
+    async fn test_tracing_add[prefix: StringLiteral, lhs: Int](rhs: Int) -> Int:
         var result = Int()
-        with Trace[level]("trace event 2", "detail event 2"):
+        with Trace[level](prefix + "trace event 2", prefix + "detail event 2"):
             result = lhs + rhs
         return result
 
     @parameter
-    async fn test_tracing_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
-        var t0 = rt.create_task(test_tracing_add[1](a))
-        var t1 = rt.create_task(test_tracing_add[2](b))
+    async fn test_tracing_add_two_of_them[
+        prefix: StringLiteral
+    ](rt: Runtime, a: Int, b: Int) -> Int:
+        var t0 = rt.create_task(test_tracing_add[prefix, 1](a))
+        var t1 = rt.create_task(test_tracing_add[prefix, 2](b))
         return await t0 + await t1
 
-    with Runtime(4, Path("-")) as rt:
-        with Trace[level]("trace event 1", "detail event 1"):
-            var task = rt.create_task(test_tracing_add_two_of_them(rt, 10, 20))
+    with Runtime() as rt:
+        with Trace[level](prefix + "trace event 1", prefix + "detail event 1"):
+            var task = rt.create_task(
+                test_tracing_add_two_of_them[prefix](rt, 10, 20)
+            )
             _ = task.wait()
 
 
 fn main():
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
-    test_tracing[TraceLevel.ALWAYS]()
-    # CHECK: "trace event 1"
-    # CHECK-SAME: "detail event 1"
-    # CHECK-SAME: "trace event 2"
-    # CHECK-SAME: "detail event 2"
+    test_tracing[TraceLevel.ALWAYS, "ENABLED: "]()
+    # CHECK: "ENABLED: trace event 1"
+    # CHECK-SAME: "ENABLED: detail event 1"
+    # CHECK-SAME: "ENABLED: trace event 2"
+    # CHECK-SAME: "ENABLED: detail event 2"
 
-    # CHECK-LABEL: test_tracing_disabled
     print("== test_tracing_disabled")
-    test_tracing[TraceLevel.THREAD]()
-    # CHECK-NOT: "trace event 1"
-    # CHECK-NOT: "detail event 1"
-    # CHECK-NOT: "trace event 2"
-    # CHECK-NOT: "detail event 2"
+    test_tracing[TraceLevel.THREAD, "DISABLED: "]()
+    # CHECK-NOT: "DISABLED: trace event 1"
+    # CHECK-NOT: "DISABLED: detail event 1"
+    # CHECK-NOT: "DISABLED: trace event 2"
+    # CHECK-NOT: "DISABLED: detail event 2"
