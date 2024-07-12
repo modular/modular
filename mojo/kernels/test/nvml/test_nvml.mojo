@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %bare-mojo %s | FileCheck %s
+# COM: TODO(KERN-645)
+
 
 from nvml import Device
 from nvml.nvml import _get_nvml_library_path
