@@ -586,3 +586,21 @@ fn kernel_with_no_target[
     type: DType, rank: Int
 ](x: NDBuffer[type, rank], out: NDBuffer[type, rank]):
     print("hello from kernel with no target")
+
+
+@value
+struct TwoIndices:
+    var first: Int
+    var second: Int
+
+
+@mogg_register("create_two_indices")
+@export
+fn create_two_indices[]() -> TwoIndices:
+    return TwoIndices(1, 2)
+
+
+@mogg_register("create_two_indices_raises")
+@export
+fn create_two_indices_raises[]() raises -> TwoIndices:
+    return TwoIndices(1, 2)
