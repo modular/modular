@@ -1047,6 +1047,7 @@ fn _matmul_gpu_dispatch[
             m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
         )
 
+        # TODO: m is set to multiple of 128 (thread block tile) for now.
         var multi_gemm_cond = (m % 128 == 0 and n % 128 == 0 and k % 16 == 0)
 
         @parameter

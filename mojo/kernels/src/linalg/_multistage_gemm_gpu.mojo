@@ -368,8 +368,8 @@ fn multistage_gemm[
     alias simd_size = simdwidthof[c_type]()
 
     var M = c.dim[0]()
-    alias N = c_shape.get[1]()
-    alias K = a_shape.get[1]()
+    alias N = b_shape.get[0]() if transpose_b else b_shape.get[1]()
+    alias K = b_shape.get[1]() if transpose_b else b_shape.get[0]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
