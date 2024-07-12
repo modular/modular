@@ -194,11 +194,6 @@ kgen.generator @raw_pointer_from_ref_type<q: !lit.lifetime<0>>(%a: !lit.ref<@Str
   kgen.return %ptr: !kgen.pointer<@Struct>
 }
 
-// CHECK: kgen.extern.generator @empty_region_dont_crash
-kgen.extern.generator @empty_region_dont_crash()
-
-
-
 //===----------------------------------------------------------------------===//
 // Reference Lowering
 //===----------------------------------------------------------------------===//

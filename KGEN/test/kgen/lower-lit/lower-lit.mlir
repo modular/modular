@@ -446,11 +446,6 @@ lit.file_module @module {
   lit.alias.decl A = <42>
 }
 
-// CHECK: kgen.extern.generator @extern() attributes {preCompiledModuleRef = @module}
-lit.func @extern() attributes {preCompiledModuleRef = @module, preElaborationName = "extern"} {
-  lit.extern_func
-}
-
 // CHECK: kgen.generator @metadata
 // CHECK-SAME: LLVMMetadata = {llvm.someattr = 3 : index}
 lit.func @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
