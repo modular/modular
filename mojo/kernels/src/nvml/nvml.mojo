@@ -11,7 +11,6 @@ from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
-from memory.unsafe import Pointer
 from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------===#
@@ -44,7 +43,7 @@ fn _get_nvml_library_path() raises -> Path:
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     try:
         var lib_path = _get_nvml_library_path()
-        var ptr = Pointer[DLHandle].alloc(1)
+        var ptr = UnsafePointer[DLHandle].alloc(1)
         var handle = DLHandle(str(lib_path))
         _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
         ptr[] = handle
