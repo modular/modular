@@ -15,7 +15,7 @@ from sys.param_env import is_defined
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import Context as CudaContext
 from gpu.host import CudaInstance, DeviceContext, Stream, KernelProfilingInfo
-from memory import DTypePointer, Pointer, UnsafePointer
+from memory import DTypePointer, UnsafePointer
 
 from utils import StringRef
 
@@ -145,13 +145,13 @@ struct ChainPromise:
 
 
 @always_inline
-fn _get_current_runtime() -> Pointer[NoneType]:
+fn _get_current_runtime() -> UnsafePointer[NoneType]:
     """Returns the current runtime. The runtime is either created by the
     surrounding mojo tool (mojo-repl, mojo-jit, ...) or by the entry main
     function.
     """
     return external_call[
-        "KGEN_CompilerRT_LLCL_GetCurrentRuntime", Pointer[NoneType]
+        "KGEN_CompilerRT_LLCL_GetCurrentRuntime", UnsafePointer[NoneType]
     ]()
 
 
@@ -173,7 +173,7 @@ fn parallelism_level() -> Int:
 
 @register_passable("trivial")
 struct Runtime:
-    alias ptr_type = Pointer[NoneType]
+    alias ptr_type = UnsafePointer[NoneType]
     var ptr: Self.ptr_type
     var owning: Bool
 
