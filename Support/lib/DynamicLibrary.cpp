@@ -17,16 +17,17 @@ using namespace M;
 using llvm::sys::DynamicLibrary;
 
 ErrorOr<DynamicLibrary>
-M::permanentPluginLibrary(const std::filesystem::path &libFilepath) {
+M::permanentPluginLibrary(const std::filesystem::path &libFilepath,
+                          const bool exposeSymbols) {
   std::string errorMessage;
 #if defined(__linux__)
-#if (LLVM_ADDRESS_SANITIZER_BUILD || LLVM_THREAD_SANITIZER_BUILD)
-  // Disable RTLD_DEEPBIND since it breaks sanitizers
+  uint64_t dlopenFlags = RTLD_LAZY;
+  dlopenFlags |= exposeSymbols ? RTLD_GLOBAL : RTLD_LOCAL;
+#if (!(LLVM_ADDRESS_SANITIZER_BUILD || LLVM_THREAD_SANITIZER_BUILD))
+  // Only use RTLD_DEEPBIND without sanitizers
   // (https://github.com/google/sanitizers/issues/611).
-  constexpr uint64_t dlopenFlags = RTLD_LAZY | RTLD_LOCAL;
-#else
-  constexpr uint64_t dlopenFlags = RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND;
-#endif // LLVM_ADDRESS_SANITIZER_BUILD
+  dlopenFlags |= RTLD_DEEPBIND;
+#endif // !LLVM_ADDRESS_SANITIZER_BUILD
 
   // TODO(#27162): Upstream dlopen flags to LLVM getPermanentLibrary.
   void *handle = ::dlopen(libFilepath.c_str(), dlopenFlags);

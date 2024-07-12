@@ -17,8 +17,11 @@ namespace M {
 /// Differs from llvm::DynamicLibrary::getPermanentLibrary in symbol resolution:
 /// `permanentPluginLibrary()` guarantees symbols first resolve locally then
 /// globally, while LLVM's `getPermanentLibrary()` does not.
+/// If exposeSymbols is true, the library will be loaded with RTLD_GLOBAL
+/// exposing its symbols to any other loaded object.
 ErrorOr<llvm::sys::DynamicLibrary>
-permanentPluginLibrary(const std::filesystem::path &libFilepath);
+permanentPluginLibrary(const std::filesystem::path &libFilepath,
+                       bool exposeSymbols = false);
 
 } // namespace M
 
