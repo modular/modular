@@ -16,7 +16,7 @@ struct SelfStruct(SelfMethod):
         pass
 
 
-# CHECK-LABEL: kgen.func @"{{.*}}call_it{{.*}}T=[struct<() memoryOnly>,
+# CHECK-LABEL: kgen.func @"{{.*}}call_it{{.*}}T=trait-self-type::SelfStruct.foo
 fn call_it[T: SelfMethod](x: T):
     # CHECK: call {{.*}}SelfStruct::foo{{.*}}(%arg0)
     x.foo()

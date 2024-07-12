@@ -1963,3 +1963,32 @@ kgen.generator export @load_from_mem() {
   kgen.param.constant = <load_from_mem(:pointer<index> apply(:(!kgen.pointer<index>) -> !kgen.pointer<index> @forward_pointer, store_to_mem(42)))>
   kgen.return
 }
+
+
+// -----
+
+// MOCO-942 - Elaborator making wild symbol names
+
+// This should not get the full vtable substituted in.
+// CHECK: kgen.func @"genA,type_param=::string_literal::StringLiteral"() no_inline {
+// CHECK: kgen.func @"genA,type_param=x::y::z"() no_inline { 
+kgen.generator @genA<type_param: type>() no_inline {
+  kgen.return
+}
+
+kgen.generator @"::string_literal::StringLiteral::__del__(::string_literal::StringLiteral)_thunk"(%arg0: !kgen.pointer<string> owned_in_mem) -> !kgen.none always_inline_no_debug {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @"x::y::z::__del__(x::y::z)"(%arg0: !kgen.pointer<string> owned_in_mem) -> !kgen.none always_inline_no_debug {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @call_generator_test() {
+  kgen.call @genA<:type [string, {"__del__" : (!kgen.pointer<string> owned_in_mem) -> !kgen.none = @"::string_literal::StringLiteral::__del__(::string_literal::StringLiteral)_thunk"}]>() : () -> ()
+  kgen.call @genA<:type [string, {"__del__" : (!kgen.pointer<string> owned_in_mem) -> !kgen.none = @"x::y::z::__del__(x::y::z)"}]>() : () -> ()
+  kgen.return
+}
+
