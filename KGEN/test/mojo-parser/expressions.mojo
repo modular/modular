@@ -275,6 +275,31 @@ fn precedence_associativity(a: Int):
   # CHECK: lit.call {{.*}}__truediv__
   var r1 = Float32(33.0) / 42.0
 
+  # COM: test if-else operator associativity
+  # CHECK: %[[C:.*]] = lit.ref.load %c
+  # CHECK-NEXT: %[[TEN:.*]] = kgen.param.constant: !Int = <{10}>
+  # CHECK-NEXT: %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[TEN]])
+  # CHECK-NEXT: %[[EQI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}%[[EQ]]
+  # CHECK-NEXT: %[[RESULT:.*]] = hlcf.if %[[EQI1]] -> !Int {
+  # CHECK-NEXT:   %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
+  # CHECK-NEXT:   hlcf.yield %[[ZERO]] : !Int
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:  %[[C:.*]] = lit.ref.load %c
+  # CHECK-NEXT:  %[[ELEVEN:.*]] = kgen.param.constant: !Int = <{11}>
+  # CHECK-NEXT:  %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[ELEVEN]])
+  # CHECK-NEXT:  %[[EQI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[EQ]])
+  # CHECK-NEXT:  %[[RIGHT_IF_RESULT:.*]] = hlcf.if %[[EQI1]] -> !Int {
+  # CHECK-NEXT:    %[[ONE:.*]] = kgen.param.constant: !Int = <{1}>
+  # CHECK-NEXT:    hlcf.yield %[[ONE]] : !Int
+  # CHECK-NEXT:  } else {
+  # CHECK-NEXT:    %[[TWO:.*]] = kgen.param.constant: !Int = <{2}>
+  # CHECK-NEXT:    hlcf.yield %[[TWO]] : !Int
+  # CHECK-NEXT:  }
+  # CHECK-NEXT:  hlcf.yield %[[RIGHT_IF_RESULT]] : !Int
+  # CHECK-NEXT:}
+  var c = 10
+  z = 0 if c == 10 else 1 if c == 11 else 2
+
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
   # CHECK: lit.call {{.*}}Int::@"__radd__(::Int,::Int)"
@@ -1048,7 +1073,7 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT:   hlcf.yield [[TMP]] : !lit.ref<{{.*}}>
   # CHECK-NEXT: }
   # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
-  var ref5 = ref1 if cond else ref2 if cond else __get_mvalue_as_litref(c)
+  var ref5 = (ref1 if cond else ref2) if cond else __get_mvalue_as_litref(c)
 
   # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
   # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %ref2
