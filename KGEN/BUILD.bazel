@@ -947,7 +947,6 @@ cc_distributable_static_library(
         "//Runtime",
         "//Support:ADT",
         "//Support:Base",
-        "//Support:CUDA",
         "//Support:Configuration",
         "//Support:Filesystem",
         "//Support:Globals.static",

@@ -73,7 +73,6 @@ add_subdirectory(ML)
 add_subdirectory(Compiler)
 add_subdirectory(DebugInfoDialect)
 add_subdirectory(Globals)
-add_subdirectory(CUDA)
 add_subdirectory(Profiling)
 add_subdirectory(UI)
 
