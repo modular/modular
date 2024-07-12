@@ -6,7 +6,7 @@
 
 from sys._assembly import inlined_assembly
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer
 from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------===#
@@ -70,7 +70,10 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
     var tmp_ptr = UnsafePointer.address_of(tmp)
 
     @parameter
-    if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]]._mlir_type]():
+    if (
+        sizeof[type]()
+        <= sizeof[UnsafePointer[SIMD[type, simd_width]]._mlir_type]()
+    ):
         inlined_assembly[
             "",
             NoneType,
