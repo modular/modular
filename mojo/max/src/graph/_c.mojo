@@ -55,7 +55,7 @@ fn cfunc[func_name: StringLiteral, T: AnyTrivialRegType]() -> T:
     return f
 
 
-# Note: Keep sections below in sync with capi.mojo, including order, grouping
+# Note: Keep sections below in sync with max_graph.cpp, including order, grouping
 # and naming.
 
 # Note: Please keep the following naming convention: conept_function. For
