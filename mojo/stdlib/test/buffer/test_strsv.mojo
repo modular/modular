@@ -67,7 +67,7 @@ fn fill_L[size: Int](L: Buffer[DType.float32, size * size]):
             if i == j:
                 L[i + j * size] = 1.0
             else:
-                L[i + j * size] = (-2.5 / Float32(size * (size - 1))).value
+                L[i + j * size] = -2.5 / Float32(size * (size - 1))
 
 
 # Fill the rhs, which is also used to save the solution vector.
@@ -102,7 +102,7 @@ fn test_strsv():
 
     var err: Float32 = 0.0
     for i in range(x0.__len__()):
-        err += abs(x0[i] - x1[i]).value
+        err += abs(x0[i] - x1[i])
 
     # CHECK: 0.0
     print(err)

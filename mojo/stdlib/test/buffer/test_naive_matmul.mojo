@@ -94,7 +94,7 @@ fn fill_a[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
     for i in range(size):
         for j in range(size):
             var val = Float32(i + 2 * j)
-            buf[StaticIntTuple[2](i, j)] = val.value
+            buf[StaticIntTuple[2](i, j)] = val
 
 
 fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
@@ -103,7 +103,7 @@ fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
     for i in range(size):
         for j in range(size):
             var val = Float32(i // (j + 1) + j)
-            buf[StaticIntTuple[2](i, j)] = val.value
+            buf[StaticIntTuple[2](i, j)] = val
 
 
 fn print_matrix[
