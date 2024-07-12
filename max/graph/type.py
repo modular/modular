@@ -53,6 +53,222 @@ class Dim:
     and work with.
     """
 
+    def is_static(self) -> bool:
+        """Checks whether or not the dimension is a static dimension.
+
+        Returns:
+            True if the dimension is static, False otherwise.
+        """
+        raise NotImplementedError
+
+    def is_symbolic(self) -> bool:
+        """Whether or not the dimension is a symbolic dimension.
+
+        Returns:
+            True if the dimension is symbolic, False otherwise.
+        """
+        raise NotImplementedError
+
+    def __eq__(self, other: Dim) -> bool:
+        """Checks whether two dimensions are equal.
+
+        Dimensions are equal if they are the same dimension type
+        (symbolic, static). Additionally, static dimensions
+        are only equal if their dimension is the same size, and symbolic
+        dimensions are only equal if they have the same name.
+
+        Args:
+            other: The other dimension to check equality against.
+
+        Returns:
+            True if the dimensions are equal, False otherwise.
+        """
+        raise NotImplementedError
+
+    def __ne__(self, other: Dim) -> bool:
+        """Checks whether two dimensions are not equal.
+
+        The inverse of __eq__.
+
+        Args:
+            other: The other dimension to check inequality against.
+
+        Returns:
+            False if the dimensions are equal, True otherwise.
+        """
+        return not self == other
+
+    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Attribute:
+        """Creates an mlir.ir.Attribute representing this dimension.
+
+        This is used internally when constructing tensor MLIR types.
+
+        Args:
+            ctx: The mlir.Context in which to create the attribute.
+
+        Returns:
+            A mlir.ir.Attribute in the context representing the dimension.
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def from_mlir(dim_attr: mlir.ir.Attribute) -> Dim:
+        """Constructs a dimension from an mlir.ir.Attribute.
+
+        Args:
+            dim_attr: The MLIR Attribute object to parse into a dimension.
+
+        Returns:
+            The dimension represented by the MLIR Attr value.
+        """
+        raise NotImplementedError
+
+
+@dataclass
+class SymbolicDim(Dim):
+    """A symbolic tensor dimension.
+
+    `SymbolicDims`s have a name and are printed as their name on MO types, eg.
+    `!mo.tensor<[batch, x, 10], si32]>` the first and second dimensions are
+    named "batch" and "x" respectively.
+
+    Symbolic dimensions don't have a static value, but they allow a readable
+    name to understand what's going on in the model IR better, and they also
+    allow users to hint to the compiler that two dimensions will have the same
+    value, which can often allow important speedups.
+
+    Create a symbolic dimension via `SymbolicDim("name")`, for example:
+    `TensorType(DType.bool, ("batch", Dim.dynamic(), 10))`.
+    """
+
+    name: str
+    """The name of the dimension."""
+
+    def is_static(self) -> bool:
+        """Checks whether or not the dimension is a static dimension.
+
+        Returns:
+            True if the dimension is static, False otherwise.
+        """
+        return False
+
+    def is_symbolic(self) -> bool:
+        """Whether or not the dimension is a symbolic dimension.
+
+        Returns:
+            True if the dimension is symbolic, False otherwise.
+        """
+        return True
+
+    def __eq__(self, other: SymbolicDim) -> bool:
+        """Whether the dimension is the same as another symbolic dimension.
+
+        Symbolic dimensions with the same name are interpreted as the same
+        dimensionality! If you use Symbolic dimensions, make sure you're naming
+        them consistently, your model will likely fail to compile if you name
+        two actually different dimensions the same name.
+
+        Args:
+            other: The other dimension to check equality against.
+
+        Returns:
+            True if the dimensions have the same name, False otherwise.
+        """
+        return self.name == other.name
+
+    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Attribute:
+        """Creates an mlir.ir.Attribute representing this dimension.
+
+        This is used internally when constructing tensor MLIR types.
+
+        Args:
+            ctx: The mlir.Context in which to create the attribute.
+
+        Returns:
+            A mlir.ir.Attribute in the context representing the dimension.
+        """
+        return _c.dim_new_symbolic(ctx, self.name)
+
+    @staticmethod
+    def from_mlir(dim_attr: mlir.ir.Attribute) -> Dim:
+        """Constructs a dimension from an mlir.ir.Attribute.
+
+        Args:
+            dim_attr: The MLIR Attribute object to parse into a dimension.
+
+        Returns:
+            The dimension represented by the MLIR Attr value.
+        """
+        return SymbolicDim(_c.dim_symbolic_name(dim_attr))
+
+
+@dataclass
+class StaticDim(Dim):
+    """A static tensor dimension.
+
+    Static tensor dimensions will always have exactly the same value,
+    and are key to good model performance.
+
+    Static dimensions can be created implicitly in most cases:
+    `TensorType(DType.int64, (4, 5))` is a tensor with 2 static dimensions:
+    `4` and `5` respectively.
+    """
+
+    dim: int
+    """The size of the static dimension."""
+
+    def is_static(self) -> bool:
+        """Checks whether or not the dimension is a static dimension.
+
+        Returns:
+            True if the dimension is static, False otherwise.
+        """
+        return True
+
+    def is_symbolic(self) -> bool:
+        """Whether or not the dimension is a symbolic dimension.
+
+        Returns:
+            True if the dimension is symbolic, False otherwise.
+        """
+        return False
+
+    def __eq__(self, other: StaticDim) -> bool:
+        """Whether the dimension has the same size as another dimension.
+
+        Args:
+            other: The other dimension to check equality against.
+
+        Returns:
+            True if both dimensions have the same static size, False otherwise.
+        """
+        return self.dim == other.dim
+
+    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Attribute:
+        """Creates an mlir.ir.Attribute representing this dimension.
+
+        This is used internally when constructing tensor MLIR types.
+
+        Args:
+            ctx: The mlir.Context in which to create the attribute.
+
+        Returns:
+            A mlir.ir.Attribute in the context representing the dimension.
+        """
+        return _c.dim_new_static(ctx, self.dim)
+
+    @staticmethod
+    def from_mlir(dim_attr: mlir.ir.Attribute) -> Dim:
+        """Constructs a dimension from an mlir.ir.Attribute.
+
+        Args:
+            dim_attr: The MLIR Attribute object to parse into a dimension.
+
+        Returns:
+            The dimension represented by the MLIR Attr value.
+        """
+        return StaticDim(_c.dim_static_value(dim_attr))
+
 
 @dataclass
 class Type:
