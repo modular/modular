@@ -5,7 +5,7 @@ types like `AsyncValueRef<T>`.
 
 ## `AsyncValue`
 
-[`AsyncValue`](../include/LLCL/Runtime/AsyncValue.h) is conceptually similar to
+[`AsyncValue`](../include/AsyncRT/Runtime/AsyncValue.h) is conceptually similar to
 [std::future](https://en.cppreference.com/w/cpp/thread/future), except that
 `AsyncValue` does not let callers wait/block until the value becomes available.
 Instead, the caller enqueues a closure that uses the value with
@@ -20,7 +20,7 @@ clients are expected to cope with (and propagate) errors in a correct way.
 
 `AsyncValue`s are heap allocated and reference counted.  You should use them
 with the [`RCRef`](../include/Support/RCRef.h) and
-[`AsyncValueRef<T>`](../include/LLCL/Runtime/AsyncValueRef.h) classes whenever
+[`AsyncValueRef<T>`](../include/AsyncRT/Runtime/AsyncValueRef.h) classes whenever
 possible to maintain their lifetime.
 
 ### Types and type erasure
@@ -48,7 +48,7 @@ storage of the payloads and data, and allows limited type reflection with the
 
 ### Access to the `M::AsyncRT::Runtime` for an `AsyncValue`
 
-The LLCL runtime is designed to support multiple instances of a runtime in a
+The AsyncRT runtime is designed to support multiple instances of a runtime in a
 process at the same time, so some things (for example allocating a new
 `AsyncValue`) require an `M::AsyncRT::Runtime&` to be handy and around. This can
 be awkward, because (like an `MLIRContext`) it is almost global state, and it
@@ -57,7 +57,7 @@ is a pain to pass it around everywhere.
 Fortunately, `AsyncValue` instances is that they always know what
 `M::AsyncRT::Runtime` they came from. You can access this through the
 `asyncVal->getRuntime()` method which returns a
-[`CompactRuntimePtr`](../include/LLCL/Runtime/CompactRuntimePtr.h). A
+[`CompactRuntimePtr`](../include/AsyncRT/Runtime/CompactRuntimePtr.h). A
 `CompactRuntimePtr` is a specialized class that can be used interchangably with
 `Runtime&`.
 

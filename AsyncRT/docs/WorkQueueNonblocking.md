@@ -20,7 +20,7 @@ older Linux kernels) [don't even support non-blocking async
 I/O](http://davmac.org/davpage/linux/async-io.html).
 
 There are two major approaches used to solve this problem: adaptive thread
-pools... and what LLCL does. :)
+pools... and what AsyncRT does. :)
 
 ## Adaptive thread pools
 
@@ -55,7 +55,7 @@ Partially as a consequence of these learnings, Apple has rolled out an entirely
 new language-based concurrency approach in Swift built on async/await and
 actors that eliminates blocking... but that isn't helpful to us in C++ land.
 
-## LLCL's Approach for Blocking Tasks
+## AsyncRT's Approach for Blocking Tasks
 
 Our approach for `WorkQueue` is to punt on the problem, and build on our
 approach to library based design to allow clients to control things at a coarse
@@ -106,7 +106,7 @@ discover new work, not running existing background tasks.
 
 ### Handling `await` without blocking
 
-As mentioned above, LLCL `await` doesn't block because the client thread
+As mentioned above, AsyncRT `await` doesn't block because the client thread
 donates itself to run the tasks in the work queue.
 
 Every threads accessing the work queue, including the "foreign" thread that
@@ -139,7 +139,7 @@ amount of time. When the busy-wait time expires, threads go into sleep and wait
 for the corresponding semaphore to be posted. Currently the default busy-wait
 time is set to 1ms.
 
-### The "Missing" I/O Subsystem in LLCL
+### The "Missing" I/O Subsystem in AsyncRT
 
 One challenge of building high-performance infrastructure that needs I/O is
 that there is no consistent and portable way to use [asynchronous
@@ -156,8 +156,8 @@ that is perfect for what we need. On the other hand, asynchronous I/O may not
 even make sense for embedded systems.
 
 At some point we will care enough about this to build a new async I/O subsystem
-and build this into the LLCL.  This should be an optional component that has OS
-specific implementations, and allows clients of LLCL to access it
+and build this into the AsyncRT.  This should be an optional component that has OS
+specific implementations, and allows clients of AsyncRT to access it
 asynchronously.  This will allow those algorithms to be written in a host OS
 independent way, and allows us to centralize the complexity of this world into
 one place.
