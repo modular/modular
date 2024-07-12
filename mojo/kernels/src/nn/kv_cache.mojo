@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
-from collections import OptionalReg
 from math import rsqrt
 from sys.info import _current_target
 from utils import Index
