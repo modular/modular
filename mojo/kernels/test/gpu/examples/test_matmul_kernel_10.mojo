@@ -34,7 +34,7 @@ fn matmul_naive(
     var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
-    if x >= m.value or y >= n.value:
+    if x >= m or y >= n:
         return
 
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
@@ -43,7 +43,7 @@ fn matmul_naive(
 
     var accum = Float32(0)
     for i in range(k):
-        accum = a[x.value, i] * b[i, y.value] + accum
+        accum = a[x, i] * b[i, y] + accum
     c[Index(x, y)] = accum
 
 
@@ -251,7 +251,6 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(c_host_naive, c_device)
 
-    var failed = False
     for i in range(M * N):
         if (
             c_host[i] != c_host_naive[i]

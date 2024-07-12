@@ -142,12 +142,12 @@ fn sgemm_warp_tiling_kernel[
 
     # Indices (row, col) for registers d[0], d[1], d[2], d[3].
     # Same indices for registers c[0-3].
-    var row_cd0_cd1: UInt = group_id
-    var row_cd2_cd3: UInt = group_id + 8
-    var col_cd0: UInt = (thread_id_in_group * 2) + (0 & 0x1)
-    var col_cd1: UInt = (thread_id_in_group * 2) + (1 & 0x1)
-    var col_cd2: UInt = (thread_id_in_group * 2) + (2 & 0x1)
-    var col_cd3: UInt = (thread_id_in_group * 2) + (3 & 0x1)
+    var row_cd0_cd1 = group_id
+    var row_cd2_cd3 = group_id + 8
+    var col_cd0 = (thread_id_in_group * 2) + (0 & 0x1)
+    var col_cd1 = (thread_id_in_group * 2) + (1 & 0x1)
+    var col_cd2 = (thread_id_in_group * 2) + (2 & 0x1)
+    var col_cd3 = (thread_id_in_group * 2) + (3 & 0x1)
 
     # ==========================================================================
 
@@ -161,13 +161,13 @@ fn sgemm_warp_tiling_kernel[
     var a_sram = NDBuffer[
         a_type,
         1,
-        DimList(int(BK * BM_padded)),
+        DimList(BK * BM_padded),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
-        DimList(int(BK * BN)),
+        DimList(BK * BN),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -188,33 +188,31 @@ fn sgemm_warp_tiling_kernel[
     var inner_co_ib = ThreadIdx.x() % (BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
-    var c_reg = stack_allocation[int(WMITER * WNITER), SIMD[c_type, 4]]()
-    memset_zero(c_reg, int(WMITER * WNITER))
+    var c_reg = stack_allocation[WMITER * WNITER, SIMD[c_type, 4]]()
+    memset_zero(c_reg, WMITER * WNITER)
 
     # Indicates chunks of size 8 (across A horizontally or across B vertically).
     # This is because MMA_K = 8.
     alias CHUNK_K = BK // MMA_K
 
     # Outer-most loop over block tiles.
-    for bk_idx in range(0, int(K), int(BK)):
-        for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
+    for bk_idx in range(0, K, BK):
+        for offset in range(0, BM - row_stride_a + 1, row_stride_a):
             # Load 4 elements at a time and store to shared memory.
             var tmp = __nvvm_ldg_f4[a_type](
-                aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
+                aa_ptr.offset((inner_row_a + offset) * K + inner_col_a * 4)
             )
 
             @parameter
             for i in range(4):
                 a_sram[
-                    int(
-                        (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
-                    )
+                    (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
                 ] = tmp[i]
 
         for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = __nvvm_ldg_f4[b_type](
-                bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
+                bb_ptr.offset((inner_row_b + offset) * N + inner_co_ib * 4)
             )
             b_sram.store[width=4, alignment=16](
                 Index((inner_row_b + offset) * BN + inner_co_ib * 4),
@@ -250,7 +248,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val0 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a0.value) * BM_padded
+                        (subwarp_tile_row_A + row_a0) * BM_padded
                         + subwarp_tile_col_A
                         + col_a0
                     )
@@ -258,7 +256,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val1 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a1.value) * BM_padded
+                        (subwarp_tile_row_A + row_a1) * BM_padded
                         + subwarp_tile_col_A
                         + col_a1
                     )
@@ -266,7 +264,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val2 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a2.value) * BM_padded
+                        (subwarp_tile_row_A + row_a2) * BM_padded
                         + subwarp_tile_col_A
                         + col_a2
                     )
@@ -274,7 +272,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val3 = a_sram[
                     Index(
-                        (subwarp_tile_row_A + row_a3.value) * BM_padded
+                        (subwarp_tile_row_A + row_a3) * BM_padded
                         + subwarp_tile_col_A
                         + col_a3
                     )
@@ -295,7 +293,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val0 = b_sram[
                     Index(
-                        (subwarp_tile_row_B + row_b0.value) * BN
+                        (subwarp_tile_row_B + row_b0) * BN
                         + subwarp_tile_col_B
                         + col_b0_b1
                     )
@@ -303,7 +301,7 @@ fn sgemm_warp_tiling_kernel[
 
                 var val1 = b_sram[
                     Index(
-                        (subwarp_tile_row_B + row_b1.value) * BN
+                        (subwarp_tile_row_B + row_b1) * BN
                         + subwarp_tile_col_B
                         + col_b0_b1
                     )
@@ -321,16 +319,16 @@ fn sgemm_warp_tiling_kernel[
                 for w_sub_col_idx in range(WNITER):
                     # MMA_M*MMA_N*MMA_K mma library function call.
                     mma(
-                        c_reg[int(w_sub_row_idx * WNITER + w_sub_col_idx)],
+                        c_reg[w_sub_row_idx * WNITER + w_sub_col_idx],
                         a_reg[w_sub_row_idx],
                         b_reg[w_sub_col_idx],
-                        c_reg[int(w_sub_row_idx * WNITER + w_sub_col_idx)],
+                        c_reg[w_sub_row_idx * WNITER + w_sub_col_idx],
                     )
 
         # Move BK columns to right.
-        aa_ptr = aa_ptr.offset(int(BK))  # move BK columns to right
+        aa_ptr = aa_ptr.offset(BK)  # move BK columns to right
         # Move BK rows down.
-        bb_ptr = bb_ptr.offset(int(BK * N))  # move BK rows down
+        bb_ptr = bb_ptr.offset(BK * N)  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -341,37 +339,37 @@ fn sgemm_warp_tiling_kernel[
         for w_sub_col_idx in range(WNITER):
             # Move C pointer to current sub-warp tile.
             var C_interim: DTypePointer[c_type] = cc_ptr.offset(
-                int((w_sub_row_idx * MMA_M) * N + w_sub_col_idx * MMA_N)
+                (w_sub_row_idx * MMA_M) * N + w_sub_col_idx * MMA_N
             )
 
             # Load from c_reg to vec register vec[0-3].
-            var vec = c_reg[int(w_sub_row_idx * WNITER + w_sub_col_idx)]
+            var vec = c_reg[w_sub_row_idx * WNITER + w_sub_col_idx]
 
             @parameter
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(Int(row_cd0_cd1.value) * N, Int(col_cd0.value)),
+                    Index(row_cd0_cd1 * N, col_cd0),
                     vec[0],
                 )
                 elementwise_lambda[c_type, 1](
-                    Index(Int(row_cd0_cd1.value) * N, Int(col_cd1.value)),
+                    Index(row_cd0_cd1 * N, col_cd1),
                     vec[1],
                 )
                 elementwise_lambda[c_type, 1](
-                    Index(Int(row_cd2_cd3.value) * N, Int(col_cd2.value)),
+                    Index(row_cd2_cd3 * N, col_cd2),
                     vec[2],
                 )
                 elementwise_lambda[c_type, 1](
-                    Index(Int(row_cd2_cd3.value) * N, Int(col_cd3.value)),
+                    Index(row_cd2_cd3 * N, col_cd3),
                     vec[3],
                 )
             else:
                 # Store result.
-                C_interim[int(row_cd0_cd1 * N + col_cd0)] = vec[0]
-                C_interim[int(row_cd0_cd1 * N + col_cd1)] = vec[1]
-                C_interim[int(row_cd2_cd3 * N + col_cd2)] = vec[2]
-                C_interim[int(row_cd2_cd3 * N + col_cd3)] = vec[3]
+                C_interim[row_cd0_cd1 * N + col_cd0] = vec[0]
+                C_interim[row_cd0_cd1 * N + col_cd1] = vec[1]
+                C_interim[row_cd2_cd3 * N + col_cd2] = vec[2]
+                C_interim[row_cd2_cd3 * N + col_cd3] = vec[3]
 
 
 # CHECK-LABEL: run_matmul_mma_warptiling

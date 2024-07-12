@@ -10,7 +10,7 @@ from gpu.host._compile import _compile_code
 
 
 fn kernel(x: Int) -> Int:
-    return ThreadIdx.x().value
+    return ThreadIdx.x()
 
 
 fn parametric[f: fn (Int) -> Int]() -> Int:

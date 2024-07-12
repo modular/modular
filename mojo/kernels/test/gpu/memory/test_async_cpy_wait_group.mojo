@@ -24,7 +24,7 @@ fn copy_via_shared(
     src: DTypePointer[DType.float32],
     dst: DTypePointer[DType.float32],
 ):
-    var thread_id = Int(ThreadIdx.x().value)
+    var thread_id = Int(ThreadIdx.x())
     var mem_buff: UnsafePointer[
         Float32, AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
