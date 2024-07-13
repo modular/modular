@@ -11,7 +11,7 @@ modular_cc_library(
     defines = [
         # FIXME(amscanne): These are non-hermetic. These will automatically
         # propagate to all dependent targets and be defined universally.
-        "MODULAR_LLCL_MAX_PROFILING_LEVEL=00000",
+        "MODULAR_ASYNCRT_MAX_PROFILING_LEVEL=00000",
         "MODULAR_KERNELS_BUILD_TYPE=\\\"unknown\\\"",
         # FIXME(amscanne): This will require some basic select or plumbing of the
         # target information somehow. This can be done in the future, but will be

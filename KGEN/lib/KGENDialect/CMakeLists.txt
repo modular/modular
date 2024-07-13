@@ -14,7 +14,7 @@ add_compile_definitions(BUILD_TYPE=${build_type})
 add_compile_definitions(KERNELS_BUILD_TYPE=${kernels_build_type})
 
 add_compile_definitions(
-  MODULAR_LLCL_MAX_PROFILING_LEVEL=${MODULAR_LLCL_MAX_PROFILING_LEVEL})
+  MODULAR_ASYNCRT_MAX_PROFILING_LEVEL=${MODULAR_ASYNCRT_MAX_PROFILING_LEVEL})
 
 add_modular_dialect_library(KGENDialect
   KGENAttrInterfaces.cpp

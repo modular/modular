@@ -196,7 +196,7 @@ struct RuntimeOptions {
         llvm::errs()
             << "WARNING: The --time-profile option was given but this build"
                " does not support profiling. Rebuild with "
-               "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
+               "MODULAR_ASYNCRT_MAX_PROFILING_LEVEL greater than 0 to enable "
                "it.\n";
       return "";
     }

@@ -73,7 +73,7 @@ BuildInfo M::getBuildInfo() {
   buildInfo.gitRevision = modularVersion.revision;
   buildInfo.buildType = modularVersion.buildType;
   buildInfo.kernelsBuildType = MODULAR_KERNELS_BUILD_TYPE;
-  buildInfo.llclMaxProfilingLevel = MODULAR_LLCL_MAX_PROFILING_LEVEL;
+  buildInfo.llclMaxProfilingLevel = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
   buildInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
 
   StringRef(LLVM_TARGETS_BUILT).split(buildInfo.llvmTargets, " ");

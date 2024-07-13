@@ -474,7 +474,7 @@ void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
   jsonOS.attribute("modular-git-sha", version.revision);
   jsonOS.attribute("modular-build-type", version.buildType);
   std::ostringstream profilingLevelOctal;
-  profilingLevelOctal << std::oct << "0" << MODULAR_LLCL_MAX_PROFILING_LEVEL;
+  profilingLevelOctal << std::oct << "0" << MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
   jsonOS.attribute("modular-profiling-level", profilingLevelOctal.str());
   jsonOS.objectEnd();
   jsonOS.attributeEnd();
@@ -522,7 +522,7 @@ TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
   } else {
     llvm::dbgs() << llvm::format(
         "PROFILE: INFO: Recording profiling entries at level 0%o\n",
-        MODULAR_LLCL_MAX_PROFILING_LEVEL);
+        MODULAR_ASYNCRT_MAX_PROFILING_LEVEL);
   }
 
 #ifndef NDEBUG
