@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug -D MODULAR_LLCL_MAX_PROFILING_LEVEL=1 %s | FileCheck %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_MAX_PROFILING_LEVEL=1 %s | FileCheck %s
 
 
 from buffer import DimList, NDBuffer
