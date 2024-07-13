@@ -11,9 +11,9 @@ from sys.param_env import env_get_int, is_defined
 
 fn build_info_llcl_max_profiling_level() -> Optional[Int]:
     @parameter
-    if not is_defined["MODULAR_LLCL_MAX_PROFILING_LEVEL"]():
+    if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
-    return env_get_int["MODULAR_LLCL_MAX_PROFILING_LEVEL"]()
+    return env_get_int["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]()
 
 
 # ===----------------------------------------------------------------------===#
