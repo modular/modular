@@ -60,7 +60,7 @@ export class MojoDecoratorContext extends DisposableContext {
 
   private decorateDocument(document: vscode.TextDocument) {
     // Check if the document is a mojo document.
-    if (document.languageId !== 'mojo')
+    if (!(document.languageId === 'mojo' || document.languageId === 'markdown'))
       return;
     // Check if this is one of the visible editors.
     vscode.window.visibleTextEditors.forEach(editor => {
@@ -87,45 +87,41 @@ export class MojoDecoratorContext extends DisposableContext {
   private decorate(editor: vscode.TextEditor) {
     const text = editor.document.getText();
     const splitLines = text.split('\n');
-    let docDectorations: vscode.DecorationOptions[] = [];
+    let docDecorations: vscode.DecorationOptions[] = [];
 
     // Generate decorations for code blocks in the document. This helps
     // visually distinguish code blocks from the rest of the document.
-    const startRegEx = /^( *)\`{3,}mojo$/g;
+    const startRegEx = /^ *\`{3,}mojo$/g;
     const endRegEx = /^ *\`{3,}$/g;
     let numCurrentCodeBlocks = 0;
-    let currentCodeBlockIndent = 0;
     let prevNumDecorations = 0;
     for (let line = 0, lineE = splitLines.length; line != lineE; ++line) {
       // Check for the start of a new codeblock.
+      let currentLine = splitLines[line];
       let match;
-      if ((match = startRegEx.exec(splitLines[line]))) {
+      if ((match = startRegEx.test(currentLine))) {
         if (numCurrentCodeBlocks++ == 0) {
-          currentCodeBlockIndent = match[1].length;
-          prevNumDecorations = docDectorations.length;
+          prevNumDecorations = docDecorations.length;
         }
         continue;
       }
       if (numCurrentCodeBlocks) {
         // Check for the end of a codeblock.
-        if (endRegEx.test(splitLines[line])) {
+        if (endRegEx.test(currentLine)) {
           --numCurrentCodeBlocks;
           continue;
         }
-        let lineLength = splitLines[line].length;
-        if (lineLength <= currentCodeBlockIndent)
-          continue;
 
         // Add a decoration for this code block.
-        let pos = new vscode.Position(line, currentCodeBlockIndent)
-        docDectorations.push({range : new vscode.Range(pos, pos)});
+        let pos = new vscode.Position(line, 0);
+        docDecorations.push({range : new vscode.Range(pos, pos)});
       }
     }
 
     // If we have a partial code block, remove the decorations.
     if (numCurrentCodeBlocks)
-      docDectorations.splice(prevNumDecorations);
+      docDecorations.splice(prevNumDecorations);
 
-    editor.setDecorations(this.docStringDecorationType, docDectorations);
+    editor.setDecorations(this.docStringDecorationType, docDecorations);
   }
 }
