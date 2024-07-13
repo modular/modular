@@ -103,16 +103,16 @@ class OStream;
 namespace M {
 
 static constexpr bool kIsProfilingEnabled =
-    MODULAR_LLCL_MAX_PROFILING_LEVEL > 0;
+    MODULAR_ASYNCRT_MAX_PROFILING_LEVEL > 0;
 
-// The cmake arg -DMODULAR_LLCL_MAX_PROFILING_LEVEL is interpreted as chunks of
-// octal numbers. The TraceType enum indicates which chunk corresponds to
+// The cmake arg -DMODULAR_ASYNCRT_MAX_PROFILING_LEVEL is interpreted as chunks
+// of octal numbers. The TraceType enum indicates which chunk corresponds to
 // which type of profiling. Each chunk, representing a type of profiling, has 3
 // bits worth of profiling levels to use. For example, to enable level 1 LLCL
 // profiling but not DEFAULT profiling, you would pass
-// -DMODULAR_LLCL_MAX_PROFILING_LEVEL=010 to cmake. To enable level 2 DEFAULT
+// -DMODULAR_ASYNCRT_MAX_PROFILING_LEVEL=010 to cmake. To enable level 2 DEFAULT
 // profiling, but not LLCL profiling, you would pass
-// -DMODULAR_LLCL_MAX_PROFILING_LEVEL=02 to cmake.
+// -DMODULAR_ASYNCRT_MAX_PROFILING_LEVEL=02 to cmake.
 // This is intended to avoid cluttering profiles with unwanted information by
 // giving the user more control over which types of traces they want to see.
 struct Trace {
@@ -178,8 +178,9 @@ struct Trace {
   }
 
   static constexpr bool EnableTrace(Type type, uint64_t level) {
-    return level <= ((MODULAR_LLCL_MAX_PROFILING_LEVEL >> typeBitshift(type)) &
-                     kProfilingTypeBitmask);
+    return level <=
+           ((MODULAR_ASYNCRT_MAX_PROFILING_LEVEL >> typeBitshift(type)) &
+            kProfilingTypeBitmask);
   }
 };
 
@@ -213,7 +214,7 @@ namespace ProfilingDetail {
 static_assert(sizeof(StringLiteral) == sizeof(StringRef));
 static_assert(sizeof(InternableString) == sizeof(StringRef));
 
-constexpr bool kProfilingEnabled = MODULAR_LLCL_MAX_PROFILING_LEVEL > 0;
+constexpr bool kProfilingEnabled = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL > 0;
 
 // We use the high_resolution_clock for maximum precision.
 // It may not be steady (ClockType::is_steady may be false), which means
@@ -786,7 +787,7 @@ struct GlobalProfilerContext {
   std::vector<CompletedEntry> getCompletedEntries();
 
   /// Sets the runtime profiling mask in order to toggle trace types enabled
-  /// with MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// with MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   /// Pre-condition: there must be no profiler events currently in progress.
   void setRuntimeProfilingTypeMask(uint64_t typeMask);
 
@@ -887,7 +888,7 @@ struct TimeTraceProfiler {
   /// main thread.
   /// `runtimeProfilingTypeMask` defaults to fully enabled, but can be set at
   /// runtime to toggle trace types enabled with
-  /// MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   TimeTraceProfiler(unsigned timeTraceGranularity, StringRef procName,
                     StringRef filename = "",
                     uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled);
@@ -901,12 +902,12 @@ struct TimeTraceProfiler {
   void addInputShape(const std::string &shape);
 
   /// Sets the runtime profiling mask in order to toggle trace types enabled
-  /// with MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// with MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   /// Pre-condition: there must be no profiler events currently in progress.
   void setRuntimeProfilingTypeMask(uint64_t typeMask);
 
   /// Get the runtime profiling mask that toggles trace types enabled with
-  /// MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   uint64_t runtimeProfilingTypeMask();
 
   /// Write profiling data to a file.

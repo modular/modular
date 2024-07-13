@@ -136,7 +136,7 @@ private:
               : "Specify the filename base for profiling output. WARNING: "
                 "This "
                 "option is ignored in this build. Rebuild with "
-                "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
+                "MODULAR_ASYNCRT_MAX_PROFILING_LEVEL greater than 0 to enable "
                 "it."),
       llvm::cl::location(options.profileFilename),
       llvm::cl::cat(RuntimeOptionsCategory)};

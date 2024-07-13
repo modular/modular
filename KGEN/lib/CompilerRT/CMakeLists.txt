@@ -72,7 +72,7 @@ function(add_static_dep_lib target)
   )
 endfunction()
 
-if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
+if(${MODULAR_ASYNCRT_MAX_PROFILING_LEVEL})
   # FIXME(20613): this dependency might need to go away to keep the runtime small.
 
   # We log HostMachineInfo with profiling information. This has a dependency
@@ -116,7 +116,7 @@ set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.Runtime>
 )
 
-if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
+if(${MODULAR_ASYNCRT_MAX_PROFILING_LEVEL})
   # For logging HostMachineInfo with profiling results.
   list(APPEND COMPILER_RT_OBJECT_SRCS $<TARGET_OBJECTS:obj.MArchTargetMinimal>)
 endif()

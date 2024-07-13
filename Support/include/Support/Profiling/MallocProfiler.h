@@ -9,7 +9,7 @@
 //
 // Example usage on Linux:
 //
-// 1. cmake-modular-release -D MODULAR_LLCL_MAX_PROFILING_LEVEL=1 -D
+// 1. cmake-modular-release -D MODULAR_ASYNCRT_MAX_PROFILING_LEVEL=1 -D
 // MODULAR_MALLOC_PROFILER=1 && build
 // 2. Set `TRACE_IN_REAL_TIME = 1` in TimeProfiler.h.
 // 3. Make sure libmimalloc.so is preloaded so that overriding malloc works from
