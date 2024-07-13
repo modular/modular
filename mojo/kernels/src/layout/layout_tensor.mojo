@@ -791,6 +791,13 @@ struct LayoutTensor[
             res.ptr = res.ptr.offset(swizzled_offset)
             return res
         else:
+            constrained[
+                layout.known_shape() and threads_layout.all_dims_known(),
+                (
+                    "Distribute expecting layout with static shapes and fully"
+                    " static threads_layout"
+                ),
+            ]()
             alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
             alias threads_layout_shape = flatten(threads_layout.shape)
@@ -819,9 +826,6 @@ struct LayoutTensor[
             for i in range(runtime_shape.scalar_length):
                 alias shape_i = to_int(flatten(layout.shape)[i])
                 alias thread_shape_i = threads_layout[i].size()
-                runtime_shape.value[i] = (
-                    self.runtime_layout.shape.value[i] // shape_i
-                )
                 runtime_stride.value[i] = (
                     self.runtime_layout.stride.value[i] * thread_shape_i
                 )

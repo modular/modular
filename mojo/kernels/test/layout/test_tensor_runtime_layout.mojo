@@ -194,8 +194,7 @@ fn test_tile_and_distribute():
             for th_i in range(4):
                 var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
                 print("----fragments-data[", th_i, "]----")
-                print(tile_2x2[0, 0], tile_2x2[0, 1])
-                print(tile_2x2[1, 0], tile_2x2[1, 1])
+                tile_2x2.print()
 
 
 # CHECK-LABEL: test_tile_and_vectorize
