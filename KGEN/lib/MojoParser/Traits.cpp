@@ -28,7 +28,8 @@ using namespace LIT;
 /// expected struct method with the current struct type.
 static std::pair<LITSignatureType, ParamBindings>
 getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
-                          ASTType structSelfType, TraitType trait) {
+                          ASTType structSelfType, TraitType trait,
+                          const ExprNode *expr) {
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getParamTypes();
@@ -36,13 +37,13 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParserParamEvaluator evaluator(emitter.getDeclResolver(), params);
-  auto bindings =
-      ParamBindings::getForDeclaredType(emitter.getScopeInfo(), structSelfType);
+  auto bindings = ParamBindings::getForDeclaredType(emitter.getScopeInfo(),
+                                                    structSelfType, expr);
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front()) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());
-    bindings.addPrechecked(params.back());
+    bindings.addPrechecked(expr, params.back());
   }
 
   return {signature.getSpecializedSignature(params), std::move(bindings)};
@@ -444,8 +445,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
         }
       }
 
-      auto [newSignature, bindings] =
-          getTraitFunctionSignature(emitter, traitFn, selfType, trait);
+      SyntheticNode syntheticNode(structDecl.getLoc());
+      auto [newSignature, bindings] = getTraitFunctionSignature(
+          emitter, traitFn, selfType, trait, syntheticNode);
       // Match against the transformed calling convention if the struct is
       // register-passable.
       LITSignatureType traitSignature = newSignature;

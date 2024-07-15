@@ -251,7 +251,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
     // On success, wrap things up into one callee.
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
-      newBindings.addPrechecked(bind);
+      newBindings.addPrechecked(expr, bind);
     return getCallee(getShared(), newFnDecls[0], baseName, newBindings, expr);
   }
   if (isErroneous())
@@ -416,7 +416,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // On success, wrap things up into one callee.
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
-      newBindings.addPrechecked(bind);
+      newBindings.addPrechecked(expr, bind);
 
     // If the target is static and there is a self operand, remove it from the
     // operand list so it doesn't get passed.
@@ -547,7 +547,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : getBindingsForSignature(candidateType))
-      newBindings.addPrechecked(bind);
+      newBindings.addPrechecked(expr, bind);
     return getCallee(getShared(), validCandidates[0], baseName, newBindings,
                      expr);
   }
@@ -1024,7 +1024,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // inferred since from the result type.
   // FIXME: Should be able to remove this when kInitReg goes away.
   callee.paramBindings =
-      ParamBindings::getForDeclaredType(getScopeInfo(), type);
+      ParamBindings::getForDeclaredType(getScopeInfo(), type, expr);
 
   // As a special extension, register-only types are allowed to return their
   // self directly as a register value instead of taking a memory value in.
@@ -1144,7 +1144,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   // always be inferred. This can happen if a constructor has more specific Self
   // type parameters or for the deprecated `-> Self` form of initializers.
   callee.paramBindings =
-      ParamBindings::getForDeclaredType(scopeInfo, requiredType);
+      ParamBindings::getForDeclaredType(scopeInfo, requiredType, expr);
 
   CallOperands adjOperands(posOperands, operands.kwOperands);
   adjOperands.hasSelfOperand = hasInitSelf;

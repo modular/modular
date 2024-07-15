@@ -73,7 +73,7 @@ public:
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
   static ParamBindings getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
-                                          ASTType type);
+                                          ASTType type, const ExprNode *expr);
 
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant
@@ -89,7 +89,7 @@ public:
 
   /// Add a bound value for pre-checked positional parameter binding. The caller
   /// is responsible for ensuring the keyword is not already present.
-  void addPrechecked(TypedAttr precheckedBinding);
+  void addPrechecked(const ExprNode *expr, TypedAttr precheckedBinding);
 
   /// Add a bound value for a positional parameter binding.
   void add(const ExprNode *expr, TypedAttr value);
