@@ -2705,7 +2705,7 @@ fn random_normal[
     for i in range(len(shape)):
         num_elements *= int(shape[i])
     randn[type](
-        output.data,
+        output.data.address,
         num_elements,
         mean[0].cast[DType.float64](),
         variance[0].cast[DType.float64](),
@@ -2729,7 +2729,7 @@ fn static_random_normal[
     seed(int(op_seed[0]))
     var num_elements = output.num_elements()
     randn(
-        output.data,
+        output.data.address,
         num_elements,
         mean[0].cast[DType.float64](),
         variance[0].cast[DType.float64](),
