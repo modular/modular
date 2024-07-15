@@ -151,7 +151,7 @@ def test_iota():
     var vector = List[Int32]()
     vector.resize(length, 0)
 
-    var buff = rebind[DTypePointer[DType.int32]](vector.data)
+    var buff = vector.data
     iota(buff, length, offset)
 
     for i in range(length):
