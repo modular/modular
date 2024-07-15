@@ -2261,10 +2261,10 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
   if (lhsType.isEqualCanon(rhsType))
     return success();
 
-  bool lhsConvertibleToRHS =
-      emitter.canImplicitlyConvertToType({lhs, lhsExpr}, rhsType);
-  bool rhsConvertibleToLHS =
-      emitter.canImplicitlyConvertToType({rhs, rhsExpr}, lhsType);
+  bool lhsConvertibleToRHS = OverloadSet::canImplicitlyConvertToType(
+      {lhs, lhsExpr}, rhsType, emitter.getScopeInfo());
+  bool rhsConvertibleToLHS = OverloadSet::canImplicitlyConvertToType(
+      {rhs, rhsExpr}, lhsType, emitter.getScopeInfo());
   if (lhsConvertibleToRHS && !rhsConvertibleToLHS) {
     lhs = convert({lhs, lhsExpr}, rhsType, /*isLHS*/ true);
     return failure(!lhs);

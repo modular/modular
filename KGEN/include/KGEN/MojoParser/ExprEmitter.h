@@ -399,23 +399,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 
-  /// If the specified type can be constructed with the specified operands
-  /// return the initializer that would be invoked. If not, return null PValue.
-  /// If there were erroneous declarations when processing, the bool return is
-  /// true, otherwise false.  If there were erroneous declarations, an error has
-  /// been raised about a constructor that likely would have applied, which
-  /// should be considered in any error reporting. This does not generate any
-  /// IR.
-  std::pair<PValue, bool>
-  canConstructType(ASTType requiredType, const CallOperands &operands,
-                   const ExprNode *expr, bool allowImplicitConversions = true);
-
-  /// Return true if 'value' may be implicitly converted to 'requiredType'
-  /// by invoking (one level of) conversion operations.  This does not generate
-  /// any IR.
-  bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                  ASTType requiredType);
-
   /// Emit a conversion from an MLIR type to a trait type by materializing stubs
   /// for the type's witness table.
   PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait);

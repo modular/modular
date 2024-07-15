@@ -331,8 +331,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       if (actualAttr.getType() != expectedType) {
         ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
-        if (emitter.canImplicitlyConvertToType({actualAttr, node},
-                                               expectedType)) {
+        if (OverloadSet::canImplicitlyConvertToType(
+                {actualAttr, node}, expectedType, emitter.getScopeInfo())) {
           if (PValue result = emitter.emitPValue(
                   {actualAttr, node}, EC_TypeParamValue, expectedType))
             actualAttr = result;
@@ -650,14 +650,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
-    auto [initFn, erroneousDecl] = emitter.canConstructType(
-        expectedType.getWithoutParameters(emitter.shared), initValue.get(),
-        operand.expr);
+    FailureOr<PValue> initFn =
+        OverloadSet::canConstructType(expectedType.getWithoutParameters(shared),
+                                      initValue.get(), operand.expr, *this);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
-    return success(bool(initFn) || erroneousDecl);
+    return success(failed(initFn) || bool(initFn.value()));
   }
 
   // Okay, we got a normal value argument convention and stripped off any
@@ -738,10 +737,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // can find them.
   auto nonParamType =
       expectedType.getWithUnknownParametersReplaced(emitter.shared);
-  auto [pValue, _] = emitter.canConstructType(
+  FailureOr<PValue> pValue = OverloadSet::canConstructType(
       nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
-      /*allowImplicitConversions=*/false);
-  if (!pValue) {
+      emitter.getScopeInfo(), /*allowImplicitConversions=*/false);
+  if (llvm::failed(pValue))
+    return success(); // Issue already diagnosed.
+
+  if (!pValue.value()) {
     // If we had a fully formed type that we were inferring into, then this is
     // a failure.
     if (nonParamType.mlirType == expectedType.mlirType) {
@@ -759,12 +761,12 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // If we found one, we recursively call inferOneOperand (but with implicit
   // conversions disabled of course) to resolve our value as the init
   // methods argument.  This allows us to infer parameters from it.
-  auto initSig = cast<LITSignatureType>(pValue.getType());
+  auto initSig = cast<LITSignatureType>(pValue.value().getType());
   // We expected to args: 0=self, 1=value we're converting from.
   ASTType inferredSelf;
   if (initSig.getArgConvention(0) == ArgConvention::InitSelf)
     inferredSelf = ASTType(initSig.getArguments()[0]).getReferenceElementType();
-  else // FIXME: get rid of -> Self initializers.
+  else // FIXME(kInitReg): get rid of -> Self initializers.
     inferredSelf = initSig.getResultType();
 
   // Infer the parameters of this overload candidate against the computed
@@ -1053,8 +1055,8 @@ ParameterInferenceState::infer(LITSignatureType signature,
         TypedAttr actualAttr = TypeConstantAttr::get(
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         SyntheticNode node(shared.getTopLevelDecl().getLoc());
-        if (!emitter.canImplicitlyConvertToType({actualAttr, node},
-                                                elementType))
+        if (!OverloadSet::canImplicitlyConvertToType(
+                {actualAttr, node}, elementType, emitter.getScopeInfo()))
           return failure();
         // Perform a conversion (e.g. from a concrete to trait type) as needed.
         PValue result = emitter.emitPValue({actualAttr, node},

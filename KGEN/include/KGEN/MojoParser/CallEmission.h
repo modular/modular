@@ -267,6 +267,26 @@ public:
       ASTType functionType,
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
+  /// If the specified type can be constructed with the specified operands
+  /// return the initializer that would be invoked. If not, return null PValue.
+  /// If there were erroneous declarations when processing return failure so we
+  /// don't indicate downstream errors.
+  ///
+  /// If there were erroneous declarations, an error has been raised about a
+  /// constructor that likely would have applied, which should be considered in
+  /// any error reporting. This does not generate any IR.
+  static FailureOr<PValue>
+  canConstructType(ASTType requiredType, const CallOperands &operands,
+                   const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
+                   bool allowImplicitConversions = true);
+
+  /// Return true if 'value' may be implicitly converted to 'requiredType'
+  /// by invoking (one level of) conversion operations.  This does not generate
+  /// any IR.
+  static bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
+                                         ASTType requiredType,
+                                         const TypeCheckScopeInfo &scopeInfo);
+
   LLVM_DUMP_METHOD void dump() const;
 
 private:
