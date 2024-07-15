@@ -80,9 +80,6 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
                                        ParserParamEvaluator &evaluator) {
-  assert(binding.expr &&
-         "should always have an expr tree for unchecked bindings");
-
   // Check the type matches what is expected, and perform an implicit
   // conversion if needed.
   expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
@@ -92,16 +89,18 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
     return PValue(UnboundAttr::get(expectedType));
 
   // If the parameter already has the right type, then we're good.
-  PValue bindingPVal(binding.getValue());
-  if (expectedType.isEqualCanon(bindingPVal.getType()))
-    return bindingPVal;
+  if (expectedType.isEqualCanon(binding.getType()))
+    return binding.value;
+
+  assert(binding.expr &&
+         "should always have an expr tree for unchecked bindings");
 
   // If the parameter can be implicitly converted, do so.
-  if (OverloadSet::canImplicitlyConvertToType(
-          {bindingPVal, binding.expr}, expectedType, emitter.getScopeInfo())) {
+  ASTExprAnd<PValue> bindingVal{binding.value, binding.expr};
+  if (OverloadSet::canImplicitlyConvertToType(bindingVal, expectedType,
+                                              emitter.getScopeInfo())) {
     numImplicitConversions += 2;
-    return emitter.emitPValue({bindingPVal, binding.expr}, EC_CallParamValue,
-                              expectedType);
+    return emitter.emitPValue(bindingVal, EC_CallParamValue, expectedType);
   }
   return {};
 }
@@ -430,7 +429,7 @@ ParamBindings::verifyBindingsImpl(
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
     if (!paramListAttr.isVariadic(idx) ||
-        binding.getValue().getType() == requestedType) {
+        binding.getType().isEqualCanon(requestedType)) {
       PValue paramValue = handlePosBinding(idx, binding, requestedType);
       if (!paramValue)
         return {{}, fitness};
@@ -539,8 +538,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](size_t index, const Binding &binding, ASTType expectedType) {
         diag = shared.emitError(binding.expr->getLoc(), baseName)
                << " parameter #" << index << " has " << expectedType
-               << " type, but value has type "
-               << ASTType(binding.getValue().getType())
+               << " type, but value has type " << binding.getType()
                << binding.expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
@@ -549,8 +547,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](StringAttr paramName, const Binding &binding, ASTType expectedType) {
         diag = shared.emitError(binding.expr->getLoc(), baseName)
                << " parameter " << paramName << " has " << expectedType
-               << " type, but value has type "
-               << ASTType(binding.getValue().getType())
+               << " type, but value has type " << binding.getType()
                << binding.expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";

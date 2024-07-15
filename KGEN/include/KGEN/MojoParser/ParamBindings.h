@@ -56,12 +56,6 @@ public:
     /// This flag is set to true if the value has been type checked.
     bool typeChecked;
 
-    TypedAttr getValue() const {
-      if (typeChecked)
-        return {};
-      return value;
-    }
-
     /// Return the type of the TypedAttr or the binding.
     ASTType getType() const { return value.getType(); }
   };
