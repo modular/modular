@@ -8,13 +8,12 @@
 from sys import argv
 
 
-from runtime.llcl import Runtime
+from runtime.llcl import run
 
 
 @no_inline
 fn takeClosure(owned formatter: Coroutine[Int]) -> Int:
-    with Runtime() as rt:
-        return rt.run(formatter^)
+    return run(formatter^)
 
 
 @no_inline
