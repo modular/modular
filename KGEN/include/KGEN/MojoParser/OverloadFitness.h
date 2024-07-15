@@ -25,7 +25,8 @@ struct TypeCheckScopeInfo;
 /// parameter binding and argument list. If so, it keeps track of several
 /// metrics that allow comparing different candidates, and if not, it indicates
 /// the reason for the mismatch.
-struct OverloadFitness {
+class OverloadFitness {
+public:
   OverloadFitness(OverloadFitness &&other)
       : paramBindings(other.paramBindings),
         diag(other.diag ? std::optional<InflightDiag>(other.takeDiag())

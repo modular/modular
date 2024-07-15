@@ -82,12 +82,13 @@ private:
 /// information about the specified parameter.
 class ParameterInferenceState : public TypeCheckScopeInfo {
 public:
-  ParameterInferenceState(const ParamBindings &givenBindings,
-                          ArrayRef<TypedAttr> bindingsSoFar,
-                          const ParserParamEvaluator &evaluator,
-                          ParameterInferenceDiagnostics &diags,
-                          bool allowImplicitConversions)
-      : TypeCheckScopeInfo(givenBindings), givenBindings(givenBindings),
+  ParameterInferenceState(
+      const TypeCheckScopeInfo &scopeInfo,
+      ArrayRef<ASTExprAnd<PValue>> posBindings,
+      const KeywordOperandContainer<ASTExprAnd<PValue>> *kwBindings,
+      ArrayRef<TypedAttr> bindingsSoFar, const ParserParamEvaluator &evaluator,
+      ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
+      : TypeCheckScopeInfo(scopeInfo), givenBindings(posBindings, kwBindings),
         evaluator(evaluator),
         inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
         diags(diags), allowImplicitConversions(allowImplicitConversions) {}
@@ -133,11 +134,11 @@ private:
   }
 
   /// Infer parameters from a single parameter binding.
-  void inferOneParam(const ParamBindings::Binding &binding, Type expectedType);
+  void inferOneParam(ASTExprAnd<PValue> binding, Type expectedType);
 
   /// These are the bindings originally provided to the callable. These are used
   /// to infer parameters from other parameter values.
-  OperandContainer<ParamBindings::Binding> givenBindings;
+  OperandContainer<ASTExprAnd<PValue>> givenBindings;
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.

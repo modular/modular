@@ -40,8 +40,8 @@ struct DiagEmitter : public SharedStateUser {
         callSyntax(callSyntax) {}
 
   InflightDiag unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
-  InflightDiag wrongParamType(const ParamBindings::Binding &actualBinding,
-                              size_t paramIdx, ASTType expectedType) const;
+  InflightDiag wrongParamType(ASTExprAnd<PValue> actualBinding, size_t paramIdx,
+                              ASTType expectedType) const;
   InflightDiag wrongParamCount(size_t expectedNumParams,
                                size_t actualNumParams) const;
   InflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
@@ -107,12 +107,12 @@ DiagEmitter::unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const {
   return diag;
 }
 
-InflightDiag
-DiagEmitter::wrongParamType(const ParamBindings::Binding &actualBinding,
-                            size_t paramIdx, ASTType expectedType) const {
+InflightDiag DiagEmitter::wrongParamType(ASTExprAnd<PValue> actualBinding,
+                                         size_t paramIdx,
+                                         ASTType expectedType) const {
   return initDiag() << "callee parameter #" << paramIdx << " has "
                     << ASTType(expectedType) << " type, but value has type "
-                    << ASTType(actualBinding.getType())
+                    << actualBinding.ir.getType()
                     << actualBinding.expr->getRange();
 }
 
@@ -681,16 +681,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         inferenceDiags.attach(paramListAttr, diag, numActual);
       },
       /*emitPosType=*/
-      [&](size_t paramIdx, const ParamBindings::Binding &binding,
-          ASTType expectedType) {
+      [&](size_t paramIdx, ASTExprAnd<PValue> binding, ASTType expectedType) {
         diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
       },
       /*emitKwType=*/
-      [&](StringAttr paramName, const ParamBindings::Binding &binding,
+      [&](StringAttr paramName, ASTExprAnd<PValue> binding,
           ASTType expectedType) {
-        diag << "callee parameter " << paramName << " has "
-             << ASTType(expectedType) << " type, but value has type "
-             << ASTType(binding.getType()) << binding.expr->getRange();
+        diag << "callee parameter " << paramName << " has " << expectedType
+             << " type, but value has type " << binding.ir.getType()
+             << binding.expr->getRange();
       },
       /*emitUnknownKeywords=*/
       [&](ArrayRef<StringAttr> unknownKeywords) {
@@ -735,14 +734,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         inferenceDiags.attach(paramListAttr, diag);
       },
       /*emitUnboundPackInVariadic=*/
-      [&](const ParamBindings::Binding &binding) {
+      [&](ASTExprAnd<PValue> binding) {
         diag << "unbound pack syntax (i.e. `*_`) cannot be used where variadic "
                 "parameters are expected"
              << binding.expr->getRange();
-        ;
       },
       /*emitUnboundPackNotEnd=*/
-      [&](const ParamBindings::Binding &binding) {
+      [&](ASTExprAnd<PValue> binding) {
         diag << "unbound pack must be at the end of the parameter list"
              << binding.expr->getRange();
       },
@@ -797,9 +795,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    ParameterInferenceState inferrence(callable.paramBindings, bindingsSoFar,
-                                       evaluator, inferenceDiags,
-                                       allowImplicitConversions);
+    ParameterInferenceState inferrence(
+        callable.paramBindings, callable.paramBindings.getPosBindings(),
+        &callable.paramBindings.getKWBindings(), bindingsSoFar, evaluator,
+        inferenceDiags, allowImplicitConversions);
 
     // Infer information from this signature holistically.
     if (failed(inferrence.infer(signature, callOperands, variadicKwOperands)))
