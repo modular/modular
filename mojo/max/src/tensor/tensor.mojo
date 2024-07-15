@@ -398,7 +398,7 @@ struct Tensor[type: DType](
             A new tensor of specified shape and filled with random elements.
         """
         var tensor = Tensor[type](shape^)
-        rand(tensor.unsafe_ptr(), tensor.num_elements())
+        rand(tensor.unsafe_ptr().address, tensor.num_elements())
         return tensor
 
     @staticmethod
@@ -422,7 +422,9 @@ struct Tensor[type: DType](
         """
 
         var tensor = Tensor[type](shape^)
-        randn(tensor.unsafe_ptr(), tensor.num_elements(), mean, variance)
+        randn(
+            tensor.unsafe_ptr().address, tensor.num_elements(), mean, variance
+        )
         return tensor
 
     fn _take_data_ptr(inout self) -> DTypePointer[type]:
