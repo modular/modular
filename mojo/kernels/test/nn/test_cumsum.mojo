@@ -23,7 +23,7 @@ fn test_cumsum_1d():
     var matrix_data = DTypePointer[DType.float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
-    iota(matrix_data, 5, 1)
+    iota(matrix_data.address, 5, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64, 1, DimList(5)
@@ -51,7 +51,7 @@ fn test_cumsum_1d_exclusive():
     var matrix_data = DTypePointer[DType.float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
-    iota(matrix_data, 5, 1)
+    iota(matrix_data.address, 5, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64, 1, DimList(5)
@@ -79,7 +79,7 @@ fn test_cumsum_1d_reverse():
     var matrix_data = DTypePointer[DType.float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
-    iota(matrix_data, 5, 1)
+    iota(matrix_data.address, 5, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64, 1, DimList(5)
@@ -107,7 +107,7 @@ fn test_cumsum_1d_reverse_exclusive():
     var matrix_data = DTypePointer[DType.float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
-    iota(matrix_data, 5, 1)
+    iota(matrix_data.address, 5, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64, 1, DimList(5)
@@ -139,7 +139,7 @@ fn test_cumsum_2d_axis_0():
         DimList(2, 3),
     ](matrix_data, DimList(2, 3))
 
-    iota(matrix_data, 6, 1)
+    iota(matrix_data.address, 6, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64,
@@ -174,7 +174,7 @@ fn test_cumsum_2d_axis_1():
         DimList(2, 3),
     ](matrix_data, DimList(2, 3))
 
-    iota(matrix_data, 6, 1)
+    iota(matrix_data.address, 6, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64,
@@ -209,7 +209,7 @@ fn test_cumsum_2d_negative_axis():
         DimList(2, 3),
     ](matrix_data, DimList(2, 3))
 
-    iota(matrix_data, 6, 1)
+    iota(matrix_data.address, 6, 1)
 
     var cumsum_matrix = NDBuffer[
         DType.float64,

@@ -84,7 +84,7 @@ fn test_case[
 fn main():
     @parameter
     fn fill_iota[rank: Int, type: DType](inout buf: NDBuffer[type, rank]):
-        iota(buf.data, buf.get_shape().flattened_length())
+        iota(buf.data.address, buf.get_shape().flattened_length())
 
     fn test_1d_sorted():
         print("== test_1d_sorted")
