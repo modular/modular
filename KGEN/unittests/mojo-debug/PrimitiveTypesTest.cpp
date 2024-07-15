@@ -42,11 +42,10 @@ TEST(PrimitiveTypesTest, testInvalidScalar) {
   /// `Dict` variable and navigate its members until reaching the invalid value.
 
   StopContext ctx = buildAndLaunch("invalid.mojo");
-  SBValue dict = ctx.frame.FindVariable("dict");
-  SBValue _index = dict.GetChildMemberWithName("_index");
-  SBValue data = _index.GetChildMemberWithName("data");
-  EXPECT_STREQ(data.GetTypeName(), "!kgen.pointer<scalar<invalid>>");
-  SBValue invalid = data.GetChildAtIndex(0);
+  SBValue a = ctx.frame.FindVariable("a");
+  SBValue x = a.GetChildMemberWithName("x");
+  EXPECT_STREQ(x.GetTypeName(), "!kgen.pointer<scalar<invalid>>");
+  SBValue invalid = x.GetChildAtIndex(0);
   EXPECT_STREQ(invalid.GetTypeName(), "!kgen.none");
   EXPECT_EQ((int)invalid.GetByteSize(), 0);
 }
