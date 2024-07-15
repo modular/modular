@@ -42,7 +42,7 @@ def test_erf_libm():
 
     # generate input values and write them to file
     var x32 = DTypePointer[test_dtype].alloc(N)
-    randn[test_dtype](x32, N, 0, 9.0)
+    randn[test_dtype](x32.address, N, 0, 9.0)
     print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
