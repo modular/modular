@@ -95,3 +95,11 @@ def MOGGIdentifyKernels : Pass<"mogg-identify-kernels", "mlir::ModuleOp"> {
     and shape functions (if present).
   }];
 }
+
+def MOGGLabelTensorParams : Pass<"mogg-label-tensor-params", "mlir::ModuleOp"> {
+  let summary = "Attaches a label to kernel tensors for subsequent use";
+  let description = [{
+    This will label the parameters of kernel tensors such that subsequent passes
+    can find them more easily.
+  }];
+}
