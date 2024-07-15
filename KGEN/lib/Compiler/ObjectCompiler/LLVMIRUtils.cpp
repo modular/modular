@@ -101,6 +101,8 @@ private:
 static LLVMModuleAndContext readAndMaterializeDependencies(
     BufferRef buf,
     const llvm::MapVector<const llvm::GlobalValue *, unsigned> &set) {
+  CompilerTimeTraceScope traceScope("readAndMaterializeDependencies");
+
   // First, create a lazy module with an internal bitcode materializer.
   // TODO: Not sure how to make lazy loading metadata work.
   LLVMModuleAndContext result;
@@ -285,7 +287,10 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // Prepare to materialize slices of the module by first writing the main
   // module as bitcode to a shared buffer.
   auto buf = WriteableBuffer::get();
-  llvm::WriteBitcodeToFile(*mainModule, *buf);
+  {
+    CompilerTimeTraceScope traceScope("writeMainModuleBitcode");
+    llvm::WriteBitcodeToFile(*mainModule, *buf);
+  }
 
   for (auto [idx, set] : llvm::enumerate(setsToProcess))
     processFn(readAndMaterializeDependencies(buf.copy(), *set), idx);
