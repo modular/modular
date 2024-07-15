@@ -7,12 +7,11 @@
 #include "llvm/ADT/StringSet.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGUtils.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "mlir/Pass/Pass.h"
-
-#include "Helpers.h"
 
 using namespace M;
 using namespace KGEN;
@@ -23,8 +22,8 @@ namespace M::KGEN::MOGGPreElab {
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
-static constexpr std::array<llvm::StringLiteral, 3> kMaxRegistrationDecorator =
-    {"max", "compiler", "register"};
+static constexpr std::array<llvm::StringLiteral, 4> kMaxRegistrationDecorator =
+    {"max", "compiler", "__init__", "register"};
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 
@@ -55,17 +54,7 @@ public:
         if (!sym)
           continue;
 
-        if (sym.getSymbol().getNestedReferences().size() !=
-            kMaxRegistrationDecorator.size())
-          continue;
-
-        bool valid = true;
-        for (auto [i, ref] :
-             llvm::enumerate(sym.getSymbol().getNestedReferences())) {
-          valid = ref.getValue().starts_with(kMaxRegistrationDecorator[i]);
-        }
-
-        if (!valid)
+        if (!symbolMatches(sym.getSymbol(), kMaxRegistrationDecorator))
           continue;
 
         auto [_, nameAttr] =

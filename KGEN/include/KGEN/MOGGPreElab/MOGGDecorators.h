@@ -94,6 +94,8 @@ constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
 
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
+static constexpr StringLiteral kKernelTensorParameterAttrName =
+    "mogg.tensor_params";
 
 } // namespace M::KGEN::MOGGPreElab
 

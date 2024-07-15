@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct UnsafeTensorSlice:
+struct UnsafeTensorSlice[type: DType, rank: Int]:
     pass
