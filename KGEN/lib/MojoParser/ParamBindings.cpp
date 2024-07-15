@@ -32,6 +32,7 @@ void ParamBindings::operator=(ParamBindings &&other) {
   kwBindings = std::move(other.kwBindings);
   defaultTypeParams = other.defaultTypeParams;
   numCtadParams = other.numCtadParams;
+  numPreTypeChecked = other.numPreTypeChecked;
 }
 
 /// Create a (possibly partially unbound) set of bindings for the given type.
@@ -56,17 +57,19 @@ ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
 
 void ParamBindings::addPrechecked(const ExprNode *expr,
                                   TypedAttr precheckedBinding) {
-  posBindings.push_back({expr, precheckedBinding, /*typeChecked=*/true});
+  assert(numPreTypeChecked == posBindings.size() &&
+         "Cannot add type prechecked after other bindings!");
+  posBindings.push_back({expr, precheckedBinding});
+  ++numPreTypeChecked;
 }
 
 void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
-  posBindings.push_back({expr, value, /*typeChecked=*/false});
+  posBindings.push_back({expr, value});
 }
 
 void ParamBindings::add(const ExprNode *expr, TypedAttr value,
                         StringAttr name) {
-  auto [_, addedNew] =
-      kwBindings.try_emplace(name, Binding{expr, value, /*typeChecked=*/false});
+  auto [_, addedNew] = kwBindings.try_emplace(name, Binding{expr, value});
   assert(addedNew && "duplicate keyword parameter");
 }
 
@@ -155,7 +158,7 @@ ParamBindings::verifyBindingsImpl(
     // UnboundAttr's, just like the user wrote the right number of _'s.
     auto unboundAttr =
         UnboundAttr::get(UnresolvedType::get(shared.getContext()));
-    Binding unboundBinding{binding.expr, unboundAttr, binding.typeChecked};
+    Binding unboundBinding{binding.expr, unboundAttr};
 
     // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
     // where the *_ was found.
@@ -295,12 +298,6 @@ ParamBindings::verifyBindingsImpl(
       if (std::optional<Binding> binding = operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
 
-        // If this value was already bound and checked, use it.
-        if (binding->typeChecked) {
-          setParamValue(binding->value);
-          continue;
-        }
-
         PValue pValue = emitSingleParameterValue(*binding, expectedType,
                                                  fitness.numImplicitConversions,
                                                  emitter, evaluator);
@@ -368,7 +365,8 @@ ParamBindings::verifyBindingsImpl(
     }
 
     // If this value was already bound and checked, use it.
-    if (binding.typeChecked) {
+    /// FIXME: Remove this, why is this needed?
+    if (posBindingIdx < numPreTypeChecked) {
       setParamValue(binding.value);
       ++posBindingIdx;
       continue;
@@ -720,12 +718,11 @@ void ParamBindings::dump() const {
   auto &os = llvm::errs();
   os << "Positional bindings:\n";
   for (auto [i, binding] : llvm::enumerate(posBindings)) {
-    os << "  " << i << "[" << binding.typeChecked << "]: " << binding.value
+    os << "  " << i << "[" << (i < numPreTypeChecked) << "]: " << binding.value
        << "\n";
   }
   os << "Keyword bindings:\n";
   for (auto [name, binding] : kwBindings) {
-    os << "  " << name.getValue() << "[" << binding.typeChecked
-       << "]: " << binding.value << "\n";
+    os << "  " << name.getValue() << ": " << binding.value << "\n";
   }
 }
