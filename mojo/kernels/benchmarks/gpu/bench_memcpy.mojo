@@ -17,13 +17,16 @@ struct Direction:
     var value: Int
     alias DEVICE_TO_HOST = Self(0)
     alias HOST_TO_DEVICE = Self(1)
+    alias DEVICE_TO_DEVICE = Self(2)
 
     @no_inline
     fn __str__(self) -> String:
         if self is Self.DEVICE_TO_HOST:
             return "device_to_host"
-        else:
+        elif self is self.HOST_TO_DEVICE:
             return "host_to_device"
+        else:
+            return "device_to_device"
 
     fn __is__(self, other: Self) -> Bool:
         return self.value == other.value
@@ -37,6 +40,7 @@ fn bench_memcpy[
     var mem_host = DTypePointer[dtype].alloc(length)
 
     var mem_device = context.create_buffer[dtype](length)
+    var mem2_device = context.create_buffer[dtype](length)
 
     @parameter
     @always_inline
@@ -47,8 +51,10 @@ fn bench_memcpy[
             @parameter
             if direction is Direction.DEVICE_TO_HOST:
                 context.enqueue_copy_from_device(mem_host, mem_device)
-            else:
+            elif direction is direction.HOST_TO_DEVICE:
                 context.enqueue_copy_to_device(mem_device, mem_host)
+            else:
+                context.enqueue_copy_device_to_device(mem_device, mem2_device)
 
         b.iter_custom[kernel_launch](context)
 
@@ -63,6 +69,7 @@ fn bench_memcpy[
 
     mem_host.free()
     _ = mem_device
+    _ = mem2_device
 
 
 def main():
@@ -74,6 +81,9 @@ def main():
                 m, length=length, context=ctx
             )
             bench_memcpy[Direction.HOST_TO_DEVICE](
+                m, length=length, context=ctx
+            )
+            bench_memcpy[Direction.DEVICE_TO_DEVICE](
                 m, length=length, context=ctx
             )
         m.dump_report()
