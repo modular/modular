@@ -53,8 +53,6 @@ public:
     const ExprNode *expr;
     /// This is the value of the binding.
     TypedAttr value;
-    /// This flag is set to true if the value has been type checked.
-    bool typeChecked;
 
     /// Return the type of the TypedAttr or the binding.
     ASTType getType() const { return value.getType(); }
@@ -215,6 +213,10 @@ private:
   /// The number of parameters declared for a type, if these are bindings for an
   /// overload set on a method.
   size_t numCtadParams = 0;
+
+  /// The number of pre-type-checked positional arguments.
+  /// FIXME: Remove this, why is this needed?
+  size_t numPreTypeChecked = 0;
 
   template <typename OperandType>
   friend class OperandContainer;
