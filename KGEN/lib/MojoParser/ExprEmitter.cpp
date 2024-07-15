@@ -998,8 +998,8 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
                                        value.expr, CallSyntax::kMethodCall);
       // Manually bind the type into the parameter list so the vtable entries
       // are specialized on the MLIR type.
-      ovSet.paramBindings =
-          ParamBindings::getForDeclaredType(getScopeInfo(), boundWrapper);
+      ovSet.paramBindings = ParamBindings::getForDeclaredType(
+          getScopeInfo(), boundWrapper, value.expr);
 
       PValue callee = ovSet.getIfPValue();
       if (!callee) {
@@ -1130,8 +1130,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
           TraitSelfBinder(typeValue).replace(requirementFn.getFullSignature());
 
       // Form a set of bindings to plow into the impl signature.
-      auto implBindings =
-          ParamBindings::getForDeclaredType(getScopeInfo(), ASTType(typeValue));
+      auto implBindings = ParamBindings::getForDeclaredType(
+          getScopeInfo(), ASTType(typeValue), value.expr);
 
       // Bind the implicit T parameter on trait members to something with the
       // right metatype to keep the remapper happy.  We already replaced all
@@ -1146,7 +1146,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
         requirementParams.push_back(unbound);
         evaluator.addInputValue(unbound);
-        implBindings.addPrechecked(unbound);
+        implBindings.addPrechecked(value.expr, unbound);
       }
       requirementSig = requirementSig.getSpecializedSignature(
           requirementParams, value.expr->getLocation(*this));
@@ -1702,7 +1702,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // unbound values.
   ParamBindings paramBindings(getScopeInfo());
   for (TypedAttr binding : type.getParamBindings())
-    paramBindings.addPrechecked(binding);
+    paramBindings.addPrechecked(expr, binding);
 
   // Check the existing bindings against the full signature of the type and make
   // sure it is fully bound.

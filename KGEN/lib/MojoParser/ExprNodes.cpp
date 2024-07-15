@@ -1027,8 +1027,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     //
     // FIXME2: What about the other set?  This seems like it only handles
     // getitem.
-    nonemptySet->paramBindings =
-        ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseType);
+    nonemptySet->paramBindings = ParamBindings::getForDeclaredType(
+        emitter.getScopeInfo(), baseType, node);
     if (failed(
             bindParamValuesToDirectCall(*nonemptySet, exprOperands, emitter)))
       return {};
@@ -1093,8 +1093,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // overload set.
     // Hard code the parameter bindings for 'self' since we aren't using type
     // inference properly.
-    setterSet.paramBindings =
-        ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseType);
+    setterSet.paramBindings = ParamBindings::getForDeclaredType(
+        emitter.getScopeInfo(), baseType, node);
     auto directSymbolAttr = setterSet.getBoundConstantAttr();
     if (!directSymbolAttr) {
       lookupError();
@@ -1298,10 +1298,11 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // of `[A, B, Int]`.  If we had ParameterizedType then we could model this
     // correctly as have an unspecified first set of bindings for the type,
     // and the Int binding could go in a subsequent parameter list.
-    auto result = OverloadSetUValue::create(
-        spelling, memberDecls,
-        ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseRVType),
-        this, CallSyntax::kDirectCall);
+    auto result =
+        OverloadSetUValue::create(spelling, memberDecls,
+                                  ParamBindings::getForDeclaredType(
+                                      emitter.getScopeInfo(), baseRVType, this),
+                                  this, CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we

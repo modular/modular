@@ -39,23 +39,24 @@ void ParamBindings::operator=(ParamBindings &&other) {
 /// type is not a parametric user defined type, this returns empty bindings.
 ParamBindings
 ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
-                                  ASTType type) {
+                                  ASTType type, const ExprNode *expr) {
   ParamBindings paramBindings(scopeInfo);
   paramBindings.numCtadParams = type.getParamBindings().size();
   paramBindings.defaultTypeParams = type.getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
   if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType()))
-    paramBindings.addPrechecked(PValue(type).get());
+    paramBindings.addPrechecked(expr, PValue(type).get());
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();
   for (TypedAttr value : paramValues)
-    paramBindings.addPrechecked(value);
+    paramBindings.addPrechecked(expr, value);
   return paramBindings;
 }
 
-void ParamBindings::addPrechecked(TypedAttr precheckedBinding) {
-  posBindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
+void ParamBindings::addPrechecked(const ExprNode *expr,
+                                  TypedAttr precheckedBinding) {
+  posBindings.push_back({expr, precheckedBinding, /*typeChecked=*/true});
 }
 
 void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
