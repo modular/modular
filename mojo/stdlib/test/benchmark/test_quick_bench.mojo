@@ -284,8 +284,8 @@ fn test_custom() raises:
     alias type = DType.int32
     var x = DTypePointer[type].alloc(N, alignment=alignment)
     var y = DTypePointer[type].alloc(N, alignment=alignment)
-    randint[type](x, N, 0, 255)
-    randint[type](y, N, 0, 255)
+    randint[type](x.address, N, 0, 255)
+    randint[type](y.address, N, 0, 255)
 
     var qb = QuickBench()
 
