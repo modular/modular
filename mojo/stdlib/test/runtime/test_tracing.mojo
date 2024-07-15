@@ -7,7 +7,7 @@
 
 from pathlib import Path
 
-from runtime.llcl import Runtime
+from runtime.llcl import create_task
 from runtime.tracing import Trace, TraceLevel
 
 
@@ -22,17 +22,14 @@ fn test_tracing[level: TraceLevel, prefix: StringLiteral]():
     @parameter
     async fn test_tracing_add_two_of_them[
         prefix: StringLiteral
-    ](rt: Runtime, a: Int, b: Int) -> Int:
-        var t0 = rt.create_task(test_tracing_add[prefix, 1](a))
-        var t1 = rt.create_task(test_tracing_add[prefix, 2](b))
+    ](a: Int, b: Int) -> Int:
+        var t0 = create_task(test_tracing_add[prefix, 1](a))
+        var t1 = create_task(test_tracing_add[prefix, 2](b))
         return await t0 + await t1
 
-    with Runtime() as rt:
-        with Trace[level](prefix + "trace event 1", prefix + "detail event 1"):
-            var task = rt.create_task(
-                test_tracing_add_two_of_them[prefix](rt, 10, 20)
-            )
-            _ = task.wait()
+    with Trace[level](prefix + "trace event 1", prefix + "detail event 1"):
+        var task = create_task(test_tracing_add_two_of_them[prefix](10, 20))
+        _ = task.wait()
 
 
 fn main():

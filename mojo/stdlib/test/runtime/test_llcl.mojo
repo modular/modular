@@ -8,7 +8,7 @@
 from os.atomic import Atomic
 
 from memory import stack_allocation
-from runtime.llcl import Runtime
+from runtime.llcl import create_task, run
 from testing import assert_true
 
 
@@ -25,8 +25,7 @@ fn test_sync_coro():
         return await test_llcl_add[5](a) + await test_llcl_add[2](b)
 
     # CHECK: 57
-    with Runtime() as rt:
-        print(rt.run(test_llcl_add_two_of_them(20, 30)))
+    print(run(test_llcl_add_two_of_them(20, 30)))
 
 
 fn test_sync_raising_coro():
@@ -72,15 +71,14 @@ fn test_runtime_task():
         return lhs + rhs
 
     @parameter
-    async fn test_llcl_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
-        return await rt.create_task(test_llcl_add[1](a)) + await rt.create_task(
+    async fn test_llcl_add_two_of_them(a: Int, b: Int) -> Int:
+        return await create_task(test_llcl_add[1](a)) + await create_task(
             test_llcl_add[2](b)
         )
 
-    with Runtime() as rt:
-        var task = rt.create_task(test_llcl_add_two_of_them(rt, 10, 20))
-        # CHECK: 33
-        print(task.wait())
+    var task = create_task(test_llcl_add_two_of_them(10, 20))
+    # CHECK: 33
+    print(task.wait())
 
 
 # CHECK-LABEL: test_runtime_taskgroup
@@ -92,25 +90,15 @@ fn test_runtime_taskgroup():
         return value
 
     @parameter
-    async fn run_as_group(rt: Runtime) -> Int:
-        var t0 = rt.create_task(return_value[1]())
-        var t1 = rt.create_task(return_value[2]())
+    async fn run_as_group() -> Int:
+        var t0 = create_task(return_value[1]())
+        var t1 = create_task(return_value[2]())
         return await t0 + await t1
 
-    with Runtime() as rt:
-        var t0 = rt.create_task(run_as_group(rt))
-        var t1 = rt.create_task(run_as_group(rt))
-        # CHECK: 6
-        print(t0.wait() + t1.wait())
-
-
-# CHECK-LABEL: test_global_same_runtime
-fn test_global_same_runtime():
-    print("== test_global_same_runtime")
-    var rt = Runtime()
-    var rt2 = Runtime()
-    # CHECK: True
-    print(rt.ptr == rt2.ptr)
+    var t0 = create_task(run_as_group())
+    var t1 = create_task(run_as_group())
+    # CHECK: 6
+    print(t0.wait() + t1.wait())
 
 
 def main():
@@ -118,4 +106,3 @@ def main():
     test_sync_raising_coro()
     test_runtime_task()
     test_runtime_taskgroup()
-    test_global_same_runtime()

@@ -74,9 +74,9 @@ struct AsyncContext:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_llcl_chain(rt: Runtime, chain: UnsafePointer[Chain]):
+fn _init_llcl_chain(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
-        rt.ptr, chain.address
+        _get_current_runtime(), chain.address
     )
 
 
@@ -92,11 +92,9 @@ fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
     )
 
 
-fn _async_execute[
-    type: AnyType
-](handle: AnyCoroutine, rt: Runtime, desired_worker_id: Int,):
+fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
-        _coro_resume_fn, handle, rt.ptr, desired_worker_id
+        _coro_resume_fn, handle, _get_current_runtime(), desired_worker_id
     )
 
 
@@ -117,9 +115,9 @@ fn _async_wait_timeout(chain: UnsafePointer[Chain], timeout: Int) -> Bool:
 struct ChainPromise:
     var chain: Chain
 
-    fn __init__(inout self, rt: Runtime):
+    fn __init__(inout self):
         self.chain = Chain()
-        _init_llcl_chain(rt, UnsafePointer.address_of(self.chain))
+        _init_llcl_chain(UnsafePointer.address_of(self.chain))
 
     fn __init__(inout self, owned chain: Chain):
         self.chain = chain
@@ -168,101 +166,55 @@ fn parallelism_level() -> Int:
     )
 
 
-# ===----------------------------------------------------------------------===#
-# Runtime
-# ===----------------------------------------------------------------------===#
+@__named_result(task)
+fn create_task(
+    owned handle: Coroutine[*_],
+    desired_worker_id: Int = -1,
+) -> Task[handle.type, handle.lifetimes]:
+    """Run the coroutine as a task on the LLCL Runtime."""
+    var ctx = handle._get_ctx[AsyncContext]()
+    _init_llcl_chain(AsyncContext.get_chain(ctx))
+    ctx[].callback = AsyncContext.complete
+    task.__init__(handle^)
+    _async_execute[handle.type](task._handle._handle, desired_worker_id)
 
 
-@register_passable("trivial")
-struct Runtime:
-    alias ptr_type = UnsafePointer[NoneType]
-    var ptr: Self.ptr_type
-    var owning: Bool
+@always_inline
+@__named_result(out)
+fn run(owned handle: Coroutine[*_]) -> handle.type:
+    var ctx = handle._get_ctx[AsyncContext]()
+    _init_llcl_chain(AsyncContext.get_chain(ctx))
+    ctx[].callback = AsyncContext.complete
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
+    handle._set_result_slot(UnsafePointer.address_of(out))
+    _async_execute[handle.type](handle._handle, -1)
+    _async_wait(AsyncContext.get_chain(ctx))
+    _del_llcl_chain(AsyncContext.get_chain(ctx))
+    _ = handle^
 
-    fn __init__() -> Runtime:
-        """Construct an LLCL Runtime with the same number of threads as
-        processor cores.
-        """
-        var ptr = _get_current_runtime()
-        return Runtime(ptr, owning=False)
 
-    fn __init__(ptr: Self.ptr_type, owning: Bool) -> Runtime:
-        return Runtime {ptr: ptr, owning: owning}
-
-    fn __enter__(self) -> Self:
-        return self
-
-    fn __exit__(self):
-        """Destroys the LLCL Runtime. Note that this must be explicitly called
-        when the Runtime goes out of the context.
-        """
-        self._destroy()
-
-    fn __exit__(self, err: Error) -> Bool:
-        """Destroys the LLCL Runtime within a raise-able env. Return True if
-        the error is empty."""
-        self._destroy()
-        return not err
-
-    fn _destroy(self):
-        """Destroys the LLCL Runtime. Note that this must be explicitly called
-        when the Runtime goes out of the context.
-        """
-        if self.owning:
-            external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](
-                self.ptr
-            )
-
-    @__named_result(task)
-    fn create_task(
-        self,
-        owned handle: Coroutine[*_],
-        desired_worker_id: Int = -1,
-    ) -> Task[handle.type, handle.lifetimes]:
-        """Run the coroutine as a task on the LLCL Runtime."""
-        var ctx = handle._get_ctx[AsyncContext]()
-        _init_llcl_chain(self, AsyncContext.get_chain(ctx))
-        ctx[].callback = AsyncContext.complete
-        task.__init__(handle^)
-        _async_execute[handle.type](
-            task._handle._handle, self, desired_worker_id
+@always_inline
+@__named_result(out)
+fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type:
+    var ctx = handle._get_ctx[AsyncContext]()
+    _init_llcl_chain(AsyncContext.get_chain(ctx))
+    ctx[].callback = AsyncContext.complete
+    handle._set_result_slot(
+        __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(out)),
+        __mlir_op.`lit.ref.to_pointer`(
+            __get_mvalue_as_litref(__get_nearest_error_slot())
+        ),
+    )
+    _async_execute[handle.type](handle._handle, -1)
+    _async_wait(AsyncContext.get_chain(ctx))
+    _del_llcl_chain(AsyncContext.get_chain(ctx))
+    if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(__get_nearest_error_slot())
         )
-
-    @always_inline
-    @__named_result(out)
-    fn run(self, owned handle: Coroutine[*_]) -> handle.type:
-        var ctx = handle._get_ctx[AsyncContext]()
-        _init_llcl_chain(self, AsyncContext.get_chain(ctx))
-        ctx[].callback = AsyncContext.complete
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
-        handle._set_result_slot(UnsafePointer.address_of(out))
-        _async_execute[handle.type](handle._handle, self, -1)
-        _async_wait(AsyncContext.get_chain(ctx))
-        _del_llcl_chain(AsyncContext.get_chain(ctx))
-        _ = handle^
-
-    @always_inline
-    @__named_result(out)
-    fn run(self, owned handle: RaisingCoroutine[*_]) raises -> handle.type:
-        var ctx = handle._get_ctx[AsyncContext]()
-        _init_llcl_chain(self, AsyncContext.get_chain(ctx))
-        ctx[].callback = AsyncContext.complete
-        handle._set_result_slot(
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(out)),
-            __mlir_op.`lit.ref.to_pointer`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
-            ),
-        )
-        _async_execute[handle.type](handle._handle, self, -1)
-        _async_wait(AsyncContext.get_chain(ctx))
-        _del_llcl_chain(AsyncContext.get_chain(ctx))
-        if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
-            )
-            __mlir_op.`lit.raise`()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
-        _ = handle^
+        __mlir_op.`lit.raise`()
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
+    _ = handle^
 
 
 # ===----------------------------------------------------------------------===#
@@ -367,13 +319,11 @@ struct _TaskGroupBox(CollectionElement):
 struct TaskGroup[lifetimes: LifetimeSet]:
     var counter: Atomic[DType.index]
     var chain: Chain
-    var rt: Runtime
     var tasks: List[_TaskGroupBox]
 
     fn __init__(inout self):
         var chain = Chain()
-        self.rt = Runtime()
-        _init_llcl_chain(self.rt, UnsafePointer[Chain].address_of(chain))
+        _init_llcl_chain(UnsafePointer[Chain].address_of(chain))
         self.counter = 1
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
@@ -409,7 +359,7 @@ struct TaskGroup[lifetimes: LifetimeSet]:
             callback: Self._task_complete_callback,
             task_group: UnsafePointer[Self].address_of(self),
         }
-        _async_execute[task.type](task._handle, self.rt, desired_worker_id)
+        _async_execute[task.type](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
 
     @staticmethod
