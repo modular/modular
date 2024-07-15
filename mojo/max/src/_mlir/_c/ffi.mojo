@@ -16,7 +16,7 @@ from memory import UnsafePointer
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     alias mlirc_dylib = env_get_string["MLIRC_DYLIB", ".graph_lib"]()
     var mof_lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.uint8]
+        "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](StringRef(mlirc_dylib))
 
     if not mof_lib_path_str_ptr:

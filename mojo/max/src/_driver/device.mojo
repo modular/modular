@@ -113,7 +113,7 @@ struct Device(Stringable):
 
         alias func_name_desc = "M_getDeviceDesc"
         return StringRef(
-            call_dylib_func[DTypePointer[DType.uint8]](
+            call_dylib_func[UnsafePointer[UInt8]](
                 self.lib.get_handle(), func_name_desc, self._cdev
             )
         )

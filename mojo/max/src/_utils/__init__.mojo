@@ -64,7 +64,7 @@ fn exchange[T: AnyTrivialRegType](inout old_var: T, owned new_value: T) -> T:
 
 fn handle_from_config(name: String, param: String) -> DLHandle:
     var lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.uint8]
+        "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](param._strref_dangerous())
     param._strref_keepalive()
 
@@ -588,7 +588,7 @@ fn get_lib_path_from_cfg(
     name: StringRef, err_name: StringLiteral
 ) raises -> String:
     var lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.uint8]
+        "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](name)
 
     if not lib_path_str_ptr:
