@@ -4,4 +4,4 @@
 //
 //===----------------------------------------------------------------------===//
 
-export const DEBUG_TYPE = "mojo-lldb";
+export const DEBUG_TYPE = 'mojo-lldb';

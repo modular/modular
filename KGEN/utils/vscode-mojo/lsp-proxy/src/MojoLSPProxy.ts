@@ -22,12 +22,9 @@ import {
   ProposedFeatures,
 } from 'vscode-languageserver/node';
 
-import {
-  MojoDocument,
-  MojoDocumentsStateHandler,
-} from './MojoDocument';
-import {MojoLSPServer} from './MojoLSPServer';
-import {Client, ExitStatus, RequestParamsWithDocument, URI} from './types';
+import { MojoDocument, MojoDocumentsStateHandler } from './MojoDocument';
+import { MojoLSPServer } from './MojoLSPServer';
+import { Client, ExitStatus, RequestParamsWithDocument, URI } from './types';
 
 /**
  * Class in charge of of managing the communication between the VSCode client
@@ -42,7 +39,7 @@ export class MojoLSPProxy {
    * The actual Mojo LSP Server. It'll be created as part of the `onInitialize`
    * method of the proxy.
    */
-  private server: MojoLSPServer|undefined;
+  private server: MojoLSPServer | undefined;
   /**
    * The state handler for all the documents notified by the client.
    */
@@ -56,7 +53,7 @@ export class MojoLSPProxy {
    * the client as part of the `initialize` request and have to be reused
    * whenever the server is restarted.
    */
-  private initializeParams: InitializeParams|undefined;
+  private initializeParams: InitializeParams | undefined;
 
   constructor() {
     this.client = createClientConnection(ProposedFeatures.all);
@@ -67,30 +64,35 @@ export class MojoLSPProxy {
   /**
    * Start the actual communication with the client.
    */
-  public start() { this.client.listen(); }
+  public start() {
+    this.client.listen();
+  }
 
   /**
    * Create a the error message that will be display on the given document upon
    * a crash.
    */
-  private createDiagnosticErrorMessageUponCrash(doc: MojoDocument,
-                                                crashTrigger: URI|
-                                                undefined): string {
-    let errorMessage = "A crash happened in the Mojo Language Server";
+  private createDiagnosticErrorMessageUponCrash(
+    doc: MojoDocument,
+    crashTrigger: URI | undefined
+  ): string {
+    let errorMessage = 'A crash happened in the Mojo Language Server';
     if (this.docsStateHandler.isCrashTrigger(doc)) {
       errorMessage +=
-          " when processing this document. The Language Server will try to " +
-          "reprocess this document once it is edited again.";
+        ' when processing this document. The Language Server will try to ' +
+        'reprocess this document once it is edited again.';
     } else {
-      if (crashTrigger !== undefined)
-        errorMessage += " when processing " + crashTrigger;
-      errorMessage += ". The Language Server will try to reprocess this " +
-                      "document automatically.";
+      if (crashTrigger !== undefined) {
+        errorMessage += ' when processing ' + crashTrigger;
+      }
+      errorMessage +=
+        '. The Language Server will try to reprocess this ' +
+        'document automatically.';
     }
     errorMessage +=
-        " Please report this issue in " +
-        "https://github.com/modularml/mojo/issues along with all the " +
-        "relevant source codes with their current contents.";
+      ' Please report this issue in ' +
+      'https://github.com/modularml/mojo/issues along with all the ' +
+      'relevant source codes with their current contents.';
     return errorMessage;
   }
 
@@ -107,31 +109,39 @@ export class MojoLSPProxy {
     // when the server is processing a request. However, if the crash happens at
     // any other moment, e.g., when reading its stdin, we would need a more
     // complex mechanism to identify the actual issue.
-    const crashTriggerURI =
-        (this.server?.getOldestPendingRequest() as RequestParamsWithDocument |
-         undefined)
-            ?.textDocument?.uri;
+    const crashTriggerURI = (
+      this.server?.getOldestPendingRequest() as
+        | RequestParamsWithDocument
+        | undefined
+    )?.textDocument?.uri;
     for (const doc of this.docsStateHandler.getAllDocs()) {
-      if (doc.uri == crashTriggerURI)
+      if (doc.uri == crashTriggerURI) {
         this.docsStateHandler.markAsCrashTrigger(doc);
-      const errorMessage =
-          this.createDiagnosticErrorMessageUponCrash(doc, crashTriggerURI);
+      }
+      const errorMessage = this.createDiagnosticErrorMessageUponCrash(
+        doc,
+        crashTriggerURI
+      );
 
       const diagnostic: PublishDiagnosticsParams = {
-        diagnostics : [ {
-          message : errorMessage,
-          range : {
-            start : {line : 0, character : 0},
-            end : {line : 0, character : 0}
+        diagnostics: [
+          {
+            message: errorMessage,
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 0 },
+            },
+            severity: DiagnosticSeverity.Error,
+            source: 'mojo',
           },
-          severity : DiagnosticSeverity.Error,
-          source : "mojo"
-        } ],
-        uri : doc.uri,
-        version : doc.version
+        ],
+        uri: doc.uri,
+        version: doc.version,
       };
-      this.client.sendNotification(PublishDiagnosticsNotification.method,
-                                   diagnostic);
+      this.client.sendNotification(
+        PublishDiagnosticsNotification.method,
+        diagnostic
+      );
     }
   }
 
@@ -140,8 +150,11 @@ export class MojoLSPProxy {
    * will also issue an initialization request to the new server.
    */
   private restartServer(status: ExitStatus) {
-    this.client.console.log(`The mojo-lsp-server binary exited with signal '${
-        status.signal}' and exit code '${status.code}'.`);
+    this.client.console.log(
+      `The mojo-lsp-server binary exited with signal '${
+        status.signal
+      }' and exit code '${status.code}'.`
+    );
 
     const timeSinceInitInMillis = Date.now() - this.initTime;
     const timeSinceInitInMins = Math.floor(timeSinceInitInMillis / 60000);
@@ -149,10 +162,14 @@ export class MojoLSPProxy {
     // LSP. VSCode allows 4 crashes every 3 minutes.
     if (timeSinceInitInMins >= 1) {
       this.client.console.log(
-          `The mojo-lsp-server binary has exited unsuccessfully. The proxy will terminate. It ran ${
-              timeSinceInitInMins} ms.`);
-      if (status.signal !== null)
+        `The mojo-lsp-server binary has exited unsuccessfully. The proxy will terminate. It ran ${
+          timeSinceInitInMins
+        } ms.`
+      );
+
+      if (status.signal !== null) {
         process.kill(process.pid, status.signal);
+      }
       process.exit(status.code!);
     }
     this.client.console.log(`The mojo-lsp-server will restart.`);
@@ -170,24 +187,32 @@ export class MojoLSPProxy {
     const params = this.initializeParams!;
     const workspaceFolder = params.rootUri;
     this.client.console.log(
-        `Server(${process.pid}) ${workspaceFolder} started`);
+      `Server(${process.pid}) ${workspaceFolder} started`
+    );
 
     this.server = new MojoLSPServer({
-      initializationOptions : params.initializationOptions,
-      logger : (message: string) => this.client.console.log(message),
-      onExit : (status: ExitStatus) => {
+      initializationOptions: params.initializationOptions,
+      logger: (message: string) => this.client.console.log(message),
+      onExit: (status: ExitStatus) => {
         // If the server exited successfully, then that's because a terminate
         // request was sent, so we just terminate the proxy as well.
-        if (status.code === 0)
+
+        // If the server exited successfully, then that's because a terminate
+        // request was sent, so we just terminate the proxy as well.
+        if (status.code === 0) {
           process.exit(0);
+        }
+        // There's been an error, we'll try restart the server.
         // There's been an error, we'll try restart the server.
         this.restartServer(status);
       },
-      onNotification : (method: string, params: any) =>
-          this.client.sendNotification(method, params)
+      onNotification: (method: string, params: any) =>
+        this.client.sendNotification(method, params),
     });
-    return this.server!.sendRequest(params, "initialize") as
-           Promise<InitializeResult>;
+    return this.server!.sendRequest(
+      params,
+      'initialize'
+    ) as Promise<InitializeResult>;
   }
 
   /**
@@ -206,31 +231,42 @@ export class MojoLSPProxy {
     // Note: all of these requests must go through `relayRequestWithDocument` to
     // ensure crash handling is applied correctly.
     this.client.onCodeAction(
-        this.relayRequestWithDocument("textDocument/codeAction"));
+      this.relayRequestWithDocument('textDocument/codeAction')
+    );
     this.client.onCompletion(
-        this.relayRequestWithDocument("textDocument/completion"));
+      this.relayRequestWithDocument('textDocument/completion')
+    );
     this.client.onDefinition(
-        this.relayRequestWithDocument("textDocument/definition"));
+      this.relayRequestWithDocument('textDocument/definition')
+    );
     this.client.onDocumentSymbol(
-        this.relayRequestWithDocument("textDocument/documentSymbol"));
+      this.relayRequestWithDocument('textDocument/documentSymbol')
+    );
     this.client.onFoldingRanges(
-        this.relayRequestWithDocument("textDocument/foldingRange"));
-    this.client.onHover(this.relayRequestWithDocument("textDocument/hover"));
+      this.relayRequestWithDocument('textDocument/foldingRange')
+    );
+    this.client.onHover(this.relayRequestWithDocument('textDocument/hover'));
     this.client.onReferences(
-        this.relayRequestWithDocument("textDocument/references"));
+      this.relayRequestWithDocument('textDocument/references')
+    );
     this.client.onRenameRequest(
-        this.relayRequestWithDocument("textDocument/rename"));
+      this.relayRequestWithDocument('textDocument/rename')
+    );
     this.client.onSignatureHelp(
-        this.relayRequestWithDocument("textDocument/signatureHelp"));
+      this.relayRequestWithDocument('textDocument/signatureHelp')
+    );
     this.client.onShutdown((params) => {
-      return this.server!.sendRequest(params, "shutdown") as Promise<any>;
+      return this.server!.sendRequest(params, 'shutdown') as Promise<any>;
     });
     this.client.languages.inlayHint.on(
-        this.relayRequestWithDocument("textDocument/inlayHint"));
+      this.relayRequestWithDocument('textDocument/inlayHint')
+    );
     this.client.languages.semanticTokens.on(
-        this.relayRequestWithDocument("textDocument/semanticTokens/full"));
-    this.client.languages.semanticTokens.onDelta(this.relayRequestWithDocument(
-        "textDocument/semanticTokens/full/delta"));
+      this.relayRequestWithDocument('textDocument/semanticTokens/full')
+    );
+    this.client.languages.semanticTokens.onDelta(
+      this.relayRequestWithDocument('textDocument/semanticTokens/full/delta')
+    );
 
     // Client notifications - normal documents
     this.client.onDidOpenTextDocument((params: DidOpenTextDocumentParams) => {
@@ -242,28 +278,34 @@ export class MojoLSPProxy {
     });
 
     this.client.onDidChangeTextDocument(
-        (params: DidChangeTextDocumentParams) => {
-          this.docsStateHandler.onDidChangeTextDocument(params, this.server!);
-        });
+      (params: DidChangeTextDocumentParams) => {
+        this.docsStateHandler.onDidChangeTextDocument(params, this.server!);
+      }
+    );
 
     // Client notifications - notebooks
     const notebooks = this.client.notebooks.synchronization;
     notebooks.onDidOpenNotebookDocument(
-        (params: DidOpenNotebookDocumentParams) => {
-          this.docsStateHandler.onDidOpenNotebookDocument(params, this.server!);
-        });
+      (params: DidOpenNotebookDocumentParams) => {
+        this.docsStateHandler.onDidOpenNotebookDocument(params, this.server!);
+      }
+    );
 
     notebooks.onDidCloseNotebookDocument(
-        (params: DidCloseNotebookDocumentParams) => {
-          this.docsStateHandler.onDidCloseNotebookDocument(params,
-                                                           this.server!);
-        });
+      (params: DidCloseNotebookDocumentParams) => {
+        this.docsStateHandler.onDidCloseNotebookDocument(params, this.server!);
+      }
+    );
 
     notebooks.onDidChangeNotebookDocument(
-        (params: DidChangeNotebookDocumentParams) => {
-          this.docsStateHandler.onDidChangeNotebookDocument(params, this.client,
-                                                            this.server!);
-        });
+      (params: DidChangeNotebookDocumentParams) => {
+        this.docsStateHandler.onDidChangeNotebookDocument(
+          params,
+          this.client,
+          this.server!
+        );
+      }
+    );
   }
 
   /**
@@ -278,12 +320,16 @@ export class MojoLSPProxy {
       // However, if it's a crash trigger, we don't reopen it and wait for edits
       // to happen first.
       const owningDoc =
-          this.docsStateHandler.getOwningTextOrNotebookDocument(uri);
-      if (owningDoc !== undefined &&
-          !this.docsStateHandler.isCrashTrigger(owningDoc) &&
-          !this.docsStateHandler.isTrackedByServer(owningDoc))
+        this.docsStateHandler.getOwningTextOrNotebookDocument(uri);
+
+      if (
+        owningDoc !== undefined &&
+        !this.docsStateHandler.isCrashTrigger(owningDoc) &&
+        !this.docsStateHandler.isTrackedByServer(owningDoc)
+      ) {
         owningDoc.openDocumentOnServer(this.server!, this.docsStateHandler);
+      }
       return this.server!.sendRequest(params, method) as any;
-    }
+    };
   }
 }

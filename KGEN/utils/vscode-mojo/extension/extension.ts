@@ -6,9 +6,9 @@
 
 import * as vscode from 'vscode';
 
-import {LoggingService} from './logging';
-import {MojoContext} from './mojoContext';
-import {isNightlyExtension} from './utils/buildInfo';
+import { LoggingService } from './logging';
+import { MojoContext } from './mojoContext';
+import { isNightlyExtension } from './utils/buildInfo';
 
 /**
  * This class provides an entry point for the Mojo extension, managing the
@@ -21,10 +21,10 @@ class MojoExtension {
   constructor(context: vscode.ExtensionContext) {
     const isNightly = isNightlyExtension(context);
     this.loggingService = new LoggingService(isNightly);
-    this.loggingService.main.logInfo("Initializing the Mojo extension.");
+    this.loggingService.main.logInfo('Initializing the Mojo extension.');
     this.mojoContext = new MojoContext(context, this.loggingService);
     this.mojoContext.activate();
-    this.loggingService.main.logInfo("Mojo extension initialized.");
+    this.loggingService.main.logInfo('Mojo extension initialized.');
 
     // Check and warn for incompatible extensions.
     this.checkForIncompatibleExtensions(isNightly);
@@ -38,27 +38,32 @@ class MojoExtension {
     // them can lead to unexpected behavior. If this is a stable extension,
     // check for a nightly extension, and vice versa.
     const invalidExtension = vscode.extensions.getExtension(
-        isNightly ? stableExtensionId : nightlyExtensionId);
-    if (!invalidExtension)
+      isNightly ? stableExtensionId : nightlyExtensionId
+    );
+
+    if (!invalidExtension) {
       return;
+    }
 
     vscode.window
-        .showWarningMessage(
-            'You have both the stable and nightly versions of the Mojo ' +
-                'extension enabled. Please disable one of them to avoid ' +
-                'conflicts.',
-            'Show Extensions')
-        .then((value) => {
-          if (value === 'Show Extensions') {
-            vscode.commands.executeCommand('workbench.extensions.search',
-                                           "@id:" + stableExtensionId + " " +
-                                               "@id:" + nightlyExtensionId);
-          }
-        });
+      .showWarningMessage(
+        'You have both the stable and nightly versions of the Mojo ' +
+          'extension enabled. Please disable one of them to avoid ' +
+          'conflicts.',
+        'Show Extensions'
+      )
+      .then((value) => {
+        if (value === 'Show Extensions') {
+          vscode.commands.executeCommand(
+            'workbench.extensions.search',
+            '@id:' + stableExtensionId + ' ' + '@id:' + nightlyExtensionId
+          );
+        }
+      });
   }
 
   public dispose() {
-    this.loggingService.main.logInfo("Deactivating extension.");
+    this.loggingService.main.logInfo('Deactivating extension.');
     this.mojoContext.dispose();
     this.loggingService.dispose();
   }
@@ -80,4 +85,6 @@ export function activate(context: vscode.ExtensionContext) {
  * an upgrade, a window reload, the editor is shutting down, or the user
  * disabled the extension manually.
  */
-export function deactivate() { extension.dispose(); }
+export function deactivate() {
+  extension.dispose();
+}

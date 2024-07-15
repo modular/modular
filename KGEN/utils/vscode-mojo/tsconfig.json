@@ -1,17 +1,14 @@
 {
-	"compilerOptions": {
-		"module": "commonjs",
-		"outDir": "out",
-		"rootDir": "extension",
-		"sourceMap": true,
-		"strict": true,
-		"noImplicitOverride": true,
-		"target": "es6"
-	},
-	"include": ["extension"],
-	"exclude": [
-		"node_modules",
-		".vscode-test"
-	],
-	"references": [{"path": "./lsp-proxy"}]
+  "compilerOptions": {
+    "module": "commonjs",
+    "outDir": "out",
+    "rootDir": "extension",
+    "sourceMap": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "target": "es6"
+  },
+  "include": ["extension"],
+  "exclude": ["node_modules", ".vscode-test"],
+  "references": [{ "path": "./lsp-proxy" }]
 }

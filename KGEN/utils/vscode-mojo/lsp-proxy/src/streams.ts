@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {ChildProcess} from "child_process";
+import { ChildProcess } from 'child_process';
 
-import {ExitStatus, JSONObject} from "./types";
+import { ExitStatus, JSONObject } from './types';
 
 /**
  * A stream reader that reports whenever a line ending with `\n` is found.
@@ -14,12 +14,15 @@ import {ExitStatus, JSONObject} from "./types";
 export class LineSeparatedStream {
   private enabled = true;
 
-  constructor(rawStream: NodeJS.ReadableStream,
-              onLine: (line: string) => void) {
-    let buffer = "";
-    rawStream.on("data", (chunk: any) => {
-      if (!this.enabled)
+  constructor(
+    rawStream: NodeJS.ReadableStream,
+    onLine: (line: string) => void
+  ) {
+    let buffer = '';
+    rawStream.on('data', (chunk: any) => {
+      if (!this.enabled) {
         return;
+      }
 
       buffer += chunk;
 
@@ -32,7 +35,9 @@ export class LineSeparatedStream {
     });
   }
 
-  public dispose() { this.enabled = false; }
+  public dispose() {
+    this.enabled = false;
+  }
 }
 
 /**
@@ -40,27 +45,30 @@ export class LineSeparatedStream {
  * notification or the response to a request is found.
  */
 export class JSONRPCStream {
-  static protocolHeader = "Content-Length: ";
-  static protocolLineSeparator = "\r\n\r\n";
-  private buffer = "";
+  static protocolHeader = 'Content-Length: ';
+  static protocolLineSeparator = '\r\n\r\n';
+  private buffer = '';
   private enabled = true;
 
-  constructor(rawStream: NodeJS.ReadableStream,
-              onResponse: (response: JSONObject) => void,
-              onNotification: (notification: JSONObject) => void) {
-
-    rawStream.on("data", (chunk: any) => {
-      if (!this.enabled)
+  constructor(
+    rawStream: NodeJS.ReadableStream,
+    onResponse: (response: JSONObject) => void,
+    onNotification: (notification: JSONObject) => void
+  ) {
+    rawStream.on('data', (chunk: any) => {
+      if (!this.enabled) {
         return;
+      }
 
       this.buffer += chunk;
 
-      let packet: JSONObject|undefined;
+      let packet: JSONObject | undefined;
       while ((packet = this.tryProcessPacket()) != undefined) {
-        if ("id" in packet)
+        if ('id' in packet) {
           onResponse(packet);
-        else
+        } else {
           onNotification(packet);
+        }
       }
       return true;
     });
@@ -69,29 +77,45 @@ export class JSONRPCStream {
   /**
    * Tries to read a packet from the buffer and update that buffer if found.
    */
-  private tryProcessPacket(): JSONObject|undefined {
+  private tryProcessPacket(): JSONObject | undefined {
     // We process first the protocol header.
-    if (!this.buffer.startsWith(JSONRPCStream.protocolHeader))
+
+    // We process first the protocol header.
+    if (!this.buffer.startsWith(JSONRPCStream.protocolHeader)) {
       return undefined;
+    }
+    // Then we parse the content length.
     // Then we parse the content length.
     let index = JSONRPCStream.protocolHeader.length;
     let contentLength = 0;
     for (; index < this.buffer.length; index++) {
       const c = this.buffer[index];
-      if (c < '0' || c > '9')
+
+      if (c < '0' || c > '9') {
         break;
+      }
       contentLength = contentLength * 10 + parseInt(c);
     }
     // Then we parse the line separator.
-    if (!this.buffer.substring(index).startsWith(
-            JSONRPCStream.protocolLineSeparator))
+
+    // Then we parse the line separator.
+    if (
+      !this.buffer
+        .substring(index)
+        .startsWith(JSONRPCStream.protocolLineSeparator)
+    ) {
       return undefined;
+    }
+
+    // Then we extract the contents of the packet.
 
     // Then we extract the contents of the packet.
     const contentBegPos = index + JSONRPCStream.protocolLineSeparator.length;
     const contentBytes = Buffer.from(this.buffer.substring(contentBegPos));
-    if (contentBytes.length < contentLength)
+
+    if (contentBytes.length < contentLength) {
       return undefined;
+    }
     const contents = contentBytes.subarray(0, contentLength).toString();
 
     // We update the buffer to point past this packet.
@@ -99,7 +123,9 @@ export class JSONRPCStream {
     return JSON.parse(contents);
   }
 
-  public dispose() { this.enabled = false; }
+  public dispose() {
+    this.enabled = false;
+  }
 }
 
 /**
@@ -110,12 +136,15 @@ export class ProcessExitStream {
   private enabled = true;
 
   constructor(process: ChildProcess, onExit: (status: ExitStatus) => void) {
-    process.on("exit", (code: number|null, signal: NodeJS.Signals|null) => {
-      if (!this.enabled)
+    process.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      if (!this.enabled) {
         return;
-      onExit({code, signal});
+      }
+      onExit({ code, signal });
     });
   }
 
-  public dispose() { this.enabled = false; }
+  public dispose() {
+    this.enabled = false;
+  }
 }

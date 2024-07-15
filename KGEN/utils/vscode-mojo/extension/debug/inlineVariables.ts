@@ -6,10 +6,10 @@
 
 import * as vscode from 'vscode';
 
-import {MojoContext} from '../mojoContext';
-import {DisposableContext} from '../utils/disposableContext';
+import { MojoContext } from '../mojoContext';
+import { DisposableContext } from '../utils/disposableContext';
 
-import {DEBUG_TYPE} from './constants';
+import { DEBUG_TYPE } from './constants';
 
 /**
  *  Variables grouped by evaluate name. Multiple entries per key represent
@@ -46,55 +46,63 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
    * variables.
    */
   private static LOCAL_SCOPE_ID = 1;
-  public onFrameGotVariables =
-      new vscode.EventEmitter<[ FrameId, VariablesGroups ]>();
+  public onFrameGotVariables = new vscode.EventEmitter<
+    [FrameId, VariablesGroups]
+  >();
 
   async waitForFrameVariables(frameId: FrameId): Promise<VariablesGroups> {
     const result = this.frameToVariables.get(frameId);
-    if (result !== undefined)
+
+    if (result !== undefined) {
       return result;
+    }
 
     return new Promise<VariablesGroups>((resolve, reject) => {
-      this.onFrameGotVariables.event(([ eventFrameId, variables ]) => {
-        if (eventFrameId == frameId)
+      this.onFrameGotVariables.event(([eventFrameId, variables]) => {
+        if (eventFrameId == frameId) {
           resolve(variables);
+        }
       });
     });
   }
 
-  onWillReceiveMessage(message: {[key: string]: unknown}): void {
-    if (message.command === "scopes") {
+  onWillReceiveMessage(message: { [key: string]: unknown }): void {
+    if (message.command === 'scopes') {
       this.currentFrameId = (message as DAPScopesRequest).arguments.frameId;
-    } else if (message.command === "variables") {
+    } else if (message.command === 'variables') {
       const request = message as DAPVariablesRequest;
-      if (request.arguments.variablesReference ===
-          LocalVariablesTracker.LOCAL_SCOPE_ID) {
+      if (
+        request.arguments.variablesReference ===
+        LocalVariablesTracker.LOCAL_SCOPE_ID
+      ) {
         this.variablesRequestIdToFrameId.set(request.seq, this.currentFrameId);
       }
     }
   }
 
-  onDidSendMessage(message: {[key: string]: unknown}): void {
-    if (message.event === "stopped") {
+  onDidSendMessage(message: { [key: string]: unknown }): void {
+    if (message.event === 'stopped') {
       this.currentFrameId = -1;
       this.frameToVariables.clear();
       this.variablesRequestIdToFrameId.clear();
     }
 
-    if (message.command === "variables") {
+    if (message.command === 'variables') {
       const response = message as DAPVariablesResponse;
       const variablesMap: VariablesGroups = new Map();
 
       for (const variable of response.body.variables) {
-        if (!variablesMap.has(variable.evaluateName))
+        if (!variablesMap.has(variable.evaluateName)) {
           variablesMap.set(variable.evaluateName, []);
+        }
         variablesMap.get(variable.evaluateName)!.push(variable);
       }
 
-      const frameId =
-          this.variablesRequestIdToFrameId.get(response.request_seq)!;
+      const frameId = this.variablesRequestIdToFrameId.get(
+        response.request_seq
+      )!;
       this.frameToVariables.set(frameId, variablesMap);
-      this.onFrameGotVariables.fire([ frameId, variablesMap ]);
+      this.onFrameGotVariables.fire([frameId, variablesMap]);
     }
   }
 }
@@ -102,13 +110,16 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
 /**
  * Provides inline local variables during a debug session.
  */
-export class InlineLocalVariablesProvider implements
-    vscode.InlineValuesProvider {
+export class InlineLocalVariablesProvider
+  implements vscode.InlineValuesProvider
+{
   private localVariablesTrackers: Map<SessionId, LocalVariablesTracker>;
   private context: MojoContext;
 
-  constructor(context: MojoContext,
-              localVariablesTrackers: Map<SessionId, LocalVariablesTracker>) {
+  constructor(
+    context: MojoContext,
+    localVariablesTrackers: Map<SessionId, LocalVariablesTracker>
+  ) {
     this.context = context;
     this.localVariablesTrackers = localVariablesTrackers;
   }
@@ -116,18 +127,24 @@ export class InlineLocalVariablesProvider implements
   /**
    * Create the inline text to show for the given variable.
    */
-  private createInlineVariableValue(line: number, column: number,
-                                    variable: Variable):
-      vscode.InlineValueText {
+  private createInlineVariableValue(
+    line: number,
+    column: number,
+    variable: Variable
+  ): vscode.InlineValueText {
     let displayName = variable.evaluateName;
-    const range = new vscode.Range(line, column, line,
-                                   column + variable.evaluateName.length);
+    const range = new vscode.Range(
+      line,
+      column,
+      line,
+      column + variable.evaluateName.length
+    );
     // The value cannot be extremely long, so we cap it.
     const inlineVariableValueLengthCap = 50;
     const value =
-        variable.value.length >= inlineVariableValueLengthCap
-            ? variable.value.substring(0, inlineVariableValueLengthCap) + "..."
-            : variable.value;
+      variable.value.length >= inlineVariableValueLengthCap
+        ? variable.value.substring(0, inlineVariableValueLengthCap) + '...'
+        : variable.value;
     return new vscode.InlineValueText(range, `${displayName} = ${value}`);
   }
 
@@ -136,25 +153,32 @@ export class InlineLocalVariablesProvider implements
    * Currently DWARF doesn't have columns (#29230), so we have to look for the
    * declaration column using text search in the document.
    */
-  private findDeclColumn(document: vscode.TextDocument, line: number,
-                         variable: Variable): number|undefined {
+  private findDeclColumn(
+    document: vscode.TextDocument,
+    line: number,
+    variable: Variable
+  ): number | undefined {
     const text = document.lineAt(line).text;
     let index = -1;
 
     // This is used to verify that a candidate declaration for our variable
     // cannot be expanded into a larger variable name.
     const forbiddenBoundary = (char?: string) =>
-        char !== undefined && /^[a-zA-Z0-9_]$/.test(char);
+      char !== undefined && /^[a-zA-Z0-9_]$/.test(char);
 
     do {
       index = text.indexOf(variable.evaluateName, index + 1);
-      if (index == -1)
+
+      if (index == -1) {
         break;
+      }
 
       const prev = text[index - 1];
       const next = text[index + variable.evaluateName.length];
-      if (!forbiddenBoundary(prev) && !forbiddenBoundary(next))
+
+      if (!forbiddenBoundary(prev) && !forbiddenBoundary(next)) {
         return index;
+      }
     } while (true);
 
     return undefined;
@@ -164,66 +188,85 @@ export class InlineLocalVariablesProvider implements
    * Create the list of inline values for a given variable using the LSP's index
    * of references.
    */
-  async getInlineValuesForVariable(document: vscode.TextDocument,
-                                   stoppedLocation: vscode.Range,
-                                   variable: Variable):
-      Promise<vscode.InlineValue[]> {
+  async getInlineValuesForVariable(
+    document: vscode.TextDocument,
+    stoppedLocation: vscode.Range,
+    variable: Variable
+  ): Promise<vscode.InlineValue[]> {
     const decl = variable.$__lldb_extensions.declaration;
-    const error = variable.$__lldb_extensions.error || "";
-    const path = decl?.path || "";
-    if (decl?.line === undefined || path.length == 0 || error.length > 0)
+    const error = variable.$__lldb_extensions.error || '';
+    const path = decl?.path || '';
+
+    if (decl?.line === undefined || path.length == 0 || error.length > 0) {
       return [];
+    }
     const line = decl.line - 1;
     // If the decl line is where we are stopped or later, we don't inline the
     // variable to prevent printing dirty memory.
-    if (line >= stoppedLocation.start.line)
+
+    // If the decl line is where we are stopped or later, we don't inline the
+    // variable to prevent printing dirty memory.
+    if (line >= stoppedLocation.start.line) {
       return [];
+    }
     let column = this.findDeclColumn(document, line, variable);
 
     // If there's no column information, we can at least show the variable in
     // the decl line.
     if (column === undefined) {
-      return [ this.createInlineVariableValue(line, 0, variable) ];
+      return [this.createInlineVariableValue(line, 0, variable)];
     }
 
     const uri = vscode.Uri.file(path);
     const lspServer = this.context.lspContext?.lspClient;
-    if (lspServer === undefined)
-      return [];
 
-    const references: undefined|any[] =
-        await lspServer.sendRequest("textDocument/references", {
-          textDocument : {
-            uri : uri.toString(),
-          },
-          context : {includeDeclaration : true},
-          position : {
-            line : line,
-            character : column,
-          }
-        });
+    if (lspServer === undefined) {
+      return [];
+    }
+
+    const references: undefined | any[] = await lspServer.sendRequest(
+      'textDocument/references',
+      {
+        textDocument: {
+          uri: uri.toString(),
+        },
+        context: { includeDeclaration: true },
+        position: {
+          line: line,
+          character: column,
+        },
+      }
+    );
     return (references || [])
-        .map(ref => this.createInlineVariableValue(
-                 ref.range.start.line, ref.range.start.character, variable))
-        .filter(
-            // We only keep the references that are on the stop line or above.
-            inlineVar =>
-                inlineVar.range.start.line <= stoppedLocation.start.line);
+      .map((ref) =>
+        this.createInlineVariableValue(
+          ref.range.start.line,
+          ref.range.start.character,
+          variable
+        )
+      )
+      .filter(
+        // We only keep the references that are on the stop line or above.
+        (inlineVar) => inlineVar.range.start.line <= stoppedLocation.start.line
+      );
   }
 
-  async provideInlineValues(document: vscode.TextDocument,
-                            _viewport: vscode.Range,
-                            context: vscode.InlineValueContext):
-      Promise<vscode.InlineValue[]> {
+  async provideInlineValues(
+    document: vscode.TextDocument,
+    _viewport: vscode.Range,
+    context: vscode.InlineValueContext
+  ): Promise<vscode.InlineValue[]> {
     const tracker = this.localVariablesTrackers.get(
-        vscode.debug.activeDebugSession?.id || "");
+      vscode.debug.activeDebugSession?.id || ''
+    );
     if (tracker === undefined) {
       // This could be a non-bug if there are two simultaneous debug sessions
       // with different debuggers.
       this.context.loggingService.main.logError(
-          `Couldn't find the local variable tracker for sessionId ${
-              vscode.debug.activeDebugSession?.id} and frameId ${
-              context.frameId}.`);
+        `Couldn't find the local variable tracker for sessionId ${
+          vscode.debug.activeDebugSession?.id
+        } and frameId ${context.frameId}.`
+      );
       return [];
     }
 
@@ -232,34 +275,50 @@ export class InlineLocalVariablesProvider implements
     const allValues: vscode.InlineValue[] = [];
     for (const variables of variableGroups.values()) {
       for (const variable of variables) {
-        allValues.push(...await this.getInlineValuesForVariable(
-            document, context.stoppedLocation, variable));
+        allValues.push(
+          ...(await this.getInlineValuesForVariable(
+            document,
+            context.stoppedLocation,
+            variable
+          ))
+        );
       }
     }
     return allValues;
   }
 }
 
-export function initializeInlineLocalVariablesProvider(context: MojoContext):
-    DisposableContext {
+export function initializeInlineLocalVariablesProvider(
+  context: MojoContext
+): DisposableContext {
   const localVariablesTrackers: Map<SessionId, LocalVariablesTracker> =
-      new Map();
+    new Map();
   const disposables = new DisposableContext();
 
-  disposables.pushSubscription(vscode.debug.registerDebugAdapterTrackerFactory(
-      DEBUG_TYPE, <vscode.DebugAdapterTrackerFactory>{
-        createDebugAdapterTracker(session: vscode.DebugSession) :
-            vscode.ProviderResult<vscode.DebugAdapterTracker> {
-              const tracker = new LocalVariablesTracker();
-              localVariablesTrackers.set(session.id, tracker);
-              return tracker;
-            }
-      }));
-  disposables.pushSubscription(vscode.debug.onDidTerminateDebugSession(
-      (session: vscode
-           .DebugSession) => { localVariablesTrackers.delete(session.id); }));
+  disposables.pushSubscription(
+    vscode.debug.registerDebugAdapterTrackerFactory(DEBUG_TYPE, <
+      vscode.DebugAdapterTrackerFactory
+    >{
+      createDebugAdapterTracker(
+        session: vscode.DebugSession
+      ): vscode.ProviderResult<vscode.DebugAdapterTracker> {
+        const tracker = new LocalVariablesTracker();
+        localVariablesTrackers.set(session.id, tracker);
+        return tracker;
+      },
+    })
+  );
+  disposables.pushSubscription(
+    vscode.debug.onDidTerminateDebugSession((session: vscode.DebugSession) => {
+      localVariablesTrackers.delete(session.id);
+    })
+  );
 
-  disposables.pushSubscription(vscode.languages.registerInlineValuesProvider(
-      "*", new InlineLocalVariablesProvider(context, localVariablesTrackers)));
+  disposables.pushSubscription(
+    vscode.languages.registerInlineValuesProvider(
+      '*',
+      new InlineLocalVariablesProvider(context, localVariablesTrackers)
+    )
+  );
   return disposables;
 }

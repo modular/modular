@@ -4,24 +4,29 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {ChildProcess, spawn} from 'child_process';
-import {firstValueFrom, Subject} from 'rxjs';
+import { ChildProcess, spawn } from 'child_process';
+import { firstValueFrom, Subject } from 'rxjs';
 
-import {DisposableCallback, DisposableContext} from './DisposableContext';
-import {JSONRPCStream, LineSeparatedStream, ProcessExitStream} from './streams';
+import { DisposableCallback, DisposableContext } from './DisposableContext';
+import {
+  JSONRPCStream,
+  LineSeparatedStream,
+  ProcessExitStream,
+} from './streams';
 import {
   ExitStatus,
   InitializationOptions,
   JSONObject,
   RequestId,
-  RequestParams
+  RequestParams,
 } from './types';
 
-const protocolHeader = "Content-Length: ";
-const protocolLineSeparator = "\r\n\r\n";
+const protocolHeader = 'Content-Length: ';
+const protocolLineSeparator = '\r\n\r\n';
 
 type PendingRequest = {
-  params: RequestParams; responseStream : Subject<JSONObject>;
+  params: RequestParams;
+  responseStream: Subject<JSONObject>;
 };
 
 /**
@@ -39,36 +44,50 @@ export class MojoLSPServer extends DisposableContext {
    *     This logger is expected to append a newline after each invocation.
    * @param onExit A callback invoked whenever the server exits.
    */
-  constructor({initializationOptions, logger, onExit, onNotification}: {
+  constructor({
+    initializationOptions,
+    logger,
+    onExit,
+    onNotification,
+  }: {
     initializationOptions: InitializationOptions;
-    logger : (message: string) => void;
-    onExit : (status: ExitStatus) => void;
-    onNotification : (method: string, params: JSONObject) => void;
+    logger: (message: string) => void;
+    onExit: (status: ExitStatus) => void;
+    onNotification: (method: string, params: JSONObject) => void;
   }) {
     super();
 
-    this.serverProcess = spawn(initializationOptions.serverPath,
-                               initializationOptions.serverArgs, {
-                                 env : initializationOptions.serverEnv,
-                               });
-    this.pushSubscription(new LineSeparatedStream(
-        this.serverProcess.stderr!, (line: string) => logger(line)));
-    this.pushSubscription(new JSONRPCStream(
+    this.serverProcess = spawn(
+      initializationOptions.serverPath,
+      initializationOptions.serverArgs,
+      {
+        env: initializationOptions.serverEnv,
+      }
+    );
+    this.pushSubscription(
+      new LineSeparatedStream(this.serverProcess.stderr!, (line: string) =>
+        logger(line)
+      )
+    );
+    this.pushSubscription(
+      new JSONRPCStream(
         this.serverProcess.stdout!,
         (response: JSONObject) =>
-            this.pendingRequests.get(response.id)!.responseStream.next(
-                response),
+          this.pendingRequests.get(response.id)!.responseStream.next(response),
         (notification: JSONObject) =>
-            onNotification(notification.method, notification.params)));
+          onNotification(notification.method, notification.params)
+      )
+    );
     this.pushSubscription(new ProcessExitStream(this.serverProcess, onExit));
-    this.pushSubscription(new DisposableCallback(() => {
-      // We kill the server process after all listeners have been disposed, to
-      // guarantee that no listener is invoked when the process dies.
-      try {
-        this.serverProcess.kill();
-      } catch {
-      }
-    }));
+    this.pushSubscription(
+      new DisposableCallback(() => {
+        // We kill the server process after all listeners have been disposed, to
+        // guarantee that no listener is invoked when the process dies.
+        try {
+          this.serverProcess.kill();
+        } catch {}
+      })
+    );
   }
 
   /**
@@ -77,14 +96,16 @@ export class MojoLSPServer extends DisposableContext {
    * @returns a promise with the payload that gets resolved when the request is
    *     responded.
    */
-  public async sendRequest(params: RequestParams,
-                           method: string): Promise<JSONObject> {
+  public async sendRequest(
+    params: RequestParams,
+    method: string
+  ): Promise<JSONObject> {
     const request = this.wrapRequest(params, method);
     const id = request.id;
     await this.sendPacket(request);
 
     const subject = new Subject<any>();
-    this.pendingRequests.set(id, {params : params, responseStream : subject});
+    this.pendingRequests.set(id, { params: params, responseStream: subject });
     const result = (await firstValueFrom(subject)).result;
     this.pendingRequests.delete(id);
     return result;
@@ -116,9 +137,9 @@ export class MojoLSPServer extends DisposableContext {
     const payload = Buffer.from(JSON.stringify(packet));
     return new Promise((resolve, _reject) => {
       return this.serverProcess.stdin?.write(
-          `${protocolHeader}${payload.length}${protocolLineSeparator}${
-              payload}`,
-          () => resolve());
+        `${protocolHeader}${payload.length}${protocolLineSeparator}${payload}`,
+        () => resolve()
+      );
     });
   }
 
@@ -128,10 +149,10 @@ export class MojoLSPServer extends DisposableContext {
    */
   private wrapRequest<T>(params: T, method: string): any {
     return {
-      id : this.getNewRequestId(),
-      jsonrpc : "2.0",
-      method : method,
-      params : params,
+      id: this.getNewRequestId(),
+      jsonrpc: '2.0',
+      method: method,
+      params: params,
     };
   }
 
@@ -141,18 +162,19 @@ export class MojoLSPServer extends DisposableContext {
    */
   private wrapNotification<T>(params: T, method: string): any {
     return {
-      jsonrpc : "2.0",
-      method : method,
-      params : params,
+      jsonrpc: '2.0',
+      method: method,
+      params: params,
     };
   }
 
   /**
    * @returns the params of the oldest pending request.
    */
-  public getOldestPendingRequest(): RequestParams|undefined {
-    for (const params of this.pendingRequests.values())
+  public getOldestPendingRequest(): RequestParams | undefined {
+    for (const params of this.pendingRequests.values()) {
       return params.params;
+    }
     return undefined;
   }
 }
