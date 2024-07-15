@@ -84,8 +84,8 @@ fn test[
     var output_ptr = DTypePointer[type].alloc(N * DO * HO * WO * F)
     var output_ref_ptr = DTypePointer[type].alloc(N * DO * HO * WO * F)
 
-    rand[type](input_ptr, N * D * H * W * C)
-    rand[type](filter_ptr, Q * R * S * C_per_group * F)
+    rand[type](input_ptr.address, N * D * H * W * C)
+    rand[type](filter_ptr.address, Q * R * S * C_per_group * F)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()

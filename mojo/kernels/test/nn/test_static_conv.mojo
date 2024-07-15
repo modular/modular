@@ -65,8 +65,8 @@ fn test[
     var output_ptr_static = DTypePointer[type].alloc(N * HO * WO * F)
     var output_ptr_dynamic = DTypePointer[type].alloc(N * HO * WO * F)
 
-    rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    rand[type](input_ptr.address, N * H * W * C)
+    rand[type](filter_ptr.address, R * S * C * F)
 
     var input = NDBuffer[type, 4, DimList(N, H, W, C)](input_ptr)
     var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C, F))

@@ -84,9 +84,9 @@ def test_mha[type: DType]():
     var mha_output_ptr = DTypePointer[type].alloc(qkv_size)
 
     # Q, K, V are randomly initialized.
-    rand(q_ptr, qkv_size)
-    rand(k_ptr, qkv_size)
-    rand(v_ptr, qkv_size)
+    rand(q_ptr.address, qkv_size)
+    rand(k_ptr.address, qkv_size)
+    rand(v_ptr.address, qkv_size)
 
     # Mask is set for half of the sequence.
     for b in range(seq_len):

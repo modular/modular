@@ -108,10 +108,10 @@ fn test[
                         )
 
     else:
-        rand[qkv_type](q_ptr, q_size)
-        rand[qkv_type](k_ptr, k_size)
-        rand[qkv_type](v_ptr, v_size)
-        rand[mask_type](mask_ptr, mask_size)
+        rand[qkv_type](q_ptr.address, q_size)
+        rand[qkv_type](k_ptr.address, k_size)
+        rand[qkv_type](v_ptr.address, v_size)
+        rand[mask_type](mask_ptr.address, mask_size)
 
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](

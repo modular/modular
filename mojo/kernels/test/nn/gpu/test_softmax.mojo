@@ -36,7 +36,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
     var out_device = NDBuffer[type, rank](out_device_ptr.ptr, shape)
 
-    rand[type](in_host_ptr, shape.flattened_length())
+    rand[type](in_host_ptr.address, shape.flattened_length())
     ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
 
     @parameter
@@ -207,7 +207,7 @@ fn test_gpu_online_softmax(ctx: DeviceContext) raises:
         out_device_ptr.ptr
     )
 
-    rand[type](in_host_ptr, shape.flattened_length())
+    rand[type](in_host_ptr.address, shape.flattened_length())
     ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
 
     var online_softmax_gpu = ctx.compile_function[

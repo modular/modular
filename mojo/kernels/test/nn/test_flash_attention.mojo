@@ -223,7 +223,7 @@ def build_ndbuffer[
     static_shape: DimList = DimList.create_unknown[rank](),
 ](shape: StaticIntTuple[rank]) -> NDBuffer[type, rank, static_shape]:
     var ptr = DTypePointer[type].alloc(shape.flattened_length())
-    rand(ptr, shape.flattened_length())
+    rand(ptr.address, shape.flattened_length())
     return NDBuffer[type, rank, static_shape](ptr, shape)
 
 
