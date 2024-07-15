@@ -637,11 +637,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
          "typechecking confirmed that we would use up all positional operands");
 
   // Find all keyword operands that we didn't bind to an argument.
-  KeywordOperands variadicKwOperands;
+  SmallVector<std::pair<StringAttr, FuncOperand>> variadicKwOperands;
   if (operands.kwOperands) {
     for (auto [name, operand] : *operands.kwOperands)
       if (!passedByKw.contains(name))
-        variadicKwOperands.try_emplace(name, operand);
+        variadicKwOperands.emplace_back(name, operand);
   }
   assert((variadicKwOperands.empty() || kwargsDict) &&
          "typechecking confirmed we have no **kwargs");

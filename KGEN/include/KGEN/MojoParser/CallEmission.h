@@ -21,6 +21,17 @@ namespace M::KGEN::LIT {
 // OperandContainer
 //===----------------------------------------------------------------------===//
 
+/// A shorthand to make positional operand handling more readable.
+using FuncOperand = ASTExprAnd<AnyValue>;
+
+/// A shorthand to make keyword operand handling more readable.
+template <typename OperandType>
+using KeywordOperandContainer =
+    llvm::MapVector<StringAttr, OperandType, SmallDenseMap<StringAttr, size_t>>;
+
+/// A shorthand to make keyword argument handling more readable.
+using KeywordOperands = KeywordOperandContainer<FuncOperand>;
+
 /// Struct that carries both positional and keyword operands for a call or
 /// parameter binding. This does not own any values, only references pointers
 /// to their containers.
