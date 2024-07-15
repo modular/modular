@@ -90,6 +90,20 @@ struct object:
 struct IntLiteral:
     var value: __mlir_type.`!kgen.int_literal`
 
+    @always_inline("nodebug")
+    fn __init__(inout self):
+        self.value = __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: Self) -> Bool:
+        return __mlir_op.`kgen.int_literal.cmp`[
+            pred = __mlir_attr.`#kgen<int_literal.cmp_pred ne>`
+        ](self.value, rhs.value)
+
+    @always_inline("nodebug")
+    fn __bool__(self) -> Bool:
+        return self != Self()
+
 
 @value
 @nonmaterializable(FloatDyn)
