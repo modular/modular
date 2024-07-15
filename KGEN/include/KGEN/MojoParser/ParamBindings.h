@@ -7,10 +7,8 @@
 #ifndef KGEN_MOJOPARSER_PARAMBINDINGS_H
 #define KGEN_MOJOPARSER_PARAMBINDINGS_H
 
-#include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/TypeCheckScopeInfo.h"
-#include "mlir/IR/BuiltinAttributeInterfaces.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/MapVector.h"
 
 namespace M::KGEN {
@@ -85,6 +83,14 @@ public:
   /// Return the total number of bindings, including keyword and positional.
   size_t size() const { return posBindings.size() + kwBindings.size(); }
 
+  ArrayRef<ASTExprAnd<PValue>> getPosBindings() const { return posBindings; }
+  /// This contains the bound parameters given by a keyword.
+  const llvm::MapVector<StringAttr, ASTExprAnd<PValue>,
+                        SmallDenseMap<StringAttr, size_t>> &
+  getKWBindings() const {
+    return kwBindings;
+  }
+
   /// Add a bound value for pre-checked positional parameter binding. The caller
   /// is responsible for ensuring the keyword is not already present.
   void addPrechecked(const ExprNode *expr, TypedAttr precheckedBinding);
@@ -93,7 +99,7 @@ public:
   void add(const ExprNode *expr, TypedAttr value);
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
-  void add(const ExprNode *expr, TypedAttr value, StringAttr name);
+  void add(const ExprNode *expr, PValue value, StringAttr name);
 
   /// The type of the function called when performing parameter inference. The
   /// hook will be provided the index of the parameter to be inferred, along
@@ -124,9 +130,9 @@ public:
     /// number of positional-only parameters.
     std::function<void(size_t, bool)> emitParamCount;
     /// Emit diagnostics for incorrect type in a positional parameter.
-    std::function<void(size_t, const Binding &, ASTType)> emitPosType;
+    std::function<void(size_t, ASTExprAnd<PValue>, ASTType)> emitPosType;
     /// Emit diagnostics for incorrect type in a keyword parameter.
-    std::function<void(StringAttr, const Binding &, ASTType)> emitKwType;
+    std::function<void(StringAttr, ASTExprAnd<PValue>, ASTType)> emitKwType;
     /// Emit diagnostics for parameters specified by an unknown keyword.
     std::function<void(ArrayRef<StringAttr>)> emitUnknownKeywords;
     /// Emit diagnostics for a parameter specified both by position and keyword.
@@ -137,9 +143,9 @@ public:
     std::function<void(size_t)> emitDeductionFailure;
     /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic
     /// signature.
-    std::function<void(const Binding &)> emitUnboundPackInVariadic;
+    std::function<void(ASTExprAnd<PValue>)> emitUnboundPackInVariadic;
     /// Emit diagnostic when unbound pack is not at the end of the param list.
-    std::function<void(const Binding &)> emitUnboundPackNotEnd;
+    std::function<void(ASTExprAnd<PValue>)> emitUnboundPackNotEnd;
     /// Emit diagnostics for failure to deduce an infer-only parameter.
     std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).
@@ -200,10 +206,11 @@ private:
                      const DiagEmitter *diagEmitter, bool partial) const;
 
   /// This contains a list of bound parameters given positionally.
-  SmallVector<Binding> posBindings;
+  SmallVector<ASTExprAnd<PValue>> posBindings;
 
   /// This contains the bound parameters given by a keyword.
-  llvm::MapVector<StringAttr, Binding, SmallDenseMap<StringAttr, size_t>>
+  llvm::MapVector<StringAttr, ASTExprAnd<PValue>,
+                  SmallDenseMap<StringAttr, size_t>>
       kwBindings;
 
   /// A list of all default parameter values declared for a type, if these are
@@ -217,9 +224,6 @@ private:
   /// The number of pre-type-checked positional arguments.
   /// FIXME: Remove this, why is this needed?
   size_t numPreTypeChecked = 0;
-
-  template <typename OperandType>
-  friend class OperandContainer;
 };
 
 } // namespace M::KGEN::LIT

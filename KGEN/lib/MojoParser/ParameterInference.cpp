@@ -783,13 +783,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   return failure();
 }
 
-void ParameterInferenceState::inferOneParam(
-    const ParamBindings::Binding &binding, Type expectedType) {
+void ParameterInferenceState::inferOneParam(ASTExprAnd<PValue> binding,
+                                            Type expectedType) {
   // Don't infer from unpacked parameters.
-  if (isa<UnpackedAttr>(binding.value))
+  if (isa<UnpackedAttr>(binding.ir.get()))
     return;
   curArgExpr = binding.expr;
-  (void)matchTypes(binding.getType(), expectedType);
+  (void)matchTypes(binding.ir.getType(), expectedType);
 }
 
 /// Given a signature type that has some of its parameter bindings known, burn
@@ -938,7 +938,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     // If we're out of positional bindings, try looking for a provided keyword
     // parameter binding.
     if (posIdx == numPosParams) {
-      if (std::optional<ParamBindings::Binding> param =
+      if (std::optional<ASTExprAnd<PValue>> param =
               givenBindings.findKwArg(paramListAttr.getName(idx))) {
         inferOneParam(*param, expectedType);
         continue;

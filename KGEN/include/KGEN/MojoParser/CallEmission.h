@@ -57,10 +57,6 @@ public:
             ArrayRef<OperandType>(std::forward<OperandsT>(posOperands)),
             kwOperands) {}
 
-  /// Form a reference from parameter bindings.
-  OperandContainer(const ParamBindings &bindings)
-      : posOperands(bindings.posBindings), kwOperands(&bindings.kwBindings) {}
-
   /// Return a keyword argument value if present, or null otherwise.
   std::optional<OperandType> findKwArg(StringAttr argName) const {
     if (hasKwOperands())
