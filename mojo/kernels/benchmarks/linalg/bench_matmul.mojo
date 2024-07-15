@@ -77,8 +77,8 @@ fn bench_matmul[
     var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
     var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
     var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
-    rand[a_type](a_ptr, len(a))
-    rand[b_type](b_ptr, len(b))
+    rand[a_type](a_ptr.address, len(a))
+    rand[b_type](b_ptr.address, len(b))
     c.zero()
 
     var padded_n_k = StaticIntTuple[2]()

@@ -21,7 +21,7 @@ fn test[N: Int = 1024 * 1024]() -> UInt32:
     alias alignment = 64
     alias type = DType.uint32
     var x = DTypePointer[type].alloc(N, alignment=alignment)
-    randint[type](x, N, 0, 255)
+    randint[type](x.address, N, 0, 255)
     var s: Scalar[DType.uint32] = 0
     for i in range(N):
         s += 123 * x[i].cast[DType.uint32]()
@@ -60,7 +60,7 @@ fn bench_func[
 
     """
     Note: We can also use the following variadic signature:
-    m.bench_function[bench_iter](BenchId(op_name), 
+    m.bench_function[bench_iter](BenchId(op_name),
         ThroughputMeasure(BenchMetric.flops, num_elements * 2),  # FMA's
         ThroughputMeasure("bytes", num_elements * 4),  # uint32 = 4 bytes
         ThroughputMeasure(BenchMetric.elements, num_elements),

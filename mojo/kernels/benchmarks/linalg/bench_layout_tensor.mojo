@@ -40,7 +40,7 @@ struct Matrix[rows: Int, cols: Int]:
     @staticmethod
     fn rand() -> Self:
         var data = DTypePointer[dtype].alloc(rows * cols)
-        rand(data, rows * cols)
+        rand(data.address, rows * cols)
         return Self(data)
 
     fn __getitem__(self, y: Int, x: Int) -> SIMD[dtype, 1]:

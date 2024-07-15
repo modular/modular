@@ -42,7 +42,7 @@ fn bench_concat[
     var input0_ptr = ctx.create_buffer[type](size)
     inputs[0] = NDBuffer[type, rank](input0_ptr.ptr, shape)
     inputs_host[0] = NDBuffer[type, rank](DTypePointer[type].alloc(size), shape)
-    randn(inputs_host[0].data, size)
+    randn(inputs_host[0].data.address, size)
     ctx.enqueue_copy_to_device(input0_ptr, inputs_host[0].data)
     name += str(shape)
     out_axis += shape[axis]
@@ -52,7 +52,7 @@ fn bench_concat[
     var input1_ptr = ctx.create_buffer[type](size)
     inputs[1] = NDBuffer[type, rank](input1_ptr.ptr, shape)
     inputs_host[1] = NDBuffer[type, rank](DTypePointer[type].alloc(size), shape)
-    randn(inputs_host[1].data, size)
+    randn(inputs_host[1].data.address, size)
     ctx.enqueue_copy_to_device(input1_ptr, inputs_host[1].data)
     name += str(shape)
     out_axis += shape[axis]
@@ -65,7 +65,7 @@ fn bench_concat[
     var output_host = NDBuffer[type, rank](
         DTypePointer[type].alloc(output.size()), out_shape
     )
-    randn(output_host.data, output.size())
+    randn(output_host.data.address, output.size())
 
     ctx.enqueue_copy_to_device(output_ptr, output_host.data)
 

@@ -38,8 +38,8 @@ fn bench_gemv_tc[
     var b_host = DTypePointer[type].alloc(K * N)
     var c_host = DTypePointer[type].alloc(M * N)
 
-    randn(a_host, M * K)
-    randn(b_host, K * N)
+    randn(a_host.address, M * K)
+    randn(b_host.address, K * N)
     memset(c_host, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
@@ -113,8 +113,8 @@ fn bench_gemv_ws[
     var b_host = DTypePointer[type].alloc(K * N)
     var c_host = DTypePointer[type].alloc(M * N)
 
-    randn(a_host, M * K)
-    randn(b_host, K * N)
+    randn(a_host.address, M * K)
+    randn(b_host.address, K * N)
     memset(c_host, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
@@ -188,8 +188,8 @@ fn bench_gemv_naive[
     var b_host = DTypePointer[type].alloc(K * N)
     var c_host = DTypePointer[type].alloc(M * N)
 
-    randn(a_host, M * K)
-    randn(b_host, K * N)
+    randn(a_host.address, M * K)
+    randn(b_host.address, K * N)
     memset(c_host, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
