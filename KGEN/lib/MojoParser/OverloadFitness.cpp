@@ -490,13 +490,11 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (!argVal) {
       if (auto initValue = operand.ir.getIfInitializer()) {
         // Initializer lists are good if we can construct the expected type.
-        ExprEmitter emitter(shared, scopeInfo.declScope,
-                            ExprContext::EC_CallArgValue);
-        auto [initFn, erroneousDecl] = emitter.canConstructType(
-            expectedType, initValue.get(), operand.expr);
+        FailureOr<PValue> initFn = OverloadSet::canConstructType(
+            expectedType, initValue.get(), operand.expr, scopeInfo);
         // If there were declaration errors, assume construction is possible to
         // avoid spurious errors.
-        bool valid = (bool)initFn || erroneousDecl;
+        bool valid = (bool)failed(initFn) || initFn.value();
         // If so, all is good, if not, we fail.
         return {valid ? kValidType : kWrongType, expectedType};
       }
@@ -543,8 +541,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
     if (allowImplicitConversions &&
-        ExprEmitter(shared, scopeInfo.declScope, ExprContext::EC_CallArgValue)
-            .canImplicitlyConvertToType({argVal, operand.expr}, expectedType)) {
+        OverloadSet::canImplicitlyConvertToType({argVal, operand.expr},
+                                                expectedType, scopeInfo)) {
       // If we had one, this bumps our # implicit conversions.
       numImplicitConversions += 2;
       return {kValidType, expectedType};
