@@ -55,8 +55,8 @@ fn test_gemv():
     var ref_out_storage = DTypePointer[type].alloc(m, alignment=alignment)
     var ref_out = Buffer[type, Dim(m)](ref_out_storage)
 
-    rand[type](lhs_storage, m * k)
-    rand[type](rhs_storage, k)
+    rand[type](lhs_storage.address, m * k)
+    rand[type](rhs_storage.address, k)
 
     # Compute reference output
     naive_gemv(ref_out, lhs, rhs)
