@@ -36,7 +36,7 @@ fn _to_dtype_pointer[
 
 
 fn fill_random[type: DType](array: InlineArray[Scalar[type]]):
-    rand(_to_dtype_pointer(array), len(array))
+    rand(_to_dtype_pointer(array).address, len(array))
 
 
 fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
