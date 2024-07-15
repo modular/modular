@@ -224,9 +224,9 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     var c_host = DTypePointer[DType.float32].alloc(M * N * c_stride)
     var c_host_naive = DTypePointer[DType.float32].alloc(M * N * c_stride)
 
-    randn(a_host, M * K)
+    randn(a_host.address, M * K)
 
-    randn(b_host, K * N)
+    randn(b_host.address, K * N)
 
     for i in range(M * N * c_stride):
         c_host[i] = 0

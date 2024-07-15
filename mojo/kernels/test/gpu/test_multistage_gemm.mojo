@@ -318,8 +318,8 @@ fn test[type: DType, transpose_b: Bool]() raises:
     var c_host = DTypePointer[type].alloc(M * N)
     var c_host_ref = DTypePointer[type].alloc(M * N)
 
-    rand[type](a_host, M * K)
-    rand[type](b_host, K * N)
+    rand[type](a_host.address, M * K)
+    rand[type](b_host.address, K * N)
 
     var a_device = _malloc[type](M * K)
     var b_device = _malloc[type](K * N)
