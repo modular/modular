@@ -14,7 +14,6 @@ from runtime.llcl import (
     _del_llcl_chain,
     _async_wait,
     _async_wait_timeout,
-    Runtime,
 )
 from utils.lock import BlockingSpinLock, BlockingScopedLock
 
@@ -36,9 +35,9 @@ struct Batch[Input: Batchable, Output: Batchable]:
     alias STARTED = 1
     var started: Atomic[DType.int64]
 
-    fn __init__(inout self: Self, rt: Runtime, capacity: Int):
+    fn __init__(inout self: Self, capacity: Int):
         var chain = Chain()
-        _init_llcl_chain(rt, UnsafePointer[Chain].address_of(chain))
+        _init_llcl_chain(UnsafePointer[Chain].address_of(chain))
         self.chain = chain
         self.pending = List[Input](capacity=capacity)
         self.outputs = List[Output]()
@@ -101,17 +100,15 @@ struct Batcher[
     Output: Batchable,
     func: fn (List[Input]) capturing -> List[Output],
 ]:
-    var rt: Runtime
     var max: Int
     var timeout: Int
     var current: Arc[Batch[Input, Output]]
     var mu: BlockingSpinLock
 
     fn __init__(inout self, max: Int = 1, timeout: Int = 0):
-        self.rt = Runtime()
         self.max = max
         self.timeout = timeout
-        self.current = Batch[Input, Output](rt=self.rt, capacity=self.max)
+        self.current = Batch[Input, Output](capacity=self.max)
         self.mu = BlockingSpinLock()
 
     fn submit(inout self, owned input: Input) -> Output:
@@ -123,7 +120,7 @@ struct Batcher[
         if index == 0 and self.timeout != 0:
             batch[].deadline = time.perf_counter_ns() + self.timeout
         if last:
-            self.current = Batch[Input, Output](rt=self.rt, capacity=self.max)
+            self.current = Batch[Input, Output](capacity=self.max)
         _ = self.mu.unlock(0)
 
         # The batch will be executed by the first waiter past the deadline. We
@@ -136,9 +133,7 @@ struct Batcher[
             # will return false.
             self.mu.lock(0)
             if self.current._inner == batch._inner:
-                self.current = Batch[Input, Output](
-                    rt=self.rt, capacity=self.max
-                )
+                self.current = Batch[Input, Output](capacity=self.max)
             _ = self.mu.unlock(0)
             batch[].outputs = func(batch[].pending)
             batch[]._complete()

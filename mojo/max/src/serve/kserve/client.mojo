@@ -6,7 +6,7 @@
 """Provides basic KServe client functionality."""
 
 from sys.ffi import DLHandle
-from runtime.llcl import Runtime, ChainPromise
+from runtime.llcl import run, ChainPromise
 from utils.variant import Variant
 
 from max.engine import InferenceSession, TensorMap
@@ -112,4 +112,4 @@ struct GRPCClient:
         var request = self._make_inference_request(
             name, version, inputs, outputs
         )
-        return Runtime().run(self._infer(request))
+        return run(self._infer(request))

@@ -6,7 +6,7 @@
 """Provides C bindings to KServe data structures."""
 
 from os import Atomic
-from runtime.llcl import Runtime, TaskGroup
+from runtime.llcl import run, TaskGroup
 from sys.ffi import DLHandle
 from time import perf_counter_ns
 
@@ -122,8 +122,7 @@ struct GRPCServer[
         self.serve[handle]()
 
     fn serve[handle_fn: Self.handle_fn_type](inout self) -> None:
-        var rt = Runtime()
-        rt.run(self._serve[handle_fn]())
+        run(self._serve[handle_fn]())
 
     async fn _serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         @always_inline

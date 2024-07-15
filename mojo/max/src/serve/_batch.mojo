@@ -8,7 +8,7 @@
 from builtin.coroutine import _coro_resume_fn, _suspend_async
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from runtime.llcl import Runtime
+from runtime.llcl import _get_current_runtime
 
 from max._utils import call_dylib_func, exchange
 
@@ -117,7 +117,7 @@ struct CBatch:
             self._lib,
             pop_function,
             server_ptr,
-            Runtime().ptr,
+            _get_current_runtime(),
             UnsafePointer.address_of(batch_ptr),
         )
 
