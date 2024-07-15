@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo --no-optimization %s | FileCheck %s
 
-from runtime.llcl import Runtime
+from runtime.llcl import run
 
 
 @no_inline
@@ -30,5 +30,4 @@ fn main():
     # CHECK-NEXT: 2
     # CHECK-NEXT: 3
     # CHECK-NEXT: 4
-    with Runtime() as rt:
-        rt.run(does_multiple_things(1))
+    run(does_multiple_things(1))

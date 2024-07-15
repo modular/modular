@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from runtime.llcl import Runtime
+from runtime.llcl import run
 
 
 @always_inline
@@ -23,8 +23,7 @@ fn foobar[pref: Int](a: Int):
 
     var coro = just_call_it[but_async]()
     print(pref)
-    with Runtime() as rt:
-        print(rt.run(coro^))
+    print(run(coro^))
 
 
 fn main():

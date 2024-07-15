@@ -7,7 +7,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
-from runtime.llcl import Runtime
+from runtime.llcl import run
 
 # CHECK: foo
 # CHECK-NEXT: hello async
@@ -23,5 +23,4 @@ fn main():
 
     var coro = byref_capture(x)
     print("foo")
-    with Runtime() as rt:
-        rt.run(coro^)
+    run(coro^)

@@ -6,7 +6,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
-from runtime.llcl import Runtime
+from runtime.llcl import run
 
 
 @value
@@ -27,14 +27,13 @@ async fn call(value: MemType, c: Bool) raises -> MemType:
 fn main():
     # CHECK: async
     print("async")
-    with Runtime() as rt:
-        try:
-            # CHECK-NEXT: 42
-            print(rt.run(call(42, False)).value)
-        except e:
-            print(e)
-        try:
-            print(rt.run(call(24, True)).value)
-        except e:
-            # CHECK-NEXT: whoops
-            print(e)
+    try:
+        # CHECK-NEXT: 42
+        print(run(call(42, False)).value)
+    except e:
+        print(e)
+    try:
+        print(run(call(24, True)).value)
+    except e:
+        # CHECK-NEXT: whoops
+        print(e)
