@@ -4,11 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Dict
+from memory import DTypePointer
+
+
+@value
+struct A:
+    var x: DTypePointer[DType.invalid]
+
+    fn __init__(inout self):
+        var y = DTypePointer[DType.int8].alloc(1)
+        self.x = y.bitcast[DType.invalid]()
 
 
 fn test_key_element() raises:
-    var dict = Dict[DType, NoneType]()
+    var a = A()
     print("bp")  # breakpoint
 
 
