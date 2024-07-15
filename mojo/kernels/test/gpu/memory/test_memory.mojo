@@ -24,7 +24,7 @@ fn test_malloc_managed() raises:
     print("== test_malloc_managed")
     alias length = 8
     var data = _malloc_managed[UInt8](length)
-    iota(DTypePointer[DType.uint8](data), length, 0)
+    iota(data, length, 0)
     var val: UInt8 = 2
     _memset(data, val, length)
     # CHECK: 2
@@ -47,7 +47,7 @@ fn test_memset_async() raises:
     fn test_memset[type: DType](val: Scalar[type]) raises:
         alias length = 4
         var data = _malloc_managed[Scalar[type]](length)
-        # iota(DTypePointer[DType.uint32](data), length, 0)
+        # iota(data, length, 0)
         var stream = Stream()
         _memset_async(data, val, length, stream)
         stream.synchronize()
