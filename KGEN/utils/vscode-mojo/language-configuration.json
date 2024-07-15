@@ -1,24 +1,12 @@
 {
   "comments": {
     "lineComment": "#",
-    "blockComment": [
-      "\"\"\"",
-      "\"\"\""
-    ]
+    "blockComment": ["\"\"\"", "\"\"\""]
   },
   "brackets": [
-    [
-      "{",
-      "}"
-    ],
-    [
-      "[",
-      "]"
-    ],
-    [
-      "(",
-      ")"
-    ]
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
   ],
   "autoClosingPairs": [
     {
@@ -36,179 +24,106 @@
     {
       "open": "\"",
       "close": "\"",
-      "notIn": [
-        "string"
-      ]
+      "notIn": ["string"]
     },
     {
       "open": "r\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "R\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "u\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "U\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "f\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "F\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "b\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "B\"",
       "close": "\"",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "r'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "R'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "u'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "U'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "f'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "F'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "b'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "B'",
       "close": "'",
-      "notIn": [
-        "string",
-        "comment"
-      ]
+      "notIn": ["string", "comment"]
     },
     {
       "open": "`",
       "close": "`",
-      "notIn": [
-        "string"
-      ]
+      "notIn": ["string"]
     }
   ],
   "surroundingPairs": [
-    [
-      "{",
-      "}"
-    ],
-    [
-      "[",
-      "]"
-    ],
-    [
-      "(",
-      ")"
-    ],
-    [
-      "\"",
-      "\""
-    ],
-    [
-      "'",
-      "'"
-    ],
-    [
-      "`",
-      "`"
-    ]
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["\"", "\""],
+    ["'", "'"],
+    ["`", "`"]
   ],
   "folding": {
     "offSide": true,

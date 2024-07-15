@@ -6,15 +6,15 @@
 
 import * as vscode from 'vscode';
 
-import {activateRunCommands} from './commands/run';
-import {MojoDebugContext} from './debug/debug';
-import {MojoDecoratorContext} from './decorations';
-import {registerFormatter} from './formatter';
-import {LoggingService} from './logging';
-import {MojoLSPContext} from './lsp/lsp';
-import {MojoSDKManager} from './mojoSDK';
-import {MojoTestContext} from './testing/testing';
-import {DisposableContext} from './utils/disposableContext';
+import { activateRunCommands } from './commands/run';
+import { MojoDebugContext } from './debug/debug';
+import { MojoDecoratorContext } from './decorations';
+import { registerFormatter } from './formatter';
+import { LoggingService } from './logging';
+import { MojoLSPContext } from './lsp/lsp';
+import { MojoSDKManager } from './mojoSDK';
+import { MojoTestContext } from './testing/testing';
+import { DisposableContext } from './utils/disposableContext';
 
 /**
  *  This class manages the Mojo extension state.
@@ -25,8 +25,10 @@ export class MojoContext extends DisposableContext {
   readonly extensionContext: vscode.ExtensionContext;
   lspContext?: MojoLSPContext;
 
-  constructor(extensionContext: vscode.ExtensionContext,
-              loggingService: LoggingService) {
+  constructor(
+    extensionContext: vscode.ExtensionContext,
+    loggingService: LoggingService
+  ) {
     super();
     this.extensionContext = extensionContext;
     this.loggingService = loggingService;
@@ -37,16 +39,16 @@ export class MojoContext extends DisposableContext {
    *  Activate the Mojo context, and start the language clients.
    */
   async activate() {
-    this.loggingService.main
-        .logInfo("Activating the Mojo Context.")
+    this.loggingService.main.logInfo('Activating the Mojo Context.');
 
-        // Initialize the commands of the extension.
-        this.pushSubscription(
-            vscode.commands.registerCommand('mojo.restart', async () => {
-              // Dispose and reactivate the context.
-              this.dispose();
-              await this.activate();
-            }));
+    // Initialize the commands of the extension.
+    this.pushSubscription(
+      vscode.commands.registerCommand('mojo.restart', async () => {
+        // Dispose and reactivate the context.
+        this.dispose();
+        await this.activate();
+      })
+    );
 
     // Initialize the testing support.
     let testContext = new MojoTestContext(this);
@@ -55,7 +57,8 @@ export class MojoContext extends DisposableContext {
 
     // Initialize the formatter.
     this.pushSubscription(
-        registerFormatter(this.loggingService, this.sdkManager));
+      registerFormatter(this.loggingService, this.sdkManager)
+    );
 
     // Initialize the debugger support.
     this.pushSubscription(new MojoDebugContext(this));
@@ -71,8 +74,11 @@ export class MojoContext extends DisposableContext {
     await this.lspContext.activate();
     this.pushSubscription(this.lspContext);
 
-    this.loggingService.main.logInfo("MojoContext activated.");
-    this.pushSubscription(new vscode.Disposable(
-        () => { this.loggingService.main.logInfo("Disposing MOJOContext."); }))
+    this.loggingService.main.logInfo('MojoContext activated.');
+    this.pushSubscription(
+      new vscode.Disposable(() => {
+        this.loggingService.main.logInfo('Disposing MOJOContext.');
+      })
+    );
   }
 }

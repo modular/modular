@@ -19,19 +19,21 @@ import {
   Uri,
   UriHandler,
   window,
-  workspace
-} from "vscode";
+  workspace,
+} from 'vscode';
 import * as YAML from 'yaml';
 
-import {LoggingService} from '../logging';
-import {DisposableContext} from '../utils/disposableContext';
+import { LoggingService } from '../logging';
+import { DisposableContext } from '../utils/disposableContext';
 
-type RPCServerResponse = {
-  success: true
-}|{
-  success: false
-  message?: string
-}
+type RPCServerResponse =
+  | {
+      success: true;
+    }
+  | {
+      success: false;
+      message?: string;
+    };
 
 /**
  * URI-based debug launcher.
@@ -79,36 +81,36 @@ export class UriLaunchServer implements UriHandler {
         } else {
           throw new Error(`Unsupported combination of launch Uri parameters.`);
         }
-
       } else if (uri.path == '/debug/launch') {
         let frags = query.split('&');
         let cmdLine = frags.pop();
 
-        let env: {[key: string]: string;} = {};
+        let env: { [key: string]: string } = {};
         for (let frag of frags) {
           let pos = frag.indexOf('=');
-          if (pos > 0)
+
+          if (pos > 0) {
             env[frag.substring(0, pos)] = frag.substring(pos + 1);
+          }
         }
 
         let args = stringArgv(cmdLine || '');
         let program = args.shift();
         let debugConfig: DebugConfiguration = {
-          type : 'mojo-lldb',
-          request : 'launch',
-          name : '',
-          program : program,
-          args : args,
-          env : env,
+          type: 'mojo-lldb',
+          request: 'launch',
+          name: '',
+          program: program,
+          args: args,
+          env: env,
         };
         debugConfig.name = debugConfig.name || debugConfig.program;
         await debug.startDebugging(undefined, debugConfig);
-
       } else if (uri.path == '/debug/launch-config') {
         let debugConfig: DebugConfiguration = {
-          type : 'mojo-lldb',
-          request : 'launch',
-          name : '',
+          type: 'mojo-lldb',
+          request: 'launch',
+          name: '',
         };
         Object.assign(debugConfig, YAML.parse(query));
         debugConfig.name = debugConfig.name || debugConfig.program;
@@ -146,19 +148,24 @@ export class RpcLaunchServer extends DisposableContext {
     this.port = port;
     this.addServerSecret(secret);
 
-    this.pushSubscription(this.errorEmitter.event((e: Error) => {
-      this.loggingService.main.logError(
-          "RPC Server error. You might need to restart VS Code to fix this issue.",
-          e);
-    }));
+    this.pushSubscription(
+      this.errorEmitter.event((e: Error) => {
+        this.loggingService.main.logError(
+          'RPC Server error. You might need to restart VS Code to fix this issue.',
+          e
+        );
+      })
+    );
 
-    this.inner = net.createServer({allowHalfOpen : true});
-    this.inner.on('error', err => { this.errorEmitter.fire(err); });
-    this.inner.on('connection', socket => {
+    this.inner = net.createServer({ allowHalfOpen: true });
+    this.inner.on('error', (err) => {
+      this.errorEmitter.fire(err);
+    });
+    this.inner.on('connection', (socket) => {
       let request = '';
-      socket.on('data', chunk => {
+      socket.on('data', (chunk) => {
         request += chunk;
-        let parsedRequest: Object|undefined = undefined;
+        let parsedRequest: Object | undefined = undefined;
         try {
           parsedRequest = JSON.parse(request);
         } catch (err) {
@@ -168,14 +175,15 @@ export class RpcLaunchServer extends DisposableContext {
         }
 
         if (typeof parsedRequest === 'object') {
-          this.processRequest(parsedRequest)
-              .then(value => socket.end(JSON.stringify(value)));
+          this.processRequest(parsedRequest).then((value) =>
+            socket.end(JSON.stringify(value))
+          );
         } else if (parsedRequest !== undefined) {
           const response: RPCServerResponse = {
-            success : false,
-            message : "the debug session request is not a JSON object."
+            success: false,
+            message: 'the debug session request is not a JSON object.',
           };
-          socket.end(JSON.stringify(response))
+          socket.end(JSON.stringify(response));
         }
         // In we couldn't parse, i.e. parsedRequest is undefined, it might be
         // because the data is incomplete, so we keep reading.
@@ -186,50 +194,60 @@ export class RpcLaunchServer extends DisposableContext {
         try {
           const _ = JSON.parse(request);
         } catch (err) {
-          const response:
-              RPCServerResponse = {"success" : false, "message" : `${err}`};
+          const response: RPCServerResponse = {
+            success: false,
+            message: `${err}`,
+          };
           socket.end(JSON.stringify(response));
         }
         socket.end();
       });
     });
 
-    this.pushSubscription(new vscode.Disposable(() => { this.inner.close(); }))
+    this.pushSubscription(
+      new vscode.Disposable(() => {
+        this.inner.close();
+      })
+    );
   }
 
   /**
    * Adds the given secret to the list of secrets used for basic authentication
    * of this server.
    */
-  addServerSecret(secret: string|undefined) { this.secrets.add(secret || '') }
+  addServerSecret(secret: string | undefined) {
+    this.secrets.add(secret || '');
+  }
 
   /**
    * Process a JSON debug configuration. It should contain a secret field with
    * the same value as the one defined to create the RPC server.
    */
   async processRequest(request: Object): Promise<RPCServerResponse> {
-    this.loggingService.main.logInfo("Received RPC debug request", request);
+    this.loggingService.main.logInfo('Received RPC debug request', request);
     let debugConfig: DebugConfiguration = {
-      type : 'mojo-lldb',
-      request : 'launch',
-      name : '',
+      type: 'mojo-lldb',
+      request: 'launch',
+      name: '',
     };
     Object.assign(debugConfig, request);
     debugConfig.name = debugConfig.name || debugConfig.program;
     if (!this.secrets.has(debugConfig.secret || '')) {
       return {
-        success : false,
-        message :
-            'Debugger error: invalid secret. The Mojo RPC debug server expects a different `secret` attribute for the debug configuration.'
+        success: false,
+        message:
+          'Debugger error: invalid secret. The Mojo RPC debug server expects a different `secret` attribute for the debug configuration.',
       };
     }
     delete debugConfig.secret;
     try {
-      let success = await debug.startDebugging(/*workspaceFolder=*/ undefined,
-                                               debugConfig);
-      return {success : success};
+      let success = await debug.startDebugging(
+        /*workspaceFolder=*/ undefined,
+        debugConfig
+      );
+      return { success: success };
     } catch (err) {
-      return {success : false, message : `${err}`};
+      return { success: false, message: `${err}` };
     }
   }
 
@@ -237,9 +255,10 @@ export class RpcLaunchServer extends DisposableContext {
    * Listens to messages using the provided network options.
    */
   public async listen() {
-    return new Promise<net.AddressInfo|string>(
-        resolve =>
-            this.inner.listen({port : this.port, host : "127.0.0.1"},
-                              () => resolve(this.inner.address() || "")));
+    return new Promise<net.AddressInfo | string>((resolve) =>
+      this.inner.listen({ port: this.port, host: '127.0.0.1' }, () =>
+        resolve(this.inner.address() || '')
+      )
+    );
   }
 }

@@ -4,15 +4,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {exec} from 'child_process';
+import { exec } from 'child_process';
 import * as vscode from 'vscode';
 
-import {LoggingService} from './logging';
-import {MojoSDKManager} from './mojoSDK';
-import {get} from './utils/config';
+import { LoggingService } from './logging';
+import { MojoSDKManager } from './mojoSDK';
+import { get } from './utils/config';
 
-export function registerFormatter(loggingService: LoggingService,
-                                  mojoSDKManager: MojoSDKManager) {
+export function registerFormatter(
+  loggingService: LoggingService,
+  mojoSDKManager: MojoSDKManager
+) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
     async provideDocumentFormattingEdits(document, _options) {
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
@@ -21,19 +23,23 @@ export function registerFormatter(loggingService: LoggingService,
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
       const sdk = await mojoSDKManager.findSDK();
-      if (!sdk)
+
+      if (!sdk) {
         return [];
+      }
 
       // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
-      var command = sdk.config.mojoDriverPath + " format";
+
+      // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
+      var command = sdk.config.mojoDriverPath + ' format';
 
       let env = sdk.config.getProcessEnv();
 
-      command += " --quiet " + args.join(' ') + ' -';
+      command += ' --quiet ' + args.join(' ') + ' -';
 
-      return new Promise<vscode.TextEdit[]>(function(resolve, reject) {
+      return new Promise<vscode.TextEdit[]>(function (resolve, reject) {
         const originalDocumentText = document.getText();
-        const process = exec(command, {cwd, env}, (error, stdout, stderr) => {
+        const process = exec(command, { cwd, env }, (error, stdout, stderr) => {
           // Process any errors/warnings during formatting. These aren't all
           // necessarily fatal, so this doesn't prevent edits from being
           // applied.
@@ -52,11 +58,10 @@ export function registerFormatter(loggingService: LoggingService,
           // Otherwise, the formatter returned the formatted text. Update the
           // document.
           const documentRange = new vscode.Range(
-              document.lineAt(0).range.start,
-              document.lineAt(document.lineCount - 1)
-                  .rangeIncludingLineBreak.end,
+            document.lineAt(0).range.start,
+            document.lineAt(document.lineCount - 1).rangeIncludingLineBreak.end
           );
-          resolve([ new vscode.TextEdit(documentRange, stdout) ]);
+          resolve([new vscode.TextEdit(documentRange, stdout)]);
         });
 
         process.stdin?.write(originalDocumentText);

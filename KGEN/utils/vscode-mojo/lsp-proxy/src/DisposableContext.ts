@@ -4,14 +4,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {Disposable} from "./types";
+import { Disposable } from './types';
 
 export class DisposableCallback implements Disposable {
   private callback: () => void;
 
-  constructor(callback: () => void) { this.callback = callback; }
+  constructor(callback: () => void) {
+    this.callback = callback;
+  }
 
-  dispose(): void { this.callback(); }
+  dispose(): void {
+    this.callback();
+  }
 }
 
 /**

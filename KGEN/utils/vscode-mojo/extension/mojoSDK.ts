@@ -11,19 +11,24 @@ import * as vscode from 'vscode';
 
 const execFile = util.promisify(require('child_process').execFile);
 
-import {LoggingService} from './logging';
+import { LoggingService } from './logging';
 import * as config from './utils/config';
-import {substituteVariables} from './utils/vscodeVariables';
-import {isNightlyExtension} from './utils/buildInfo';
-import {DisposableContext} from './utils/disposableContext';
+import { substituteVariables } from './utils/vscodeVariables';
+import { isNightlyExtension } from './utils/buildInfo';
+import { DisposableContext } from './utils/disposableContext';
 import * as configWatcher from './utils/configWatcher';
 
 /**
  * This class represents a Mojo SDK version.
  */
 export class MojoSDKVersion {
-  constructor(title: string, major: number, minor: number, patch: number,
-              driverPath: string) {
+  constructor(
+    title: string,
+    major: number,
+    minor: number,
+    patch: number,
+    driverPath: string
+  ) {
     this.title = title;
     this.minor = minor;
     this.major = major;
@@ -46,7 +51,7 @@ export class MojoSDKVersion {
     if (this.isDev()) {
       // We include the path to the modular repo, which is three levels up from
       // the mojo driver path.
-      const repo = path.join(path.parse(this.driverPath).dir, "..", "..", "..");
+      const repo = path.join(path.parse(this.driverPath).dir, '..', '..', '..');
       return `${this.title} (dev) - ${repo}`;
     }
 
@@ -69,13 +74,21 @@ export class MojoSDKConfig {
   /**
    * Create a new MojoSDKConfig object from the given configuration.
    */
-  static async create(loggingService: LoggingService, modularPath: string,
-                      configSection: string, rawConfig: {[key: string]: any;}):
-      Promise<MojoSDKConfig|undefined> {
+  static async create(
+    loggingService: LoggingService,
+    modularPath: string,
+    configSection: string,
+    rawConfig: { [key: string]: any }
+  ): Promise<MojoSDKConfig | undefined> {
     let version = await MojoSDKConfig.parseVersionFromDriver(
-        loggingService, rawConfig.driver_path, configSection);
-    if (!version)
+      loggingService,
+      rawConfig.driver_path,
+      configSection
+    );
+
+    if (!version) {
       return undefined;
+    }
     return new MojoSDKConfig(loggingService, version, modularPath, rawConfig);
   }
 
@@ -84,12 +97,16 @@ export class MojoSDKConfig {
    * binaries.
    */
   public getProcessEnv(): NodeJS.ProcessEnv {
-    let env = {...process.env};
+    let env = { ...process.env };
 
     // If we had modular home provided somewhere, make sure that
     // gets propagated.
-    if (this.modularHomePath)
+
+    // If we had modular home provided somewhere, make sure that
+    // gets propagated.
+    if (this.modularHomePath) {
       env.MODULAR_HOME = this.modularHomePath;
+    }
     return env;
   }
 
@@ -99,44 +116,66 @@ export class MojoSDKConfig {
    */
   public lldbHasPythonScriptingSupport(): Promise<boolean> {
     // We cache this check because it's not a no-op.
-    if (this.lldbHasPythonScriptingSupportResult == undefined)
+
+    // We cache this check because it's not a no-op.
+    if (this.lldbHasPythonScriptingSupportResult == undefined) {
       this.lldbHasPythonScriptingSupportResult =
-          this.doLLDBHasPythonScriptingSupport();
+        this.doLLDBHasPythonScriptingSupport();
+    }
     return this.lldbHasPythonScriptingSupportResult;
   }
 
   /**
    * Parse a version number from the given mojo driver.
    */
-  private static async parseVersionFromDriver(loggingService: LoggingService,
-                                              driverPath: string,
-                                              configSection: string):
-      Promise<MojoSDKVersion|undefined> {
+  private static async parseVersionFromDriver(
+    loggingService: LoggingService,
+    driverPath: string,
+    configSection: string
+  ): Promise<MojoSDKVersion | undefined> {
     try {
-      let {stdout, stderr} = await execFile(driverPath, [ "--version" ], {
-        env : {...process.env},
-        encoding : "utf-8",
+      let { stdout, stderr } = await execFile(driverPath, ['--version'], {
+        env: { ...process.env },
+        encoding: 'utf-8',
       });
-      if (stderr)
-        return undefined;
 
-      let match =
-          stdout.toString().match(/mojo\s+([0-9]+)\.([0-9]+)\.([0-9]+)/);
-      if (!match)
+      if (stderr) {
         return undefined;
+      }
+
+      let match = stdout
+        .toString()
+        .match(/mojo\s+([0-9]+)\.([0-9]+)\.([0-9]+)/);
+
+      if (!match) {
+        return undefined;
+      }
 
       // Build the title of the version based on the config key.
-      let title = "Mojo";
-      if (configSection.includes("max"))
-        title += " Max";
-      if (configSection.includes("nightly"))
-        title += " (nightly)";
 
-      return new MojoSDKVersion(title, +match[1], +match[2], +match[3],
-                                driverPath);
+      // Build the title of the version based on the config key.
+      let title = 'Mojo';
+
+      if (configSection.includes('max')) {
+        title += ' Max';
+      }
+
+      if (configSection.includes('nightly')) {
+        title += ' (nightly)';
+      }
+
+      return new MojoSDKVersion(
+        title,
+        +match[1],
+        +match[2],
+        +match[3],
+        driverPath
+      );
     } catch (e) {
       loggingService.main.logError(
-          "Unable to parse version from `mojo` driver: ", e);
+        'Unable to parse version from `mojo` driver: ',
+        e
+      );
       return undefined;
     }
   }
@@ -149,30 +188,41 @@ export class MojoSDKConfig {
    */
   private async doLLDBHasPythonScriptingSupport(): Promise<boolean> {
     try {
-      let {stdout, stderr} =
-          await execFile(this.lldbPath, [ "-b", "-o", "script print(100+1)" ]);
-      stdout = (stdout || "") as string;
-      stderr = (stderr || "") as string;
+      let { stdout, stderr } = await execFile(this.lldbPath, [
+        '-b',
+        '-o',
+        'script print(100+1)',
+      ]);
+      stdout = (stdout || '') as string;
+      stderr = (stderr || '') as string;
 
-      if (stdout.indexOf("101") != -1) {
+      if (stdout.indexOf('101') != -1) {
         this.loggingService.main.logInfo(
-            "Python scripting support in LLDB found.");
+          'Python scripting support in LLDB found.'
+        );
         return true;
       } else {
         this.loggingService.main.logInfo(
-            `Python scripting support in LLDB not found. The test script returned:\n${
-                stdout}\n${stderr}`);
+          `Python scripting support in LLDB not found. The test script returned:\n${
+            stdout
+          }\n${stderr}`
+        );
       }
     } catch (e) {
       this.loggingService.main.logError(
-          "Python scripting support in LLDB not found. The test script failed with",
-          e);
+        'Python scripting support in LLDB not found. The test script failed with',
+        e
+      );
     }
     return false;
   }
 
-  private constructor(loggingService: LoggingService, version: MojoSDKVersion,
-                      modularPath: string, rawConfig: {[key: string]: any;}) {
+  private constructor(
+    loggingService: LoggingService,
+    version: MojoSDKVersion,
+    modularPath: string,
+    rawConfig: { [key: string]: any }
+  ) {
     this.loggingService = loggingService;
 
     this.version = version;
@@ -198,37 +248,37 @@ export class MojoSDKConfig {
   /**
    * The MODULAR_HOME path containing the SDK.
    */
-  modularHomePath: string = "";
+  modularHomePath: string = '';
 
   /**
    * The path to the mojo driver within the SDK installation.
    */
-  mojoDriverPath: string = "";
+  mojoDriverPath: string = '';
 
   /**
    * The path to the LLDB vscode debug adapter.
    */
-  mojoLLDBVSCodePath: string = "";
+  mojoLLDBVSCodePath: string = '';
 
   /**
    * The path to the LLDB visualizers.
    */
-  mojoLLDBVisualizersPath: string = "";
+  mojoLLDBVisualizersPath: string = '';
 
   /**
    * The path the mojo language server within the SDK installation.
    */
-  mojoLanguageServerPath: string = "";
+  mojoLanguageServerPath: string = '';
 
   /**
    * The path to the mojo LLDB plugin.
    */
-  mojoLLDBPluginPath: string = "";
+  mojoLLDBPluginPath: string = '';
 
   /**
    * The path to the LLDB binary.
    */
-  lldbPath: string = "";
+  lldbPath: string = '';
 
   /**
    * A promise for if the LLDB binary has python scripting support.
@@ -244,8 +294,11 @@ export class MojoSDK {
   private loggingService: LoggingService;
   private context: vscode.ExtensionContext;
 
-  constructor(config: MojoSDKConfig, loggingService: LoggingService,
-              context: vscode.ExtensionContext) {
+  constructor(
+    config: MojoSDKConfig,
+    loggingService: LoggingService,
+    context: vscode.ExtensionContext
+  ) {
     this.config = config;
     this.loggingService = loggingService;
     this.context = context;
@@ -254,27 +307,51 @@ export class MojoSDK {
   /**
    * Return the configuration key for the SDK within the modular.cfg file.
    */
-  static getConfigKey(modularHomePath: string, isNightly: boolean,
-                      possibleKeys: string[]): string|undefined {
+  static getConfigKey(
+    modularHomePath: string,
+    isNightly: boolean,
+    possibleKeys: string[]
+  ): string | undefined {
     // Bail early if we don't have any keys.
-    if (possibleKeys.length === 0)
+
+    // Bail early if we don't have any keys.
+    if (possibleKeys.length === 0) {
       return undefined;
+    }
 
     // If this is a dev-build path, there'll only be one key so just grab
     // it.
-    if (modularHomePath.endsWith(".derived"))
+
+    // If this is a dev-build path, there'll only be one key so just grab
+    // it.
+
+    // If this is a dev-build path, there'll only be one key so just grab
+    // it.
+    if (modularHomePath.endsWith('.derived')) {
       return possibleKeys[0];
+    }
 
     // Filter the keys to only those that match the current extension.
-    possibleKeys =
-        possibleKeys.filter(key => isNightly == key.endsWith("-nightly"));
-    if (possibleKeys.length === 0)
+
+    // Filter the keys to only those that match the current extension.
+    possibleKeys = possibleKeys.filter(
+      (key) => isNightly == key.endsWith('-nightly')
+    );
+
+    if (possibleKeys.length === 0) {
       return undefined;
+    }
 
     // Prefer the 'max' key if it exists.
-    const maxKey = possibleKeys.find(key => key.includes("max"));
-    if (maxKey)
+
+    // Prefer the 'max' key if it exists.
+    const maxKey = possibleKeys.find((key) => key.includes('max'));
+
+    if (maxKey) {
       return maxKey;
+    }
+
+    // Otherwise, just grab the first key.
 
     // Otherwise, just grab the first key.
     return possibleKeys[0];
@@ -285,29 +362,39 @@ export class MojoSDK {
    */
   public async warnIfSDKOutOfDate() {
     // If this is a dev-build, there's no version to check.
-    if (this.config.version.isDev())
+
+    // If this is a dev-build, there's no version to check.
+    if (this.config.version.isDev()) {
       return;
+    }
 
     // Grab the current extension version.
-    const extensionVersion =
-        this.context.extension.packageJSON.version as string;
-    const extensionVersionMatch =
-        extensionVersion.match(/([0-9]+)\.([0-9]+)\.([0-9]+)/);
+
+    // Grab the current extension version.
+    const extensionVersion = this.context.extension.packageJSON
+      .version as string;
+    const extensionVersionMatch = extensionVersion.match(
+      /([0-9]+)\.([0-9]+)\.([0-9]+)/
+    );
     if (!extensionVersionMatch) {
       this.loggingService.main.logError(
-          "Unable to compute extension version: " + extensionVersion);
+        'Unable to compute extension version: ' + extensionVersion
+      );
       return;
     }
 
     // Compare the two versions. We don't warn if the extension is older,
     // just if the SDK is older.
-    if (this.config.version.major < +extensionVersionMatch[1] ||
-        this.config.version.minor < +extensionVersionMatch[2] ||
-        this.config.version.patch < +extensionVersionMatch[3]) {
+    if (
+      this.config.version.major < +extensionVersionMatch[1] ||
+      this.config.version.minor < +extensionVersionMatch[2] ||
+      this.config.version.patch < +extensionVersionMatch[3]
+    ) {
       vscode.window.showWarningMessage(
-          "The current Mojo SDK version is incompatible with this " +
-          "version of the Mojo extension. Please update your SDK " +
-          "to ensure the extension behaves correctly.");
+        'The current Mojo SDK version is incompatible with this ' +
+          'version of the Mojo extension. Please update your SDK ' +
+          'to ensure the extension behaves correctly.'
+      );
     }
   }
 }
@@ -320,7 +407,7 @@ export class MojoSDKManager extends DisposableContext {
   /**
    * The main SDK owned by the manager.
    */
-  private sdk: Promise<MojoSDK|undefined>|undefined;
+  private sdk: Promise<MojoSDK | undefined> | undefined;
 
   /**
    * A service that can be used to log message in the Mojo output channel.
@@ -332,14 +419,19 @@ export class MojoSDKManager extends DisposableContext {
    */
   private readonly context: vscode.ExtensionContext;
 
-  constructor(loggingService: LoggingService,
-              context: vscode.ExtensionContext) {
+  constructor(
+    loggingService: LoggingService,
+    context: vscode.ExtensionContext
+  ) {
     super();
     this.loggingService = loggingService;
     this.context = context;
 
-    this.pushSubscription(vscode.commands.registerCommand(
-        "mojo.sdk.install", () => { this.promptInstallSDK(); }))
+    this.pushSubscription(
+      vscode.commands.registerCommand('mojo.sdk.install', () => {
+        this.promptInstallSDK();
+      })
+    );
   }
 
   /**
@@ -358,13 +450,14 @@ export class MojoSDKManager extends DisposableContext {
    * This function caches the result and the cache is refreshed whenever there's
    * a change in the list of active workspaces.
    */
-  public async findSDK(): Promise<MojoSDK|undefined> {
+  public async findSDK(): Promise<MojoSDK | undefined> {
     // Find the SDK if we haven't yet.
     if (!this.sdk) {
       this.sdk = this.doFindSDK();
-      this.sdk.then(sdk => {
-        if (!sdk)
+      this.sdk.then((sdk) => {
+        if (!sdk) {
           this.promptInstallSDK(/*notifySDKNotFound=*/ true);
+        }
       });
     }
 
@@ -386,21 +479,26 @@ export class MojoSDKManager extends DisposableContext {
 
     // Utilities for processing SDKs found via modular home paths.
     let checkedPaths = new Set<string>();
-    let addSDKPath = async (path: string|undefined) => {
-      if (!path || checkedPaths.has(path))
+    let addSDKPath = async (path: string | undefined) => {
+      if (!path || checkedPaths.has(path)) {
         return;
+      }
       checkedPaths.add(path);
       let sdk = await this.loadSDKFromModularHome(path);
-      if (sdk)
+
+      if (sdk) {
         possibleSDKs.push(sdk);
+      }
     };
 
     // First, find the possible SDKs by looking at the `mojo.modularHomePath`
     // setting.
     if (vscode.workspace.workspaceFolders) {
-      for (let workspaceFolder of vscode.workspace.workspaceFolders)
+      for (let workspaceFolder of vscode.workspace.workspaceFolders) {
         await addSDKPath(
-            await this.tryGetModularHomePathFromConfig(workspaceFolder));
+          await this.tryGetModularHomePathFromConfig(workspaceFolder)
+        );
+      }
     }
     await addSDKPath(await this.tryGetModularHomePathFromConfig(undefined));
 
@@ -408,14 +506,16 @@ export class MojoSDKManager extends DisposableContext {
     await addSDKPath(process.env.MODULAR_HOME);
 
     // Finally, check the configurations defined via the `modular` tool.
-    possibleSDKs.push(...await this.findPossibleSDKsFromCLI());
+    possibleSDKs.push(...(await this.findPossibleSDKsFromCLI()));
 
     /// Remove duplicate SDKs (as determined by version).
     let seenVersions = new Set<string>();
-    return possibleSDKs.filter(sdk => {
+    return possibleSDKs.filter((sdk) => {
       let version = sdk.config.version.toString();
-      if (seenVersions.has(version))
+
+      if (seenVersions.has(version)) {
         return false;
+      }
       seenVersions.add(version);
       return true;
     });
@@ -435,41 +535,54 @@ export class MojoSDKManager extends DisposableContext {
     // The first step is to invoke the `modular` cli and collect all of the
     // mojo related configuration values, bucketing them by the top-level
     // section.
-    let configurationValues = new Map < string, { [key: string]: any; }
-    > ();
+    let configurationValues = new Map<string, { [key: string]: any }>();
     try {
-      let {stdout, stderr} = await execFile("modular", [ "config-list" ]);
-      for (let line of stdout.split("\n")) {
+      let { stdout, stderr } = await execFile('modular', ['config-list']);
+      for (let line of stdout.split('\n')) {
         line = line.trim();
 
         // Match the value regex.
         let match = valueRegex.exec(line);
-        if (!match)
+
+        if (!match) {
           continue;
+        }
         let section = match[1];
         let key = match[2];
         let value = match[3];
 
         // Ignore nightly configs in non-nightly extensions, and vice versa.
-        if (isNightly != section.endsWith("-nightly"))
+
+        // Ignore nightly configs in non-nightly extensions, and vice versa.
+        if (isNightly != section.endsWith('-nightly')) {
           continue;
+        }
 
         // Set this configuration value.
-        if (!configurationValues.has(section))
+
+        // Set this configuration value.
+
+        // Set this configuration value.
+        if (!configurationValues.has(section)) {
           configurationValues.set(section, {});
+        }
         configurationValues.get(section)![key] = value;
       }
     } catch (e) {
       this.loggingService.main.logError(
-          "Unable to invoke `modular config-list`, failed with: ", e);
+        'Unable to invoke `modular config-list`, failed with: ',
+        e
+      );
     }
 
     // Build a possible SDK for each of the configurations.
     let possibleSDKs: MojoSDK[] = [];
     for (let [section, values] of configurationValues) {
       let sdk = await this.createSDKAndConfig(section, values);
-      if (sdk)
+
+      if (sdk) {
         possibleSDKs.push(sdk);
+      }
     }
     return possibleSDKs;
   }
@@ -477,59 +590,81 @@ export class MojoSDKManager extends DisposableContext {
   /**
    * Load a Mojo SDK defined at the given modular home location.
    */
-  private async loadSDKFromModularHome(modularPath: string):
-      Promise<MojoSDK|undefined> {
+  private async loadSDKFromModularHome(
+    modularPath: string
+  ): Promise<MojoSDK | undefined> {
     this.loggingService.main.logInfo(`MODULAR_HOME is ${modularPath}.`);
 
     // Read in the config file.
-    const modularCfg = path.join(modularPath, "modular.cfg");
+    const modularCfg = path.join(modularPath, 'modular.cfg');
     let configPath = vscode.Uri.file(modularCfg);
 
     try {
       let configPathStat = await vscode.workspace.fs.stat(configPath);
       if (!(configPathStat.type & vscode.FileType.File)) {
         this.showSDKErrorMessage(
-            `The modular config file '${modularCfg}' is not a file.`);
+          `The modular config file '${modularCfg}' is not a file.`
+        );
         return undefined;
       }
     } catch (e) {
       this.showSDKErrorMessage(
-          `The modular config file '${
-              modularCfg}' does not exist or VS Code does not have permissions to access it.`,
-          e);
+        `The modular config file '${
+          modularCfg
+        }' does not exist or VS Code does not have permissions to access it.`,
+        e
+      );
       return undefined;
     }
-    let modularConfig = ini.parse(new TextDecoder().decode(
-        await vscode.workspace.fs.readFile(configPath)));
-    this.loggingService.main.logInfo("modular.cfg file with contents",
-                                     modularConfig);
+    let modularConfig = ini.parse(
+      new TextDecoder().decode(await vscode.workspace.fs.readFile(configPath))
+    );
+    this.loggingService.main.logInfo(
+      'modular.cfg file with contents',
+      modularConfig
+    );
 
     // Find the appropriate mojo configuration key in the config file.
-    let mojoKeys: string[] =
-        Object.keys(modularConfig).filter(key => key.startsWith("mojo"));
+    let mojoKeys: string[] = Object.keys(modularConfig).filter((key) =>
+      key.startsWith('mojo')
+    );
     let configKey = MojoSDK.getConfigKey(
-        modularPath, isNightlyExtension(this.context), mojoKeys);
+      modularPath,
+      isNightlyExtension(this.context),
+      mojoKeys
+    );
     if (!configKey) {
       this.showSDKErrorMessage(
-          `The modular config file '${modularCfg}' is outdated.`);
+        `The modular config file '${modularCfg}' is outdated.`
+      );
       return undefined;
     }
 
-    return this.createSDKAndConfig(configKey, modularConfig[configKey],
-                                   modularPath);
+    return this.createSDKAndConfig(
+      configKey,
+      modularConfig[configKey],
+      modularPath
+    );
   }
 
   /**
    * Create a Mojo SDK from the given configuration.
    */
-  private async createSDKAndConfig(configSection: string,
-                                   rawConfig: {[key: string]: any;},
-                                   modularPath: string = ""):
-      Promise<MojoSDK|undefined> {
-    let sdkConfig = await MojoSDKConfig.create(this.loggingService, modularPath,
-                                               configSection, rawConfig);
-    if (!sdkConfig)
+  private async createSDKAndConfig(
+    configSection: string,
+    rawConfig: { [key: string]: any },
+    modularPath: string = ''
+  ): Promise<MojoSDK | undefined> {
+    let sdkConfig = await MojoSDKConfig.create(
+      this.loggingService,
+      modularPath,
+      configSection,
+      rawConfig
+    );
+
+    if (!sdkConfig) {
       return undefined;
+    }
     return new MojoSDK(sdkConfig, this.loggingService, this.context);
   }
 
@@ -537,35 +672,46 @@ export class MojoSDKManager extends DisposableContext {
    * This function discovers an SDK following the procedure described in
    * `findSDK`.
    */
-  private async doFindSDK(): Promise<MojoSDK|undefined> {
+  private async doFindSDK(): Promise<MojoSDK | undefined> {
     // Find the possible set of SDKs.
     let possibleSDKs = await this.findAllPossibleSDKs();
-    if (possibleSDKs.length == 0)
+
+    if (possibleSDKs.length == 0) {
       return undefined;
+    }
+
+    // Resolve the SDK from the set of possible choices.
 
     // Resolve the SDK from the set of possible choices.
     let sdk = possibleSDKs[0];
     if (possibleSDKs.length > 1) {
       // If there are multiple, ask the user which one they want to use.
-      let sdkNames = possibleSDKs.map(sdk => sdk.config.version.toString());
+      let sdkNames = possibleSDKs.map((sdk) => sdk.config.version.toString());
       let selected = await vscode.window.showQuickPick(sdkNames, {
-        placeHolder : "Select the Mojo SDK to use!",
-        ignoreFocusOut : true,
+        placeHolder: 'Select the Mojo SDK to use!',
+        ignoreFocusOut: true,
       });
       if (selected) {
-        sdk = possibleSDKs.find(sdk =>
-                                    sdk.config.version.toString() == selected)!;
+        sdk = possibleSDKs.find(
+          (sdk) => sdk.config.version.toString() == selected
+        )!;
       }
     }
 
     // Push a subscription for changes to any of the SDK paths.
-    this.pushSubscription(await configWatcher.activate(undefined, [], [
-      sdk.config.mojoLLDBVSCodePath,
-      sdk.config.mojoDriverPath,
-      sdk.config.mojoLanguageServerPath,
-      sdk.config.mojoLLDBPluginPath,
-      sdk.config.lldbPath,
-    ]));
+    this.pushSubscription(
+      await configWatcher.activate(
+        undefined,
+        [],
+        [
+          sdk.config.mojoLLDBVSCodePath,
+          sdk.config.mojoDriverPath,
+          sdk.config.mojoLanguageServerPath,
+          sdk.config.mojoLLDBPluginPath,
+          sdk.config.lldbPath,
+        ]
+      )
+    );
 
     // Now that we have a resolved SDK, warn if it's out of date.
     await sdk.warnIfSDKOutOfDate();
@@ -577,25 +723,28 @@ export class MojoSDKManager extends DisposableContext {
    * installation instructions.
    */
   private async promptInstallSDK(notifySDKNotFound: boolean = false) {
-    this.loggingService.main.logInfo("Prompting Install SDK.")
+    this.loggingService.main.logInfo('Prompting Install SDK.');
     const prefix = notifySDKNotFound
-                       ? "The Mojo🔥 development environment was not found. "
-                       : "";
+      ? 'The Mojo🔥 development environment was not found. '
+      : '';
 
     let value = await vscode.window.showInformationMessage(
-        (prefix +
-         "If the Mojo SDK is installed, please set the MODULAR_HOME environment variable to the " +
-         "appropriate path, or set the `mojo.modularHomePath` configuration. If you do " +
-         "not have it installed, would you like to install it?"),
-        "Install", "Open setting");
-    if (value === "Install") {
+      prefix +
+        'If the Mojo SDK is installed, please set the MODULAR_HOME environment variable to the ' +
+        'appropriate path, or set the `mojo.modularHomePath` configuration. If you do ' +
+        'not have it installed, would you like to install it?',
+      'Install',
+      'Open setting'
+    );
+    if (value === 'Install') {
       // TODO: This should resolve to the actual mojo download link when
       // the user console is in place.
-      vscode.env.openExternal(vscode.Uri.parse("https://www.modular.com/mojo"));
-    } else if (value === "Open setting") {
-      vscode.commands.executeCommand(
-          'workbench.action.openGlobalSettings',
-          {openToSide : false, query : `mojo.modularHomePath`});
+      vscode.env.openExternal(vscode.Uri.parse('https://www.modular.com/mojo'));
+    } else if (value === 'Open setting') {
+      vscode.commands.executeCommand('workbench.action.openGlobalSettings', {
+        openToSide: false,
+        query: `mojo.modularHomePath`,
+      });
     }
   }
 
@@ -606,36 +755,42 @@ export class MojoSDKManager extends DisposableContext {
    * If the setting does not exist or the resolved path is not a directory,
    * return undefined.
    */
-  private async tryGetModularHomePathFromConfig(workspaceFolder:
-                                                    vscode.WorkspaceFolder|
-                                                undefined):
-      Promise<string|undefined> {
+  private async tryGetModularHomePathFromConfig(
+    workspaceFolder: vscode.WorkspaceFolder | undefined
+  ): Promise<string | undefined> {
     let modularPath = config.get<string>('modularHomePath', workspaceFolder);
-    if (!modularPath)
+
+    if (!modularPath) {
       return undefined;
+    }
     const substituted = substituteVariables(modularPath, workspaceFolder);
 
     const showError = (reason: string) => {
       let message = `The mojo.modularHomePath setting '${modularPath}'`;
-      if (substituted !== modularPath)
+
+      if (substituted !== modularPath) {
         message += `, which resolves to '${substituted}',`;
-      message += " " + reason + ".";
+      }
+      message += ' ' + reason + '.';
       this.showSDKErrorMessage(message);
       return undefined;
     };
 
     if (substituted.length == 0) {
-      return showError("is empty");
+      return showError('is empty');
     }
 
     try {
-      let configPathStat =
-          await vscode.workspace.fs.stat(vscode.Uri.file(substituted));
-      if (configPathStat.type & vscode.FileType.Directory)
+      let configPathStat = await vscode.workspace.fs.stat(
+        vscode.Uri.file(substituted)
+      );
+
+      if (configPathStat.type & vscode.FileType.Directory) {
         return substituted;
-      return showError("is not a directory");
+      }
+      return showError('is not a directory');
     } catch (err) {
-      return showError("does not exist");
+      return showError('does not exist');
     }
   }
 
@@ -644,7 +799,7 @@ export class MojoSDKManager extends DisposableContext {
    * channel as well.
    */
   private showSDKErrorMessage(message: string, error?: unknown): void {
-    message = "Mojo SDK initialization error: " + message;
+    message = 'Mojo SDK initialization error: ' + message;
     this.loggingService.main.logError(message, error);
     vscode.window.showErrorMessage(message);
   }

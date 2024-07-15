@@ -7,9 +7,9 @@
 import * as shellescape from 'shell-escape';
 import * as vscode from 'vscode';
 
-import {MojoContext} from '../mojoContext';
-import {MojoSDKConfig} from '../mojoSDK';
-import {DisposableContext} from '../utils/disposableContext';
+import { MojoContext } from '../mojoContext';
+import { MojoSDKConfig } from '../mojoSDK';
+import { DisposableContext } from '../utils/disposableContext';
 
 /**
  * This class provides a manager for executing and debugging mojo files.
@@ -28,24 +28,29 @@ class ExecutionManager extends DisposableContext {
    * Activate the run commands, used for executing and debugging mojo files.
    */
   activateRunCommands() {
-    for (const cmd of ['mojo.execFileInTerminal',
-                       'mojo.execFileInDedicatedTerminal']) {
+    for (const cmd of [
+      'mojo.execFileInTerminal',
+      'mojo.execFileInDedicatedTerminal',
+    ]) {
       this.pushSubscription(
-          vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
-            await this.executeFileInTerminal(
-                file,
-                /*newTerminalPerFile=*/ cmd ===
-                    'mojo.execFileInDedicatedTerminal',
-            );
-          }));
+        vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
+          await this.executeFileInTerminal(
+            file,
+            /*newTerminalPerFile=*/ cmd === 'mojo.execFileInDedicatedTerminal'
+          );
+        })
+      );
     }
 
     for (const cmd of ['mojo.debugFile', 'mojo.debugFileInTerminal']) {
       this.pushSubscription(
-          vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
-            await this.debugFile(file, /*runInTerminal=*/ cmd ===
-                                           'mojo.debugFileInTerminal');
-          }));
+        vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
+          await this.debugFile(
+            file,
+            /*runInTerminal=*/ cmd === 'mojo.debugFileInTerminal'
+          );
+        })
+      );
     }
   }
 
@@ -54,25 +59,38 @@ class ExecutionManager extends DisposableContext {
    *
    * @param options Options to consider when executing the file.
    */
-  async executeFileInTerminal(file: vscode.Uri|undefined,
-                              newTerminalPerFile: boolean) {
+  async executeFileInTerminal(
+    file: vscode.Uri | undefined,
+    newTerminalPerFile: boolean
+  ) {
     let doc = await this.getDocumentToExecute(file);
-    if (!doc)
+
+    if (!doc) {
       return;
+    }
+
+    // Find the config for processing this file.
 
     // Find the config for processing this file.
     let sdk = await this.context.sdkManager.findSDK();
-    if (!sdk)
+
+    if (!sdk) {
       return;
+    }
+
+    // Execute the file.
 
     // Execute the file.
     let terminal = this.getTerminalForFile(doc, sdk.config, newTerminalPerFile);
     terminal.show();
-    terminal.sendText(shellescape([ sdk.config.mojoDriverPath, doc.fileName ]));
+    terminal.sendText(shellescape([sdk.config.mojoDriverPath, doc.fileName]));
 
     // Focus on the terminal if the user has configured it to do so.
-    if (this.shouldTerminalFocusOnStart(doc.uri))
+
+    // Focus on the terminal if the user has configured it to do so.
+    if (this.shouldTerminalFocusOnStart(doc.uri)) {
       vscode.commands.executeCommand('workbench.action.terminal.focus');
+    }
   }
 
   /**
@@ -82,44 +100,60 @@ class ExecutionManager extends DisposableContext {
    *     terminal, and therefore its stdin and stdout are not managed by the
    *     Debug Console.
    */
-  async debugFile(file: vscode.Uri|undefined, runInTerminal: boolean) {
+  async debugFile(file: vscode.Uri | undefined, runInTerminal: boolean) {
     let doc = await this.getDocumentToExecute(file);
-    if (!doc)
+
+    if (!doc) {
       return;
+    }
 
     let debugConfig: vscode.DebugConfiguration = {
-      type : "mojo-lldb",
-      name : "Mojo",
-      request : "launch",
-      mojoFile : doc.fileName,
-      runInTerminal : runInTerminal,
+      type: 'mojo-lldb',
+      name: 'Mojo',
+      request: 'launch',
+      mojoFile: doc.fileName,
+      runInTerminal: runInTerminal,
     };
     await vscode.debug.startDebugging(
-        vscode.workspace.getWorkspaceFolder(doc.uri), debugConfig);
+      vscode.workspace.getWorkspaceFolder(doc.uri),
+      debugConfig
+    );
   }
 
   /**
    * Get a terminal to use for the given file.
    */
-  getTerminalForFile(doc: vscode.TextDocument, config: MojoSDKConfig,
-                     newTerminalPerFile: boolean): vscode.Terminal {
-
+  getTerminalForFile(
+    doc: vscode.TextDocument,
+    config: MojoSDKConfig,
+    newTerminalPerFile: boolean
+  ): vscode.Terminal {
     if (vscode.window.activeTerminal && !newTerminalPerFile) {
-      return vscode.window.activeTerminal
+      return vscode.window.activeTerminal;
     }
 
-    let terminalName = "Mojo";
-    if (newTerminalPerFile)
+    let terminalName = 'Mojo';
+
+    if (newTerminalPerFile) {
       terminalName += `: ${doc.fileName}`;
+    }
+
+    // Look for an existing terminal.
 
     // Look for an existing terminal.
     let terminal = vscode.window.terminals.find((t) => t.name === terminalName);
-    if (terminal)
+
+    if (terminal) {
       return terminal;
+    }
 
     // Build a new terminal.
-    return vscode.window.createTerminal(
-        {name : terminalName, env : config.getProcessEnv()});
+
+    // Build a new terminal.
+    return vscode.window.createTerminal({
+      name: terminalName,
+      env: config.getProcessEnv(),
+    });
   }
 
   /**
@@ -131,19 +165,23 @@ class ExecutionManager extends DisposableContext {
    * @param file If provided, the document will point to this file, otherwise,
    *     it will point to the currently active document.
    */
-  async getDocumentToExecute(file?: vscode.Uri):
-      Promise<vscode.TextDocument|undefined> {
-    let doc = file === undefined
-                  ? vscode.window.activeTextEditor?.document
-                  : await vscode.workspace.openTextDocument(file);
+  async getDocumentToExecute(
+    file?: vscode.Uri
+  ): Promise<vscode.TextDocument | undefined> {
+    let doc =
+      file === undefined
+        ? vscode.window.activeTextEditor?.document
+        : await vscode.workspace.openTextDocument(file);
     if (!doc) {
       vscode.window.showErrorMessage(
-          `Couldn't access the file '${file}' for execution.`);
+        `Couldn't access the file '${file}' for execution.`
+      );
       return undefined;
     }
-    if (doc.isDirty && !await doc.save()) {
+    if (doc.isDirty && !(await doc.save())) {
       vscode.window.showErrorMessage(
-          `Couldn't save file '${file}' before execution.`);
+        `Couldn't save file '${file}' before execution.`
+      );
       return undefined;
     }
     return doc;
@@ -154,8 +192,8 @@ class ExecutionManager extends DisposableContext {
    */
   private shouldTerminalFocusOnStart(uri: vscode.Uri): boolean {
     return vscode.workspace
-        .getConfiguration('terminal', vscode.workspace.getWorkspaceFolder(uri))
-        .get<boolean>("focusAfterLaunch", false);
+      .getConfiguration('terminal', vscode.workspace.getWorkspaceFolder(uri))
+      .get<boolean>('focusAfterLaunch', false);
   }
 }
 

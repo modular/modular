@@ -5,12 +5,20 @@
 //===----------------------------------------------------------------------===//
 
 import type {
-  CodeActionParams, CompletionParams, DefinitionParams, DocumentSymbolParams,
-  FoldingRangeParams, HoverParams, InitializeParams, InlayHintParams,
-  ReferenceParams, SemanticTokensDeltaParams, SemanticTokensParams,
-  SignatureHelpParams} from 'vscode-languageserver-protocol'
-import type {
-  createConnection as createClientConnection} from 'vscode-languageserver/node';
+  CodeActionParams,
+  CompletionParams,
+  DefinitionParams,
+  DocumentSymbolParams,
+  FoldingRangeParams,
+  HoverParams,
+  InitializeParams,
+  InlayHintParams,
+  ReferenceParams,
+  SemanticTokensDeltaParams,
+  SemanticTokensParams,
+  SignatureHelpParams,
+} from 'vscode-languageserver-protocol';
+import type { createConnection as createClientConnection } from 'vscode-languageserver/node';
 
 /**
  * A generic disposable.
@@ -47,14 +55,14 @@ export interface InitializationOptions {
   /**
    * The environment to use when invoking `mojo-lsp-server`.
    */
-  serverEnv: {[env: string]: string|undefined}
+  serverEnv: { [env: string]: string | undefined };
 }
 
 /**
  * This type represents a decoded JSON object.
  */
 export type JSONObject = {
-  [key: string]: any
+  [key: string]: any;
 };
 
 /**
@@ -67,8 +75,9 @@ export type RequestId = number;
  * fields is guaranteed not to be null.
  */
 export type ExitStatus = {
-  code: number|null; signal : NodeJS.Signals | null;
-}
+  code: number | null;
+  signal: NodeJS.Signals | null;
+};
 
 // The `shutdown` request doesn't have params, but using `{}` simplifies
 // typechecking.
@@ -79,18 +88,27 @@ export type ShutdownParams = {};
  * `textDocument` entry.
  */
 export type RequestParamsWithDocument =
-    CodeActionParams|CompletionParams|DefinitionParams|DocumentSymbolParams|
-    FoldingRangeParams|HoverParams|ReferenceParams|SignatureHelpParams|
-    InlayHintParams|SemanticTokensParams|SemanticTokensDeltaParams;
+  | CodeActionParams
+  | CompletionParams
+  | DefinitionParams
+  | DocumentSymbolParams
+  | FoldingRangeParams
+  | HoverParams
+  | ReferenceParams
+  | SignatureHelpParams
+  | InlayHintParams
+  | SemanticTokensParams
+  | SemanticTokensDeltaParams;
 
 /**
  * This union type represents all supported request params that don't contain a
  * `textDocument` entry.
  */
-export type RequestParamsWithoutDocument = InitializeParams|ShutdownParams;
+export type RequestParamsWithoutDocument = InitializeParams | ShutdownParams;
 
 /**
  * This union type represents all supported request params.
  */
 export type RequestParams =
-    RequestParamsWithDocument|RequestParamsWithoutDocument;
+  | RequestParamsWithDocument
+  | RequestParamsWithoutDocument;

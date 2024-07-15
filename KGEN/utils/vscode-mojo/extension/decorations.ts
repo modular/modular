@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 
-import {DisposableContext} from './utils/disposableContext';
+import { DisposableContext } from './utils/disposableContext';
 
 /**
  * MojoDecoratorContext is responsible for decorating mojo documents with
@@ -22,61 +22,95 @@ export class MojoDecoratorContext extends DisposableContext {
     // before the doc string, to help visually distinguish it from the rest of
     // the code. This effectively models an inlay hint, but we use a decoration
     // type as decorations get refreshed much faster.
-    this.docStringDecorationType =
-        vscode.window.createTextEditorDecorationType({
-          after : {
-            contentText : '>',
-            color : {id : 'editorInlayHint.foreground'},
-            backgroundColor : {id : 'editorInlayHint.background'},
+    this.docStringDecorationType = vscode.window.createTextEditorDecorationType(
+      {
+        after: {
+          contentText: '>',
+          color: { id: 'editorInlayHint.foreground' },
+          backgroundColor: { id: 'editorInlayHint.background' },
 
-            // Add a little padding to the right of the inlay hint.
-            margin : '0em 0.2em 0em 0em',
-          },
-          // Hide the decoration, we only care about the "after" content.
-          opacity : "0"
-        });
+          // Add a little padding to the right of the inlay hint.
+          margin: '0em 0.2em 0em 0em',
+        },
+        // Hide the decoration, we only care about the "after" content.
+        opacity: '0',
+      }
+    );
     this.pushSubscription(this.docStringDecorationType);
 
-    this.pushSubscription(vscode.workspace.onDidOpenTextDocument(
-        event => { this.decorateDocument(event); }));
-    this.pushSubscription(vscode.workspace.onDidChangeTextDocument(
-        event => { this.decorateDocument(event.document); }));
-    this.pushSubscription(vscode.workspace.onDidOpenNotebookDocument(
-        event => { this.decorateNotebookDocument(event); }));
-    this.pushSubscription(vscode.workspace.onDidChangeNotebookDocument(
-        event => { this.decorateNotebookDocument(event.notebook); }));
-    this.pushSubscription(vscode.window.onDidChangeVisibleTextEditors(
-        editors => { editors.forEach(editor => this.decorate(editor)); }));
     this.pushSubscription(
-        vscode.window.onDidChangeVisibleNotebookEditors(editors => {
-          editors.forEach(editor =>
-                              this.decorateNotebookDocument(editor.notebook));
-        }));
+      vscode.workspace.onDidOpenTextDocument((event) => {
+        this.decorateDocument(event);
+      })
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidChangeTextDocument((event) => {
+        this.decorateDocument(event.document);
+      })
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidOpenNotebookDocument((event) => {
+        this.decorateNotebookDocument(event);
+      })
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidChangeNotebookDocument((event) => {
+        this.decorateNotebookDocument(event.notebook);
+      })
+    );
+    this.pushSubscription(
+      vscode.window.onDidChangeVisibleTextEditors((editors) => {
+        editors.forEach((editor) => this.decorate(editor));
+      })
+    );
+    this.pushSubscription(
+      vscode.window.onDidChangeVisibleNotebookEditors((editors) => {
+        editors.forEach((editor) =>
+          this.decorateNotebookDocument(editor.notebook)
+        );
+      })
+    );
 
     // Process any existing documents.
-    for (const textDoc of vscode.workspace.textDocuments)
+
+    // Process any existing documents.
+    for (const textDoc of vscode.workspace.textDocuments) {
       this.decorateDocument(textDoc);
+    }
   }
 
   private decorateDocument(document: vscode.TextDocument) {
     // Check if the document is a mojo document.
-    if (!(document.languageId === 'mojo' || document.languageId === 'markdown'))
+
+    // Check if the document is a mojo document.
+    if (
+      !(document.languageId === 'mojo' || document.languageId === 'markdown')
+    ) {
       return;
+    }
     // Check if this is one of the visible editors.
-    vscode.window.visibleTextEditors.forEach(editor => {
-      if (editor.document === document)
+    // Check if this is one of the visible editors.
+    vscode.window.visibleTextEditors.forEach((editor) => {
+      if (editor.document === document) {
         this.decorate(editor);
+      }
     });
   }
 
   private decorateNotebookDocument(notebook: vscode.NotebookDocument) {
-    vscode.window.visibleNotebookEditors.forEach(editor => {
-      if (editor.notebook !== notebook)
+    vscode.window.visibleNotebookEditors.forEach((editor) => {
+      if (editor.notebook !== notebook) {
         return;
+      }
 
       // Decorate any mojo cells in the notebook.
-      for (let cell of notebook.getCells())
-        this.decorateDocument(cell.document)
+
+      // Decorate any mojo cells in the notebook.
+
+      // Decorate any mojo cells in the notebook.
+      for (let cell of notebook.getCells()) {
+        this.decorateDocument(cell.document);
+      }
     });
   }
 
@@ -114,13 +148,16 @@ export class MojoDecoratorContext extends DisposableContext {
 
         // Add a decoration for this code block.
         let pos = new vscode.Position(line, 0);
-        docDecorations.push({range : new vscode.Range(pos, pos)});
+        docDecorations.push({ range: new vscode.Range(pos, pos) });
       }
     }
 
     // If we have a partial code block, remove the decorations.
-    if (numCurrentCodeBlocks)
+
+    // If we have a partial code block, remove the decorations.
+    if (numCurrentCodeBlocks) {
       docDecorations.splice(prevNumDecorations);
+    }
 
     editor.setDecorations(this.docStringDecorationType, docDecorations);
   }

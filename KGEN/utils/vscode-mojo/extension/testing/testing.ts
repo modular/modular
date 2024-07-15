@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {exec} from 'child_process';
+import { exec } from 'child_process';
 import * as vscode from 'vscode';
 
-import {MojoContext} from '../mojoContext';
-import {MojoSDK} from '../mojoSDK';
+import { MojoContext } from '../mojoContext';
+import { MojoSDK } from '../mojoSDK';
 import * as config from '../utils/config';
-import {DisposableContext} from '../utils/disposableContext';
+import { DisposableContext } from '../utils/disposableContext';
 
 import path = require('path');
 
@@ -29,8 +29,8 @@ interface MojoSourceRange {
  */
 interface MojoTest {
   id: string;
-  location: MojoSourceRange|undefined;
-  children: MojoTest[]|undefined;
+  location: MojoSourceRange | undefined;
+  children: MojoTest[] | undefined;
 }
 
 /**
@@ -45,7 +45,7 @@ interface MojoTestExecutionResult {
   stdOut: string;
   stdErr: string;
 
-  children: MojoTestExecutionResult[]|undefined;
+  children: MojoTestExecutionResult[] | undefined;
 }
 
 /**
@@ -65,30 +65,47 @@ export class MojoTestContext extends DisposableContext {
     this.context = context;
 
     // Register the mojo test controller.
-    this.controller =
-        vscode.tests.createTestController('mojoTests', 'Mojo Tests');
+    this.controller = vscode.tests.createTestController(
+      'mojoTests',
+      'Mojo Tests'
+    );
     this.pushSubscription(this.controller);
 
     // Create the different test profiles.
     this.controller.createRunProfile(
-        'Run', vscode.TestRunProfileKind.Run, (request, token) => {
-          this.runHandler(/*shouldDebug=*/ false, request, token);
-        });
+      'Run',
+      vscode.TestRunProfileKind.Run,
+      (request, token) => {
+        this.runHandler(/*shouldDebug=*/ false, request, token);
+      }
+    );
   }
 
   /**
    * Activate the mojo test context.
    */
   async activate() {
-    this.pushSubscription(vscode.workspace.onDidOpenTextDocument(
-        event => { this.discoverTestsInDocument(event); }));
-    this.pushSubscription(vscode.workspace.onDidSaveTextDocument(
-        event => { this.discoverTestsInDocument(event); }));
-    this.pushSubscription(vscode.workspace.onDidCloseTextDocument(
-        event => { this.controller.items.delete(event.uri.fsPath); }));
+    this.pushSubscription(
+      vscode.workspace.onDidOpenTextDocument((event) => {
+        this.discoverTestsInDocument(event);
+      })
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidSaveTextDocument((event) => {
+        this.discoverTestsInDocument(event);
+      })
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidCloseTextDocument((event) => {
+        this.controller.items.delete(event.uri.fsPath);
+      })
+    );
     // Process any existing documents.
-    for (const textDoc of vscode.workspace.textDocuments)
+
+    // Process any existing documents.
+    for (const textDoc of vscode.workspace.textDocuments) {
       this.discoverTestsInDocument(textDoc);
+    }
   }
 
   /**
@@ -98,16 +115,26 @@ export class MojoTestContext extends DisposableContext {
    * @param request The test run request.
    * @param token The cancellation token.
    */
-  async runHandler(shouldDebug: boolean, request: vscode.TestRunRequest,
-                   token: vscode.CancellationToken) {
+  async runHandler(
+    shouldDebug: boolean,
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken
+  ) {
     const queue: vscode.TestItem[] = [];
 
     // Loop through all included tests, or all known tests, and add them to our
     // queue.
-    if (request.include)
-      request.include.forEach(test => queue.push(test));
-    else
-      this.controller.items.forEach(test => queue.push(test));
+
+    // Loop through all included tests, or all known tests, and add them to our
+    // queue.
+    if (request.include) {
+      request.include.forEach((test) => queue.push(test));
+    } else {
+      this.controller.items.forEach((test) => queue.push(test));
+    }
+
+    // A set of doc tests that we have seen, mapped to the final code block
+    // to test.
 
     // A set of doc tests that we have seen, mapped to the final code block
     // to test.
@@ -120,8 +147,15 @@ export class MojoTestContext extends DisposableContext {
       const test = queue.pop()!;
 
       // Skip tests the user asked to exclude
-      if (request.exclude?.includes(test))
+
+      // Skip tests the user asked to exclude
+      if (request.exclude?.includes(test)) {
         continue;
+      }
+
+      // Doc tests are a bit special because each code block is treated as a
+      // separate test, but we want to process them all together in the same
+      // run.
 
       // Doc tests are a bit special because each code block is treated as a
       // separate test, but we want to process them all together in the same
@@ -130,58 +164,78 @@ export class MojoTestContext extends DisposableContext {
         // Track the latest code block we actually want to test. We can find
         // this by inspecting the label, which is the index of the code block.
         let testIndex = parseInt(test.label);
-        if (testIndex > (docTests.get(test.parent!) ?? -1))
+
+        if (testIndex > (docTests.get(test.parent!) ?? -1)) {
           docTests.set(test.parent!, testIndex);
+        }
       } else if (test.tags.includes(this.unitTestTag)) {
         unitTests.add(test);
         includedTests.add(test);
       } else {
         includedTests.add(test);
-        test.children.forEach(test => queue.push(test));
+        test.children.forEach((test) => queue.push(test));
       }
     }
 
     // Include any additional doc tests we found that are dependencies of
     // included tests.
     for (const [test, latestCodeBlockIdx] of docTests) {
-      if (token.isCancellationRequested)
+      if (token.isCancellationRequested) {
         break;
-      for (let i = 0; i <= latestCodeBlockIdx; ++i)
-        includedTests.add(test.children.get(test.id + "::" + i.toString())!);
+      }
+
+      for (let i = 0; i <= latestCodeBlockIdx; ++i) {
+        includedTests.add(test.children.get(test.id + '::' + i.toString())!);
+      }
     }
 
     // Build a new request that contains the expanded set of included tests.
     let excludedTests: vscode.TestItem[] = [];
     if (request.exclude) {
-      request.exclude.forEach(test => {
-        if (!includedTests.has(test))
-          excludedTests.push(test)
+      request.exclude.forEach((test) => {
+        if (!includedTests.has(test)) {
+          excludedTests.push(test);
+        }
       });
     }
-    request = new vscode.TestRunRequest(Array.from(includedTests.keys()),
-                                        excludedTests, request.profile);
+    request = new vscode.TestRunRequest(
+      Array.from(includedTests.keys()),
+      excludedTests,
+      request.profile
+    );
     const run = this.controller.createTestRun(request);
 
     // Process the doc tests collected so far.
     let testPromises = [];
     for (const [test, childIdx] of docTests) {
-      if (token.isCancellationRequested)
+      if (token.isCancellationRequested) {
         break;
+      }
+
+      // The predecessor doc tests are implicit-dependencies, and will be run
+      // automatically.
 
       // The predecessor doc tests are implicit-dependencies, and will be run
       // automatically.
       const dependencies: vscode.TestItem[] = [];
-      for (let i = 0; i < childIdx; ++i)
-        dependencies.push(test.children.get(test.id + "::" + i.toString())!);
-      testPromises.push(this.executeTest(
-          run, test.children.get(test.id + "::" + childIdx.toString())!,
-          dependencies));
+
+      for (let i = 0; i < childIdx; ++i) {
+        dependencies.push(test.children.get(test.id + '::' + i.toString())!);
+      }
+      testPromises.push(
+        this.executeTest(
+          run,
+          test.children.get(test.id + '::' + childIdx.toString())!,
+          dependencies
+        )
+      );
     }
 
     // Process the unit tests collected so far.
-    unitTests.forEach(async test => {
-      if (!token.isCancellationRequested)
+    unitTests.forEach(async (test) => {
+      if (!token.isCancellationRequested) {
         testPromises.push(this.executeTest(run, test));
+      }
     });
 
     // Wait for the tests to finish executing.
@@ -193,9 +247,12 @@ export class MojoTestContext extends DisposableContext {
    * Execute the given test, updating its status (and the status of its
    * dependencies) as we go.
    */
-  async executeTest(run: vscode.TestRun, test: vscode.TestItem,
-                    dependencies: vscode.TestItem[] = []) {
-    let allTests = [...dependencies, test ];
+  async executeTest(
+    run: vscode.TestRun,
+    test: vscode.TestItem,
+    dependencies: vscode.TestItem[] = []
+  ) {
+    let allTests = [...dependencies, test];
     for (const test of allTests) {
       run.enqueued(test);
       run.started(test);
@@ -203,8 +260,9 @@ export class MojoTestContext extends DisposableContext {
 
     // A utility functor to mark all of the tests as errored.
     const markAllTestsErrored = (message: string) => {
-      for (const test of allTests)
+      for (const test of allTests) {
         run.errored(test, new vscode.TestMessage(message));
+      }
     };
 
     // Grab the sdk for the execution context.
@@ -218,7 +276,10 @@ export class MojoTestContext extends DisposableContext {
     // document.
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(test.uri!);
     let result = await this.runMojoTestCommand<MojoTestExecutionResult>(
-        sdk, test.id, workspaceFolder);
+      sdk,
+      test.id,
+      workspaceFolder
+    );
     if (!result) {
       markAllTestsErrored('fatal error: unable to process test execution');
       return;
@@ -227,15 +288,21 @@ export class MojoTestContext extends DisposableContext {
     // Build a map of the results keyed by the id of the test.
     let resultsPerTest = new Map<string, MojoTestExecutionResult>();
     resultsPerTest.set(result.testID, result);
-    for (const child of result.children ?? [])
+
+    for (const child of result.children ?? []) {
       resultsPerTest.set(child.testID, child);
+    }
+
+    // Process the tests.
 
     // Process the tests.
     for (const test of allTests) {
       let result = resultsPerTest.get(test.id);
       if (!result) {
-        run.errored(test,
-                    new vscode.TestMessage('fatal error: test not found'));
+        run.errored(
+          test,
+          new vscode.TestMessage('fatal error: test not found')
+        );
         continue;
       }
 
@@ -245,16 +312,24 @@ export class MojoTestContext extends DisposableContext {
         run.skipped(test);
       } else {
         let message = result.error;
-        if (result.stdErr.length > 0)
-          message += "\n" + result.stdErr + "\n";
+
+        if (result.stdErr.length > 0) {
+          message += '\n' + result.stdErr + '\n';
+        }
 
         // TODO: We only add stdout right now because we don't have a nice
         // way of printing exceptions to stderr.
-        if (result.stdOut.length > 0)
-          message += "\n" + result.stdOut + "\n";
 
-        run.failed(test, [ new vscode.TestMessage(message) ],
-                   result.duration_ms);
+        // TODO: We only add stdout right now because we don't have a nice
+        // way of printing exceptions to stderr.
+
+        // TODO: We only add stdout right now because we don't have a nice
+        // way of printing exceptions to stderr.
+        if (result.stdOut.length > 0) {
+          message += '\n' + result.stdOut + '\n';
+        }
+
+        run.failed(test, [new vscode.TestMessage(message)], result.duration_ms);
       }
     }
   }
@@ -263,25 +338,37 @@ export class MojoTestContext extends DisposableContext {
    * Invoke the `test` subcommand of the mojo tool with the given
    * arguments. Returns the json output of running the command.
    */
-  async runMojoTestCommand<Result>(sdk: MojoSDK, testId: string,
-                                   workspaceFolder: vscode.WorkspaceFolder|
-                                   undefined,
-                                   args: string[] = []):
-      Promise<Result|undefined> {
+  async runMojoTestCommand<Result>(
+    sdk: MojoSDK,
+    testId: string,
+    workspaceFolder: vscode.WorkspaceFolder | undefined,
+    args: string[] = []
+  ): Promise<Result | undefined> {
     // Grab any additional include directories from the workspace settings.
-    const includeDirs = await config.get<string[]|undefined>("lsp.includeDirs",
-                                                             workspaceFolder) ||
-                        [];
-    for (const includeDir of includeDirs)
-      args.push("-I", includeDir);
+    const includeDirs =
+      (await config.get<string[] | undefined>(
+        'lsp.includeDirs',
+        workspaceFolder
+      )) || [];
+
+    for (const includeDir of includeDirs) {
+      args.push('-I', includeDir);
+    }
 
     // Build the command to run.
-    var command = sdk.config.mojoDriverPath + " test --json " +
-                  "'" + testId + "' " + args.join(' ');
+
+    // Build the command to run.
+    var command =
+      sdk.config.mojoDriverPath +
+      ' test --json ' +
+      "'" +
+      testId +
+      "' " +
+      args.join(' ');
     let env = sdk.config.getProcessEnv();
 
-    return new Promise<Result|undefined>(function(resolve, reject) {
-      exec(command, {env}, (error, stdout, stderr) => {
+    return new Promise<Result | undefined>(function (resolve, reject) {
+      exec(command, { env }, (error, stdout, stderr) => {
         // Parse the json output from the stdout.
         try {
           resolve(JSON.parse(stdout));
@@ -296,8 +383,11 @@ export class MojoTestContext extends DisposableContext {
    * Process the given document for tests.
    */
   async discoverTestsInDocument(document: vscode.TextDocument) {
-    if (document.languageId !== 'mojo' || document.isDirty)
+    if (document.languageId !== 'mojo' || document.isDirty) {
       return;
+    }
+
+    // Invoke the mojo tool to discover tests in the document.
 
     // Invoke the mojo tool to discover tests in the document.
     let sdk = await this.context.sdkManager.findSDK();
@@ -310,7 +400,11 @@ export class MojoTestContext extends DisposableContext {
     // document.
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
     let mojoTestSuite = await this.runMojoTestCommand<MojoTest>(
-        sdk, document.uri.fsPath, workspaceFolder, [ '--co' ]);
+      sdk,
+      document.uri.fsPath,
+      workspaceFolder,
+      ['--co']
+    );
     if (!mojoTestSuite || !mojoTestSuite.children) {
       this.controller.items.delete(document.uri.fsPath);
       return;
@@ -320,8 +414,10 @@ export class MojoTestContext extends DisposableContext {
     let file = this.controller.items.get(document.uri.fsPath);
     if (!file) {
       file = this.controller.createTestItem(
-          document.uri.fsPath, document.uri.fsPath.split(path.sep).pop()!,
-          document.uri);
+        document.uri.fsPath,
+        document.uri.fsPath.split(path.sep).pop()!,
+        document.uri
+      );
       this.controller.items.add(file);
     }
 
@@ -332,33 +428,45 @@ export class MojoTestContext extends DisposableContext {
   /**
    * Recursively populate the tests in the given mojo test suite.
    */
-  populateTests(parent: MojoTest, parentVSTest: vscode.TestItem,
-                document: vscode.TextDocument) {
-    if (!parent.children)
+  populateTests(
+    parent: MojoTest,
+    parentVSTest: vscode.TestItem,
+    document: vscode.TextDocument
+  ) {
+    if (!parent.children) {
       return;
+    }
     let vsChildren: vscode.TestItem[] = [];
     for (let test of parent.children) {
       let label = test.id.substring(parent.id.length);
       let tags: vscode.TestTag[] = [];
-      if (label.startsWith("@")) {
+      if (label.startsWith('@')) {
         label = label.substring(1);
-      } else if (label.startsWith("::")) {
+      } else if (label.startsWith('::')) {
         label = label.substring(2);
 
         // Add the proper tag if this is a doc test.
-        if (test.id.includes("__doc__::"))
+
+        // Add the proper tag if this is a doc test.
+        if (test.id.includes('__doc__::')) {
           tags.push(this.docTestTag);
-        else
+        } else {
           tags.push(this.unitTestTag);
+        }
       }
 
       let vsTest = this.controller.createTestItem(test.id, label, document.uri);
       if (test.location) {
-        vsTest.range =
-            new vscode.Range(new vscode.Position(test.location.startLine - 1,
-                                                 test.location.startColumn - 1),
-                             new vscode.Position(test.location.endLine - 1,
-                                                 test.location.endColumn - 1));
+        vsTest.range = new vscode.Range(
+          new vscode.Position(
+            test.location.startLine - 1,
+            test.location.startColumn - 1
+          ),
+          new vscode.Position(
+            test.location.endLine - 1,
+            test.location.endColumn - 1
+          )
+        );
       }
       vsTest.tags = tags;
       this.populateTests(test, vsTest, document);

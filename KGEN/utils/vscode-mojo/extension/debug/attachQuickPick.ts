@@ -6,25 +6,28 @@
 
 import * as vscode from 'vscode';
 
-import {ProcessDescriptor, psList} from "../external/psList";
-import {MojoContext} from '../mojoContext';
+import { ProcessDescriptor, psList } from '../external/psList';
+import { MojoContext } from '../mojoContext';
 
 class RefreshButton implements vscode.QuickInputButton {
   get iconPath(): vscode.ThemeIcon {
-    return new vscode.ThemeIcon("extensions-refresh");
+    return new vscode.ThemeIcon('extensions-refresh');
   }
 
-  get tooltip(): string { return "Refresh process list"; }
+  get tooltip(): string {
+    return 'Refresh process list';
+  }
 }
 
 interface ProcessItem extends vscode.QuickPickItem {
   id: number;
 }
 
-async function getProcessItems(context: vscode.ExtensionContext):
-    Promise<ProcessItem[]> {
+async function getProcessItems(
+  context: vscode.ExtensionContext
+): Promise<ProcessItem[]> {
   let processes: ProcessDescriptor[] = await psList(context);
-  processes.filter(p => p.pid !== undefined);
+  processes.filter((p) => p.pid !== undefined);
 
   processes.sort((a, b) => {
     if (a.name === undefined) {
@@ -45,12 +48,12 @@ async function getProcessItems(context: vscode.ExtensionContext):
   });
   return processes.map((process): ProcessItem => {
     return {
-      label : process.name,
-      description : `${process.pid}`,
-      detail : process.cmd,
-      id : process.pid
+      label: process.name,
+      description: `${process.pid}`,
+      detail: process.cmd,
+      id: process.pid,
     };
-  })
+  });
 }
 
 /**
@@ -63,62 +66,81 @@ async function getProcessItems(context: vscode.ExtensionContext):
  * @returns The pid of the selected process as string. If the user cancelled, an
  *     exception is thrown.
  */
-async function showQuickPick(context: MojoContext,
-                             debugConfig: any): Promise<string|undefined> {
-  const processItems: ProcessItem[] =
-      await getProcessItems(context.extensionContext);
+async function showQuickPick(
+  context: MojoContext,
+  debugConfig: any
+): Promise<string | undefined> {
+  const processItems: ProcessItem[] = await getProcessItems(
+    context.extensionContext
+  );
   const memento = context.extensionContext.workspaceState;
-  const filterMementoKey = ("searchProgramToAttach" + debugConfig.name);
+  const filterMementoKey = 'searchProgramToAttach' + debugConfig.name;
   const previousFilter = memento.get<string>(filterMementoKey);
 
-  return new Promise<string|undefined>((resolve, reject) => {
+  return new Promise<string | undefined>((resolve, reject) => {
     const quickPick: vscode.QuickPick<ProcessItem> =
-        vscode.window.createQuickPick<ProcessItem>();
-    quickPick.value = previousFilter || "";
-    quickPick.title = "Attach to process";
+      vscode.window.createQuickPick<ProcessItem>();
+    quickPick.value = previousFilter || '';
+    quickPick.title = 'Attach to process';
     quickPick.canSelectMany = false;
     quickPick.matchOnDescription = true;
     quickPick.matchOnDetail = true;
-    quickPick.placeholder = "Select the process to attach to";
-    quickPick.buttons = [ new RefreshButton() ];
+    quickPick.placeholder = 'Select the process to attach to';
+    quickPick.buttons = [new RefreshButton()];
     quickPick.items = processItems;
-    let textFilter = "";
+    let textFilter = '';
     const disposables: vscode.Disposable[] = [];
 
-    quickPick.onDidTriggerButton(async () => {
-      quickPick.items = await getProcessItems(context.extensionContext);
-    }, undefined, disposables);
+    quickPick.onDidTriggerButton(
+      async () => {
+        quickPick.items = await getProcessItems(context.extensionContext);
+      },
+      undefined,
+      disposables
+    );
 
-    quickPick.onDidChangeValue((e: string) => { textFilter = e; });
+    quickPick.onDidChangeValue((e: string) => {
+      textFilter = e;
+    });
 
-    quickPick.onDidAccept(() => {
-      if (quickPick.selectedItems.length !== 1) {
-        reject(new Error("Process not selected."));
-      }
+    quickPick.onDidAccept(
+      () => {
+        if (quickPick.selectedItems.length !== 1) {
+          reject(new Error('Process not selected.'));
+        }
 
-      const selectedId: string = `${quickPick.selectedItems[0].id}`;
+        const selectedId: string = `${quickPick.selectedItems[0].id}`;
 
-      disposables.forEach(item => item.dispose());
-      quickPick.dispose();
-      memento.update(filterMementoKey, textFilter);
+        disposables.forEach((item) => item.dispose());
+        quickPick.dispose();
+        memento.update(filterMementoKey, textFilter);
 
-      resolve(selectedId);
-    }, undefined, disposables);
+        resolve(selectedId);
+      },
+      undefined,
+      disposables
+    );
 
-    quickPick.onDidHide(() => {
-      disposables.forEach(item => item.dispose());
-      quickPick.dispose();
+    quickPick.onDidHide(
+      () => {
+        disposables.forEach((item) => item.dispose());
+        quickPick.dispose();
 
-      resolve(undefined);
-    }, undefined, disposables);
+        resolve(undefined);
+      },
+      undefined,
+      disposables
+    );
 
     quickPick.show();
   });
 }
 
-export function activatePickProcessToAttachCommand(context: MojoContext):
-    vscode.Disposable {
+export function activatePickProcessToAttachCommand(
+  context: MojoContext
+): vscode.Disposable {
   return vscode.commands.registerCommand(
-      "mojo.pickProcessToAttach",
-      async (debugConfig: any) => showQuickPick(context, debugConfig));
+    'mojo.pickProcessToAttach',
+    async (debugConfig: any) => showQuickPick(context, debugConfig)
+  );
 }

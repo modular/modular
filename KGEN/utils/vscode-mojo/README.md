@@ -29,7 +29,7 @@ extension setting.
 
 ```json
 {
-    "mojo.modularHomePath": "/absolute/path/to/.modular"
+  "mojo.modularHomePath": "/absolute/path/to/.modular"
 }
 ```
 

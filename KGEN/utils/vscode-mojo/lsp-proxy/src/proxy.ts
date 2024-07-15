@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {MojoLSPProxy} from "./MojoLSPProxy";
+import { MojoLSPProxy } from './MojoLSPProxy';
 
 const lspProxy = new MojoLSPProxy();
 lspProxy.start();
