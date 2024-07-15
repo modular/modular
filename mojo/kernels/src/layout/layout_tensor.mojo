@@ -24,7 +24,7 @@ from utils.numerics import max_finite
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
 
-from .runtime_layout import RuntimeLayout
+from .runtime_layout import RuntimeLayout, coalesce as runtime_coalesce
 from .runtime_tuple import RuntimeTuple
 
 
@@ -907,10 +907,10 @@ struct LayoutTensor[
             ]()
 
             var runtime_element_layout_shape = RuntimeTuple[
-                coalesce(__tiled_layout[0]).shape
+                __tiled_layout[0].shape
             ]()
             var runtime_element_layout_stride = RuntimeTuple[
-                coalesce(__tiled_layout[0]).stride
+                __tiled_layout[0].stride
             ](self.runtime_layout.stride.value)
 
             @parameter
@@ -930,8 +930,13 @@ struct LayoutTensor[
             ](
                 self.ptr,
                 RuntimeLayout(runtime_shape, runtime_stride),
-                RuntimeLayout(
-                    runtime_element_layout_shape, runtime_element_layout_stride
+                rebind[RuntimeLayout[coalesce(__tiled_layout[0])]](
+                    runtime_coalesce(
+                        RuntimeLayout(
+                            runtime_element_layout_shape,
+                            runtime_element_layout_stride,
+                        )
+                    )
                 ),
             )
 
