@@ -385,10 +385,10 @@ fn _flash_attention_kv_cache_gpu[
 ):
     # TODO fix scale, right now it's passed in as GPU buffer but it's needed as a scalar
     # GRA-750
-    var k_nd = NDBuffer[DType.float32, 4, DimList(Dim(), Dim(), 4, 16)](
+    var k_nd = NDBuffer[DType.float32, 4, DimList(Dim(), Dim(), 6, 48)](
         k.block.data, q.dynamic_shape
     )
-    var v_nd = NDBuffer[DType.float32, 4, DimList(Dim(), Dim(), 4, 16)](
+    var v_nd = NDBuffer[DType.float32, 4, DimList(Dim(), Dim(), 6, 48)](
         v.block.data, q.dynamic_shape
     )
     var mask_nd = NDBuffer[DType.float32, 3, DimList(Dim(), Dim(), Dim()),](
