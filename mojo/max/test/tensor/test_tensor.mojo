@@ -500,7 +500,8 @@ fn test_pow():
     print(tensor_copy)
 
     var tensor_pow_neg1 = tensor
-    tensor_pow_neg1[0] = 1.0
+    tensor_pow_neg1[Index(0, 0)] = 1.0
+    tensor_pow_neg1[Index(0, 1)] = 1.0
     tensor_pow_neg1 **= -1
     # CHECK{LITERAL}: Tensor([[1.0, 1.0],
     # CHECK: [0.5, 0.333{{.*}}]]
