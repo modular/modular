@@ -6,7 +6,7 @@
 
 # REQUIRES: cuda
 # TODO (MSDK-465): Remove env var
-# RUN: TMP_ALLOCATE_ON_DEVICE=1 mojo -D MOJO_ENABLE_ASSERTIONS %s
+# RUN: TMP_ALLOCATE_ON_DEVICE=1 %mojo %s
 
 from max import tensor
 from max.graph import Graph, TensorType, Type, ops

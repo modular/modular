@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
+# RUN: %mojo %s
 
 # COM: Test with mojo build
 # RUN: mkdir -p %t

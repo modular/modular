@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
+# RUN: %mojo %s
 
 from max._compiler import foreach
 

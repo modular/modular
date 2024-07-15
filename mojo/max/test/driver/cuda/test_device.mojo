@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: cuda
-# RUN: mojo -D MOJO_ENABLE_ASSERTIONS %s
+# RUN: mojo %s
 
 from max._driver import cpu_device, cuda_device, Tensor
 from testing import assert_equal, assert_not_equal
