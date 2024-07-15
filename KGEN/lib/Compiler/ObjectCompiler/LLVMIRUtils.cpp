@@ -121,6 +121,7 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
 
   // The global value indices go from aliases, functions, then globals.
   unsigned curIdx = 0;
+  SmallVector<llvm::GlobalVariable *, 2> toDelete;
   auto materializeGlobals = [&](auto origRange) {
     for (auto &value : llvm::make_early_inc_range(origRange)) {
       if (idxIt != idxEnd && curIdx == *idxIt) {
@@ -128,10 +129,15 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
         llvm::cantFail(value.materialize());
       } else {
         if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     llvm::GlobalVariable>)
+                                     llvm::GlobalVariable>) {
           value.setInitializer(nullptr);
-        else
+          // Appending values with no initializers are not valid. Make sure to
+          // delete them after materialization.
+          if (value.hasAppendingLinkage())
+            toDelete.push_back(&value);
+        } else {
           value.deleteBody();
+        }
         value.setComdat(nullptr);
         value.setLinkage(llvm::GlobalValue::ExternalLinkage);
       }
@@ -143,6 +149,10 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
 
   // Finalize materialization of the module.
   llvm::cantFail(result->materializeAll());
+
+  // Now we can delete stuff.
+  for (llvm::GlobalVariable *value : toDelete)
+    value->eraseFromParent();
   return result;
 }
 
@@ -164,6 +174,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     infos[&value].gvIdx = gvIdx++;
     collectImmediateDependencies(&value, &value);
   };
+  // NOTE: The visitation of functions then globals has to line up with
+  // `readAndMaterializeDependencies`.
   for (const llvm::Function &fn : mainModule->functions()) {
     computeDeps(fn);
     if (!fn.isDeclaration() && (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
@@ -280,6 +292,11 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
       setsToProcess.push_back(&deps.deps);
   }
 
+  if (setsToProcess.size() <= 1) {
+    processFn(std::move(mainModule), std::nullopt);
+    return;
+  }
+
   // Sort the sets by to schedule the larger modules first.
   llvm::sort(setsToProcess,
              [](auto *lhs, auto *rhs) { return lhs->size() > rhs->size(); });
@@ -334,12 +351,15 @@ private:
   struct ValueInfo {
     const llvm::Value *value = nullptr;
     bool canBeSplit = true;
-    llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
-    llvm::SmallPtrSet<const llvm::Value *, 4> users;
+    llvm::SmallPtrSet<const llvm::GlobalValue *, 4> dependencies;
+    llvm::SmallPtrSet<const llvm::GlobalValue *, 4> users;
+    /// Map each global value to its index in the module. We will use this to
+    /// materialize global values from bitcode.
+    unsigned gvIdx;
   };
 
   /// Collect all of the immediate global value users of `value`.
-  void collectValueUsers(const llvm::Value *value);
+  void collectValueUsers(const llvm::GlobalValue *value);
 
   /// Propagate use information through the module.
   void propagateUseInfo();
@@ -348,7 +368,7 @@ private:
   LLVMModuleAndContext mainModule;
 
   /// The value info for each global value in the module.
-  llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
+  llvm::MapVector<const llvm::GlobalValue *, ValueInfo> valueInfos;
 };
 } // namespace
 
@@ -365,7 +385,13 @@ void KGEN::splitPerFunction(LLVMModuleAndContext module,
 /// function.
 void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // Compute the value info for each global in the module.
-  auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
+  // NOTE: The visitation of functions then globals has to line up with
+  // `readAndMaterializeDependencies`.
+  unsigned gvIdx = 0;
+  auto computeUsers = [&](const llvm::GlobalValue &value) {
+    valueInfos[&value].gvIdx = gvIdx++;
+    collectValueUsers(&value);
+  };
   llvm::for_each(mainModule->functions(), computeUsers);
   llvm::for_each(mainModule->globals(), computeUsers);
 
@@ -382,71 +408,54 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // LLVM LTO style optimization may suffer a bit here since we don't have
   // the full callstack present anymore in each cloned module.
   llvm::DenseSet<const llvm::Value *> splitValues;
-  auto splitValue =
-      [&](const llvm::Value *root) -> std::unique_ptr<llvm::Module> {
+  SmallVector<llvm::MapVector<const llvm::GlobalValue *, unsigned>>
+      setsToProcess;
+
+  // Hoist these collections to re-use memory allocations.
+  llvm::ValueToValueMapTy valueMap;
+  SmallPtrSet<const llvm::Value *, 4> splitDeps;
+  auto splitValue = [&](const llvm::GlobalValue *root) {
     // If the function is already split, e.g. if it was a dependency of
     // another function, skip it.
     if (splitValues.count(root))
-      return nullptr;
+      return;
 
     auto &valueInfo = valueInfos[root];
-    llvm::ValueToValueMapTy valueMap;
-    SmallPtrSet<const llvm::Value *, 4> splitdDeps;
+    valueMap.clear();
+    splitDeps.clear();
 
-    // llvm::CloneModule is not thread safe if the cloning is from the same
-    // original module because new cloned things will be added to the same
-    // llvm::LLVMContext which can have race condition.
-    // This is also true that cloned modules (with the same origin) cannot be
-    // destroyed in multi-threading without explict mutex because erasing things
-    // from the same llvm::LLVMContext is not protected.
-    std::unique_ptr<llvm::Module> splitModule(llvm::CloneModule(
-        *mainModule, valueMap, [&](const llvm::GlobalValue *globalVal) {
-          // Only clone root and the declaration of its dependencies.
-          if (globalVal == root) {
-            splitdDeps.insert(globalVal);
-            return true;
-          }
+    auto shouldSplit = [&](const llvm::GlobalValue *globalVal,
+                           const ValueInfo &info) {
+      // Only clone root and the declaration of its dependencies.
+      if (globalVal == root) {
+        splitDeps.insert(globalVal);
+        return true;
+      }
+      if ((info.canBeSplit || info.users.empty()) &&
+          isa_and_nonnull<llvm::Function>(globalVal))
+        return false;
 
-          auto iter = valueInfos.find(globalVal);
-          if (iter == valueInfos.end())
-            return false;
-          if ((iter->second.canBeSplit || iter->second.users.empty()) &&
-              isa_and_nonnull<llvm::Function>(globalVal))
-            return false;
+      if (valueInfo.dependencies.contains(globalVal)) {
+        splitDeps.insert(globalVal);
+        return true;
+      }
+      return false;
+    };
 
-          if (valueInfo.dependencies.contains(globalVal)) {
-            splitdDeps.insert(globalVal);
-            return true;
-          }
-          return false;
-        }));
-
-    if (splitModule->empty())
-      splitModule->setModuleInlineAsm("");
-
-    // Module cloning creates stubs for every function and global in the
-    // original module, even if they aren't used in this slice. Kill all of
-    // these off to make the module more self-contained.
-    for (auto &func : llvm::make_early_inc_range(*splitModule)) {
-      if (func.isDeclaration() &&
-          (func.use_empty() && !valueInfo.dependencies.count(&func)))
-        func.eraseFromParent();
+    auto &set = setsToProcess.emplace_back();
+    for (auto &[globalVal, info] : valueInfos) {
+      if (shouldSplit(globalVal, info))
+        set.insert({globalVal, info.gvIdx});
     }
-
-    for (auto &globalVar : llvm::make_early_inc_range(splitModule->globals())) {
-      if (globalVar.isDeclaration() && globalVar.use_empty())
-        globalVar.eraseFromParent();
-    }
+    if (set.empty())
+      setsToProcess.pop_back();
 
     // Record the split values.
-    splitValues.insert(splitdDeps.begin(), splitdDeps.end());
-
-    return splitModule;
+    splitValues.insert(splitDeps.begin(), splitDeps.end());
   };
 
-  int64_t totalSplit = 0;
   int64_t count = 0;
-  SmallVector<llvm::Value *> toSplit;
+  SmallVector<const llvm::GlobalValue *> toSplit;
   for (auto &global : mainModule->globals()) {
     if (global.hasInternalLinkage()) {
       global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
@@ -471,37 +480,30 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
     }
   }
 
-  std::string bitcodeData;
-  llvm::raw_string_ostream bitcodeOs(bitcodeData);
-  for (auto [idx, value] : llvm::enumerate(toSplit)) {
-    // Synchronize incrementally to reduce pressuring memory to much for holding
-    // the cloned llvm modules.
-    if (std::unique_ptr<llvm::Module> splitModule = splitValue(value)) {
-      LLVMModuleAndContext bitcloned;
-      // FIXME: We shouldn't be cloning and then roundtripping through bitcode
-      // here! We can lazy load symbols out of bitcode to make this faster.
-      (void)bitcloned.create([&](llvm::LLVMContext &ctx) {
-        llvm::WriteBitcodeToFile(*splitModule, bitcodeOs);
-        auto moduleOr = llvm::parseBitcodeFile(
-            llvm::MemoryBufferRef(bitcodeOs.str(), "<split>"), ctx);
-        bitcodeData.clear();
-        // We don't expect roundtripping LLVM bitcode to fail.
-        if (!moduleOr)
-          llvm::report_fatal_error("LLVM bitcode roundtrip failed");
-        return std::move(*moduleOr);
-      });
-      processFn(std::move(bitcloned), totalSplit++);
-    }
+  // Run this now since we just changed the linkages.
+  for (const llvm::GlobalValue *value : toSplit)
+    splitValue(value);
+
+  if (setsToProcess.size() <= 1) {
+    processFn(std::move(mainModule), std::nullopt);
+    return;
   }
 
-  // If we had no functions to split, just process the main module.
-  if (totalSplit == 0)
-    processFn(std::move(mainModule), std::nullopt);
+  // Prepare to materialize slices of the module by first writing the main
+  // module as bitcode to a shared buffer.
+  auto buf = WriteableBuffer::get();
+  {
+    CompilerTimeTraceScope traceScope("writeMainModuleBitcode");
+    llvm::WriteBitcodeToFile(*mainModule, *buf);
+  }
+
+  for (auto [idx, set] : llvm::enumerate(setsToProcess))
+    processFn(readAndMaterializeDependencies(buf.copy(), set), idx);
 }
 
 /// Collect all of the immediate global value users of `value`.
 void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
-    const llvm::Value *value) {
+    const llvm::GlobalValue *value) {
   SmallVector<const llvm::User *> worklist(value->users());
 
   while (!worklist.empty()) {
@@ -554,7 +556,7 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
     worklist.pop_back();
 
     // Propagate the dependencies of this value to its users.
-    for (const llvm::Value *user : info->users) {
+    for (const llvm::GlobalValue *user : info->users) {
       ValueInfo &userInfo = valueInfos.find(user)->second;
       if (info == &userInfo)
         continue;
@@ -592,7 +594,7 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
 
     // If a value cannot be split, propagate its dependencies up to its
     // dependencies.
-    for (const llvm::Value *dep : info->dependencies) {
+    for (const llvm::GlobalValue *dep : info->dependencies) {
       ValueInfo &depInfo = valueInfos.find(dep)->second;
       if (info == &depInfo)
         continue;
