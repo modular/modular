@@ -44,5 +44,6 @@ modular_pybind_extension(
     deps = [
         "//GenericML:SupportGlobals",
         "//GenericML:modular-framework-common",
+        "//ModularFramework/tools/mof",
     ],
 )
