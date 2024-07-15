@@ -6,15 +6,14 @@
 """Core graph primitives."""
 
 import contextlib
-from dataclasses import dataclass
 from typing import Iterable
 
+import max.graph.core as _c
 from max.graph import mlir
 from max.graph.graph_value import GraphValue
 from max.graph.type import Type
 
 
-@dataclass
 class Graph:
     """Represents a single MAX graph.
 
@@ -36,7 +35,7 @@ class Graph:
     from max.tensor import Tensor, TensorShape
 
     def build_model() -> Graph:
-        graph = Graph(TensorType(DType.float32, 2, 6))
+        graph = Graph(TensorType(DType.float32, (2, 6)))
 
         matmul_constant_value = Tensor(TensorShape(6, 1), 0.15)
         matmul_constant = graph.constant(matmul_constant_value)
@@ -54,10 +53,18 @@ class Graph:
     [build a graph with MAX Graph](/max/graph/get-started).
     """
 
-    def __init__(self, name: str, input_types: Iterable[Type]) -> None:
+    def __init__(
+        self,
+        name: str,
+        input_types: Iterable[Type] = None,
+        output_types: Iterable[Type] = None,
+    ) -> None:
         self._context = mlir.ir.Context()
         self._location = mlir.ir.Location.unknown(context=self._context)
         self.ctx_stack = contextlib.ExitStack()
+
+        registry = mlir.ir.DialectRegistry()
+        _c.load_modular_dialects(registry._CAPIPtr)
 
     def __enter__(self):
         # XXX: easy location decorator that works with python location info
@@ -94,3 +101,9 @@ class Graph:
 
     def output(self, *args):
         pass
+
+    def __repr__(self) -> str:
+        return (
+            f"Graph(name='{self.name}', input_types={self.input_types},"
+            f" output_types={self.output_types})"
+        )

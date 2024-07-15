@@ -41,6 +41,9 @@ modular_pybind_extension(
     pybind_data = [
         "//SDK/lib/GraphAPI/python/max/graph/mlir:_mlir_libs/_mlir",
     ],
+    pybind_deps = [
+        "//SDK:GraphPython",
+    ],
     deps = [
         "//GenericML:SupportGlobals",
         "//GenericML:modular-framework-common",
