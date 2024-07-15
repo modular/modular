@@ -28,6 +28,7 @@
     "vscode:prepublish": "tsc -b ./",
     "watch": "tsc -b -watch ./",
     "package": "vsce package --out ./out/vscode-mojo.vsix",
+    "format": "npx prettier . --write --ignore-path .gitignore",
     "publish": "vsce publish"
   },
   "devDependencies": {
@@ -37,10 +38,12 @@
     "@types/shell-escape": "0.2.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.19.0",
+    "prettier": "^3.3.3",
+    "prettier-plugin-curly": "^0.2.1",
     "typescript": "^4.6.4"
   },
   "dependencies": {
-    "chokidar": "3.5.2",
+    "chokidar": "^3.6.0",
     "ini": "4.1.1",
     "shell-escape": "0.2.0",
     "string-argv": "0.3.2",
