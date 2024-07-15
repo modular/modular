@@ -9,12 +9,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/DLValues.h"
+#include "KGEN/MojoTooling/ASTDeclView.h"
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/ASTType.h"
-#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
