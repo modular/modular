@@ -2316,7 +2316,7 @@ fn scatter_max[
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
-        return lhs.max(rhs)
+        return max(lhs, rhs)
 
     scatter_elements[reduce_func](
         input,
@@ -2347,7 +2347,7 @@ fn scatter_min[
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
-        return lhs.min(rhs)
+        return min(lhs, rhs)
 
     scatter_elements[reduce_func](
         input,
@@ -2483,7 +2483,7 @@ fn scatter_nd_max[
     fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
-        return lhs.max(rhs)
+        return max(lhs, rhs)
 
     scatter_nd_generator[
         output_type,
@@ -2520,7 +2520,7 @@ fn scatter_nd_min[
     fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
-        return lhs.min(rhs)
+        return min(lhs, rhs)
 
     scatter_nd_generator[
         output_type,
