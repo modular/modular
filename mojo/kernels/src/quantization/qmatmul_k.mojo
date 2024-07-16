@@ -317,7 +317,7 @@ fn _quantize_a_Q8_K[
                     var fp_data = SIMD[size=group_size].load(
                         am_ptr, g * group_size
                     )
-                    max_value_simd = abs(fp_data).max(max_value_simd)
+                    max_value_simd = max(abs(fp_data), max_value_simd)
 
                 var max_value = max_value_simd.reduce_max()
                 var scale = (max_value / 127.0).cast[DType.float32]()
