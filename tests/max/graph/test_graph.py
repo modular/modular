@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 import pytest
-from max.graph import DType, Graph, TensorType, mlir
+from max.graph import DType, Graph, TensorType, graph, mlir
 
 
 def test_mlir_module_create() -> None:
@@ -27,3 +27,19 @@ def test_elementwise_add_graph() -> None:
         ],
     ) as graph:
         graph.output(graph.inputs[0] + 1)
+
+
+def test_location():
+    def bar():
+        return graph.location()
+
+    def foo():
+        return bar()
+
+    with mlir.Context() as ctx:
+        loc = foo()
+
+    # We can't really introspect locations except to get their `str`
+    assert f"{__name__}.test_location" in str(loc)
+    assert f"{__name__}.foo" in str(loc)
+    assert f"{__name__}.bar" in str(loc)
