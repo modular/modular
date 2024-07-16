@@ -23,7 +23,7 @@ from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
-from runtime.llcl import parallelism_level
+from runtime.asyncrt import parallelism_level
 
 from utils import Index, InlineArray
 

@@ -44,7 +44,7 @@ from linalg._multistage_gemm_gpu import multistage_mma
 from memory import stack_allocation
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
 from utils.numerics import neg_inf, min_or_neg_inf

@@ -18,7 +18,7 @@ from linalg.matmul import matmul
 from nn.flash_attention import flash_attention as cpu_flash_attention
 from nn.mha import flash_attention as gpu_flash_attention
 from register import mogg_register, mogg_register_shape_func
-from runtime.llcl import (
+from runtime.asyncrt import (
     MojoCallContextPtr,
 )
 

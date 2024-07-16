@@ -16,7 +16,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import memset_zero, stack_allocation
 from register import mogg_register
-from runtime.llcl import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils import StaticIntTuple, StaticTuple, unroll

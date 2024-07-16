@@ -20,7 +20,7 @@ from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory.unsafe import DTypePointer
 from register import mogg_register
-from runtime.llcl import parallelism_level
+from runtime.asyncrt import parallelism_level
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll

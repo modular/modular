@@ -16,7 +16,7 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from register import mogg_register
-from runtime.llcl import parallelism_level
+from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from utils.index import StaticTuple, StaticIntTuple, Index
@@ -33,7 +33,7 @@ from gpu.host._compile import _get_nvptx_target
 from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx
 from gpu.memory import AddressSpace
 from .reshape import reshape
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 
 # using numerically stable Welford online algorithm to compute single pass mean and variance

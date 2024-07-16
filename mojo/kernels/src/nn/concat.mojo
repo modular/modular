@@ -22,7 +22,7 @@ from gpu.host import DeviceContext, DeviceBuffer
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from register import mogg_register
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils import StaticIntTuple, StaticTuple, product
 
