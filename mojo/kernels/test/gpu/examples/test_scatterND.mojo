@@ -132,7 +132,7 @@ fn scatter_nd[
     # by the end of scatternd kernel).
     var output_flat = output.flatten()
     var data_flat = data.flatten()
-    memcpy(output_flat.data, data_flat.data, len(output_flat))
+    memcpy(output_flat.data.address, data_flat.data.address, len(output_flat))
 
     # Get shapes of buffers to be used in subsequent calculations.
     var data_shape = data.get_shape()
