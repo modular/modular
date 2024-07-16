@@ -48,7 +48,7 @@ def test_quantize_bfloat16():
     g.output(bfloat16_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_tokens, 2 * channels))
-    memset_zero(zeros.unsafe_ptr(), zeros.num_elements())
+    memset_zero(zeros.unsafe_ptr().address, zeros.num_elements())
 
     output = execute_unary(g, zeros)
 
@@ -120,7 +120,7 @@ def test_quantize_q4_0():
     g.output(q4_0_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_rows, 2 * sizeof[BlockQ40]()))
-    memset_zero(zeros.unsafe_ptr(), zeros.num_elements())
+    memset_zero(zeros.unsafe_ptr().address, zeros.num_elements())
 
     actual_output = execute_unary[outtype = DType.uint8](g, zeros)
 
