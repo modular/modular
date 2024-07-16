@@ -478,7 +478,11 @@ struct Tensor[type: DType](
             return False
 
         return (
-            memcmp(self.unsafe_ptr(), other.unsafe_ptr(), self.num_elements())
+            memcmp(
+                self.unsafe_ptr().address,
+                other.unsafe_ptr().address,
+                self.num_elements(),
+            )
             == 0
         )
 

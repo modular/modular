@@ -396,7 +396,9 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
         if self.get_rank() != other.get_rank():
             return False
 
-        return memcmp(self.dims, other.dims, self.get_rank()) == 0
+        return (
+            memcmp(self.dims.address, other.dims.address, self.get_rank()) == 0
+        )
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
