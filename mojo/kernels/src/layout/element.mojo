@@ -4,8 +4,35 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from . import Layout
-from .layout import coalesce, to_int
+from . import Layout, RuntimeLayout
+from .layout import to_int
+from .int_tuple import UNKNOWN_VALUE
+
+
+@always_inline
+fn __get_offset[
+    i: Int, layout: Layout
+](runtime_layout: RuntimeLayout[layout]) -> Int:
+    @parameter
+    if layout.all_dims_known():
+        alias offset = layout(i)
+        return offset
+    else:
+        return runtime_layout(i)
+
+
+@always_inline
+fn __get_offset[
+    i: Int, j: Int, layout: Layout
+](runtime_layout: RuntimeLayout[layout]) -> Int:
+    @parameter
+    if layout.all_dims_known():
+        alias offset = layout(IntTuple(i, j))
+        return offset
+    else:
+        return runtime_layout(
+            RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](i, j)
+        )
 
 
 # Element is a wrapper around SIMD type, it extends the SIMD type to define
@@ -16,13 +43,27 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
     var element_data: Self.element_data_type
 
+    var runtime_layout: RuntimeLayout[layout]
+
     fn __init__(inout self, element_data: Self.element_data_type):
         self.element_data = element_data
+        self.runtime_layout = RuntimeLayout[layout]()
+
+    fn __init__(
+        inout self,
+        element_data: Self.element_data_type,
+        runtime_layout: RuntimeLayout[layout],
+    ):
+        self.element_data = element_data
+        self.runtime_layout = runtime_layout
 
     @staticmethod
     fn load[
         address_space: AddressSpace
-    ](ptr: DTypePointer[dtype, address_space]) -> Self:
+    ](
+        ptr: DTypePointer[dtype, address_space],
+        runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
+    ) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -38,10 +79,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(size):
-                    alias offset = layout(i)
-
-                    element_data[i] = ptr[offset]
-                return element_data
+                    element_data[i] = ptr[__get_offset[i](runtime_layout)]
+                return Element(element_data, runtime_layout)
         else:
 
             @parameter
@@ -56,11 +95,12 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    alias offset = layout(IntTuple(0, i))
-                    var vec_i = vec_type.load(ptr, offset)
+                    var vec_i = vec_type.load(
+                        ptr, __get_offset[0, i](runtime_layout)
+                    )
                     element_data = element_data.insert[offset = i * size](vec_i)
 
-                return element_data
+                return Element(element_data, runtime_layout)
             elif layout.stride[1] == 1:
                 alias size = to_int(layout.shape[1])
                 alias elements = to_int(layout.shape[0])
@@ -72,11 +112,12 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    alias offset = layout(IntTuple(i, 0))
-                    var vec_i = vec_type.load(ptr, offset)
+                    var vec_i = vec_type.load(
+                        ptr, __get_offset[i, 0](runtime_layout)
+                    )
                     element_data = element_data.insert[offset = i * size](vec_i)
 
-                return element_data
+                return Element(element_data, runtime_layout)
             else:
                 var element_data = Self.element_data_type()
 
@@ -88,11 +129,11 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                     @parameter
                     for j in range(dim_1):
-                        alias offset = layout(IntTuple(i, j))
+                        element_data[i + j * dim_1] = ptr[
+                            __get_offset[i, j](runtime_layout)
+                        ]
 
-                        element_data[i + j * dim_1] = ptr[offset]
-
-                return element_data
+                return Element(element_data, runtime_layout)
 
     fn store[
         address_space: AddressSpace
@@ -113,9 +154,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(size):
-                    alias offset = layout(i)
-
-                    ptr[offset] = self.element_data[i]
+                    ptr[
+                        __get_offset[i](self.runtime_layout)
+                    ] = self.element_data[i]
         else:
 
             @parameter
@@ -128,9 +169,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    alias offset = layout(IntTuple(0, i))
                     vec_type.store[alignment=alignment](
-                        ptr + offset,
+                        ptr + __get_offset[i, 0](self.runtime_layout),
                         self.element_data.slice[size, offset = i * size](),
                     )
 
@@ -143,9 +183,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    alias offset = layout(IntTuple(i, 0))
                     vec_type.store[alignment=alignment](
-                        ptr + offset,
+                        ptr + __get_offset[i, 0](self.runtime_layout),
                         self.element_data.slice[size, offset = i * size](),
                     )
             else:
@@ -157,9 +196,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                     @parameter
                     for j in range(dim_1):
-                        alias offset = layout(IntTuple(i, j))
-
-                        self.element_data[i + j * dim_1].store(ptr, offset)
+                        self.element_data[i + j * dim_1].store(
+                            ptr, __get_offset[i, j](self.runtime_layout)
+                        )
 
     @no_inline
     fn __str__(self) -> String:

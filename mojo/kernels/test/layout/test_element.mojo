@@ -7,8 +7,9 @@
 # RUN: %bare-mojo %s | FileCheck %s
 # COM: TODO(KERN-645)
 
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.element import Element
+from layout.int_tuple import UNKNOWN_VALUE
 
 
 # CHECK-LABEL: test_element_load
@@ -141,6 +142,53 @@ fn test_element_store():
     tensor_8x8.print()
 
 
+fn test_element_dynamic_layout():
+    print("== test_element_dynamic_layout")
+
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var dynamic_layout = RuntimeLayout[layout](
+        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+    )
+
+    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+
+    var tensor_8x8 = LayoutTensor[DType.float32, layout](
+        storage, dynamic_layout
+    )
+
+    tensor_8x8.linspace()
+
+    for tile_i in range(2):
+        for tile_j in range(2):
+            var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
+            var offset = tensor_8x8_v_4_4.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](
+                    tile_i, tile_j
+                )
+            )
+            var elem = Element[
+                tensor_8x8_v_4_4.dtype,
+                tensor_8x8_v_4_4.element_layout,
+            ].load(
+                tensor_8x8_v_4_4.ptr.offset(offset),
+                tensor_8x8_v_4_4.runtime_element_layout,
+            )
+            elem.element_data *= 10
+            elem.store(tensor_8x8_v_4_4.ptr.offset(offset))
+
+    # CHECK: 0.0 10.0 20.0 30.0 40.0 50.0 60.0 70.0
+    # CHECK: 80.0 90.0 100.0 110.0 120.0 130.0 140.0 150.0
+    # CHECK: 160.0 170.0 180.0 190.0 200.0 210.0 220.0 230.0
+    # CHECK: 240.0 250.0 260.0 270.0 280.0 290.0 300.0 310.0
+    # CHECK: 320.0 330.0 340.0 350.0 360.0 370.0 380.0 390.0
+    # CHECK: 400.0 410.0 420.0 430.0 440.0 450.0 460.0 470.0
+    # CHECK: 480.0 490.0 500.0 510.0 520.0 530.0 540.0 550.0
+    # CHECK: 560.0 570.0 580.0 590.0 600.0 610.0 620.0 630.0
+    tensor_8x8.print()
+
+
 fn main():
     test_element_load()
     test_element_store()
+    test_element_dynamic_layout()
