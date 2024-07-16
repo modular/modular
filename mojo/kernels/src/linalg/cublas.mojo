@@ -42,7 +42,15 @@ fn cublas_matmul(
     var alpha = Scalar[DType.float32](1.0)
     var beta = Scalar[DType.float32](0.0)
 
-    var compute_type = ComputeType.COMPUTE_32F_FAST_TF32 if a.type == DType.float32 else ComputeType.COMPUTE_32F
+    var compute_type: ComputeType
+
+    @parameter
+    if a.type == DType.float16:
+        compute_type = ComputeType.COMPUTE_32F_FAST_16F
+    elif a.type == DType.bfloat16:
+        compute_type = ComputeType.COMPUTE_32F_FAST_16BF
+    else:
+        compute_type = ComputeType.COMPUTE_32F_FAST_TF32
 
     # Cublas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
