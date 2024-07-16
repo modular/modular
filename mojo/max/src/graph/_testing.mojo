@@ -10,6 +10,8 @@ from testing import assert_almost_equal, assert_equal
 from max.engine import InferenceSession, TensorMap
 from max.tensor import Tensor, TensorShape
 
+from builtin._location import __call_location
+
 
 @always_inline
 fn assert_tensors_almost_equal[
@@ -23,7 +25,11 @@ fn assert_tensors_almost_equal[
     assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
         assert_almost_equal[dtype](
-            a.unsafe_ptr()[i], b.unsafe_ptr()[i], atol=atol, rtol=rtol
+            a.unsafe_ptr()[i],
+            b.unsafe_ptr()[i],
+            atol=atol,
+            rtol=rtol,
+            location=__call_location(),
         )
 
 
@@ -31,9 +37,11 @@ fn assert_tensors_almost_equal[
 fn assert_tensors_equal[
     dtype: DType
 ](a: Tensor[dtype], b: Tensor[dtype]) raises:
-    assert_equal(a.spec(), b.spec())
+    assert_equal(a.spec(), b.spec(), location=__call_location())
     for i in range(a.num_elements()):
-        assert_equal[dtype](a.unsafe_ptr()[i], b.unsafe_ptr()[i])
+        assert_equal[dtype](
+            a.unsafe_ptr()[i], b.unsafe_ptr()[i], location=__call_location()
+        )
 
 
 @always_inline
