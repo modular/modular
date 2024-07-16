@@ -22,10 +22,8 @@ class bar:
 # CHECK-NOT: (PythonObject) a =
 # CHECK: (PythonObject) b = {
 # CHECK:   (PyObjectPtr) py_object = {
-# CHECK:     (DTypePointer[int8, {{.*}}]) value = {
-# CHECK:       (UnsafePointer[SIMD[int8, 1], {{.*}}]) address = {
+# CHECK:     (UnsafePointer[SIMD[int8, 1], {{.*}}]) value = {
 # CHECK:         (pointer<{{.*}}>) address = 0x
-# CHECK:       }
 # CHECK:     }
 # CHECK:   }
 # CHECK: }
