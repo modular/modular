@@ -791,7 +791,11 @@ fn _transpose_4d_swap_middle_helper[
                     #   output[l, n, m, k] = input[l, m, n, k]
                     var in_off = l * M * N * K + m * N * K + n * K
                     var out_off = l * M * N * K + n * M * K + m * K
-                    memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
+                    memcpy(
+                        dst_ptr.offset(out_off).address,
+                        src_ptr.offset(in_off).address,
+                        K,
+                    )
         return
     else:
         var num_threads = parallelism_level()
@@ -814,7 +818,11 @@ fn _transpose_4d_swap_middle_helper[
 
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
-                memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
+                memcpy(
+                    dst_ptr.offset(out_off).address,
+                    src_ptr.offset(in_off).address,
+                    K,
+                )
 
         sync_parallelize[_parallel_copy](num_tasks)
 
@@ -926,7 +934,7 @@ fn transpose_trivial_memcpy[
     var total_size = output.size()
 
     if total_size <= min_work_for_parallel:
-        memcpy(dst_ptr, src_ptr, total_size)
+        memcpy(dst_ptr.address, src_ptr.address, total_size)
 
     else:
         var work_units = ceildiv(total_size, min_work_per_task)
@@ -982,7 +990,7 @@ fn _copy_with_strides[
         var src_ptr = input.offset(input_offset)
         var dst_ptr = output.data.offset(output_offset)
         if input_axis_stride == 1 and output_axis_stride == 1:
-            memcpy(dst_ptr, src_ptr, axis_dim)
+            memcpy(dst_ptr.address, src_ptr.address, axis_dim)
         else:
 
             @always_inline
