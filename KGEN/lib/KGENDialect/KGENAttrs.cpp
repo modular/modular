@@ -2624,15 +2624,19 @@ TypedAttr KGEN::emitMLIROperationCall(
 //===----------------------------------------------------------------------===//
 
 CustomOpImplAttr CustomOpImplAttr::get(StringAttr opName,
-                                       SymbolConstantAttr opImplementation) {
-  return CustomOpImplAttr::get(opName.getContext(), opName, opImplementation);
+                                       SymbolConstantAttr opImplementation,
+                                       SymbolConstantAttr opCanonicalization) {
+  return CustomOpImplAttr::get(opName.getContext(), opName, opImplementation,
+                               opCanonicalization);
 }
 
 CustomOpImplAttr CustomOpImplAttr::get(StringRef opName,
-                                       SymbolConstantAttr opImplementation) {
+                                       SymbolConstantAttr opImplementation,
+                                       SymbolConstantAttr opCanonicalization) {
   MLIRContext *context = opImplementation.getContext();
   auto opNameAttr = StringAttr::get(context, opName);
-  return CustomOpImplAttr::get(context, opNameAttr, opImplementation);
+  return CustomOpImplAttr::get(context, opNameAttr, opImplementation,
+                               opCanonicalization);
 }
 
 //===----------------------------------------------------------------------===//

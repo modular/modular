@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s --lower-custom-ops | FileCheck %s
 
 module {
-  kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.arith.neg", :!kgen.signature<(!pop.scalar<si32>) -> !pop.scalar<si32>> @my_impl>]
+  kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.arith.neg", impl: :!kgen.signature<(!pop.scalar<si32>) -> !pop.scalar<si32>> @my_impl>]
 
   kgen.generator @my_impl(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
     kgen.return %arg0 : !pop.scalar<si32>

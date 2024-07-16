@@ -2105,6 +2105,13 @@ private:
   void processValueDecorator(SMLoc decoratorLoc, LIT::FuncOp moveFunc,
                              LIT::FuncOp copyFunc);
 
+  /// Get a constant symbol to a method, and return null if it is missing or
+  /// something went wrong.
+  /// Provide optionally a callback for the case where the method is missing.
+  SymbolConstantAttr
+  getSymbolForMethod(StringRef methodName, ExprNode *decorator,
+                     function_ref<void()> callbackOnMissing = nullptr);
+
   /// Process the @op_implementation body decorator on structs.
   /// It adds a new operation in the IR that link the new op name with the
   /// relevant struct methods.
@@ -2205,6 +2212,30 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
   }
 }
 
+SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
+    StringRef methodName, ExprNode *decorator,
+    function_ref<void()> callbackOnMissing) {
+  // Get the possibly overloaded method.
+  TypeCheckScopeInfo scopeInfo{structDecl, false, shared};
+  auto methods = OverloadSet::lookup(
+      scopeInfo, structDecl.getTypeDeclSelf(), methodName, decorator,
+      CallSyntax::kMethodCallSynthetic, callbackOnMissing);
+
+  // Case where we did not find the `impl` method or an error occured.
+  if (!methods)
+    return {};
+
+  // Emit the constant symbol.
+  auto methodsUValue = OverloadSetUValue::create(std::move(methods));
+  ExprEmitter emitter(shared, structDecl, {});
+  PValue value =
+      emitter.emitPValue({methodsUValue, decorator}, ExprContext::EC_Decorator);
+  if (!value)
+    return {};
+
+  return cast<SymbolConstantAttr>(value.get());
+}
+
 void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
                                                   StringRef opName) {
   SMLoc decoratorLoc = decorator->getRangeStart();
@@ -2213,30 +2244,16 @@ void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
                             << "should define an `impl` method";
   };
 
-  // Get the `impl` methods.
-  TypeCheckScopeInfo scopeInfo{structDecl, false, shared};
-  auto implMethods = OverloadSet::lookup(
-      scopeInfo, structDecl.getTypeDeclSelf(), "impl", decorator,
-      CallSyntax::kMethodCallSynthetic, noImplMethodError);
-
-  // Case where we did not find the `impl` method or an error occured.
-  if (!implMethods)
+  auto implSym = getSymbolForMethod("impl", decorator, noImplMethodError);
+  if (!implSym)
     return;
 
-  // Emit the constant symbol for the `impl` method.
-  auto implMethodsUValue = OverloadSetUValue::create(std::move(implMethods));
-  ExprEmitter emitter(shared, structDecl, {});
-  PValue value = emitter.emitPValue({implMethodsUValue, decorator},
-                                    ExprContext::EC_Decorator);
-  if (!value)
-    return;
-
-  auto implConstant = cast<SymbolConstantAttr>(value.get());
+  auto canonicalizeSym = getSymbolForMethod("canonicalize", decorator);
 
   // Add the op implementation, and return an error if the op already had an
   // implementation.
-  (void)shared.addCustomOpImpl(CustomOpImplAttr::get(opName, implConstant),
-                               decoratorLoc);
+  (void)shared.addCustomOpImpl(
+      CustomOpImplAttr::get(opName, implSym, canonicalizeSym), decoratorLoc);
   return;
 }
 
