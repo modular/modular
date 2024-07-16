@@ -330,6 +330,14 @@ struct Trace[level: TraceLevel]:
         else:
             return ""
 
+    fn start(inout self):
+        """Start recording trace event."""
+        self.__enter__()
+
+    fn end(inout self):
+        """End recording trace event."""
+        self.__exit__()
+
 
 fn get_current_trace_id() -> Int:
     """Returns the id of last created trace entry on the current thread."""
