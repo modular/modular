@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
   DebugInfo::registerTransformsPasses();
 
   // Most *-opt tools create a runtime for use during the passes. However, due
-  // to dependency structure the Support library does not use LLCL, and does
+  // to dependency structure the Support library does not use AsyncRT, and does
   // not require a runtime.
 
   return failed(

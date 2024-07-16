@@ -159,7 +159,7 @@ struct MojoTypeSystem::Impl {
   /// typesystem.
   MLIRContext mlirContext{mlir::MLIRContext::Threading::DISABLED};
 
-  /// The LLCL runtime to use for compilation/processing associated with this
+  /// The AsyncRT runtime to use for compilation/processing associated with this
   /// type system. This is derived from the context available in the
   /// MLIRContext.
   AsyncRT::Runtime &runtime;

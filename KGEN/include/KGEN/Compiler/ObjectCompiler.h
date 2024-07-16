@@ -115,7 +115,7 @@ private:
   /// The MLIR context.
   MLIRContext &context;
 
-  /// The LLCL runtime.
+  /// The AsyncRT runtime.
   AsyncRT::Runtime &runtime;
 };
 

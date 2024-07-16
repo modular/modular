@@ -1,6 +1,6 @@
 // RUN: kgen-opt -automatic-inline %s | FileCheck %s
 // RUN: kgen-opt -automatic-inline=func-pipeline='canonicalize,cse' %s | FileCheck %s --check-prefix=CANON
-// RUN: not kgen-opt --llcl-single-thread --mlir-disable-threading -pass-pipeline='builtin.module(automatic-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO
+// RUN: not kgen-opt --asyncrt-single-thread --mlir-disable-threading -pass-pipeline='builtin.module(automatic-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO
 
 // CHECK-LABEL: kgen.func @top
 // CANON-LABEL: kgen.func @top

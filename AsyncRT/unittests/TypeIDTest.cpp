@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-/// This test is still under LLCL because we want to do fine-grained thread
-/// control to run this test with semaphores, which rightly lives in LLCL.
+/// This test is still under AsyncRT because we want to do fine-grained thread
+/// control to run this test with semaphores, which rightly lives in AsyncRT.
 #include "Support/TypeID.h"
 
 #include "AsyncRT/Support/Semaphore.h"

@@ -65,12 +65,13 @@ void registerIO(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
-// LLCL.cpp
+// AsyncRT.cpp
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-/// Register the LLCL functions.
-void registerLLCL(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+/// Register the AsyncRT functions.
+void registerAsyncRT(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

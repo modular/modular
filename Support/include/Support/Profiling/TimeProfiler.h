@@ -108,10 +108,10 @@ static constexpr bool kIsProfilingEnabled =
 // The cmake arg -DMODULAR_ASYNCRT_MAX_PROFILING_LEVEL is interpreted as chunks
 // of octal numbers. The TraceType enum indicates which chunk corresponds to
 // which type of profiling. Each chunk, representing a type of profiling, has 3
-// bits worth of profiling levels to use. For example, to enable level 1 LLCL
+// bits worth of profiling levels to use. For example, to enable level 1 AsyncRT
 // profiling but not DEFAULT profiling, you would pass
 // -DMODULAR_ASYNCRT_MAX_PROFILING_LEVEL=010 to cmake. To enable level 2 DEFAULT
-// profiling, but not LLCL profiling, you would pass
+// profiling, but not AsyncRT profiling, you would pass
 // -DMODULAR_ASYNCRT_MAX_PROFILING_LEVEL=02 to cmake.
 // This is intended to avoid cluttering profiles with unwanted information by
 // giving the user more control over which types of traces they want to see.
@@ -130,7 +130,7 @@ struct Trace {
     // Level 2:
     //   RuntimeCacheProfilerEntry for cache transforms.
     kOther = 0,
-    // For traces related to core LLCL scheduling and runtime.
+    // For traces related to core AsyncRT scheduling and runtime.
     // Level 1:
     //   none
     // Level 2:
@@ -139,7 +139,7 @@ struct Trace {
     // Level 3:
     //   AsyncProfilerEntry for AsyncValue allocation and premature freeing.
     //   AlllWorkItemsProfilerEntry for the execution of every work/wait item.
-    kLLCL = 1,
+    kAsyncRT = 1,
     // For traces related to memory usage.
     // Level 1:
     //   MemCopyProfilerEntry for memcpy.
@@ -613,7 +613,7 @@ struct TimeTraceThreadProfiler {
 #endif
 #ifdef MODULAR_PROFILING_NSIGHT
     // record the nvtx id associated with this profiler event id
-    llclToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
+    asyncrtToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
 #endif
     return id;
   }
@@ -630,7 +630,7 @@ struct TimeTraceThreadProfiler {
 #endif
 #ifdef MODULAR_PROFILING_NSIGHT
     // record the nvtx id associated with this profiler event id
-    llclToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
+    asyncrtToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
 #endif
     return id;
   }
@@ -646,8 +646,8 @@ struct TimeTraceThreadProfiler {
 #endif
 #ifdef MODULAR_PROFILING_NSIGHT
     // also end the nvtx process range
-    nvtxRangeEnd(llclToNvtx[id]);
-    llclToNvtx.erase(id);
+    nvtxRangeEnd(asyncrtToNvtx[id]);
+    asyncrtToNvtx.erase(id);
 #endif
   }
 
@@ -729,7 +729,7 @@ struct TimeTraceThreadProfiler {
   DebugEventList debugEvents;
 #ifdef MODULAR_PROFILING_NSIGHT
   // store the nvtx ids associated with profile event ids
-  llvm::DenseMap<ProfilerEventId, nvtxRangeId_t> llclToNvtx;
+  llvm::DenseMap<ProfilerEventId, nvtxRangeId_t> asyncrtToNvtx;
 #endif
 
   /// String arena.

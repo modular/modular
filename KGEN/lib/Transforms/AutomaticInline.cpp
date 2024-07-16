@@ -184,7 +184,7 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
                                             const SymbolTable &symtab);
 
 private:
-  /// Reference to the LLCL runtime for launch jobs in parallel.
+  /// Reference to the AsyncRT runtime for launch jobs in parallel.
   AsyncRT::Runtime &runtime;
 
   /// The pass managers to use.

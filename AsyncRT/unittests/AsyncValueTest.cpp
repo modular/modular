@@ -211,7 +211,7 @@ TEST_P(AsyncValueTest, EmplacingFromTask_DeadlockOnFailure) {
                      runtime = runtime.get(),
                      finished = finished.copy()]() mutable {
     testReady.post();
-    // Run the test inside an LLCL task. Waiter can be scheduled on the
+    // Run the test inside an AsyncRT task. Waiter can be scheduled on the
     // same thread.
     auto ref = AsyncValueRef<Chain>::allocate(*runtime);
     ref.andThenSync([&canaryProceed, finished = finished.copy()]() mutable {
@@ -236,7 +236,7 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
     return;
 
   // Run the test inside the main (ie 'foreign') thread. Waiter will be
-  // scheduled as an LLCL task.
+  // scheduled as an AsyncRT task.
   auto runtime = createRuntime();
   auto finished = AsyncValueRef<int>::allocate(*runtime);
   Semaphore canRun;

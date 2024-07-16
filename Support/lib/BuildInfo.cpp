@@ -18,8 +18,8 @@ void BuildInfo::print(llvm::raw_ostream &os) const {
   os << "\ngit-revision: " << gitRevision;
   os << "\nbuild-type: " << buildType;
   os << "\nkernels-build-type: " << kernelsBuildType;
-  os << "\nllcl-max-profiling-level: "
-     << llvm::format("0%04o", llclMaxProfilingLevel);
+  os << "\naysncrt-max-profiling-level: "
+     << llvm::format("0%04o", asyncrtMaxProfilingLevel);
   os << "\npreferred-mem-alignment: " << preferredMemoryAlignment;
   os << "\nllvm-targets: ";
   llvm::interleaveComma(llvmTargets, os);
@@ -32,7 +32,7 @@ void BuildInfo::print(llvm::json::OStream &json) const {
   json.attribute("git-revision", gitRevision);
   json.attribute("build-type", buildType);
   json.attribute("kernels-build-type", kernelsBuildType);
-  json.attribute("llcl-max-profiling-level", llclMaxProfilingLevel);
+  json.attribute("asyncrt-max-profiling-level", asyncrtMaxProfilingLevel);
   json.attribute("preferred-mem-alignment", preferredMemoryAlignment);
   json.attribute("llvm-targets", llvm::json::Array(llvmTargets));
   json.objectEnd();
@@ -52,8 +52,8 @@ void BuildInfo::print(BuildProperty property, llvm::raw_ostream &os) const {
   case BuildProperty::KernelsBuildType:
     os << kernelsBuildType;
     break;
-  case BuildProperty::LLCLMaxProfilingLevel:
-    os << llclMaxProfilingLevel;
+  case BuildProperty::AsyncRTMaxProfilingLevel:
+    os << asyncrtMaxProfilingLevel;
     break;
   case BuildProperty::PreferredMemoryAlignment:
     os << preferredMemoryAlignment;
@@ -73,7 +73,7 @@ BuildInfo M::getBuildInfo() {
   buildInfo.gitRevision = modularVersion.revision;
   buildInfo.buildType = modularVersion.buildType;
   buildInfo.kernelsBuildType = MODULAR_KERNELS_BUILD_TYPE;
-  buildInfo.llclMaxProfilingLevel = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
+  buildInfo.asyncrtMaxProfilingLevel = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
   buildInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
 
   StringRef(LLVM_TARGETS_BUILT).split(buildInfo.llvmTargets, " ");

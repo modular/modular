@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file forward declares LLCL types in a canonical place and imports them
-// into the Modular M namespace.  This avoids scattering forward declarations
-// throughout the codebase.
+// This file forward declares AsyncRT types in a canonical place and imports
+// them into the Modular M namespace.  This avoids scattering forward
+// declarations throughout the codebase.
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,13 +18,13 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::AsyncRT {
-// LLCL/Support Declarations
+// AsyncRT/Support Declarations
 class Chain;
 class EncodedLocation;
 class EncodedDiagnostic;
 class LocationDecoder;
 
-// LLCL/Runtime Declarations
+// AsyncRT/Runtime Declarations
 class Allocator;
 class AsyncValue;
 class AnyAsyncValueRef;
@@ -39,13 +39,13 @@ class Runtime;
 //===----------------------------------------------------------------------===//
 
 namespace M {
-// LLCL/Support Declarations
+// AsyncRT/Support Declarations
 using AsyncRT::Chain;
 using AsyncRT::EncodedDiagnostic;
 using AsyncRT::EncodedLocation;
 using AsyncRT::LocationDecoder;
 
-// LLCL/Runtime Declarations
+// AsyncRT/Runtime Declarations
 using AsyncRT::Allocator;
 using AsyncRT::AnyAsyncValueRef;
 using AsyncRT::AsyncValue;

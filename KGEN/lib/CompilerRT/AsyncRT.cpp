@@ -34,26 +34,26 @@ using namespace M::CUDA;
 
 /// An opaque wrapper around a pointer to a T.
 template <typename T>
-struct LLCLWrapper {
+struct AsyncRTWrapper {
   void *ptr;
 };
 
 template <typename T>
-T &unwrap(LLCLWrapper<T> ref) {
+T &unwrap(AsyncRTWrapper<T> ref) {
   return *reinterpret_cast<T *>(ref.ptr);
 }
 template <typename T>
-LLCLWrapper<T> wrap(T *ptr) {
-  return LLCLWrapper<T>{ptr};
+AsyncRTWrapper<T> wrap(T *ptr) {
+  return AsyncRTWrapper<T>{ptr};
 }
 
-using LLCLRuntimeRef = LLCLWrapper<Runtime>;
-using LLCLMojoCallContextRef = LLCLWrapper<MojoCallContext>;
-using LLCLAsyncChainRef = LLCLWrapper<AsyncValueRef<Chain>>;
-using LLCLSpinWaiterRef = LLCLWrapper<SpinWaiter<true>>;
+using AsyncRTRuntimeRef = AsyncRTWrapper<Runtime>;
+using AsyncRTMojoCallContextRef = AsyncRTWrapper<MojoCallContext>;
+using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
+using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 
 /// Dummy entry point to force loading.
-/// (All the other entry points use LLCLWrapper which we don't want to
+/// (All the other entry points use AsyncRTWrapper which we don't want to
 /// have to include in the header).
 COMPILERRT_EXPORT void KGEN_CompilerRT_AsyncRT_Dummy() {}
 
@@ -63,8 +63,8 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_AsyncRT_Dummy() {}
 
 /// Creates a new AsyncValueRef<Chain> and assigns it to chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_InitializeChain(LLCLRuntimeRef rt,
-                                        LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_InitializeChain(AsyncRTRuntimeRef rt,
+                                        AsyncRTAsyncChainRef chain) {
   checkUniqueRuntime(unwrap(rt));
   new (&unwrap(chain))
       AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
@@ -72,13 +72,13 @@ KGEN_CompilerRT_AsyncRT_InitializeChain(LLCLRuntimeRef rt,
 
 /// Destroys the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_DestroyChain(LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_DestroyChain(AsyncRTAsyncChainRef chain) {
   unwrap(chain).~AsyncValueRef<Chain>();
 }
 
 /// Emplaces the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_Complete(LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_Complete(AsyncRTAsyncChainRef chain) {
 #if MODULAR_PARANOID
   unwrap(chain).getRuntime()->getWorkQueue()->taskIsDone();
 #endif
@@ -87,7 +87,7 @@ KGEN_CompilerRT_AsyncRT_Complete(LLCLAsyncChainRef chain) {
 
 /// Blocks until the given chain is ready.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_Wait(LLCLAsyncChainRef chain) {
+KGEN_CompilerRT_AsyncRT_Wait(AsyncRTAsyncChainRef chain) {
   await(unwrap(chain));
 }
 
@@ -97,7 +97,7 @@ KGEN_CompilerRT_AsyncRT_Wait(LLCLAsyncChainRef chain) {
 /// ready, false is a timeout occurred. Note that the value may be ready by the
 /// time the function returns regardless.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT bool
-KGEN_CompilerRT_AsyncRT_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
+KGEN_CompilerRT_AsyncRT_Wait_Timeout(AsyncRTAsyncChainRef chain, int64_t ns) {
   static TimerHeap heap;
   AsyncValueRef<Chain> &done = unwrap(chain);
   AsyncValueRef<Chain> expired =
@@ -135,14 +135,14 @@ KGEN_CompilerRT_AsyncRT_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
 // Coroutine / Future
 //===----------------------------------------------------------------------===//
 
-/// Execute a coroutine as an LLCL task on the given runtime. If desiredWorkerId
-/// is >= 0 then the task will be executed by the worker thread with that id.
-/// Otherwise the task will be executed by the next available worker thread.
-/// Scheduling tasks onto specific workers can avoid some LLCL scheduling
-/// overhead and ensure worker's are balanced.
+/// Execute a coroutine as an AsyncRT task on the given runtime. If
+/// desiredWorkerId is >= 0 then the task will be executed by the worker thread
+/// with that id. Otherwise the task will be executed by the next available
+/// worker thread. Scheduling tasks onto specific workers can avoid some AsyncRT
+/// scheduling overhead and ensure worker's are balanced.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
-                                LLCLRuntimeRef rt, ssize_t desiredWorkerId) {
+                                AsyncRTRuntimeRef rt, ssize_t desiredWorkerId) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask(
       [resume, hdl] {
@@ -151,7 +151,7 @@ KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
         // Sleeping here gives any await loop the chance to exit and
         // proceed while this task is still 'active'. This can trigger
         // bugs since the common case is for the task to have returned
-        // all the way up to the LLCL run items loop before any emplace
+        // all the way up to the AsyncRT run items loop before any emplace
         // in the task body has been acted on.
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
 #endif
@@ -162,15 +162,15 @@ KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
 /// Resume a coroutine when the current one completes.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
-                                LLCLAsyncChainRef chain, int8_t *hdl) {
+                                AsyncRTAsyncChainRef chain, int8_t *hdl) {
   unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Execute a coroutine and block the current routine until it is complete.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
-                                       LLCLRuntimeRef rt,
-                                       LLCLAsyncChainRef chain) {
+                                       AsyncRTRuntimeRef rt,
+                                       AsyncRTAsyncChainRef chain) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   await(unwrap(chain));
@@ -181,8 +181,9 @@ KGEN_CompilerRT_AsyncRT_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_ExecuteAndResume(void (*resume)(int8_t *),
                                          int8_t *execHdl,
-                                         LLCLAsyncChainRef chain,
-                                         LLCLRuntimeRef rt, int8_t *resumeHdl) {
+                                         AsyncRTAsyncChainRef chain,
+                                         AsyncRTRuntimeRef rt,
+                                         int8_t *resumeHdl) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
   unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
@@ -195,13 +196,13 @@ KGEN_CompilerRT_AsyncRT_ExecuteAndResume(void (*resume)(int8_t *),
 /// Returns the pointer to the runtime to which the caller's thread is
 /// associated. Returns null if the caller's thread is not managed by any
 /// runtime.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
   return wrap(Runtime::getCurrentRuntimeOrNull());
 }
 
-/// Create an LLCL runtime and return its pointer.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
+/// Create an AsyncRT runtime and return its pointer.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(ssize_t numThreads,
                                                  const char *profileFilenamePtr,
                                                  ssize_t profileFilenameLen) {
@@ -216,22 +217,22 @@ KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(ssize_t numThreads,
   return wrap(runtime.release());
 }
 
-/// Create an LLCL runtime and return its pointer.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
+/// Create an AsyncRT runtime and return its pointer.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
   return KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(numThreads, nullptr,
                                                           0);
 }
 
-/// Given a pointer to an LLCL runtime, destroy it.
+/// Given a pointer to an AsyncRT runtime, destroy it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_DestroyRuntime(LLCLRuntimeRef rt) {
+KGEN_CompilerRT_AsyncRT_DestroyRuntime(AsyncRTRuntimeRef rt) {
   delete &unwrap(rt);
 }
 
-/// Given a pointer to an LLCL runtime, get the number of threads in it.
+/// Given a pointer to an AsyncRT runtime, get the number of threads in it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
-KGEN_CompilerRT_AsyncRT_ParallelismLevel(LLCLRuntimeRef rt) {
+KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
   return unwrap(rt).getWorkQueue()->getParallelismLevel();
 }
 
@@ -247,9 +248,9 @@ KGEN_CompilerRT_AsyncRT_GetCurrentStream() {
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CudaContextSetDevice(void *devCtx,
-                                     MojoValue::DestructorFn destructor,
-                                     LLCLWrapper<CUDA::CUDARuntime> runtime) {
+KGEN_CompilerRT_CudaContextSetDevice(
+    void *devCtx, MojoValue::DestructorFn destructor,
+    AsyncRTWrapper<CUDA::CUDARuntime> runtime) {
   unwrap(runtime).deviceContext = MojoValue(devCtx, destructor);
 }
 
@@ -260,14 +261,14 @@ KGEN_CompilerRT_CudaContextSetDevice(void *devCtx,
 /// Emplaces the chain in the given call context.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete(
-    LLCLMojoCallContextRef callContext) {
+    AsyncRTMojoCallContextRef callContext) {
   unwrap(callContext).complete();
 }
 
 /// Sets the chain in the given call context to be an error.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError(
-    LLCLMojoCallContextRef callContext, const char *messagePtr,
+    AsyncRTMojoCallContextRef callContext, const char *messagePtr,
     ssize_t messageLen) {
   StringRef message(messagePtr, messageLen);
   unwrap(callContext).setToError(message);
@@ -276,7 +277,7 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError(
 /// Get the cuda stream from the context. Null for cpu kernels.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream(
-    LLCLMojoCallContextRef callContext) {
+    AsyncRTMojoCallContextRef callContext) {
   auto runtime = unwrap(callContext).deviceRuntime;
   return reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream;
 }
@@ -284,7 +285,7 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream(
 /// Get cuda device from cuda runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice(
-    LLCLMojoCallContextRef callContext) {
+    AsyncRTMojoCallContextRef callContext) {
   return unwrap(callContext).deviceContext;
 }
 
@@ -293,8 +294,9 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice(
 //===----------------------------------------------------------------------===//
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsync_bool(bool data, LLCLWrapper<AnyAsyncValueRef> async,
-                                 LLCLWrapper<Runtime> runtimePtr) {
+KGEN_CompilerRT_CreateAsync_bool(bool data,
+                                 AsyncRTWrapper<AnyAsyncValueRef> async,
+                                 AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
@@ -307,8 +309,8 @@ KGEN_CompilerRT_CreateAsync_bool(bool data, LLCLWrapper<AnyAsyncValueRef> async,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
-                                   LLCLWrapper<AnyAsyncValueRef> async,
-                                   LLCLWrapper<Runtime> runtimePtr) {
+                                   AsyncRTWrapper<AnyAsyncValueRef> async,
+                                   AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
@@ -321,8 +323,8 @@ KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
-                                    LLCLWrapper<AnyAsyncValueRef> async,
-                                    LLCLWrapper<Runtime> runtimePtr) {
+                                    AsyncRTWrapper<AnyAsyncValueRef> async,
+                                    AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
@@ -334,8 +336,8 @@ KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsync_chain(LLCLWrapper<AnyAsyncValueRef> async,
-                                  LLCLWrapper<Runtime> runtimePtr) {
+KGEN_CompilerRT_CreateAsync_chain(AsyncRTWrapper<AnyAsyncValueRef> async,
+                                  AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
@@ -348,8 +350,8 @@ KGEN_CompilerRT_CreateAsync_chain(LLCLWrapper<AnyAsyncValueRef> async,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
-                                     LLCLWrapper<AnyAsyncValueRef> async,
-                                     LLCLWrapper<Runtime> runtimePtr) {
+                                     AsyncRTWrapper<AnyAsyncValueRef> async,
+                                     AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   if (value.getPointer() && value.getPointer()->isIndirect()) {
@@ -364,9 +366,9 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncCUDABufferRef(void *data, size_t size,
-                                         LLCLWrapper<AnyAsyncValueRef> async,
-                                         LLCLWrapper<Runtime> runtimePtr,
-                                         LLCLMojoCallContextRef callCtx) {
+                                         AsyncRTWrapper<AnyAsyncValueRef> async,
+                                         AsyncRTWrapper<Runtime> runtimePtr,
+                                         AsyncRTMojoCallContextRef callCtx) {
   Runtime &runtime = unwrap(runtimePtr);
   CUDARuntime *cudaRuntimePtr =
       reinterpret_cast<CUDARuntime *>(unwrap(callCtx).deviceRuntime);
@@ -390,8 +392,8 @@ KGEN_CompilerRT_CreateAsyncCUDABufferRef(void *data, size_t size,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
                                       int8_t rawDType,
-                                      LLCLWrapper<AnyAsyncValueRef> async,
-                                      LLCLWrapper<Runtime> runtimePtr) {
+                                      AsyncRTWrapper<AnyAsyncValueRef> async,
+                                      AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   llvm::SmallVector<ssize_t> dims;
@@ -409,10 +411,10 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateOwnedAsyncMojoValue(void *data,
-                                          void (*destructorFn)(void *),
-                                          LLCLWrapper<AnyAsyncValueRef> async,
-                                          LLCLWrapper<Runtime> runtimePtr) {
+KGEN_CompilerRT_CreateOwnedAsyncMojoValue(
+    void *data, void (*destructorFn)(void *),
+    AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
 
@@ -440,7 +442,7 @@ KGEN_CompilerRT_MojoValueFreeBuffer(void *ptr) {
 //===----------------------------------------------------------------------===//
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetValueFromAsync(LLCLWrapper<AnyAsyncValueRef> async) {
+KGEN_CompilerRT_GetValueFromAsync(AsyncRTWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
   if (value.getPointer() && value.getPointer()->isIndirect()) {
@@ -451,7 +453,7 @@ KGEN_CompilerRT_GetValueFromAsync(LLCLWrapper<AnyAsyncValueRef> async) {
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async,
+KGEN_CompilerRT_GetDataFromBuffer(AsyncRTWrapper<AnyAsyncValueRef> async,
                                   size_t *sizeOut) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
@@ -462,7 +464,7 @@ KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint8_t
 KGEN_CompilerRT_GetTensorSpecFromAsync(ssize_t *data, ssize_t rank,
-                                       LLCLWrapper<AnyAsyncValueRef> async) {
+                                       AsyncRTWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
   auto &spec = value.get<TensorSpec>();
@@ -473,14 +475,14 @@ KGEN_CompilerRT_GetTensorSpecFromAsync(ssize_t *data, ssize_t rank,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetContextPayloadPtr(size_t index,
-                                     LLCLWrapper<StateContext> rawCtx) {
+                                     AsyncRTWrapper<StateContext> rawCtx) {
   StateContext &ctx = unwrap(rawCtx);
   return ctx.getStateSlot(index).getUnderlyingPointer();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetContextAndSizeFromAsync(
-    size_t *size, LLCLWrapper<AnyAsyncValueRef> async) {
+    size_t *size, AsyncRTWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
   auto &ctx = value.get<StateContext>();
@@ -500,13 +502,13 @@ KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter() {
 
 /// Waits on the SpinWaiter
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait(LLCLSpinWaiterRef waiter) {
+KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait(AsyncRTSpinWaiterRef waiter) {
   unwrap(waiter).wait();
 }
 
 /// Destroys the given SpinWaiter.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
+KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(AsyncRTSpinWaiterRef waiter) {
   delete (SpinWaiter<true> *)(waiter.ptr);
 }
 
@@ -514,7 +516,7 @@ KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
 // Strings
 //===----------------------------------------------------------------------===//
 
-void M::KGEN::registerLLCL(
+void M::KGEN::registerAsyncRT(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_InitializeChain",
                    (void *)&KGEN_CompilerRT_AsyncRT_InitializeChain});

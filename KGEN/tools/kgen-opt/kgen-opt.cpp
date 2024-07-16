@@ -151,9 +151,9 @@ struct TestAlwaysFailPass
 
 int main(int argc, char **argv) {
   // HACK: Read in the option early.
-  bool llclSingleThread = false;
-  if (argc >= 2 && StringRef(argv[1]) == "--llcl-single-thread")
-    llclSingleThread = true;
+  bool asyncrtSingleThread = false;
+  if (argc >= 2 && StringRef(argv[1]) == "--asyncrt-single-thread")
+    asyncrtSingleThread = true;
 
   DialectRegistry registry;
 
@@ -179,17 +179,17 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Create our context.
-  AsyncRT::RuntimeOptions llclOpts;
-  llclOpts.withLeakCheckedAllocator();
-  if (llclSingleThread)
-    llclOpts.withSingleThreaded();
+  AsyncRT::RuntimeOptions asyncrtOpts;
+  asyncrtOpts.withLeakCheckedAllocator();
+  if (asyncrtSingleThread)
+    asyncrtOpts.withSingleThreaded();
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "kgen-opt", Init::Options().withRuntimeOptions(llclOpts));
+      "kgen-opt", Init::Options().withRuntimeOptions(asyncrtOpts));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
-  if (llclSingleThread) {
+  if (asyncrtSingleThread) {
     // Defend against upstream errors.
     [[maybe_unused]] auto &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
     assert(runtime.getWorkQueue()->getParallelismLevel() == 1);
@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
   KGEN::registerDefaultKGENPasses();
 
   // Register cl options.
-  static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};
+  static llvm::cl::opt<bool> dummyOpt{"asyncrt-single-thread"};
 
   static llvm::cl::opt<bool> timeTrace{
       "time-trace",

@@ -6,7 +6,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
-from runtime.llcl import run
+from runtime.asyncrt import run
 
 
 @value

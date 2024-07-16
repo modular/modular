@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the core LLCL Runtime.
+// This file implements the core AsyncRT Runtime.
 //
 //===----------------------------------------------------------------------===//
 
@@ -25,8 +25,8 @@ void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}
 
 /// Create "Chain" AsyncValue, making sure that "Chain" type is registered
-/// before the construction. "Chain" is core to LLCL implementation, so it
-/// needs to be registered unconditionally from LLCL.
+/// before the construction. "Chain" is core to AsyncRT implementation, so it
+/// needs to be registered unconditionally from AsyncRT.
 static AsyncValueRef<Chain> createReadyChain(Runtime &runtime) {
   return AsyncValueRef<Chain>::createReady(runtime);
 }

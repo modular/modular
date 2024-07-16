@@ -5,7 +5,8 @@
 //===----------------------------------------------------------------------===//
 //
 // This file declares the M::AsyncRT::WorkQueue interface, which allows clients
-// of LLCL to implement work queues that map onto their systems in a nice way.
+// of AsyncRT to implement work queues that map onto their systems in a nice
+// way.
 //
 //===----------------------------------------------------------------------===//
 
@@ -58,13 +59,13 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 using TaskFunction = llvm::unique_function<void()>;
 
 /// Profiling entries for capturing the waiting time of tasks and other
-/// internal LLCL measurements.
+/// internal AsyncRT measurements.
 using InternalProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2), Trace::kLLCL>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kAsyncRT, 2), Trace::kAsyncRT>;
 
 /// Profiling entries for capturing every execution of a task or local task.
 using AllWorkItemsProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3), Trace::kLLCL>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kAsyncRT, 3), Trace::kAsyncRT>;
 
 using namespace std::chrono_literals;
 

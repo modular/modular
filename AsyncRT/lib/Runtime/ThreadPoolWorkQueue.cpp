@@ -25,7 +25,7 @@
 #include "llvm/Support/Threading.h"
 #include <cmath>
 
-#define DEBUG_TYPE "llcl"
+#define DEBUG_TYPE "asyncrt"
 
 using namespace M;
 using namespace M::AsyncRT;
@@ -72,7 +72,8 @@ enum WorkType : uint8_t { kLocal = 0, kAffinity = 1, kGlobal = 2 };
 static void randomSleep() {
   std::chrono::milliseconds delay{(rand() % 4) * 2000};
   if (delay.count() > 0) {
-    TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.randomSleep"));
+    TimeTraceScope scope(
+        AllWorkItemsProfilerEntry::create("asyncrt.randomSleep"));
     std::this_thread::sleep_for(delay);
   }
 }
@@ -423,7 +424,7 @@ struct WorkQueueThread {
     // Do the work.
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
-          IsWaiter ? "llcl.waiter" : "llcl.doWork"));
+          IsWaiter ? "asyncrt.waiter" : "asyncrt.doWork"));
       workItem.task();
     }
 #if ASYNCRT_WORKER_STATS
@@ -517,8 +518,8 @@ void WorkQueueThread::runOnThread() {
         return sharedState.doneFlag.load(std::memory_order_acquire);
       },
       /*waitForTasks=*/true,
-      /*spinningLabel=*/"llcl.runOnThread.spinning",
-      /*sleepingLabel=*/"llcl.runOnThread.sleeping");
+      /*spinningLabel=*/"asyncrt.runOnThread.spinning",
+      /*sleepingLabel=*/"asyncrt.runOnThread.sleeping");
 }
 
 template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
@@ -966,7 +967,7 @@ void ThreadPoolWorkQueue::shutdown() {
          "work pool is not ready");
 #endif
 
-  TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
+  TimeTraceScope scope(InternalProfilerEntry::create("asyncrt.shutdown"));
 
   WorkQueueThread *callingWorker = getOwningWorkQueueThread();
 
@@ -985,8 +986,8 @@ void ThreadPoolWorkQueue::shutdown() {
         /*earlyStopPredicate=*/[]() { return false; }, // Always loop
         /*lateStopPredicate=*/[]() { return false; },  // Always loop
         /*waitForTasks=*/false,
-        /*spinningLabel=*/"llcl.shutdown.spinning",
-        /*sleepingLabel=*/"llcl.shutdown.sleeping");
+        /*spinningLabel=*/"asyncrt.shutdown.spinning",
+        /*sleepingLabel=*/"asyncrt.shutdown.sleeping");
   }
   // else: the existing workers will keep processing work items until they
   // test the lateStopPredicate. This is as good a synchronization we can
@@ -1213,8 +1214,8 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
           return false;
         },
         /*waitForTasks=*/true,
-        /*spinningLabel=*/"llcl.await.spinning",
-        /*sleepingLabel=*/"llcl.await.sleeping");
+        /*spinningLabel=*/"asyncrt.await.spinning",
+        /*sleepingLabel=*/"asyncrt.await.sleeping");
 
   } else {
     // The caller is a 'foreign' thread. Sleep until all values are available,

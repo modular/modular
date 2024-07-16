@@ -68,7 +68,7 @@ from buffer.buffer import (
   DynamicRankBuffer
 )
 
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 alias unary_fn_type = __mlir_type[
     `(`,

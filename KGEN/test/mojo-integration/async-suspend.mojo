@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo --no-optimization %s | FileCheck %s
 
-from runtime.llcl import run
+from runtime.asyncrt import run
 
 
 @no_inline

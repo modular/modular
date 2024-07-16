@@ -286,8 +286,8 @@ private:
   // Worklist
   //===--------------------------------------------------------------------===//
 
-  /// Schedule an implementation node on the LLCL work queue and increment the
-  /// initial counters.
+  /// Schedule an implementation node on the AsyncRT work queue and increment
+  /// the initial counters.
   void initialScheduleImplNode(ImplNode *inode) {
     ++inode->parent->numActive;
     g.numWorkItems.fetch_add(1);
@@ -299,7 +299,7 @@ private:
     if (g.numWorkItems.fetch_sub(1) == 1)
       g.worklistCh.copy().emplace();
   }
-  /// Schedule an implementation node on the LLCL work queue.
+  /// Schedule an implementation node on the AsyncRT work queue.
   void scheduleImplNode(ImplNode *inode);
   /// Process the scopes within an implementation node. This function returns
   /// `success` if all scopes completed processing and the node is completely
@@ -399,7 +399,7 @@ private:
   Shared<DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>>>
       knownGraphs;
 
-  /// The LLCL runtime instance to use.
+  /// The AsyncRT runtime instance to use.
   AsyncRT::Runtime &runtime;
 
   /// The callgraph being expanded.
