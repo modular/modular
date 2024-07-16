@@ -1105,9 +1105,11 @@ fn _matmul_Q4_K_columns[
         return
 
     # Unpack the quantized bits to uint8 values.
-    var b_q_bits = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
-    ]()
+    var b_q_bits = DTypePointer(
+        stack_allocation[
+            _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
+        ]()
+    )
     b_tile_ptr[].q_bits.unpack(b_q_bits)
 
     @parameter
@@ -1312,9 +1314,11 @@ fn _matmul_Q6_K_columns[
         return
 
     # Unpack the quantized bits to uint8 values.
-    var b_q_bits = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
-    ]()
+    var b_q_bits = DTypePointer(
+        stack_allocation[
+            _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
+        ]()
+    )
     b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
 
     @parameter
