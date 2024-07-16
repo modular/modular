@@ -40,7 +40,7 @@ fn bench_gemv_tc[
 
     randn(a_host.address, M * K)
     randn(b_host.address, K * N)
-    memset(c_host, 0, M * N)
+    memset(c_host.address, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
     var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
@@ -115,7 +115,7 @@ fn bench_gemv_ws[
 
     randn(a_host.address, M * K)
     randn(b_host.address, K * N)
-    memset(c_host, 0, M * N)
+    memset(c_host.address, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
     var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
@@ -190,7 +190,7 @@ fn bench_gemv_naive[
 
     randn(a_host.address, M * K)
     randn(b_host.address, K * N)
-    memset(c_host, 0, M * N)
+    memset(c_host.address, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
     var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))

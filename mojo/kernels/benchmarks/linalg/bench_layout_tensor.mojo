@@ -30,7 +30,7 @@ struct Matrix[rows: Int, cols: Int]:
     # Initialize zeroeing all values
     fn __init__(inout self):
         self.data = DTypePointer[dtype].alloc(rows * cols)
-        memset_zero(self.data, rows * cols)
+        memset_zero(self.data.address, rows * cols)
 
     # Initialize taking a pointer, don't set any elements
     fn __init__(inout self, data: DTypePointer[dtype]):
