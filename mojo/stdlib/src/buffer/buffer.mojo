@@ -262,7 +262,7 @@ struct Buffer[
         Args:
             idx: The index of the prefetched location.
         """
-        prefetch[params](self.data.offset(idx))
+        prefetch[params](self.data.offset(idx).address)
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -1375,7 +1375,7 @@ struct NDBuffer[
         Args:
             idx: The N-D index of the prefetched location.
         """
-        prefetch[params](self._offset(idx))
+        prefetch[params](self._offset(idx).address)
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
@@ -1387,7 +1387,7 @@ struct NDBuffer[
         Args:
             indices: The N-D index of the prefetched location.
         """
-        prefetch[params](self._offset(indices))
+        prefetch[params](self._offset(indices).address)
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: Float32):
@@ -1632,7 +1632,7 @@ fn partial_simd_load[
     var incr = iota[DType.int32, width]()
     var mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    return masked_load[width](storage, mask, pad_value)
+    return masked_load[width](storage.address, mask, pad_value)
 
 
 @always_inline
@@ -1674,7 +1674,9 @@ fn partial_simd_store[
     # address_space as ptr1 and (2) `DTypePointer[type]` sets address_space to
     # generic by default. The `masked_store` takes (2) to enforce the same type
     # between data and storage. #28834.
-    return masked_store(data, rebind[DTypePointer[storage.type]](storage), mask)
+    return masked_store(
+        data, rebind[DTypePointer[storage.type]](storage).address, mask
+    )
 
 
 # ===----------------------------------------------------------------------===#
