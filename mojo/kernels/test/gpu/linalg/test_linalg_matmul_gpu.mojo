@@ -13,7 +13,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 
