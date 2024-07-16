@@ -18,7 +18,7 @@ from ._utils import _check_error, _StreamHandle
 
 # TODO: Figure a way to resolve circular dependency between the gpu and runtime
 # packages in the corresponding CMakes and sub below from runtime.tracing
-fn build_info_llcl_max_profiling_level() -> Optional[Int]:
+fn build_info_asyncrt_max_profiling_level() -> Optional[Int]:
     @parameter
     if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
@@ -229,7 +229,7 @@ struct DeviceContext:
     # Profiling is enabled only when the optional returned by the below call is
     # not None and has a non-zero value (this will be True for a
     # cmake-modular-profiling build).
-    alias profiling_enabled = True if build_info_llcl_max_profiling_level() is not None and build_info_llcl_max_profiling_level().value() > 0 else False
+    alias profiling_enabled = True if build_info_asyncrt_max_profiling_level() is not None and build_info_asyncrt_max_profiling_level().value() > 0 else False
 
     # Default initializer for all existing cases outside MGP; this currently
     # includes tests, benchmarks, Driver API. The tests and benchmarks (all of
