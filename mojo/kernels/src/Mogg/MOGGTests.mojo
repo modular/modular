@@ -11,7 +11,7 @@ from buffer.dimlist import DimList
 from extensibility import Tensor as ExtensibilityTensor
 from extensibility import empty_tensor
 from register import *
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils import unroll
 from utils.index import StaticIntTuple

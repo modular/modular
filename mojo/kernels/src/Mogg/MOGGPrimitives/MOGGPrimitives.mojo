@@ -23,7 +23,7 @@ from memory import UnsafePointer
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
