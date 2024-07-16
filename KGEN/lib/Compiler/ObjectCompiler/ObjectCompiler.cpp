@@ -416,20 +416,41 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
   CompilerTimeTraceScope traceScope("compile-optimized-llvm-to-object",
                                     module->getName());
 
-  SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
-  auto compileToObject = [&](LLVMModuleAndContext inputModule,
-                             std::optional<int64_t> idx) {
-    cacheResults.push_back(compileOptimizedLLVMModuleToObject(
-        std::move(inputModule), loc, runtime, isJIT, emitAssembly, options,
-        transformCache, moduleIdx, idx));
-  };
+  // Perform module materialization in another task.
+  auto launchCompilation =
+      [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
+          std::optional<int64_t> idx) {
+        auto result = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
+        runtime.getWorkQueue()->addTask(
+            [produceModule = std::move(produceModule), loc, &runtime, isJIT,
+             emitAssembly, &options, cache = transformCache.copy(), moduleIdx,
+             idx, result = result.copy()]() mutable {
+              AsyncRT::AnyAsyncValueRef output =
+                  compileOptimizedLLVMModuleToObject(
+                      produceModule(), loc, runtime, isJIT, emitAssembly,
+                      options, cache, moduleIdx, idx);
+              andThenSyncMoving(
+                  output,
+                  [result = std::move(result)](
+                      MutableArrayRef<AnyAsyncValueRef> output) mutable {
+                    std::move(result).emplace(output.front().get<BufferRef>());
+                  });
+            });
+        return result;
+      };
 
-  if (isParLLC) {
-    splitPerFunction(std::move(module), compileToObject);
+  SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
+  if (!isParLLC) {
+    cacheResults.push_back(
+        launchCompilation(forwardModule(std::move(module)), std::nullopt));
   } else {
-    cacheResults.push_back(compileOptimizedLLVMModuleToObject(
-        std::move(module), loc, runtime, isJIT, emitAssembly, options,
-        transformCache, moduleIdx, std::nullopt));
+    splitPerFunction(
+        std::move(module),
+        [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
+            std::optional<int64_t> idx) {
+          cacheResults.push_back(
+              launchCompilation(std::move(produceModule), idx));
+        });
   }
   return cacheResults;
 }
@@ -750,28 +771,24 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
 
       SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
       if (noSplitting) {
-        cacheResults.push_back(lowerLLVMModuleToObjects(
-            std::move(llvmModule), op->getLoc(), parLLC, std::nullopt));
+        cacheResults.push_back(
+            lowerLLVMModuleToObjects(forwardModule(std::move(llvmModule)),
+                                     op->getLoc(), parLLC, std::nullopt));
       } else {
         (void)writeTempModule("pre-split", options.saveTempsPrefix,
                               *llvmModule);
 
-        if (options.enableLLVMPerFunctionSplitting) {
-          splitPerFunction(std::move(llvmModule),
-                           [&](LLVMModuleAndContext inputModule,
-                               std::optional<int64_t> idx) {
-                             cacheResults.push_back(lowerLLVMModuleToObjects(
-                                 std::move(inputModule), op->getLoc(),
-                                 /*parLLC=*/false, idx));
-                           });
-        } else {
-          splitPerExported(
-              std::move(llvmModule),
-              [&](LLVMModuleAndContext module, std::optional<int64_t> idx) {
-                cacheResults.push_back(lowerLLVMModuleToObjects(
-                    std::move(module), op->getLoc(), parLLC, idx));
-              });
-        }
+        auto handleSplit =
+            [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
+                std::optional<int64_t> idx) {
+              cacheResults.push_back(lowerLLVMModuleToObjects(
+                  std::move(produceModule), op->getLoc(),
+                  !options.enableLLVMPerFunctionSplitting && parLLC, idx));
+            };
+        if (options.enableLLVMPerFunctionSplitting)
+          splitPerFunction(std::move(llvmModule), handleSplit);
+        else
+          splitPerExported(std::move(llvmModule), handleSplit);
       }
 
       andThenSyncMoving(
@@ -879,31 +896,30 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
 //===----------------------------------------------------------------------===//
 
 AsyncRT::AsyncValueRef<SmallVector<BufferRef>>
-ObjectCompiler::lowerLLVMModuleToObjects(LLVMModuleAndContext module,
-                                         Location loc, bool parLLC,
-                                         std::optional<size_t> moduleIdx) {
+ObjectCompiler::lowerLLVMModuleToObjects(
+    llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
+    bool parLLC, std::optional<size_t> moduleIdx) {
   auto result =
       AsyncRT::AsyncValueRef<SmallVector<BufferRef>>::allocate(runtime);
 
-  // Create the target machine.
-  auto machineOr = createTargetMachine(options, isJIT);
-  if (failed(machineOr)) {
-    result.copy().setToError(
-        AsyncRT::getMLIRDiagnostic(machineOr.takeError(), loc));
-    return result;
-  }
-
-  // Set the data layout on the module.
-  module->setDataLayout((*machineOr)->createDataLayout());
-
   runtime.getWorkQueue()->addTask([this, result = result.copy(),
-                                   module = std::move(module), loc,
-                                   tm = std::move(*machineOr), moduleIdx,
-                                   parLLC]() mutable {
+                                   produceModule = std::move(produceModule),
+                                   loc, moduleIdx, parLLC]() mutable {
     CompilerTimeTraceScope traceScope("optimizeLLVMTask");
 
+    // Create the target machine.
+    auto tmOr = createTargetMachine(options, isJIT);
+    if (failed(tmOr)) {
+      return std::move(result).setToError(
+          AsyncRT::getMLIRDiagnostic(tmOr.takeError(), loc));
+    }
+    llvm::TargetMachine &tm = **tmOr;
+
+    // Materialize the module.
+    LLVMModuleAndContext module = produceModule();
+
     // Optimize the llvm Module.
-    if (failed(optimizeLLVMModule(*module, *tm, options, runtime, moduleIdx))) {
+    if (failed(optimizeLLVMModule(*module, tm, options, runtime, moduleIdx))) {
       return std::move(result).setToError(
           AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
     }
@@ -912,7 +928,7 @@ ObjectCompiler::lowerLLVMModuleToObjects(LLVMModuleAndContext module,
     // HACK: Some targets like PTX don't support object files so can only
     // emit assembly.
     bool emitAssembly =
-        tm->getTargetTriple().str().find("nvptx") != std::string::npos;
+        tm.getTargetTriple().str().find("nvptx") != std::string::npos;
     SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
         std::move(module), loc, options, runtime, transformCache, parLLC, isJIT,
         emitAssembly, moduleIdx);

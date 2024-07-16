@@ -94,9 +94,9 @@ private:
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
-  AsyncRT::AsyncValueRef<SmallVector<BufferRef>>
-  lowerLLVMModuleToObjects(LLVMModuleAndContext module, Location loc,
-                           bool parLLC, std::optional<size_t> moduleIdx);
+  AsyncRT::AsyncValueRef<SmallVector<BufferRef>> lowerLLVMModuleToObjects(
+      llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
+      bool parLLC, std::optional<size_t> moduleIdx);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
