@@ -380,7 +380,7 @@ struct LayoutTensor[
     @always_inline
     fn prefetch(self, m: Int, n: Int):
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            self.ptr.offset(self._offset(m, n))
+            self.ptr.offset(self._offset(m, n)).address
         )
 
     @always_inline
