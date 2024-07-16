@@ -236,8 +236,8 @@ fn sgemm_double_buffer[
     b_gmem_tile += int(b_gmem_shift)
 
     # Alternate share memory buffer for loading.
-    storea_smem_ptr += a_smem_size
-    storeb_smem_ptr += b_smem_size
+    storea_smem_ptr += int(a_smem_size)
+    storeb_smem_ptr += int(b_smem_size)
 
     alias num_mma_n = WN // MMA_N
     alias num_mma_m = WM // MMA_M
@@ -252,8 +252,8 @@ fn sgemm_double_buffer[
     # fmt: on
 
     # Load address in shared memory for fma.
-    var loada_smem_ptr = a_tile + warp_y * WM * MMA_K
-    var loadb_smem_ptr = b_tile + warp_x * WN * MMA_K
+    var loada_smem_ptr = a_tile + int(warp_y * WM * MMA_K)
+    var loadb_smem_ptr = b_tile + int(warp_x * WN * MMA_K)
 
     alias align4 = alignof[SIMD[c_type, 4]]()
     alias align2 = alignof[SIMD[c_type, 2]]()
@@ -295,14 +295,14 @@ fn sgemm_double_buffer[
 
                 # fmt: off
                 # Switch shared memory buffer.
-                loada_smem_ptr = loada_smem_ptr + a_smem_size if (k_tile_id % 2 == 0) \
-                    else loada_smem_ptr - a_smem_size
-                storea_smem_ptr = storea_smem_ptr - a_smem_size if (k_tile_id % 2 == 0) \
-                    else storea_smem_ptr + a_smem_size
-                loadb_smem_ptr = loadb_smem_ptr + b_smem_size if (k_tile_id % 2 == 0) \
-                    else loadb_smem_ptr - b_smem_size
-                storeb_smem_ptr = storeb_smem_ptr - b_smem_size if (k_tile_id % 2 == 0) \
-                    else storeb_smem_ptr + b_smem_size
+                loada_smem_ptr = loada_smem_ptr + int(a_smem_size) if (k_tile_id % 2 == 0) \
+                    else loada_smem_ptr - int(a_smem_size)
+                storea_smem_ptr = storea_smem_ptr - int(a_smem_size) if (k_tile_id % 2 == 0) \
+                    else storea_smem_ptr + int(a_smem_size)
+                loadb_smem_ptr = loadb_smem_ptr + int(b_smem_size) if (k_tile_id % 2 == 0) \
+                    else loadb_smem_ptr - int(b_smem_size)
+                storeb_smem_ptr = storeb_smem_ptr - int(b_smem_size) if (k_tile_id % 2 == 0) \
+                    else storeb_smem_ptr + int(b_smem_size)
                 # fmt: on
 
                 # Advance to the next k tile.
