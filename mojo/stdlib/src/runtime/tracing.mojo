@@ -9,7 +9,7 @@ from collections.optional import Optional
 from sys.param_env import env_get_int, is_defined
 
 
-fn build_info_llcl_max_profiling_level() -> Optional[Int]:
+fn build_info_asyncrt_max_profiling_level() -> Optional[Int]:
     @parameter
     if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
@@ -27,7 +27,7 @@ struct TraceType(EqualityComparable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     alias OTHER = TraceType(0)
-    alias LLCL = TraceType(1)
+    alias AsyncRT = TraceType(1)
     alias MEM = TraceType(2)
     alias MOJO = TraceType(3)
 
@@ -126,7 +126,7 @@ fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
     if level == TraceLevel.ALWAYS:
         return True
 
-    alias max_profiling_level = build_info_llcl_max_profiling_level()
+    alias max_profiling_level = build_info_asyncrt_max_profiling_level()
     if not max_profiling_level:
         return False
 
@@ -261,7 +261,7 @@ struct Trace[level: TraceLevel]:
             #    runtime.
             var detail_strref = self.detail._strref_dangerous()
 
-            # Begins recording the trace range from the stack. This is only enabled if the LLCL
+            # Begins recording the trace range from the stack. This is only enabled if the AsyncRT
             # profiling is enabled.
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int

@@ -8,7 +8,7 @@
 from os.atomic import Atomic
 
 from memory import stack_allocation
-from runtime.llcl import create_task, run
+from runtime.asyncrt import create_task, run
 from testing import assert_true
 
 
@@ -17,15 +17,15 @@ fn test_sync_coro():
     print("== test_sync_coro")
 
     @parameter
-    async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
+    async fn test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
     @parameter
-    async fn test_llcl_add_two_of_them(a: Int, b: Int) -> Int:
-        return await test_llcl_add[5](a) + await test_llcl_add[2](b)
+    async fn test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+        return await test_asyncrt_add[5](a) + await test_asyncrt_add[2](b)
 
     # CHECK: 57
-    print(run(test_llcl_add_two_of_them(20, 30)))
+    print(run(test_asyncrt_add_two_of_them(20, 30)))
 
 
 fn test_sync_raising_coro():
@@ -67,16 +67,16 @@ fn test_runtime_task():
     print("== test_runtime_task")
 
     @parameter
-    async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
+    async fn test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
     @parameter
-    async fn test_llcl_add_two_of_them(a: Int, b: Int) -> Int:
-        return await create_task(test_llcl_add[1](a)) + await create_task(
-            test_llcl_add[2](b)
+    async fn test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+        return await create_task(test_asyncrt_add[1](a)) + await create_task(
+            test_asyncrt_add[2](b)
         )
 
-    var task = create_task(test_llcl_add_two_of_them(10, 20))
+    var task = create_task(test_asyncrt_add_two_of_them(10, 20))
     # CHECK: 33
     print(task.wait())
 

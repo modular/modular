@@ -70,17 +70,17 @@ struct AsyncContext:
 
 
 # ===----------------------------------------------------------------------===#
-# LLCL C Shims
+# AsyncRT C Shims
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_llcl_chain(chain: UnsafePointer[Chain]):
+fn _init_asyncrt_chain(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         _get_current_runtime(), chain.address
     )
 
 
-fn _del_llcl_chain(chain: UnsafePointer[Chain]):
+fn _del_asyncrt_chain(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
         chain.address
     )
@@ -117,14 +117,14 @@ struct ChainPromise:
 
     fn __init__(inout self):
         self.chain = Chain()
-        _init_llcl_chain(UnsafePointer.address_of(self.chain))
+        _init_asyncrt_chain(UnsafePointer.address_of(self.chain))
 
     fn __init__(inout self, owned chain: Chain):
         self.chain = chain
 
     fn __del__(owned self):
         if self.chain:
-            _del_llcl_chain(UnsafePointer.address_of(self.chain))
+            _del_asyncrt_chain(UnsafePointer.address_of(self.chain))
 
     @always_inline
     fn __await__(self):
@@ -173,7 +173,7 @@ fn create_task(
 ) -> Task[handle.type, handle.lifetimes]:
     """Run the coroutine as a task on the LLCL Runtime."""
     var ctx = handle._get_ctx[AsyncContext]()
-    _init_llcl_chain(AsyncContext.get_chain(ctx))
+    _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
     task.__init__(handle^)
     _async_execute[handle.type](task._handle._handle, desired_worker_id)
@@ -183,13 +183,13 @@ fn create_task(
 @__named_result(out)
 fn run(owned handle: Coroutine[*_]) -> handle.type:
     var ctx = handle._get_ctx[AsyncContext]()
-    _init_llcl_chain(AsyncContext.get_chain(ctx))
+    _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
     handle._set_result_slot(UnsafePointer.address_of(out))
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(AsyncContext.get_chain(ctx))
-    _del_llcl_chain(AsyncContext.get_chain(ctx))
+    _del_asyncrt_chain(AsyncContext.get_chain(ctx))
     _ = handle^
 
 
@@ -197,7 +197,7 @@ fn run(owned handle: Coroutine[*_]) -> handle.type:
 @__named_result(out)
 fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type:
     var ctx = handle._get_ctx[AsyncContext]()
-    _init_llcl_chain(AsyncContext.get_chain(ctx))
+    _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
     handle._set_result_slot(
         __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(out)),
@@ -207,7 +207,7 @@ fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type:
     )
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(AsyncContext.get_chain(ctx))
-    _del_llcl_chain(AsyncContext.get_chain(ctx))
+    _del_asyncrt_chain(AsyncContext.get_chain(ctx))
     if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(__get_nearest_error_slot())
@@ -244,7 +244,7 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
         """
         var ctx = self._handle._get_ctx[AsyncContext]()
         var chainPtr: UnsafePointer[Chain] = AsyncContext.get_chain(ctx)
-        _del_llcl_chain(chainPtr)
+        _del_asyncrt_chain(chainPtr)
         _ = self._handle^
 
     @always_inline
@@ -323,13 +323,13 @@ struct TaskGroup[lifetimes: LifetimeSet]:
 
     fn __init__(inout self):
         var chain = Chain()
-        _init_llcl_chain(UnsafePointer[Chain].address_of(chain))
+        _init_asyncrt_chain(UnsafePointer[Chain].address_of(chain))
         self.counter = 1
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(owned self):
-        _del_llcl_chain(UnsafePointer[Chain].address_of(self.chain))
+        _del_asyncrt_chain(UnsafePointer[Chain].address_of(self.chain))
 
     @always_inline
     fn _counter_decr(inout self) -> Int:

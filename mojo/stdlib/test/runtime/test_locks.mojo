@@ -10,7 +10,7 @@ from os import Atomic
 from time import now, sleep, time_function
 
 from utils.lock import SpinWaiter, BlockingSpinLock, BlockingScopedLock
-from runtime.llcl import TaskGroup
+from runtime.asyncrt import TaskGroup
 from testing import assert_equal, assert_true
 
 
