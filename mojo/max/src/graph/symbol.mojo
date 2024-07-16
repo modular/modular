@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Symbolic value primitives."""
 
-from builtin._location import __call_location
+from builtin._location import __call_location, _SourceLocation
 from collections.optional import Optional
 from utils.variant import Variant
 
@@ -130,6 +130,11 @@ struct Symbol(CollectionElement, Stringable, Formattable):
 
     @always_inline
     fn rebind(self, *dims: Dim) raises -> Symbol:
+        return self._rebind_impl(dims, __call_location())
+
+    fn _rebind_impl(
+        self, dims: VariadicListMem[Dim, *_], call_loc: _SourceLocation
+    ) raises -> Symbol:
         var out_dims = List[Dim]()
         for dim in dims:
             out_dims.append(dim[])
@@ -137,16 +142,21 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         var message = format_error(
             self.graph(),
             "Failed to rebind runtime shape",
-            __call_location(),
+            call_loc,
         )
         return ops.rebind(self, out_dims, message)
 
     @always_inline
     fn rebind(self, dims: List[Dim]) raises -> Symbol:
+        return self._rebind_impl(dims, __call_location())
+
+    fn _rebind_impl(
+        self, dims: List[Dim], call_loc: _SourceLocation
+    ) raises -> Symbol:
         var message = format_error(
             self.graph(),
-            "Failed to rebind runtime shape",
-            __call_location(),
+            "failed to rebind runtime shape",
+            call_loc,
         )
         return ops.rebind(self, dims, message)
 
@@ -171,8 +181,13 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             A new `Symbol` that has the given shape.
         """
-        from builtin._location import __call_location
+        return self._reshape_impl(dims, __call_location())
 
+    # TODO(GRA-578): Once reshape with Variant[Symbol, Int] is removed, we can also remove this.
+    # Will only need Variant[Dim, Int].
+    fn _reshape_impl(
+        self, dims: VariadicList[Int], call_loc: _SourceLocation
+    ) raises -> Symbol:
         if len(dims) == 0:
             return self.reshape()
 
@@ -183,7 +198,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         try:
             return ops.reshape(self, shape)
         except e:
-            raise error(self.graph(), e, __call_location())
+            raise error(self.graph(), e, call_loc)
 
     @always_inline
     fn reshape(self, *dims: Dim) raises -> Symbol:
@@ -197,6 +212,11 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             A new `Symbol` that has the given shape.
         """
+        return self._reshape_impl(dims, __call_location())
+
+    fn _reshape_impl(
+        self, dims: VariadicListMem[Dim, *_], call_loc: _SourceLocation
+    ) raises -> Symbol:
         if len(dims) == 0:
             return self.reshape()
 
@@ -207,7 +227,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         try:
             return ops.reshape(self, shape)
         except e:
-            raise error(self.graph(), e, __call_location())
+            raise error(self.graph(), e, call_loc)
 
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
@@ -272,6 +292,15 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The slicing result.
         """
+        return self._getitem_impl(i, axis, keep_dims, __call_location())
+
+    fn _getitem_impl(
+        self,
+        i: Variant[Symbol, Int],
+        axis: Int,
+        keep_dims: Bool,
+        call_loc: _SourceLocation,
+    ) raises -> Symbol:
         var index_sym: Symbol
         if i.isa[Int]():
             index_sym = self.graph().scalar(Int64(i[Int]))
@@ -280,7 +309,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
                 raise error(
                     self.graph(),
                     "Slicing a tensor by Symbol requires a rank 0 index",
-                    __call_location(),
+                    call_loc,
                 )
 
             index_sym = i[Symbol]
@@ -305,10 +334,18 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         Returns:
             The slicing result.
         """
+        return self._getitem_impl(s, out_dims, __call_location())
+
+    fn _getitem_impl(
+        self,
+        s: VariadicListMem[SymbolicSlice, *_],
+        out_dims: List[Dim],
+        call_loc: _SourceLocation,
+    ) raises -> Symbol:
         var slices = List[SymbolicSlice]()
         for sval in s:
             slices.append(sval[])
-        return ops.slice(self, slices, out_dims, __call_location())
+        return ops.slice(self, slices, out_dims, call_loc)
 
     @always_inline
     fn __getitem__(

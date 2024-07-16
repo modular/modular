@@ -121,10 +121,7 @@ def add(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.add"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.add"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -162,10 +159,7 @@ def div(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.div"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.div"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -203,10 +197,7 @@ def max(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.max"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.max"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -244,10 +235,7 @@ def min(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.min"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.min"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -285,10 +273,7 @@ def mod(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.mod"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.mod"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -326,10 +311,7 @@ def mul(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.mul"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.mul"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -367,10 +349,7 @@ def pow(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.pow"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.pow"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -408,10 +387,7 @@ def sub(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.sub"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.sub"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -449,10 +425,7 @@ def equal(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.equal"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.equal"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -490,10 +463,7 @@ def greater(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.greater"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.greater"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -531,10 +501,7 @@ def greater_equal(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
-    try:
-        return _binary_op["rmo.greater_equal"](lhs, rhs)
-    except e:
-        raise error(lhs.graph(), e, location or __call_location())
+    return _op_impl["rmo.greater_equal"](lhs, rhs, location, __call_location())
 
 
 @always_inline
@@ -571,10 +538,21 @@ def not_equal(
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
+    return _op_impl["rmo.not_equal"](lhs, rhs, location, __call_location())
+
+
+fn _op_impl[
+    op_name: StringLiteral
+](
+    lhs: Symbol,
+    rhs: Symbol,
+    location: Optional[_SourceLocation],
+    call_loc: _SourceLocation,
+) raises -> Symbol:
     try:
-        return _binary_op["rmo.not_equal"](lhs, rhs)
+        return _binary_op[op_name](lhs, rhs)
     except e:
-        raise error(lhs.graph(), e, location or __call_location())
+        raise error(lhs.graph(), e, location or call_loc)
 
 
 # ===----------------------------------------------------------------------=== #
