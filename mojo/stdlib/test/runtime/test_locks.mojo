@@ -9,25 +9,15 @@
 from os import Atomic
 from time import now, sleep, time_function
 
-from utils.lock import SpinWaiter, BlockingSpinLock, BlockingScopedLock
+from utils.lock import BlockingSpinLock, BlockingScopedLock
 from runtime.asyncrt import TaskGroup
-from testing import assert_equal, assert_true
-
-
-# CHECK-LABEL: test_spin_waiter
-def test_spin_waiter():
-    print("== test_spin_waiter")
-    var waiter = SpinWaiter()
-    alias RUNS = 1000
-    for i in range(RUNS):
-        waiter.wait()
-    assert_true(True)
+from testing import assert_equal
 
 
 fn test_basic_lock() raises:
     var lock = BlockingSpinLock()
     var rawCounter = 0
-    var counter = Atomic[DType.int64](False)
+    var counter = Atomic[DType.int64](0)
     alias maxI = 100
     alias maxJ = 100
 
@@ -47,9 +37,9 @@ fn test_basic_lock() raises:
 
     @parameter
     fn test_atomic() capturing -> None:
-        var tg = TaskGroup[__lifetime_of()]()
-        for i in range(0, maxI):
-            for j in range(0, maxJ):
+        var tg = TaskGroup[__lifetime_of(lock)]()
+        for _ in range(0, maxI):
+            for _ in range(0, maxJ):
                 tg.create_task(inc())
         tg.wait()
 
@@ -70,5 +60,4 @@ fn test_basic_lock() raises:
 
 
 def main():
-    test_spin_waiter()
     test_basic_lock()
