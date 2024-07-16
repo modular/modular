@@ -20,18 +20,15 @@ fn test_reshape() raises:
 
     # [3, 4] -> [6, 2]
     var reshape1 = g[0].reshape(6, 2)
-    # TODO(GRA-552): Enable comparison of shape directly instead of printing full mlir
-    assert_true(str(reshape1).endswith("!mo.tensor<[6, 2], si32>"))
+    assert_true(reshape1.shape() == List[Dim](6, 2))
 
     # [3, 4] -> [2, 3, -1]
     var reshape2 = g[0].reshape(2, 3, -1)
-    # TODO(GRA-552): Enable comparison of shape directly instead of printing full mlir
-    assert_true(str(reshape2).endswith("!mo.tensor<[2, 3, 2], si32>"))
+    assert_true(reshape2.shape() == List[Dim](2, 3, 2))
 
     # [2, x, 2] -> [-1, x]
     var reshape3 = g[1].reshape(Dim(-1), Dim("x"))
-    # TODO(GRA-552): Enable comparison of shape directly instead of printing full mlir
-    assert_true(str(reshape3).endswith("!mo.tensor<[4, x], si32>"))
+    assert_true(reshape3.shape() == List[Dim](4, "x"))
 
 
 fn test_reshape_error() raises:
@@ -97,8 +94,46 @@ fn test_reshape_runtime_zero() raises:
         _ = _testing.execute_unary(g, x)
 
 
+fn test_broadcast_to() raises:
+    var g = Graph(
+        List[Type](
+            TensorType(DType.int32, 2, 1, 2),
+            TensorType(DType.int32, Dim("x"), 1),
+        ),
+    )
+
+    var broadcast1 = g[0].broadcast_to(2, 7, 2)
+    assert_true(broadcast1.shape() == List[Dim](2, 7, 2))
+
+    var broadcast2 = g[0].broadcast_to(2, "x", 2)
+    assert_true(broadcast2.shape() == List[Dim](2, "x", 2))
+
+    var broadcast3 = g[1].broadcast_to("x", 7)
+    assert_true(broadcast3.shape() == List[Dim]("x", 7))
+
+
+fn test_broadcast_to_error() raises:
+    var g = Graph(
+        List[Type](
+            TensorType(DType.int32, 2, 1, 2),
+            TensorType(DType.int32, Dim("x"), 1),
+        ),
+    )
+
+    with assert_raises(contains="must be either 1 or equal to"):
+        _ = g[0].broadcast_to(3, 7, 2)
+
+    with assert_raises(contains="must be either 1 or equal to"):
+        _ = g[0].broadcast_to(1, 1, 2)
+
+    with assert_raises(contains="must be either 1 or equal to"):
+        _ = g[1].broadcast_to("y", 1)
+
+
 def main():
     test_reshape()
     test_reshape_error()
-    test_reshape_runtime_zero()
     # TODO(GRA-578): Once we have dim expression in, test a runtime negative number.
+    test_reshape_runtime_zero()
+    test_broadcast_to()
+    test_broadcast_to_error()

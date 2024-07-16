@@ -6,6 +6,7 @@
 """Ops that modify the shape or data type of a symbolic tensor."""
 from _mlir.ir import NamedAttribute, Identifier
 from _mlir.builtin_attributes import StringAttr
+from builtin._location import __call_location, _SourceLocation
 
 from .._attributes import _shape_attr
 from ..error import error
@@ -359,6 +360,46 @@ fn reshape_like(v: Symbol, like: Symbol) raises -> Symbol:
         the shape of the `like` tensor.
     """
     return reshape(v, shape_of(like), like.tensor_type().dims)
+
+
+# ===----------------------------------------------------------------------=== #
+# Broadcasts
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn broadcast_to(
+    v: Symbol, shape: List[Dim], location: Optional[_SourceLocation] = None
+) raises -> Symbol:
+    """Broadcasts a symbolic tensor.
+
+    Broadcasts the input tensor to the specified shape.
+    Dimensions in the input must be one or match the target dimension.
+
+    Args:
+        v: The input symbolic tensor to broadcast.
+            This tensor may not contain any dynamic dimensions.
+        shape: The new shape as a list of dimensions.
+            Dynamic dimensions are not allowed.
+        location: An optional location for a more specific error message.
+
+    Returns:
+        A symbolic tensor with the same elements as the original tensor, but
+        in a new shape. Its symbolic shape is the same as `shape`.
+    """
+    var g = v.graph()
+
+    var ctx = g._context()
+    var newShapeAttr = _shape_attr(ctx, "newShape", shape)
+    try:
+        return g.nvop(
+            "rmo.broadcast_to",
+            List[Symbol](v),
+            attrs=List[NamedAttribute](newShapeAttr),
+            enable_result_type_inference=True,
+        )[0]
+    except e:
+        raise error(g, e, location or __call_location())
 
 
 # ===----------------------------------------------------------------------=== #

@@ -272,6 +272,42 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         """
         return transpose(self, axis1, axis2)
 
+    @always_inline
+    fn broadcast_to(self, *dims: Dim) raises -> Symbol:
+        """Broadcasts this `Symbol` to the specified dims.
+
+        Uses the `mo.broadcast_to` op. Requires the symbol to be a `TensorType`.
+
+        Args:
+            dims: The target dimensions.
+
+        Returns:
+            A new `Symbol` that is broadcast to the given shape.
+        """
+        var shape = List[Dim]()
+        for dim in dims:
+            shape.append(dim[])
+
+        return self.broadcast_to(shape, __call_location())
+
+    @always_inline
+    fn broadcast_to(
+        self, shape: List[Dim], location: Optional[_SourceLocation] = None
+    ) raises -> Symbol:
+        """Broadcasts this `Symbol` to the specified shape.
+
+        Uses the `mo.broadcast_to` op. Requires the symbol to be a `TensorType`.
+
+        Args:
+            shape: The target shape.
+            location: An optional location for a more specific error message.
+
+        Returns:
+            A new `Symbol` that is broadcast to the given shape.
+        """
+
+        return ops.broadcast_to(self, shape, location or __call_location())
+
     # ===------------------------------------------------------------------=== #
     # Slicing operators
     # ===------------------------------------------------------------------=== #

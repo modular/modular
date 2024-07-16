@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
+from builtin._location import __call_location, _SourceLocation
 from collections import Set
 from sys.info import has_neon
 
@@ -712,9 +713,10 @@ struct Graph(CollectionElement, Stringable, Formattable):
             TensorType(dtype, len(range(start, stop, step))),
         )
 
+    @always_inline
     fn full[
         dtype: DType
-    ](self, value: Scalar[dtype], dims: List[Symbol]) raises -> Symbol:
+    ](self, value: Scalar[dtype], *dims: Dim) raises -> Symbol:
         """Creates a constant-valued symbolic tensor of a specified shape.
 
         Parameters:
@@ -728,17 +730,37 @@ struct Graph(CollectionElement, Stringable, Formattable):
             A symbolic tensor of the specified shape and dtype, where
             every value is the specified fill value.
         """
-        var out_dims = List[Dim]()
-        var shape = List[Symbol]()
-        for i in range(len(dims)):
-            if dims[i].tensor_type().rank() != 0:
-                raise error(self, "zeros inputs must be scalars")
-            shape.append(dims[i])
-            out_dims.append(Dim.dynamic())
-        return self.op(
-            "rmo.mo.broadcast_to",
-            List[Symbol](self.scalar(value), ops.stack(shape)),
-            TensorType(dtype, out_dims),
+        var shape = List[Dim]()
+        for d in dims:
+            shape.append(d[])
+
+        return self.full(value, shape, __call_location())
+
+    @always_inline
+    fn full[
+        dtype: DType
+    ](
+        self,
+        value: Scalar[dtype],
+        dims: List[Dim],
+        location: Optional[_SourceLocation] = None,
+    ) raises -> Symbol:
+        """Creates a constant-valued symbolic tensor of a specified shape.
+
+        Parameters:
+            dtype: The output tensor's element type.
+
+        Args:
+            value: The value to fill the resulting tensor with.
+            dims: The shape dimensions of the zero-valued tensor.
+            location: An optional location for a more specific error message.
+
+        Returns:
+            A symbolic tensor of the specified shape and dtype, where
+            every value is the specified fill value.
+        """
+        return self.scalar(value).broadcast_to(
+            dims, location or __call_location()
         )
 
     fn output(inout self, outputs: List[Symbol]) raises:

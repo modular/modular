@@ -27,6 +27,7 @@ from .casting import (
     rebind,
     reshape,
     reshape_like,
+    broadcast_to,
     transpose_matrix,
     transpose,
 )
