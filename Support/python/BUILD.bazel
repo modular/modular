@@ -18,9 +18,6 @@ py_library(
 modular_py_test(
     name = "unittests",
     srcs = glob(["tests/**/*.py"]),
-    exec_properties = {
-        "test.dockerNetwork": "bridge",
-    },
     tags = ["requires-network"],
     deps = [
         ":support",
