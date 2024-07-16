@@ -338,7 +338,7 @@ struct Buffer[
         var data_pointer = stack_allocation[
             size.get(), type, alignment=alignment, address_space=address_space
         ]()
-        return Self(data_pointer)
+        return Self(DTypePointer(data_pointer))
 
 
 # ===----------------------------------------------------------------------===#
