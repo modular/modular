@@ -26,7 +26,7 @@ from linalg.vnni_intrinsics import (
 )
 from memory import UnsafePointer
 from memory.unsafe import DTypePointer
-from runtime.llcl import parallelism_level
+from runtime.asyncrt import parallelism_level
 
 from utils import InlineArray
 from utils.index import Index
