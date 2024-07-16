@@ -998,8 +998,10 @@ fn _copy_with_strides[
             @parameter
             fn _copy[simd_width: Int](offset: Int):
                 strided_store(
-                    strided_load[type, simd_width](src_ptr, input_axis_stride),
-                    dst_ptr,
+                    strided_load[type, simd_width](
+                        src_ptr.address, input_axis_stride
+                    ),
+                    dst_ptr.address,
                     output_axis_stride,
                 )
                 src_ptr = src_ptr.offset(simd_width * input_axis_stride)

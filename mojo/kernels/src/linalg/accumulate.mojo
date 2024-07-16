@@ -636,7 +636,7 @@ struct _Accumulator[
                         .high_locality()
                         .to_data_cache()
                     ](
-                        b_ptr
+                        b_ptr.address
                         + prefetch_offset.value() * kernel_width
                         + j * simd_width
                     )
@@ -697,7 +697,7 @@ struct _Accumulator[
                         .high_locality()
                         .to_data_cache()
                     ](
-                        b_ptr
+                        b_ptr.address
                         + prefetch_offset.value() * kernel_width
                         + j * simd_width
                     )
