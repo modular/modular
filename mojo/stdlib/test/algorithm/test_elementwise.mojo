@@ -21,13 +21,13 @@ fn test_elementwise[
     numelems: Int, outer_rank: Int, is_blocking: Bool
 ](dims: DimList):
     var memory1 = stack_allocation[numelems, DType.float32, 1]()
-    var buffer1 = NDBuffer[DType.float32, outer_rank](memory1.address, dims)
+    var buffer1 = NDBuffer[DType.float32, outer_rank](memory1, dims)
 
     var memory2 = stack_allocation[numelems, DType.float32, 1]()
-    var buffer2 = NDBuffer[DType.float32, outer_rank](memory2.address, dims)
+    var buffer2 = NDBuffer[DType.float32, outer_rank](memory2, dims)
 
     var memory3 = stack_allocation[numelems, DType.float32, 1]()
-    var out_buffer = NDBuffer[DType.float32, outer_rank](memory3.address, dims)
+    var out_buffer = NDBuffer[DType.float32, outer_rank](memory3, dims)
 
     var x: Float32 = 1.0
     for i in range(numelems):
