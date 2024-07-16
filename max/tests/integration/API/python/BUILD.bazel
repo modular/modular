@@ -20,16 +20,11 @@ modular_py_test(
         "BAZEL": "true",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
-        "MODULAR_IS_CUDA_AVAILABLE": "$(location //CUDASupport/tools/is-cuda-available)",
-    } | select({
-        # NOTE: Hack to make sure we don't cache test results that ran without cuda
-        "//:has_cuda_setting": {"MODULAR_INVALIDATE_CUDA": "true"},
-        "//conditions:default": {},
-    }),
+        "MODULAR_IS_CUDA_AVAILABLE": "false",  # TODO: Run tests on GPU if they get re-enabled
+    },
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
     ],
-    tags = ["gpu"],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
         "//:asan": ["@platforms//:incompatible"],
