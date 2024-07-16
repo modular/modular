@@ -223,7 +223,7 @@ struct Tensor[type: DType](
         var num_elements = other.num_elements()
         self._spec = other._spec
         self._ptr = DTypePointer[type].alloc(num_elements)
-        memcpy(self._ptr, other._ptr, num_elements)
+        memcpy(self._ptr.address, other._ptr.address, num_elements)
 
     @always_inline
     fn __init__(inout self, *dims: Int):
@@ -373,7 +373,7 @@ struct Tensor[type: DType](
         var num_elements = other.num_elements()
         self._spec = other._spec
         self._ptr = DTypePointer[type].alloc(num_elements)
-        memcpy(self._ptr, other._ptr, num_elements)
+        memcpy(self._ptr.address, other._ptr.address, num_elements)
 
     fn __moveinit__(inout self, owned existing: Self):
         """Move initializer for the tensor.
@@ -1366,7 +1366,11 @@ struct Tensor[type: DType](
         var tensor = Self(spec)
         if spec.num_elements() == 0:
             return tensor
-        memcpy(tensor.unsafe_ptr(), data.bitcast[type](), spec.num_elements())
+        memcpy(
+            tensor.unsafe_ptr().address,
+            data.bitcast[type]().address,
+            spec.num_elements(),
+        )
         _ = bytes^
         return tensor
 
@@ -1398,7 +1402,7 @@ fn _serialize_as_tensor[
     var self_ptr = UnsafePointer.address_of(object).bitcast[UInt8]()
     alias size = sizeof[type]()
     var bytes = Tensor[DType.uint8](size)
-    memcpy(bytes.unsafe_ptr(), self_ptr, size)
+    memcpy(bytes.unsafe_ptr().address, self_ptr.address, size)
     return bytes^
 
 
@@ -1441,8 +1445,8 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     ) -> Int:
         var size = src.num_elements()
         memcpy(
-            dest.unsafe_ptr() + offset,
-            src.unsafe_ptr(),
+            dest.unsafe_ptr().address + offset,
+            src.unsafe_ptr().address,
             size,
         )
         return offset + size
@@ -1456,8 +1460,8 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
 
     # TODO: Avoid this copy.
     memcpy(
-        bytes.unsafe_ptr() + copied,
-        tensor.unsafe_ptr().bitcast[DType.uint8](),
+        bytes.unsafe_ptr().address + copied,
+        tensor.unsafe_ptr().bitcast[DType.uint8]().address,
         tensor.num_elements() * sizeof[type](),
     )
     copied += tensor.num_elements() * sizeof[type]()
