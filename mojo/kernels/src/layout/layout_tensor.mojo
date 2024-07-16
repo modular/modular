@@ -405,12 +405,14 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn stack_allocation[*, alignment: Int = alignof[dtype]()]() -> Self:
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
-        return stack_allocation[
+        var ptr = stack_allocation[
             layout.size(),
             dtype,
             alignment=alignment,
             address_space=address_space,
         ]()
+
+        return DTypePointer(ptr)
 
     @staticmethod
     @always_inline("nodebug")
