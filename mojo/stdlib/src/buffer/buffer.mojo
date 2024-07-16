@@ -905,7 +905,7 @@ struct NDBuffer[
             shape.append(self.dynamic_shape[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data, shape
+            self.data.address, shape
         )
 
         writer.write(")")
