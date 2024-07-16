@@ -9,9 +9,10 @@ from buffer import NDBuffer
 import testing
 from ._utils import TestTensor
 from collections import Optional
-from builtin._location import _SourceLocation
+from builtin._location import _SourceLocation, __call_location
 
 
+@always_inline
 fn assert_almost_equal(
     x: DTypePointer,
     y: __type_of(x),
@@ -31,10 +32,11 @@ fn assert_almost_equal(
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
-            location=location,
+            location=location.or_else(__call_location()),
         )
 
 
+@always_inline
 fn assert_almost_equal(
     x: NDBuffer,
     y: __type_of(x),
@@ -53,10 +55,11 @@ fn assert_almost_equal(
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
-            location=location,
+            location=location.or_else(__call_location()),
         )
 
 
+@always_inline
 fn assert_almost_equal(
     x: TestTensor,
     y: __type_of(x),
@@ -74,10 +77,11 @@ fn assert_almost_equal(
         atol=atol,
         rtol=rtol,
         equal_nan=equal_nan,
-        location=location,
+        location=location.or_else(__call_location()),
     )
 
 
+@always_inline
 fn assert_equal(
     x: NDBuffer,
     y: __type_of(x),
@@ -90,10 +94,11 @@ fn assert_equal(
             x.data[i],
             y.data[i],
             msg=msg + " at " + str(x.get_nd_index(i)),
-            location=location,
+            location=location.or_else(__call_location()),
         )
 
 
+@always_inline
 fn assert_equal(
     x: TestTensor,
     y: __type_of(x),
@@ -101,7 +106,12 @@ fn assert_equal(
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    return assert_equal(x.ndbuffer, y.ndbuffer, msg=msg, location=location)
+    return assert_equal(
+        x.ndbuffer,
+        y.ndbuffer,
+        msg=msg,
+        location=location.or_else(__call_location()),
+    )
 
 
 fn _minmax(x: DTypePointer, N: Int) -> Tuple[Scalar[x.type], Scalar[x.type]]:
