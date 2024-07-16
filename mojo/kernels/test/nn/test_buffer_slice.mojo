@@ -54,17 +54,17 @@ fn test_slice[
 
     var start_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     var start_tensor = NDBuffer[DType.index, 1](
-        start_tensor_mem.address, StaticIntTuple[1](outer_rank)
+        start_tensor_mem, StaticIntTuple[1](outer_rank)
     )
 
     var end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     var end_tensor = NDBuffer[DType.index, 1](
-        end_tensor_mem.address, StaticIntTuple[1](outer_rank)
+        end_tensor_mem, StaticIntTuple[1](outer_rank)
     )
 
     var step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     var step_tensor = NDBuffer[DType.index, 1](
-        step_tensor_mem.address, StaticIntTuple[1](outer_rank)
+        step_tensor_mem, StaticIntTuple[1](outer_rank)
     )
 
     for dim in range(outer_rank):
@@ -93,7 +93,7 @@ fn test_slice[
             outer_rank,
             rebind[DimList](static_shape),
         ](
-            output_mem.address,
+            output_mem,
             rebind[StaticIntTuple[outer_rank]](sliced.dynamic_shape),
         )
 
