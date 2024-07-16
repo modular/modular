@@ -303,13 +303,15 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
                 @parameter
                 if type is DType.bool:
                     var v = strided_load[DType.uint8, simd_width](
-                        self.data.bitcast[DType.uint8]().offset(flat_index),
+                        self.data.bitcast[DType.uint8]()
+                        .offset(flat_index)
+                        .address,
                         stride,
                     )
                     return v.cast[type]()
                 else:
                     return strided_load[type, simd_width](
-                        self.data.offset(flat_index), stride
+                        self.data.offset(flat_index).address, stride
                     )
 
         if self.strides[self.rank() - 1] == 0:
