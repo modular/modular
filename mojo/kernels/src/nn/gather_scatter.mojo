@@ -834,7 +834,9 @@ fn scatter_nd_generator[
 
     @parameter
     if target != "cuda":
-        memcpy(output_flat.data, data_flat.data, len(output_flat))
+        memcpy(
+            output_flat.data.address, data_flat.data.address, len(output_flat)
+        )
 
     @__copy_capture(
         r_minus_m, data_shape, last_shape_of_indices, output_flat, updates_flat
@@ -1524,8 +1526,8 @@ fn gather_nd[
 
             # Perform the actual copy of element/slice/sheet/cuboid/etc.
             memcpy(
-                output.data + output_offset,
-                reshaped_data.data + input_offset,
+                output.data.address + output_offset,
+                reshaped_data.data.address + input_offset,
                 count_copy,
             )
     idx_ptr.free()

@@ -384,8 +384,8 @@ fn index_tensor[
 
             # Perform the actual copy of element/slice/sheet/cuboid/etc.
             memcpy(
-                output.data + output_offset,
-                reshaped_data.data + input_offset,
+                output.data.address + output_offset,
+                reshaped_data.data.address + input_offset,
                 count_copy,
             )
     idx_ptr.free()

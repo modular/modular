@@ -149,7 +149,7 @@ fn _pad_constant_impl_rec[
             return
 
         _fill(pre_pad_start_ptr, constant, pre_pad)
-        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
+        memcpy(non_pad_start_ptr.address, input_start_ptr.address, non_pad)
         _fill(post_pad_start_ptr, constant, post_pad)
         return
 
@@ -284,7 +284,9 @@ fn _memcpy_regions[
             var copy_from_ptr = pre_pad_start_ptr.offset(
                 (copy_from * output_axis_stride)
             )
-            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            memcpy(
+                copy_to_ptr.address, copy_from_ptr.address, output_axis_stride
+            )
             curr_pre_pad += 1
 
         if curr_post_pad < post_pad:
@@ -304,7 +306,9 @@ fn _memcpy_regions[
                 copy_from * output_axis_stride
             )
 
-            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            memcpy(
+                copy_to_ptr.address, copy_from_ptr.address, output_axis_stride
+            )
             curr_post_pad += 1
 
 
@@ -375,7 +379,7 @@ fn _pad_reflect_impl_rec[
     else:
         # no more dimensions to recurse, copy from input to unpadded region
         var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
-        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
+        memcpy(non_pad_start_ptr.address, input_start_ptr.address, non_pad)
 
     _memcpy_regions[type](
         pre_pad, post_pad, non_pad, output_axis_stride, pre_pad_start_ptr

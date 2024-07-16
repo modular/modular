@@ -79,7 +79,7 @@ fn broadcast[
     if input_output_have_same_shape:
         var src_ptr = input.data
         var dst_ptr = output.data
-        memcpy(dst_ptr, src_ptr, input.size())
+        memcpy(dst_ptr.address, src_ptr.address, input.size())
         return
 
     alias init_axis = 0
@@ -191,5 +191,5 @@ fn _tile_1d[
     """
     var dst_ptr = init_dst_ptr
     for i in range(n):
-        memcpy(dst_ptr, src_ptr, tile_num_elems)
+        memcpy(dst_ptr.address, src_ptr.address, tile_num_elems)
         dst_ptr = dst_ptr.offset(tile_num_elems)

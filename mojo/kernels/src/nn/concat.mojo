@@ -174,8 +174,8 @@ fn _concat_parallel[
                             output_wc_offset
                             + overlap_rel_start // input_wc * output_wc
                             + overlap_rel_start % input_wc
-                        ),
-                        input_data.offset(overlap_rel_start),
+                        ).address,
+                        input_data.offset(overlap_rel_start).address,
                         overlap_rel_end - overlap_rel_start,
                     )
                 else:
@@ -188,8 +188,8 @@ fn _concat_parallel[
                             output_wc_offset
                             + overlap_rel_start // input_wc * output_wc
                             + overlap_rel_start % input_wc
-                        ),
-                        input_data.offset(overlap_rel_start),
+                        ).address,
+                        input_data.offset(overlap_rel_start).address,
                         overlap_full_rel_start - overlap_rel_start,
                     )
                     # Now, fully-aligned sections:
@@ -200,12 +200,14 @@ fn _concat_parallel[
                         + overlap_full_rel_start // input_wc * output_wc
                     )
                     while in_ptr < end_in_ptr:
-                        memcpy(out_ptr, in_ptr, input_wc)
+                        memcpy(out_ptr.address, in_ptr.address, input_wc)
                         in_ptr += input_wc
                         out_ptr += output_wc
                     # Lastly, trailing stragglers:
                     memcpy(
-                        out_ptr, in_ptr, overlap_rel_end - overlap_full_rel_end
+                        out_ptr.address,
+                        in_ptr.address,
+                        overlap_rel_end - overlap_full_rel_end,
                     )
 
             amount_traversed += input_byte_size
@@ -260,8 +262,8 @@ fn _concat[
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
             memcpy(
-                output.data + output_offset,
-                inputs[i].data + input_offset,
+                output.data.address + output_offset,
+                inputs[i].data.address + input_offset,
                 w * c,
             )
         w_offset += w
@@ -278,7 +280,11 @@ fn _concat_inner[
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
-        memcpy(output.data.offset(num_elems_copied), inputs[i].data, buffer_len)
+        memcpy(
+            output.data.offset(num_elems_copied).address,
+            inputs[i].data.address,
+            buffer_len,
+        )
         num_elems_copied += buffer_len
 
 
