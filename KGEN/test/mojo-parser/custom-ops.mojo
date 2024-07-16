@@ -9,6 +9,8 @@
 # Change the order of definitions, so we check that the resulting
 # kgen.custom.op_impls is sorted.
 
+import _mlir
+
 @op_implementation("custom.a")
 struct CustomOpA:
     @staticmethod
@@ -27,6 +29,16 @@ struct CustomOpB:
     fn impl(x: Int32, y: Int32) -> Int32:
         return x + y
 
+@op_implementation("custom.with_canonicalize")
+struct CustomOpWithCanonicalize:
+    @staticmethod
+    fn impl(x: Int32, y: Int32) -> Int32:
+        return x + y
+
+    @staticmethod
+    fn canonicalize(x: _mlir.Operation):
+        return
+
 fn main():
     var x: Int32 = 4
     var y: Int32 = 6
@@ -34,9 +46,14 @@ fn main():
     print(res)
 
 # Check that the custom ops are registered with `custom.op_impls`
-# CHECK: kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.a",
-# CHECK-SAME:                    @"custom-ops"::@CustomOpA::@"impl(::SIMD[{int32}, {1}],::SIMD[{int32}, {1}])">,
-# CHECK-SAME:                  <"custom.b",
-# CHECK-SAME:                    @"custom-ops"::@CustomOpB::@"impl(::SIMD[{int32}, {1}],::SIMD[{int32}, {1}])">,
-# CHECK-SAME:                  <"custom.c",
-# CHECK-SAME:                    @"custom-ops"::@CustomOpC::@"impl(::SIMD[{int32}, {1}],::SIMD[{int32}, {1}])">]
+
+# CHECK:      kgen.custom.op_impls @__CustomOpImplSymbol [
+# CHECK-SAME:   <"custom.a",
+# CHECK-SAME:     impl: :!lit.signature<{{.*}}> @"custom-ops"::@CustomOpA::@"impl({{[^\)]*}})">,
+# CHECK-SAME:   <"custom.b",
+# CHECK-SAME:     impl: :!lit.signature<{{.*}}> @"custom-ops"::@CustomOpB::@"impl({{[^\)]*}})">,
+# CHECK-SAME:   <"custom.c",
+# CHECK-SAME:     impl: :!lit.signature<{{.*}}> @"custom-ops"::@CustomOpC::@"impl({{[^\)]*}})">,
+# CHECK-SAME:   <"custom.with_canonicalize",
+# CHECK-SAME:     impl: :!lit.signature<{{.*}}> @"custom-ops"::@CustomOpWithCanonicalize::@"impl({{[^\)]*}})",
+# CHECK-SAME:     canonicalize: :!lit.signature<{{.*}}> @"custom-ops"::@CustomOpWithCanonicalize::@"canonicalize({{[^\)]*}})">]

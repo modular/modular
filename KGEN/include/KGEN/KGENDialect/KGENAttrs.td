@@ -1062,14 +1062,23 @@ def KGEN_CustomOpImplAttr : KGENAttr<"CustomOpImpl", "custom.op_impl"> {
   }];
 
   let parameters = (ins "StringAttr":$opName,
-                        "SymbolConstantAttr":$opImplementation);
-  let assemblyFormat = "`<` $opName `,` custom<ColonTypeSymbolConstant>($opImplementation) `>`";
+                        "SymbolConstantAttr":$opImplementation,
+                        OptionalParameter<"SymbolConstantAttr">:$opCanonicalization);
+  let assemblyFormat = [{
+    `<` $opName
+    `,` `impl` `` `:` custom<ColonTypeSymbolConstant>($opImplementation)
+    (`,` `canonicalize` `` `:` custom<ColonTypeSymbolConstant>($opCanonicalization)^)? `>`
+  }];
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$opName,
-                                        "SymbolConstantAttr":$opImplementation)>,
-    AttrBuilderWithInferredContext<(ins "StringRef":$opName,
-                                        "SymbolConstantAttr":$opImplementation)>
+    AttrBuilderWithInferredContext<(ins
+      "StringAttr":$opName,
+      "SymbolConstantAttr":$opImplementation,
+      CArg<"SymbolConstantAttr", "{}">:$opCanonicalization)>,
+    AttrBuilderWithInferredContext<(ins
+      "StringRef":$opName,
+      "SymbolConstantAttr":$opImplementation,
+      CArg<"SymbolConstantAttr", "{}">:$opCanonicalization)>,
   ];
 }
 

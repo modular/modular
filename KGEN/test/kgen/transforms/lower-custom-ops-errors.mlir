@@ -28,8 +28,8 @@ module {
 // -----
 
 module {
-  kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.a", :!kgen.signature<(!pop.scalar<si32>) -> !pop.scalar<si32>> @my_impl>,
-                                              <"custom.c", :!kgen.signature<(!pop.scalar<si32>) -> !pop.scalar<si32>> @my_impl>]
+  kgen.custom.op_impls @__CustomOpImplSymbol [<"custom.a", impl: :!kgen.signature<(!pop.scalar<si32>) -> !pop.scalar<si32>> @my_impl>,
+                                              <"custom.c", impl: :!kgen.signature<(!pop.scalar<si32>) -> !pop.scalar<si32>> @my_impl>]
   kgen.generator @my_impl(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
     kgen.return %arg0 : !pop.scalar<si32>
   }
