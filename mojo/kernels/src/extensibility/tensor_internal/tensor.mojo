@@ -253,7 +253,7 @@ struct Tensor[type: DType](
         var num_elements = spec.num_elements()
         self._spec = spec
         self._ptr = DTypePointer[type].alloc(num_elements)
-        memset_zero(self._ptr, num_elements)
+        memset_zero(self._ptr.address, num_elements)
 
     @always_inline
     fn __init__(inout self, shape: Tuple):
@@ -265,7 +265,7 @@ struct Tensor[type: DType](
         self._spec = TensorSpec(type, shape)
         var num_elements = self._spec.num_elements()
         self._ptr = DTypePointer[type].alloc(num_elements)
-        memset_zero(self._ptr, num_elements)
+        memset_zero(self._ptr.address, num_elements)
 
     @always_inline
     fn __init__(
@@ -320,7 +320,7 @@ struct Tensor[type: DType](
                 )
 
             else:
-                memset_zero(ptr, num_elements)
+                memset_zero(ptr.address, num_elements)
         else:
             for i in range(len(data)):
                 ptr[i] = data[i]
