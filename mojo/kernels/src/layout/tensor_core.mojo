@@ -325,7 +325,12 @@ struct TensorCore[
             element_layout=element_layout0,
             masked=masked0,
         ],
-        fragments: LayoutTensor[type1, layout1, element_layout=element_layout1],
+        fragments: LayoutTensor[
+            type1,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL,
+        ],
         mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
@@ -361,7 +366,12 @@ struct TensorCore[
             element_layout=element_layout0,
             masked=masked0,
         ],
-        fragments: LayoutTensor[type0, layout1, element_layout=element_layout1],
+        fragments: LayoutTensor[
+            type0,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL,
+        ],
         mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
         warp_tile_coordn: Int = 0,  # n coordiante of warp tile
     ):

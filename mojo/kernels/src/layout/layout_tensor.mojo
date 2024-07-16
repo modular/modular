@@ -1941,6 +1941,7 @@ fn copy_local_to_dram[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
+    src_addr_space: AddressSpace,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1952,7 +1953,7 @@ fn copy_local_to_dram[
     src: LayoutTensor[
         dtype,
         src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
+        address_space=src_addr_space,
         element_layout=src_element_layout,
         masked=src_mask,
     ],
@@ -1972,6 +1973,7 @@ fn copy_local_to_sram[
     dst_element_layout: Layout,
     src_mask: Bool,
     dst_mask: Bool,
+    src_addr_space: AddressSpace,
 ](
     dst: LayoutTensor[
         dst_type,
@@ -1983,7 +1985,7 @@ fn copy_local_to_sram[
     src: LayoutTensor[
         src_type,
         src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
+        address_space=src_addr_space,
         element_layout=src_element_layout,
         masked=src_mask,
     ],
