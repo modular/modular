@@ -21,7 +21,7 @@ from algorithm.functional import _get_num_workers
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.dimlist import Dim, DimList
-from builtin.math import min as _min
+from builtin.math import min as _min, max as _max
 from gpu.host import DeviceContext
 from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
@@ -1031,7 +1031,7 @@ fn _simd_max_elementwise[
     """Computes the elementwise max of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
-    return x.max(y.cast[acc_type]())
+    return _max(x, y.cast[acc_type]())
 
 
 fn max(src: Buffer) -> Scalar[src.type]:
@@ -1085,7 +1085,7 @@ fn _simd_min_elementwise[
     """Computes the elementwise min of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
-    return x.min(y.cast[acc_type]())
+    return _min(x, y.cast[acc_type]())
 
 
 fn min(src: Buffer) -> Scalar[src.type]:
