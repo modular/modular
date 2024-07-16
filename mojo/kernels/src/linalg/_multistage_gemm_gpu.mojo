@@ -94,7 +94,7 @@ fn multistage_mma[
     *,
     swizzle_a: Bool = True,
 ](
-    c: LayoutTensor[c_type, c_layout],
+    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
     a_iter_arg: LayoutTensorIter[a_type, a_layout, address_space=_, circular=_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout],
     a_smem_iter: LayoutTensorIter[
@@ -193,10 +193,14 @@ fn multistage_mma[
     # Register tiles.
     # TODO: parameterize fragment size based on data type.
     var a_reg_tiles = LayoutTensor[
-        a_type, Layout.row_major(2 * num_m_mmas, a_frag_size)
+        a_type,
+        Layout.row_major(2 * num_m_mmas, a_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
     var b_reg_tiles = LayoutTensor[
-        b_type, Layout.row_major(2 * num_n_mmas, b_frag_size)
+        b_type,
+        Layout.row_major(2 * num_n_mmas, b_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
 
     var a_warp_tile = a_smem_iter.get().tile[WM, BK](int(warp_y), 0)
@@ -493,10 +497,14 @@ fn multistage_gemm[
     # Register tiles.
     # TODO: parameterize fragment size based on data type.
     var a_reg_tiles = LayoutTensor[
-        a_type, Layout.row_major(2 * num_m_mmas, a_frag_size)
+        a_type,
+        Layout.row_major(2 * num_m_mmas, a_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
     var b_reg_tiles = LayoutTensor[
-        b_type, Layout.row_major(2 * num_n_mmas, b_frag_size)
+        b_type,
+        Layout.row_major(2 * num_n_mmas, b_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
         accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
