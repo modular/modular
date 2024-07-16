@@ -20,6 +20,7 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/GlobalStatus.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
@@ -119,40 +120,48 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
   auto idxIt = sortIndices.begin();
   auto idxEnd = sortIndices.end();
 
-  // The global value indices go from aliases, functions, then globals.
+  // The global value indices go from globals, functions, then aliases. This
+  // mirrors the order in which global values are deleted by LLVM's GlobalDCE.
   unsigned curIdx = 0;
-  SmallVector<llvm::GlobalVariable *, 2> toDelete;
-  auto materializeGlobals = [&](auto origRange) {
-    for (auto &value : llvm::make_early_inc_range(origRange)) {
-      if (idxIt != idxEnd && curIdx == *idxIt) {
-        ++idxIt;
-        llvm::cantFail(value.materialize());
-      } else {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     llvm::GlobalVariable>) {
-          value.setInitializer(nullptr);
-          // Appending values with no initializers are not valid. Make sure to
-          // delete them after materialization.
-          if (value.hasAppendingLinkage())
-            toDelete.push_back(&value);
-        } else {
-          value.deleteBody();
-        }
-        value.setComdat(nullptr);
-        value.setLinkage(llvm::GlobalValue::ExternalLinkage);
-      }
-      ++curIdx;
+  // We need to keep the IR "valid" for the verifier because `materializeAll`
+  // may invoke it. It doesn't matter since we're deleting the globals anyway.
+  for (llvm::GlobalVariable &global : result->globals()) {
+    if (idxIt != idxEnd && curIdx == *idxIt) {
+      ++idxIt;
+      llvm::cantFail(global.materialize());
+    } else {
+      global.setInitializer(nullptr);
+      global.setComdat(nullptr);
+      global.setLinkage(llvm::GlobalValue::ExternalLinkage);
     }
-  };
-  materializeGlobals(result->functions());
-  materializeGlobals(result->globals());
+    ++curIdx;
+  }
+  for (llvm::Function &func : result->functions()) {
+    if (idxIt != idxEnd && curIdx == *idxIt) {
+      ++idxIt;
+      llvm::cantFail(func.materialize());
+    } else {
+      func.deleteBody();
+      func.setComdat(nullptr);
+      func.setLinkage(llvm::GlobalValue::ExternalLinkage);
+    }
+    ++curIdx;
+  }
 
   // Finalize materialization of the module.
   llvm::cantFail(result->materializeAll());
 
-  // Now we can delete stuff.
-  for (llvm::GlobalVariable *value : toDelete)
-    value->eraseFromParent();
+  // Now that the module is materialized, we can start deleting stuff. Just
+  // delete declarations with no uses.
+  for (llvm::GlobalVariable &global :
+       llvm::make_early_inc_range(result->globals())) {
+    if (global.isDeclaration() && global.use_empty())
+      global.eraseFromParent();
+  }
+  for (llvm::Function &func : llvm::make_early_inc_range(result->functions())) {
+    if (func.isDeclaration() && func.use_empty())
+      func.eraseFromParent();
+  }
   return result;
 }
 
@@ -174,17 +183,17 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     infos[&value].gvIdx = gvIdx++;
     collectImmediateDependencies(&value, &value);
   };
-  // NOTE: The visitation of functions then globals has to line up with
+  // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
-  for (const llvm::Function &fn : mainModule->functions()) {
-    computeDeps(fn);
-    if (!fn.isDeclaration() && (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
-      transitiveDeps[&fn];
-  }
   for (const llvm::GlobalVariable &global : mainModule->globals()) {
     computeDeps(global);
     if (!global.hasInternalLinkage())
       transitiveDeps[&global];
+  }
+  for (const llvm::Function &fn : mainModule->functions()) {
+    computeDeps(fn);
+    if (!fn.isDeclaration() && (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
+      transitiveDeps[&fn];
   }
 
   // If there is only one (or fewer) exported functions, forward the main
@@ -385,15 +394,15 @@ void KGEN::splitPerFunction(LLVMModuleAndContext module,
 /// function.
 void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // Compute the value info for each global in the module.
-  // NOTE: The visitation of functions then globals has to line up with
+  // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
   unsigned gvIdx = 0;
   auto computeUsers = [&](const llvm::GlobalValue &value) {
     valueInfos[&value].gvIdx = gvIdx++;
     collectValueUsers(&value);
   };
-  llvm::for_each(mainModule->functions(), computeUsers);
   llvm::for_each(mainModule->globals(), computeUsers);
+  llvm::for_each(mainModule->functions(), computeUsers);
 
   // With use information collected, propagate it to the dependencies.
   propagateUseInfo();
