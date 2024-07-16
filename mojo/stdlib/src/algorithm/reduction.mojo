@@ -24,7 +24,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.math import min as _min
 from gpu.host import DeviceContext
 from memory.unsafe import bitcast
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple, StaticTuple
 from utils.loop import unroll

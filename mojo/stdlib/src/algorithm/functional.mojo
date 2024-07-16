@@ -20,7 +20,7 @@ from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, DeviceContext
 from runtime import tracing
-from runtime.llcl import TaskGroup, MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import TaskGroup, MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, StaticIntTuple

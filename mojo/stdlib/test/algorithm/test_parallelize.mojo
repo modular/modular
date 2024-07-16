@@ -9,7 +9,7 @@ from math import ceildiv
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import Buffer
-from runtime.llcl import num_physical_cores
+from runtime.asyncrt import num_physical_cores
 
 
 # CHECK-LABEL: test_sync_parallelize

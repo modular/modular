@@ -16,7 +16,7 @@ from algorithm import parallel_memcpy
 from math import ceildiv
 
 from memory import memcpy
-from runtime.llcl import parallelism_level
+from runtime.asyncrt import parallelism_level
 
 
 fn parallel_memcpy[
