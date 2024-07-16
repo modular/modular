@@ -6,7 +6,7 @@
 """Provides basic KServe client functionality."""
 
 from sys.ffi import DLHandle
-from runtime.llcl import run, ChainPromise
+from runtime.asyncrt import run, ChainPromise
 from utils.variant import Variant
 
 from max.engine import InferenceSession, TensorMap

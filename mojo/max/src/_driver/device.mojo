@@ -142,7 +142,7 @@ struct Device(Stringable):
             Compiled graph ready to be loaded and executed.
         """
         # Graph compiler shares the context with Mojo. This context
-        # contains LLCL Runtime, Telemetery etc.
+        # contains AsyncRT Runtime, Telemetery etc.
         var max_context = _get_global_or_null["MaxContext"]().address
         var status = Status(self.lib)
         var compiled_ptr = call_dylib_func[_CCompiledGraph](

@@ -8,7 +8,7 @@
 from sys.ffi import DLHandle
 from memory import UnsafePointer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Chain
+from runtime.asyncrt import Chain
 
 from max._utils import call_dylib_func, exchange, CString
 

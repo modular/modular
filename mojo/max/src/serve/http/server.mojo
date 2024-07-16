@@ -19,7 +19,7 @@ from sys.ffi import DLHandle
 from memory.unsafe_pointer import UnsafePointer
 from python import PythonObject
 from python.python import _get_global_python_itf
-from runtime.llcl import TaskGroup
+from runtime.asyncrt import TaskGroup
 from time import perf_counter_ns
 
 from max._utils import handle_from_config

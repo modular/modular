@@ -6,7 +6,7 @@
 """Provides C bindings to KServe data structures."""
 
 from os import Atomic
-from runtime.llcl import run, TaskGroup
+from runtime.asyncrt import run, TaskGroup
 from sys.ffi import DLHandle
 from time import perf_counter_ns
 

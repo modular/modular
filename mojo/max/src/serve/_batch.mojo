@@ -8,7 +8,7 @@
 from builtin.coroutine import _coro_resume_fn, _suspend_async
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from runtime.llcl import _get_current_runtime
+from runtime.asyncrt import _get_current_runtime
 
 from max._utils import call_dylib_func, exchange
 

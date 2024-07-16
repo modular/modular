@@ -7,11 +7,11 @@
 import time
 from memory.arc import Arc
 from os import Atomic
-from runtime.llcl import (
+from runtime.asyncrt import (
     Chain,
-    _init_llcl_chain,
+    _init_asyncrt_chain,
     _async_complete,
-    _del_llcl_chain,
+    _del_asyncrt_chain,
     _async_wait,
     _async_wait_timeout,
 )
@@ -37,7 +37,7 @@ struct Batch[Input: Batchable, Output: Batchable]:
 
     fn __init__(inout self: Self, capacity: Int):
         var chain = Chain()
-        _init_llcl_chain(UnsafePointer[Chain].address_of(chain))
+        _init_asyncrt_chain(UnsafePointer[Chain].address_of(chain))
         self.chain = chain
         self.pending = List[Input](capacity=capacity)
         self.outputs = List[Output]()
@@ -92,7 +92,7 @@ struct Batch[Input: Batchable, Output: Batchable]:
 
     fn __del__(owned self):
         if self.chain.storage != UnsafePointer[Int]():
-            _del_llcl_chain(UnsafePointer[Chain].address_of(self.chain))
+            _del_asyncrt_chain(UnsafePointer[Chain].address_of(self.chain))
 
 
 struct Batcher[
