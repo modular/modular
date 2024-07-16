@@ -9,6 +9,7 @@ from pathlib import Path
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
 from sys.param_env import env_get_string
 
+from builtin.builtin_list import _LITRefPackHelper
 from memory import UnsafePointer
 
 
@@ -43,11 +44,18 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 
 
 @always_inline
-fn MLIR_func[name: StringLiteral, T: AnyTrivialRegType]() -> T:
+fn MLIR_func[
+    name: StringLiteral, T: AnyTrivialRegType, *Args: AnyType
+](*args: *Args) -> T:
+    var loaded_args_pack = _LITRefPackHelper(args._value).get_loaded_kgen_pack()
     var f = _get_dylib_function[
-        "MOF_LIB", name, _init_dylib, _destroy_dylib, T
+        "MOF_LIB",
+        name,
+        _init_dylib,
+        _destroy_dylib,
+        fn (__type_of(loaded_args_pack)) -> T,
     ]()
     var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
     if not ptr:
         abort("cannot load " + String(name) + " from graph library")
-    return f
+    return f(loaded_args_pack)

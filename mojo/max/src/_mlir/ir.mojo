@@ -68,7 +68,7 @@ struct DialectRegistry:
         _c.IR.mlirDialectHandleInsertDialect(handle.c, self.c)
 
     fn load_modular_dialects(self):
-        MLIR_func["MAXG_loadModularDialects", fn (Self.cType) -> None]()(self.c)
+        MLIR_func["MAXG_loadModularDialects", NoneType._mlir_type](self.c)
 
 
 @value
