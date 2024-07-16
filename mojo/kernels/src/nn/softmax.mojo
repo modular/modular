@@ -879,7 +879,9 @@ fn _online_softmax_kernel[
     )
 
     var p = LayoutTensor[
-        type, Layout.row_major(num_m_mmas * num_n_mmas, frag_size)
+        type,
+        Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     p.vectorize[1, 2]().transpose().copy_from(
         input_warp_tile0.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
@@ -888,7 +890,9 @@ fn _online_softmax_kernel[
     )
 
     var o = LayoutTensor[
-        type, Layout.row_major(num_m_mmas * num_n_mmas, frag_size)
+        type,
+        Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     o.fill(0.0)
 
@@ -961,10 +965,21 @@ fn _online_softmax_iter_for_mma_output[
     _layout1: Layout,
     _layout2: Layout,
 ](
-    output_reg_tile: LayoutTensor[type, _layout0],
-    p_reg_tile: LayoutTensor[type, _layout1],
+    output_reg_tile: LayoutTensor[
+        type,
+        _layout0,
+        address_space = AddressSpace.LOCAL,
+    ],
+    p_reg_tile: LayoutTensor[
+        type,
+        _layout1,
+        address_space = AddressSpace.LOCAL,
+    ],
     warp_scratch: LayoutTensor[
-        type, _layout2, address_space = AddressSpace.SHARED, masked=_
+        type,
+        _layout2,
+        address_space = AddressSpace.SHARED,
+        masked=_,
     ],
     rowmax: DTypePointer[type],
     rowsum: DTypePointer[type],

@@ -1661,11 +1661,15 @@ fn mha_single_batch[
     alias p_frag_simdwidth = p_frag_size // 2
 
     var p_reg_tile = LayoutTensor[
-        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size)
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = LayoutTensor[
-        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size)
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     output_reg_tile.fill(0.0)
 
