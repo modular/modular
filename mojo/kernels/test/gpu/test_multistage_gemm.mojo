@@ -217,7 +217,9 @@ fn multistage_gemm[
     alias c_frag_size = frag_size[2]
 
     var c_reg_tile = LayoutTensor[
-        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     c_reg_tile.fill(0)
