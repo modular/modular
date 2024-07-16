@@ -347,7 +347,7 @@ fn index_tensor[
         DimList(reshaped_data_rank),
     ]().stack_allocation()
     # Zeroing here to avoid doing it selectively within the nested loop below.
-    memset_zero[DType.index](start_tensor.data, reshaped_data_rank)
+    memset_zero(start_tensor.data.address, reshaped_data_rank)
 
     var output_buffer_copy_ind = 0
     for batch_dim in range(reshaped_indices_shape[0]):

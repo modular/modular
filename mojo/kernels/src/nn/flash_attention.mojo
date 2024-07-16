@@ -291,7 +291,9 @@ struct _Matmul[
 
         if aligned_n != N:
             for k in range(K):
-                memset_zero(packed_ptr + k * aligned_n + N, aligned_n - N)
+                memset_zero(
+                    packed_ptr.address + k * aligned_n + N, aligned_n - N
+                )
 
     @no_inline
     @staticmethod
@@ -313,7 +315,7 @@ struct _Matmul[
             _ = k
 
             if aligned_n != N:
-                memset_zero(output_ptr + N, aligned_n - N)
+                memset_zero(output_ptr.address + N, aligned_n - N)
 
             output_ptr += aligned_n
 
