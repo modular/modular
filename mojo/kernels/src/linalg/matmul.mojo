@@ -468,7 +468,7 @@ fn _small_matmul[
             vectorize[_wrapper, simd_width, unroll_factor=2](N)
 
         for m in range(M):
-            memset_zero(c.data + m * N, N)
+            memset_zero(c.data.address + m * N, N)
             for k in range(K - 1):
                 accum_out_row[normal_update](m, k)
             accum_out_row[last_update](m, K - 1)

@@ -86,8 +86,8 @@ fn init_matrices(
         a[i] = Int8(i & 127)
         b2[i] = Int8(i & 127)
 
-    memset_zero[DType.int32](c.data, 1024)
-    memset_zero[DType.int32](c2.data, 1024)
+    memset_zero(c.data.address, 1024)
+    memset_zero(c2.data.address, 1024)
 
     var b2m = NDBuffer[DType.int8, 2, DimList(64, 16)](b2.data.address)
     var bm = NDBuffer[DType.int8, 2, DimList(16, 64)](b_ptr.address)
@@ -116,7 +116,7 @@ fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
     var ptr = UnsafePointer.address_of(tc)
     var tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
-    memset_zero(tc_ptr, 64)
+    memset_zero(tc_ptr.address, 64)
 
     var nrows: UInt8 = 16
     var colb: UInt16 = 64
@@ -149,7 +149,7 @@ fn main():
     print(errors)
     if errors != 0:
         print("Matrices don't agree!")
-    memset_zero[DType.int32](c.data, 1024)
+    memset_zero(c.data.address, 1024)
     if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()
