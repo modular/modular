@@ -95,7 +95,7 @@ fn _softmax_2_pass_step1[
     for i in range(0, vector_end, simd_width):
         var simd_elem = input.load[width=simd_width](i)
         var new_max_vec = SIMD[type, simd_width](
-            running_max_vec.max(simd_elem).reduce_max()
+            max(running_max_vec, simd_elem).reduce_max()
         )
         running_sum_vec = running_sum_vec * exp(
             running_max_vec - new_max_vec
@@ -107,7 +107,7 @@ fn _softmax_2_pass_step1[
 
     for i in range(vector_end, length):
         var elem = input[i]
-        var new_max = running_max.max(elem)
+        var new_max = max(running_max, elem)
         running_sum = running_sum * exp(running_max - new_max) + exp(
             elem - new_max
         )
