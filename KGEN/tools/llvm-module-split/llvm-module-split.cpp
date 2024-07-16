@@ -119,32 +119,37 @@ int main(int argc, char **argv) {
                                          "':" + error.message()));
   }
 
-  auto outputLambda = [&](LLVMModuleAndContext subModule,
-                          std::optional<int64_t> idx) {
-    if (clOptions.outputPrefix == "-") {
-      output->os() << "##############################################\n";
-      if (idx)
-        output->os() << "# [LLVM Module Split: submodule " << *idx << "]\n";
-      else
-        output->os() << "# [LLVM Module Split: main module]\n";
-      output->os() << "##############################################\n";
-      output->os() << *subModule;
-      output->os() << "\n";
-    } else {
-      std::string outPath;
-      if (!idx)
-        outPath = clOptions.outputPrefix + ".ll";
-      else
-        outPath = (clOptions.outputPrefix + "." + Twine(*idx) + ".ll").str();
-      auto outFile = mlir::openOutputFile(outPath);
-      if (!outFile)
-        exit(clOptions.options.reportError("Cannot open output file: '" +
-                                           outPath + "."));
-      outFile->os() << *subModule;
-      outFile->keep();
-      llvm::outs() << "Write llvm module to " << outPath << "\n";
-    }
-  };
+  auto outputLambda =
+      [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
+          std::optional<int64_t> idx) mutable {
+        LLVMModuleAndContext subModule = produceModule();
+        if (clOptions.outputPrefix == "-") {
+          output->os() << "##############################################\n";
+          if (idx)
+            output->os() << "# [LLVM Module Split: submodule " << *idx << "]\n";
+          else
+            output->os() << "# [LLVM Module Split: main module]\n";
+          output->os() << "##############################################\n";
+          output->os() << *subModule;
+          output->os() << "\n";
+        } else {
+          std::string outPath;
+          if (!idx) {
+            outPath = clOptions.outputPrefix + ".ll";
+          } else {
+            outPath =
+                (clOptions.outputPrefix + "." + Twine(*idx) + ".ll").str();
+          }
+          auto outFile = mlir::openOutputFile(outPath);
+          if (!outFile) {
+            exit(clOptions.options.reportError("Cannot open output file: '" +
+                                               outPath + "."));
+          }
+          outFile->os() << *subModule;
+          outFile->keep();
+          llvm::outs() << "Write llvm module to " << outPath << "\n";
+        }
+      };
 
   if (clOptions.perFunctionSplit)
     splitPerFunction(std::move(module), outputLambda);

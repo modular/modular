@@ -9,6 +9,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/FunctionExtras.h"
 #include "llvm/IR/Module.h"
 
 namespace M::KGEN {
@@ -43,8 +44,14 @@ private:
 // Module Splitter
 //===----------------------------------------------------------------------===//
 
-using LLVMSplitProcessFn =
-    function_ref<void(LLVMModuleAndContext, std::optional<int64_t>)>;
+using LLVMSplitProcessFn = function_ref<void(
+    llvm::unique_function<LLVMModuleAndContext()>, std::optional<int64_t>)>;
+
+/// Helper to create a lambda that just forwards a preexisting modu.e.
+inline llvm::unique_function<LLVMModuleAndContext()>
+forwardModule(LLVMModuleAndContext &&module) {
+  return [module = std::move(module)]() mutable { return std::move(module); };
+}
 
 /// support for splitting an LLVM module into multiple parts using exported
 /// functions as anchors, and pull in all dependency on the call stack into one

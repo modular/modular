@@ -198,10 +198,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
 
   // If there is only one (or fewer) exported functions, forward the main
   // module.
-  if (transitiveDeps.size() <= 1) {
-    processFn(std::move(mainModule), std::nullopt);
-    return;
-  }
+  if (transitiveDeps.size() <= 1)
+    return processFn(forwardModule(std::move(mainModule)), std::nullopt);
 
   // Now for each export'd global value, compute the transitive set of
   // dependencies using DFS.
@@ -283,7 +281,7 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     }
   }
 
-  SmallVector<const llvm::MapVector<const llvm::GlobalValue *, unsigned> *>
+  SmallVector<llvm::MapVector<const llvm::GlobalValue *, unsigned> *>
       setsToProcess;
   setsToProcess.reserve(buckets.size() + transitiveDeps.size());
 
@@ -301,10 +299,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
       setsToProcess.push_back(&deps.deps);
   }
 
-  if (setsToProcess.size() <= 1) {
-    processFn(std::move(mainModule), std::nullopt);
-    return;
-  }
+  if (setsToProcess.size() <= 1)
+    return processFn(forwardModule(std::move(mainModule)), std::nullopt);
 
   // Sort the sets by to schedule the larger modules first.
   llvm::sort(setsToProcess,
@@ -318,8 +314,13 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     llvm::WriteBitcodeToFile(*mainModule, *buf);
   }
 
-  for (auto [idx, set] : llvm::enumerate(setsToProcess))
-    processFn(readAndMaterializeDependencies(buf.copy(), *set), idx);
+  for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
+    auto makeModule = [set = std::move(*set),
+                       buf = BufferRef(buf.copy())]() mutable {
+      return readAndMaterializeDependencies(std::move(buf), set);
+    };
+    processFn(std::move(makeModule), idx);
+  }
 }
 
 void LLVMModuleSplitterImpl::collectImmediateDependencies(
@@ -493,10 +494,8 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   for (const llvm::GlobalValue *value : toSplit)
     splitValue(value);
 
-  if (setsToProcess.size() <= 1) {
-    processFn(std::move(mainModule), std::nullopt);
-    return;
-  }
+  if (setsToProcess.size() <= 1)
+    return processFn(forwardModule(std::move(mainModule)), std::nullopt);
 
   // Prepare to materialize slices of the module by first writing the main
   // module as bitcode to a shared buffer.
@@ -506,8 +505,13 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
     llvm::WriteBitcodeToFile(*mainModule, *buf);
   }
 
-  for (auto [idx, set] : llvm::enumerate(setsToProcess))
-    processFn(readAndMaterializeDependencies(buf.copy(), set), idx);
+  for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
+    auto makeModule = [set = std::move(set),
+                       buf = BufferRef(buf.copy())]() mutable {
+      return readAndMaterializeDependencies(std::move(buf), set);
+    };
+    processFn(std::move(makeModule), idx);
+  }
 }
 
 /// Collect all of the immediate global value users of `value`.
