@@ -8,10 +8,10 @@
 import contextlib
 from typing import Iterable
 
-import max.graph.core as _c
-from max.graph import mlir
-from max.graph.graph_value import GraphValue
-from max.graph.type import Type
+from . import core as _c
+from . import mlir
+from .graph_value import GraphValue
+from .type import Type
 
 
 class Graph:
@@ -53,57 +53,88 @@ class Graph:
     [build a graph with MAX Graph](/max/graph/get-started).
     """
 
+    _mlir_op: mlir.Operation
+    inputs: tuple[GraphValue, ...]
+
     def __init__(
         self,
         name: str,
-        input_types: Iterable[Type] = None,
-        output_types: Iterable[Type] = None,
+        input_types: Iterable[Type] = (),
+        output_types: Iterable[Type] = (),
     ) -> None:
-        self._context = mlir.ir.Context()
-        self._location = mlir.ir.Location.unknown(context=self._context)
-        self.ctx_stack = contextlib.ExitStack()
+        self.name = name
+        self._mlir_context = mlir.Context()
+        self._context_stack = contextlib.ExitStack()
+        self._input_types = list(input_types)
+        self._output_types = list(output_types)
 
-        registry = mlir.ir.DialectRegistry()
+        registry = mlir.DialectRegistry()
         _c.load_modular_dialects(registry._CAPIPtr)
 
     def __enter__(self):
         # XXX: easy location decorator that works with python location info
-        self.ctx_stack.enter_context(self._context)
-        self.ctx_stack.enter_context(self._location)
-        self._module = mlir.ir.Module.create()
+        self._context_stack.enter_context(self._mlir_context)
+        self._context_stack.enter_context(
+            mlir.Location.unknown(context=self._mlir_context)
+        )
+
+        self._module = mlir.Module.create()
+        with mlir.InsertionPoint(self._module.body):
+            # Parse an empty graph.
+            # - Quick cludge should update this to use a real op builder ASAP
+            # - We have a simplified builder in C++, we can either call this or
+            #   create a similar wrapper using MLIR python builder registration.
+            argstring = ", ".join(
+                f"%{i}: {type.to_mlir()}"
+                for i, type in enumerate(self._input_types)
+            )
+            opstring = f"mo.graph @{self.name}({argstring})"
+            self._mlir_op = mlir.Operation.parse(opstring)
+
+        self.inputs = tuple(
+            GraphValue(self, arg) for arg in self._body.arguments
+        )
+
         return self
 
     def __exit__(self, *exc):
-        self.ctx_stack.__exit__(*exc)
+        self._context_stack.__exit__(*exc)
+
+    @property
+    def _body(self) -> mlir.Block:
+        return self._mlir_op.regions[0].blocks[0]
 
     def _add_variadic_result_op(
         self,
         name: str,
         operands: Iterable[GraphValue] = (),
-        # XXX: dict[str, Attribute]
-        attrs: Iterable[mlir.ir.NamedAttribute] = (),
-        # result_types: Iterable[Type] = (),
-        enable_result_type_inference: bool = True,
+        attrs: dict[str, mlir.Attribute] = {},  # ugh
     ) -> list[GraphValue]:
         # XXX: location info from stack inspection or stack trace
         assert all(o.graph == self for o in operands)
 
-        op = mlir.ir.Operation(
-            name=name,
-            operands=[o._mlir_value for o in operands],
-            attributes=attrs,
-            enable_result_type_inference=enable_result_type_inference,
-        )
+        with mlir.InsertionPoint(self._body):
+            op = mlir.Operation.create(
+                name=name,
+                operands=[o._mlir_value for o in operands],
+                attributes=attrs,
+                infer_type=True,
+            )
+        return [GraphValue(self, result) for result in op.results]
 
-    @property
-    def inputs(self):
-        return [42]
+    def _add_op(
+        self,
+        name: str,
+        operands: Iterable[GraphValue] = (),
+        attrs: dict[str, mlir.Attribute] = {},  # ugh
+    ) -> GraphValue:
+        return self._add_variadic_result_op(name, operands, attrs)[0]
 
-    def output(self, *args):
-        pass
+    def output(self, *outputs: GraphValue):
+        self._add_variadic_result_op("mo.output", outputs)
 
     def __repr__(self) -> str:
         return (
-            f"Graph(name='{self.name}', input_types={self.input_types},"
-            f" output_types={self.output_types})"
+            f"Graph(name='{self.name}', input_types={self._input_types},"
+            f" output_types={self._output_types})"
         )

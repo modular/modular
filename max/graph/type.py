@@ -6,13 +6,14 @@
 """Library for graph value types."""
 
 from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 from typing import Iterable, Union
 
-import max.graph.core as _c
-from max.graph import mlir
-from max.graph.dtype import DType
+from . import DType
+from . import core as _c
+from . import mlir
 
 
 @dataclass
@@ -279,19 +280,19 @@ class Type:
     about an individual Value.
     """
 
-    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Type:
-        """Converts to an mlir.ir.Type instance.
+    def to_mlir(self) -> mlir.Type:
+        """Converts to an mlir.Type instance.
 
         Args:
-            ctx: The mlir.ir.Context in which to create the type.
+            ctx: The mlir.Context in which to create the type.
 
         Returns:
-            An mlir.ir.Type in the specified Context.
+            An mlir.Type in the specified Context.
         """
         raise NotImplementedError
 
     @staticmethod
-    def from_mlir(t: mlir.ir.Type) -> Type:
+    def from_mlir(t: mlir.Type) -> Type:
         """Constructs a type from an MLIR type.
 
         Args:
@@ -338,24 +339,20 @@ class TensorType(Type):
         self.dtype = dtype
         self.dims = list(dims)
 
-    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Type:
+    def to_mlir(self) -> mlir.Type:
         """Converts to an _mlir.Type instance.
 
         Args:
-            ctx: The mlir.ir.Context in which to create the type.
+            ctx: The mlir.Context in which to create the type.
 
         Returns:
             An _mlir.Type in the specified Context.
         """
-        return _c.tensor_type_new(
-            ctx,
-            _c.dtype_new(ctx, self.dtype),
-            dims=[mlir.ir.Attribute(d.to_mlir(ctx)) for d in self.dims],
-            ranked=True,
-        )
+        dims = f"[{', '.join(str(dim) for dim in self.dims)}]"
+        return mlir.Type.parse(f"!mo.tensor<{dims}, {self.dtype._mlir}>")
 
     @staticmethod
-    def from_mlir(t: mlir.ir.Type) -> TensorType:
+    def from_mlir(t: mlir.Type) -> TensorType:
         """Constructs a tensor type from an MLIR type.
 
         Args:
@@ -446,7 +443,9 @@ class TensorType(Type):
             The number of elements the tensor contains.
         """
         if not self.is_static():
-            raise "can't find num elements since tensor has symbolic dims"
+            raise Exception(
+                "can't find num elements since tensor has symbolic dims"
+            )
 
         return math.prod(self.dims)
 
@@ -469,19 +468,19 @@ class _OpaqueType(Type):
     name: str
     """Identifier for the opaque type."""
 
-    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Type:
-        """Converts to an mlir.ir.Type instance.
+    def to_mlir(self) -> mlir.Type:
+        """Converts to an mlir.Type instance.
 
         Args:
-            ctx: The mlir.ir.Context in which to create the type.
+            ctx: The mlir.Context in which to create the type.
 
         Returns:
-            An mlir.ir.Type in the specified Context.
+            An mlir.Type in the specified Context.
         """
-        return _c.opaque_type_new(ctx, self.name)
+        return _c.opaque_type_new(mlir.Context.current, self.name)
 
     @staticmethod
-    def from_mlir(t: mlir.ir.Type) -> _OpaqueType:
+    def from_mlir(t: mlir.Type) -> _OpaqueType:
         """Constructs an opaque type from an MLIR type.
 
         Args:

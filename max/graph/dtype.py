@@ -14,19 +14,23 @@ from enum import Enum
 class DType(Enum):
     """The tensor data type."""
 
-    bool = 0
-    int8 = 1
-    int16 = 2
-    int32 = 3
-    int64 = 4
-    uint8 = 5
-    uint16 = 6
-    uint32 = 7
-    uint64 = 8
-    float16 = 9
-    float32 = 10
-    float64 = 11
-    unknown = 12
+    bool = 0, "bool"
+    int8 = 1, "i8"
+    int16 = 2, "i16"
+    int32 = 3, "i32"
+    int64 = 4, "i64"
+    uint8 = 5, "ui8"
+    uint16 = 6, "ui16"
+    uint32 = 7, "ui32"
+    uint64 = 8, "ui64"
+    float16 = 9, "f16"
+    float32 = 10, "f32"
+    float64 = 11, "f64"
+    unknown = 12, "unknown"
 
     def __repr__(self) -> str:
         return self.name
+
+    @property
+    def _mlir(self):
+        return self.value[1]

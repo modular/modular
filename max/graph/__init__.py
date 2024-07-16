@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """APIs to build inference graphs for MAX."""
 
-from max.graph.dtype import DType
-from max.graph.graph import Graph
-from max.graph.type import TensorType
+from .dtype import DType
+from .graph import Graph
+from .graph_value import GraphValue
+from .type import TensorType

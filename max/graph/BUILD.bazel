@@ -45,7 +45,6 @@ modular_pybind_extension(
         "//SDK:GraphPython",
     ],
     deps = [
-        "//GenericML:SupportGlobals",
         "//GenericML:modular-framework-common",
         "//ModularFramework/tools/mof",
     ],

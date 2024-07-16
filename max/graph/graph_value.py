@@ -4,7 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
+from dataclasses import dataclass
+
+from . import graph, mlir
+
+
+@dataclass
 class GraphValue:
     """Represents a symbolic value within a `Graph`.
 
@@ -24,3 +31,6 @@ class GraphValue:
     Note: All the methods in this type are documented as "Creates foo". This is
     a shorthand notation for "Adds a node representing an op that returns foo".
     """
+
+    graph: graph.Graph
+    _mlir_value: mlir.Value

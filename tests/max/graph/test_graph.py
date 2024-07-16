@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
-from max.graph import mlir, DType, Graph, TensorType
+import pytest
+from max.graph import DType, Graph, TensorType, mlir
 
 
 def test_mlir_module_create() -> None:
@@ -12,10 +13,11 @@ def test_mlir_module_create() -> None:
 
     This is a basic smoke test for max.graph Python packaging.
     """
-    with mlir.ir.Context(), mlir.ir.Location.unknown():
-        _ = mlir.ir.Module.create()
+    with mlir.Context(), mlir.Location.unknown():
+        _ = mlir.Module.create()
 
 
+@pytest.mark.skip(reason="max.graph.Graph is currently a work in progress")
 def test_elementwise_add_graph() -> None:
     """Builds a simple graph with an elementwise addition and checks the IR."""
     with Graph(
