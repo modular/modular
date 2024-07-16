@@ -880,7 +880,7 @@ struct Tensor[type: DType](
             shape.append(self.shape()[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.unsafe_ptr(), shape
+            self.unsafe_ptr().address, shape
         )
 
         writer.write(")")

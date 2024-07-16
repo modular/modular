@@ -375,7 +375,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
             shape.append(self.shape[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data, shape
+            self.data.address, shape
         )
 
         writer.write(")")
