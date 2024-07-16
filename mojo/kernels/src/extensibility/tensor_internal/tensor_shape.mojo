@@ -466,7 +466,7 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
           A new copy of the representation.
         """
         var dims_copy = DTypePointer[DType.index].alloc(self.get_rank())
-        memcpy(dims_copy, self.dims, self.get_rank())
+        memcpy(dims_copy.address, self.dims.address, self.get_rank())
 
         return Self {
             dims: dims_copy,
