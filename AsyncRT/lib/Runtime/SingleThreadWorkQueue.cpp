@@ -11,7 +11,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 
-#define DEBUG_TYPE "llcl"
+#define DEBUG_TYPE "asyncrt"
 
 using namespace M;
 using namespace AsyncRT;
@@ -104,7 +104,7 @@ private:
 
     // Do the work.
     {
-      TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.doWork"));
+      TimeTraceScope scope(AllWorkItemsProfilerEntry::create("asyncrt.doWork"));
       workItem.task();
     }
 

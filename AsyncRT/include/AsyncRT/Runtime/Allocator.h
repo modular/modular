@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file declares the M::AsyncRT::Allocator interface, which allows clients
-// of LLCL to implement custom allocation and other fancy policies.
+// of AsyncRT to implement custom allocation and other fancy policies.
 //
 //===----------------------------------------------------------------------===//
 

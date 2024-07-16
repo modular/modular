@@ -8,10 +8,10 @@ from lit.llvm import llvm_config
 from lit.llvm.subst import ToolSubst, FindTool
 import platform
 
-config.name = "LLCL"
+config.name = "AsyncRT"
 
 # test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join(config.modular_obj_root, "LLCL", "test")
+config.test_exec_root = os.path.join(config.modular_obj_root, "AsyncRT", "test")
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -21,7 +21,7 @@ config.substitutions.append(
     (
         "%driver-tblgen",
         (
-            'driver-tblgen -I "{0}/KGEN/include" -I "{0}/LLCL/include" '
+            'driver-tblgen -I "{0}/KGEN/include" -I "{0}/AsyncRT/include" '
             '-I "{0}/third-party/llvm-project/llvm/include"'
         ).format(config.modular_src_root),
     )

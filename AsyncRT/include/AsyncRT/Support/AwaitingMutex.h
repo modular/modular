@@ -12,7 +12,7 @@
 namespace M::AsyncRT {
 /// This class implements an "awaiting" mutex where threads waiting on a mutex
 /// donate themselves to the workqueue instead of sleeping. This is useful for
-/// parallel programming patterns with LLCL that contain suspension points
+/// parallel programming patterns with AsyncRT that contain suspension points
 /// inside exclusive code guarded by a mutex.
 ///
 /// ```c++

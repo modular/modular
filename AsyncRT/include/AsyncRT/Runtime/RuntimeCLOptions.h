@@ -27,7 +27,7 @@ namespace M::AsyncRT {
 class Runtime;
 
 /// Contains a number of command-line options that are shared among binaries
-/// that use the LLCL Runtime and want configurability of Allocator,
+/// that use the AsyncRT Runtime and want configurability of Allocator,
 /// WorkQueue, stopping behavior, etc.
 ///
 class RuntimeCLOptions {

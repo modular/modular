@@ -42,7 +42,7 @@ std::string addrToHex(void *p);
 /// Profiling entry for AsyncValue allocation and frees. Useful for tracking
 /// down the root cause of "destroying a non-available AsyncValue" errors.
 using AsyncProfilerEntry =
-    M::ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3), Trace::kLLCL>;
+    M::ProfilerEntry<Trace::EnableTrace(Trace::kAsyncRT, 3), Trace::kAsyncRT>;
 
 /// This is a future of the specified value type. Arbitrary C++ types may be
 /// used here, even non-copyable types and expensive ones like "your database".

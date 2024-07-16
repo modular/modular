@@ -28,8 +28,8 @@
 namespace M {
 
 /// This class is used to run a micro-benchmark. It is designed to be used by
-/// any C++ code with no dependency on LLCL or GraphRT. It is also designed to
-/// be flexible and extensible, so that it can apply to many use cases.
+/// any C++ code with no dependency on AsyncRT or GraphRT. It is also designed
+/// to be flexible and extensible, so that it can apply to many use cases.
 ///
 /// Usage:
 ///

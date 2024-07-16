@@ -44,7 +44,8 @@ static void forceLinkCompilerRT() {
   llvm::nulls() << (void *)&KGEN::registerConfig
                 << (void *)&KGEN::registerGlobals
                 << (void *)&KGEN::registerIntelAMX << (void *)&KGEN::registerIO
-                << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerPython
+                << (void *)&KGEN::registerAsyncRT
+                << (void *)&KGEN::registerPython
                 << (void *)&KGEN::registerMemory
                 << (void *)&KGEN::registerRandom
                 << (void *)&KGEN::registerSupport

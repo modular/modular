@@ -24,7 +24,7 @@
 #include <windows.h>
 #endif
 
-#define DEBUG_TYPE "llcl"
+#define DEBUG_TYPE "asyncrt"
 
 M::ErrorOr<std::vector<size_t>>
 M::AsyncRT::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,

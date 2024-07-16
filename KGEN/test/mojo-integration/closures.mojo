@@ -8,7 +8,7 @@
 from sys import argv
 
 
-from runtime.llcl import run
+from runtime.asyncrt import run
 
 
 @no_inline

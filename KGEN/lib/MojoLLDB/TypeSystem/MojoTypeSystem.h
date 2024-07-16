@@ -54,7 +54,7 @@ public:
   /// Return the parser's SharedState for this type system.
   LIT::SharedState &getSharedState();
 
-  /// Return the LLCL runtime for this type system.
+  /// Return the AsyncRT runtime for this type system.
   AsyncRT::Runtime &getRuntime();
 
   /// Return the Mojo parser context attached to this type system.

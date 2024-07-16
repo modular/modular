@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares top level "god object" that organizes LLCL thread pool,
+// This file declares top level "god object" that organizes AsyncRT thread pool,
 // memory allocator, etc.
 //
 // This header file is intended to be a low-dependency header that other things
@@ -316,7 +316,7 @@ struct RuntimeOptions {
   }
 };
 
-/// This represents one instance of the LLCL runtime, which can have multiple
+/// This represents one instance of the AsyncRT runtime, which can have multiple
 /// threads, a private heap for data, a way of reporting errors, and other
 /// context objects. This is also the natural unit for task cancellation.
 class Runtime final {

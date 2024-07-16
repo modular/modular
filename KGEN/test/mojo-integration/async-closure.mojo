@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from runtime.llcl import run
+from runtime.asyncrt import run
 
 
 @always_inline

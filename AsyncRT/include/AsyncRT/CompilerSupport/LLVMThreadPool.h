@@ -15,8 +15,8 @@
 namespace M::AsyncRT {
 class Runtime;
 
-/// This is an implement of the LLVM thread pool interface that wraps an LLCL
-/// runtime. This can be used to inject an LLCL runtime as the thread pool
+/// This is an implement of the LLVM thread pool interface that wraps an AsyncRT
+/// runtime. This can be used to inject an AsyncRT runtime as the thread pool
 /// implementation inside an MLIR context.
 class LLVMThreadPool : public llvm::ThreadPoolInterface {
 public:
@@ -31,7 +31,7 @@ public:
   unsigned getMaxConcurrency() const override;
 
 private:
-  /// The wrapped LLCL runtime.
+  /// The wrapped AsyncRT runtime.
   AsyncRT::Runtime &runtime;
 
   /// Turnstile for a task group or for the whole queue that can be waited on.

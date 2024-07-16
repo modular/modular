@@ -86,7 +86,7 @@ modular_cc_library(
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
     local_defines = select({
-        "//:llcl_no_affinity_setting": ["LLCL_NO_AFFINITY"],
+        "//:asyncrt_no_affinity_setting": ["ASYNCRT_NO_AFFINITY"],
         "//conditions:default": [],
     }),
     deps = [

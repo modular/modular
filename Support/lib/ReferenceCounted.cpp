@@ -28,7 +28,7 @@ void M::verifyNoLiveReferenceCountedObjects(const char *errorMessage) {
     return;
 
   // Otherwise print an error and crash.
-  fprintf(stderr, "LLCL internal error %s\n", errorMessage);
+  fprintf(stderr, "AsyncRT internal error %s\n", errorMessage);
   fflush(stderr);
   abort();
 #endif // MODULAR_DEBUG

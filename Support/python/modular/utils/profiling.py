@@ -265,7 +265,7 @@ class TimeTrace:
         """
         # List of known profiling categories, in reverse order
         # These are only used for error messages.
-        labels = ["Other", "LLCL", "Mem", "Mojo"]
+        labels = ["Other", "AsyncRT", "Mem", "Mojo"]
         # Retrieve recorded profiling levels
         trace_levels = self.version_info["modular-profiling-level"]
         # Convert expected & recorded levels to list of ints in reverse order
