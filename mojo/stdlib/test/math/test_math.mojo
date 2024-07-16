@@ -366,6 +366,8 @@ def test_gcd():
     assert_equal(gcd(1, 0), 1)
     assert_equal(gcd(-2, 4), 2)
     assert_equal(gcd(-2, -4), 2)
+    assert_equal(gcd(-2, 0), 2)
+    assert_equal(gcd(2, -4), 2)
     assert_equal(gcd(24826148, 45296490), 526)
     assert_equal(gcd(0, 9), 9)
     assert_equal(gcd(4, 4), 4)
