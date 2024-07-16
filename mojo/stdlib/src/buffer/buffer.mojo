@@ -276,7 +276,7 @@ struct Buffer[
     @always_inline
     fn zero(self):
         """Sets all bytes of the Buffer to 0."""
-        memset_zero(self.data, len(self))
+        memset_zero(self.data.address, len(self))
 
     @always_inline
     fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
@@ -1296,7 +1296,7 @@ struct NDBuffer[
             The buffer must be contiguous.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        memset_zero(self.data, len(self))
+        memset_zero(self.data.address, len(self))
 
     @always_inline
     fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
