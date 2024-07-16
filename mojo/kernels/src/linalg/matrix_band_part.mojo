@@ -9,7 +9,7 @@ from algorithm.functional import _elementwise_impl, unswitch
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import mogg_register
-from runtime.llcl import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple

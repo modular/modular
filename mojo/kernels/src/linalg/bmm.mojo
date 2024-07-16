@@ -20,7 +20,7 @@ from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
 from memory import memset_zero
 from register import mogg_register
-from runtime.llcl import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 
 from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type

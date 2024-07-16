@@ -14,7 +14,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
-from runtime.llcl import parallelism_level
+from runtime.asyncrt import parallelism_level
 
 from utils.index import StaticIntTuple, StaticTuple
 from utils.loop import unroll

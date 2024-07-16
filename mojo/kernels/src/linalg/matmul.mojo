@@ -12,7 +12,7 @@ from buffer.buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import memset_zero
 from memory.unsafe import DTypePointer
-from runtime.llcl import MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 
 from utils.index import Index, StaticIntTuple
 
