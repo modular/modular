@@ -553,7 +553,7 @@ struct Result(Stringable, EqualityComparable, KeyElement):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __hash__(self) -> Int:
+    fn __hash__(self) -> UInt:
         return int(self.code)
 
     @no_inline
