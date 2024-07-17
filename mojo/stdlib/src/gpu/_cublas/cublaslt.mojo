@@ -1580,7 +1580,7 @@ fn cublasLtMatmulPreferenceSetAttribute(
 # Experimental: Logger callback type.
 # .
 alias cublasLtLoggerCallback_t = fn (
-    Int32, DTypePointer[DType.int8], DTypePointer[DType.int8]
+    Int32, UnsafePointer[Int8], UnsafePointer[Int8]
 ) -> None
 
 
