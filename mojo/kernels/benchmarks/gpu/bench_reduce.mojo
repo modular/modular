@@ -60,7 +60,7 @@ fn run_reduce[
     var input_buf_device = vec_device.tensor
     var output_buf_device = res_device.tensor
 
-    ctx.enqueue_copy_to_device(vec_device.buffer, in_host)
+    ctx.enqueue_copy_to_device(vec_device.buffer, in_host.address)
 
     @always_inline
     @parameter
