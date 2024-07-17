@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 import pytest
+import sys
 from max.graph import DType, Graph, TensorType, graph, mlir
 
 
@@ -29,6 +30,7 @@ def test_elementwise_add_graph() -> None:
         graph.output(graph.inputs[0] + 1)
 
 
+@pytest.mark.skipif(sys.version_info.minor > 10, reason="MSDK-636")
 def test_location():
     def bar():
         return graph.location()
