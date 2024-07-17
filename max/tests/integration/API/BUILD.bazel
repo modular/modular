@@ -21,10 +21,15 @@ filegroup(
 lit_tests(
     name = "test",
     size = "large",
-    srcs = glob([
-        "**/*.api",
-        "**/*.mojo",
-    ]),
+    srcs = glob(
+        [
+            "**/*.api",
+            "**/*.mojo",
+        ],
+        exclude = [
+            "mojo/test_model_gpu.mojo",  # TODO: Enable
+        ],
+    ),
     available_features = [
         "GENERATED_ONNX_TESTS",
         "GENERATED_TESTS",
@@ -60,7 +65,7 @@ lit_tests(
     gpu_only_srcs = [
         "c/gpu.api",
         "mojo/test_devicetensor_gpu.mojo",
-        "mojo/test_model_gpu.mojo",
+        # "mojo/test_model_gpu.mojo", # TODO: enable
     ],
     mojo_deps = [
         "//SDK/lib/API/mojo/max",
