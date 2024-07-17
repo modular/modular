@@ -1491,7 +1491,7 @@ struct LayoutTensor[
                 )
 
                 async_copy[element_size_bytes](
-                    src_ptr + src_idx, dst_ptr + dst_idx
+                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
                 )
 
         else:
@@ -1501,7 +1501,9 @@ struct LayoutTensor[
                 alias src_idx = make_layout(src.element_layout, src_layout)(i)
                 alias dst_idx = make_layout(self.element_layout, self.layout)(i)
 
-                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                async_copy[4](
+                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                )
 
     @always_inline
     fn copy_from_async_masked_src[
@@ -1577,11 +1579,11 @@ struct LayoutTensor[
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
                     async_copy[element_size_bytes](
-                        src_ptr + src_idx, dst_ptr + dst_idx
+                        src_ptr.address + src_idx, dst_ptr.address + dst_idx
                     )
                 # else:
                 #     async_copy[element_size_bytes](
-                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
+                #         src_ptr.address + src_idx, dst_ptr.address + dst_idx, 0
                 #     )
 
         else:
@@ -1595,10 +1597,12 @@ struct LayoutTensor[
                 var n: Int
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
-                    async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                    async_copy[4](
+                        src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                    )
                 # else:
                 #     async_copy[element_size_bytes](
-                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
+                #         src_ptr.address + src_idx, dst_ptr.address + dst_idx, 0
                 #     )
 
     fn linspace(self):
