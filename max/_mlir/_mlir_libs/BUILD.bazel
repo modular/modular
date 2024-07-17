@@ -14,10 +14,34 @@ copy_files(
     ],
 )
 
+copy_files(
+    name = "dialect_srcs",
+    srcs = [
+        "//GenericML:MOBindingIncGen",
+        "//GenericML:RMOBindingIncGen",
+        "@llvm-project//mlir/python:DialectCorePyFiles",
+    ],
+    outs = [
+        "dialects/_ods_common.py",
+        "dialects/mo.py",
+        "dialects/rmo.py",
+    ],
+)
+
 filegroup(
     name = "py_srcs",
-    srcs = glob(["*.py"]) + [
+    srcs = glob(["**/*.py"]) + [
         ":copy_srcs",
+        ":dialect_srcs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "modular_py_srcs",
+    srcs = [
+        "__init__.py",
+        "dialects/__init__.py",
     ],
     visibility = ["//visibility:public"],
 )
