@@ -24,14 +24,14 @@ fn cpu_free[dtype: DType](ptr: DTypePointer[dtype]):
 
 fn gpu_managed_alloc[layout: Layout, dtype: DType]() -> DTypePointer[dtype]:
     try:
-        return _malloc_managed[dtype](layout.size())
+        return _malloc_managed[Scalar[dtype]](layout.size())
     except e:
         return abort[DTypePointer[dtype]]("Can't alloc gpu memory")
 
 
 fn gpu_free[dtype: DType](ptr: DTypePointer[dtype]):
     try:
-        return _free(ptr)
+        return _free(ptr.address)
     except e:
         abort("Can't free gpu memory")
 
