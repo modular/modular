@@ -575,7 +575,7 @@ fn _load_matrix_frag[
     ) * simd_size
 
     return ld_matrix[mma_tile.dtype, __output_width, transposed](
-        mma_tile.ptr + lane_offset
+        mma_tile.ptr.address + lane_offset
     )
 
 
