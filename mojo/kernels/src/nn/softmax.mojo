@@ -838,6 +838,11 @@ fn softmax[
         )
 
 
+# ===----------------------------------------------------------------------=== #
+# Online softmax in flash attention.
+# ===----------------------------------------------------------------------=== #
+
+
 fn _online_softmax_kernel[
     WM: Int,
     WN: Int,
@@ -1048,52 +1053,63 @@ fn _online_softmax_iter_for_mma_output[
             shuffle_xor(p_frag_rowmax[2 * m_mma + 1], 1),
         )
 
-    # Write per warp rowmax to shared memory.
-    if lane % 4 == 0:
+    # If a row is split across multiple warps, communicate via shared memory
+    # to achieve the rowwise max.
+    @parameter
+    if num_rowwise_warps > 1:
+        # Write per warp rowmax to shared memory.
+        if lane % 4 == 0:
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-            # Each thread handle two rows in the mma output.
-            var row0 = m_mma * MMA_M + int(lane) // (MMA_N // p_frag_simdwidth)
-            var row1 = row0 + MMA_M // 2
-            warp_scratch[warp_x.value, row0] = p_frag_rowmax[2 * m_mma]
-            warp_scratch[warp_x.value, row1] = p_frag_rowmax[2 * m_mma + 1]
-
-    barrier()
-
-    # Reduce the warpwise rowmax.
-    if lane % 4 == 0:
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-            var row0 = m_mma * MMA_M + int(lane) // (MMA_N // p_frag_simdwidth)
-            var row1 = row0 + MMA_M // 2
-
-            # Reduce rowmax. Warps in the same row do the samea reduction.
             @parameter
-            for w in range(num_rowwise_warps):
-                p_frag_rowmax[2 * m_mma] = max(
-                    p_frag_rowmax[2 * m_mma],
-                    rebind[Scalar[type]](warp_scratch[w, row0]),
+            for m_mma in range(num_m_mmas):
+                # Each thread handle two rows in the mma output.
+                var row0 = m_mma * MMA_M + int(lane) // (
+                    MMA_N // p_frag_simdwidth
                 )
-                p_frag_rowmax[2 * m_mma + 1] = max(
-                    p_frag_rowmax[2 * m_mma + 1],
-                    rebind[Scalar[type]](warp_scratch[w, row1]),
+                var row1 = row0 + MMA_M // 2
+                warp_scratch[warp_x.value, row0] = p_frag_rowmax[2 * m_mma]
+                warp_scratch[warp_x.value, row1] = p_frag_rowmax[2 * m_mma + 1]
+
+        barrier()
+
+        # Reduce the warpwise rowmax.
+        if lane % 4 == 0:
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+                var row0 = m_mma * MMA_M + int(lane) // (
+                    MMA_N // p_frag_simdwidth
                 )
+                var row1 = row0 + MMA_M // 2
+
+                # Reduce rowmax. Warps in the same row do the same reduction.
+                @parameter
+                for w in range(num_rowwise_warps):
+                    p_frag_rowmax[2 * m_mma] = max(
+                        p_frag_rowmax[2 * m_mma],
+                        rebind[Scalar[type]](warp_scratch[w, row0]),
+                    )
+                    p_frag_rowmax[2 * m_mma + 1] = max(
+                        p_frag_rowmax[2 * m_mma + 1],
+                        rebind[Scalar[type]](warp_scratch[w, row1]),
+                    )
 
     @parameter
     for m_mma in range(num_m_mmas):
         # Broadcast to 4 threads in the same row.
         @parameter
-        for shift in range(1, 3):
-            p_frag_rowmax[2 * m_mma] = max(
-                p_frag_rowmax[2 * m_mma],
-                shuffle_xor(p_frag_rowmax[2 * m_mma], shift),
-            )
-            p_frag_rowmax[2 * m_mma + 1] = max(
-                p_frag_rowmax[2 * m_mma + 1],
-                shuffle_xor(p_frag_rowmax[2 * m_mma + 1], shift),
-            )
+        if num_rowwise_warps > 1:
+
+            @parameter
+            for shift in range(1, 3):
+                p_frag_rowmax[2 * m_mma] = max(
+                    p_frag_rowmax[2 * m_mma],
+                    shuffle_xor(p_frag_rowmax[2 * m_mma], shift),
+                )
+                p_frag_rowmax[2 * m_mma + 1] = max(
+                    p_frag_rowmax[2 * m_mma + 1],
+                    shuffle_xor(p_frag_rowmax[2 * m_mma + 1], shift),
+                )
 
         # Corrention since previous max may be updated.
         correction[2 * m_mma] = exp(
@@ -1146,56 +1162,64 @@ fn _online_softmax_iter_for_mma_output[
                 p_frag_rowsum[2 * m_mma + 1], shift
             )
 
-    barrier()
-    # Write per warp rowmax to shared memory.
-    if lane % 4 == 0:
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-            # Each thread handle two rows in the mma output.
-            var row0 = m_mma * MMA_M + int(lane // (MMA_N // p_frag_simdwidth))
-            var row1 = row0 + MMA_M // 2
-            warp_scratch[warp_x.value, row0] = p_frag_rowsum[2 * m_mma]
-            warp_scratch[warp_x.value, row1] = p_frag_rowsum[2 * m_mma + 1]
-    # Guard writing warp_scratch
-    barrier()
-
-    # Reduce the warpwise rowsum.
-    if lane % 4 == 0:
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-            var row0 = m_mma * MMA_M + int(lane // (MMA_N // p_frag_simdwidth))
-            var row1 = row0 + MMA_M // 2
-            p_frag_rowsum[2 * m_mma] = 0.0
-            p_frag_rowsum[2 * m_mma + 1] = 0.0
-
-            # Reduce rowmax. Warps in the same row do the samea reduction.
-            @parameter
-            for w in range(num_rowwise_warps):
-                p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
-                    warp_scratch[w, row0]
-                )
-
-                p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
-                    warp_scratch[w, row1]
-                )
-
-    # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
-    # TODO: Use Shuffle up
     @parameter
-    for m_mma in range(num_m_mmas):
-        # Broadcast to 4 threads in the same row.
+    if num_rowwise_warps > 1:
+        # Guard access of the shared memory scratch.
+        barrier()
+
+        # Write per warp rowmax to shared memory.
+        if lane % 4 == 0:
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+                # Each thread handle two rows in the mma output.
+                var row0 = m_mma * MMA_M + int(
+                    lane // (MMA_N // p_frag_simdwidth)
+                )
+                var row1 = row0 + MMA_M // 2
+                warp_scratch[warp_x.value, row0] = p_frag_rowsum[2 * m_mma]
+                warp_scratch[warp_x.value, row1] = p_frag_rowsum[2 * m_mma + 1]
+        # Guard writing warp_scratch
+        barrier()
+
+        # Reduce the warpwise rowsum.
+        if lane % 4 == 0:
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+                var row0 = m_mma * MMA_M + int(
+                    lane // (MMA_N // p_frag_simdwidth)
+                )
+                var row1 = row0 + MMA_M // 2
+                p_frag_rowsum[2 * m_mma] = 0.0
+                p_frag_rowsum[2 * m_mma + 1] = 0.0
+
+                # Reduce rowmax. Warps in the same row do the same reduction.
+                @parameter
+                for w in range(num_rowwise_warps):
+                    p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
+                        warp_scratch[w, row0]
+                    )
+
+                    p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
+                        warp_scratch[w, row1]
+                    )
+
+        # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
+        # TODO: Use Shuffle up
         @parameter
-        for shift in range(1, 3):
-            p_frag_rowsum[2 * m_mma] = max(
-                p_frag_rowsum[2 * m_mma],
-                shuffle_xor(p_frag_rowsum[2 * m_mma], shift),
-            )
-            p_frag_rowsum[2 * m_mma + 1] = max(
-                p_frag_rowsum[2 * m_mma + 1],
-                shuffle_xor(p_frag_rowsum[2 * m_mma + 1], shift),
-            )
+        for m_mma in range(num_m_mmas):
+            # Broadcast to 4 threads in the same row.
+            @parameter
+            for shift in range(1, 3):
+                p_frag_rowsum[2 * m_mma] = max(
+                    p_frag_rowsum[2 * m_mma],
+                    shuffle_xor(p_frag_rowsum[2 * m_mma], shift),
+                )
+                p_frag_rowsum[2 * m_mma + 1] = max(
+                    p_frag_rowsum[2 * m_mma + 1],
+                    shuffle_xor(p_frag_rowsum[2 * m_mma + 1], shift),
+                )
 
     # Correct previous result
     @parameter
@@ -1226,4 +1250,8 @@ fn _online_softmax_iter_for_mma_output[
             + p_frag_rowsum[2 * m_mma + 1]
         )
 
-    barrier()
+    # Guard the access to shared memory scratch. The same memory may be used
+    # after this function.
+    @parameter
+    if num_rowwise_warps > 1:
+        barrier()

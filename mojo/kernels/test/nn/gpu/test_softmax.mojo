@@ -11,6 +11,7 @@ from random import rand, random_float64, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from gpu import WARP_SIZE
 from gpu.host.device_context import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
@@ -181,14 +182,14 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     _ = in_device_ref
 
 
-fn test_gpu_online_softmax(ctx: DeviceContext) raises:
+fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     print("== test_online_softmax")
 
     alias type = DType.float32
     alias rank = 3
-    alias WM = 32
     alias seqlen = 256
-    alias shape = StaticIntTuple[rank](1, 32, 256)
+    alias shape = StaticIntTuple[rank](1, WM, 256)
+    alias num_threads = seqlen // 2 // WN * WARP_SIZE
 
     var in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
     var out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
@@ -212,7 +213,7 @@ fn test_gpu_online_softmax(ctx: DeviceContext) raises:
 
     var online_softmax_gpu = ctx.compile_function[
         _online_softmax_kernel[
-            32, 32, DType.float32, Layout.row_major(shape[1], shape[2])
+            WM, WN, DType.float32, Layout.row_major(shape[1], shape[2])
         ]
     ]()
     ctx.enqueue_function(
@@ -220,7 +221,7 @@ fn test_gpu_online_softmax(ctx: DeviceContext) raises:
         in_device,
         out_device,
         grid_dim=(1,),
-        block_dim=(128,),
+        block_dim=(num_threads,),
     )
 
     @parameter
@@ -262,6 +263,9 @@ def main():
             test_gpu_softmax(ctx)
             test_gpu_softmax_half[DType.bfloat16](ctx)
             test_gpu_softmax_half[DType.float16](ctx)
-            test_gpu_online_softmax(ctx)
+            # Test general online-softmax, communicating data via shared memory.
+            test_gpu_online_softmax[32, 32](ctx)
+            # Test covering entire row within one warp
+            test_gpu_online_softmax[16, 128](ctx)
     except e:
         print("CUDA_ERROR:", e)
