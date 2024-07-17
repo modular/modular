@@ -31,7 +31,7 @@ def shape_of(v: Symbol) -> Symbol:
     Returns:
         A symbolic rank-1 tensor representing the input's shape.
     """
-    var g = v.graph()
+    g = v.graph()
     return g.op(
         "rmo.mo.shape_of", v, TensorType(DType.int64, v.tensor_type().rank())
     )
@@ -63,7 +63,7 @@ def cast(v: Symbol, dtype: DType) -> Symbol:
 # ===----------------------------------------------------------------------=== #
 
 
-fn rebind(v: Symbol, out_dims: List[Dim], message: String) raises -> Symbol:
+def rebind(v: Symbol, out_dims: List[Dim], message: String) -> Symbol:
     """Rebinds a symbolic tensor to a specified set of dimensions.
 
     This does not mutate the symbolic tensor passed in, but instead adds a
@@ -83,13 +83,88 @@ fn rebind(v: Symbol, out_dims: List[Dim], message: String) raises -> Symbol:
         tensor, but with the symbolic shape asserted to `out_dims`.
 
     """
-    var g = v.graph()
+    g = v.graph()
     if v.tensor_type().rank() != len(out_dims):
         raise error(
             g, "rebind out_dims length must match the rank of the input shape"
         )
 
-    var ctx = g._context()
+    known_dims = Dict[String, Int64]()
+
+    def try_unify_symbolic_to_static(x: Dim, y: Dim):
+        """Fills `known_dims` with mappings from symbolic dims to static dims.
+
+        Will raise if a symbolic dim is defined twice.
+        """
+        if not (x.is_symbolic() and y.is_static()):
+            return
+
+        x_str = str(x)
+        y_int = y.num_elements()
+
+        if x_str not in known_dims:
+            known_dims[x_str] = y_int
+            return
+
+        known_dim = known_dims[x_str]
+        if known_dim != y_int:
+            raise error(
+                g,
+                "rebind out_dims statically known to be incorrect. Dimension"
+                ' (value "'
+                + x_str
+                + '") rebinds to two different constants: '
+                + str(known_dim)
+                + " and "
+                + str(y_int),
+            )
+
+    # Build mapping from symbolic to known statically known values.
+    for i in range(len(out_dims)):
+        src_dim = v.shape()[i]
+        dst_dim = out_dims[i]
+
+        try_unify_symbolic_to_static(src_dim, dst_dim)
+        try_unify_symbolic_to_static(dst_dim, src_dim)
+
+    def known_dim_size(d: Dim) -> Optional[Int64]:
+        """Loads the length of a dim if known.
+
+        The length is known in two cases:
+          1. The dim is static.
+          2. The dim is symbolic and in `known_dims`.
+        """
+        if d.is_static():
+            return d.num_elements()
+
+        if d.is_symbolic() and str(d) in known_dims:
+            return known_dims[str(d)]
+
+        return None
+
+    # Ensure all statically known dims are equivalent.
+    for i in range(len(out_dims)):
+        src_dim = v.shape()[i]
+        dst_dim = out_dims[i]
+
+        src_size = known_dim_size(src_dim)
+        dst_size = known_dim_size(dst_dim)
+        if src_size and dst_size and src_size.value() != dst_size.value():
+            raise error(
+                g,
+                "rebind out_dims statically known to be incorrect. Dimension"
+                ' (name: "'
+                + str(src_dim)
+                + ", value: "
+                + str(src_size.value())
+                + '") cannot rebind to Dimension (name: '
+                + str(dst_dim)
+                + ", value: "
+                + str(dst_size.value())
+                + ")",
+            )
+
+    ctx = g._context()
     return g.op(
         "rmo.rebind_tensor_shape",
         (v),
@@ -121,19 +196,19 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
         A symbolic tensor with the same number of elements as the input tensor,
         and whose rank is 1 less than the rank of the input tensor.
     """
-    var g = v.graph()
-    var v_type = v.tensor_type()
-    var rank = v_type.rank()
+    g = v.graph()
+    v_type = v.tensor_type()
+    rank = v_type.rank()
     if axis < 0:
         axis += rank
 
-    var new_shape = g.op(
+    new_shape = g.op(
         "rmo.mo.squeeze_shape",
         List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
         TensorType(DType.int64, rank - 1),
     )
 
-    var squeezed_dims = List[Dim]()
+    squeezed_dims = List[Dim]()
     for i in range(rank):
         if i != axis:
             squeezed_dims.append(v_type.dims[i])
@@ -158,9 +233,9 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         whose rank is 1 larger than the rank of the input tensor. The result's
         shape at the `axis` dimension is a static dimension of size 1.
     """
-    var g = v.graph()
-    var type = v.tensor_type()
-    var rank = type.rank()
+    g = v.graph()
+    type = v.tensor_type()
+    rank = type.rank()
     # Negative values add an extra 1, as -1 adds a new dim at the _end_.
     if axis < 0:
         axis += rank + 1
@@ -178,13 +253,13 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         return v.reshape(1)
 
     # TODO: Bug - passing v_type.rank() + 1 into a variadic Int64 corrupts it.
-    var new_shape = g.op(
+    new_shape = g.op(
         "rmo.mo.unsqueeze_shape",
         List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
         TensorType(DType.int64, rank + 1),
     )
 
-    var dims = List[Dim]()
+    dims = List[Dim]()
     for i in range(rank):
         if i == axis:
             dims.append(1)
@@ -197,7 +272,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
 
 # TODO(GRA-578): Remove old reshape apis once we have dim expressions and remove dynamic dimensions.
 # Only this version should be needed in the future.
-fn reshape(v: Symbol, shape: List[Dim]) raises -> Symbol:
+def reshape(v: Symbol, shape: List[Dim]) -> Symbol:
     """Reshapes a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
@@ -221,10 +296,10 @@ fn reshape(v: Symbol, shape: List[Dim]) raises -> Symbol:
         A symbolic tensor with the same elements as the original tensor, but
         in a new shape. Its symbolic shape is the same as `shape`.
     """
-    var g = v.graph()
+    g = v.graph()
 
-    var ctx = g._context()
-    var newShapeAttr = _shape_attr(ctx, "newShape", shape)
+    ctx = g._context()
+    newShapeAttr = _shape_attr(ctx, "newShape", shape)
     return g.nvop(
         "rmo.reshape",
         List[Symbol](v),
@@ -233,7 +308,7 @@ fn reshape(v: Symbol, shape: List[Dim]) raises -> Symbol:
     )[0]
 
 
-fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
+def reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) -> Symbol:
     """Reshapes a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
@@ -257,8 +332,8 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
         A symbolic tensor with the same elements as the original tensor, but
         in a new shape. Its symbolic shape is the same as `out_dims`.
     """
-    var g = v.graph()
-    var dtype = shape.tensor_type().dtype
+    g = v.graph()
+    dtype = shape.tensor_type().dtype
     if not (dtype is DType.int64 or dtype is DType.int32):
         raise error(g, "reshape shape must be int32 or int64")
     if shape.tensor_type().rank() != 1:
@@ -270,7 +345,7 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     )
 
 
-fn reshape(v: Symbol, shape: List[Symbol]) raises -> Symbol:
+def reshape(v: Symbol, shape: List[Symbol]) -> Symbol:
     """Reshapes a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
@@ -294,10 +369,10 @@ fn reshape(v: Symbol, shape: List[Symbol]) raises -> Symbol:
         in a new shape. It has a rank equal to the length of `shape`,
         but every symbolic dimension of the result is a dynamic size.
     """
-    var g = v.graph()
+    g = v.graph()
 
     if len(shape) == 0:  # Can't `stack` an empty tuple
-        var dims = List[Dim]()
+        dims = List[Dim]()
         return reshape(v, g.constant(Tensor[DType.int64](TensorShape(0))), dims)
 
     for i in range(len(shape)):
@@ -308,7 +383,7 @@ fn reshape(v: Symbol, shape: List[Symbol]) raises -> Symbol:
     return reshape(v, stack(shape))
 
 
-fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
+def reshape(v: Symbol, shape: Symbol) -> Symbol:
     """Reshapes a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
@@ -332,19 +407,19 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
         in a new shape. It has a rank equal to the static size of `shape`,
         but every symbolic dimension of the result is a dynamic size.
     """
-    var g = v.graph()
+    g = v.graph()
 
-    var shape_t = shape.tensor_type()
+    shape_t = shape.tensor_type()
     if (shape_t.rank() != 1) or (not shape_t.dims[0].is_static()):
         raise error(g, "reshape shape requires static shape shape")
-    var out_dims = List[Dim]()
+    out_dims = List[Dim]()
     for _ in range(shape_t.dims[0].num_elements()):
         out_dims.append(Dim.dynamic())
 
     return reshape(v, shape, out_dims)
 
 
-fn reshape_like(v: Symbol, like: Symbol) raises -> Symbol:
+def reshape_like(v: Symbol, like: Symbol) -> Symbol:
     """Reshapes a symbolic tensor to the same shape as another symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
@@ -370,9 +445,9 @@ fn reshape_like(v: Symbol, like: Symbol) raises -> Symbol:
 
 
 @always_inline
-fn broadcast_to(
+def broadcast_to(
     v: Symbol, shape: List[Dim], location: Optional[_SourceLocation] = None
-) raises -> Symbol:
+) -> Symbol:
     """Broadcasts a symbolic tensor.
 
     Broadcasts the input tensor to the specified shape.
@@ -389,10 +464,10 @@ fn broadcast_to(
         A symbolic tensor with the same elements as the original tensor, but
         in a new shape. Its symbolic shape is the same as `shape`.
     """
-    var g = v.graph()
+    g = v.graph()
 
-    var ctx = g._context()
-    var newShapeAttr = _shape_attr(ctx, "newShape", shape)
+    ctx = g._context()
+    newShapeAttr = _shape_attr(ctx, "newShape", shape)
     try:
         return g.nvop(
             "rmo.broadcast_to",
@@ -425,8 +500,8 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
         It has the same elements and dtype, but the order of the elements
         is different according to the transposition.
     """
-    var g = input.graph()
-    var input_type = input.tensor_type()
+    g = input.graph()
+    input_type = input.tensor_type()
     if input_type.rank() < 2:
         raise "transpose input must have rank >= 2"
     if x < 0:
@@ -436,8 +511,8 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     if x < 0 or x >= input_type.rank() or y < 0 or y >= input_type.rank():
         raise "transpose dim outside range"
 
-    var dims = List[Dim]()
-    var ptr = DTypePointer[DType.int64].alloc(input_type.rank())
+    dims = List[Dim]()
+    ptr = DTypePointer[DType.int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.append(input_type.dims[i])
         Scalar.store(ptr, i, i)
@@ -447,7 +522,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     Scalar.store(ptr, x, y)
     Scalar.store(ptr, y, x)
 
-    var transpose_indices = g.constant(
+    transpose_indices = g.constant(
         Tensor[DType.int64](TensorShape(input_type.rank()), ptr)
     )
 

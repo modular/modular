@@ -130,6 +130,22 @@ fn test_broadcast_to_error() raises:
         _ = g[1].broadcast_to("y", 1)
 
 
+fn test_rebind() raises:
+    var g = Graph(TensorType(DType.float32, "x", "y", "x"))
+
+    with assert_raises(
+        contains="rebind out_dims statically known to be incorrect"
+    ):
+        _ = g[0].rebind(List[Dim](1, 1, 3))
+
+    g = Graph(TensorType(DType.float32, 1, 1, 1, 6))
+
+    with assert_raises(
+        contains="rebind out_dims statically known to be incorrect"
+    ):
+        _ = g[0].rebind(List[Dim](1, 1, 1, 3))
+
+
 def main():
     test_reshape()
     test_reshape_error()
@@ -137,3 +153,4 @@ def main():
     test_reshape_runtime_zero()
     test_broadcast_to()
     test_broadcast_to_error()
+    test_rebind()
