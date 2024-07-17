@@ -7,7 +7,7 @@
 # COM: TODO(KERN-645)
 
 from layout import LayoutTensor, Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import UNKNOWN_VALUE
+from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 
 
 #  CHECK-LABEL: test_fill_and_print
@@ -409,9 +409,33 @@ fn test_tile_and_vectorize():
             tensor_v_8x2.print()
 
 
+# CHECK-LABEL: test_copy_from
+fn test_copy_from():
+    print("== test_copy_from")
+    alias layout = Layout(
+        IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    )
+
+    var dynamic_layout = RuntimeLayout[layout](
+        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+    )
+    var src_tensor = LayoutTensor[DType.float32, layout](
+        DTypePointer[DType.float32].alloc(dynamic_layout.size()), dynamic_layout
+    )
+    src_tensor.linspace()
+    var dst_tensor = LayoutTensor[DType.float32, layout](
+        DTypePointer[DType.float32].alloc(dynamic_layout.size()), dynamic_layout
+    )
+    dst_tensor.fill(0)
+    dst_tensor.print()
+    dst_tensor.copy_from(src_tensor)
+    dst_tensor.print()
+
+
 def main():
     test_fill_and_print()
     test_set_and_get_items()
     test_tile()
     test_tile_and_distribute()
     test_tile_and_vectorize()
+    test_copy_from()

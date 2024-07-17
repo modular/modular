@@ -24,7 +24,11 @@ from utils.numerics import max_finite
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
 
-from .runtime_layout import RuntimeLayout, coalesce as runtime_coalesce
+from .runtime_layout import (
+    RuntimeLayout,
+    coalesce as runtime_coalesce,
+    make_layout as make_runtime_layout,
+)
 from .runtime_tuple import RuntimeTuple
 
 
@@ -1176,30 +1180,50 @@ struct LayoutTensor[
 
         return (int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
 
+    # Returns the linear index of an elem_i 0 ... size(layout).
+    #
+    @always_inline
+    fn __get_element_idx[elem_i: Int](self) -> Int:
+        alias element_size = int(self.element_size)
+
+        @parameter
+        if layout.all_dims_known():
+            alias idx = make_layout(element_layout, layout)(
+                elem_i * element_size
+            )
+            return idx
+        else:
+            var idx = make_runtime_layout(
+                self.runtime_element_layout, self.runtime_layout
+            )(elem_i * element_size)
+            return idx
+
     @always_inline
     fn copy_from(self, other: LayoutTensor):
         alias other_mask = other.masked
         alias other_layout = other.layout
 
-        alias dst_size = layout.size()
-        alias src_size = other_layout.size()
-
         alias dst_element_size = int(self.element_size)
         alias src_element_size = int(other.element_size)
 
         constrained[
-            dst_size == src_size, "copy_from should move data of the same size"
+            layout.known_shape() and other_layout.known_shape(),
+            "copy_from must move data of statically known shape",
         ]()
 
+        alias dst_size = layout.size()
+        alias src_size = other_layout.size()
+        constrained[
+            dst_size == src_size,
+            "copy_from should move data of the same size",
+        ]()
         constrained[
             dst_element_size == src_element_size, "copy_from should move"
         ]()
-
         constrained[
             not other_mask or dst_element_size == 1,
             "For masked src only scalar copy is supported",
         ]()
-
         alias is_masked = self.masked or other_mask
         constrained[
             not is_masked, "copy_from doesn't support masked tensors."
@@ -1207,18 +1231,15 @@ struct LayoutTensor[
 
         @parameter
         for i in range(dst_size):
-            alias src_idx = make_layout(other.element_layout, other_layout)(
-                i * src_element_size
-            )
-            alias dst_idx = make_layout(self.element_layout, self.layout)(
-                i * dst_element_size
-            )
+            var src_idx = other.__get_element_idx[i]()
+            var dst_idx = self.__get_element_idx[i]()
             var src_element = Element[dtype, other.element_layout].load[
                 other.address_space
             ](
                 rebind[DTypePointer[dtype, other.address_space]](
                     other.ptr
-                ).offset(src_idx)
+                ).offset(src_idx),
+                other.runtime_element_layout,
             )
             alias dst_element_type = Element[dtype, self.element_layout]
             dst_element_type(
