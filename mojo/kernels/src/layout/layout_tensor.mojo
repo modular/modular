@@ -2296,8 +2296,7 @@ fn copy_local_to_sram[
                 dst_vec[j + 1] = vec_converted[1]
 
             SIMD[size=elem_size].store[
-                alignment = alignof[SIMD[dst_type, src.element_size]](),
-                address_space = _GPUAddressSpace.SHARED,
+                alignment = alignof[SIMD[dst_type, src.element_size]]()
             ](dst_frag.ptr + dst_idx, dst_vec)
 
 
