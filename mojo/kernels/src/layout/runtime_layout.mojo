@@ -10,6 +10,7 @@ from .int_tuple import flatten, to_int, UNKNOWN_VALUE
 from .layout import (
     coalesce as coalesce_layout,
     composition as composition_layout,
+    make_layout as make_layout_static,
     is_tuple,
 )
 
@@ -113,3 +114,27 @@ fn coalesce[
             idx += 1
 
     return RuntimeLayout[coalesce_layout(l, keep_rank)](res_shape, res_stride)
+
+
+fn make_layout[
+    l1: Layout, l2: Layout
+](a: RuntimeLayout[l1], b: RuntimeLayout[l2]) -> RuntimeLayout[
+    make_layout_static(l1, l2)
+]:
+    var res_shape = RuntimeTuple[make_layout_static(l1, l2).shape]()
+    var res_stride = RuntimeTuple[make_layout_static(l1, l2).stride]()
+
+    alias a_length = len(flatten(l1.shape))
+    alias b_length = len(flatten(l2.shape))
+
+    @parameter
+    for i in range(a_length):
+        res_shape.value[i] = a.shape.value[i]
+        res_stride.value[i] = a.stride.value[i]
+
+    @parameter
+    for i in range(b_length):
+        res_shape.value[a_length + i] = b.shape.value[i]
+        res_stride.value[a_length + i] = b.stride.value[i]
+
+    return RuntimeLayout(res_shape, res_stride)

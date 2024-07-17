@@ -13,6 +13,7 @@ from layout.runtime_layout import (
     RuntimeTuple,
     IntTuple,
     coalesce,
+    make_layout,
 )
 
 from layout.layout import print_layout, crd2idx, coalesce as coalesce_layout
@@ -123,6 +124,7 @@ def test_sublayout_indexing():
     assert_equal(str(layout.sublayout[1]()), "(4:1)")
 
 
+# CHECK-LABEL: test_coalesce
 def test_coalesce():
     print("== test_coalesce")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -145,6 +147,21 @@ def test_coalesce():
     assert_equal(str(coalesce_layout(layout_t_2)), "((-1, -1, 8):(-1, 8, 1))")
 
 
+# CHECK-LABEL: test_make_layout
+def test_make_layout():
+    print("== test_make_layout")
+    alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var l_a = RuntimeLayout[layout_t](
+        RuntimeTuple[layout_t.shape](2, 2), RuntimeTuple[layout_t.stride](2, 1)
+    )
+    var l_b = RuntimeLayout[layout_t](
+        RuntimeTuple[layout_t.shape](4, 4), RuntimeTuple[layout_t.stride](4, 1)
+    )
+    assert_equal(
+        str(make_layout(l_a, l_b)), "(((2, 2), (4, 4)):((2, 1), (4, 1)))"
+    )
+
+
 def main():
     test_runtime_layout_const()
     test_static_and_dynamic_size()
@@ -152,3 +169,4 @@ def main():
     test_tiled_layout_indexing_linear_idx()
     test_sublayout_indexing()
     test_coalesce()
+    test_make_layout()

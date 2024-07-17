@@ -86,6 +86,17 @@ fn make_layout(*layouts: Layout) -> Layout:
     return Layout(shape, stride)
 
 
+# Workaround MOCO-976.
+fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
+    var shape = IntTuple()
+    var stride = IntTuple()
+    shape.append(layout_a.shape)
+    shape.append(layout_b.shape)
+    stride.append(layout_a.stride)
+    stride.append(layout_b.stride)
+    return Layout(shape, stride)
+
+
 @value
 struct _LayoutIter:
     var index: Int
