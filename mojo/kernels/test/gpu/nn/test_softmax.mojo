@@ -188,8 +188,12 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     alias type = DType.float32
     alias rank = 3
     alias seqlen = 256
-    alias shape = StaticIntTuple[rank](1, WM, 256)
-    alias num_threads = seqlen // 2 // WN * WARP_SIZE
+
+    # For testing purpose, call online softmax twice and each time updates half
+    # seq_len. Limit to WM rows and arrange warps in N dim.
+    alias shape = StaticIntTuple[rank](1, WM, seqlen)
+    alias num_warps = seqlen // (2 * WN)
+    alias num_threads = num_warps * WARP_SIZE
 
     var in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
     var out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
@@ -220,8 +224,8 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
         online_softmax_gpu,
         in_device,
         out_device,
-        grid_dim=(1,),
-        block_dim=(num_threads,),
+        grid_dim=1,
+        block_dim=num_threads,
     )
 
     @parameter
