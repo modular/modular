@@ -223,18 +223,7 @@ struct Layout(
 
     @no_inline
     fn format_to(self, inout writer: Formatter):
-        # FIXME(#38125):
-        #   The following variadic invocation of `writer.write` failed with a
-        #   compiler assertion, but the expanded 1-arg-per-write-call below
-        #   does not crash.
-        #
-        # writer.write("(", self.shape, ":", self.stride, ")")
-
-        writer.write("(")
-        writer.write(self.shape)
-        writer.write(":")
-        writer.write(self.stride)
-        writer.write(")")
+        writer.write("(", self.shape, ":", self.stride, ")")
 
     fn __eq__(self, other: Layout) -> Bool:
         return self.shape == other.shape and self.stride == other.stride
