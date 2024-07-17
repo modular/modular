@@ -50,6 +50,11 @@ parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
                         llvm::opt::OptSpecifier sanitizeId = {},
                         llvm::opt::OptSpecifier debugInfoLanguageId = {});
 
+/// Warn users when doing debug builds with a compiler in debug mode.
+void warnBuildingForDebugWithDebugBuiltCompiler(
+    const State &state,
+    KGEN::CompilationOptions::DebugInfoLevel debugInfoLevel);
+
 /// Parse the common configuration options for Mojo related to target info,
 /// populating the provided `compilationOptions` argument. On success, `target`
 /// is populated with the selected compilation target.

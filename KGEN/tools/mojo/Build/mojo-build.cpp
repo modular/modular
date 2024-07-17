@@ -375,6 +375,8 @@ static int build(const State &subcommandState) {
           parseArgs(state, args, sourceMgr, options, mlirCtx, target))
     return *exitCode;
 
+  warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
+
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));

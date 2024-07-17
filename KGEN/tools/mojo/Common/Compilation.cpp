@@ -100,6 +100,20 @@ ErrorOrSuccess M::parseCompilationOptions(
   return success();
 }
 
+void M::warnBuildingForDebugWithDebugBuiltCompiler(
+    const State &state,
+    KGEN::CompilationOptions::DebugInfoLevel debugInfoLevel) {
+#ifdef MODULAR_DEBUG
+  if (debugInfoLevel == M::KGEN::CompilationOptions::kFullDebugInfo)
+    state.reportWarning(
+        "Performing debug build with Mojo compiler built in debug mode:\n"
+        "It is not necessary to use a debug build of the Mojo compiler to "
+        "produce debuggable Mojo programs.\n"
+        "You can safely use a release build of the compiler for this, which "
+        "will result in faster build times.\n");
+#endif
+}
+
 ErrorOrSuccess M::parseTargetOptions(
     const State &state, const llvm::opt::InputArgList &args,
     CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
