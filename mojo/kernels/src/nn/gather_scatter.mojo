@@ -817,12 +817,12 @@ fn scatter_nd_generator[
             # TODO: Owning = True or False?
             var outp = DeviceBuffer(
                 ctx,
-                output.data,
+                output.data.address,
                 data.num_elements(),
                 owning=False,
             )
             var inp = DeviceBuffer(
-                ctx, data.data, data.num_elements(), owning=False
+                ctx, data.data.address, data.num_elements(), owning=False
             )
             ctx.enqueue_copy_device_to_device(
                 outp,

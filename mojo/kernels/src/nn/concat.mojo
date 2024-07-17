@@ -1426,12 +1426,15 @@ fn _concat_gpu[
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
-                    output.data.offset(input_size),
+                    output.data.offset(input_size).address,
                     inputs[i].num_elements(),
                     owning=False,
                 )
                 var inp = DeviceBuffer(
-                    ctx, inputs[i].data, inputs[i].num_elements(), owning=False
+                    ctx,
+                    inputs[i].data.address,
+                    inputs[i].num_elements(),
+                    owning=False,
                 )
                 ctx.enqueue_copy_device_to_device(
                     outp,
