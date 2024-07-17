@@ -8,7 +8,7 @@
 from sys import llvm_intrinsic
 
 from memory.reference import AddressSpace
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from .memory import AddressSpace as GPUAddressSpace
 
@@ -90,35 +90,6 @@ fn mbarrier[
 
 
 @always_inline("nodebug")
-fn mbarrier[
-    type: DType, address_space: AddressSpace
-](address: DTypePointer[type, address_space]):
-    """Makes the mbarrier object track all prior copy async operations initiated
-    by the executing thread.
-
-    Args:
-      address: The mbarrier object is at the location.
-    """
-
-    _mbarrier_impl(address.address)
-
-
-@always_inline("nodebug")
-fn mbarrier_init[
-    type: DType
-](shared_mem: DTypePointer[type, GPUAddressSpace.SHARED], num_threads: Int32):
-    """Initialize shared memory barrier for N number of threads.
-
-    Args:
-        shared_mem: Shared memory barrier to initialize.
-        num_threads: Number of threads participating.
-    """
-    llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
-        shared_mem, num_threads
-    )
-
-
-@always_inline("nodebug")
 fn mbarrier_init[
     type: AnyType
 ](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED], num_threads: Int32):
@@ -135,8 +106,8 @@ fn mbarrier_init[
 
 @always_inline("nodebug")
 fn mbarrier_arrive[
-    type: DType
-](shared_mem: DTypePointer[type, GPUAddressSpace.SHARED]) -> Int:
+    type: AnyType
+](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED]) -> Int:
     """Commits the arrival of thead to a shared memory barrier.
 
     Args:
@@ -152,24 +123,6 @@ fn mbarrier_arrive[
 fn mbarrier_test_wait[
     type: AnyType
 ](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED], state: Int) -> Bool:
-    """Test waiting for the memory barrier.
-
-    Args:
-        shared_mem: Shared memory barrier.
-        state: Memory barrier arrival state.
-
-    Returns:
-        True if all particpating thread arrived to the barrier.
-    """
-    return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
-        shared_mem, state
-    )
-
-
-@always_inline("nodebug")
-fn mbarrier_test_wait[
-    type: DType
-](shared_mem: DTypePointer[type, GPUAddressSpace.SHARED], state: Int) -> Bool:
     """Test waiting for the memory barrier.
 
     Args:

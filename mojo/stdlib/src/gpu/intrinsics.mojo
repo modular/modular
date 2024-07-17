@@ -10,7 +10,7 @@ from sys.info import alignof
 from sys.intrinsics import llvm_intrinsic
 
 from memory import UnsafePointer
-from memory.unsafe import DTypePointer, bitcast
+from memory.unsafe import bitcast
 
 from .sys import is_sm_greater_equal
 
@@ -20,7 +20,7 @@ from .sys import is_sm_greater_equal
 
 
 @always_inline
-fn ldg[type: DType](x: DTypePointer[type]) -> Scalar[type]:
+fn ldg[type: DType](x: UnsafePointer[Scalar[type]]) -> Scalar[type]:
     """Load a register variable from global state space via non-coherent cache.
     """
 
@@ -30,25 +30,25 @@ fn ldg[type: DType](x: DTypePointer[type]) -> Scalar[type]:
     if type is DType.uint8 or type is DType.int8:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i8", Int8](
-                x.bitcast[DType.int8](), alignment
+                x.bitcast[Int8](), alignment
             )
         )
     elif type is DType.uint16 or type is DType.int16:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i16", Int16](
-                x.bitcast[DType.int16](), alignment
+                x.bitcast[Int16](), alignment
             )
         )
     elif type is DType.uint32 or type is DType.int32:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i32", Int32](
-                x.bitcast[DType.int32](), alignment
+                x.bitcast[Int32](), alignment
             )
         )
     elif type is DType.uint64 or type is DType.int64:
         return bitcast[type, 1](
             llvm_intrinsic["llvm.nvvm.ldg.global.i.i64", Int64](
-                x.bitcast[DType.int64](), alignment
+                x.bitcast[Int64](), alignment
             )
         )
     elif type is DType.float32:
