@@ -8,7 +8,7 @@ import math
 
 from layout.dynamic_tuple import *
 
-from utils._format import Formatter, write_to
+from utils._format import Formatter
 from utils.variant import Variant
 
 # IntTuple definition
@@ -33,7 +33,7 @@ struct IntDelegate(ElementDelegate):
         T: CollectionElement
     ](inout writer: Formatter, a: Variant[T]):
         if a.isa[Int]():
-            write_to(writer, a[Int])
+            writer.write(a[Int])
         else:
             abort("Unexpected data type.")
 

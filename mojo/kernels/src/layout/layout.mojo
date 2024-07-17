@@ -6,7 +6,7 @@
 
 from builtin.string import _calc_initial_buffer_size_int32
 
-from utils._format import Formattable, Formatter, write_to
+from utils._format import Formattable, Formatter
 
 from .dynamic_tuple import *
 from .int_tuple import (
@@ -224,17 +224,17 @@ struct Layout(
     @no_inline
     fn format_to(self, inout writer: Formatter):
         # FIXME(#38125):
-        #   The following variadic invocation of `write_to` failed with a
-        #   compiler assertion, but the expanded 1-arg-per-write_to-call below
+        #   The following variadic invocation of `writer.write` failed with a
+        #   compiler assertion, but the expanded 1-arg-per-write-call below
         #   does not crash.
         #
-        # write_to(writer, "(", self.shape, ":", self.stride, ")")
+        # writer.write("(", self.shape, ":", self.stride, ")")
 
-        write_to(writer, "(")
-        write_to(writer, self.shape)
-        write_to(writer, ":")
-        write_to(writer, self.stride)
-        write_to(writer, ")")
+        writer.write("(")
+        writer.write(self.shape)
+        writer.write(":")
+        writer.write(self.stride)
+        writer.write(")")
 
     fn __eq__(self, other: Layout) -> Bool:
         return self.shape == other.shape and self.stride == other.stride

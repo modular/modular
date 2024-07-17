@@ -271,13 +271,13 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
 
     @no_inline
     fn format_to(self, inout writer: Formatter):
-        write_to(writer, "(")
-        write_to(writer, str(bits))
-        write_to(writer, ",")
-        write_to(writer, str(base))
-        write_to(writer, ",")
-        write_to(writer, str(shift))
-        write_to(writer, ")")
+        writer.write("(")
+        writer.write(str(bits))
+        writer.write(",")
+        writer.write(str(base))
+        writer.write(",")
+        writer.write(str(shift))
+        writer.write(")")
 
     @no_inline
     fn __str__(self) -> String:
@@ -343,13 +343,13 @@ struct SwizzleEx(LayoutTrait, Stringable, Formattable):
         return False
 
     fn format_to(self, inout writer: Formatter):
-        write_to(writer, "(")
-        write_to(writer, str(self.bits))
-        write_to(writer, ",")
-        write_to(writer, str(self.base))
-        write_to(writer, ",")
-        write_to(writer, str(self.shift))
-        write_to(writer, ")")
+        writer.write("(")
+        writer.write(str(self.bits))
+        writer.write(",")
+        writer.write(str(self.base))
+        writer.write(",")
+        writer.write(str(self.shift))
+        writer.write(")")
 
     fn __str__(self) -> String:
         return String.format_sequence(self)

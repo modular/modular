@@ -41,14 +41,14 @@ struct GeneralDelegate(ElementDelegate):
         var v = a[General]
 
         if v.isa[Int]():
-            write_to(writer, v[Int])
+            writer.write(v[Int])
         if v.isa[Float32]():
             # FIXME(#37912):
             #   Implement a Mojo float formatting algorithm that can be used
             #   format floating point values even on GPU, and use it here.
-            write_to(writer, "<UnsupportedFormattedFloat:#37912>")
+            writer.write("<UnsupportedFormattedFloat:#37912>")
         if v.isa[String]():
-            write_to(writer, v[String])
+            writer.write(v[String])
 
 
 alias GeneralTupleBase = DynamicTupleBase[General, GeneralDelegate]
