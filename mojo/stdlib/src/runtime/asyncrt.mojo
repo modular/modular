@@ -393,12 +393,12 @@ struct MojoCallContextPtr:
     """
 
     # Actually a MojoCallContext*
-    alias ptr_type = DTypePointer[DType.invalid]
+    alias ptr_type = UnsafePointer[NoneType]
     var ptr: Self.ptr_type
 
     @always_inline
     fn __init__() -> MojoCallContextPtr:
-        return MojoCallContextPtr {ptr: DTypePointer[DType.invalid]()}
+        return MojoCallContextPtr {ptr: UnsafePointer[NoneType]()}
 
     @always_inline
     fn __init__(ptr: Self.ptr_type) -> MojoCallContextPtr:
