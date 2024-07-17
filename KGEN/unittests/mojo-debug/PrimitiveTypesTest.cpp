@@ -149,6 +149,15 @@ TEST(PrimitiveTypesTest, testTupleAndSIMD) {
 (simd<4, si16>) simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4))"));
 }
 
+TEST(PrimitiveTypesTest, testPointerToClosure) {
+  StopContext ctx = buildAndLaunch("pointer-to-closure.mojo");
+  SBValue callback =
+      ctx.frame.FindVariable("self").GetChildMemberWithName("callback");
+  EXPECT_STREQ(callback.GetTypeName(),
+               "!kgen.pointer<!lit.signature<() -> !kgen.none>>");
+  EXPECT_NE(callback.GetValueAsAddress(), (lldb::addr_t)0);
+}
+
 TEST(PrimitiveTypesTest, testBuiltinTypes) {
   StopContext ctx = buildAndLaunch("builtin-types.mojo");
   EXPECT_EQ(ctx.runCommand("v a_var_index").output,
