@@ -216,6 +216,7 @@ run_tool(
         "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
     },
+    env_inherit = ["MODULAR_PROFILE_FILENAME"],
     tags = ["manual"],
     tool = ":mojo",
     visibility = ["//visibility:private"],
