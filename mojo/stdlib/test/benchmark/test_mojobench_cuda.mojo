@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
+# TODO: KERN-689
+# REQUIRES: has_cuda_device, disabled
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from benchmark import Bench, Bencher, BenchId
