@@ -115,7 +115,7 @@ fn run_reduce[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(res_host, res_device.buffer)
+    ctx.enqueue_copy_from_device(res_host.address, res_device.buffer)
 
     for i in range(out_size):
         assert_equal(res_host[i], expected_vals[i])

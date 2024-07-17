@@ -153,7 +153,7 @@ fn run_elementwise[
     var in_buffer = DeviceNDBuffer[type, rank](dims, ctx=ctx)
     var out_buffer = DeviceNDBuffer[type, rank](dims, ctx=ctx)
 
-    ctx.enqueue_copy_to_device(in_buffer.buffer, in_host.data)
+    ctx.enqueue_copy_to_device(in_buffer.buffer, in_host.data.address)
 
     var in_tensor = in_buffer.tensor
     var out_tensor = out_buffer.tensor
@@ -217,7 +217,7 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host.data, out_buffer.buffer)
+    ctx.enqueue_copy_from_device(out_host.data.address, out_buffer.buffer)
 
     _ = in_buffer
     _ = out_buffer

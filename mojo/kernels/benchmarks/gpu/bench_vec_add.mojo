@@ -18,9 +18,9 @@ from testing import assert_equal
 
 
 fn vec_func(
-    in0: DTypePointer[DType.float32],
-    in1: DTypePointer[DType.float32],
-    out: DTypePointer[DType.float32],
+    in0: UnsafePointer[Float32],
+    in1: UnsafePointer[Float32],
+    out: UnsafePointer[Float32],
     len: Int,
 ):
     var tid: UInt = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
@@ -34,9 +34,9 @@ fn bench_vec_add(
     inout b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
     alias dtype = DType.float32
-    var in0_host = DTypePointer[dtype].alloc(length)
-    var in1_host = DTypePointer[dtype].alloc(length)
-    var out_host = DTypePointer[dtype].alloc(length)
+    var in0_host = UnsafePointer[Scalar[dtype]].alloc(length)
+    var in1_host = UnsafePointer[Scalar[dtype]].alloc(length)
+    var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
 
     for i in range(length):
         in0_host[i] = i
@@ -46,8 +46,8 @@ fn bench_vec_add(
     var in1_device = context.create_buffer[dtype](length)
     var out_device = context.create_buffer[dtype](length)
 
-    context.enqueue_copy_to_device(in0_device, in0_host)
-    context.enqueue_copy_to_device(in1_device, in1_host)
+    context.enqueue_copy_to_device(in0_device, in0_host.address)
+    context.enqueue_copy_to_device(in1_device, in1_host.address)
 
     var func = context.compile_function[vec_func]()
 
@@ -79,7 +79,7 @@ fn bench_vec_add(
         ThroughputMeasure(BenchMetric.flops, length),
     )
     context.synchronize()
-    context.enqueue_copy_from_device(out_host, out_device)
+    context.enqueue_copy_from_device(out_host.address, out_device)
 
     for i in range(length):
         assert_equal(i + 2, out_host[i])

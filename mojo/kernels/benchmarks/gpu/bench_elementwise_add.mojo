@@ -31,9 +31,9 @@ fn bench_add[
     randn(input0_ptr_host.address, size)
     randn(input1_ptr_host.address, size)
     randn(output_ptr_host.address, size)
-    ctx.enqueue_copy_to_device(input0_ptr, input0_ptr_host)
-    ctx.enqueue_copy_to_device(input1_ptr, input1_ptr_host)
-    ctx.enqueue_copy_to_device(output_ptr, output_ptr_host)
+    ctx.enqueue_copy_to_device(input0_ptr, input0_ptr_host.address)
+    ctx.enqueue_copy_to_device(input1_ptr, input1_ptr_host.address)
+    ctx.enqueue_copy_to_device(output_ptr, output_ptr_host.address)
 
     var input0 = NDBuffer[type, rank](input0_ptr.ptr, shape)
     var input1 = NDBuffer[type, rank](input1_ptr.ptr, shape)
@@ -66,7 +66,7 @@ fn bench_add[
         ThroughputMeasure(BenchMetric.elements, size * sizeof[type]() * 3),
     )
 
-    ctx.enqueue_copy_from_device(output_ptr_host, output_ptr)
+    ctx.enqueue_copy_from_device(output_ptr_host.address, output_ptr)
 
     alias nelts = simdwidthof[type]()
     for i in range(0, size, nelts):
