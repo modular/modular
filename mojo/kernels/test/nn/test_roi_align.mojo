@@ -12,7 +12,7 @@ from testing import *
 
 
 # CHECK-LABEL: test_roi_align_avg
-def test_roi_align_avg():
+def test_roi_align_avg[scale_type: DType]():
     print("=== test_roi_align_avg")
 
     alias in_shape = DimList(1, 10, 10, 1)
@@ -33,14 +33,14 @@ def test_roi_align_avg():
     rois[StaticIntTuple[2](0, 3)] = 4
     rois[StaticIntTuple[2](0, 4)] = 4
 
-    roi_align_nhwc[DType.float32, in_shape, roi_shape, False,](
+    roi_align_nhwc[aligned=False](
         output.make_dims_unknown(),
         input,
         rois,
         out_shape.at[1]().get(),
         out_shape.at[2]().get(),
-        1.0,
-        2.0,
+        Scalar[scale_type](1.0),
+        Scalar[scale_type](2.0),
     )
 
     assert_almost_equal(output[(0, 0, 0, 0)], 4.4000000953674316)
@@ -96,7 +96,7 @@ def test_roi_align_max():
     rois[StaticIntTuple[2](0, 3)] = 4
     rois[StaticIntTuple[2](0, 4)] = 4
 
-    roi_align_nhwc[DType.float32, in_shape, roi_shape, False, "MAX",](
+    roi_align_nhwc[aligned=False, mode="MAX"](
         output.make_dims_unknown(),
         input,
         rois,
@@ -138,5 +138,6 @@ def test_roi_align_max():
 
 
 def main():
-    test_roi_align_avg()
+    test_roi_align_avg[DType.float32]()
+    test_roi_align_avg[DType.float64]()
     test_roi_align_max()

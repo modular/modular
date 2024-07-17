@@ -104,7 +104,7 @@ fn _bilinear_interpolate[
 fn roi_align_nhwc[
     type: DType,
     input_shape: DimList,
-    roi_shape: DimList,
+    roi_shape: DimList, //,
     aligned: Bool,
     mode: StringLiteral = "AVG",
 ](
@@ -113,8 +113,8 @@ fn roi_align_nhwc[
     rois: NDBuffer[type, 2, roi_shape],
     output_height: Int,
     output_width: Int,
-    spatial_scale: Float32,
-    sampling_ratio: Float32,
+    in_spatial_scale: Scalar,
+    in_sampling_ratio: Scalar,
 ):
     """
     Compute ROIAlign a batch of rois of shape [M, 5] where the first dim is the
@@ -134,8 +134,9 @@ fn roi_align_nhwc[
         rois: Batched ROIs box coordinates.
         output_height: Pooled output height.
         output_width: Pooled output width.
-        spatial_scale: Scale of ROIs from spatial scale to pooling scale.
-        sampling_ratio: Number of sampling points in the interpolation grid
+        in_spatial_scale: Scale factor to remap the roi_align coordinates to the
+          input coordinates.
+        in_sampling_ratio: Number of sampling points in the interpolation grid
           used to compute the output value of each pooled bin.
     """
 
@@ -143,8 +144,15 @@ fn roi_align_nhwc[
         type.is_floating_point(),
         "ROI align input / output must be a floating point",
     ]()
+    constrained[
+        in_spatial_scale.type.is_floating_point(),
+        "the scale factor must be in floating point format",
+    ]()
 
     debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
+
+    var spatial_scale = in_spatial_scale.cast[DType.float32]()
+    var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
 
     var n_regions = rois.dim(0)
     var height = input.dim(1)
@@ -200,6 +208,7 @@ fn roi_align_nhwc[
         @parameter
         @always_inline
         fn init_fn[type: DType]() -> Scalar[type]:
+            @parameter
             if mode == "AVG":
                 return 0
             else:
@@ -210,6 +219,7 @@ fn roi_align_nhwc[
         fn update_fn[
             type: DType
         ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            @parameter
             if mode == "AVG":
                 return a + b
             else:
@@ -220,6 +230,7 @@ fn roi_align_nhwc[
         fn reduce_fn[
             type: DType
         ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            @parameter
             if mode == "AVG":
                 return a / b
             else:
