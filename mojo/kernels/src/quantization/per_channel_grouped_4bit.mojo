@@ -20,79 +20,12 @@ fn _to_StaticTuple[
 ](data: SIMD[type, size]) -> StaticTuple[Scalar[type], size]:
     """Convert SIMD to StaticTuple."""
 
+    var res = StaticTuple[Scalar[type], size]()
+
     @parameter
-    if size == 1:
-        return StaticTuple[_, size](data[0])
-    elif size == 2:
-        return StaticTuple[_, size](data[0], data[1])
-    elif size == 4:
-        return StaticTuple[_, size](data[0], data[1], data[2], data[3])
-    elif size == 8:
-        return StaticTuple[_, size](
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-        )
-    elif size == 16:
-        return StaticTuple[_, size](
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-            data[8],
-            data[9],
-            data[10],
-            data[11],
-            data[12],
-            data[13],
-            data[14],
-            data[15],
-        )
-    else:
-        constrained[size == 32]()
-        return StaticTuple[_, size](
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-            data[8],
-            data[9],
-            data[10],
-            data[11],
-            data[12],
-            data[13],
-            data[14],
-            data[15],
-            data[16],
-            data[17],
-            data[18],
-            data[19],
-            data[20],
-            data[21],
-            data[22],
-            data[23],
-            data[24],
-            data[25],
-            data[26],
-            data[27],
-            data[28],
-            data[29],
-            data[30],
-            data[31],
-        )
+    for i in range(size):
+        res[i] = data[i]
+    return res
 
 
 @always_inline
@@ -100,80 +33,12 @@ fn _to_SIMD[
     type: DType, size: Int
 ](data: StaticTuple[Scalar[type], size]) -> SIMD[type, size]:
     """Convert StaticTuple to SIMD."""
+    var res = SIMD[type, size]()
 
     @parameter
-    if size == 1:
-        return SIMD[type, size](data[0])
-    elif size == 2:
-        return SIMD[type, size](data[0], data[1])
-    elif size == 4:
-        return SIMD[type, size](data[0], data[1], data[2], data[3])
-    elif size == 8:
-        return SIMD[type, size](
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-        )
-    elif size == 16:
-        return SIMD[type, size](
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-            data[8],
-            data[9],
-            data[10],
-            data[11],
-            data[12],
-            data[13],
-            data[14],
-            data[15],
-        )
-    else:
-        constrained[size == 32]()
-        return SIMD[type, size](
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-            data[8],
-            data[9],
-            data[10],
-            data[11],
-            data[12],
-            data[13],
-            data[14],
-            data[15],
-            data[16],
-            data[17],
-            data[18],
-            data[19],
-            data[20],
-            data[21],
-            data[22],
-            data[23],
-            data[24],
-            data[25],
-            data[26],
-            data[27],
-            data[28],
-            data[29],
-            data[30],
-            data[31],
-        )
+    for i in range(size):
+        res[i] = data[i]
+    return res
 
 
 @always_inline
