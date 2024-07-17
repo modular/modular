@@ -78,18 +78,31 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
 // State
 //===----------------------------------------------------------------------===//
 
-int State::reportError(const Twine &errorMessage) const {
+int State::reportError(const Twine &message) const {
   switch (diagnosticFormat) {
   case DiagnosticFormat::Text:
-    llvm::errs() << programName << ": error: " << errorMessage << '\n';
+    llvm::errs() << programName << ": error: " << message << '\n';
     break;
   case DiagnosticFormat::JSON:
     llvm::errs() << toJSON(json::Diagnostic{json::DiagnosticKind::Error,
-                                            errorMessage.str()})
+                                            message.str()})
                  << '\n';
     break;
   }
   return EXIT_FAILURE;
+}
+
+void State::reportWarning(const Twine &message) const {
+  switch (diagnosticFormat) {
+  case DiagnosticFormat::Text:
+    llvm::errs() << programName << ": warning: " << message << '\n';
+    break;
+  case DiagnosticFormat::JSON:
+    llvm::errs() << toJSON(json::Diagnostic{json::DiagnosticKind::Warning,
+                                            message.str()})
+                 << '\n';
+    break;
+  }
 }
 
 int State::parseDiagnosticFormatArguments(

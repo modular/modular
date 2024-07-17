@@ -62,7 +62,10 @@ struct State {
   State(const State &) = default;
 
   /// Write the given error message to stderr and return a non-zero exit code.
-  int reportError(const Twine &errorMessage) const;
+  int reportError(const Twine &message) const;
+
+  /// Write the given message to stderr, according to format config.
+  void reportWarning(const Twine &message) const;
 
   /// If `args` contains a diagnostic format option (as specified by the given
   /// option ID), this parses that option and sets this object's
