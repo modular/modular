@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 filegroup(
     name = "modular_py_srcs",
     srcs = glob(["**/*.py"]) + [
-        "//SDK/lib/GraphAPI/python/max/graph/mlir:__init__.py",
+        "//SDK/lib/GraphAPI/python/max/graph/mlir:modular_py_srcs",
     ],
 )
 
