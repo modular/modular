@@ -89,7 +89,7 @@ fn copy_with_src_size(
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    async_copy[16](src.address, smem.address, src_size)
+    async_copy[16](src.address, smem, src_size)
     async_copy_wait_all()
     dst[0] = smem[0]
     dst[1] = smem[1]

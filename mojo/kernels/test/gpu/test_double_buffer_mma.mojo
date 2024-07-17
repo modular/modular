@@ -87,7 +87,7 @@ fn loada[
         # t16 t20 t24 t28 | t17 t21 t25 t29 | t18 t22 t26 t30 | t19 t23 t27 t31
         var smem_ptr = sptr + mma_tile_id * MMA_M * MMA_K + warp_id_in_tile * WARP_SIZE
         smem_ptr += lane_id // 16 * 16 + lane_id % 4 * 4 + lane_id // 4 % 4
-        async_copy[4](gmem_ptr, smem_ptr)
+        async_copy[4](gmem_ptr.address, smem_ptr.address)
 
 
 @always_inline
@@ -135,12 +135,12 @@ fn loadb[
         # t0, ,t8, ,t16, ,t24, ,t1, ,t9, ,t17, ,t25, ...
         var smem_ptr = sptr + mma_tile_id * MMA_K * MMA_N
         smem_ptr += lane_id % 8 * 8 + lane_id // 8 * 2
-        async_copy[4](gmem_ptr, smem_ptr)
+        async_copy[4](gmem_ptr.address, smem_ptr.address)
         # Load next 4 rows.
         # , ,t0, ,t8, ,t16, ,t24, ,t1, ,t9, ,t17, ,t25, ...
         gmem_ptr += 4 * N
         smem_ptr += 1
-        async_copy[4](gmem_ptr, smem_ptr)
+        async_copy[4](gmem_ptr.address, smem_ptr.address)
 
 
 fn sgemm_double_buffer[

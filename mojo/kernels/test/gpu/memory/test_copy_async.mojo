@@ -127,8 +127,8 @@ fn test_async_copy(src: DTypePointer[DType.float32, AddressSpace.GLOBAL]):
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
-    async_copy[4](src, shared_mem)
-    async_copy[16](src, shared_mem)
+    async_copy[4](src.address, shared_mem)
+    async_copy[16](src.address, shared_mem)
 
 
 @always_inline
