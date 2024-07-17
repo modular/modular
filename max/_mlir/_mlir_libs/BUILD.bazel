@@ -44,6 +44,10 @@ modular_pybind_extension(
             "-Wl,-rpath,$ORIGIN/../../../../.libs",
         ],
     }),
+    local_defines = [
+        # Set definition used in Interop.h to prefix the MLIR package.
+        "MLIR_PYTHON_PACKAGE_PREFIX=max.graph.mlir.",
+    ],
     pybind_deps = [
         "//:MLIRBindingsPythonHeaders",
     ],
