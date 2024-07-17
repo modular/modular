@@ -33,9 +33,7 @@ fn alloc_device_buffer(
     ctx: UnsafePointer[DeviceContext], bytes: Int
 ) -> DTypePointer[DType.uint8]:
     try:
-        return ctx[].cuda_context.malloc_async[DType.uint8](
-            bytes, ctx[].cuda_stream
-        )
+        return ctx[].cuda_context.malloc_async[UInt8](bytes, ctx[].cuda_stream)
     except e:
         return abort[UnsafePointer[UInt8]]()
 
@@ -48,7 +46,7 @@ fn copy_device_to_host(
 ):
     try:
         ctx[].cuda_context.copy_device_to_host_async(
-            host_ptr, dev_ptr, size, ctx[].cuda_stream
+            host_ptr.address, dev_ptr.address, size, ctx[].cuda_stream
         )
     except e:
         abort(e)
@@ -62,7 +60,7 @@ fn copy_host_to_device(
 ):
     try:
         ctx[].cuda_context.copy_host_to_device_async(
-            dev_ptr, host_ptr, size, ctx[].cuda_stream
+            dev_ptr.address, host_ptr.address, size, ctx[].cuda_stream
         )
     except e:
         abort(e)
@@ -76,7 +74,7 @@ fn copy_device_to_device(
 ):
     try:
         ctx[].cuda_context.copy_device_to_device_async(
-            dst_ptr, src_ptr, size, ctx[].cuda_stream
+            dst_ptr.address, src_ptr.address, size, ctx[].cuda_stream
         )
     except e:
         abort(e)
@@ -86,7 +84,7 @@ fn free_buffer(
     ctx: UnsafePointer[DeviceContext], ptr: DTypePointer[DType.uint8]
 ):
     try:
-        ctx[].cuda_context.free_async(ptr, ctx[].cuda_stream)
+        ctx[].cuda_context.free_async(ptr.address, ctx[].cuda_stream)
     except e:
         abort(e)
 
