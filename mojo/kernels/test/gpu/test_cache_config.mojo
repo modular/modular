@@ -19,7 +19,7 @@ fn gpu_kernel(buff: DTypePointer[DType.int64]):
 def main():
     with CudaInstance() as instance:
         with Context(Device(instance)) as ctx:
-            var buff = ctx.malloc_managed[DType.int64](16)
+            var buff = ctx.malloc_managed[Int64](16)
             for i in range(16):
                 buff[i] = 0
             var kernel = Function[gpu_kernel](

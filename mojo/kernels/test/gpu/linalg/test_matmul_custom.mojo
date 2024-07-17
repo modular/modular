@@ -54,8 +54,8 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     var b_device_n = ctx.create_buffer[DType.float32](K * N)
     var c_device_n = ctx.create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     alias BLOCK_DIM = 16
     var func_gemm_bf16 = ctx.compile_function[
@@ -84,11 +84,11 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     run_func_bf16()
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy_from_device(c_host.address, c_device)
 
     # running naive
-    ctx.enqueue_copy_to_device(a_device_n, a_host_n)
-    ctx.enqueue_copy_to_device(b_device_n, b_host_n)
+    ctx.enqueue_copy_to_device(a_device_n, a_host_n.address)
+    ctx.enqueue_copy_to_device(b_device_n, b_host_n.address)
 
     var func_gemm_fp32 = ctx.compile_function[
         matmul_kernel_naive[
@@ -116,7 +116,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     run_func_fp32()
 
-    ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.enqueue_copy_from_device(c_host_n.address, c_device_n)
 
     for i in range(M * N):
         var out_val = c_host[i]
@@ -194,15 +194,15 @@ fn run_matmul[
     var b_device_n = ctx.create_buffer[type](K * N)
     var c_device_n = ctx.create_buffer[type](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     _matmul_gpu(c_buf, a_buf, b_buf, ctx)
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy_from_device(c_host.address, c_device)
 
     # running naive
-    ctx.enqueue_copy_to_device(a_device_n, a_host_n)
-    ctx.enqueue_copy_to_device(b_device_n, b_host_n)
+    ctx.enqueue_copy_to_device(a_device_n, a_host_n.address)
+    ctx.enqueue_copy_to_device(b_device_n, b_host_n.address)
 
     alias BLOCK_DIM = 16
     var func_gemm_naive = ctx.compile_function[
@@ -231,7 +231,7 @@ fn run_matmul[
 
     run_func_naive()
 
-    ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.enqueue_copy_from_device(c_host_n.address, c_device_n)
     ctx.synchronize()
 
     for i in range(M * N):
@@ -304,8 +304,8 @@ fn run_batched_matmul(
     var b_buf_n = NDBuffer[DType.float32, 3](b_device_n.ptr, Index(B, K, N))
     var c_buf_n = NDBuffer[DType.float32, 3](c_device_n.ptr, Index(B, M, N))
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     @always_inline
     @__copy_capture(c_buf)
@@ -324,10 +324,10 @@ fn run_batched_matmul(
         elementwise_epilogue_fn=elementwise_epilogue_fn1,
     ](c_buf, a_buf, b_buf, ctx)
 
-    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.enqueue_copy_from_device(c_host.address, c_device)
 
-    ctx.enqueue_copy_to_device(a_device_n, a_host_n)
-    ctx.enqueue_copy_to_device(b_device_n, b_host_n)
+    ctx.enqueue_copy_to_device(a_device_n, a_host_n.address)
+    ctx.enqueue_copy_to_device(b_device_n, b_host_n.address)
 
     @always_inline
     @__copy_capture(c_buf_n)
@@ -346,7 +346,7 @@ fn run_batched_matmul(
         elementwise_epilogue_fn=elementwise_epilogue_fn2,
     ](c_buf_n, a_buf_n, b_buf_n, ctx)
 
-    ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.enqueue_copy_from_device(c_host_n.address, c_device_n)
     ctx.synchronize()
 
     for i in range(B * M * N):

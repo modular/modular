@@ -117,12 +117,12 @@ fn matmul_test_case[
     _linspace_fill(mat_a_host)
     _linspace_fill(mat_b_host)
 
-    ctx.enqueue_copy_from_device(mat_a_host.data, mat_a_dev[0])
-    ctx.enqueue_copy_from_device(mat_b_host.data, mat_b_dev[0])
+    ctx.enqueue_copy_from_device(mat_a_host.data.address, mat_a_dev[0])
+    ctx.enqueue_copy_from_device(mat_b_host.data.address, mat_b_dev[0])
 
     _matmul_gpu(mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx)
 
-    ctx.enqueue_copy_from_device(mat_c_host.data, mat_c_dev[0])
+    ctx.enqueue_copy_from_device(mat_c_host.data.address, mat_c_dev[0])
     ctx.synchronize()
 
     # FIXME: We should run a reference gpu matmul, the reference should also

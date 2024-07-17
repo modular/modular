@@ -46,8 +46,8 @@ fn copy_via_shared(
 # CHECK-LABEL: run_copy_via_shared
 fn run_copy_via_shared(ctx: Context) raises:
     print("== run_copy_via_shared")
-    var in_data = ctx.malloc_managed[DType.float32](16)
-    var out_data = ctx.malloc_managed[DType.float32](16)
+    var in_data = ctx.malloc_managed[Float32](16)
+    var out_data = ctx.malloc_managed[Float32](16)
 
     for i in range(16):
         in_data[i] = i + 1
@@ -110,7 +110,7 @@ fn test_copy_with_src_size(ctx: Context) raises:
     var a_device = ctx.malloc[Float32](size)
     var b_device = ctx.malloc[Float32](size)
 
-    ctx.copy_host_to_device(a_device, a_host, size)
+    ctx.copy_host_to_device(a_device, a_host.address, size)
 
     alias kernel = copy_with_src_size
     var func = Function[kernel](ctx, threads_per_block=1)
@@ -121,7 +121,7 @@ fn test_copy_with_src_size(ctx: Context) raises:
 
     ctx.synchronize()
 
-    ctx.copy_device_to_host(b_host, b_device, size)
+    ctx.copy_device_to_host(b_host.address, b_device, size)
 
     assert_equal(b_host[0], 1)
     assert_equal(b_host[1], 2)

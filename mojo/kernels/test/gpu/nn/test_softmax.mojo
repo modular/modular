@@ -38,7 +38,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     var out_device = NDBuffer[type, rank](out_device_ptr.ptr, shape)
 
     rand[type](in_host_ptr.address, shape.flattened_length())
-    ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
+    ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr.address)
 
     @parameter
     @__copy_capture(in_device)
@@ -71,7 +71,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     ](shape, out_ref, rank - 1)
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host_ptr, out_device_ptr)
+    ctx.enqueue_copy_from_device(out_host_ptr.address, out_device_ptr)
 
     # CHECK-NOT: ERROR
     for i in range(shape.flattened_length()):
@@ -134,8 +134,8 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
         )
         in_host_ref_ptr[i] = in_host_test_ptr[i].cast[ref_type]()
 
-    ctx.enqueue_copy_to_device(in_device_test_ptr, in_host_test_ptr)
-    ctx.enqueue_copy_to_device(in_device_ref_ptr, in_host_ref_ptr)
+    ctx.enqueue_copy_to_device(in_device_test_ptr, in_host_test_ptr.address)
+    ctx.enqueue_copy_to_device(in_device_ref_ptr, in_host_ref_ptr.address)
 
     @parameter
     @__copy_capture(in_device_ref)
@@ -168,8 +168,8 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     ](shape, out_device_test, rank - 1, ctx)
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host_ref_ptr, out_device_ref_ptr)
-    ctx.enqueue_copy_from_device(out_host_test_ptr, out_device_test_ptr)
+    ctx.enqueue_copy_from_device(out_host_ref_ptr.address, out_device_ref_ptr)
+    ctx.enqueue_copy_from_device(out_host_test_ptr.address, out_device_test_ptr)
 
     for i in range(length):
         var ref_val = out_host_ref_ptr[i]
@@ -213,7 +213,7 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     )
 
     rand[type](in_host_ptr.address, shape.flattened_length())
-    ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr)
+    ctx.enqueue_copy_to_device(in_device_ptr, in_host_ptr.address)
 
     var online_softmax_gpu = ctx.compile_function[
         _online_softmax_kernel[
@@ -246,7 +246,7 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     ](shape, out_ref, rank - 1)
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host_ptr, out_device_ptr)
+    ctx.enqueue_copy_from_device(out_host_ptr.address, out_device_ptr)
 
     for i in range(shape.flattened_length()):
         assert_almost_equal(

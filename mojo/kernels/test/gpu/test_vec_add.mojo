@@ -44,8 +44,8 @@ fn run_vec_add(ctx: DeviceContext) raises:
     var in1_device = ctx.create_buffer[DType.float32](length)
     var out_device = ctx.create_buffer[DType.float32](length)
 
-    ctx.enqueue_copy_to_device(in0_device, in0_host)
-    ctx.enqueue_copy_to_device(in1_device, in1_host)
+    ctx.enqueue_copy_to_device(in0_device, in0_host.address)
+    ctx.enqueue_copy_to_device(in1_device, in1_host.address)
 
     var func = ctx.compile_function[vec_func]()
 
@@ -61,7 +61,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    ctx.enqueue_copy_from_device(out_host, out_device)
+    ctx.enqueue_copy_from_device(out_host.address, out_device)
 
     # CHECK: at index 0 the value is 2.0
     # CHECK: at index 1 the value is 3.0

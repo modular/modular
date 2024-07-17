@@ -43,8 +43,8 @@ fn test(ctx: DeviceContext) raises:
     var out_device = ctx.create_buffer[DType.float32](length)
 
     # Copy the input data from the Host to the Device memory
-    ctx.enqueue_copy_to_device(in0_device, in0_host)
-    ctx.enqueue_copy_to_device(in1_device, in1_host)
+    ctx.enqueue_copy_to_device(in0_device, in0_host.address)
+    ctx.enqueue_copy_to_device(in1_device, in1_host.address)
 
     # Compile the kernel for the device
     var func = ctx.compile_function[vec_func]()
@@ -66,7 +66,7 @@ fn test(ctx: DeviceContext) raises:
     )
 
     # Copy the results back from the device to the host
-    ctx.enqueue_copy_from_device(out_host, out_device)
+    ctx.enqueue_copy_from_device(out_host.address, out_device)
 
     # Wait for the computation to be completed
     ctx.synchronize()

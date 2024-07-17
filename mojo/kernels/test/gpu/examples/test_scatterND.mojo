@@ -203,12 +203,13 @@ fn scatter_nd[
     )
     var updates_device = ctx.create_buffer[type](updates_count_copy)
     var indices_device = ctx.create_buffer[indices_type](indices_count_copy)
-    ctx.enqueue_copy_to_device(output_device, output_flat.data)
+    ctx.enqueue_copy_to_device(output_device, output_flat.data.address)
     ctx.enqueue_copy_to_device(
-        element_counts_and_input_dims_device, element_counts_and_input_dims.data
+        element_counts_and_input_dims_device,
+        element_counts_and_input_dims.data.address,
     )
-    ctx.enqueue_copy_to_device(updates_device, updates.data)
-    ctx.enqueue_copy_to_device(indices_device, indices.data)
+    ctx.enqueue_copy_to_device(updates_device, updates.data.address)
+    ctx.enqueue_copy_to_device(indices_device, indices.data.address)
 
     # Number of indices (that is without last dimension).
     # Each thread will handle one index.
@@ -238,7 +239,7 @@ fn scatter_nd[
     ctx.synchronize()
 
     # Copy back output data from GPU to CPU.
-    ctx.enqueue_copy_from_device(output.data, output_device)
+    ctx.enqueue_copy_from_device(output.data.address, output_device)
 
     _ = output_device
     _ = element_counts_and_input_dims_device

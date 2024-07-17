@@ -59,7 +59,7 @@ fn fused_reduce_inner_test[
     var output_buf_device0 = NDBuffer[type, rank](res_device0.ptr, out_shape)
     var output_buf_device1 = NDBuffer[type, rank](res_device1.ptr, out_shape)
 
-    ctx.enqueue_copy_to_device(vec_device, vec_host)
+    ctx.enqueue_copy_to_device(vec_device, vec_host.address)
 
     @__copy_capture(input_buf_device)
     @parameter
@@ -94,8 +94,8 @@ fn fused_reduce_inner_test[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(res_host0, res_device0)
-    ctx.enqueue_copy_from_device(res_host1, res_device1)
+    ctx.enqueue_copy_from_device(res_host0.address, res_device0)
+    ctx.enqueue_copy_from_device(res_host1.address, res_device1)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(str(res_host0[i]), str(expected_vals0[i]))
@@ -147,7 +147,7 @@ fn reduce_inner_test[
     var input_buf_device = NDBuffer[type, rank](vec_device.ptr, shape)
     var output_buf_device = NDBuffer[type, rank](res_device.ptr, out_shape)
 
-    ctx.enqueue_copy_to_device(vec_device, vec_host)
+    ctx.enqueue_copy_to_device(vec_device, vec_host.address)
 
     @always_inline
     @parameter
@@ -188,7 +188,7 @@ fn reduce_inner_test[
     ](shape, axis, init, ctx)
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(res_host, res_device)
+    ctx.enqueue_copy_from_device(res_host.address, res_device)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(str(res_host[i]), str(expected_vals[i]))

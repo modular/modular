@@ -30,9 +30,9 @@ fn gpu_kernel(
 def main():
     with CudaInstance() as instance:
         with Context(Device(instance)) as ctx:
-            var vec_a = ctx.malloc_managed[DType.float32](16)
-            var vec_b = ctx.malloc_managed[DType.float32](16)
-            var vec_c = ctx.malloc_managed[DType.float32](16)
+            var vec_a = ctx.malloc_managed[Float32](16)
+            var vec_b = ctx.malloc_managed[Float32](16)
+            var vec_c = ctx.malloc_managed[Float32](16)
             for i in range(16):
                 vec_a[i] = i
                 vec_b[i] = i

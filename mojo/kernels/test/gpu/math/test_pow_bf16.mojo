@@ -34,7 +34,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.data)
+    ctx.enqueue_copy_to_device(in_device, in_host.data.address)
 
     var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
     var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
@@ -58,7 +58,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy_from_device(out_host.data.address, out_device)
 
     for i in range(length):
         var expected_value: SIMD[DType.float32, 1]

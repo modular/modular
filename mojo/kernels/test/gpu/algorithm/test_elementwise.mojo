@@ -33,7 +33,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.data)
+    ctx.enqueue_copy_to_device(in_device, in_host.data.address)
 
     var in_buffer = NDBuffer[type, 2](in_device.ptr, Index(2, 8))
     var out_buffer = NDBuffer[type, 2](out_device.ptr, Index(2, 8))
@@ -55,7 +55,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy_from_device(out_host.data.address, out_device)
 
     var expected_vals = List[Scalar[type]](
         42.0,
@@ -99,7 +99,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.data)
+    ctx.enqueue_copy_to_device(in_device, in_host.data.address)
 
     var in_buffer = NDBuffer[type, 2](in_device.ptr, Index(3, 3))
     var out_buffer = NDBuffer[type, 2](out_device.ptr, Index(3, 3))
@@ -120,7 +120,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
         ctx,
     )
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy_from_device(out_host.data.address, out_device)
 
     var expected_vals = List[Scalar[type]](
         42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
@@ -150,7 +150,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.data)
+    ctx.enqueue_copy_to_device(in_device, in_host.data.address)
 
     var in_buffer_transposed = NDBuffer[type, 3](
         in_device.ptr, Index(4, 2, 5), Index(5, 20, 1)
@@ -175,7 +175,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy_from_device(out_host.data.address, out_device)
 
     var expected_vals = List[Scalar[type]](
         0.0,

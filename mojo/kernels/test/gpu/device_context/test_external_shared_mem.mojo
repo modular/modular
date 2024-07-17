@@ -28,7 +28,7 @@ fn test_dynamic_shared_mem(ctx: Context) raises:
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024),
     )
 
-    var res = ctx.malloc_managed[DType.float32](16)
+    var res = ctx.malloc_managed[Float32](16)
     for i in range(16):
         res[i] = 0
 

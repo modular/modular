@@ -289,8 +289,8 @@ fn test(ctx: Context) raises:
     var c_device = ctx.malloc[Float32](M * N)
     var c_device_ref = ctx.malloc[Float32](M * N)
 
-    ctx.copy_host_to_device(a_device, a_host, M * K)
-    ctx.copy_host_to_device(b_device, b_host, K * N)
+    ctx.copy_host_to_device(a_device, a_host.address, M * K)
+    ctx.copy_host_to_device(b_device, b_host.address, K * N)
 
     var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device)
     var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
@@ -356,7 +356,7 @@ fn test(ctx: Context) raises:
 
     ctx.synchronize()
 
-    ctx.copy_device_to_host(c_host, c_device, M * N)
+    ctx.copy_device_to_host(c_host.address, c_device, M * N)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
@@ -377,7 +377,7 @@ fn test(ctx: Context) raises:
     )
 
     ctx.synchronize()
-    ctx.copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.copy_device_to_host(c_host_ref.address, c_device_ref, M * N)
 
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):
