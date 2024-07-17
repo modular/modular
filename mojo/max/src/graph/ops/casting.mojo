@@ -53,6 +53,8 @@ def cast(v: Symbol, dtype: DType) -> Symbol:
         A new symbolic tensor with the same shape as the input and the
         specified dtype.
     """
+    if v.tensor_type().dtype == dtype:
+        return v
     return v.graph().op("rmo.mo.cast", v, v.tensor_type().cast(dtype))
 
 
