@@ -91,6 +91,50 @@ from memory.unsafe import D
       .execute();
 }
 
+TEST(CompletionTest, testCompletionItemSorting) {
+  Document doc("test:///foo.mojo",
+               R"(
+@value
+struct Foo:
+  var __other: Int
+  var ___another__: Int
+  var __dunder__: Int
+  var _sunder_: Int
+  var _priv: Int
+  var normal: Int
+  fn foo(self): pass
+  fn _foobar_(self): pass
+  fn _bar(self): pass
+  fn __baz__(self): pass
+
+fn function(arg: Foo):
+  arg.
+)");
+
+  createTestClient()
+      .open(doc)
+      .completion(
+          doc, lsp::Position(15, 6),
+          [](const lsp::CompletionList &completionList) {
+            EXPECT_STREQ(completionList.items[0].label.c_str(), "foo");
+            EXPECT_STREQ(completionList.items[1].label.c_str(), "normal");
+            EXPECT_STREQ(completionList.items[2].label.c_str(), "_bar");
+            EXPECT_STREQ(completionList.items[3].label.c_str(), "_priv");
+            EXPECT_STREQ(completionList.items[4].label.c_str(), "_foobar_");
+            EXPECT_STREQ(completionList.items[5].label.c_str(), "_sunder_");
+            EXPECT_STREQ(completionList.items[6].label.c_str(), "__baz__");
+            EXPECT_STREQ(completionList.items[7].label.c_str(), "__copyinit__");
+            EXPECT_STREQ(completionList.items[8].label.c_str(), "__del__");
+            EXPECT_STREQ(completionList.items[9].label.c_str(), "__init__");
+            EXPECT_STREQ(completionList.items[10].label.c_str(),
+                         "__moveinit__");
+            EXPECT_STREQ(completionList.items[11].label.c_str(), "__dunder__");
+            EXPECT_STREQ(completionList.items[12].label.c_str(),
+                         "___another__");
+            EXPECT_STREQ(completionList.items[13].label.c_str(), "__other");
+          })
+      .execute();
+}
 TEST(CompletionTest, testCompletionMemberLookup) {
   Document doc("test:///foo.mojo",
                R"(

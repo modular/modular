@@ -1036,6 +1036,35 @@ void MojoDocument::onCodeCompletion(
   });
 }
 
+enum class ItemAccessKind { kNormal, kPrivate, kSunder, kDunder, kOther };
+static ItemAccessKind getItemAccesKind(const lsp::CompletionItem &item) {
+  // We use accessKind as the primary sorting key, which tells us if the item
+  // is normal, private (single leading underscore), sunder (`_foo_`), or
+  // dunder (`__bar__`). Items are then sorted within this access grouping
+  // based on their kind (`it.kind`).
+
+  StringRef label = item.label;
+  size_t size = label.size();
+  size_t numLeftUnders = size - label.ltrim('_').size();
+  size_t numRightUnders = size - label.rtrim('_').size();
+
+  if (numLeftUnders == numRightUnders) {
+    switch (numLeftUnders) {
+    case 0:
+      return ItemAccessKind::kNormal;
+    case 1:
+      return ItemAccessKind::kSunder;
+    case 2:
+      return ItemAccessKind::kDunder;
+    default:
+      return ItemAccessKind::kOther;
+    }
+  } else if (numLeftUnders == 1 && numRightUnders == 0)
+    return ItemAccessKind::kPrivate;
+
+  return ItemAccessKind::kOther;
+};
+
 lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
   if (!context)
     return lsp::CompletionList();
@@ -1046,7 +1075,11 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
        onCodeCompletionSyncImpl(completeLoc)) {
     lsp::CompletionItem item;
     item.label = it.label;
-    item.sortText = std::to_string(static_cast<unsigned>(it.kind));
+
+    auto accessKind = getItemAccesKind(item);
+    item.sortText = llvm::formatv("{0}-{1}-{2}",
+                                  static_cast<unsigned>(getItemAccesKind(item)),
+                                  it.kind, it.label);
 
     switch (it.kind) {
     case KGEN::Mojo::CodeCompletionResult::kUnknown:
@@ -1079,6 +1112,11 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
       item.documentation = {lsp::MarkupKind::Markdown, it.documentation};
     completionList.items.push_back(item);
   }
+
+  llvm::sort(completionList.items,
+             [](const lsp::CompletionItem &L, const lsp::CompletionItem &R) {
+               return L.sortText < R.sortText;
+             });
   return completionList;
 }
 
