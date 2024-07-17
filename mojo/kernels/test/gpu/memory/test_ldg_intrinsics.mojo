@@ -7,7 +7,7 @@
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.intrinsics import ldg
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import *
 
 
@@ -23,16 +23,16 @@ fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
 
 
 fn register_intrinsics(
-    i8: DTypePointer[DType.int8],
-    ui8: DTypePointer[DType.uint8],
-    i16: DTypePointer[DType.int16],
-    ui16: DTypePointer[DType.uint16],
-    i32: DTypePointer[DType.int32],
-    ui32: DTypePointer[DType.uint32],
-    i64: DTypePointer[DType.int64],
-    ui64: DTypePointer[DType.uint64],
-    f32: DTypePointer[DType.float32],
-    f64: DTypePointer[DType.float64],
+    i8: UnsafePointer[Int8],
+    ui8: UnsafePointer[UInt8],
+    i16: UnsafePointer[Int16],
+    ui16: UnsafePointer[UInt16],
+    i32: UnsafePointer[Int32],
+    ui32: UnsafePointer[UInt32],
+    i64: UnsafePointer[Int64],
+    ui64: UnsafePointer[UInt64],
+    f32: UnsafePointer[Float32],
+    f64: UnsafePointer[Float64],
 ):
     # Note we perform the store purely to avoid the compiler from optimizing
     # away the statements.

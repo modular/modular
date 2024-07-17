@@ -22,15 +22,14 @@ from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import stack_allocation, UnsafePointer
 from testing import assert_almost_equal
 
 
 fn test_ldmatrix_fp32(
-    c_ptr: DTypePointer[DType.float32],
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
+    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
     m: Int,
     n: Int,
     k: Int,
@@ -79,9 +78,9 @@ fn test_ldmatrix_fp32(
 fn test_ldmatrix_transposed[
     input_type: DType, output_type: DType
 ](
-    c_ptr: DTypePointer[output_type],
-    a_ptr: DTypePointer[input_type],
-    b_ptr: DTypePointer[input_type],
+    c_ptr: UnsafePointer[Scalar[output_type]],
+    a_ptr: UnsafePointer[Scalar[input_type]],
+    b_ptr: UnsafePointer[Scalar[input_type]],
 ):
     alias accum_type = get_accum_type[input_type]()
     alias mma_shape = get_mma_shape[input_type, accum_type]()

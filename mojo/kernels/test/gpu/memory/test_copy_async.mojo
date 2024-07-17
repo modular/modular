@@ -26,17 +26,17 @@ fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
 
 fn test_mbarrier(
     addr0: UnsafePointer[Int8],
-    addr1: DTypePointer[DType.uint8],
+    addr1: UnsafePointer[UInt8],
     addr2: UnsafePointer[Float32, AddressSpace.GLOBAL],
     addr3: UnsafePointer[Float32, AddressSpace.SHARED],
-    addr4: DTypePointer[DType.float64, AddressSpace.GLOBAL],
-    addr5: DTypePointer[DType.float64, AddressSpace.SHARED],
+    addr4: UnsafePointer[Float64, AddressSpace.GLOBAL],
+    addr5: UnsafePointer[Float64, AddressSpace.SHARED],
 ):
     mbarrier(addr0)
     mbarrier(addr1)
-    # mbarrier(addr2) # TODO (24115) comment in once fixed.
+    mbarrier(addr2)
     mbarrier(addr3)
-    # mbarrier(addr4) # TODO (24115) comment in once fixed.
+    mbarrier(addr4)
     mbarrier(addr5)
 
 
@@ -61,7 +61,7 @@ def test_mbarrier_sm90():
 
 
 fn test_mbarrier_init(
-    shared_mem: DTypePointer[DType.int32, AddressSpace.SHARED],
+    shared_mem: UnsafePointer[Int32, AddressSpace.SHARED],
 ):
     mbarrier_init(shared_mem, 4)
 
@@ -90,7 +90,7 @@ def test_mbarrier_init_sm90():
 
 
 fn test_mbarrier_test_wait(
-    shared_mem: DTypePointer[DType.int32, AddressSpace.SHARED], state: Int
+    shared_mem: UnsafePointer[Int32, AddressSpace.SHARED], state: Int
 ):
     var done = False
     while not done:
@@ -120,15 +120,15 @@ def test_mbarrier_test_wait_sm90():
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
-fn test_async_copy(src: DTypePointer[DType.float32, AddressSpace.GLOBAL]):
+fn test_async_copy(src: UnsafePointer[Float32, AddressSpace.GLOBAL]):
     var barrier = stack_allocation[
         sizeof[DType.int32](), DType.int32, address_space = AddressSpace.SHARED
     ]()
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
-    async_copy[4](src.address, shared_mem)
-    async_copy[16](src.address, shared_mem)
+    async_copy[4](src, shared_mem)
+    async_copy[16](src, shared_mem)
 
 
 @always_inline

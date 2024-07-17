@@ -21,16 +21,15 @@ from gpu.host.memory import (
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory.unsafe import DTypePointer
 
 from utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp32_tf32(
-    c_ptr: DTypePointer[DType.float32],
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
+    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
     m: Int,
     n: Int,
     k: Int,
@@ -67,9 +66,9 @@ fn mma_kernel_fp32_tf32(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp32_bf16(
-    c_ptr: DTypePointer[DType.float32],
-    a_ptr: DTypePointer[DType.bfloat16],
-    b_ptr: DTypePointer[DType.bfloat16],
+    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16],
     m: Int,
     n: Int,
     k: Int,
@@ -106,9 +105,9 @@ fn mma_kernel_fp32_bf16(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
 fn mma_kernel_fp32_bf16_2(
-    c_ptr: DTypePointer[DType.float32],
-    a_ptr: DTypePointer[DType.bfloat16],
-    b_ptr: DTypePointer[DType.bfloat16],
+    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16],
     m: Int,
     n: Int,
     k: Int,
@@ -145,9 +144,9 @@ fn mma_kernel_fp32_bf16_2(
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp32_fp16(
-    c_ptr: DTypePointer[DType.float32],
-    a_ptr: DTypePointer[DType.float16],
-    b_ptr: DTypePointer[DType.float16],
+    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16],
     m: Int,
     n: Int,
     k: Int,
@@ -184,9 +183,9 @@ fn mma_kernel_fp32_fp16(
 
 # FP16 Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp16_fp16(
-    c_ptr: DTypePointer[DType.float16],
-    a_ptr: DTypePointer[DType.float16],
-    b_ptr: DTypePointer[DType.float16],
+    c_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16],
     m: Int,
     n: Int,
     k: Int,
