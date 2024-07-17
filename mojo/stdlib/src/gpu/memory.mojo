@@ -10,8 +10,9 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from gpu.host._utils import _check_error
 from gpu.host.result import Result
 from memory import stack_allocation as _generic_stack_allocation
+from memory import UnsafePointer
 from memory.reference import _GPUAddressSpace
-from memory.unsafe import DTypePointer, bitcast
+from memory.unsafe import bitcast
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace
@@ -22,30 +23,6 @@ alias AddressSpace = _GPUAddressSpace
 # ===----------------------------------------------------------------------===#
 # cp.async
 # ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn async_copy[
-    size: Int, type: DType
-](
-    src: DTypePointer[type, AddressSpace.GLOBAL],
-    dst: DTypePointer[type, AddressSpace.SHARED],
-):
-    """Asynchronously copy `size` amount of bytes from src global memory address
-    to shared memory `dst` address.
-
-    Parameters:
-        size: Number of bytes to copy.
-        type: The pointer type.
-
-    Args:
-        src: Global memory pointer.
-        dst: Shared memory pointer.
-    """
-    # TODO: Constrained on device capability.
-    constrained[size == 4 or size == 8 or size == 16]()
-
-    return async_copy[size](src.address, dst.address)
 
 
 @always_inline
