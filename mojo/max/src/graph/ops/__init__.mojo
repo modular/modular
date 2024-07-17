@@ -77,7 +77,6 @@ from .linalg import (
     layer_norm,
     matmul,
     outer,
-    range_fill,
     tile,
 )
 from .lists import list

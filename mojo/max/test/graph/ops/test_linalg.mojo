@@ -6,7 +6,7 @@
 # RUN: mojo "%s"
 
 from max.graph import _testing, Graph, TensorType
-from max.graph.ops.linalg import layer_norm, range_fill, tile
+from max.graph.ops.linalg import layer_norm, tile
 from max.tensor import Tensor, TensorShape
 
 
@@ -48,37 +48,6 @@ fn test_layer_norm() raises:
     _testing.assert_tensors_almost_equal(expected, actual, 1e-4)
 
 
-fn test_range_fill() raises:
-    var g = Graph(TensorType(DType.int32, 1, 4, 4, 1))
-
-    var limit = g.scalar(12, DType.int32)
-
-    var start = g.scalar(0, DType.int32)
-
-    var step = g.scalar(1, DType.int32)
-
-    g.output(
-        range_fill(
-            start,
-            limit,
-            step,
-        )
-    )
-    g.verify()
-
-    var x = Tensor[DType.int32](TensorShape(1, 4, 4, 1), 0)
-
-    # fmt: off
-    var expected = Tensor[DType.int32](
-        TensorShape(12),
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-    )
-    # fmt: on
-
-    var actual = _testing.execute_unary[DType.int32, DType.int32](g, x)
-    _testing.assert_tensors_equal[DType.int32](expected, actual)
-
-
 fn test_tile() raises:
     var g = Graph(TensorType(DType.float32, 2, 3))
 
@@ -112,6 +81,5 @@ fn test_tile() raises:
 
 
 def main():
-    test_range_fill()
     test_layer_norm()
     test_tile()

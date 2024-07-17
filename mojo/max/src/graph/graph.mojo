@@ -690,18 +690,24 @@ struct Graph(CollectionElement, Stringable, Formattable):
     ](
         self, start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]
     ) raises -> Symbol:
-        """Adds a node representing a `mo.range` operation.
+        """Creates a sequence of numbers. The sequence goes from `start` with
+        increments of size `step` up to (but not including) `stop`. All arguments
+        are mandatory and must have the same element type.
+
+        Note the following restrictions on input values:
+        1. `step` must be non-zero
+        2. `stop - start` must be zero or have the same sign as `step`
 
         Parameters:
             dtype: The output tensor's element type.
 
         Args:
-            start: The starting value.
-            stop: The end value (exclusive).
-            step: The step value.
+            start: The start of the range to generate.
+            stop: The range will be generated up to, but not including, this value.
+            step: The step size for the range.
 
         Returns:
-            The symbolic output of this node.
+            A symbolic tensor value containing the defined range of values.
         """
         return self.op(
             "rmo.mo.range",
@@ -711,6 +717,37 @@ struct Graph(CollectionElement, Stringable, Formattable):
                 self.scalar[dtype](step),
             ),
             TensorType(dtype, len(range(start, stop, step))),
+        )
+
+    fn range(
+        self, start: Symbol, stop: Symbol, step: Symbol, out_dim: Dim
+    ) raises -> Symbol:
+        """Creates a sequence of numbers. The sequence goes from `start` with
+        increments of size `step` up to (but not including) `stop`. All arguments
+        are mandatory and must have the same element type.
+
+        Note the following restrictions on input values:
+        1. `step` must be non-zero
+        2. `stop - start` must be zero or have the same sign as `step`
+
+        Args:
+            start: The start of the range to generate.
+            stop: The range will be generated up to, but not including, this value.
+            step: The step size for the range.
+            out_dim: The expected output dimensions returned by the range op.
+              These will be assert at graph execution time to be correct.
+
+        Returns:
+            A symbolic tensor value containing the defined range of values.
+        """
+        return self.op(
+            "rmo.mo.range",
+            List[Symbol](
+                start,
+                stop,
+                step,
+            ),
+            TensorType(start.tensor_type().dtype, out_dim),
         )
 
     @always_inline

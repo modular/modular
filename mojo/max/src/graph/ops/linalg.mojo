@@ -158,36 +158,6 @@ def layer_norm[
     return reshape_like(result, input)
 
 
-def range_fill(start: Symbol, limit: Symbol, step: Symbol) -> Symbol:
-    """Creates a sequence of numbers. The sequence goes from `start` with
-    increments of size `step` up to (but not including) `limit`. All arguments
-    are mandatory and must have the same element type.
-
-    Note the following restrictions on input values:
-    1. `step` must be non-zero
-    2. `limit - start` must be zero or have the same sign as `step`
-
-    Args:
-        start: The start of the range to generate.
-        limit: The range will be generated up to, but not including, this value.
-        step: The step size for the range.
-
-    Returns:
-        A symbolic tensor value containing the defined range of values.
-    """
-    g = limit.graph()
-
-    return g.op(
-        "rmo.mo.range",
-        List[Symbol](
-            start,
-            limit,
-            step,
-        ),
-        TensorType(limit.tensor_type().dtype, Dim.dynamic()),
-    )
-
-
 def tile(input: Symbol, repeats: List[Int64]) -> Symbol:
     """Returns a new Tensor as the result of copying the input tensor N_i times
     on each dimension, where N_i = tiles[i].
