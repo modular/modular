@@ -7,7 +7,7 @@
 
 from sys.ffi import DLHandle
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils import StringRef
 

@@ -10,7 +10,6 @@ from os import abort
 from pathlib import Path
 
 from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer
 
 from utils import StringRef
 

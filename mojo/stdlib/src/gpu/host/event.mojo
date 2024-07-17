@@ -8,8 +8,6 @@
 from os import abort
 from time import perf_counter_ns
 
-from memory.unsafe import DTypePointer
-
 from ._utils import _check_error, _EventHandle, _StreamHandle
 from .context import Context
 from .stream import Stream

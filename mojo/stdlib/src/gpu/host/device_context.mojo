@@ -105,21 +105,21 @@ struct KernelProfilingInfo:
 
 @value
 struct DeviceBuffer[type: DType](Sized):
-    var ptr: DTypePointer[type]
+    var ptr: UnsafePointer[Scalar[type]]
     var ctx_ptr: UnsafePointer[DeviceContext]
     var size: Int
     var owning: Bool
 
     fn __init__(inout self, ctx: DeviceContext, size: Int) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
-        self.ptr = self.ctx_ptr[].cuda_context.malloc[type](size)
+        self.ptr = self.ctx_ptr[].cuda_context.malloc[Scalar[type]](size)
         self.size = size
         self.owning = True
 
     fn __init__(
         inout self,
         ctx: DeviceContext,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         size: Int,
         *,
         owning: Bool,
@@ -131,7 +131,7 @@ struct DeviceBuffer[type: DType](Sized):
 
     fn __init__(inout self):
         self.ctx_ptr = UnsafePointer[DeviceContext]()
-        self.ptr = DTypePointer[type]()
+        self.ptr = UnsafePointer[Scalar[type]]()
         self.size = 0
         self.owning = False
 
@@ -147,7 +147,7 @@ struct DeviceBuffer[type: DType](Sized):
         self.size = existing.size
         self.owning = existing.owning
         existing.ctx_ptr = UnsafePointer[DeviceContext]()
-        existing.ptr = DTypePointer[type]()
+        existing.ptr = UnsafePointer[Scalar[type]]()
         existing.size = 0
         existing.owning = False
 
@@ -169,16 +169,16 @@ struct DeviceBuffer[type: DType](Sized):
             raise Error("offset and size exceed original buffer size")
         var sub_buffer = DeviceBuffer[view_type]()
         sub_buffer.ctx_ptr = self.ctx_ptr
-        sub_buffer.ptr = rebind[DTypePointer[view_type]](self.ptr).offset(
-            offset
-        )
+        sub_buffer.ptr = rebind[UnsafePointer[Scalar[view_type]]](
+            self.ptr
+        ).offset(offset)
         sub_buffer.size = size
         sub_buffer.owning = False
         return sub_buffer
 
-    fn take_ptr(owned self) -> DTypePointer[type]:
+    fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         var tmp = self.ptr
-        self.ptr = DTypePointer[type]()
+        self.ptr = UnsafePointer[Scalar[type]]()
         return tmp
 
 
@@ -388,14 +388,14 @@ struct DeviceContext:
 
     fn enqueue_copy_to_device[
         type: DType
-    ](self, buf: DeviceBuffer[type], ptr: DTypePointer[type]) raises:
+    ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
         self.cuda_context.copy_host_to_device_async(
             buf.ptr, ptr, len(buf), self.cuda_stream
         )
 
     fn enqueue_copy_from_device[
         type: DType
-    ](self, ptr: DTypePointer[type], buf: DeviceBuffer[type]) raises:
+    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
         self.cuda_context.copy_device_to_host_async(
             ptr, buf.ptr, len(buf), self.cuda_stream
         )
@@ -409,12 +409,12 @@ struct DeviceContext:
 
     fn copy_to_device_sync[
         type: DType
-    ](self, buf: DeviceBuffer[type], ptr: DTypePointer[type]) raises:
+    ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
         self.cuda_context.copy_host_to_device(buf.ptr, ptr, len(buf))
 
     fn copy_from_device_sync[
         type: DType
-    ](self, ptr: DTypePointer[type], buf: DeviceBuffer[type]) raises:
+    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
         self.cuda_context.copy_device_to_host(ptr, buf.ptr, len(buf))
 
     fn copy_device_to_device_sync[

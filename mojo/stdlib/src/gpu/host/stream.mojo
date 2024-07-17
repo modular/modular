@@ -7,15 +7,14 @@
 
 from os import abort
 
-from memory.unsafe import DTypePointer
 
 from ._utils import _check_error, _StreamHandle
 
 
 @always_inline
-fn _get_current_stream() -> DTypePointer[DType.invalid]:
+fn _get_current_stream() -> UnsafePointer[NoneType]:
     return external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentStream", DTypePointer[DType.invalid]
+        "KGEN_CompilerRT_AsyncRT_GetCurrentStream", UnsafePointer[NoneType]
     ]()
 
 

@@ -132,12 +132,12 @@ fn _get_dylib_function[
 @value
 @register_passable("trivial")
 struct CudaHandle(Boolable, Stringable):
-    var handle: DTypePointer[DType.invalid]
+    var handle: UnsafePointer[NoneType]
 
     fn __init__(inout self):
-        self.handle = DTypePointer[DType.invalid]()
+        self.handle = UnsafePointer[NoneType]()
 
-    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
+    fn __init__(inout self, handle: UnsafePointer[NoneType]):
         self.handle = handle
 
     fn __bool__(self) -> Bool:

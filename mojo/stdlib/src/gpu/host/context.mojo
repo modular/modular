@@ -7,7 +7,7 @@
 
 from os import abort
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
@@ -87,9 +87,6 @@ struct Context:
         )
         return ptr.bitcast[type]()
 
-    fn malloc[type: DType](self, count: Int) raises -> DTypePointer[type]:
-        return self.malloc[Scalar[type]](count)
-
     fn malloc_managed[
         type: AnyType
     ](self, count: Int) raises -> UnsafePointer[type]:
@@ -107,19 +104,11 @@ struct Context:
         )
         return ptr.bitcast[type]()
 
-    fn malloc_managed[
-        type: DType
-    ](self, count: Int) raises -> DTypePointer[type]:
-        return self.malloc_managed[Scalar[type]](count)
-
     fn free[type: AnyType](self, ptr: UnsafePointer[type]) raises:
         """Frees allocated GPU device memory."""
 
         var cuMemFree = self.cuda_dll.value().cuMemFree if self.cuda_dll else cuMemFree.load()
         _check_error(cuMemFree(ptr.bitcast[Int]()))
-
-    fn free[type: DType](self, ptr: DTypePointer[type]) raises:
-        self.free(ptr._as_scalar_pointer())
 
     fn copy_host_to_device[
         type: AnyType
@@ -138,20 +127,6 @@ struct Context:
                 host_src.bitcast[NoneType](),
                 count * sizeof[type](),
             )
-        )
-
-    fn copy_host_to_device[
-        type: DType
-    ](
-        self,
-        device_dest: DTypePointer[type],
-        host_src: DTypePointer[type],
-        count: Int,
-    ) raises:
-        self.copy_host_to_device[Scalar[type]](
-            device_dest._as_scalar_pointer(),
-            host_src._as_scalar_pointer(),
-            count,
         )
 
     fn copy_host_to_device_async[
@@ -175,22 +150,6 @@ struct Context:
             )
         )
 
-    fn copy_host_to_device_async[
-        type: DType
-    ](
-        self,
-        device_dst: DTypePointer[type],
-        host_src: DTypePointer[type],
-        count: Int,
-        stream: Stream,
-    ) raises:
-        self.copy_host_to_device_async[Scalar[type]](
-            device_dst._as_scalar_pointer(),
-            host_src._as_scalar_pointer(),
-            count,
-            stream,
-        )
-
     fn copy_device_to_host[
         type: AnyType
     ](
@@ -208,20 +167,6 @@ struct Context:
                 device_src.bitcast[Int](),
                 count * sizeof[type](),
             )
-        )
-
-    fn copy_device_to_host[
-        type: DType
-    ](
-        self,
-        host_dest: DTypePointer[type],
-        device_src: DTypePointer[type],
-        count: Int,
-    ) raises:
-        self.copy_device_to_host[Scalar[type]](
-            host_dest._as_scalar_pointer(),
-            device_src._as_scalar_pointer(),
-            count,
         )
 
     fn copy_device_to_host_async[
@@ -245,22 +190,6 @@ struct Context:
             )
         )
 
-    fn copy_device_to_host_async[
-        type: DType
-    ](
-        self,
-        host_dest: DTypePointer[type],
-        device_src: DTypePointer[type],
-        count: Int,
-        stream: Stream,
-    ) raises:
-        self.copy_device_to_host_async[Scalar[type]](
-            host_dest._as_scalar_pointer(),
-            device_src._as_scalar_pointer(),
-            count,
-            stream,
-        )
-
     fn copy_device_to_device_async[
         type: AnyType
     ](
@@ -282,19 +211,6 @@ struct Context:
             )
         )
 
-    fn copy_device_to_device_async[
-        type: DType
-    ](
-        self,
-        dst: DTypePointer[type],
-        src: DTypePointer[type],
-        count: Int,
-        stream: Stream,
-    ) raises:
-        return self.copy_device_to_device_async(
-            dst._as_scalar_pointer(), src._as_scalar_pointer(), count, stream
-        )
-
     fn memset[
         type: AnyType
     ](self, device_dest: UnsafePointer[type], val: UInt8, count: Int) raises:
@@ -309,20 +225,11 @@ struct Context:
             )
         )
 
-    fn memset[
-        type: DType
-    ](self, device_dest: DTypePointer[type], val: UInt8, count: Int) raises:
-        self.memset[Scalar[type]](
-            device_dest._as_scalar_pointer(),
-            val,
-            count,
-        )
-
     fn memset_async[
         type: DType
     ](
         self,
-        device_dest: DTypePointer[type],
+        device_dest: UnsafePointer[Scalar[type]],
         val: Scalar[type],
         count: Int,
         stream: Stream,
@@ -388,27 +295,6 @@ struct Context:
             )
         )
 
-    @always_inline
-    fn copy_device_to_device[
-        type: DType
-    ](
-        self,
-        device_dest: DTypePointer[type],
-        device_src: DTypePointer[type],
-        count: Int,
-    ) raises:
-        self.copy_device_to_device[Scalar[type]](
-            device_dest._as_scalar_pointer(),
-            device_src._as_scalar_pointer(),
-            count,
-        )
-
-    fn malloc_async[
-        type: DType
-    ](self, count: Int, stream: Stream) raises -> DTypePointer[type]:
-        """Allocates memory with stream ordered semantics."""
-        return self.malloc_async[Scalar[type]](count, stream)
-
     fn malloc_async[
         type: AnyType
     ](self, count: Int, stream: Stream) raises -> UnsafePointer[type]:
@@ -432,9 +318,3 @@ struct Context:
 
         var cuMemFreeAsync = self.cuda_dll.value().cuMemFreeAsync if self.cuda_dll else cuMemFreeAsync.load()
         _check_error(cuMemFreeAsync(ptr.bitcast[Int](), stream.stream))
-
-    fn free_async[
-        type: DType
-    ](self, ptr: DTypePointer[type], stream: Stream) raises:
-        """Frees memory with stream ordered semantics."""
-        self.free_async[Scalar[type]](ptr._as_scalar_pointer(), stream)
