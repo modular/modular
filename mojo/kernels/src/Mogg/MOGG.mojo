@@ -2824,29 +2824,23 @@ fn resize_shape[
 fn roi_align[
     type: DType, aligned: Bool, mode: StringLiteral
 ](
-    input: NDBuffer[type, 4],
-    rois: NDBuffer[type, 2],
-    output_height: NDBuffer[DType.int64, 1],
-    output_width: NDBuffer[DType.int64, 1],
-    spatial_scale: NDBuffer[DType.float32, 1],
-    sampling_ratio: NDBuffer[DType.float32, 1],
+    input: NDBuffer[type, 4, *_],
+    rois: NDBuffer[type, 2, *_],
+    output_height: Int64,
+    output_width: Int64,
+    spatial_scale: Scalar,
+    sampling_ratio: Scalar,
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
 ):
-    roi_align_nhwc[
-        type,
-        DimList.create_unknown[4](),
-        DimList.create_unknown[2](),
-        aligned,
-        mode,
-    ](
+    roi_align_nhwc[aligned, mode](
         output,
         input,
         rois,
-        int(output_height[0]),
-        int(output_width[0]),
-        spatial_scale[0],
-        sampling_ratio[0],
+        int(output_height),
+        int(output_width),
+        spatial_scale,
+        sampling_ratio,
     )
 
 
