@@ -1026,9 +1026,11 @@ MojoASTDeclRef MojoTypeSystem::createDeclsFromSourceNameRecursive(
 MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
                                                           StringRef name) {
   std::string effectiveName = name.str();
-  if (name.empty()) {
-    die.GetDWARF()->GetObjectFile()->GetModule()->ReportError(
-        "[MojoTypeSystem::getDeclForDie]: {0} is empty. Die = {1:x16}.",
+  if (name.empty() && die.Tag() != DW_TAG_subroutine_type &&
+      die.Tag() != DW_TAG_inlined_subroutine) {
+    die.GetDWARF()->GetObjectFile()->GetModule()->ReportWarning(
+        "[MojoTypeSystem::getDeclForDie]: {0} has an empty name. Die = "
+        "{1:x16}.",
         DW_TAG_value_to_name(die.Tag()), die.GetOffset());
 
     effectiveName = "__lldb_anonymous__" + std::to_string(die.GetOffset());
@@ -1046,6 +1048,8 @@ MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
   case DW_TAG_structure_type: {
     return getOrCreateStructDecl(effectiveName, MojoASTDeclRef{});
   case DW_TAG_subprogram:
+  case DW_TAG_subroutine_type:
+  case DW_TAG_inlined_subroutine:
     return getOrCreateFunctionDecl(effectiveName, MojoASTDeclRef{});
   }
   default:
