@@ -1037,12 +1037,12 @@ void MojoDocument::onCodeCompletion(
 }
 
 enum class ItemAccessKind { kNormal, kPrivate, kSunder, kDunder, kOther };
-static ItemAccessKind getItemAccesKind(const lsp::CompletionItem &item) {
-  // We use accessKind as the primary sorting key, which tells us if the item
-  // is normal, private (single leading underscore), sunder (`_foo_`), or
-  // dunder (`__bar__`). Items are then sorted within this access grouping
-  // based on their kind (`it.kind`).
 
+/// We use accessKind as the primary sorting key, which tells us if the item
+/// is normal, private (single leading underscore), sunder (`_foo_`), or
+/// dunder (`__bar__`). Items are then sorted within this access grouping
+/// based on their kind (`it.kind`).
+static ItemAccessKind getItemAccessKind(const lsp::CompletionItem &item) {
   StringRef label = item.label;
   size_t size = label.size();
   size_t numLeftUnders = size - label.ltrim('_').size();
@@ -1076,9 +1076,9 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
     lsp::CompletionItem item;
     item.label = it.label;
 
-    item.sortText = llvm::formatv("{0}-{1}-{2}",
-                                  static_cast<unsigned>(getItemAccesKind(item)),
-                                  it.kind, it.label);
+    item.sortText = llvm::formatv(
+        "{0}-{1}-{2}", static_cast<unsigned>(getItemAccessKind(item)), it.kind,
+        it.label);
 
     switch (it.kind) {
     case KGEN::Mojo::CodeCompletionResult::kUnknown:
