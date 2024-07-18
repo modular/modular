@@ -20,6 +20,8 @@
 // Forward Declarations
 //===----------------------------------------------------------------------===//
 
+class MlirOperation;
+
 namespace mlir {
 class ModuleOp;
 class OpPassManager;
@@ -51,6 +53,7 @@ class FuncOp;
 class GeneratorOp;
 class PackageLinkOp;
 class SymbolConstantAttr;
+struct ExportedSymbol;
 
 namespace POP {
 class POPDialect;
@@ -125,6 +128,19 @@ std::unique_ptr<mlir::Pass>
 createElaborateGenerators(TargetInfoAttr target,
                           const ElaborateGeneratorsOptions &options = {},
                           ElaboratorCompileAsmFn compileAsmFn = {});
+
+//===----------------------------------------------------------------------===//
+// Custom op registration
+//===----------------------------------------------------------------------===//
+
+using CAPICanonicalizationFn = std::function<void(MlirOperation op)>;
+using CompileCanonicalizationFnFn =
+    std::function<ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>(
+        ModuleOp, SymbolTable &,
+        llvm::MapVector<StringAttr, ExportedSymbol> const &, TargetInfoAttr)>;
+
+std::unique_ptr<mlir::Pass>
+createRegisterCustomOps(CompileCanonicalizationFnFn compileModuleFn = {});
 
 //===----------------------------------------------------------------------===//
 // Inlining

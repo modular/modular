@@ -950,3 +950,28 @@ def LowerCustomOps : Pass<"lower-custom-ops"> {
 
   let dependentDialects = ["KGENDialect", "Custom::CustomDialect"];
 }
+
+//===----------------------------------------------------------------------===//
+// `custom` dialect registration
+//===----------------------------------------------------------------------===//
+
+def RegisterCustomOps : Pass<"register-custom-ops", "ModuleOp"> {
+  let summary = "Register ops from the `custom` dialect";
+  let description = [{
+    This pass registers all `custom` ops in the `custom` dialect.
+    In particular, it JITs the canonicalization patterns and registers them in
+    the `custom` dialect.
+  }];
+
+  // FIXME(#15949): Should not require all these dialects to be loaded.
+  let dependentDialects = [
+    "KGENDialect",
+    "DebugInfo::DebugInfoDialect",
+    "HLCF::HLCFDialect",
+    "MDialect",
+    "Custom::CustomDialect",
+    "mlir::LLVM::LLVMDialect",
+    "mlir::NVVM::NVVMDialect",
+    "mlir::index::IndexDialect",
+  ];
+}
