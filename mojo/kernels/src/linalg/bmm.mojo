@@ -175,7 +175,7 @@ fn _small_batched_matmul[
             var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
             var b_buf_index = indices
 
-            memset_zero(c_buf.data.address + batch * M * N, M * N)
+            memset_zero(c_buf.data + batch * M * N, M * N)
             for m in range(M):
                 indices[rank - 2] = m
 
