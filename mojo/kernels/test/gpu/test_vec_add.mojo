@@ -6,6 +6,22 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Debugging tests:
+# GDB: b %breakpoint1:location
+# GDB: c
+# GDB: cuda thread 0
+# GDB: info locals
+# GDB: info args
+
+# CHECK-GDB: hit Breakpoint {{.*}} at {{.*}}%breakpoint1:location
+# CHECK-GDB: tid = 0
+# CHECK-GDB: in0 = 0x
+# CHECK-GDB: in1 = 0x
+# CHECK-GDB: out = 0x
+# CHECK-GDB: len = 1024
+# ===----------------------------------------------------------------------=== #
+
 from pathlib import Path
 from gpu import *
 from gpu.host import DeviceContext, Dim
@@ -21,7 +37,7 @@ fn vec_func(
     var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid]
+    out[tid] = in0[tid] + in1[tid]  # breakpoint1
 
 
 # CHECK-LABEL: run_vec_add
