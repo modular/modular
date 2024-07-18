@@ -262,8 +262,8 @@ fn _concat[
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
             memcpy(
-                output.data.address + output_offset,
-                inputs[i].data.address + input_offset,
+                output.data + output_offset,
+                inputs[i].data + input_offset,
                 w * c,
             )
         w_offset += w
@@ -281,8 +281,8 @@ fn _concat_inner[
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
         memcpy(
-            output.data.offset(num_elems_copied).address,
-            inputs[i].data.address,
+            output.data.offset(num_elems_copied),
+            inputs[i].data,
             buffer_len,
         )
         num_elems_copied += buffer_len

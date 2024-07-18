@@ -1294,7 +1294,7 @@ fn conv_transposed[
         packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
             pack_filter_shape(filter, 1)
         )
-        packed_filter_ptr = DTypePointer[filter.type].alloc(
+        packed_filter_ptr = UnsafePointer[Scalar[filter.type]].alloc(
             packed_filter_shape.flattened_length()
         )
     else:

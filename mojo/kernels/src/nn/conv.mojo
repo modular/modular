@@ -422,7 +422,7 @@ struct ConvDirectNHWC[
         var output_size = prod_dims[0, output_rank](output)
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
-            output_ptr = DTypePointer[output_type].alloc(scratch_size)
+            output_ptr = UnsafePointer[Scalar[output_type]].alloc(scratch_size)
         var output_scratch = Buffer[output_type](output_ptr, scratch_size)
 
         @__copy_capture(

@@ -817,12 +817,12 @@ fn scatter_nd_generator[
             # TODO: Owning = True or False?
             var outp = DeviceBuffer(
                 ctx,
-                output.data.address,
+                output.data,
                 data.num_elements(),
                 owning=False,
             )
             var inp = DeviceBuffer(
-                ctx, data.data.address, data.num_elements(), owning=False
+                ctx, data.data, data.num_elements(), owning=False
             )
             ctx.enqueue_copy_device_to_device(
                 outp,
@@ -1526,8 +1526,8 @@ fn gather_nd[
 
             # Perform the actual copy of element/slice/sheet/cuboid/etc.
             memcpy(
-                output.data.address + output_offset,
-                reshaped_data.data.address + input_offset,
+                output.data + output_offset,
+                reshaped_data.data + input_offset,
                 count_copy,
             )
     idx_ptr.free()

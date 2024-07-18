@@ -274,23 +274,27 @@ fn _resize[
     var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.data
-    var out_ptr = DTypePointer[type]()
+    var out_ptr = UnsafePointer[Scalar[type]]()
     var using_tmp1 = False
-    var tmp_buffer1 = DTypePointer[type]()
-    var tmp_buffer2 = DTypePointer[type]()
+    var tmp_buffer1 = UnsafePointer[Scalar[type]]()
+    var tmp_buffer2 = UnsafePointer[Scalar[type]]()
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass accross one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
         out_ptr = output.data
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = DTypePointer[type].alloc(tmp_dims.flattened_length())
+        tmp_buffer1 = UnsafePointer[Scalar[type]].alloc(
+            tmp_dims.flattened_length()
+        )
         out_ptr = tmp_buffer1
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = DTypePointer[type].alloc(tmp_dims.flattened_length())
+        tmp_buffer2 = UnsafePointer[Scalar[type]].alloc(
+            tmp_dims.flattened_length()
+        )
     var in_shape = input.get_shape()
     var out_shape = input.get_shape()
     # interpolation is separable, so perform 1d interpolation across each
