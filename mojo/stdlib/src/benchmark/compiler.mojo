@@ -91,23 +91,6 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
 
 
 @always_inline
-fn keep[type: DType](val: DTypePointer[type]):
-    """Provides a hint to the compiler to not optimize the variable use away.
-
-    This is useful in benchmarking to avoid the compiler not deleting the
-    code to be benchmarked because the variable is not used in a side-effecting
-    manner.
-
-    Parameters:
-      type: The type of the input.
-
-    Args:
-      val: The value to not optimize away.
-    """
-    keep(val.address)
-
-
-@always_inline
 fn keep[type: AnyType](val: UnsafePointer[type]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
