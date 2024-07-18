@@ -106,7 +106,7 @@ void M::warnBuildingForDebugWithDebugBuiltCompiler(
 #ifdef MODULAR_DEBUG
   if (debugInfoLevel == M::KGEN::CompilationOptions::kFullDebugInfo)
     state.reportWarning(
-        "Performing debug build with Mojo compiler built in debug mode:\n"
+        "Performing a debug build with the Mojo compiler built in debug mode:\n"
         "It is not necessary to use a debug build of the Mojo compiler to "
         "produce debuggable Mojo programs.\n"
         "You can safely use a release build of the compiler for this, which "
