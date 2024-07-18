@@ -679,6 +679,8 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 # MGP Device Context Primitives
 # ===----------------------------------------------------------------------===#
 
+alias dev_ty = Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
+
 
 @mogg_register("mgp.device.context.create")
 @always_inline
@@ -688,7 +690,6 @@ fn mgp_device_context_create[
 ](dummy_chain: Int, ctx: StateContext) -> Int:
     @parameter
     if bDevice == "cuda":
-        alias dev_ty = Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
         var dev_ctx = external_call[
             "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[dev_ty]
         ](sizeof[dev_ty](), alignof[dev_ty]())
