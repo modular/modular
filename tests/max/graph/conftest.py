@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from max.graph import core as _c, mlir
+
 
 @pytest.fixture
 def modular_path() -> Path:
@@ -17,3 +19,14 @@ def modular_path() -> Path:
     assert modular_path is not None
 
     return Path(modular_path)
+
+
+@pytest.fixture(scope="module")
+def mlir_context() -> mlir.Context:
+    """Set up the MLIR context by registering and loading Modular dialects."""
+    with mlir.Context() as ctx, mlir.Location.unknown():
+        registry = mlir.DialectRegistry()
+        _c.load_modular_dialects(registry)
+        ctx.append_dialect_registry(registry)
+        ctx.load_all_available_dialects()
+        yield ctx

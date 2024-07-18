@@ -15,10 +15,10 @@ class DType(Enum):
     """The tensor data type."""
 
     bool = 0, "bool"
-    int8 = 1, "i8"
-    int16 = 2, "i16"
-    int32 = 3, "i32"
-    int64 = 4, "i64"
+    int8 = 1, "si8"
+    int16 = 2, "si16"
+    int32 = 3, "si32"
+    int64 = 4, "si64"
     uint8 = 5, "ui8"
     uint16 = 6, "ui16"
     uint32 = 7, "ui32"
@@ -26,7 +26,6 @@ class DType(Enum):
     float16 = 9, "f16"
     float32 = 10, "f32"
     float64 = 11, "f64"
-    unknown = 12, "unknown"
 
     def __repr__(self) -> str:
         return self.name
