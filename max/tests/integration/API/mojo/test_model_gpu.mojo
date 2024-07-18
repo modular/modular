@@ -16,7 +16,7 @@ from max._driver import cuda_device
 from max.tensor import Tensor, TensorShape
 
 
-fn test_model_metadata() raises:
+fn test_model_metadata(session: InferenceSession) raises:
     var args = argv()
 
     assert_equal(len(args), 2)
@@ -24,9 +24,6 @@ fn test_model_metadata() raises:
     assert_true("mo.mlir" in args[1])
 
     var model_path = args[1]
-    var options = SessionOptions()
-    options._set_device(cuda_device())
-    var session = InferenceSession(options)
     var compiled_model = session.load(Path(model_path))
     assert_equal(compiled_model.num_model_inputs(), 1)
 
@@ -45,7 +42,7 @@ fn test_model_metadata() raises:
     assert_equal(output_names[0], "output")
 
 
-fn test_model() raises:
+fn test_model(session: InferenceSession) raises:
     var args = argv()
 
     assert_equal(len(args), 2)
@@ -54,9 +51,6 @@ fn test_model() raises:
 
     var model_path = args[1]
 
-    var options = SessionOptions()
-    options._set_device(cuda_device())
-    var session = InferenceSession(options)
     var model = session.load(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
 
@@ -79,5 +73,9 @@ fn test_model() raises:
 
 
 fn main() raises:
-    test_model_metadata()
-    test_model()
+    var options = SessionOptions()
+    options._set_device(cuda_device())
+    var session = InferenceSession(options)
+
+    test_model_metadata(session)
+    test_model(session)
