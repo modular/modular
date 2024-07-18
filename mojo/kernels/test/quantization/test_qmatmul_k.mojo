@@ -28,15 +28,8 @@ from quantization.qmatmul_k import (
 from utils.index import Index
 
 
-@always_inline
-fn _to_dtype_pointer[
-    type: DType
-](array: InlineArray[Scalar[type]]) -> DTypePointer[type]:
-    return DTypePointer[type](array.unsafe_ptr())
-
-
 fn fill_random[type: DType](array: InlineArray[Scalar[type]]):
-    rand(_to_dtype_pointer(array).address, len(array))
+    rand(array.unsafe_ptr(), len(array))
 
 
 fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
@@ -186,7 +179,7 @@ struct qgemm_Q4_0(QuantizedGemm):
 
         # Decode the bits of the weight data.
         var q_packed_bits = SIMD[size = _block_Q4_0.group_size // 2].load(
-            _to_dtype_pointer(block_ptr[].q_bits)
+            block_ptr[].q_bits.unsafe_ptr()
         )
 
         for j in range(2):
@@ -301,7 +294,7 @@ struct qgemm_Q4_K(QuantizedGemm):
 
         # Decode the bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 32):
-            var q_bits_ptr = _to_dtype_pointer(block_ptr[].q_bits)
+            var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
             var q_packed_bits = SIMD[size=32].load(q_bits_ptr, i)
 
             for j in range(2):
@@ -395,7 +388,7 @@ struct qgemm_Q6_K(QuantizedGemm):
 
         # Decode the bottom bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 64):
-            var q_bits_lo_ptr = _to_dtype_pointer(block_ptr[].q_bits_lo)
+            var q_bits_lo_ptr = block_ptr[].q_bits_lo.unsafe_ptr()
             var q_packed_bits = SIMD[size=64].load(q_bits_lo_ptr, i)
 
             for j in range(2):
@@ -405,7 +398,7 @@ struct qgemm_Q6_K(QuantizedGemm):
 
         # Decode the top bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 4, 32):
-            var q_bits_hi_ptr = _to_dtype_pointer(block_ptr[].q_bits_hi)
+            var q_bits_hi_ptr = block_ptr[].q_bits_hi.unsafe_ptr()
             var q_packed_bits = SIMD[size=32].load(q_bits_hi_ptr, i)
 
             for j in range(4):
@@ -416,7 +409,7 @@ struct qgemm_Q6_K(QuantizedGemm):
 
         var sum = dot_product_QK_K[
             group_size = _block_Q6_K.group_size, b_zero_point=32
-        ](a_quant_data, b_quant_data, _to_dtype_pointer(block_ptr[].q_scales))
+        ](a_quant_data, b_quant_data, block_ptr[].q_scales.unsafe_ptr())
 
         var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
             DType.float32

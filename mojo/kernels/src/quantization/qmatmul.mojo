@@ -1017,10 +1017,7 @@ fn _matmul_qint4_m_1[
 
             for k in range(0, K, group_size):
                 kernel.process_group_packed[group_size](
-                    ak_ptr,
-                    ak_scale_ptr,
-                    bk_ptr,
-                    c_float,
+                    ak_ptr, ak_scale_ptr, bk_ptr, c_float
                 )
 
                 ak_ptr += group_size

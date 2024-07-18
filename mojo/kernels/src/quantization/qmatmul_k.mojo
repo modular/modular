@@ -33,13 +33,6 @@ from utils.index import Index
 from ._utils import roundeven_to_int32
 
 
-@always_inline
-fn _to_dtype_pointer[
-    type: DType
-](array: InlineArray[Scalar[type]]) -> UnsafePointer[Scalar[type]]:
-    return array.unsafe_ptr()
-
-
 struct _block_QK_K:
     alias quantized_k = 256
 
@@ -100,7 +93,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
-        var bits_ptr = _to_dtype_pointer(self.bits)
+        var bits_ptr = self.bits.unsafe_ptr()
 
         for m in range(0, block_m, 2 * Self._tuple_width):
 
@@ -127,7 +120,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
-        var bits_ptr = _to_dtype_pointer(self.bits)
+        var bits_ptr = self.bits.unsafe_ptr()
 
         for m in range(0, block_m, 2 * Self._tuple_width):
 
@@ -160,7 +153,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
-        var bits_ptr = _to_dtype_pointer(self.bits)
+        var bits_ptr = self.bits.unsafe_ptr()
 
         for m in range(0, block_m, 4 * Self._tuple_width):
             var src_col_ptr = src_ptr
@@ -192,7 +185,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
-        var bits_ptr = _to_dtype_pointer(self.bits)
+        var bits_ptr = self.bits.unsafe_ptr()
 
         for m in range(0, block_m, 4 * Self._tuple_width):
             var dst_col_ptr = dst_ptr
@@ -307,7 +300,7 @@ fn _quantize_a_Q8_K[
             var block_ptr = packed_ptr.bitcast[
                 _block_Q8_K_packed[group_size, tile_m]
             ]()
-            var q_bits_ptr = _to_dtype_pointer(block_ptr[].q_bits)
+            var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
 
             for row in range(tile_m):
                 var max_value_simd = SIMD[type, group_size](Scalar[type].MIN)
@@ -361,7 +354,7 @@ fn _quantize_a_Q8_K[
 
 fn _expand_q_bits_lo[
     *, width: Int
-](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8],):
+](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
     for k in range(0, _block_QK_K.quantized_k // 2, width):
         var src_q_bits = SIMD[size=width].load(src_ptr)
         src_ptr += width
@@ -374,7 +367,7 @@ fn _expand_q_bits_lo[
 
 fn _expand_and_merge_q_bits_hi[
     *, width: Int, bit_count: Int
-](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8],):
+](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
     alias values_per_byte = 8 // bit_count
     alias bit_mask = (1 << bit_count) - 1
 
@@ -393,7 +386,7 @@ fn _expand_and_merge_q_bits_hi[
 
 fn _copy_column_q_bits_to_block[
     block_n: Int
-](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8],):
+](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
     """Interleaves the linear source buffer to the blocked destination
     buffer.
     """
@@ -451,7 +444,7 @@ fn _pack_block_Q4_K[
         ]()
 
         _expand_q_bits_lo[width=32](
-            _to_dtype_pointer(src_ptr[].q_bits), q_bits_column_buf
+            src_ptr[].q_bits.unsafe_ptr(), q_bits_column_buf
         )
         _copy_column_q_bits_to_block[block_n](
             q_bits_column_buf, q_bits_block_buf + n * 4
@@ -539,10 +532,10 @@ fn _pack_block_Q6_K[
         ]()
 
         _expand_q_bits_lo[width=64](
-            _to_dtype_pointer(src_ptr[].q_bits_lo), q_bits_column_buf
+            src_ptr[].q_bits_lo.unsafe_ptr(), q_bits_column_buf
         )
         _expand_and_merge_q_bits_hi[width=32, bit_count=2](
-            _to_dtype_pointer(src_ptr[].q_bits_hi), q_bits_column_buf
+            src_ptr[].q_bits_hi.unsafe_ptr(), q_bits_column_buf
         )
         _copy_column_q_bits_to_block[block_n](
             q_bits_column_buf, q_bits_block_buf + n * 4
@@ -1004,7 +997,7 @@ fn _matmul_Q4_K_tile[
 
     c_int32_block.init()
 
-    var a_q_bits_ptr = _to_dtype_pointer(a_tile_ptr[].q_bits)
+    var a_q_bits_ptr = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
         var c_int32_group = _Accumulator[
@@ -1035,17 +1028,17 @@ fn _matmul_Q4_K_tile[
     var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
 
     _apply_base_scales(
-        _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+        b_tile_ptr[].base_scales.unsafe_ptr(), c_int32_block, c_float
     )
 
     _apply_zero_point_correction[group_count](
-        _to_dtype_pointer(a_tile_ptr[].group_sums),
+        a_tile_ptr[].group_sums.unsafe_ptr(),
         b_q_mins_ptr,
-        _to_dtype_pointer(b_tile_ptr[].base_mins),
+        b_tile_ptr[].base_mins.unsafe_ptr(),
         c_float,
     )
 
-    _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
+    _apply_a_scales(a_tile_ptr[].scales.unsafe_ptr(), c_float)
 
     _accumulate_and_store(c_ptr, N, accumulate, c_float)
 
@@ -1076,7 +1069,7 @@ fn _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = _to_dtype_pointer(b_tile_ptr[].q_bits.bits)
+        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
 
         @parameter
         fn matmul_group_packed(
@@ -1198,7 +1191,7 @@ fn _matmul_Q6_K_tile[
 
     c_int32_block.init()
 
-    var a_q_bits_ptr = _to_dtype_pointer(a_tile_ptr[].q_bits)
+    var a_q_bits_ptr = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
         var c_int32_group = _Accumulator[
@@ -1230,7 +1223,7 @@ fn _matmul_Q6_K_tile[
 
         a_q_bits_ptr += tile_m * group_size
 
-        var b_q_scales_ptr = _to_dtype_pointer(b_tile_ptr[].q_scales)
+        var b_q_scales_ptr = b_tile_ptr[].q_scales.unsafe_ptr()
 
         # Scale the accumulator for this group and add to the block level
         # accumulators.
@@ -1249,10 +1242,10 @@ fn _matmul_Q6_K_tile[
     var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
 
     _apply_base_scales(
-        _to_dtype_pointer(b_tile_ptr[].base_scales), c_int32_block, c_float
+        b_tile_ptr[].base_scales.unsafe_ptr(), c_int32_block, c_float
     )
 
-    _apply_a_scales(_to_dtype_pointer(a_tile_ptr[].scales), c_float)
+    _apply_a_scales(a_tile_ptr[].scales.unsafe_ptr(), c_float)
 
     _accumulate_and_store(c_ptr, N, accumulate, c_float)
 
@@ -1281,7 +1274,7 @@ fn _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = _to_dtype_pointer(b_tile_ptr[].q_bits.bits)
+        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
 
         @parameter
         fn matmul_group_packed(
@@ -1391,12 +1384,7 @@ fn _matmul_Qb_K[
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
                 columns_fn[tile_n, simd_width](
-                    a_packed_ptr,
-                    bn_packed_ptr,
-                    cn_ptr.address,
-                    M,
-                    N,
-                    accumulate,
+                    a_packed_ptr, bn_packed_ptr, cn_ptr, M, N, accumulate
                 )
 
                 bn_packed_ptr += tile_n * simd_width

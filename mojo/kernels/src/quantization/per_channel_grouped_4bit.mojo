@@ -492,13 +492,6 @@ fn q4_k_dequantize_impl(
 ######
 
 
-@always_inline
-fn _to_unsafe_pointer[
-    type: DType
-](array: InlineArray[Scalar[type]]) -> UnsafePointer[Scalar[type]]:
-    return array.unsafe_ptr()
-
-
 struct block_Q6_K:
     alias group_size = 16
     alias group_count = block_QK_K.quantized_k // Self.group_size
