@@ -40,7 +40,7 @@ alias cuDeviceGetAttribute = _dylib_function[
 
 alias cuDeviceGetName = _dylib_function[
     "cuDeviceGetName",
-    fn (DTypePointer[DType.int8], Int32, _DeviceHandle) -> Result,
+    fn (UnsafePointer[Int8], Int32, _DeviceHandle) -> Result,
 ]
 
 alias cuDeviceTotalMem = _dylib_function[
@@ -155,17 +155,17 @@ alias cuMemsetD8 = _dylib_function[
 
 alias cuMemsetD8Async = _dylib_function[
     "cuMemsetD8Async",
-    fn (DTypePointer[DType.uint8], UInt8, Int, _StreamHandle) -> Result,
+    fn (UnsafePointer[UInt8], UInt8, Int, _StreamHandle) -> Result,
 ]
 
 alias cuMemsetD16Async = _dylib_function[
     "cuMemsetD16Async",
-    fn (DTypePointer[DType.uint16], UInt16, Int, _StreamHandle) -> Result,
+    fn (UnsafePointer[UInt16], UInt16, Int, _StreamHandle) -> Result,
 ]
 
 alias cuMemsetD32Async = _dylib_function[
     "cuMemsetD32Async",
-    fn (DTypePointer[DType.uint32], UInt32, Int, _StreamHandle) -> Result,
+    fn (UnsafePointer[UInt32], UInt32, Int, _StreamHandle) -> Result,
 ]
 
 alias cuLaunchKernel = _dylib_function[
@@ -181,7 +181,7 @@ alias cuLaunchKernel = _dylib_function[
         UInt32,  # SharedMemSize
         _StreamHandle,
         UnsafePointer[UnsafePointer[NoneType]],  # Args
-        DTypePointer[DType.invalid],  # Extra
+        UnsafePointer[NoneType],  # Extra
     ) -> Result,
 ]
 

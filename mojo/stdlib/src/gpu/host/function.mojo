@@ -13,7 +13,6 @@ from sys.intrinsics import _mlirtype_is_eq
 
 from gpu.host.device_context import DeviceBuffer
 from memory import stack_allocation
-from memory.unsafe import DTypePointer
 
 from utils.lock import BlockingSpinLock, BlockingScopedLock
 from utils.variant import Variant
@@ -500,7 +499,7 @@ struct Function[
                 UInt32(shared_mem_bytes),
                 stream_value.stream,
                 args,
-                DTypePointer[DType.invalid](),
+                UnsafePointer[NoneType](),
             ),
             msg=Self._impl.function_name,
             location=__call_location(),
