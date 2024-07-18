@@ -6,7 +6,6 @@
 
 from collections.optional import OptionalReg
 from math import ceildiv
-from builtin.io import _printf
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -424,7 +423,6 @@ fn multistage_gemm[
     var a_gmem_slice = LayoutTensor[
         a_type, Layout.row_major(BM, K),
     ](a.data.offset(BM * block_idx[1] * K))
-        
 
     alias b_layout = Layout.row_major(N, K) if transpose_b else Layout.row_major(K, N)
     var b_gmem_tensor = LayoutTensor[
@@ -446,11 +444,10 @@ fn multistage_gemm[
     alias async_copy_b_layout = Layout.row_major(
         num_threads * simd_size // BD_1, BD_1 // simd_size
     )
-    alias async_copy_b_swizzle = Optional[_swizzle_signature](
-        xor_2bits_per8T
-    ) if transpose_b else (
-        None if a_type
-        == DType.float32 else Optional[_swizzle_signature](xor_3bits_per16T)
+    alias async_copy_b_swizzle = None if transpose_b else (
+        Optional[_swizzle_signature](
+            xor_2bits_per8T if a_type == DType.float32 else xor_3bits_per16T
+        )
     )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -465,9 +462,6 @@ fn multistage_gemm[
         ](
             a_smem_tile.vectorize[1, simd_size](),
             a_gmem_iter.get().vectorize[1, simd_size](),
-            a_gmem_iter.get().distance(a.data),
-            M,
-            K,
         )
 
         copy_dram_to_sram_async[
@@ -596,9 +590,6 @@ fn multistage_gemm[
                     ](
                         a_smem_prefetch_tile.vectorize[1, simd_size](),
                         a_gmem_iter.get().vectorize[1, simd_size](),
-                        a_gmem_iter.get().distance(a.data),
-                        M,
-                        K,
                     )
 
                     copy_dram_to_sram_async[
@@ -680,8 +671,7 @@ fn multistage_gemm[
                     )
                     vec[j] = vec_converted[0]
                     vec[j + 1] = vec_converted[1]
-                if m < M:
-                    epilogue((m, n), vec)
+                epilogue((m, n), vec)
 
         else:
             copy_sram_to_dram[
@@ -691,9 +681,6 @@ fn multistage_gemm[
             ](
                 c_gmem_tile.vectorize[1, simd_size](),
                 accum_smem_tile.vectorize[1, simd_size](),
-                c_gmem_tile.distance(c.data),
-                M,
-                N,
             )
 
     # Store FP32 results to FP32 buffer in global memory.
@@ -713,15 +700,15 @@ fn multistage_gemm[
                 alias src_idx = c_reg_frag.layout(i)
                 alias dst_idx = c_gmem_frag.layout(i)
                 m, n = divmod(thread_offset + dst_idx, N)
-                if m < M:
-                    var vec = SIMD[size=2].load[alignment = alignof[SIMD[c_type, 2]]()](c_reg_frag.ptr.offset(src_idx))
-                    epilogue((m, n), vec)
+                # var idx_x: Int
+                # var idx_y: Int
+                # idx_y, idx_x = divmod(i, c_reg_frag.dim[0]())
+                # var vec = c_reg_frag.aligned_load[2](idx_x, idx_y)
+                var vec = SIMD[size=2].load[alignment = alignof[SIMD[c_type, 2]]()](c_reg_frag.ptr.offset(src_idx))
+                epilogue((m, n), vec)
 
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
                 c_gmem_warp_tile.vectorize[1, 2](),
                 c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-                c_gmem_warp_tile.distance(c.data),
-                M,
-                N,
             )
