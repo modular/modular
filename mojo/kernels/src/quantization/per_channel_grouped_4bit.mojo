@@ -493,10 +493,10 @@ fn q4_k_dequantize_impl(
 
 
 @always_inline
-fn _to_dtype_pointer[
+fn _to_unsafe_pointer[
     type: DType
-](array: InlineArray[Scalar[type]]) -> DTypePointer[type]:
-    return DTypePointer[type](array.unsafe_ptr())
+](array: InlineArray[Scalar[type]]) -> UnsafePointer[Scalar[type]]:
+    return array.unsafe_ptr()
 
 
 struct block_Q6_K:

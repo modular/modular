@@ -20,7 +20,7 @@ from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
 from linalg.utils import partition_work
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from runtime.asyncrt import parallelism_level
 
 from utils import InlineArray
@@ -81,7 +81,7 @@ def matmul_qint4_pack_b[
 
 fn _quantize_a_block[
     group_size: Int, aq_type: DType, type: DType
-](a_ptr: DTypePointer[type]) -> (
+](a_ptr: UnsafePointer[Scalar[type]]) -> (
     SIMD[aq_type, group_size],
     Scalar[DType.float32],
 ):
@@ -144,7 +144,7 @@ fn _quantize_a_buffer[
                     var scale: Scalar[DType.float32]
                     (quant_data, scale) = _quantize_a_block[
                         group_size, aq_type
-                    ](am_ptr.offset(ki))
+                    ](am_ptr.offset(ki).address)
 
                     # Interleave this local block to the output buffer.
                     #
@@ -184,10 +184,10 @@ fn _unpack_weights[
     needs_correction: Bool,
     is_i8mm: Bool,
 ](
-    _b_s8_ptr: DTypePointer[DType.int8],
-    _b_packed_ptr: DTypePointer[DType.uint8],
-    _b_scale_ptr: DTypePointer[DType.float32],
-    _b_correction_ptr: DTypePointer[DType.int32],
+    _b_s8_ptr: UnsafePointer[Int8],
+    _b_packed_ptr: UnsafePointer[UInt8],
+    _b_scale_ptr: UnsafePointer[Float32],
+    _b_correction_ptr: UnsafePointer[Int32],
     batch_k: Int,
 ):
     var b_s8_ptr = _b_s8_ptr
@@ -308,8 +308,8 @@ fn _scale_and_accumulate[
     tile_n: Int,
     simd_width: Int,
 ](
-    a_scale_ptr: DTypePointer[DType.float32],
-    b_scale_ptr: DTypePointer[b_scale_type],
+    a_scale_ptr: UnsafePointer[Float32],
+    b_scale_ptr: UnsafePointer[Scalar[b_scale_type]],
     inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
@@ -393,9 +393,9 @@ trait _MatmulQInt4Kernel:
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
         inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         ...
@@ -404,11 +404,11 @@ trait _MatmulQInt4Kernel:
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_base_ptr: DTypePointer[DType.int8],
-        b_ptr: DTypePointer[DType.float32],
-        b_correction_ptr: DTypePointer[DType.int32],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_base_ptr: UnsafePointer[Int8],
+        b_ptr: UnsafePointer[Float32],
+        b_correction_ptr: UnsafePointer[Int32],
         inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         ...
@@ -440,9 +440,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
         inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
@@ -512,11 +512,11 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
-        b_scale_ptr: DTypePointer[DType.float32],
-        b_correction_ptr: DTypePointer[DType.int32],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
+        b_scale_ptr: UnsafePointer[Float32],
+        b_correction_ptr: UnsafePointer[Int32],
         inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
@@ -586,9 +586,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
         inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
@@ -676,11 +676,11 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
-        b_scale_ptr: DTypePointer[DType.float32],
-        b_correction_ptr: DTypePointer[DType.int32],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
+        b_scale_ptr: UnsafePointer[Float32],
+        b_correction_ptr: UnsafePointer[Int32],
         inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
@@ -755,9 +755,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
         inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
@@ -806,11 +806,11 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
-        b_scale_ptr: DTypePointer[DType.float32],
-        b_correction_ptr: DTypePointer[DType.int32],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
+        b_scale_ptr: UnsafePointer[Float32],
+        b_correction_ptr: UnsafePointer[Int32],
         inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
@@ -877,9 +877,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     fn process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
         inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         # The data layout for quantized A data is identical for the NEON dot
@@ -893,11 +893,11 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     fn process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
-        a_ptr: DTypePointer[DType.int8],
-        a_scale_ptr: DTypePointer[DType.float32],
-        b_ptr: DTypePointer[DType.int8],
-        b_scale_ptr: DTypePointer[DType.float32],
-        b_correction_ptr: DTypePointer[DType.int32],
+        a_ptr: UnsafePointer[Int8],
+        a_scale_ptr: UnsafePointer[Float32],
+        b_ptr: UnsafePointer[Int8],
+        b_scale_ptr: UnsafePointer[Float32],
+        b_correction_ptr: UnsafePointer[Int32],
         inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         alias block_m = max(tile_m // 2, 1)
@@ -1017,7 +1017,10 @@ fn _matmul_qint4_m_1[
 
             for k in range(0, K, group_size):
                 kernel.process_group_packed[group_size](
-                    ak_ptr, ak_scale_ptr, bk_ptr, c_float
+                    ak_ptr.address,
+                    ak_scale_ptr.address,
+                    bk_ptr.address,
+                    c_float,
                 )
 
                 ak_ptr += group_size
@@ -1098,7 +1101,7 @@ fn _matmul_qint4_m_any[
                     k_batch_groups * tile_n * simd_width,
                     DType.int32,
                     alignment=alignment,
-                ]() if needs_correction else DTypePointer[DType.int32]()
+                ]() if needs_correction else UnsafePointer[Int32]()
 
                 _unpack_weights[
                     group_size,
@@ -1108,7 +1111,7 @@ fn _matmul_qint4_m_any[
                     is_i8mm = kernel.aq_tuple_type() == DType.int64,
                 ](
                     b_s8_buf,
-                    b_ptr
+                    b_ptr.address
                     + (n * k_groups + ko_group * tile_n * simd_width)
                     * bytes_per_group_int4,
                     b_scale_buf,
@@ -1138,8 +1141,8 @@ fn _matmul_qint4_m_any[
 
                     for ki in range(0, ko_count, group_size):
                         kernel.process_group_unpacked[group_size](
-                            rebind[DTypePointer[DType.int8]](ak_ptr),
-                            ak_scale_ptr,
+                            rebind[UnsafePointer[Int8]](ak_ptr),
+                            ak_scale_ptr.address,
                             bk_s8_ptr,
                             bk_scale_ptr,
                             bk_correction_ptr,
@@ -1182,10 +1185,10 @@ fn _matmul_qint4[
 
     alias aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = DTypePointer[aq_type].alloc(
-        M * K, alignment=alignment
-    )
-    var a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
+    var a_quant_base_ptr = UnsafePointer[Scalar[aq_type]].alloc[
+        alignment=alignment
+    ](M * K)
+    var a_scale_base_ptr = UnsafePointer[Float32].alloc(M * k_groups)
 
     var a_quant = NDBuffer[aq_type, 2](a_quant_base_ptr, Index(M, K))
     var a_scale = NDBuffer[DType.float32, 2](
