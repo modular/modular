@@ -8,28 +8,34 @@
 from gpu.host.memory import _free, _malloc_managed
 from layout import *
 
-alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> DTypePointer[dtype]
+alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> UnsafePointer[
+    Scalar[dtype]
+]
 
-alias free_fn_type = fn[dtype: DType] (ptr: DTypePointer[dtype]) -> None
+alias free_fn_type = fn[dtype: DType] (
+    ptr: UnsafePointer[Scalar[dtype]]
+) -> None
 
 
-fn cpu_alloc[layout: Layout, dtype: DType]() -> DTypePointer[dtype]:
-    return DTypePointer[dtype].alloc(layout.size())
+fn cpu_alloc[layout: Layout, dtype: DType]() -> UnsafePointer[Scalar[dtype]]:
+    return UnsafePointer[Scalar[dtype]].alloc(layout.size())
 
 
 @always_inline
-fn cpu_free[dtype: DType](ptr: DTypePointer[dtype]):
+fn cpu_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
     ptr.free()
 
 
-fn gpu_managed_alloc[layout: Layout, dtype: DType]() -> DTypePointer[dtype]:
+fn gpu_managed_alloc[
+    layout: Layout, dtype: DType
+]() -> UnsafePointer[Scalar[dtype]]:
     try:
         return _malloc_managed[Scalar[dtype]](layout.size())
     except e:
-        return abort[DTypePointer[dtype]]("Can't alloc gpu memory")
+        return abort[UnsafePointer[Scalar[dtype]]]("Can't alloc gpu memory")
 
 
-fn gpu_free[dtype: DType](ptr: DTypePointer[dtype]):
+fn gpu_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
     try:
         return _free(ptr.address)
     except e:

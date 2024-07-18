@@ -416,7 +416,7 @@ struct LayoutTensor[
             address_space=address_space,
         ]()
 
-        return DTypePointer(ptr)
+        return ptr
 
     @staticmethod
     @always_inline("nodebug")
@@ -1167,7 +1167,7 @@ struct LayoutTensor[
         ](self.ptr)
 
     @always_inline
-    fn distance(self, addr: DTypePointer[dtype, address_space]) -> Int:
+    fn distance(self, addr: UnsafePointer[Scalar[dtype], address_space]) -> Int:
         """Returns the distance from the input address."""
 
         return (int(self.ptr) - int(addr)) // sizeof[dtype]()
@@ -1236,7 +1236,7 @@ struct LayoutTensor[
             var src_element = Element[dtype, other.element_layout].load[
                 other.address_space
             ](
-                rebind[DTypePointer[dtype, other.address_space]](
+                rebind[UnsafePointer[Scalar[dtype], other.address_space]](
                     other.ptr
                 ).offset(src_idx),
                 other.runtime_element_layout,

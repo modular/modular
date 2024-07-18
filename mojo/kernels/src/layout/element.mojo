@@ -61,7 +61,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
     fn load[
         address_space: AddressSpace
     ](
-        ptr: DTypePointer[dtype, address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
     ) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
@@ -137,7 +137,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
     fn store[
         address_space: AddressSpace
-    ](self, ptr: DTypePointer[dtype, address_space]):
+    ](self, ptr: UnsafePointer[Scalar[dtype], address_space]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
