@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu import *
-from gpu.host import Context, CudaInstance, Device, Dim, Function, Stream
+from gpu.host import DeviceContext, Dim
 from testing import *
 
 
@@ -23,9 +23,8 @@ fn add_constant_fn(
     out[tid] = input[tid] + constant
 
 
-def run_add_constant(ctx: Context):
+def run_add_constant(ctx: DeviceContext):
     alias length = 1024
-    var stream = Stream(ctx)
 
     var in_host = UnsafePointer[Float32].alloc(length)
     var out_host = UnsafePointer[Float32].alloc(length)
@@ -33,43 +32,44 @@ def run_add_constant(ctx: Context):
     for i in range(length):
         in_host[i] = i
 
-    var in_device = ctx.malloc[Float32](length)
-    var out_device = ctx.malloc[Float32](length)
+    var in_device = ctx.create_buffer[DType.float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
-    ctx.copy_host_to_device(in_device, in_host, length)
+    ctx.enqueue_copy_to_device(in_device, in_host)
 
-    var func = Function[add_constant_fn](ctx)
+    var func = ctx.compile_function[add_constant_fn]()
 
     var block_dim = 32
     # FIXME: why did this have FloatLiteral here?
     alias constant = Float32(33)
 
-    func(
+    ctx.enqueue_function(
+        func,
         out_device,
         in_device,
         constant,
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
-        stream=stream,
     )
 
-    ctx.copy_device_to_host(out_host, out_device, length)
+    ctx.enqueue_copy_from_device(out_host, out_device)
 
     for i in range(10):
         assert_equal(out_host[i], i + constant)
 
-    ctx.free(in_device)
-    ctx.free(out_device)
+    _ = in_device
+    _ = out_device
 
     in_host.free()
     out_host.free()
 
     _ = func^
-    _ = stream^
 
 
 def main():
-    with CudaInstance() as instance:
-        with Context(Device(instance)) as ctx:
+    try:
+        with DeviceContext() as ctx:
             run_add_constant(ctx)
+    except e:
+        print("CUDA_ERROR:", e)

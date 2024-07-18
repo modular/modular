@@ -10,13 +10,7 @@ from pathlib import Path
 
 
 from gpu import *
-from gpu.host import Context, Dim, Function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 
 
 fn vec_func(
@@ -31,7 +25,7 @@ fn vec_func(
 
 
 # CHECK-LABEL: run_vec_add
-fn run_vec_add() raises:
+fn run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
     alias length = 1024
@@ -44,18 +38,19 @@ fn run_vec_add() raises:
         in0_host[i] = i
         in1_host[i] = 2
 
-    var in0_device = _malloc[Float32](length)
-    var in1_device = _malloc[Float32](length)
-    var out_device = _malloc[Float32](length)
+    var in0_device = ctx.create_buffer[DType.float32](length)
+    var in1_device = ctx.create_buffer[DType.float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
-    _copy_host_to_device(in0_device, in0_host, length)
-    _copy_host_to_device(in1_device, in1_host, length)
+    ctx.enqueue_copy_to_device(in0_device, in0_host)
+    ctx.enqueue_copy_to_device(in1_device, in1_host)
 
-    var func = Function[vec_func](debug=True)
+    var func = ctx.compile_function[vec_func](debug=True)
 
     var block_dim = 32
 
-    func(
+    ctx.enqueue_function(
+        func,
         in0_device,
         in1_device,
         out_device,
@@ -64,7 +59,7 @@ fn run_vec_add() raises:
         block_dim=(block_dim),
     )
 
-    _copy_device_to_host(out_host, out_device, length)
+    ctx.enqueue_copy_from_device(out_host, out_device)
 
     # CHECK: at index 0 the value is 2.0
     # CHECK: at index 1 the value is 3.0
@@ -79,9 +74,9 @@ fn run_vec_add() raises:
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
 
-    _free(in0_device)
-    _free(in1_device)
-    _free(out_device)
+    _ = in0_device
+    _ = in1_device
+    _ = out_device
 
     in0_host.free()
     in1_host.free()
@@ -93,7 +88,7 @@ fn run_vec_add() raises:
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_vec_add()
+        with DeviceContext() as ctx:
+            run_vec_add(ctx)
     except e:
         print("CUDA_ERROR:", e)

@@ -11,13 +11,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
@@ -112,7 +106,7 @@ fn stencil2d_smem(
 
 
 # CHECK-LABEL: run_stencil2d
-fn run_stencil2d[smem: Bool]() raises:
+fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     print("== run_stencil2d")
 
     alias m = 64
@@ -126,26 +120,25 @@ fn run_stencil2d[smem: Bool]() raises:
     alias num_rows = 8
     alias num_cols = 8
 
-    var a_host = NDBuffer[DType.float32, 1, DimList(m)].stack_allocation()
-    var b_host = NDBuffer[DType.float32, 1, DimList(m)].stack_allocation()
-
-    var stream = Stream()
+    var a_host = UnsafePointer[Float32].alloc(m)
+    var b_host = UnsafePointer[Float32].alloc(m)
 
     for i in range(m):
-        a_host[Index(i)] = i
-        b_host[Index(i)] = 0
+        a_host[i] = i
+        b_host[i] = 0
 
-    var a_device = _malloc[Float32](m)
-    var b_device = _malloc[Float32](m)
+    var a_device = ctx.create_buffer[DType.float32](m)
+    var b_device = ctx.create_buffer[DType.float32](m)
 
-    _copy_host_to_device(a_device, a_host.data, m)
+    ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias func_select = stencil2d_smem if smem == True else stencil2d
 
-    var func = Function[func_select]()
+    var func = ctx.compile_function[func_select]()
 
     for i in range(iterations):
-        func(
+        ctx.enqueue_function(
+            func,
             a_device,
             b_device,
             m,
@@ -161,15 +154,14 @@ fn run_stencil2d[smem: Bool]() raises:
                 ceildiv(num_cols, BLOCK_DIM),
             ),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
-        synchronize()
+        ctx.synchronize()
 
         var tmp_ptr = b_device
         b_device = a_device
         a_device = tmp_ptr
 
-    _copy_device_to_host(b_host.data, b_device, m)
+    ctx.enqueue_copy_from_device(b_host, b_device)
 
     # CHECK: == run_stencil2d
     # CHECK: 37729.0 ,52628.0 ,57021.0 ,60037.0 ,58925.0 ,39597.0 ,
@@ -183,21 +175,20 @@ fn run_stencil2d[smem: Bool]() raises:
             print(b_host[i * num_cols + j], ",", end="")
         print()
 
-    _free(a_device)
-    _free(b_device)
+    _ = a_device
+    _ = b_device
 
     _ = a_host
     _ = b_host
 
     _ = func^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_stencil2d[False]()
-            run_stencil2d[True]()
+        with DeviceContext() as ctx:
+            run_stencil2d[False](ctx)
+            run_stencil2d[True](ctx)
     except e:
         print("CUDA_ERROR:", e)

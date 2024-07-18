@@ -10,13 +10,7 @@ from math import ceildiv
 
 from buffer import DimList, NDBuffer
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from memory import memset_zero, stack_allocation
 
 from utils.index import Index
@@ -97,41 +91,44 @@ fn matmul(
 
 
 # CHECK-LABEL: run_matmul
-fn run_matmul() raises:
+fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
     alias m = 512
     alias n = 512
     alias k = 512
 
-    var stream = Stream()
+    var a_host_ptr = UnsafePointer[Scalar[DType.index]].alloc(m * k)
+    var b_host_ptr = UnsafePointer[Scalar[DType.index]].alloc(k * n)
+    var c_host_ptr = UnsafePointer[Scalar[DType.index]].alloc(m * n)
 
-    var a_host = NDBuffer[DType.index, 2, DimList(m, k)].stack_allocation()
-    var b_host = NDBuffer[DType.index, 2, DimList(k, n)].stack_allocation()
-    var c_host = NDBuffer[DType.index, 2, DimList(m, n)].stack_allocation()
+    var a_host = NDBuffer[DType.index, 2, DimList(m, k)](a_host_ptr)
+    var b_host = NDBuffer[DType.index, 2, DimList(k, n)](b_host_ptr)
+    var c_host = NDBuffer[DType.index, 2, DimList(m, n)](c_host_ptr)
 
     for i in range(m):
         for j in range(k):
-            a_host[Index(i, j)] = 1
+            a_host[i, j] = 1
 
     for i in range(k):
         for j in range(n):
-            b_host[Index(i, j)] = 1
+            b_host[i, j] = 1
 
     for i in range(m):
         for j in range(n):
-            c_host[Index(i, j)] = 0
+            c_host[i, j] = 0
 
-    var a_device = _malloc[DType.index](m * k)
-    var b_device = _malloc[DType.index](k * n)
-    var c_device = _malloc[DType.index](m * n)
+    var a_device = ctx.create_buffer[DType.index](m * k)
+    var b_device = ctx.create_buffer[DType.index](k * n)
+    var c_device = ctx.create_buffer[DType.index](m * n)
 
-    _copy_host_to_device(a_device, a_host.data, m * k)
-    _copy_host_to_device(b_device, b_host.data, k * n)
+    ctx.enqueue_copy_to_device(a_device, a_host_ptr)
+    ctx.enqueue_copy_to_device(b_device, b_host_ptr)
 
-    var func = Function[matmul]()
+    var func = ctx.compile_function[matmul]()
 
-    func(
+    ctx.enqueue_function(
+        func,
         a_device,
         b_device,
         c_device,
@@ -140,32 +137,30 @@ fn run_matmul() raises:
         k,
         grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
-        stream=stream,
     )
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(c_host.data, c_device, m * n)
+    ctx.enqueue_copy_from_device(c_host_ptr, c_device)
 
     for i in range(10):
         for j in range(10):
             print("at index = [", i, ",", j, "]the value is", c_host[i, j])
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    _ = a_device
+    _ = b_device
+    _ = c_device
 
     _ = a_host
     _ = b_host
     _ = c_host
 
     _ = func^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_matmul()
+        with DeviceContext() as ctx:
+            run_matmul(ctx)
     except e:
         print("CUDA_ERROR:", e)

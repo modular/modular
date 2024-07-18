@@ -10,13 +10,7 @@
 from math import *
 from pathlib import Path
 
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from testing import assert_true
 
 
@@ -25,18 +19,18 @@ fn run_func[
     kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-](val: Scalar[type] = 0) raises:
+](ctx: DeviceContext, val: Scalar[type] = 0) raises:
     @parameter
     fn kernel(out: DTypePointer[type], input: Scalar[type]):
         out[0] = kernel_fn(input)
 
-    var func = Function[kernel]()
+    var func = ctx.compile_function[kernel]()
 
-    var out = _malloc[type](1)
-    func(out, val, grid_dim=1, block_dim=1)
-    synchronize()
+    var out = ctx.create_buffer[type](1)
+    ctx.enqueue_function(func, out, val, grid_dim=1, block_dim=1)
+    ctx.synchronize()
 
-    _free(out)
+    _ = out
 
 
 fn hypot_fn(val: SIMD) -> __type_of(val):
@@ -94,14 +88,14 @@ fn powf_fn(val: SIMD) -> __type_of(val):
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
+        with DeviceContext() as ctx:
 
             @parameter
             fn test[
                 *kernel_fns: fn[type: DType, width: Int] (
                     SIMD[type, width]
                 ) -> SIMD[type, width]
-            ]() raises:
+            ](ctx: DeviceContext) raises:
                 @parameter
                 fn variadic_len[
                     *kernel_fns: fn[type: DType, width: Int] (
@@ -115,8 +109,8 @@ def main():
                 @parameter
                 for idx in range(ls):
                     alias kernel_fn = kernel_fns[idx]
-                    run_func[DType.float32, kernel_fn[]]()
-                    run_func[DType.float16, kernel_fn[]]()
+                    run_func[DType.float32, kernel_fn[]](ctx)
+                    run_func[DType.float16, kernel_fn[]](ctx)
 
             # Anything that's commented does not work atm and needs to be
             # implemented. This list is also not exhastive and needs to be
@@ -156,6 +150,6 @@ def main():
                 pow_fn,
                 powi_fn,
                 powf_fn,
-            ]()
+            ](ctx)
     except e:
         print("CUDA_ERROR:", e)

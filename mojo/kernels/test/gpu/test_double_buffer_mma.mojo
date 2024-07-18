@@ -13,15 +13,7 @@ from sys import argv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, AddressSpace, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import (
-    CacheConfig,
-    Context,
-    CudaInstance,
-    Device,
-    Function,
-    Stream,
-)
-from gpu.host.event import time_function
+from gpu.host import CacheConfig, DeviceContext
 from gpu.memory import async_copy, async_copy_wait_all
 from gpu.mma import mma
 from linalg.matmul_gpu import matmul_kernel_naive
@@ -429,7 +421,7 @@ fn sgemm_double_buffer[
             )
 
 
-fn test(ctx: Context) raises:
+fn test(ctx: DeviceContext) raises:
     alias NUM_THREADS = 256
     alias M = 8192
     alias N = 8192
@@ -440,12 +432,10 @@ fn test(ctx: Context) raises:
     alias WM = 64
     alias WN = 64
 
-    var stream = Stream(ctx)
-
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var c_host_ref = DTypePointer[DType.float32].alloc(M * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         a_host[i] = i
@@ -453,17 +443,13 @@ fn test(ctx: Context) raises:
     for i in range(K * N):
         b_host[i] = i + 1
 
-    var a_device = ctx.malloc[Float32](M * K)
-    var b_device = ctx.malloc[Float32](K * N)
-    var c_device = ctx.malloc[Float32](M * N)
-    var c_device_ref = ctx.malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    ctx.copy_host_to_device(a_device, a_host.address, M * K)
-    ctx.copy_host_to_device(b_device, b_host.address, K * N)
-
-    var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device)
-    var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
     alias gemm = sgemm_double_buffer[
         DType.float32,
@@ -480,8 +466,7 @@ fn test(ctx: Context) raises:
         WN,
         NUM_THREADS,
     ]
-    var func = Function[gemm](
-        ctx,
+    var func = ctx.compile_function[gemm](
         threads_per_block=NUM_THREADS,  # dump_ptx=Path("./mm.ptx")
         cache_config=CacheConfig.PREFER_SHARED,
     )
@@ -492,50 +477,52 @@ fn test(ctx: Context) raises:
 
         @always_inline
         @parameter
-        fn run_func(stream: Stream) raises:
-            for i in range(nrun):
-                func(
-                    c_buffer,
-                    a_buffer,
-                    b_buffer,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-                    block_dim=(NUM_THREADS, 1, 1),
-                    stream=stream,
-                )
+        fn run_func(ctx: DeviceContext) raises:
+            ctx.enqueue_function(
+                func,
+                c_device,
+                a_device,
+                b_device,
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+                block_dim=(NUM_THREADS, 1, 1),
+            )
 
         # Warmup
         for i in range(nwarmup):
-            run_func(stream)
+            run_func(ctx)
 
-        var nstime = time_function[run_func](stream) / nrun
+        var nstime = ctx.execution_time[run_func](nrun) / nrun
         var sectime = nstime * 1e-9
         var TFlog = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlogs/s", TFlog / sectime)
 
-    func(
-        c_buffer,
-        a_buffer,
-        b_buffer,
+    ctx.enqueue_function(
+        func,
+        c_device,
+        a_device,
+        b_device,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
         block_dim=(NUM_THREADS, 1, 1),
-        stream=stream,
     )
 
     ctx.synchronize()
 
-    ctx.copy_device_to_host(c_host.address, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = Function[gemm_naive](ctx, threads_per_block=NUM_THREADS)
-    var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](c_device_ref)
-    func_naive(
-        c_buffer_ref,
-        a_buffer,
-        b_buffer,
+    var func_naive = ctx.compile_function[gemm_naive](
+        threads_per_block=NUM_THREADS
+    )
+
+    ctx.enqueue_function(
+        func_naive,
+        c_device_ref,
+        a_device,
+        b_device,
         M,
         N,
         K,
@@ -544,7 +531,7 @@ fn test(ctx: Context) raises:
     )
 
     ctx.synchronize()
-    ctx.copy_device_to_host(c_host_ref.address, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=0.01):
@@ -552,10 +539,10 @@ fn test(ctx: Context) raises:
             break
         # assert_almost_equal(c_host[i], c_host_ref[i])
 
-    ctx.free(c_device)
-    ctx.free(c_device_ref)
-    ctx.free(a_device)
-    ctx.free(b_device)
+    _ = c_device
+    _ = c_device_ref
+    _ = a_device
+    _ = b_device
 
     c_host.free()
     c_host_ref.free()
@@ -564,13 +551,11 @@ fn test(ctx: Context) raises:
 
     _ = func^
     _ = func_naive^
-    _ = stream^
 
 
 def main():
     try:
-        with CudaInstance() as instance:
-            with Context(Device(instance)) as ctx:
-                test(ctx)
+        with DeviceContext() as ctx:
+            test(ctx)
     except e:
         print("CUDA_ERROR:", e)

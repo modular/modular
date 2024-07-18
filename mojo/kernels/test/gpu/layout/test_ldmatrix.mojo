@@ -10,13 +10,7 @@ from math import ceildiv
 from random import random_si64
 
 from gpu import WARP_SIZE, ThreadIdx, barrier, lane_id
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
@@ -132,7 +126,7 @@ fn test_ldmatrix_transposed[
 fn check_ldmatrix_transposed_bf16[
     input_type: DType,
     output_type: DType,
-]() raises:
+](ctx: DeviceContext) raises:
     print("== test ldmatrix transposed bf16")
 
     # Shape for a single mma.
@@ -142,11 +136,10 @@ fn check_ldmatrix_transposed_bf16[
     alias N = mma_shape[1]
     alias K = mma_shape[2]
 
-    var stream = Stream()
-    var a_host = DTypePointer[input_type].alloc(M * K)
-    var b_host = DTypePointer[input_type].alloc(K * N)
-    var c_host = DTypePointer[output_type].alloc(M * N)
-    var c_host_ref = DTypePointer[output_type].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[input_type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[input_type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[output_type]].alloc(M * N)
+    var c_host_ref = UnsafePointer[Scalar[output_type]].alloc(M * N)
 
     for m in range(M):
         for k in range(K):
@@ -160,35 +153,36 @@ fn check_ldmatrix_transposed_bf16[
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[input_type](M * K)
-    var b_device = _malloc[input_type](K * N)
-    var c_device = _malloc[output_type](M * N)
-    var c_device_ref = _malloc[output_type](M * N)
+    var a_device = ctx.create_buffer[input_type](M * K)
+    var b_device = ctx.create_buffer[input_type](K * N)
+    var c_device = ctx.create_buffer[output_type](M * N)
+    var c_device_ref = ctx.create_buffer[output_type](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func = Function[test_ldmatrix_transposed[input_type, output_type]](
-        dump_ptx=False
-    )
+    var func = ctx.compile_function[
+        test_ldmatrix_transposed[input_type, output_type]
+    ](dump_ptx=False)
 
-    func(
+    ctx.enqueue_function(
+        func,
         c_device,
         a_device,
         b_device,
         grid_dim=1,
         block_dim=WARP_SIZE,
-        stream=stream,
     )
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[output_type, input_type, input_type, BLOCK_DIM]
     ]()
-    func_naive(
+    ctx.enqueue_function(
+        func_naive,
         c_device_ref,
         a_device,
         b_device,
@@ -199,17 +193,17 @@ fn check_ldmatrix_transposed_bf16[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     for i in range(M * N):
         var out_val = Scalar.load(c_host, i)
         var out_ref = Scalar.load(c_host_ref, i)
         assert_almost_equal(out_val, out_ref)
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -218,19 +212,13 @@ fn check_ldmatrix_transposed_bf16[
 
     _ = func^
     _ = func_naive^
-    _ = stream^
 
 
 fn check_ldmatrix(
-    M: Int,
-    N: Int,
-    K: Int,
-    rand_min: Int64,
-    rand_max: Int64,
+    M: Int, N: Int, K: Int, rand_min: Int64, rand_max: Int64, ctx: DeviceContext
 ) raises:
     print("== test ldmatrix instruction")
 
-    var stream = Stream()
     var a_host = UnsafePointer[Float32].alloc(M * K)
     var b_host = UnsafePointer[Float32].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -248,78 +236,69 @@ fn check_ldmatrix(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_ldmatrix = Function[test_ldmatrix_fp32](dump_ptx=False)
+    var func_ldmatrix = ctx.compile_function[test_ldmatrix_fp32](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
     alias MMA_N = 8
     alias MMA_K = 8
 
-    @always_inline
-    @__copy_capture(func_ldmatrix, c_device, a_device, b_device)
-    @parameter
-    fn run_ldmatrix(stream: Stream) raises:
-        func_ldmatrix(
-            c_device,
-            a_device,
-            b_device,
-            M,
-            N,
-            K,
-            grid_dim=1,
-            block_dim=WARP_SIZE,
-            stream=stream,
-        )
+    ctx.enqueue_function(
+        func_ldmatrix,
+        c_device,
+        a_device,
+        b_device,
+        M,
+        N,
+        K,
+        grid_dim=1,
+        block_dim=WARP_SIZE,
+    )
 
-    run_ldmatrix(stream)
-    stream.synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
-    @always_inline
-    @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
-            c_device_ref,
-            a_device,
-            b_device,
-            M,
-            N,
-            K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
-        )
+    ctx.enqueue_function(
+        func_naive,
+        c_device_ref,
+        a_device,
+        b_device,
+        M,
+        N,
+        K,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
 
-    run_func_naive(stream)
-    stream.synchronize()
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.synchronize()
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     for i in range(M * N):
         var out_val = c_host[i]
         var out_ref = c_host_ref[i]
         assert_almost_equal(out_val, out_ref)
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -328,15 +307,14 @@ fn check_ldmatrix(
 
     _ = func_ldmatrix^
     _ = func_naive^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            check_ldmatrix(16, 8, 8, -100, 100)
-            check_ldmatrix_transposed_bf16[DType.bfloat16, DType.bfloat16]()
+        with DeviceContext() as ctx:
+            check_ldmatrix(16, 8, 8, -100, 100, ctx)
+            check_ldmatrix_transposed_bf16[DType.bfloat16, DType.bfloat16](ctx)
 
     except e:
         print("CUDA_ERROR:", e)

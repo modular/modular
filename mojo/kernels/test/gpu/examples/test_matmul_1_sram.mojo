@@ -11,13 +11,7 @@ from math import align_down, ceildiv
 from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from memory import stack_allocation
 
 from utils.index import Index
@@ -128,7 +122,7 @@ fn matmul_sram(
 
 
 # CHECK-LABEL: run_matmul_sram
-fn run_matmul() raises:
+fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul_sram")
 
     # Should be able to handle non-divisible values.
@@ -136,11 +130,12 @@ fn run_matmul() raises:
     alias N = 502
     alias K = 511
 
-    var stream = Stream()
-
-    var a_host = NDBuffer[DType.float32, 2, DimList(M, K)].stack_allocation()
-    var b_host = NDBuffer[DType.float32, 2, DimList(K, N)].stack_allocation()
-    var c_host = NDBuffer[DType.float32, 2, DimList(M, N)].stack_allocation()
+    var a_host_ptr = UnsafePointer[Float32].alloc(M * K)
+    var a_host = NDBuffer[DType.float32, 2, DimList(M, K)](a_host_ptr)
+    var b_host_ptr = UnsafePointer[Float32].alloc(K * N)
+    var b_host = NDBuffer[DType.float32, 2, DimList(K, N)](b_host_ptr)
+    var c_host_ptr = UnsafePointer[Float32].alloc(M * N)
+    var c_host = NDBuffer[DType.float32, 2, DimList(M, N)](c_host_ptr)
 
     for i in range(M):
         for j in range(K):
@@ -154,16 +149,17 @@ fn run_matmul() raises:
         for j in range(N):
             c_host[Index(i, j)] = 0
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host.data, M * K)
-    _copy_host_to_device(b_device, b_host.data, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host_ptr)
+    ctx.enqueue_copy_to_device(b_device, b_host_ptr)
 
-    var func = Function[matmul_sram]()
+    var func = ctx.compile_function[matmul_sram]()
 
-    func(
+    ctx.enqueue_function(
+        func,
         a_device,
         b_device,
         c_device,
@@ -172,11 +168,10 @@ fn run_matmul() raises:
         K,
         grid_dim=(ceildiv(N, tile_size), ceildiv(M, tile_size)),
         block_dim=(tile_size, tile_size),
-        stream=stream,
     )
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(c_host.data, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host_ptr, c_device)
 
     var failed = False
     for i in range(M - 10, M):
@@ -198,22 +193,21 @@ fn run_matmul() raises:
     if not failed:
         print("succeed")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    _ = a_device
+    _ = b_device
+    _ = c_device
 
     _ = a_host
     _ = b_host
     _ = c_host
 
     _ = func^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_matmul()
+        with DeviceContext() as ctx:
+            run_matmul(ctx)
     except e:
         print("CUDA_ERROR:", e)
