@@ -43,10 +43,12 @@ fn run_reduce[
     var out_size = product(shape, rank - 1)
 
     alias align = alignof_simd[type, simd_target = _get_nvptx_target()]()
-    var expected_vals = DTypePointer[type].alloc(out_size, alignment=align)
+    var expected_vals = UnsafePointer[Scalar[type]].alloc[alignment=align](
+        out_size
+    )
 
-    var in_host = DTypePointer[type].alloc(in_size)
-    var res_host = DTypePointer[type].alloc(out_size)
+    var in_host = UnsafePointer[Scalar[type]].alloc(in_size)
+    var res_host = UnsafePointer[Scalar[type]].alloc(out_size)
 
     for i in range(in_size):
         in_host[i] = (i // shape[axis]) + 1
