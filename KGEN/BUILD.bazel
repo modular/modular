@@ -1083,6 +1083,7 @@ modular_cc_library(
         "//AsyncRT:Runtime",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:CAPIIR",
         "@llvm-project//mlir:TransformUtils",
     ],
 )

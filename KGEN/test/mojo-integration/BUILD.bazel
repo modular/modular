@@ -8,7 +8,10 @@ lit_tests(
             "*.mojo",
             "*.mlir",
         ],
-        exclude = ["multiresult_asm_mma.mojo"],
+        exclude = [
+            "canonicalize-custom-ops.mojo",
+            "multiresult_asm_mma.mojo",
+        ],
     ),
     data = glob(["inputs/**/*.mojo"]) + [
         "//:libpython",
@@ -36,21 +39,28 @@ lit_tests(
 
 lit_tests(
     name = "test_stdlib_srcs",
-    # This test requres the stdlib srcs, where another test requires not having the srcs
-    srcs = ["multiresult_asm_mma.mojo"],
+    # This tests require the stdlib and mlirc srcs, where other tests do
+    # not require them
+    srcs = [
+        "canonicalize-custom-ops.mojo",
+        "multiresult_asm_mma.mojo",
+    ],
     data = glob(["inputs/**/*.mojo"]) + [
         "//KGEN:CompilerRT",
+        "//Kernels/mojo/_mlir:_mlir_srcs",
         "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/_mlir:_mlir_srcs) $(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
     },
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
     tools = [
         "//KGEN/tools/kgen",
+        "//KGEN/tools/kgen-opt",
+        "//KGEN/tools/kgen-translate",
     ],
 )
 

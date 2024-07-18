@@ -11,6 +11,7 @@
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -26,6 +27,7 @@
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/CAPI/IR.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -421,6 +423,81 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
         return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options);
       });
+}
+
+//===----------------------------------------------------------------------===//
+// createRegisterCustomOpsWithDefaultJIT
+//===----------------------------------------------------------------------===//
+
+/// Compile the pre-elaboration canonicalizations patterns present in the
+/// module. Requires the module symbol table, and the exportMap of all the
+/// canonicalization functions.
+static ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>
+compileCustomCanonicalizationFns(ModuleOp module, SymbolTable &table,
+                                 const ExportMap &exportMap,
+                                 TargetInfoAttr target) {
+  MLIRContext *ctx = module.getContext();
+  CompilationOptions options;
+  ExecutionEngineOptions eeOptions;
+
+  // Start the execution engine.
+  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
+      initializeExecutionEngine(*ctx, options, std::move(eeOptions),
+                                /*isJIT=*/true, PassManagerConfigOptions());
+  if (execEngineOr.isError())
+    return execEngineOr.takeError();
+
+  // We place the engine in a shared pointer that is going to be owned by all
+  // canonicalization patterns. This is so it stays alive for as long the
+  // operations are loaded.
+  std::shared_ptr<ExecutionEngine> engine(execEngineOr->release());
+
+  // Create the object compiler and slice a new module with the operations we
+  // want to JIT.
+  auto objCompilerOr =
+      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, *ctx);
+  if (failed(objCompilerOr))
+    return objCompilerOr.takeError();
+  ObjectCompiler &objCompiler = **objCompilerOr;
+  auto newModule = objCompiler.produceStandaloneModule(table, exportMap);
+
+  // Add an environment variable to specify that the CAPI is linked in the
+  // JIT'ed code.
+  auto dict = DictionaryAttr::get(
+      ctx,
+      {NamedAttribute(StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
+                      mlir::UnitAttr::get(ctx))});
+  (**newModule).setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
+
+  // Run the KGEN pipeline, and compile it to an archive.
+  KGENCompiler compiler(*ctx, options);
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(*newModule, target))
+    assert(false);
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(*newModule);
+  assert(succeeded(archiveOr));
+
+  // Add the canonicalization pattern layer.
+  ErrorOrSuccess err = engine->addIfAbsent<StaticArchiveLayer>(
+      "canonicalization_patterns", archiveOr.takeValue());
+  assert(succeeded(err));
+
+  // The map of compiled functions.
+  DenseMap<StringAttr, CAPICanonicalizationFn> compiledFns;
+  for (auto [name, _] : exportMap) {
+    ErrorOr<CompiledFunc> funcOrRes = engine->lookup(name);
+    if (funcOrRes.isError())
+      return funcOrRes.takeError();
+    compiledFns.try_emplace(
+        name, [engine = engine, func = *funcOrRes](MlirOperation op) mutable {
+          func.invoke<void>(op);
+        });
+  }
+
+  return compiledFns;
+}
+
+std::unique_ptr<Pass> KGEN::createRegisterCustomOpsWithDefaultJIT() {
+  return createRegisterCustomOps(compileCustomCanonicalizationFns);
 }
 
 //===----------------------------------------------------------------------===//
