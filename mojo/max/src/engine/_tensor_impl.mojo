@@ -110,7 +110,7 @@ struct EngineTensor(Sized):
     fn tensor[type: DType](self) raises -> Tensor[type]:
         var tensor = Tensor[type](self.spec())
         memcpy(
-            tensor.unsafe_ptr().address,
+            tensor.unsafe_ptr(),
             self.data[type]().address,
             len(self),
         )

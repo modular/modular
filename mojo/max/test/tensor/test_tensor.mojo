@@ -476,7 +476,7 @@ fn test_rdiv_scalar():
 fn test_pow():
     print("== test_pow")
     var tensor = Tensor[DType.float32](2, 2)
-    iota(tensor.unsafe_ptr().address, tensor.num_elements())
+    iota(tensor.unsafe_ptr(), tensor.num_elements())
     var tensor_pow_2 = tensor**2
     # CHECK{LITERAL}: Tensor([[0.0, 1.0],
     # CHECK{LITERAL}: [2.0, 3.0]]
@@ -508,7 +508,7 @@ fn test_pow():
     print(tensor_pow_neg1)
 
     var tensor_large = Tensor[DType.float32](65)
-    iota(tensor_large.unsafe_ptr().address, tensor_large.num_elements())
+    iota(tensor_large.unsafe_ptr(), tensor_large.num_elements())
     # CHECK{LITERAL}: Tensor([[0.0, 1.0, 4.0, ..., 3844.0, 3969.0, 4096.0]]
     print(tensor_large**2)
 
@@ -532,7 +532,7 @@ fn test_print_small():
     # CHECK{LITERAL}: [[6, 7, 8],
     # CHECK{LITERAL}: [9, 10, 11]]], dtype=index, shape=2x2x3)
     var tensor = Tensor[DType.index](2, 2, 3)
-    iota(tensor.unsafe_ptr().address, tensor.num_elements())
+    iota(tensor.unsafe_ptr(), tensor.num_elements())
     print(str(tensor))
 
 
@@ -546,7 +546,7 @@ fn test_print_large():
     # CHECK: 5994, 5995, 5996, ..., 6324, 6325, 6326],
     # CHECK{LITERAL}: [1482183, 1482184, 1482185, ..., 1482513, 1482514, 1482515]]], dtype=index, shape=212x21x333)
     var tensor = Tensor[DType.index](212, 21, 333)
-    iota(tensor.unsafe_ptr().address, tensor.num_elements())
+    iota(tensor.unsafe_ptr(), tensor.num_elements())
     print(str(tensor))
 
 
