@@ -16,6 +16,7 @@
 from imported_module import returns_false
 from testing import assert_true
 
+# CHECK: Testing Time: {{.*}}s
 # CHECK: Total Discovered Tests: 8
 # CHECK: Passed : 4
 # CHECK: Failed : 3
@@ -31,7 +32,8 @@ from testing import assert_true
 
 # CHECK: Failure: '{{.*}}test_execution.mojo::test_unit\2Efailure()'
 # CHECK: Unhandled exception caught during execution
-# CHECK: Error: {{.*}}test_execution.mojo:59:16: AssertionError: condition was unexpectedly False
+# CHECK: {{.*}}test_execution.mojo:61:16: AssertionError: condition was unexpectedly False
+# CHECK: {{.*}}error: execution exited with a non-zero result: 1
 
 # CHECK-DOC: Total Discovered Tests: 2
 # CHECK-DOC: Passed : 0

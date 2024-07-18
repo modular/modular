@@ -17,19 +17,19 @@
 # RUN: mojo-test-executor --pretty %t | FileCheck %s --check-prefix=CHECK-UNIT2
 
 # RUN: echo '[{"id": "%s@doc_test_failure_first_cell().__doc__::0",' > %t
-# RUN: echo ' "location": {"endColumn": 1, "endLine": 83,' >> %t
-# RUN: echo ' "startColumn": 1, "startLine": 80}},' >> %t
+# RUN: echo ' "location": {"endColumn": 1, "endLine": 85,' >> %t
+# RUN: echo ' "startColumn": 1, "startLine": 82}},' >> %t
 # RUN: echo '{"id": "%s@doc_test_failure_first_cell().__doc__::1",' >> %t
-# RUN: echo ' "location": {"endColumn": 1, "endLine": 87,' >> %t
-# RUN: echo ' "startColumn": 1, "startLine": 85}}]' >> %t
+# RUN: echo ' "location": {"endColumn": 1, "endLine": 89,' >> %t
+# RUN: echo ' "startColumn": 1, "startLine": 87}}]' >> %t
 # RUN: mojo-test-executor --pretty %t | FileCheck %s --check-prefix=CHECK-DOC-FIRST-CELL
 
 # RUN: echo '[{"id": "%s@doc_test_failure_second_cell().__doc__::0",' > %t
-# RUN: echo ' "location": {"endColumn": 1, "endLine": 107,' >> %t
-# RUN: echo ' "startColumn": 1, "startLine": 105}},' >> %t
+# RUN: echo ' "location": {"endColumn": 1, "endLine": 109,' >> %t
+# RUN: echo ' "startColumn": 1, "startLine": 107}},' >> %t
 # RUN: echo '{"id": "%s@doc_test_failure_second_cell().__doc__::1",' >> %t
-# RUN: echo ' "location": {"endColumn": 1, "endLine": 112,' >> %t
-# RUN: echo ' "startColumn": 1, "startLine": 109}}]' >> %t
+# RUN: echo ' "location": {"endColumn": 1, "endLine": 114,' >> %t
+# RUN: echo ' "startColumn": 1, "startLine": 111}}]' >> %t
 # RUN: mojo-test-executor --pretty %t | FileCheck %s --check-prefix=CHECK-DOC-SECOND-CELL
 
 from testing import assert_true
@@ -42,7 +42,8 @@ from testing import assert_true
 # CHECK-UNIT1: execution/result
 # CHECK-UNIT1:  "error": "Unhandled exception caught during execution",
 # CHECK-UNIT1:  "kind": "executionError",
-# CHECK-UNIT1:  "stdOut": {{.*}}Error: {{.*}} AssertionError: condition was unexpectedly False\r\n",
+# CHECK-UNIT1:  "stdErr": "{{.*}}error: execution exited with a non-zero result: 1\n",
+# CHECK-UNIT1:  "stdOut": {{.*}} AssertionError: condition was unexpectedly False
 # CHECK-UNIT1:  "testID": "{{.*}}test_execution.mojo::test_{{fn|def}}_assert_failure()"
 
 
@@ -54,7 +55,8 @@ fn test_fn_assert_failure() raises:
 # CHECK-UNIT2: execution/result
 # CHECK-UNIT2:  "error": "Unhandled exception caught during execution",
 # CHECK-UNIT2:  "kind": "executionError",
-# CHECK-UNIT2:  "stdOut": {{.*}}Error: {{.*}} AssertionError: condition was unexpectedly False\r\n",
+# CHECK-UNIT2:  "stdErr": "{{.*}}error: execution exited with a non-zero result: 1\n",
+# CHECK-UNIT2:  "stdOut": {{.*}} AssertionError: condition was unexpectedly False
 # CHECK-UNIT2:  "testID": "{{.*}}test_execution.mojo::test_{{fn|def}}_assert_failure()"
 
 
