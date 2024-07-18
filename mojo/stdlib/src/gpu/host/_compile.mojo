@@ -14,6 +14,16 @@ from compile import Info, compile_info, get_linkage_name
 
 @always_inline
 fn _get_nvptx_target() -> __mlir_type.`!kgen.target`:
+    # Workaround KERN-695
+    @parameter
+    if is_defined["SM_90_TARGET"]():
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_90", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
