@@ -6,9 +6,11 @@ lit_tests(
         ["**/*.mojo"],
     ),
     data = [
+        "//KGEN:CompilerRT",
         "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN/tools/mojo-repl-entry-point",
+        "@llvm-project//compiler-rt:orc_rt",
     ],
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
@@ -18,6 +20,7 @@ lit_tests(
         "//conditions:default": [],
     }),
     tools = [
+        "//KGEN/tools/mojo",
         "//KGEN/tools/mojo-test-executor",
     ],
 )

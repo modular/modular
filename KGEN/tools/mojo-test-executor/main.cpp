@@ -4,24 +4,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
-#include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/MojoJupyter/Kernel.h"
-#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTesting/Test.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/Support/Configuration.h"
-#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
+#include "Support/Process.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -30,13 +29,22 @@ using namespace M::Mojo::Jupyter;
 using namespace mlir::lsp;
 
 namespace {
+/// How to execute an executable test.
+enum class TestExecutionKind {
+  /// Use `mojo run` to invoke the test case.
+  MojoRun,
+  /// Use the REPL kernel to invoke a group of tests at once.
+  REPL,
+};
+
 /// A test that can be executed.
 struct ExecutableTest {
-  ExecutableTest(TestID id, StringRef contents)
-      : id(std::move(id)), contents(contents.str()) {}
+  ExecutableTest(TestID id, StringRef contents, TestExecutionKind kind)
+      : id(std::move(id)), contents(contents.str()), kind(kind) {}
 
   TestID id;
   std::string contents;
+  TestExecutionKind kind;
 };
 } // namespace
 
@@ -57,11 +65,79 @@ emitInitializationError(ArrayRef<ExecutableTest> tests,
     emitFn(TestExecutionResult::buildSkip(test.id));
 }
 
-/// Execute the given tests, emitting results to the given function.
-static void executeTests(ContextRef ctx, StringRef workingDirectory,
-                         ArrayRef<std::string> includeDirs,
-                         ArrayRef<ExecutableTest> tests,
-                         function_ref<void(TestExecutionResult)> emitFn) {
+static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
+                                              ArrayRef<std::string> includeDirs,
+                                              const ExecutableTest &test) {
+
+  auto emitInitError = [&](StringRef error) {
+    return TestExecutionResult::buildInitError(test.id, error);
+  };
+  // Determine the path of the repl entry point.
+  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
+  if (failed(config))
+    return emitInitError("failed to open modular.cfg");
+  StringRef exePath = config->getDriverPath();
+
+  ErrorOr<TempFile> testFileOr = TempFile::create("test-in-%%%%%%.mojo");
+  if (failed(testFileOr))
+    return emitInitError(testFileOr.getError());
+  {
+    llvm::raw_fd_ostream inOS(testFileOr->getFD(), /*shouldClose=*/false);
+    inOS << test.contents;
+  }
+
+  // Create a temporary output file for the test executor.
+  ErrorOr<TempFile> outFileOr = TempFile::create("test-out-%%%%%%.txt");
+  if (failed(outFileOr))
+    return emitInitError(outFileOr.getError());
+
+  ErrorOr<TempFile> errFileOr = TempFile::create("test-err-%%%%%%.txt");
+  if (failed(errFileOr))
+    return emitInitError(errFileOr.getError());
+
+  std::string out = outFileOr->getPath().string();
+  std::string errPath = errFileOr->getPath().string();
+  const std::optional<StringRef> redirects[] = {
+      /*stdin=*/std::nullopt,
+      /*stdout=*/out,
+      /*stderr=*/errPath,
+  };
+  SmallVector<StringRef> args = {exePath, "run", "-I", workingDirectory};
+  for (StringRef path : includeDirs)
+    llvm::append_range(args, ArrayRef<StringRef>{"-I", path});
+  args.push_back(testFileOr->getPath().c_str());
+
+  auto now = std::chrono::steady_clock::now();
+  auto exitCode = llvm::sys::ExecuteAndWait(exePath, args, {}, redirects);
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - now);
+
+  auto kind = exitCode == 0 ? TestExecutionResult::kSuccess
+                            : TestExecutionResult::kExecutionError;
+  StringRef error = kind == TestExecutionResult::kSuccess
+                        ? ""
+                        : "Unhandled exception caught during execution";
+
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> stdOutBufOr =
+      toModularErrorOr(llvm::MemoryBuffer::getFile(out));
+  if (failed(stdOutBufOr))
+    return emitInitError(stdOutBufOr.getError());
+
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> stdErrBufOf =
+      toModularErrorOr(llvm::MemoryBuffer::getFile(errPath));
+  if (failed(stdErrBufOf))
+    return emitInitError(stdErrBufOf.getError());
+  std::string stdOut = stdOutBufOr->get()->getBuffer().str();
+  std::string stdErr = stdErrBufOf->get()->getBuffer().str();
+
+  return TestExecutionResult{kind,        test.id,           duration,
+                             error.str(), std::move(stdOut), std::move(stdErr)};
+}
+
+static void executeReplTests(ContextRef ctx, StringRef workingDirectory,
+                             ArrayRef<std::string> includeDirs,
+                             ArrayRef<ExecutableTest> tests,
+                             function_ref<void(TestExecutionResult)> emitFn) {
   auto emitInitError = [&](StringRef error) {
     emitInitializationError(tests, emitFn, error);
   };
@@ -123,6 +199,23 @@ static void executeTests(ContextRef ctx, StringRef workingDirectory,
   }
 }
 
+/// Execute the given tests, emitting results to the given function.
+static void executeTests(ContextRef ctx, StringRef workingDirectory,
+                         ArrayRef<std::string> includeDirs,
+                         std::vector<ExecutableTest> tests,
+                         function_ref<void(TestExecutionResult)> emitFn) {
+
+  std::vector<ExecutableTest> docTests;
+  for (auto &test : tests) {
+    if (test.kind == TestExecutionKind::REPL)
+      docTests.push_back(std::move(test));
+    else
+      emitFn(executeMojoRunTest(workingDirectory, includeDirs, test));
+  }
+  executeReplTests(std::move(ctx), workingDirectory, includeDirs, docTests,
+                   emitFn);
+}
+
 //===----------------------------------------------------------------------===//
 // Test Initialization
 
@@ -153,7 +246,7 @@ static ErrorOr<ExecutableTest> getDocTest(llvm::SourceMgr &sourceMgr,
 
   StringRef codeBlock(startLoc.getPointer(),
                       endLoc.getPointer() - startLoc.getPointer());
-  return ExecutableTest{test.getTestID(), codeBlock};
+  return ExecutableTest{test.getTestID(), codeBlock, TestExecutionKind::REPL};
 }
 
 /// Return an executable test for a unit test defined by the given test id.
@@ -178,8 +271,9 @@ static ErrorOr<ExecutableTest> getUnitTest(const std::filesystem::path &path,
   // simple here and define a repl expression that imports the test module
   // and invokes the test function.
   std::string contents =
-      llvm::formatv("import `{0}`\n`{0}`.`{1}`()", path.stem(), names->back());
-  return ExecutableTest{testID, contents};
+      llvm::formatv("import `{0}`\nfn main() raises:\n\t`{0}`.`{1}`()",
+                    path.stem(), names->back());
+  return ExecutableTest{testID, contents, TestExecutionKind::MojoRun};
 }
 
 /// Return an executable test for the given Test ID, or Error if the test ID
@@ -259,8 +353,8 @@ static mlir::LogicalResult runTestExecutor(ContextRef ctx, ArrayRef<Test> tests,
   std::filesystem::path workingDirectory = path.parent_path();
   while (Filesystem::isMojoSourcePackagePath(workingDirectory))
     workingDirectory = workingDirectory.parent_path();
-  executeTests(ctx, workingDirectory.string(), includeDirs, executableTests,
-               onTestResultFn);
+  executeTests(std::move(ctx), workingDirectory.string(), includeDirs,
+               std::move(executableTests), onTestResultFn);
   return success();
 }
 

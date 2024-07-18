@@ -1016,7 +1016,7 @@ executeTests(ArrayRef<Test> tests,
   const std::optional<StringRef> redirects[] = {
       /*stdin=*/in,
       /*stdout=*/out,
-      /*stderr=*/std::nullopt,
+      /*stderr=*/"",
   };
   SmallVector<StringRef> args = {testExecutorPath};
   for (StringRef path : additionalImportPaths)
