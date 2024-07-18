@@ -60,22 +60,51 @@ fn testTestParamStruct(a: Parameterized[4]):
   var partial_var_type: Thing[1] # expected-error {{missing required parameter 'b'}}
 
 
+alias DType = __mlir_type.`!kgen.dtype`
+
 # expected-note @below {{struct declared here}}
-struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
+struct MySIMD[size: Int, type: DType]:
   # expected-note @below {{function declared here}}
   fn __add__(self, rhs: MySIMD[size, type]):
     pass
+
+# expected-note @below {{function declared here}}
+fn twoUses[dt1: DType, dt2: DType, size: Int](lhs: MySIMD[size, dt1], rhs: MySIMD[size, dt2]):
+  pass
 
 fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  # TODO: {{failed to infer parameter #0, parameter inferred to two different values: '2' and '1'}}
   # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD'}}
+  # expected-note @below {{failed to infer parameter #0, parameter inferred to two different values: '2' and '1'}}
   var z = b+a
 
-fn badReboundType[type: __mlir_type.`!kgen.dtype`,
-                  val: __mlir_type[`!pop.scalar<`, type, `>`]]():
+  # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size' of callee 'twoUses'}}
+  # expected-note @below {{failed to infer parameter 'size', parameter inferred to two different values: '1' and '2'}}
+  twoUses(a, b)
+
+struct TwoParams[a: int, b: int]:
+    fn __init__(inout self, other: TwoParams[`1`, `1`]):
+        pass
+
+# expected-note @below {{function declared here}}
+fn infer_then_convert[a: int, b: int](lhs: TwoParams[a, b],
+                                      rhs: TwoParams[a, b]):
+    pass
+
+fn left_to_right_implicit_conversion(lhs: TwoParams[`1`, `2`],
+                                     rhs: TwoParams[`1`, `1`]):
+    # This succeeds because 'a' and 'b' are inferred to '1' and '2', and 'rhs'
+    # can implicitly convert from 'TwoParams[1, 1]' to 'TwoParams[1, 2]'.
+    infer_then_convert(lhs, rhs)
+    # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
+    # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
+    # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a' of callee 'infer_then_convert'}}
+    # expected-note @below {{failed to infer parameter 'b', parameter inferred to two different values: '1' and '2'}}
+    infer_then_convert(rhs, lhs)
+
+fn badReboundType[type: DType, val: __mlir_type[`!pop.scalar<`, type, `>`]]():
   pass
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():

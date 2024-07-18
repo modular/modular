@@ -550,6 +550,57 @@ LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
   return success();
 }
 
+/// Given a signature type that has some of its parameter bindings known, burn
+/// the values for those parameters in, leaving the rest untouched so we can
+/// infer them.
+template <typename... Ts>
+static std::tuple<Ts...>
+getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
+                                 ParserParamEvaluator &evaluator, Ts... args) {
+  if (bindingsSoFar.empty())
+    return std::make_tuple(args...);
+
+  struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
+                ParserParamEvaluator &evaluator)
+        : bindingsSoFar(bindingsSoFar), evaluator(evaluator) {}
+
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      // Depth-1 because we're matching against the signature parameters,
+      // and that pushes level of depth immediately.
+      auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
+      if (!ref || ref.getDepth() != depth - signatureScoped ||
+          ref.getIndex() >= bindingsSoFar.size())
+        return {};
+      auto result = bindingsSoFar[ref.getIndex()];
+      assert(result.getType() == evaluator.getReboundType(ref.getType()) &&
+             "Parameter type mismatch");
+      return result;
+    }
+
+    ArrayRef<TypedAttr> bindingsSoFar;
+    ParserParamEvaluator &evaluator;
+    bool signatureScoped;
+  } substitutor(bindingsSoFar, evaluator);
+
+  auto refine = [&](auto arg) {
+    if constexpr (std::is_base_of_v<Type, decltype(arg)>)
+      substitutor.signatureScoped = isa<ParameterScopeTypeInterface>(arg);
+    else
+      substitutor.signatureScoped = false;
+    auto newArg = substitutor.replace(arg);
+    if (newArg == arg)
+      return arg;
+    // If we changed something, then we substituted constants into the type
+    // tree. This can cause some expressions to fold with the interpreter, so
+    // see if we can simplify the result.
+    return cast<decltype(arg)>(evaluator.refine(newArg));
+  };
+
+  return std::make_tuple(refine(args)...);
+}
+
 /// Infer parameters from an operand being passed into this function. This is
 /// only called on the top level function operands being matched up, not
 /// anything in recursive functiontype positions.
@@ -645,14 +696,38 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     break;
   }
 
+  /// When checking if an implicit conversion is possible, apply the bindings
+  /// inferred so far (plus a distinct new attribute relating back to the
+  /// original decls for ones that are missing) to the signature with
+  /// getSpecializedSignature so we benefit from the already-fixed substitutions
+  /// being applied to the input types.  This can make them more concrete and
+  /// help with inferring dependent types based on already-bound parameters.  If
+  /// we inferred a value for the parameter from previous arguments, substitute
+  /// it into the expected types of subsequent arguments.  This allows us to
+  /// handle dependent argument types like:
+  ///     fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
+  /// where the type of 'v' depends on 'dt' being inferred.
+  auto getPartiallySpecializedType = [&]() -> ASTType {
+    SmallVector<TypedAttr> currentParams;
+    for (TypedAttr param : inferredParams) {
+      if (param)
+        currentParams.push_back(param);
+      else
+        break;
+    }
+    auto [type] = getPartiallySpecializedSignature(currentParams, evaluator,
+                                                   Type(expectedType));
+    return type;
+  };
+
   // Check to see if the expected type has an initializer with the
   // specified operands.  Remove any parameters from the expected type
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    FailureOr<PValue> initFn =
-        OverloadSet::canConstructType(expectedType.getWithoutParameters(shared),
-                                      initValue.get(), operand.expr, *this);
+    FailureOr<PValue> initFn = OverloadSet::canConstructType(
+        getPartiallySpecializedType().getWithoutParameters(shared),
+        initValue.get(), operand.expr, *this);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
@@ -713,7 +788,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // If implicit conversions are enabled and the target type is known, then
   // we can check to see if any of the constructors for the result type can
   // work.
-  ASTDecl *expectedDecl = expectedType.getDecl(shared);
+  ASTType knownExpectedType = getPartiallySpecializedType();
+  ASTDecl *expectedDecl = knownExpectedType.getDecl(shared);
   if (!allowImplicitConversions || !expectedDecl) {
     diags.resetDiags(std::move(noImplicitConversionDiags));
     return failure();
@@ -736,7 +812,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // contain unbound parameters, replacing them with UnboundAttr so inference
   // can find them.
   auto nonParamType =
-      expectedType.getWithUnknownParametersReplaced(emitter.shared);
+      knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
       nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
       emitter.getScopeInfo(), /*allowImplicitConversions=*/false);
@@ -746,7 +822,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (!pValue.value()) {
     // If we had a fully formed type that we were inferring into, then this is
     // a failure.
-    if (nonParamType.mlirType == expectedType.mlirType) {
+    if (!noImplicitConversionDiags.empty() ||
+        nonParamType.mlirType == expectedType.mlirType) {
       diags.resetDiags(std::move(noImplicitConversionDiags));
       return failure();
     }
@@ -771,7 +848,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
-  auto result = matchTypes(inferredSelf, expectedType);
+  auto result = matchTypes(inferredSelf, knownExpectedType);
 
   // If the implicit conversion worked then we're good.
   if (succeeded(result))
@@ -790,96 +867,6 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<PValue> binding,
     return;
   curArgExpr = binding.expr;
   (void)matchTypes(binding.ir.getType(), expectedType);
-}
-
-/// Given a signature type that has some of its parameter bindings known, burn
-/// the values for those parameters in, leaving the rest untouched so we can
-/// infer them.
-template <typename... Ts>
-static std::tuple<Ts...>
-getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
-                                 ParserParamEvaluator &evaluator, Ts... args) {
-  if (bindingsSoFar.empty())
-    return std::make_tuple(args...);
-
-  struct Substitutor : IndexParameterReplacer<Substitutor> {
-    Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
-                ParserParamEvaluator &evaluator)
-        : bindingsSoFar(bindingsSoFar), evaluator(evaluator) {}
-
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      // Depth-1 because we're matching against the signature parameters,
-      // and that pushes level of depth immediately.
-      auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
-      if (!ref || ref.getDepth() != depth - signatureScoped ||
-          ref.getIndex() >= bindingsSoFar.size())
-        return {};
-      auto result = bindingsSoFar[ref.getIndex()];
-      assert(result.getType() == evaluator.getReboundType(ref.getType()) &&
-             "Parameter type mismatch");
-      return result;
-    }
-
-    ArrayRef<TypedAttr> bindingsSoFar;
-    ParserParamEvaluator &evaluator;
-    bool signatureScoped;
-  } substitutor(bindingsSoFar, evaluator);
-
-  auto refine = [&](auto arg) {
-    if constexpr (std::is_base_of_v<Type, decltype(arg)>)
-      substitutor.signatureScoped = isa<ParameterScopeTypeInterface>(arg);
-    else
-      substitutor.signatureScoped = false;
-    auto newArg = substitutor.replace(arg);
-    if (newArg == arg)
-      return arg;
-    // If we changed something, then we substituted constants into the type
-    // tree. This can cause some expressions to fold with the interpreter, so
-    // see if we can simplify the result.
-    return cast<decltype(arg)>(evaluator.refine(newArg));
-  };
-
-  return std::make_tuple(refine(args)...);
-}
-
-/// Apply the bindings so far (plus a distinct new attribute relating
-/// back to the original decls for ones that are missing) to the signature with
-/// getSpecializedSignature so we benefit from the already-fixed substitutions
-/// being applied to the input types.  This can make them more concrete and
-/// help with inferring dependent types based on already-bound parameters.
-template <typename... Ts>
-static bool partiallySpecializeIfNeeded(ArrayRef<TypedAttr> inferredParams,
-                                        ParserParamEvaluator &evaluator,
-                                        size_t &numAlreadySpecialized,
-                                        Ts &...args) {
-  // If we inferred a value for the parameter from previous arguments,
-  // substitute it into the expected types of subsequent arguments.  This
-  // allows us to handle dependent argument types like:
-  //    fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
-  // where the type of 'v' depends on 'dt' being inferred.
-  //
-  // FIXME: Don't do this, it makes it more difficult to diagnose conflicting
-  // values.  We should switch over to using the evaluator instead.
-  if (numAlreadySpecialized < inferredParams.size() &&
-      inferredParams[numAlreadySpecialized]) {
-    // Take all the bindings that are now known.  Be careful about gaps.
-    SmallVector<TypedAttr> effectiveBindings(inferredParams);
-    for (auto it = effectiveBindings.begin(), e = effectiveBindings.end();
-         it != e; ++it) {
-      // Drop any unknown parameter values and everything after it.
-      if (!*it) {
-        effectiveBindings.erase(it, effectiveBindings.end());
-        break;
-      }
-    }
-
-    std::tie(args...) =
-        getPartiallySpecializedSignature(effectiveBindings, evaluator, args...);
-    numAlreadySpecialized = effectiveBindings.size();
-    return true;
-  }
-  return false;
 }
 
 /// Helper that returns true if the parameter list has any inferred parameters.
@@ -902,16 +889,9 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 
   auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
 
-  size_t numAlreadySpecialized = inferredParams.size();
   DefaultValueHandler defaultHandler(paramListAttr);
   std::tie(types, paramListAttr) = getPartiallySpecializedSignature(
       inferredParams, evaluator, types, paramListAttr);
-  auto rebindPartialTypes = [&]() {
-    if (partiallySpecializeIfNeeded(inferredParams, evaluator,
-                                    numAlreadySpecialized, types,
-                                    paramListAttr))
-      defaultHandler = DefaultValueHandler(paramListAttr);
-  };
 
   size_t posIdx = 0, numPosParams = givenBindings.posOperands.size();
   for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
@@ -919,7 +899,6 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     // specified by the user. We want to infer them from other parameters.
     if (pog.getPassingKind() == PassingKind::Inferred)
       continue;
-    rebindPartialTypes();
 
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
@@ -969,18 +948,9 @@ ParameterInferenceState::infer(LITSignatureType signature,
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
 
-  size_t numAlreadySpecialized = inferredParams.size();
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   std::tie(signature) =
       getPartiallySpecializedSignature(inferredParams, evaluator, signature);
-  auto rebindPartialSignature = [&](bool isParam = false) {
-    if (partiallySpecializeIfNeeded(inferredParams, evaluator,
-                                    numAlreadySpecialized, signature)) {
-      defaultHandler =
-          DefaultValueHandler(isParam ? signature.getParamListAttrs()
-                                      : signature.getArgListAttrs());
-    }
-  };
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -992,7 +962,6 @@ ParameterInferenceState::infer(LITSignatureType signature,
     // There is no provided operand for a by-ref result.
     if (SignatureType::isResultSlot(expectedConvention))
       continue;
-    rebindPartialSignature();
 
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
@@ -1085,17 +1054,12 @@ ParameterInferenceState::infer(LITSignatureType signature,
         continue;
       }
 
-      // If available, we check the default argument value.
-      // NOTE: The type of the default argument has to match the argument type,
-      // meaning there can't be anything to infer here directly, but we still
-      // check to make sure that the default value doesn't contradict already
-      // inferred parameters.
-      if (TypedAttr defaultOr = defaultHandler.getDefault(expectedArgIdx)) {
-        if (failed(inferOneOperand({defaultOr, curArgExpr}, expectedType,
-                                   expectedConvention)))
-          return failure();
+      // If not, and this argument has a default value, then just skip it. We
+      // can't infer from default values since its type already matches the
+      // argument type. If its type is dependent, we already know the value is
+      // well-formed regardless of the parameter's value.
+      if (defaultHandler.getDefault(expectedArgIdx))
         continue;
-      }
 
       // Otherwise we have an argument count mismatch, just fail.
       return failure();

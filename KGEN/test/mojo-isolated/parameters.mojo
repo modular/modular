@@ -836,6 +836,14 @@ fn test_deduce_kw_only(a: Abstraction[3]):
 fn test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
    _ = take_two(a, b)
 
+struct CallableArg[ArgT: AnyTrivialRegType]:
+    fn __call__(self, arg: ArgT):
+        pass
+
+# CHECK-LABEL: lit.func @"infer_conversion_arg_type
+fn infer_conversion_arg_type(callable: CallableArg[NoneType]):
+    callable(None)
+
 fn take_two[a_type: DType, c_type: DType, width: Int](
     c: SIMD[c_type, width], a: SIMD[a_type, width + 1],
 ) -> SIMD[c_type, width]: pass

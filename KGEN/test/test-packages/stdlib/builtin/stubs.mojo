@@ -8,7 +8,6 @@ alias int = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
-alias NoneType = __mlir_type.`!kgen.none`
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
 alias MutableLifetime = __mlir_type.`!lit.lifetime<1>`
@@ -81,6 +80,12 @@ struct object:
         pass
 
     fn __copyinit__(inout self, existing: Self, /):
+        pass
+
+
+@register_passable("trivial")
+struct NoneType:
+    fn __init__(inout self, x: __mlir_type.`!kgen.none`):
         pass
 
 
