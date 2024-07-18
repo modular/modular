@@ -144,7 +144,7 @@ fn _quantize_a_buffer[
                     var scale: Scalar[DType.float32]
                     (quant_data, scale) = _quantize_a_block[
                         group_size, aq_type
-                    ](am_ptr.offset(ki).address)
+                    ](am_ptr.offset(ki))
 
                     # Interleave this local block to the output buffer.
                     #
@@ -1017,9 +1017,9 @@ fn _matmul_qint4_m_1[
 
             for k in range(0, K, group_size):
                 kernel.process_group_packed[group_size](
-                    ak_ptr.address,
-                    ak_scale_ptr.address,
-                    bk_ptr.address,
+                    ak_ptr,
+                    ak_scale_ptr,
+                    bk_ptr,
                     c_float,
                 )
 
@@ -1111,7 +1111,7 @@ fn _matmul_qint4_m_any[
                     is_i8mm = kernel.aq_tuple_type() == DType.int64,
                 ](
                     b_s8_buf,
-                    b_ptr.address
+                    b_ptr
                     + (n * k_groups + ko_group * tile_n * simd_width)
                     * bytes_per_group_int4,
                     b_scale_buf,
@@ -1142,7 +1142,7 @@ fn _matmul_qint4_m_any[
                     for ki in range(0, ko_count, group_size):
                         kernel.process_group_unpacked[group_size](
                             rebind[UnsafePointer[Int8]](ak_ptr),
-                            ak_scale_ptr.address,
+                            ak_scale_ptr,
                             bk_s8_ptr,
                             bk_scale_ptr,
                             bk_correction_ptr,
