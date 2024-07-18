@@ -58,7 +58,7 @@ struct Buffer[
       address_space: The address space of the Buffer.
     """
 
-    var data: DTypePointer[type, address_space]
+    var data: UnsafePointer[Scalar[type], address_space]
     """The underlying data pointer of the data."""
     var dynamic_size: Int
     """The dynamic size of the buffer."""
@@ -75,7 +75,7 @@ struct Buffer[
         initialized to 0.
         """
 
-        self.data = DTypePointer[type, address_space]()
+        self.data = UnsafePointer[Scalar[type], address_space]()
         self.dynamic_size = 0
         self.dtype = type
 
@@ -107,7 +107,7 @@ struct Buffer[
         """
         # Construct a Buffer type with statically known size
         constrained[size.has_value(), "must have known size"]()
-        self.data = ptr
+        self.data = ptr.address
         self.dynamic_size = size.get()
         self.dtype = type
 
@@ -157,7 +157,7 @@ struct Buffer[
                 in_size == size.get(),
                 "if static size is known, static size must equal dynamic size",
             )
-        self.data = ptr
+        self.data = ptr.address
         self.dynamic_size = in_size
         self.dtype = type
 
@@ -276,7 +276,7 @@ struct Buffer[
     @always_inline
     fn zero(self):
         """Sets all bytes of the Buffer to 0."""
-        memset_zero(self.data.address, len(self))
+        memset_zero(self.data, len(self))
 
     @always_inline
     fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
@@ -573,7 +573,7 @@ struct NDBuffer[
         address_space: The address space of the buffer.
     """
 
-    var data: DTypePointer[type, address_space]
+    var data: UnsafePointer[Scalar[type], address_space]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
     var dynamic_shape: StaticIntTuple[rank]
@@ -593,7 +593,7 @@ struct NDBuffer[
         initialized to 0.
         """
 
-        self.data = DTypePointer[type, address_space]()
+        self.data = UnsafePointer[Scalar[type], address_space]()
         self.dynamic_shape = StaticIntTuple[rank]()
         self.dynamic_stride = StaticIntTuple[rank]()
         self.is_contiguous = False
@@ -643,7 +643,7 @@ struct NDBuffer[
             "dimensions must all be known",
         ]()
 
-        self.data = ptr
+        self.data = ptr.address
         self.dynamic_shape = _make_tuple[rank](shape)
         self.dynamic_stride = _compute_ndbuffer_stride[rank](
             _make_tuple[rank](shape)
@@ -689,7 +689,7 @@ struct NDBuffer[
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
-        self.data = ptr
+        self.data = ptr.address
         self.dynamic_shape = dynamic_shape
         self.dynamic_stride = _compute_ndbuffer_stride[rank](dynamic_shape)
         self.is_contiguous = True
@@ -779,7 +779,7 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
             dynamic_stride: A static tuple of size 'rank' representing strides.
         """
-        self.data = ptr
+        self.data = ptr.address
         self.dynamic_shape = dynamic_shape
         self.dynamic_stride = dynamic_stride
         self.is_contiguous = (
@@ -905,7 +905,7 @@ struct NDBuffer[
             shape.append(self.dynamic_shape[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data.address, shape
+            self.data, shape
         )
 
         writer.write(")")
@@ -1296,7 +1296,7 @@ struct NDBuffer[
             The buffer must be contiguous.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        memset_zero(self.data.address, len(self))
+        memset_zero(self.data, len(self))
 
     @always_inline
     fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
