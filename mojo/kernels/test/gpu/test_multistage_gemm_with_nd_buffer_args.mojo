@@ -113,7 +113,7 @@ fn ld_mma[
 
     row_offset = row_offset * simd_size
 
-    return ld_matrix[mat.dtype, num_matrices](mat.ptr.address + int(row_offset))
+    return ld_matrix[mat.dtype, num_matrices](mat.ptr + int(row_offset))
 
 
 fn multistage_gemm[

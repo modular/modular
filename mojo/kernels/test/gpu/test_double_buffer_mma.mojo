@@ -192,12 +192,8 @@ fn sgemm_double_buffer[
     ]()
 
     # Cast pointers from generic to global.
-    var a_gmem_ptr = a.data.address.bitcast[
-        address_space = AddressSpace.GLOBAL
-    ]()
-    var b_gmem_ptr = b.data.address.bitcast[
-        address_space = AddressSpace.GLOBAL
-    ]()
+    var a_gmem_ptr = a.data.bitcast[address_space = AddressSpace.GLOBAL]()
+    var b_gmem_ptr = b.data.bitcast[address_space = AddressSpace.GLOBAL]()
 
     # Current block updates a [BM, BN] tile in C.
     # Find the this tile's coordinates in C and set the offsets in A, B.
@@ -400,7 +396,9 @@ fn sgemm_double_buffer[
         next_buffer_id ^= 0x1
 
     # Point to the start of the current warp.
-    var c_gmem_ptr = c.data + (c_row + warp_y * WM) * N + (c_col + warp_x * WN)
+    var c_gmem_ptr = c.data + int(
+        (c_row + warp_y * WM) * N + (c_col + warp_x * WN)
+    )
     # c_gmem_ptr += mma_y * simd_size * N + mma_x * simd_size
 
     @parameter
@@ -408,7 +406,7 @@ fn sgemm_double_buffer[
 
         @parameter
         for j in range(num_mma_n):
-            var c_mma_tile = c_gmem_ptr + (i * MMA_M) * N + j * MMA_N
+            var c_mma_tile = c_gmem_ptr + int((i * MMA_M) * N + j * MMA_N)
             SIMD[size=2].store[alignment=align2](
                 c_mma_tile,
                 int((lane_id // 4) * N + lane_id % 4 * 2),
