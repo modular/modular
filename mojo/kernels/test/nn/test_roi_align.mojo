@@ -11,7 +11,6 @@ from nn.roi_align import roi_align_nhwc
 from testing import *
 
 
-# CHECK-LABEL: test_roi_align_avg
 def test_roi_align_avg[scale_type: DType]():
     print("=== test_roi_align_avg")
 
@@ -74,7 +73,6 @@ def test_roi_align_avg[scale_type: DType]():
     assert_almost_equal(output[(0, 4, 4, 0)], 39.600006103515625)
 
 
-# CHECK-LABEL: test_roi_align_max
 def test_roi_align_max():
     print("=== test_roi_align_max")
 
@@ -137,7 +135,52 @@ def test_roi_align_max():
     assert_almost_equal(output[(0, 4, 4, 0)], 28.160013198852539)
 
 
+def test_roi_align_KERN_692():
+    print("=== test_roi_align_KERN_692")
+
+    alias in_shape = DimList(1, 6, 6, 1)
+    alias out_shape = DimList(1, 3, 3, 1)
+    alias roi_shape = DimList(1, 5)
+
+    var input = NDBuffer[DType.float32, 4, in_shape].stack_allocation()
+    var output = NDBuffer[DType.float32, 4, out_shape].stack_allocation()
+    var rois = NDBuffer[DType.float32, 2, roi_shape].stack_allocation()
+
+    for i in range(6):
+        for j in range(6):
+            input[StaticIntTuple[4](0, i, j, 0)] = i * 6 + j + 1
+
+    rois[StaticIntTuple[2](0, 0)] = 0
+    rois[StaticIntTuple[2](0, 1)] = -2
+    rois[StaticIntTuple[2](0, 2)] = -2
+    rois[StaticIntTuple[2](0, 3)] = 22
+    rois[StaticIntTuple[2](0, 4)] = 22
+
+    roi_align_nhwc[aligned=False](
+        output.make_dims_unknown(),
+        input,
+        rois,
+        out_shape.at[1]().get(),
+        out_shape.at[2]().get(),
+        0.25,
+        2.0,
+    )
+
+    assert_almost_equal(output[(0, 0, 0, 0)], 4.5)
+    assert_almost_equal(output[(0, 0, 1, 0)], 6.5)
+    assert_almost_equal(output[(0, 0, 2, 0)], 8.5)
+
+    assert_almost_equal(output[(0, 1, 0, 0)], 16.5)
+    assert_almost_equal(output[(0, 1, 1, 0)], 18.5)
+    assert_almost_equal(output[(0, 1, 2, 0)], 20.5)
+
+    assert_almost_equal(output[(0, 2, 0, 0)], 28.5)
+    assert_almost_equal(output[(0, 2, 1, 0)], 30.5)
+    assert_almost_equal(output[(0, 2, 2, 0)], 32.5)
+
+
 def main():
     test_roi_align_avg[DType.float32]()
     test_roi_align_avg[DType.float64]()
     test_roi_align_max()
+    test_roi_align_KERN_692()

@@ -51,24 +51,21 @@ fn _bilinear_interpolate[
     Weighted2DPoint[type],
     Weighted2DPoint[type],
 ):
-    # Compute centeral point (y, x) by mapping (py, ph) into a  grid of size
+    # Compute central point (y, x) by mapping (py, ph) into a grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
-    var y = max(
-        roi_start_h
-        + ph * bin_size_h
-        + (iy + 0.5) * bin_size_h / roi_bin_grid_h,
-        0,
-    )
-    var x = max(
-        roi_start_w
-        + pw * bin_size_w
-        + (ix + 0.5) * bin_size_w / roi_bin_grid_w,
-        0,
-    )
-    var topLeft = y == 0 and x == 0
-    if topLeft or y > height or x > width:
+    var y = roi_start_h + ph * bin_size_h + (
+        iy + 0.5
+    ) * bin_size_h / roi_bin_grid_h
+    var x = roi_start_w + pw * bin_size_w + (
+        ix + 0.5
+    ) * bin_size_w / roi_bin_grid_w
+
+    if not (Float32(-1.0) <= y <= height) or not (Float32(-1.0) <= x <= width):
         var zeroPoint = Weighted2DPoint[type](0, 0, 0)
         return (zeroPoint, zeroPoint, zeroPoint, zeroPoint)
+
+    y = max(y, 0)
+    x = max(x, 0)
 
     # Compute box coordinates:
     #   (y_low,  x_low)      (y_low,  x_high)
@@ -76,7 +73,7 @@ fn _bilinear_interpolate[
     #                   (x, y)
     #
     #   (y_high, x_low)      (y_high, x_high)
-    # and bilinar weights (w1, w2, w3, w4)
+    # and bilinear weights (w1, w2, w3, w4)
     var y_low = min(int(y), height - 1)
     var x_low = min(int(x), width - 1)
     var y_high = min(y_low + 1, height - 1)
@@ -157,7 +154,7 @@ fn roi_align_nhwc[
     var n_regions = rois.dim(0)
     var height = input.dim(1)
     var width = input.dim(2)
-    var channles = input.dim(3)
+    var channels = input.dim(3)
 
     var pooled_height = output_height
     var pooled_width = output_width
@@ -203,8 +200,7 @@ fn roi_align_nhwc[
         # Number of points in the pooling window.
         var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
-        # Associatve pooling init/update/finalize functions parameterized by
-        # mode
+        # Pooling init/update/finalize functions parameterized by mode
         @parameter
         @always_inline
         fn init_fn[type: DType]() -> Scalar[type]:
@@ -238,7 +234,7 @@ fn roi_align_nhwc[
 
         for ph in range(pooled_height):
             for pw in range(pooled_width):
-                for c in range(channles):
+                for c in range(channels):
                     var pool_val = init_fn[type]()
                     for iy in range(roi_bin_grid_h):
                         for ix in range(roi_bin_grid_w):
