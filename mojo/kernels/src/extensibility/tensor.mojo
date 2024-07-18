@@ -90,7 +90,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
 
     """
 
-    var data: DTypePointer[type]
+    var data: UnsafePointer[Scalar[type]]
     var shape: StaticIntTuple[static_rank]
     var strides: StaticIntTuple[static_rank]
 
@@ -110,7 +110,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
             ptr: A pointer to the tensor data.
             shape: The shape of the tensor.
         """
-        self.data = ptr
+        self.data = ptr.address
         self.shape = shape
         self.strides = StaticIntTuple[static_rank]()
 
@@ -139,7 +139,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
             shape: The shape of the tensor.
             strides: The stride size for each dimension.
         """
-        self.data = ptr
+        self.data = ptr.address
         self.shape = shape
         self.strides = strides
 
@@ -148,10 +148,10 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
         self.data = existing.data
         self.shape = existing.shape
         self.strides = existing.strides
-        existing.data = DTypePointer[type]()
+        existing.data = UnsafePointer[Scalar[type]]()
 
     fn __del__(owned self):
-        if self.data != DTypePointer[type]():
+        if self.data != UnsafePointer[Scalar[type]]():
             self.data.free()
 
     @always_inline

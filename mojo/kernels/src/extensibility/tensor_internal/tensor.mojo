@@ -204,14 +204,14 @@ struct Tensor[type: DType](
 
     var _spec: TensorSpec
     """The underlying specification of the tensor."""
-    var _ptr: DTypePointer[type]
+    var _ptr: UnsafePointer[Scalar[type]]
     """The underlying data of the tensor."""
 
     @always_inline
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self._spec = TensorSpec()
-        self._ptr = DTypePointer[type]()
+        self._ptr = UnsafePointer[Scalar[type]]()
 
     @always_inline
     fn __init__(inout self, other: Self):
@@ -222,8 +222,8 @@ struct Tensor[type: DType](
         """
         var num_elements = other.num_elements()
         self._spec = other._spec
-        self._ptr = DTypePointer[type].alloc(num_elements)
-        memcpy(self._ptr.address, other._ptr.address, num_elements)
+        self._ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
+        memcpy(self._ptr, other._ptr, num_elements)
 
     @always_inline
     fn __init__(inout self, *dims: Int):
@@ -252,8 +252,8 @@ struct Tensor[type: DType](
         """
         var num_elements = spec.num_elements()
         self._spec = spec
-        self._ptr = DTypePointer[type].alloc(num_elements)
-        memset_zero(self._ptr.address, num_elements)
+        self._ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
+        memset_zero(self._ptr, num_elements)
 
     @always_inline
     fn __init__(inout self, shape: Tuple):
@@ -264,8 +264,8 @@ struct Tensor[type: DType](
         """
         self._spec = TensorSpec(type, shape)
         var num_elements = self._spec.num_elements()
-        self._ptr = DTypePointer[type].alloc(num_elements)
-        memset_zero(self._ptr.address, num_elements)
+        self._ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
+        memset_zero(self._ptr, num_elements)
 
     @always_inline
     fn __init__(
@@ -278,7 +278,7 @@ struct Tensor[type: DType](
           shape: The tensor shapes.
           ptr: The data pointer.
         """
-        self = Self(TensorSpec(type, shape^), ptr)
+        self = Self(TensorSpec(type, shape^), ptr.address)
 
     @always_inline
     fn __init__(
@@ -292,7 +292,7 @@ struct Tensor[type: DType](
           ptr: The data pointer.
         """
         self._spec = spec^
-        self._ptr = ptr
+        self._ptr = ptr.address
 
     @always_inline
     fn __init__(inout self, shape: TensorShape, *data: Scalar[type]):
@@ -305,7 +305,7 @@ struct Tensor[type: DType](
           data: Elements to place into the created tensor.
         """
         var num_elements = shape.num_elements()
-        var ptr = DTypePointer[type].alloc(num_elements)
+        var ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
         if len(data) == 1:
             var data0 = data[0]
 
@@ -320,7 +320,7 @@ struct Tensor[type: DType](
                 )
 
             else:
-                memset_zero(ptr.address, num_elements)
+                memset_zero(ptr, num_elements)
         else:
             for i in range(len(data)):
                 ptr[i] = data[i]
@@ -336,10 +336,8 @@ struct Tensor[type: DType](
         """
         # Store the list length before we do a wiping take from it
         var data_anyptr = list.steal_data()
-        var data_ptr = data_anyptr
-        var data_dptr = DTypePointer[type](data_ptr)
 
-        self = Self(shape, data_dptr)
+        self = Self(shape, data_anyptr)
 
     @always_inline
     fn __init__(inout self, owned list: List[Scalar[type]]):
@@ -352,10 +350,8 @@ struct Tensor[type: DType](
         var list_len = len(list)
 
         var data_anyptr = list.steal_data()
-        var data_ptr = data_anyptr
-        var data_dptr = DTypePointer[type](data_ptr)
 
-        self = Self(TensorShape(list_len), data_dptr)
+        self = Self(TensorShape(list_len), data_anyptr)
 
     @always_inline
     fn __del__(owned self):
@@ -372,8 +368,8 @@ struct Tensor[type: DType](
         """
         var num_elements = other.num_elements()
         self._spec = other._spec
-        self._ptr = DTypePointer[type].alloc(num_elements)
-        memcpy(self._ptr.address, other._ptr.address, num_elements)
+        self._ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
+        memcpy(self._ptr, other._ptr, num_elements)
 
     fn __moveinit__(inout self, owned existing: Self):
         """Move initializer for the tensor.
@@ -384,7 +380,7 @@ struct Tensor[type: DType](
         self._spec = existing._spec^
         self._ptr = existing._ptr
         existing._spec = TensorSpec()
-        existing._ptr = DTypePointer[type]()
+        existing._ptr = UnsafePointer[Scalar[type]]()
 
     @staticmethod
     fn rand(owned shape: TensorShape) -> Tensor[type]:
@@ -398,7 +394,7 @@ struct Tensor[type: DType](
             A new tensor of specified shape and filled with random elements.
         """
         var tensor = Tensor[type](shape^)
-        rand(tensor.unsafe_ptr().address, tensor.num_elements())
+        rand(tensor.unsafe_ptr(), tensor.num_elements())
         return tensor
 
     @staticmethod
@@ -422,19 +418,17 @@ struct Tensor[type: DType](
         """
 
         var tensor = Tensor[type](shape^)
-        randn(
-            tensor.unsafe_ptr().address, tensor.num_elements(), mean, variance
-        )
+        randn(tensor.unsafe_ptr(), tensor.num_elements(), mean, variance)
         return tensor
 
-    fn _take_data_ptr(inout self) -> DTypePointer[type]:
+    fn _take_data_ptr(inout self) -> UnsafePointer[Scalar[type]]:
         """Return ownership of the data pointer from within the Tensor.
         Returns:
             A pointer that owns the underlying buffer.
         """
 
         var result = self._ptr
-        self._ptr = DTypePointer[type]()
+        self._ptr = UnsafePointer[Scalar[type]]()
         return result
 
     @always_inline
@@ -479,8 +473,8 @@ struct Tensor[type: DType](
 
         return (
             memcmp(
-                self.unsafe_ptr().address,
-                other.unsafe_ptr().address,
+                self.unsafe_ptr(),
+                other.unsafe_ptr(),
                 self.num_elements(),
             )
             == 0
@@ -781,7 +775,7 @@ struct Tensor[type: DType](
         return result
 
     @always_inline
-    fn unsafe_ptr(self) -> DTypePointer[type]:
+    fn unsafe_ptr(self) -> UnsafePointer[Scalar[type]]:
         """Gets the underlying Data pointer to the Tensor.
 
         Returns:
@@ -790,13 +784,13 @@ struct Tensor[type: DType](
         return self._ptr
 
     @always_inline
-    fn unsafe_uint8_ptr(self) -> DTypePointer[DType.uint8]:
+    fn unsafe_uint8_ptr(self) -> UnsafePointer[UInt8]:
         """Gets the underlying Data pointer to the Tensor.
 
         Returns:
           The underlying data pointer of the tensor.
         """
-        return rebind[DTypePointer[DType.uint8]](self._ptr)
+        return rebind[UnsafePointer[UInt8]](self._ptr)
 
     @always_inline
     fn rank(self) -> Int:
@@ -884,7 +878,7 @@ struct Tensor[type: DType](
             shape.append(self.shape()[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.unsafe_ptr().address, shape
+            self.unsafe_ptr(), shape
         )
 
         writer.write(")")
@@ -1279,7 +1273,7 @@ struct Tensor[type: DType](
         self._to_buffer().tofile(path)
 
     @always_inline
-    fn _steal_ptr(inout self) -> DTypePointer[type]:
+    fn _steal_ptr(inout self) -> UnsafePointer[Scalar[type]]:
         """Transfer ownership of pointer to the underlying memory.
         The caller is responsible for freeing up the memory.
 
@@ -1287,7 +1281,7 @@ struct Tensor[type: DType](
             The pointer to the underlying memory.
         """
         var ptr = self._ptr
-        self._ptr = DTypePointer[type]()
+        self._ptr = UnsafePointer[Scalar[type]]()
         self._spec = TensorSpec()
         return ptr
 
@@ -1338,9 +1332,9 @@ struct Tensor[type: DType](
             if bytes[i] != _SERIALIZATION_HEADER[i]:
                 raise "given file is not a serialized mojo tensor."
 
-        fn _uint32_from_bytes(data: DTypePointer[DType.uint8]) -> UInt32:
-            var ptr = data._as_scalar_pointer().bitcast[UInt32]()
-            return UnsafePointer(ptr.address).take_pointee()
+        fn _uint32_from_bytes(data: UnsafePointer[UInt8]) -> UInt32:
+            var ptr = data.bitcast[UInt32]()
+            return UnsafePointer(ptr).take_pointee()
 
         var major_format_ptr = bytes.unsafe_ptr() + len(_SERIALIZATION_HEADER)
         var major_format = _uint32_from_bytes(major_format_ptr)
@@ -1367,8 +1361,8 @@ struct Tensor[type: DType](
         if spec.num_elements() == 0:
             return tensor
         memcpy(
-            tensor.unsafe_ptr().address,
-            data.bitcast[type]().address,
+            tensor.unsafe_ptr(),
+            data.bitcast[type](),
             spec.num_elements(),
         )
         _ = bytes^
@@ -1402,7 +1396,7 @@ fn _serialize_as_tensor[
     var self_ptr = UnsafePointer.address_of(object).bitcast[UInt8]()
     alias size = sizeof[type]()
     var bytes = Tensor[DType.uint8](size)
-    memcpy(bytes.unsafe_ptr().address, self_ptr.address, size)
+    memcpy(bytes.unsafe_ptr(), self_ptr, size)
     return bytes^
 
 
@@ -1445,8 +1439,8 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     ) -> Int:
         var size = src.num_elements()
         memcpy(
-            dest.unsafe_ptr().address + offset,
-            src.unsafe_ptr().address,
+            dest.unsafe_ptr() + offset,
+            src.unsafe_ptr(),
             size,
         )
         return offset + size
@@ -1460,8 +1454,8 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
 
     # TODO: Avoid this copy.
     memcpy(
-        bytes.unsafe_ptr().address + copied,
-        tensor.unsafe_ptr().bitcast[DType.uint8]().address,
+        bytes.unsafe_ptr() + copied,
+        tensor.unsafe_ptr().bitcast[DType.uint8](),
         tensor.num_elements() * sizeof[type](),
     )
     copied += tensor.num_elements() * sizeof[type]()
