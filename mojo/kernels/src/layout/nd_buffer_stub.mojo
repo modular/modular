@@ -252,7 +252,7 @@ fn distribute[
         )
 
     var res = NDBuffer[dtype, rank, _result_shape](
-        buff.data.offset(thread_offset),
+        buff.data.offset(int(thread_offset)),
         dynamic_shape=res_shape,
         dynamic_stride=res_strides,
     )
@@ -519,7 +519,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
                 async_copy[element_size_bytes](
-                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                    src_ptr + src_idx, dst_ptr + dst_idx
                 )
             else:
                 var src_element = SIMD[size=vec_size].load[alignment=alignment](
@@ -559,7 +559,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                         address_space = _GPUAddressSpace.SHARED
                     ]()
                     async_copy[element_size_bytes](
-                        src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                        src_ptr + src_idx, dst_ptr + dst_idx
                     )
                 else:
                     var src_vec = SIMD[size=vec_width].load[
@@ -586,9 +586,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[4](
-                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
-                )
+                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
 
@@ -669,7 +667,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
                 async_copy[element_size_bytes](
-                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                    src_ptr + src_idx, dst_ptr + dst_idx
                 )
             else:
                 var src_element = SIMD[size=vec_size].load[alignment=alignment](
@@ -709,7 +707,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                         address_space = _GPUAddressSpace.SHARED
                     ]()
                     async_copy[element_size_bytes](
-                        src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                        src_ptr + src_idx, dst_ptr + dst_idx
                     )
                 else:
                     var src_vec = SIMD[size=vec_width].load[
@@ -745,9 +743,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[4](
-                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
-                )
+                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
 

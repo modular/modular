@@ -136,7 +136,7 @@ struct LayoutTensor[
     index_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
 ](CollectionElement, CollectionElementNew):
-    var ptr: DTypePointer[dtype, address_space]
+    var ptr: UnsafePointer[Scalar[dtype], address_space]
 
     var runtime_layout: RuntimeLayout[layout]
 
@@ -163,7 +163,7 @@ struct LayoutTensor[
         ptr: DTypePointer[dtype, address_space],
     ):
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
-        self.ptr = ptr
+        self.ptr = ptr.address
         self.runtime_layout = RuntimeLayout[layout]()
         self.runtime_element_layout = RuntimeLayout[element_layout]()
 
@@ -180,7 +180,7 @@ struct LayoutTensor[
         constrained[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
-        self.ptr = ptr
+        self.ptr = ptr.address
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = RuntimeLayout[element_layout]()
 
@@ -195,7 +195,7 @@ struct LayoutTensor[
         runtime_layout: RuntimeLayout[layout],
         elemnt_runtime_layout: RuntimeLayout[element_layout],
     ):
-        self.ptr = ptr
+        self.ptr = ptr.address
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = elemnt_runtime_layout
 
@@ -384,7 +384,7 @@ struct LayoutTensor[
     @always_inline
     fn prefetch(self, m: Int, n: Int):
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            self.ptr.offset(self._offset(m, n)).address
+            self.ptr.offset(self._offset(m, n))
         )
 
     @always_inline
@@ -760,7 +760,7 @@ struct LayoutTensor[
                 address_space=address_space,
                 element_layout=element_layout,
                 masked = Self.masked,
-            ](self.ptr.offset(offset))
+            ](self.ptr.offset(int(offset)))
 
             @parameter
             for i in range(len(fragments_layout_stride)):
@@ -794,7 +794,7 @@ struct LayoutTensor[
                 )
 
             # Adjust to actual offset.
-            res.ptr = res.ptr.offset(swizzled_offset)
+            res.ptr = res.ptr.offset(int(swizzled_offset))
             return res
         else:
             constrained[
@@ -845,7 +845,7 @@ struct LayoutTensor[
                 element_layout=element_layout,
                 masked = Self.masked,
             ](
-                self.ptr.offset(offset),
+                self.ptr.offset(int(offset)),
                 RuntimeLayout(runtime_shape, runtime_stride),
             )
 
@@ -879,7 +879,7 @@ struct LayoutTensor[
                 )
 
             # Adjust to actual offset.
-            res.ptr = res.ptr.offset(swizzled_offset)
+            res.ptr = res.ptr.offset(int(swizzled_offset))
             return res
 
     @always_inline
@@ -1512,7 +1512,7 @@ struct LayoutTensor[
                 )
 
                 async_copy[element_size_bytes](
-                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                    src_ptr + src_idx, dst_ptr + dst_idx
                 )
 
         else:
@@ -1522,9 +1522,7 @@ struct LayoutTensor[
                 alias src_idx = make_layout(src.element_layout, src_layout)(i)
                 alias dst_idx = make_layout(self.element_layout, self.layout)(i)
 
-                async_copy[4](
-                    src_ptr.address + src_idx, dst_ptr.address + dst_idx
-                )
+                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
 
     @always_inline
     fn copy_from_async_masked_src[
@@ -1600,11 +1598,11 @@ struct LayoutTensor[
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
                     async_copy[element_size_bytes](
-                        src_ptr.address + src_idx, dst_ptr.address + dst_idx
+                        src_ptr + src_idx, dst_ptr + dst_idx
                     )
                 # else:
                 #     async_copy[element_size_bytes](
-                #         src_ptr.address + src_idx, dst_ptr.address + dst_idx, 0
+                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
                 #     )
 
         else:
@@ -1618,12 +1616,10 @@ struct LayoutTensor[
                 var n: Int
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
-                    async_copy[4](
-                        src_ptr.address + src_idx, dst_ptr.address + dst_idx
-                    )
+                    async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
                 # else:
                 #     async_copy[element_size_bytes](
-                #         src_ptr.address + src_idx, dst_ptr.address + dst_idx, 0
+                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
                 #     )
 
     fn linspace(self):
@@ -2344,7 +2340,7 @@ struct LayoutTensorIter[
     TODO: support constructing iterator from layout tensor.
     """
 
-    var ptr: DTypePointer[type, address_space]
+    var ptr: UnsafePointer[Scalar[type], address_space]
     var offset: Int
     var stride: Int
     var bound: Int
@@ -2357,7 +2353,7 @@ struct LayoutTensorIter[
         stride: Int = layout.size(),
         offset: Int = 0,
     ):
-        self.ptr = ptr
+        self.ptr = ptr.address
         self.offset = offset
         self.stride = stride
         self.bound = bound
