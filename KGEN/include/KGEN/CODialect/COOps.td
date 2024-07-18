@@ -343,4 +343,38 @@ def CO_GetByRefErrorAndResultOp : COOp<"get_byref_error_result"> {
   let assemblyFormat = "$coroutine attr-dict `:` type(results)";
 }
 
+//===----------------------------------------------------------------------===//
+// HotInvokeOp
+//===----------------------------------------------------------------------===//
+
+def CO_HotInvokeOp : COOp<"hot_invoke", [
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
+  let summary = "invoke an async function, forming a coroutine";
+  let description = [{
+    The `co.hot_invoke` operation calls an `async` parametric callable. It returns
+    a hot-started `!co.routine` from the callee and the bound arguments.
+
+    Example:
+
+    ```mlir
+    %coro = co.hot_invoke[() async -> index: @foo](%arg1)
+    ```
+  }];
+
+  let arguments = (ins
+    AttrOfType<KGEN_SignatureType>:$callee,
+    Variadic<AnyType>:$calleeOperands
+  );
+  let results = (outs CoroutineType:$coroutine);
+
+  let assemblyFormat = [{
+  `` custom<HotAsyncParametricCallee>(
+       $callee, $calleeOperands, type($calleeOperands))
+    attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
 #endif // COOPS_TD
