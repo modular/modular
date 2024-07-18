@@ -31,7 +31,10 @@ def Canonicalizer : Pass<"canonicalizer"> {
     IR only has single-block regions.
   }];
 
-  let dependentDialects = ["mlir::index::IndexDialect"];
+  let dependentDialects = [
+    "mlir::index::IndexDialect",
+    "Custom::CustomDialect"
+  ];
 }
 
 //===----------------------------------------------------------------------===//

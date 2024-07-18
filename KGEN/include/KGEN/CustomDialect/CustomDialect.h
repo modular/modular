@@ -7,7 +7,12 @@
 #ifndef KGEN_CUSTOMDIALECT_CUSTOMDIALECT_H
 #define KGEN_CUSTOMDIALECT_CUSTOMDIALECT_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Dialect.h"
+
+namespace mlir {
+class PatternRewriter;
+} // namespace mlir
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

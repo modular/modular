@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CustomDialect/CustomDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
@@ -351,6 +352,24 @@ struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
   }
 };
 
+/// A canonicalization pattern for an op in the `custom` dialect.
+struct CustomOpPattern : RewritePattern {
+  CustomOpPattern(StringAttr opName,
+                  std::function<mlir::LogicalResult(mlir::Operation *,
+                                                    mlir::PatternRewriter &)>
+                      canonicalizationFn)
+      : RewritePattern(opName.strref(), /*benefit=*/9, opName.getContext()),
+        canonicalizationFn(canonicalizationFn) {}
+
+  LogicalResult matchAndRewrite(Operation *op,
+                                PatternRewriter &b) const override {
+    return canonicalizationFn(op, b);
+  }
+
+private:
+  std::function<mlir::LogicalResult(mlir::Operation *, mlir::PatternRewriter &)>
+      canonicalizationFn;
+};
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -364,30 +383,69 @@ namespace M::KGEN {
 
 namespace {
 struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
-  /// Initialize the canonicalizer by building the set of patterns used during
-  /// execution.
+  /// Initialize the canonicalizer by building the set of patterns.
   LogicalResult initialize(MLIRContext *context) override {
-    RewritePatternSet owningPatterns(context);
-    for (auto *dialect : context->getLoadedDialects())
-      dialect->getCanonicalizationPatterns(owningPatterns);
-    for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
-      op.getCanonicalizationPatterns(owningPatterns, context);
-
-    owningPatterns
-        .insert<IfToSelect, IfYieldSelect, IndexifyComparison, InvertComparison,
-                SimplifyCompareSelect, ConditionPropagation>(context);
-
-    patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
+    updatePatterns(context);
     return success();
   }
+
+  /// Update the pattern set after a change in the custom ops patterns.
+  void updatePatterns(MLIRContext *context);
+
+  /// Get the rewrite pattern set. This will either get the already computed
+  /// set, or update it if the number of custom op patterns has changed.
+  mlir::FrozenRewritePatternSet getPatterns();
 
   void runOnOperation() override {
     mlir::GreedyRewriteConfig config;
     config.enableRegionSimplification =
         mlir::GreedySimplifyRegionLevel::Disabled;
-    (void)applyPatternsAndFoldGreedily(getOperation(), patterns, config);
+    (void)applyPatternsAndFoldGreedily(getOperation(), getPatterns(), config);
   }
 
   mlir::FrozenRewritePatternSet patterns;
+
+  /// The number of patterns for custom ops. As this number only grows for now,
+  /// we use it to detect if new patterns were created.
+  size_t nCustomPatternsInPatterns;
 };
+
+void Canonicalizer::updatePatterns(MLIRContext *context) {
+  RewritePatternSet owningPatterns(context);
+
+  // Add the "static" canonicalization patterns.
+  for (auto *dialect : context->getLoadedDialects())
+    dialect->getCanonicalizationPatterns(owningPatterns);
+  for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
+    op.getCanonicalizationPatterns(owningPatterns, context);
+
+  owningPatterns
+      .insert<IfToSelect, IfYieldSelect, IndexifyComparison, InvertComparison,
+              SimplifyCompareSelect, ConditionPropagation>(context);
+
+  // Add the canonicalization patterns from the custom dialect. These may
+  // during the pipeline.
+  auto *customDialect = context->getLoadedDialect<Custom::CustomDialect>();
+  for (auto [name, canonicalizationFn] : customDialect->canonicalizationFns)
+    owningPatterns.insert<CustomOpPattern>(name, canonicalizationFn);
+
+  // Update the pattern set, and the number of custom ops patterns that was
+  // used to compute the set.
+  patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
+  nCustomPatternsInPatterns = customDialect->canonicalizationFns.size();
+}
+
+mlir::FrozenRewritePatternSet Canonicalizer::getPatterns() {
+  auto *customDialect = getContext().getLoadedDialect<Custom::CustomDialect>();
+  size_t nCurrentCustomPatterns = customDialect->canonicalizationFns.size();
+
+  // If the pattern set is up to date, return it.
+  if (nCustomPatternsInPatterns == nCurrentCustomPatterns)
+    return patterns;
+
+  // Otherwise, update it and then return it.
+  updatePatterns(&getContext());
+  return patterns;
+}
+
 } // namespace
