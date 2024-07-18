@@ -29,6 +29,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/CustomDialect/**/*.h"]),
     deps = [
         ":CustomDialectIncGen",
+        "//Support:Base",
         "@llvm-project//mlir:IR",
     ],
 )

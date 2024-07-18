@@ -21,6 +21,13 @@ def CustomDialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN::Custom";
+
+  let extraClassDeclaration = [{
+    /// Canonicalization functions of the `custom` unregistered ops.
+    DenseMap<StringAttr,
+             std::function<LogicalResult(Operation *, PatternRewriter &)>>
+        canonicalizationFns;
+  }];
 }
 
 #endif // CUSTOMDIALECT_TD
