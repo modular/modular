@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import graph, mlir
+from . import mlir, ops
 
 
 @dataclass
@@ -32,5 +32,7 @@ class GraphValue:
     a shorthand notation for "Adds a node representing an op that returns foo".
     """
 
-    graph: graph.Graph
     _mlir_value: mlir.Value
+
+    def __add__(self, other: GraphValue) -> GraphValue:
+        return ops.add(self, other)

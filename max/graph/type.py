@@ -11,9 +11,20 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Union
 
-from . import DType
+from .dtype import DType
 from . import core as _c
 from . import mlir
+
+
+def dim(value: Union[int, str, Dim]) -> Dim:
+    """Converts valid input values to Dim."""
+    if isinstance(value, int):
+        return StaticDim(value)
+    elif isinstance(value, str):
+        return SymbolicDim(value)
+    elif isinstance(value, Dim):
+        return value
+    raise TypeError(f"Unsupported dimension type {value}")
 
 
 @dataclass
@@ -99,22 +110,19 @@ class Dim:
         """
         return not self == other
 
-    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Attribute:
-        """Creates an mlir.ir.Attribute representing this dimension.
+    def to_mlir(self) -> mlir.Attribute:
+        """Creates an mlir.Attribute representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
 
-        Args:
-            ctx: The mlir.Context in which to create the attribute.
-
         Returns:
-            A mlir.ir.Attribute in the context representing the dimension.
+            An mlir.Attribute in the context representing the dimension.
         """
         raise NotImplementedError
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.ir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.ir.Attribute.
+    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+        """Constructs a dimension from an mlir.Attribute.
 
         Args:
             dim_attr: The MLIR Attribute object to parse into a dimension.
@@ -177,22 +185,19 @@ class SymbolicDim(Dim):
         """
         return self.name == other.name
 
-    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Attribute:
-        """Creates an mlir.ir.Attribute representing this dimension.
+    def to_mlir(self) -> mlir.Attribute:
+        """Creates an mlir.Attribute representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
 
-        Args:
-            ctx: The mlir.Context in which to create the attribute.
-
         Returns:
-            A mlir.ir.Attribute in the context representing the dimension.
+            An mlir.Attribute in the context representing the dimension.
         """
-        return _c.dim_new_symbolic(ctx, self.name)
+        return _c.symbolic_dim(mlir.Context.current, self.name)
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.ir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.ir.Attribute.
+    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+        """Constructs a dimension from an mlir.Attribute.
 
         Args:
             dim_attr: The MLIR Attribute object to parse into a dimension.
@@ -200,7 +205,7 @@ class SymbolicDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return SymbolicDim(_c.dim_symbolic_name(dim_attr))
+        return SymbolicDim(_c.symbolic_dim_name(dim_attr))
 
 
 @dataclass
@@ -245,22 +250,19 @@ class StaticDim(Dim):
         """
         return self.dim == other.dim
 
-    def to_mlir(self, ctx: mlir.ir.Context) -> mlir.ir.Attribute:
-        """Creates an mlir.ir.Attribute representing this dimension.
+    def to_mlir(self) -> mlir.Attribute:
+        """Creates an mlir.Attribute representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
 
-        Args:
-            ctx: The mlir.Context in which to create the attribute.
-
         Returns:
-            A mlir.ir.Attribute in the context representing the dimension.
+            An mlir.Attribute in the context representing the dimension.
         """
-        return _c.dim_new_static(ctx, self.dim)
+        return _c.static_dim(mlir.Context.current, self.dim)
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.ir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.ir.Attribute.
+    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+        """Constructs a dimension from an mlir.Attribute.
 
         Args:
             dim_attr: The MLIR Attribute object to parse into a dimension.
@@ -268,7 +270,7 @@ class StaticDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return StaticDim(_c.dim_static_value(dim_attr))
+        return StaticDim(_c.static_dim_value(dim_attr))
 
 
 @dataclass
@@ -282,9 +284,6 @@ class Type:
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an mlir.Type instance.
-
-        Args:
-            ctx: The mlir.Context in which to create the type.
 
         Returns:
             An mlir.Type in the specified Context.
@@ -325,10 +324,12 @@ class TensorType(Type):
 
     dtype: DType
     """The element type of the tensor value."""
-    dims: list[Union[int, Dim]]
+    dims: list[Dim]
     """The dimensions of the tensor value."""
 
-    def __init__(self, dtype: DType, dims: Iterable[Union[int, Dim]]) -> None:
+    def __init__(
+        self, dtype: DType, dims: Iterable[Union[int, str, Dim]]
+    ) -> None:
         """Constructs a tensor type.
 
         Args:
@@ -337,19 +338,19 @@ class TensorType(Type):
                   is the rank of the tensor.
         """
         self.dtype = dtype
-        self.dims = list(dims)
+        self.dims = [dim(d) for d in dims]
 
     def to_mlir(self) -> mlir.Type:
-        """Converts to an _mlir.Type instance.
-
-        Args:
-            ctx: The mlir.Context in which to create the type.
+        """Converts to an mlir.Type instance.
 
         Returns:
-            An _mlir.Type in the specified Context.
+            An mlir.Type in the specified Context.
         """
-        dims = f"[{', '.join(str(dim) for dim in self.dims)}]"
-        return mlir.Type.parse(f"!mo.tensor<{dims}, {self.dtype._mlir}>")
+        return _c.tensor_type(
+            mlir.Context.current,
+            _c.dtype_type(mlir.Context.current, self.dtype._mlir),
+            [d.to_mlir() for d in self.dims],
+        )
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> TensorType:
@@ -470,9 +471,6 @@ class _OpaqueType(Type):
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an mlir.Type instance.
-
-        Args:
-            ctx: The mlir.Context in which to create the type.
 
         Returns:
             An mlir.Type in the specified Context.

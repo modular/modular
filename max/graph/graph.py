@@ -10,19 +10,19 @@ from __future__ import annotations
 import contextlib
 import inspect
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable
 
 from . import core as _c
 from . import mlir
 from .graph_value import GraphValue
-from .type import Type
+from .mlir.dialects import mo
+from .type import TensorType, Type
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
 
 def _frame_function_qualname(frame):
-    """Get the qualified name of a Python stack frame.
+    """Gets the qualified name of a Python stack frame.
 
     If not available (Python < 3.11), approximate it instead.
     """
@@ -37,7 +37,7 @@ def _frame_function_qualname(frame):
 
 
 def _frame_location(frame):
-    """Create an MLIR location corresponding to a single stack frame.
+    """Creates an MLIR location corresponding to a single stack frame.
 
     An MLIR file location has a filename, a line, and a column.
     - Stack frames and function definitions don't store column info,
@@ -118,27 +118,30 @@ class Graph:
         self.name = name
         self._input_types = list(input_types)
         self._output_types = list(output_types)
+        self._params = {
+            dim.name
+            for t in input_types
+            for dim in t.dims
+            if isinstance(t, TensorType) and dim.is_symbolic()
+        }
 
         registry = mlir.DialectRegistry()
         _c.load_modular_dialects(registry._CAPIPtr)
 
         self._context = mlir.Context()
-        self._module = mlir.Module.create()
+        self._context.append_dialect_registry(registry)
+        self._context.load_all_available_dialects()
+
         with self._context, location():
+            # Create the top level module op.
+            self._module = mlir.Module.create()
+
             with mlir.InsertionPoint(self._module.body):
-                # Parse an empty graph.
-                # - Quick cludge should update this to use a real op builder ASAP
-                # - We have a simplified builder in C++, we can either call this or
-                #   create a similar wrapper using MLIR python builder registration.
-                argstring = ", ".join(
-                    f"%{i}: {type.to_mlir()}"
-                    for i, type in enumerate(self._input_types)
+                self._mlir_op = mo.GraphOp(
+                    name, [t.to_mlir() for t in input_types], []
                 )
-                opstring = f"mo.graph @{self.name}({argstring})"
-                self._mlir_op = mlir.Operation.parse(opstring)
-        self.inputs = tuple(
-            GraphValue(self, arg) for arg in self._body.arguments
-        )
+
+        self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
 
     # This is really awkward, I just want this to be the generator :(
     def __enter__(self) -> Graph:
@@ -168,33 +171,41 @@ class Graph:
     def _body(self) -> mlir.Block:
         return self._mlir_op.regions[0].blocks[0]
 
-    def _add_variadic_result_op(
-        self,
-        name: str,
-        operands: Iterable[GraphValue] = (),
-        attrs: Optional[dict[str, mlir.Attribute]] = None,
-    ) -> list[GraphValue]:
-        assert all(o.graph == self for o in operands)
+    def _add_op(self, op, *args, **kwargs) -> list[GraphValue]:
+        def unwrap(arg):
+            return arg._mlir_value if isinstance(arg, GraphValue) else arg
+
+        args = [unwrap(arg) for arg in args]
+        kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
         with mlir.InsertionPoint(self._body), location():
-            op = mlir.Operation.create(
-                name=name,
-                operands=[o._mlir_value for o in operands],
-                attributes=attrs or {},
-                infer_type=True,
-            )
-        return [GraphValue(self, result) for result in op.results]
+            results = op(*args, **kwargs)
 
-    def _add_op(
-        self,
-        name: str,
-        operands: Iterable[GraphValue] = (),
-        attrs: Optional[dict[str, mlir.Attribute]] = None,
-    ) -> GraphValue:
-        return self._add_variadic_result_op(name, operands, attrs)[0]
+        if isinstance(results, mlir.Value):
+            return [GraphValue(results)]
+        elif isinstance(results, mlir.Operation):
+            return []
+        return [GraphValue(result) for result in results]
 
     def output(self, *outputs: GraphValue):
-        self._add_variadic_result_op("mo.output", outputs)
+        # mo.output doesn't support infer_type
+        self._add_op(mo.output, [o._mlir_value for o in outputs])
+        # We have a type mismatch now, these are MLIR types
+        self._output_types = [o._mlir_value.type for o in outputs]
+        # Need to set some more stuff.
+        function_type = mlir.FunctionType.get(
+            [t.to_mlir() for t in self._input_types],
+            self._output_types,
+        )
+        signature = mlir.Type.parse(f"!kgen.signature<{function_type}>")
+        self._mlir_op.attributes["signature"] = mlir.TypeAttr.get(signature)
+        self._mlir_op.attributes["functionType"] = mlir.TypeAttr.get(
+            function_type
+        )
+        params = mlir.Attribute.parse(
+            f"#kgen<param.decls[{', '.join(f'{param}: index' for param in self._params)}]>"
+        )
+        self._mlir_op.attributes["inputParams"] = params
 
     def __repr__(self) -> str:
         return (
