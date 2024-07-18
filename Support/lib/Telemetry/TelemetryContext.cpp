@@ -264,6 +264,11 @@ TelemetryContext::TelemetryContext(
   attrs.SetAttribute("sessionid", local_ids.second);
   machineId = local_ids.first;
 
+  auto webId = dyn_cast_if_present<StringRef>(settings.get("web.id"));
+  if (!webId.empty()) {
+    attrs.SetAttribute("web.user.id", webId);
+  }
+
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
     std::visit([&](auto v) { attrs.SetAttribute(resource.first(), v); },
