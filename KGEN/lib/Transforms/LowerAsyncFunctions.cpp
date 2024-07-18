@@ -53,7 +53,8 @@ public:
 struct FrameData {
   /// Error value and result value are excluded from the frame
   FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-            Value errorValue, Value resultValue);
+            Value errorValue, Value resultValue,
+            function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform);
   FrameData() {}
 
   /// Given a value, determine the state of its defining op or block argument.
@@ -566,8 +567,10 @@ int FrameData::getDefinitionStateForValue(Value operand) const {
   return opToState.at(definingOp);
 }
 
-FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-                     Value errorValue, Value resultValue) {
+FrameData::FrameData(
+    FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
+    Value resultValue,
+    function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -787,6 +790,8 @@ FrameData::FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
     assert(unterminatedLoops.empty() && "all loops have been terminated");
   }
 
+  transform(originalFunction, opToState);
+
   // Calculate the frame. Whenever there is a use whose def lives in another
   // state, it must be added to the frame. We need to store the location of the
   // value in the frame so that when we generate the resume function the frame
@@ -875,6 +880,60 @@ static Operation *findNearestCommonAncestor(mlir::DominanceInfo &domInfo,
   return domInfo.dominates(lhsCommon, rhsCommon) ? lhsCommon : rhsCommon;
 }
 
+static bool needsStateClone(Operation *operation) {
+  return operation->hasTrait<OpTrait::ConstantLike>() ||
+         isa<KGEN::StructGEPOp, POP::OffsetOp>(operation);
+}
+
+struct CloneFrameArgs {
+  CloneFrameArgs(ImplicitLocOpBuilder &b, DenseMap<Operation *, int> &opToState,
+                 mlir::DominanceInfo &dominanceInfo)
+      : builder(b), opToState(opToState), dominanceInfo(dominanceInfo) {}
+  void cloneFrameArgsOf(Operation *user) {
+    int useState = opToState[user];
+    for (auto [index, operand] : llvm::enumerate(user->getOperands())) {
+      Operation *definingOp = operand.getDefiningOp();
+      if (!definingOp)
+        continue;
+      if (!needsStateClone(definingOp))
+        continue;
+      int defState = opToState[definingOp];
+      if (defState == useState)
+        continue;
+
+      auto existing = constantToStateSpecific.find(definingOp);
+      if (existing == constantToStateSpecific.end())
+        existing = constantToStateSpecific.try_emplace(definingOp).first;
+      auto existingClone = existing->second.find(useState);
+      Operation *clonedDefOp;
+      if (existingClone == existing->second.end()) {
+        builder.setInsertionPoint(user);
+        clonedDefOp = builder.clone(*definingOp);
+        opToState[clonedDefOp] = useState;
+        existing->second.insert({useState, clonedDefOp});
+        if (clonedDefOp->getNumOperands() > 0)
+          cloneFrameArgsOf(clonedDefOp);
+      } else {
+        clonedDefOp = existingClone->second;
+        if (!dominanceInfo.dominates(clonedDefOp, user)) {
+          // We have two uses in the same state where one does not dominate the
+          // other. This implies that the first instance of the usage is in a
+          // nested region.
+          Operation *parent = clonedDefOp->getParentOp();
+          while (!dominanceInfo.dominates(parent, user))
+            parent = parent->getParentOp();
+          clonedDefOp->moveBefore(parent);
+        }
+      }
+      user->setOperand(index, clonedDefOp->getResult(0));
+    }
+  }
+  ImplicitLocOpBuilder &builder;
+  DenseMap<Operation *, int> &opToState;
+  DenseMap<Operation *, DenseMap<int, Operation *>> constantToStateSpecific;
+  mlir::DominanceInfo &dominanceInfo;
+};
+
 void LowerAsyncFunctionsPass::runOnOperation() {
   ModuleOp module = getOperation();
   TargetInfoAttr targetInfo = lookupTargetInfo(module);
@@ -937,7 +996,21 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       alloc->moveBefore(ancestor);
     }
 
-    FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue);
+    // The transform function clones ops whose values should not be stored in
+    // the frame. This includes constants and pointer offsets.
+    std::function<void(FuncOp, DenseMap<Operation *, int> &)> transform =
+        [&](FuncOp originalFunction, DenseMap<Operation *, int> &opToState) {
+          auto insertPoint = b.saveInsertionPoint();
+          CloneFrameArgs cloner(b, opToState, domInfo);
+          funcOp.walk([&](Operation *user) {
+            if (user->getNumOperands() > 0)
+              cloner.cloneFrameArgsOf(user);
+          });
+          b.restoreInsertionPoint(insertPoint);
+        };
+
+    FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
+                        transform);
     COTypes cotypes(
         module.getContext(), frameData,
         StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
