@@ -1076,7 +1076,6 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
     lsp::CompletionItem item;
     item.label = it.label;
 
-    auto accessKind = getItemAccesKind(item);
     item.sortText = llvm::formatv("{0}-{1}-{2}",
                                   static_cast<unsigned>(getItemAccesKind(item)),
                                   it.kind, it.label);
