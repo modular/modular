@@ -77,6 +77,25 @@ kgen.func @call_async_fn(%arg0: index) -> !co.routine {
   kgen.return %0 : !co.routine
 }
 
+kgen.func @async_hot_fn(%arg0: index, %__error__: !kgen.pointer<index> byref_error, %__result__: !kgen.pointer<index> byref_result) throws|async {
+  kgen.return
+}
+
+// CHECK-LABEL: @hot_call_async_fn
+kgen.func @hot_call_async_fn(%arg0: index, %__error__: !kgen.pointer<index> byref_error, %__result__: !kgen.pointer<index> byref_result) throws|async -> index {
+  co.suspend (%hdl) {
+    %fn = co.resume %hdl : <(!co.routine) -> ()>
+    // CHECK:      co.hot_invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> (): @async_hot_fn]
+    // CHECK-SAME: (%arg0, %arg1, %arg2)
+    %0 = co.hot_invoke[
+     (index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> (): @async_hot_fn
+      ](%arg0, %__error__, %__result__)
+    co.suspend.end
+  }
+
+  kgen.return %arg0 : index
+}
+
 kgen.func @throwing_coroutine(%arg0: index, %__error__: !kgen.pointer<index> byref_error, %__result__: !kgen.pointer<index> byref_result) throws|async -> i1 {
   %true = index.bool.constant true
   kgen.return %true : i1

@@ -131,6 +131,51 @@ FailureOr<InlineResult> InvokeOp::prepInline(mlir::RewriterBase &b) {
 }
 
 //===----------------------------------------------------------------------===//
+// HotInvokeOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseHotAsyncParametricCallee(
+    OpAsmParser &p, TypedAttr &callee,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+    SmallVectorImpl<Type> &operandTypes) {
+  if (failed(parseParametricCallee(p, callee)))
+    return failure();
+
+  // Parse async function operands.
+  SignatureType signature = cast<SignatureType>(callee.getType());
+  llvm::append_range(operandTypes, signature.getArguments());
+  if (failed(p.parseCommaSeparatedList(
+          mlir::AsmParser::Delimiter::Paren, [&]() -> ParseResult {
+            return p.parseOperand(operands.emplace_back());
+          })))
+    return failure();
+
+  return success();
+}
+
+static void printHotAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
+                                          TypedAttr callee, ValueRange operands,
+                                          TypeRange operandTypes) {
+  printParametricCallee(p, op, callee);
+  p << "(";
+  p.printOperands(operands);
+  p << ")";
+}
+
+LogicalResult HotInvokeOp::verify() {
+  auto signature = cast<SignatureType>(getCallee().getType());
+  if (!signature.isAsync())
+    return emitOpError("callable must be 'async'");
+  if (signature.hasInitSelfArg())
+    return emitOpError("callable cannot have an 'init_self' argument");
+  return success();
+}
+
+FailureOr<InlineResult> HotInvokeOp::prepInline(mlir::RewriterBase &b) {
+  return {{*this, [](Operation *) {}}};
+}
+
+//===----------------------------------------------------------------------===//
 // ExecuteOp
 //===----------------------------------------------------------------------===//
 
