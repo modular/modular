@@ -15,8 +15,7 @@ from sys.info import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import memcpy, memset_zero, stack_allocation
-from memory.unsafe import DTypePointer
+from memory import memcpy, memset_zero, stack_allocation, UnsafePointer
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`
@@ -233,7 +232,7 @@ fn genlut(gpr: Int):
 @always_inline
 fn _encode_load_store[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int) -> Int:
+](src: UnsafePointer[Scalar[type]], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
@@ -248,42 +247,42 @@ fn _encode_load_store[
 @always_inline
 fn store_x[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int):
+](src: UnsafePointer[Scalar[type]], start_index: Int):
     ldx(_encode_load_store[row_count, type](src, start_index))
 
 
 @always_inline
 fn store_y[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int):
+](src: UnsafePointer[Scalar[type]], start_index: Int):
     ldy(_encode_load_store[row_count, type](src, start_index))
 
 
 @always_inline
 fn store_z[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int):
+](src: UnsafePointer[Scalar[type]], start_index: Int):
     ldz(_encode_load_store[row_count, type](src, start_index))
 
 
 @always_inline
 fn read_x[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int):
+](src: UnsafePointer[Scalar[type]], start_index: Int):
     stx(_encode_load_store[row_count, type](src, start_index))
 
 
 @always_inline
 fn read_y[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int):
+](src: UnsafePointer[Scalar[type]], start_index: Int):
     sty(_encode_load_store[row_count, type](src, start_index))
 
 
 @always_inline
 fn load_z[
     row_count: Int, type: DType
-](src: DTypePointer[type], start_index: Int):
+](src: UnsafePointer[Scalar[type]], start_index: Int):
     stz(_encode_load_store[row_count, type](src, start_index))
 
 

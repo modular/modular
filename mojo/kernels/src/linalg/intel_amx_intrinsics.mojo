@@ -13,7 +13,7 @@ from sys import llvm_intrinsic
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.static_tuple import StaticTuple
 
@@ -65,7 +65,7 @@ fn _tile_zero[tdest: Int]():
     llvm_intrinsic["llvm.x86.tilezero", NoneType](Int8(tdest))
 
 
-fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
+fn _tile_loadd[dst: Int](base: UnsafePointer[NoneType], stride: Int):
     """
     Load tile rows from memory specifieid by base address and stride into destination tile dst using the tile configuration previously configured via _tile_loadconfig.
 
@@ -76,7 +76,7 @@ fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
     )
 
 
-fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
+fn _tile_stored[src: Int](base: UnsafePointer[NoneType], stride: Int):
     """
     Store the tile specified by src to memory specifieid by base address and stride using the tile configuration previously configured via _tile_loadconfig.
 
@@ -85,7 +85,7 @@ fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
     llvm_intrinsic["llvm.x86.tilestored64", NoneType](Int8(src), base, stride)
 
 
-fn _tile_loadconfig(mem_addr: DTypePointer[void]):
+fn _tile_loadconfig(mem_addr: UnsafePointer[NoneType]):
     """
     Load tile configuration from a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type palvarte, the number of bytes per row, and the number of rows. If the specified palvarte_id is zero, that signifies the init state for both the tile config and the tile data, and the tiles are zeroed. Any invalid configurations will result in #GP fault.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadconfig
@@ -93,7 +93,7 @@ fn _tile_loadconfig(mem_addr: DTypePointer[void]):
     llvm_intrinsic["llvm.x86.ldtilecfg", NoneType](mem_addr)
 
 
-fn _tile_storeconfig(mem_addr: DTypePointer[void]):
+fn _tile_storeconfig(mem_addr: UnsafePointer[NoneType]):
     """
     Stores the current tile configuration to a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type palvarte, the number of bytes per row, and the number of rows. If tiles are not configured, all zeroes will be stored to memory.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_storeconfig
@@ -124,9 +124,9 @@ struct tileconfig:
 
 
 fn _tile_dpbssd_emulated(
-    cptr: DTypePointer[DType.int32],
-    aptr: DTypePointer[DType.int8],
-    bptr: DTypePointer[DType.int8],
+    cptr: UnsafePointer[Int32],
+    aptr: UnsafePointer[Int8],
+    bptr: UnsafePointer[Int8],
 ):
     var a = NDBuffer[DType.int8, 2, DimList(16, 64)](aptr)
     var b = NDBuffer[DType.int8, 2, DimList(16, 64)](bptr)

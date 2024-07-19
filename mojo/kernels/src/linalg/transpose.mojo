@@ -12,8 +12,7 @@ from sys.intrinsics import strided_load, strided_store
 from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from memory import memcpy
-from memory.unsafe import DTypePointer
+from memory import memcpy, UnsafePointer
 from runtime.asyncrt import parallelism_level
 
 from utils.index import StaticIntTuple, StaticTuple
@@ -370,9 +369,9 @@ fn _permute_data[
     size: Int,
     type: DType,
 ](
-    input: DTypePointer[type],
-    output: DTypePointer[type],
-    perms: DTypePointer[DType.index],
+    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[type]],
+    perms: UnsafePointer[Scalar[DType.index]],
 ):
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
@@ -389,7 +388,10 @@ fn _fill_strides[
     rank: Int,
     input_shape: DimList,
     type: DType,
-](buf: NDBuffer[type, rank, input_shape], strides: DTypePointer[DType.index]):
+](
+    buf: NDBuffer[type, rank, input_shape],
+    strides: UnsafePointer[Scalar[DType.index]],
+):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -535,7 +537,7 @@ fn _simplify_transpose_perms[
 @always_inline
 fn _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: DTypePointer[DType.index]) -> StaticIntTuple[rank]:
+](perms: UnsafePointer[Scalar[DType.index]]) -> StaticIntTuple[rank]:
     var simplified_perms = StaticIntTuple[rank]()
     # TODO: unroll
     for j in range(rank):
@@ -554,8 +556,8 @@ fn _process_tile[
     n: Int,
     M: Int,
     N: Int,
-    out_ptr: DTypePointer[type],
-    in_ptr: DTypePointer[type],
+    out_ptr: UnsafePointer[Scalar[type]],
+    in_ptr: UnsafePointer[Scalar[type]],
 ):
     var input_tile_offset = M * n + m
     var output_tile_offset = N * m + n
@@ -591,7 +593,7 @@ fn _transpose_2d_serial_tiled[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
     offset: Int,
@@ -658,7 +660,7 @@ fn _transpose_2d_parallel_tiled[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
     offset: Int,
@@ -723,7 +725,7 @@ fn transpose_2d[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
     offset: Int,
@@ -762,8 +764,8 @@ fn transpose_2d[
 fn _transpose_4d_swap_middle_helper[
     type: DType,
 ](
-    dst_ptr: DTypePointer[type],
-    src_ptr: DTypePointer[type],
+    dst_ptr: UnsafePointer[Scalar[type]],
+    src_ptr: UnsafePointer[Scalar[type]],
     L: Int,
     M: Int,
     N: Int,
@@ -835,7 +837,7 @@ fn transpose_4d_swap_middle[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
 ):
@@ -862,7 +864,7 @@ fn transpose_3d_swap_outer[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
 ):
@@ -890,7 +892,7 @@ fn transpose_3d_swap_inner[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
 ):
@@ -960,9 +962,9 @@ fn _copy_with_strides[
 ](
     axis: Int,
     output: NDBuffer[type, rank, output_shape],
-    input: DTypePointer[type],
-    input_strides: DTypePointer[DType.index],
-    output_strides: DTypePointer[DType.index],
+    input: UnsafePointer[Scalar[type]],
+    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.index]],
     input_offset: Int,
     output_offset: Int,
 ) raises:
@@ -1090,17 +1092,17 @@ fn transpose_strided[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
 ) raises:
     # Compute `permuted_input_strides`
-    var input_strides = DTypePointer[DType.index].alloc(rank)
-    var permuted_input_strides = DTypePointer[DType.index].alloc(rank)
+    var input_strides = UnsafePointer[Scalar[DType.index]].alloc(rank)
+    var permuted_input_strides = UnsafePointer[Scalar[DType.index]].alloc(rank)
     _fill_strides(input, input_strides)
     _permute_data[rank, DType.index](
         input_strides, permuted_input_strides, perms
     )
     # Compute `output_strides`
-    var output_strides = DTypePointer[DType.index].alloc(rank)
+    var output_strides = UnsafePointer[Scalar[DType.index]].alloc(rank)
     _fill_strides(output, output_strides)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
@@ -1139,7 +1141,7 @@ fn transpose[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    perms: DTypePointer[DType.index],
+    perms: UnsafePointer[Scalar[DType.index]],
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in

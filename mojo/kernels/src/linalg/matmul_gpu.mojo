@@ -35,8 +35,7 @@ from layout.layout_tensor import (
 )
 from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.swizzle import Swizzle
-from memory import stack_allocation
-from memory.unsafe import DTypePointer, bitcast
+from memory import stack_allocation, UnsafePointer
 
 from utils.index import Index
 from utils.numerics import get_accum_type
@@ -48,7 +47,7 @@ from gpu.host._compile import _get_nvptx_target
 
 
 @always_inline
-fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
+fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
     # Load a register variable from global state space via non-coherent cache.
 
     alias alignment = Int32(alignof[SIMD[type, 4]]())
@@ -336,9 +335,9 @@ fn gemv_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: DTypePointer[c_type],
-    a: DTypePointer[a_type],
-    b: DTypePointer[b_type],
+    c: UnsafePointer[Scalar[c_type]],
+    a: UnsafePointer[Scalar[a_type]],
+    b: UnsafePointer[Scalar[b_type]],
     m: Int,
     n: Int,
     k: Int,
@@ -390,9 +389,9 @@ fn gemv_tc_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: DTypePointer[c_type],
-    a: DTypePointer[a_type],
-    b: DTypePointer[b_type],
+    c: UnsafePointer[Scalar[c_type]],
+    a: UnsafePointer[Scalar[a_type]],
+    b: UnsafePointer[Scalar[b_type]],
     m: Int,
     n: Int,
     k: Int,
@@ -495,9 +494,9 @@ fn gevm_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: DTypePointer[c_type],
-    a: DTypePointer[a_type],
-    b: DTypePointer[b_type],
+    c: UnsafePointer[Scalar[c_type]],
+    a: UnsafePointer[Scalar[a_type]],
+    b: UnsafePointer[Scalar[b_type]],
     m: Int,
     n: Int,
     k: Int,
@@ -556,9 +555,9 @@ fn matmul_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: DTypePointer[c_type],
-    a_ptr: DTypePointer[a_type],
-    b_ptr: DTypePointer[b_type],
+    c_ptr: UnsafePointer[Scalar[c_type]],
+    a_ptr: UnsafePointer[Scalar[a_type]],
+    b_ptr: UnsafePointer[Scalar[b_type]],
     m: Int,
     n: Int,
     k: Int,
@@ -679,8 +678,8 @@ fn sgemm_double_buffer_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     m: Int,
-    c: DTypePointer[c_type],
-    a: DTypePointer[a_type],
+    c: UnsafePointer[Scalar[c_type]],
+    a: UnsafePointer[Scalar[a_type]],
     b: LayoutTensor[b_type, b_layout],
 ):
     alias simd_size = simdwidthof[c_type]()
@@ -912,9 +911,9 @@ fn matmul_kernel_naive[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: DTypePointer[c_type],
-    a_ptr: DTypePointer[a_type],
-    b_ptr: DTypePointer[b_type],
+    c_ptr: UnsafePointer[Scalar[c_type]],
+    a_ptr: UnsafePointer[Scalar[a_type]],
+    b_ptr: UnsafePointer[Scalar[b_type]],
     m: Int,
     n: Int,
     k: Int,

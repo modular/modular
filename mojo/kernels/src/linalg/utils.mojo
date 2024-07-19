@@ -648,8 +648,8 @@ fn packA_i8mm[
     t0: Int,
     t1: Int,
     k: Int,
-    a_ptr: DTypePointer[a_type],
-    a_packed_ptr: DTypePointer[a_type],
+    a_ptr: UnsafePointer[Scalar[a_type]],
+    a_packed_ptr: UnsafePointer[Scalar[a_type]],
 ):
     @always_inline
     @__copy_capture(k)

@@ -9,8 +9,7 @@ from sys.info import alignof
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import stack_allocation, UnsafePointer
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -130,7 +129,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[DTypePointer[c.type]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -156,5 +155,8 @@ struct Inner_matmul_neon(InnerMatmulKernel):
                     Index(idx_n, idx_k1),
                 )
             acc.store(
-                rebind[DTypePointer[c.type]](c_ptr), c_stride, idx_n, c_bound
+                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                c_stride,
+                idx_n,
+                c_bound,
             )

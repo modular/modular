@@ -15,8 +15,8 @@ from buffer.buffer import (
     partial_simd_store,
 )
 from buffer.dimlist import DimList
-from memory import stack_allocation
-from memory.unsafe import DTypePointer, bitcast
+from memory import stack_allocation, UnsafePointer
+from memory.unsafe import bitcast
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -191,7 +191,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[DTypePointer[c.type]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -221,7 +221,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                     tile_n_k,
                 )
             acc.store(
-                rebind[DTypePointer[c.type]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

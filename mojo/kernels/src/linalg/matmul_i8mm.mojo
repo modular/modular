@@ -10,8 +10,7 @@ from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
-from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import stack_allocation, UnsafePointer
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -49,7 +48,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         inout self,
-        c_ptr: DTypePointer[type],
+        c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
@@ -92,7 +91,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _store_c_tile(
         inout self,
-        c_ptr: DTypePointer[type],
+        c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
@@ -254,7 +253,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
                 acc._initialize_c_tile()
             else:
                 acc._load_c_tile(
-                    rebind[DTypePointer[c.type]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -269,5 +268,8 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
                     Index(idx_n, idx_k),
                 )
             acc._store_c_tile(
-                rebind[DTypePointer[c.type]](c_ptr), c_stride, idx_n, c_bound
+                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                c_stride,
+                idx_n,
+                c_bound,
             )

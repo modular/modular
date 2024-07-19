@@ -872,7 +872,7 @@ struct BTileGenerator[
     scratch buffer and return a view of that."""
 
     var b: NDBuffer[b_type, 2, shape]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: DTypePointer[b_type]
+    var b_tile_stack_ptr: UnsafePointer[Scalar[b_type]]
     var tile_n_k: StaticIntTuple[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -883,7 +883,7 @@ struct BTileGenerator[
     ) -> BTileGenerator[
         config, a_type, b_type, c_type, shape, transpose_b, b_packed
     ]:
-        var b_tile_stack_ptr = DTypePointer[b_type]()
+        var b_tile_stack_ptr = UnsafePointer[Scalar[b_type]]()
 
         debug_assert(
             not (transpose_b and b_packed),

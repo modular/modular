@@ -37,12 +37,12 @@ alias cblas_gemm_type = fn (
     Int32,
     Int32,
     Float32,
-    DTypePointer[DType.float32],
+    UnsafePointer[Float32],
     Int32,
-    DTypePointer[DType.float32],
+    UnsafePointer[Float32],
     Int32,
     Float32,
-    DTypePointer[DType.float32],
+    UnsafePointer[Float32],
     Int32,
 ) -> None
 
@@ -151,15 +151,10 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: DTypePointer,
-    a_ptr: DTypePointer,
-    b_ptr: DTypePointer,
+    c_ptr: UnsafePointer[Float32, *_],
+    a_ptr: UnsafePointer[Float32, *_],
+    b_ptr: UnsafePointer[Float32, *_],
 ):
-    constrained[
-        a_ptr.type == b_ptr.type == c_ptr.type == DType.float32,
-        "input and output types must be float32",
-    ]()
-
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
         _CBLASTranspose.NO_TRANSPOSE,
@@ -168,12 +163,12 @@ fn _cblas_f32[
         n,
         k,
         alpha,
-        rebind[DTypePointer[DType.float32]](a_ptr),
+        rebind[UnsafePointer[Float32]](a_ptr),
         lda,
-        rebind[DTypePointer[DType.float32]](b_ptr),
+        rebind[UnsafePointer[Float32]](b_ptr),
         ldb,
         beta,
-        rebind[DTypePointer[DType.float32]](c_ptr),
+        rebind[UnsafePointer[Float32]](c_ptr),
         ldc,
     )
 
@@ -193,15 +188,10 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: DTypePointer,
-    a_ptr: DTypePointer,
-    b_ptr: DTypePointer,
+    c_ptr: UnsafePointer[Float32, *_],
+    a_ptr: UnsafePointer[Float32, *_],
+    b_ptr: UnsafePointer[Float32, *_],
 ):
-    constrained[
-        a_ptr.type == b_ptr.type == c_ptr.type == DType.float32,
-        "input and output types must be float32",
-    ]()
-
     var cblas_gemm = get_cblas_f32_function()
 
     _cblas_f32[transpose_b=transpose_b](
@@ -214,9 +204,9 @@ fn _cblas_f32[
         ldc,
         alpha,
         beta,
-        rebind[DTypePointer[DType.float32]](c_ptr),
-        rebind[DTypePointer[DType.float32]](a_ptr),
-        rebind[DTypePointer[DType.float32]](b_ptr),
+        c_ptr,
+        a_ptr,
+        b_ptr,
     )
 
 
@@ -253,14 +243,14 @@ fn apple_gemv[
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
     var transposed_b = NDBuffer[b_type, 2]()
-    var transposed_b_ptr = DTypePointer[b_type]()
+    var transposed_b_ptr = UnsafePointer[Scalar[b_type]]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     @parameter
     if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
-        transposed_b_ptr = DTypePointer[b_type].alloc(b.num_elements())
+        transposed_b_ptr = UnsafePointer[Scalar[b_type]].alloc(b.num_elements())
         transposed_b = NDBuffer[b_type, 2](transposed_b_ptr, transposed_b_shape)
 
         pack_b_ndbuffer[
@@ -376,9 +366,9 @@ fn apple_matmul[
             ldc,
             alpha,
             beta,
-            c.data,
-            a.data,
-            b.data,
+            rebind[UnsafePointer[Float32, c.address_space]](c.data),
+            rebind[UnsafePointer[Float32, a.address_space]](a.data),
+            rebind[UnsafePointer[Float32, b.address_space]](b.data),
         )
 
         @parameter

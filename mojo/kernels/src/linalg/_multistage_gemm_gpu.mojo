@@ -45,7 +45,7 @@ from layout.tensor_core import (
     get_mma_shape,
 )
 from memory.reference import _GPUAddressSpace as AddressSpace
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index
 
@@ -67,8 +67,9 @@ fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
 
 
 @always_inline
-fn distance(arg0: DTypePointer, arg1: DTypePointer) -> Int:
-    constrained[arg0.type == arg1.type, "Pointer types mismatch"]()
+fn distance[
+    type: DType, //
+](arg0: UnsafePointer[Scalar[type]], arg1: UnsafePointer[Scalar[type]]) -> Int:
     return (int(arg0) - int(arg1)) // sizeof[arg1.type]()
 
 

@@ -383,11 +383,11 @@ fn _batched_matmul_cpu[
             alias alignment = alignof[SIMD[c_type, simd_size]]()
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
-            var a_packed_ptr = DTypePointer[a_type]()
+            var a_packed_ptr = UnsafePointer[Scalar[a_type]]()
             if use_i8mm:
-                a_packed_ptr = DTypePointer[a_type].alloc(
-                    mh * kh, alignment=alignment
-                )
+                a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc[
+                    alignment=alignment
+                ](mh * kh)
             var a_packed = NDBuffer[a_type, 2](a_packed_ptr, DimList(mh, kh))
 
             if use_i8mm:
