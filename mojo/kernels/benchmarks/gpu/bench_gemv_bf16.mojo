@@ -13,12 +13,10 @@ from random import randn
 
 from benchmark import *
 from gpu import WARP_SIZE
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import _copy_host_to_device, _free, _malloc
+from gpu.host import DeviceContext
 from linalg.matmul_gpu import gemv_kernel, gemv_tc_kernel, matmul_kernel_naive
 from memory import memset
 from memory.unsafe import DTypePointer
-from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from internal_utils import DeviceNDBuffer
 from buffer import DimList, NDBuffer
@@ -33,7 +31,6 @@ fn bench_gemv_tc[
     var M = dims[0]
     var N = dims[1]
     var K = dims[2]
-    var stream = Stream()
     var a_host = DTypePointer[type].alloc(M * K)
     var b_host = DTypePointer[type].alloc(K * N)
     var c_host = DTypePointer[type].alloc(M * N)
@@ -55,7 +52,7 @@ fn bench_gemv_tc[
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = Function[
+    var func_gemv = ctx.compile_function[
         gemv_tc_kernel[
             type,
             type,
@@ -70,7 +67,8 @@ fn bench_gemv_tc[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            func_gemv(
+            ctx.enqueue_function(
+                func_gemv,
                 c_buf.buffer.ptr,
                 a_buf.buffer.ptr,
                 b_buf.buffer.ptr,
@@ -108,7 +106,6 @@ fn bench_gemv_ws[
     var M = dims[0]
     var N = dims[1]
     var K = dims[2]
-    var stream = Stream()
     var a_host = DTypePointer[type].alloc(M * K)
     var b_host = DTypePointer[type].alloc(K * N)
     var c_host = DTypePointer[type].alloc(M * N)
@@ -130,7 +127,7 @@ fn bench_gemv_ws[
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = Function[
+    var func_gemv = ctx.compile_function[
         gemv_kernel[
             type,
             type,
@@ -145,7 +142,8 @@ fn bench_gemv_ws[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            func_gemv(
+            ctx.enqueue_function(
+                func_gemv,
                 c_buf.buffer.ptr,
                 a_buf.buffer.ptr,
                 b_buf.buffer.ptr,
@@ -183,7 +181,6 @@ fn bench_gemv_naive[
     var M = dims[0]
     var N = dims[1]
     var K = dims[2]
-    var stream = Stream()
     var a_host = DTypePointer[type].alloc(M * K)
     var b_host = DTypePointer[type].alloc(K * N)
     var c_host = DTypePointer[type].alloc(M * N)
@@ -205,7 +202,7 @@ fn bench_gemv_naive[
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = Function[
+    var func_gemv = ctx.compile_function[
         matmul_kernel_naive[
             type,
             type,
@@ -221,7 +218,8 @@ fn bench_gemv_naive[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            func_gemv(
+            ctx.enqueue_function(
+                func_gemv,
                 c_buf.buffer.ptr,
                 a_buf.buffer.ptr,
                 b_buf.buffer.ptr,
