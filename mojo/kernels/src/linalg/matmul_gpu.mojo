@@ -21,7 +21,12 @@ from gpu.memory import (
 )
 from gpu.mma import ld_matrix, mma
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
-from gpu.tensor_ops import tc_reduce, tc_reduce_vector
+from gpu.tensor_ops import (
+    tc_reduce,
+    tc_reduce_vector,
+    tc_reduce_gevm_4x,
+    tc_reduce_gevm_8x,
+)
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -505,8 +510,8 @@ fn gevm_kernel[
     var warpId = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[s_type, 1]()
     var col = BlockIdx.x() * WARP_SIZE + lane_id()
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var globalWarpId = x // WARP_SIZE
+    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var globalWarpId = tid // WARP_SIZE
 
     var x_shared = stack_allocation[
         tile_size,
@@ -545,6 +550,100 @@ fn gevm_kernel[
             )
         else:
             c[globalWarpId] = total.cast[c_type]()
+
+
+fn gevm_tc_kernel_vector_8x[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    tile_size: Int,
+    simd_width: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
+](
+    c: NDBuffer[c_type, 2],
+    a: NDBuffer[a_type, 2],
+    b: NDBuffer[b_type, 2],
+    m: UInt,
+    n: UInt,
+    k: UInt,
+):
+    alias align_b = alignof[SIMD[b_type, simd_width]]()
+    alias align_x = alignof[SIMD[s_type, simd_width]]()
+
+    var warpsPerBlock = BlockDim.x() // WARP_SIZE
+    var warpId = ThreadIdx.x() // WARP_SIZE
+    var accum = SIMD[s_type, simd_width]()
+    var col = BlockIdx.x() * WARP_SIZE * simd_width + lane_id() * simd_width
+    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var globalWarpId = tid // WARP_SIZE
+
+    var x_shared = stack_allocation[
+        tile_size,
+        a_type,
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    # Every block computes warp size * simd_width length of output values
+    for i in range(ceildiv(k, warpsPerBlock)):
+        var row = i * warpsPerBlock + warpId
+        if row < k and col < n:
+            var lhs = a.load(Index(0, row))
+            var rhs = b.load[width=simd_width, alignment=align_b](
+                Index(row, col)
+            )
+            accum += lhs.cast[s_type]() * rhs.cast[s_type]()
+
+    var xs = warpId * WARP_SIZE * simd_width + lane_id() * simd_width
+
+    @parameter
+    for x in range(simd_width):
+        x_shared[xs + x] = accum[x].cast[a_type]()
+
+    barrier()
+
+    var val1 = SIMD[s_type, simd_width // 2]()
+    var val2 = SIMD[s_type, simd_width // 2]()
+
+    # indexing to fetch correctly from shared memory
+    var stride = 256
+    var mma_tile_width = 8
+    var mma_col_elem_width = 4
+    var target_row = (lane_id() % mma_col_elem_width) * mma_col_elem_width
+    var target_col = warpId * mma_tile_width + (lane_id() // mma_col_elem_width)
+
+    @parameter
+    for i in range(simd_width // 2):
+        val1[i] = x_shared[(target_row + i) * stride + target_col].cast[
+            s_type
+        ]()
+        val2[i] = x_shared[(target_row + 16 + i) * stride + target_col].cast[
+            s_type
+        ]()
+
+    # Doing tensor core reduction to get final results in first row
+    var res = tc_reduce_gevm_8x[s_type, a_type, simd_width // 2](
+        val1.cast[a_type](), val2.cast[a_type]()
+    )
+
+    if lane_id() < 4:
+        var final = res.split()
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, (simd_width // 2) // 2](
+                Index(UInt(0), globalWarpId * simd_width + lane_id() * 2),
+                final[0].cast[c_type](),
+            )
+        else:
+            c.store[
+                width = (simd_width // 2) // 2,
+                alignment = alignof[SIMD[c_type, (simd_width // 2) // 2]](),
+            ](
+                Index(UInt(0), globalWarpId * simd_width + lane_id() * 2),
+                final[0].cast[c_type](),
+            )
 
 
 fn matmul_kernel[
@@ -1269,29 +1368,86 @@ fn _matmul_gpu_dispatch[
                     grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
-        elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
-            # k should be a multiple of warps per block
-            alias WARPS_PER_BLOCK = 32
-            var gpu_func = ctx.compile_function[
-                gevm_kernel[
-                    c_type,
-                    a_type,
-                    b_type,
-                    WARP_SIZE * WARPS_PER_BLOCK,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            )
+        elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
+
+            @parameter
+            if a_type == DType.bfloat16:
+                alias simd_width = simdwidthof[
+                    DType.bfloat16, target = _get_nvptx_target()
+                ]()
+                alias max_warps_per_block = 32
+
+                if (
+                    k >= 4096
+                    and n >= 4096
+                    and k % simd_width == 0
+                    and n % simd_width == 0
+                ):
+                    var gpu_func = ctx.compile_function[
+                        gevm_tc_kernel_vector_8x[
+                            c_type,
+                            a_type,
+                            b_type,
+                            WARP_SIZE * max_warps_per_block * simd_width,
+                            simd_width,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                        ]
+                    ]()
+                    ctx.enqueue_function(
+                        gpu_func,
+                        c,
+                        a,
+                        b,
+                        m,
+                        n,
+                        k,
+                        grid_dim=ceildiv(n, WARP_SIZE * simd_width),
+                        block_dim=WARP_SIZE * max_warps_per_block,
+                    )
+                else:
+                    alias WARPS_PER_BLOCK = 32
+                    var gpu_func = ctx.compile_function[
+                        gevm_kernel[
+                            c_type,
+                            a_type,
+                            b_type,
+                            WARP_SIZE * WARPS_PER_BLOCK,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                        ]
+                    ]()
+                    ctx.enqueue_function(
+                        gpu_func,
+                        c.data,
+                        a.data,
+                        b.data,
+                        m,
+                        n,
+                        k,
+                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                        block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                    )
+            else:
+                alias WARPS_PER_BLOCK = 32
+                var gpu_func = ctx.compile_function[
+                    gevm_kernel[
+                        c_type,
+                        a_type,
+                        b_type,
+                        WARP_SIZE * WARPS_PER_BLOCK,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                )
         else:
             alias BLOCK_DIM = 16
             var gpu_func = ctx.compile_function[
