@@ -59,16 +59,30 @@ def run_elementwise[
     ctx.enqueue_copy_from_device(out_host.data.address, out_device)
 
     for i in range(length):
-        assert_almost_equal(
-            out_host[i],
-            rsqrt(in_host[i]),
-            msg="values did not match at position "
+        var msg = (
+            "values did not match at position "
             + str(i)
             + " for dtype="
-            + str(type),
-            atol=1e-08 if type is DType.float32 else 1e-04,
-            rtol=1e-05 if type is DType.float32 else 1e-03,
+            + str(type)
         )
+
+        @parameter
+        if type is DType.float32:
+            assert_almost_equal(
+                out_host[i],
+                rsqrt(in_host[i]),
+                msg=msg,
+                atol=1e-08,
+                rtol=1e-05,
+            )
+        else:
+            assert_almost_equal(
+                out_host[i],
+                rsqrt(in_host[i]),
+                msg=msg,
+                atol=1e-04,
+                rtol=1e-03,
+            )
 
     _ = in_device
     _ = out_device

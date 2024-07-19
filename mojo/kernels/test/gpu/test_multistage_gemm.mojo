@@ -440,7 +440,7 @@ fn test[type: DType, transpose_b: Bool]() raises:
     synchronize()
     _copy_device_to_host(c_host_ref, c_device_ref, M * N)
 
-    var rtol = 1e-3 if type == DType.float32 else 1e-4
+    alias rtol = 1e-3 if type == DType.float32 else 1e-4
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
             print(

@@ -23,8 +23,8 @@ from gpu.host._compile import _compile_code, _get_nvptx_target
 fn welford_mean_var[
     type: DType
 ](vector: Buffer[type], size: Int) -> StaticTuple[Scalar[type], 2]:
-    var mean: Scalar[type] = Float32(0)
-    var s: Scalar[type] = Float32(0)
+    var mean: Scalar[type] = 0
+    var s: Scalar[type] = 0
 
     for i in range(1, size + 1):
         var x: Scalar[type] = vector[i - 1]
@@ -36,7 +36,7 @@ fn welford_mean_var[
 
 fn run_layer_norm_block_vector[
     type: DType
-](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
+](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
     alias rank = 2
@@ -126,7 +126,7 @@ fn run_layer_norm_block_vector[
 
 fn run_layer_norm_block_scalar[
     type: DType
-](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
+](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
     alias rank = 2

@@ -45,11 +45,11 @@ fn test_cublas() raises:
 
     for m in range(M):
         for k in range(K):
-            a_host[m * K + k] = random_float64(-10, 10)
+            a_host[m * K + k] = random_float64(-10, 10).cast[type]()
 
     for k in range(K):
         for n in range(N):
-            b_host[k * N + n] = random_float64(-10, 10)
+            b_host[k * N + n] = random_float64(-10, 10).cast[type]()
 
     var a_device = _malloc[type](M * K)
     var b_device = _malloc[type](K * N)

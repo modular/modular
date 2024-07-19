@@ -138,8 +138,9 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
 
     _copy_device_to_host(c_host_n, c_device_n, M * N)
 
-    # Due to varied pattern of FP arith the accumulated sum isn't exactly accurate. Hence relative tolerance needs to be checked.
-    var errorTolerance = 0.1
+    # Due to varied pattern of FP arith the accumulated sum isn't exactly
+    # accurate. Hence relative tolerance needs to be checked.
+    alias errorTolerance = 0.1
     var failed = False
     for i in range(M * N):
         var outVal = c_host[i]

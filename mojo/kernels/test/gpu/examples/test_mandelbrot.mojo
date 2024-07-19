@@ -60,8 +60,8 @@ fn mandelbrot(out: NDBuffer[int_type, 2, DimList(height, width)]):
     if row >= height:
         return
 
-    var scale_x = (max_x - min_x) / width
-    var scale_y = (max_y - min_y) / height
+    alias scale_x = (max_x - min_x) / width
+    alias scale_y = (max_y - min_y) / height
 
     @always_inline
     @parameter
@@ -70,7 +70,7 @@ fn mandelbrot(out: NDBuffer[int_type, 2, DimList(height, width)]):
         if col >= width:
             return
         var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
-        var cy = min_y + row * scale_y
+        var cy = min_y + row * SIMD[float_type, simd_width](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
         out.store[width=simd_width](
             Index(row, col), mandelbrot_kernel[simd_width](c)

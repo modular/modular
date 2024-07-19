@@ -229,7 +229,9 @@ fn test[
         ctx.enqueue_copy_from_device(output_ptr.address, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var rtol = 0.02 if (use_tensor_core and not use_index_input) else 1e-4
+    var rtol = Scalar[qkv_type](0.02) if (
+        use_tensor_core and not use_index_input
+    ) else Scalar[qkv_type](1e-4)
 
     for h in range(num_heads):
         for s in range(seq_len):

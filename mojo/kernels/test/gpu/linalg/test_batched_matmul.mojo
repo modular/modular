@@ -33,7 +33,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
         DType.float32, 3, DimList(b, m, n)
     ].stack_allocation()
 
-    var csum = 0.0
+    var csum: Float32 = 0.0
     for bi in range(b):
         for mi in range(m):
             for ki in range(k):
