@@ -465,7 +465,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     def _build_float_buffer(M: Int, N: Int) -> NDBuffer[DType.float32, 2]:
         var ptr = DTypePointer[DType.float32].alloc(M * N)
         for i in range(M * N):
-            ptr[i] = random_float64(min=-1.0, max=+1.0)
+            ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
         return NDBuffer[DType.float32, 2](ptr, Index(M, N))
 
     @staticmethod
