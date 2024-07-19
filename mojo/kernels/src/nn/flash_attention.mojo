@@ -198,7 +198,7 @@ struct _Matmul[
                 var c_tile = _Accumulator[type, tile_m, tile_n, simd_width]()
 
                 if accumulate:
-                    c_tile.load(cn_ptr, c_stride)
+                    c_tile.load(cn_ptr.address, c_stride)
                 else:
                     c_tile.init(0.0)
 
@@ -212,7 +212,7 @@ struct _Matmul[
                         K, am_ptr, a_stride, bn_ptr, N, c_tile
                     )
 
-                c_tile.store(cn_ptr, c_stride)
+                c_tile.store(cn_ptr.address, c_stride)
 
                 bn_ptr += tile_n * simd_width
                 cn_ptr += tile_n * simd_width
@@ -437,10 +437,10 @@ struct _Matmul[
         M: Int,
         N: Int,
         K: Int,
-        a_ptr: DTypePointer[type],
+        a_ptr: UnsafePointer[Scalar[type]],
         a_stride: Int,
-        packed_ptr: DTypePointer[type],
-        c_ptr: DTypePointer[type],
+        packed_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         accumulate: Bool = False,
     ):
@@ -477,9 +477,9 @@ struct _Matmul[
                 c_stride,
                 Float32(1.0),
                 Float32(1.0) if accumulate else Float32(0.0),
-                rebind[DTypePointer[DType.float32]](c_ptr),
-                rebind[DTypePointer[DType.float32]](a_ptr),
-                rebind[DTypePointer[DType.float32]](packed_ptr),
+                rebind[UnsafePointer[Float32]](c_ptr),
+                rebind[UnsafePointer[Float32]](a_ptr),
+                rebind[UnsafePointer[Float32]](packed_ptr),
             )
 
         Self._matmul_packed(
@@ -767,9 +767,9 @@ struct _FlashAttention[
                         count_m,
                         kv_seq_cnt,
                         depth_dim,
-                        q_ptr,
+                        q_ptr.address,
                         depth_dim,
-                        packed_ptr,
+                        packed_ptr.address,
                         qk_block_ptr,
                         Self._config.qk_block_n,
                     )
@@ -807,10 +807,10 @@ struct _FlashAttention[
                         count_m,
                         count_n,
                         kv_seq_cnt,
-                        qk_block_ptr,
+                        qk_block_ptr.address,
                         Self._config.qk_block_n,
-                        packed_ptr,
-                        o_block_ptr,
+                        packed_ptr.address,
+                        o_block_ptr.address,
                         Self._config.o_block_n,
                         accumulate=(kv_seq_idx > 0),
                     )

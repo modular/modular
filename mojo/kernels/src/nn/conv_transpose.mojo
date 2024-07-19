@@ -1078,22 +1078,22 @@ fn accumulate_wo_tile[
     ]()
 
     acc.load[partial_load=partial_load](
-        output,
+        output.address,
         output_stride,
         partial_load_size,
     )
 
     acc.accumulate[prefetch_offset=4, partial_load_b=partial_load](
         c_tile_size,
-        input,
+        input.address,
         input_stride,
-        filter,
+        filter.address,
         filter_stride,
         partial_load_size,
     )
 
     acc.store[partial_store=partial_load](
-        output,
+        output.address,
         output_stride,
         partial_load_size,
     )
