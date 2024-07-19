@@ -1358,7 +1358,7 @@ fn mean[
         fn wrapped_output_mul[
             _type: DType, width: Int, rank: Int
         ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-            var mean_val = value * reciprocal
+            var mean_val = value * reciprocal.cast[_type]()
             output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
 
         _reduce_generator[
