@@ -54,6 +54,9 @@ modular_cc_library(
     local_defines = select({
         "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
         "//conditions:default": [],
+    }) + select({
+        "//:asyncrt_no_affinity_setting": ["ASYNCRT_NO_AFFINITY=1"],
+        "//conditions:default": [],
     }),
     deps = [
         ":Runtime.headers",
@@ -85,10 +88,6 @@ modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
-    local_defines = select({
-        "//:asyncrt_no_affinity_setting": ["ASYNCRT_NO_AFFINITY"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//Support:MArchTarget",
         "//Support:Threading",
@@ -104,7 +103,7 @@ modular_cc_library(
         "include/AsyncRT/Init/Init.h",
     ],
     deps = [
-        "Runtime",
+        ":Runtime",
         "//Support:CrashReporting",
         "//Support:Settings",
         "//Support:Telemetry",
