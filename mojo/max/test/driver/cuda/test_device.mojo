@@ -7,7 +7,7 @@
 # REQUIRES: cuda
 # RUN: mojo %s
 
-from max._driver import cpu_device, cuda_device, Tensor
+from max._driver import cpu_device, cuda_device, Tensor, AnyTensor
 from testing import assert_equal, assert_not_equal
 from max.tensor import TensorSpec
 from utils import Index
@@ -97,9 +97,51 @@ def test_move():
     assert_not_equal(addr, moved_tensor.unsafe_ptr())
 
 
+def test_print():
+    gpu = cuda_device()
+
+    input = Tensor[DType.float32, 2]((10, 2))
+
+    val = 1
+    for i in range(10):
+        for j in range(2):
+            input[i, j] = val
+            val += 1
+
+    input_cpu = input^.to_device_tensor()
+    gpu_tensor1 = input_cpu.copy_to(gpu)
+
+    # DeviceTensor
+    assert_equal(
+        str(gpu_tensor1),
+        "DeviceTensor(Device(type=CUDA,gpu_id=0),Spec(10x2xfloat32))",
+    )
+
+    # AnyTensor
+    any_tensor = AnyTensor(gpu_tensor1^)
+    assert_equal(
+        str(any_tensor),
+        (
+            "Tensor(<Unable to print device tensor>,"
+            " Device(type=CUDA,gpu_id=0), dtype=float32, shape=10x2)"
+        ),
+    )
+
+    # Tensor
+    tensor = any_tensor.to_device_tensor().to_tensor[DType.float32, 2]()
+    assert_equal(
+        str(tensor),
+        (
+            "Tensor(<Unable to print device tensor>,"
+            " Device(type=CUDA,gpu_id=0), dtype=float32, shape=10x2)"
+        ),
+    )
+
+
 def main():
     test_cuda_device()
     test_copy_d2h()
     test_copy_empty()
     test_copy_d2d()
     test_move()
+    test_print()

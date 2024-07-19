@@ -93,8 +93,24 @@ def test_any_memory():
     assert_false(reg_foo_memory.is_tensor())
 
 
+def test_print_any_tensor():
+    tensor = Tensor[DType.float32, 2]((2, 2))
+
+    tensor[0, 0] = 1
+    tensor[0, 1] = 2
+    tensor[1, 0] = 3
+    tensor[1, 1] = 4
+
+    anytensor = AnyTensor(tensor^)
+
+    expected = """Tensor([[1.0, 2.0],
+[3.0, 4.0]], dtype=float32, shape=2x2)"""
+    assert_equal(expected, str(anytensor))
+
+
 def main():
     test_from_device_memory()
     test_from_tensor()
     test_implicit_conversion()
     test_any_memory()
+    test_print_any_tensor()

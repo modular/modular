@@ -381,6 +381,22 @@ def test_slice_mutability():
     assert_equal(x[0], 2)
 
 
+def test_print():
+    tensor = Tensor[DType.float32, 2]((10, 2))
+
+    val = 1
+    for i in range(10):
+        for j in range(2):
+            tensor[i, j] = val
+            val += 1
+    expected = (
+        "Tensor([[1.0, 2.0],[3.0, 4.0],[5.0, 6.0],..., [15.0, 16.0],[17.0,"
+        " 18.0],[19.0, 20.0]], dtype=float32, shape=10x2)"
+    )
+    s = str(tensor).replace("\n", "")
+    assert_equal(s, expected)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -399,3 +415,4 @@ def main():
     test_take()
     test_unsafe_slice_simd()
     test_slice_mutability()
+    test_print()

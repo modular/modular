@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 from .device_memory import DeviceMemory
 from .tensor import Tensor
-from .device import Device
+from .device import Device, cpu_device
 from max.tensor import TensorSpec
 from max._utils import exchange
+from utils._serialize import _serialize
 
 
 struct AnyTensor:
@@ -88,6 +89,106 @@ struct AnyTensor:
         _ = DeviceMemory(
             self._device_memory_impl_ptr, self._spec.bytecount(), self._device
         )
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the tensor as a string.
+
+        Returns:
+          A compact string of the tensor.
+        """
+
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this Tensor to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write("Tensor(")
+
+        @parameter
+        fn write_dtype_and_shape():
+            writer.write("dtype=")
+            writer.write(self._spec.dtype())
+            writer.write(", ")
+            writer.write("shape=")
+            for i in range(self.get_rank()):
+                if i > 0:
+                    writer.write("x")
+                writer.write(self._spec.shape[i])
+
+        var device_str = str(self._device)
+        if "CPU" not in device_str:
+            writer.write("<Unable to print device tensor>, ")
+            writer.write(device_str)
+            writer.write(", ")
+            write_dtype_and_shape()
+            writer.write(")")
+            return
+
+        @parameter
+        fn serialize[T: Formattable](val: T):
+            writer.write(val)
+
+        @parameter
+        fn dispatcher[dt: DType]():
+            var shape = List[Int]()
+            for i in range(self.get_rank()):
+                shape.append(self._spec.shape[i])
+            _serialize[serialize_fn=serialize, serialize_end_line=False](
+                self._data.address.bitcast[SIMD[dt, 1]](), shape
+            )
+
+        var type = self._spec.dtype()
+        try:
+
+            @parameter
+            if is_x86():
+                type._dispatch_custom[
+                    dispatcher,
+                    DType.bool,
+                    DType.int8,
+                    DType.uint8,
+                    DType.int16,
+                    DType.uint16,
+                    DType.int32,
+                    DType.uint32,
+                    DType.int64,
+                    DType.uint64,
+                    DType.bfloat16,
+                    DType.float16,
+                    DType.float32,
+                    DType.float64,
+                    DType.index,
+                ]()
+            else:
+                # Exclude DType.bfloat16, which is not supported on ARM
+                # architectures.
+                type._dispatch_custom[
+                    dispatcher,
+                    DType.bool,
+                    DType.int8,
+                    DType.uint8,
+                    DType.int16,
+                    DType.uint16,
+                    DType.int32,
+                    DType.uint32,
+                    DType.int64,
+                    DType.uint64,
+                    DType.float16,
+                    DType.float32,
+                    DType.float64,
+                    DType.index,
+                ]()
+        except err:
+            writer.write("<Error occured when formatting dtype>, ")
+            write_dtype_and_shape()
+
+        writer.write(")")
 
 
 @value
@@ -235,3 +336,21 @@ struct AnyMemory:
         """Take value from object. Further access to this object is undefined behavior.
         """
         return self._value[AnyMojoValue].take()
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets this value as a string."""
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats the string representation of this value to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+        if self._value.isa[AnyTensor]():
+            return writer.write(self._value[AnyTensor])
+        else:
+            # TODO: Implement print for AnyMojoValue.
+            return writer.write("AnyMojoValue")

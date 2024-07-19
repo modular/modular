@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice, UnsafeTensorSlice
-from utils import InlineArray
 from max.tensor import TensorSpec, TensorShape
+from utils import InlineArray
+from utils._serialize import _serialize
 
 
 @always_inline
@@ -324,3 +325,56 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         var tmp = Self()
         swap(tmp, self)
         return tmp
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the tensor as a string.
+
+        Returns:
+          A compact string of the tensor.
+        """
+
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """
+        Formats this Tensor to the provided formatter.
+
+        Args:
+            writer: The formatter to write to.
+        """
+
+        writer.write("Tensor(")
+
+        @parameter
+        fn write_dtype_and_shape():
+            writer.write("dtype=")
+            writer.write(type)
+            writer.write(", ")
+            writer.write("shape=")
+            for i in range(rank):
+                if i > 0:
+                    writer.write("x")
+                writer.write(self._spec.shape[i])
+
+        var device_str = str(self._device)
+        if "CPU" not in device_str:
+            writer.write("<Unable to print device tensor>, ")
+            writer.write(device_str)
+            writer.write(", ")
+            write_dtype_and_shape()
+            writer.write(")")
+            return
+
+        @parameter
+        fn serialize[T: Formattable](val: T):
+            writer.write(val)
+
+        var shape = List[Int]()
+        for i in range(self._spec.rank):
+            shape.append(self._spec.shape[i])
+
+        _serialize[serialize_fn=serialize, serialize_end_line=False](
+            self._ptr.address, shape
+        )
+        writer.write(")")
