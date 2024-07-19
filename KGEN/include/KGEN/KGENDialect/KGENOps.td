@@ -1337,7 +1337,8 @@ def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert",
     literal to a fixed width integer type.
   }];
 
-  let arguments = (ins KGEN_IntLiteralType:$input);
+  let arguments = (ins KGEN_IntLiteralType:$input,
+                       UnitAttr:$treatIndexAsUnsigned);
   let results = (outs AnyTypeOf<[AnyInteger, Index]>:$output);
 
   let assemblyFormat = [{

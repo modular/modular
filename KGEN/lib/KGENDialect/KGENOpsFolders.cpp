@@ -464,22 +464,34 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
 
 static ErrorTreeOrSuccess intLiteralConvertOpHelper(IPInt invalIP,
                                                     mlir::Type outType,
+                                                    bool treatIndexAsUnsigned,
                                                     IntegerAttr &attrResult,
                                                     Location loc) {
   APInt invalAP = invalIP.getAPInt();
   unsigned outWidth = 64;
-  bool isUnsigned = false;
+  bool isUnsigned = treatIndexAsUnsigned;
   APInt result;
   if (!outType.isIndex()) {
     outWidth = outType.getIntOrFloatBitWidth();
-    if (outType.isUnsignedInteger())
-      isUnsigned = true;
+    isUnsigned = outType.isUnsignedInteger();
   }
-  if (invalAP.getBitWidth() > outWidth) {
+  if ((invalIP < 0) && isUnsigned) {
+    std::string msg;
+    llvm::raw_string_ostream msgStream(msg);
+    msgStream << "integer value " << invalIP
+              << " is negative, but is being converted to an unsigned type.";
+    return ErrorTree(loc, Error(msgStream.str()));
+  }
+  uint64_t effectiveInputWidth = invalAP.getBitWidth();
+  // Positive IPInts are stored with an extra leading zero.  If converting to an
+  // unsgned type, we can strip the leading zero.
+  if (isUnsigned)
+    effectiveInputWidth -= 1;
+  if (effectiveInputWidth > outWidth) {
     std::string msg;
     llvm::raw_string_ostream msgStream(msg);
     msgStream << "integer value " << invalIP << " requires "
-              << invalAP.getBitWidth()
+              << effectiveInputWidth
               << " bits to store, but the destination bit width is only "
               << outWidth << " bits wide";
     return ErrorTree(loc, Error(msgStream.str()));
@@ -500,7 +512,8 @@ ErrorTreeOrSuccess IntLiteralConvertOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), Error("input must be IntLiteralAttr"));
   IntegerAttr attrResult;
   ErrorTreeOrSuccess errOrSuccess = intLiteralConvertOpHelper(
-      inval.getValue(), getType(), attrResult, getLoc());
+      inval.getValue(), getType(), getTreatIndexAsUnsigned(), attrResult,
+      getLoc());
   if (errOrSuccess.isError())
     return errOrSuccess;
   state.mapResults(attrResult);
@@ -512,8 +525,9 @@ OpFoldResult IntLiteralConvertOp::fold(FoldAdaptor adaptor) {
   if (!in)
     return {};
   IntegerAttr attrResult;
-  ErrorTreeOrSuccess errOrSuccess =
-      intLiteralConvertOpHelper(in.getValue(), getType(), attrResult, getLoc());
+  ErrorTreeOrSuccess errOrSuccess = intLiteralConvertOpHelper(
+      in.getValue(), getType(), adaptor.getTreatIndexAsUnsigned(), attrResult,
+      getLoc());
   if (errOrSuccess.isError())
     return {};
   return attrResult;
