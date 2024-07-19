@@ -61,15 +61,14 @@ class MojoDebugAdapterDescriptorFactory
     let sdk = await this.context.sdkManager.findSDK();
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
-
-    // We don't need to show error messages here because
-    // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
       return undefined;
     }
     return new vscode.DebugAdapterExecutable(sdk.config.mojoLLDBVSCodePath, [
       '--repl-mode',
       'variable',
+      '--pre-init-command',
+      `?!plugin load '${sdk.config.mojoLLDBPluginPath}'`,
     ]);
   }
 }
@@ -95,9 +94,6 @@ class MojoDebugConfigurationResolver
     // Load the MojoLLDB plugin. The SDK must be present because otherwise we
     // can't get access to the debug adapter.
     let sdk = await this.context.sdkManager.findSDK();
-    // We don't need to show error messages here because
-    // `findSDKConfigForDebugSession` does that.
-
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
@@ -146,18 +142,9 @@ class MojoDebugConfigurationResolver
 
     // This setting indicates LLDB to generate a useful summary for each
     // non-primitive type that is displayed right away in the IDE.
-
-    // This setting indicates LLDB to generate a useful summary for each
-    // non-primitive type that is displayed right away in the IDE.
     if (debugConfiguration.enableAutoVariableSummaries === undefined) {
       debugConfiguration.enableAutoVariableSummaries = true;
     }
-
-    // This setting indicates LLDB to use the `:` prefix in the Debug Console to
-    // disambiguate variable printing from regular LLDB commands.
-
-    // This setting indicates LLDB to use the `:` prefix in the Debug Console to
-    // disambiguate variable printing from regular LLDB commands.
 
     // This setting indicates LLDB to use the `:` prefix in the Debug Console to
     // disambiguate variable printing from regular LLDB commands.
@@ -167,24 +154,15 @@ class MojoDebugConfigurationResolver
 
     // This timeout affects targets created with "attachCommands" or
     // "launchCommands".
-
-    // This timeout affects targets created with "attachCommands" or
-    // "launchCommands".
-
-    // This timeout affects targets created with "attachCommands" or
-    // "launchCommands".
     if (debugConfiguration.timeout === undefined) {
       debugConfiguration.timeout = initializationTimeoutSec;
     }
-
-    // This setting shortens the length of address strings.
 
     // This setting shortens the length of address strings.
     const initCommands = [
       '?settings set target.show-hex-variable-values-with-leading-zeroes false',
       // FIXME(#23274): remove this when we properly emit the opt flag.
       '?settings set target.process.optimization-warnings false',
-      `?!plugin load '${sdk.config.mojoLLDBPluginPath}'`,
       '?mojo statistics telemetry session.start vscode',
     ];
 
@@ -208,9 +186,6 @@ class MojoDebugConfigurationResolver
     const env = [
       `LLDB_VSCODE_RIT_TIMEOUT_IN_MS=${initializationTimeoutSec * 1000}`, // runInTerminal initialization timeout.
     ];
-
-    // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
-    // giving preference to the env specified by the user.
 
     // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
     // giving preference to the env specified by the user.
