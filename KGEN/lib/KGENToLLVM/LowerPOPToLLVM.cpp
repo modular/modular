@@ -17,6 +17,7 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
+#include "mlir/Conversion/NVVMToLLVM/NVVMToLLVM.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -1452,6 +1453,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
+  mlir::populateNVVMToLLVMConversionPatterns(patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,
                   ConvertPOPVariadicSplat, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
