@@ -216,7 +216,7 @@ fn run_layer_norm_block_scalar[
 
 fn run_layer_norm_warp_tiling_vector[
     type: DType
-](ctx: DeviceContext, rows: Int, cols: Int) raises:
+](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
     alias rank = 2
@@ -292,6 +292,7 @@ fn run_layer_norm_warp_tiling_vector[
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
                 c
             ] + beta_h[c]
+            assert_almost_equal(val, res[idx], rtol=rtol)
 
     _ = data_h
     _ = gamma_h
@@ -305,7 +306,7 @@ fn run_layer_norm_warp_tiling_vector[
 
 fn run_layer_norm_warp_tiling_scalar[
     type: DType
-](ctx: DeviceContext, rows: Int, cols: Int) raises:
+](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
     alias rank = 2
@@ -381,6 +382,7 @@ fn run_layer_norm_warp_tiling_scalar[
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
                 c
             ] + beta_h[c]
+            assert_almost_equal(val, res[idx], rtol=rtol)
 
     _ = data_h
     _ = gamma_h
