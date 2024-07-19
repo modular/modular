@@ -1449,26 +1449,52 @@ fn _matmul_gpu_dispatch[
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
         else:
-            alias BLOCK_DIM = 16
-            var gpu_func = ctx.compile_function[
-                matmul_kernel_naive[
-                    a_type,
-                    b_type,
-                    c_type,
-                    BLOCK_DIM,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-                block_dim=(BLOCK_DIM, BLOCK_DIM),
-            )
+            # Tile size for tiling in shared memory.
+            # Thread block would have shape (tile_size, tile_size, 1)
+            # If k < tile_size use naive version.
+            alias tile_size = 16
+            if k >= tile_size:
+                var gpu_func = ctx.compile_function[
+                    matmul_kernel[
+                        c_type,
+                        a_type,
+                        b_type,
+                        tile_size,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
+                    block_dim=(tile_size, tile_size),
+                )
+            else:
+                alias BLOCK_DIM = 16
+                var gpu_func = ctx.compile_function[
+                    matmul_kernel_naive[
+                        a_type,
+                        b_type,
+                        c_type,
+                        BLOCK_DIM,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                )
     except e:
         abort(e)
