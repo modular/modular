@@ -7,6 +7,7 @@
 #include "Helpers.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/LLVMForwardDecls.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/FileUtilities.h"

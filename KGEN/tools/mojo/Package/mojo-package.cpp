@@ -24,6 +24,7 @@
 #include "Support/Driver/DriverSupport.h"
 
 #include "Support/Filesystem/Paths.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"

@@ -23,6 +23,7 @@
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Context.h"
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
