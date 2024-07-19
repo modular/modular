@@ -20,14 +20,8 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
+from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -55,7 +49,6 @@ from layout.tensor_core import (
 from linalg.cublas import cublas_matmul
 from linalg._multistage_gemm_gpu import multistage_mma
 from memory.reference import _GPUAddressSpace as AddressSpace
-from memory.unsafe import DTypePointer
 from memory import UnsafePointer
 from random import rand
 from testing import assert_almost_equal
@@ -291,7 +284,7 @@ fn multistage_gemm[
         )
 
 
-fn test[type: DType, transpose_b: Bool]() raises:
+fn test[type: DType, transpose_b: Bool](ctx: DeviceContext) raises:
     print("test multistage matmul")
     alias num_pipeline_stages = 4
     alias M = 8192
@@ -306,37 +299,35 @@ fn test[type: DType, transpose_b: Bool]() raises:
 
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-    var stream = Stream()
-
     alias a_layout = Layout.row_major(M, K)
     alias b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     alias c_layout = Layout.row_major(M, N)
 
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var b_trans_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[type].alloc(M * N)
-    var c_host_ref = DTypePointer[type].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var b_trans_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
+    var c_host_ref = UnsafePointer[Scalar[type]].alloc(M * N)
 
     rand[type](a_host.address, M * K)
     rand[type](b_host.address, K * N)
 
-    var a_device = _malloc[type](M * K)
-    var b_device = _malloc[type](K * N)
-    var c_device = _malloc[type](M * N)
-    var c_device_ref = _malloc[type](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[type](M * N)
+    var c_device_ref = ctx.create_buffer[type](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device)
+    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
+    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
 
-    var c_tensor = LayoutTensor[type, c_layout](c_device)
-    var a_tensor = LayoutTensor[type, a_layout](a_device)
-    var b_tensor = LayoutTensor[type, b_layout](b_device)
+    var c_tensor = LayoutTensor[type, c_layout](c_device.ptr)
+    var a_tensor = LayoutTensor[type, a_layout](a_device.ptr)
+    var b_tensor = LayoutTensor[type, b_layout](b_device.ptr)
 
     alias gemm = multistage_gemm[
         type,  # c_type
@@ -355,7 +346,7 @@ fn test[type: DType, transpose_b: Bool]() raises:
         num_pipeline_stages,
     ]
     # TODO: The cache config doesn't really help here, see #38391.
-    var func = Function[gemm](
+    var func = ctx.compile_function[gemm](
         threads_per_block=num_threads,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             shared_mem_bytes
@@ -370,31 +361,30 @@ fn test[type: DType, transpose_b: Bool]() raises:
 
         @always_inline
         @parameter
-        fn run_func(stream: Stream) raises:
-            for i in range(nrun):
-                func(
-                    c_tensor,
-                    a_tensor,
-                    b_tensor,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=shared_mem_bytes,
-                    stream=stream,
-                )
-
-        # Warmup
-        for i in range(nwarmup):
-            func(
+        fn run_func(ctx: DeviceContext) raises:
+            ctx.enqueue_function(
+                func,
                 c_tensor,
                 a_tensor,
                 b_tensor,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                 block_dim=(num_threads, 1, 1),
                 shared_mem_bytes=shared_mem_bytes,
-                stream=stream,
             )
 
-        var nstime = time_function[run_func](stream) / nrun
+        # Warmup
+        for i in range(nwarmup):
+            ctx.enqueue_function(
+                func,
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=shared_mem_bytes,
+            )
+
+        var nstime = ctx.execution_time[run_func](nrun) / nrun
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(
@@ -407,21 +397,19 @@ fn test[type: DType, transpose_b: Bool]() raises:
             TFlop / sectime,
         )
 
-    func(
+    ctx.enqueue_function(
+        func,
         c_tensor,
         a_tensor,
         b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=shared_mem_bytes,
-        stream=stream,
     )
 
-    synchronize()
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
-    _copy_device_to_host(c_host, c_device, M * N)
-
-    var c_buffer_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
+    var c_buffer_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.ptr)
 
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
@@ -437,8 +425,7 @@ fn test[type: DType, transpose_b: Bool]() raises:
     )
     check_cublas_error(cublasDestroy(handle))
 
-    synchronize()
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     alias rtol = 1e-3 if type == DType.float32 else 1e-4
     for i in range(M * N):
@@ -451,10 +438,10 @@ fn test[type: DType, transpose_b: Bool]() raises:
             )
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
 
-    _free(c_device)
-    _free(c_device_ref)
-    _free(a_device)
-    _free(b_device)
+    _ = c_device
+    _ = c_device_ref
+    _ = a_device
+    _ = b_device
 
     c_host.free()
     c_host_ref.free()
@@ -463,15 +450,14 @@ fn test[type: DType, transpose_b: Bool]() raises:
     b_trans_host.free()
 
     _ = func^
-    _ = stream^
 
 
 def main():
     try:
-        with Context() as ctx:
-            test[DType.float32, False]()
-            test[DType.float32, True]()
-            test[DType.bfloat16, False]()
-            test[DType.bfloat16, True]()
+        with DeviceContext() as ctx:
+            test[DType.float32, False](ctx)
+            test[DType.float32, True](ctx)
+            test[DType.bfloat16, False](ctx)
+            test[DType.bfloat16, True](ctx)
     except e:
         print("ERROR:", e)

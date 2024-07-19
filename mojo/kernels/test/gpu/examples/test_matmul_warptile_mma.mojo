@@ -12,14 +12,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Function, Stream
-from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import mma
 from linalg.matmul_gpu import matmul_kernel_naive
@@ -373,7 +366,7 @@ fn sgemm_warp_tiling_kernel[
 
 
 # CHECK-LABEL: run_matmul_mma_warptiling
-fn run_matmul_mma_warptiling() raises:
+fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     print("== run_matmul_mma_warptiling")
 
     # Note: Has been tested for correctness for various sizes and M != N != K.
@@ -454,8 +447,6 @@ fn run_matmul_mma_warptiling() raises:
         "BN*BK must be a multiple of 4*256 to vectorize loads",
     ]()
 
-    var stream = Stream()
-
     var a_host = UnsafePointer[Float32].alloc(M * K)
     var b_host = UnsafePointer[Float32].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -473,18 +464,18 @@ fn run_matmul_mma_warptiling() raises:
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device)
-    var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device)
+    var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device.ptr)
+    var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device.ptr)
+    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device.ptr)
 
-    var func = Function[
+    var func = ctx.compile_function[
         sgemm_warp_tiling_kernel[
             DType.float32,
             DimList(M, N),
@@ -506,17 +497,17 @@ fn run_matmul_mma_warptiling() raises:
     @always_inline
     @__copy_capture(a_buffer, b_buffer, c_buffer, func)
     @parameter
-    fn run_func(stream: Stream) raises:
-        func(
+    fn run_func(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func,
             c_buffer,
             a_buffer,
             b_buffer,
             grid_dim=(ceildiv(N, K10_BN), ceildiv(M, K10_BM)),
             block_dim=(K10_NUM_THREADS,),
-            stream=stream,
         )
 
-    var nstime = time_function[run_func](stream)
+    var nstime = ctx.execution_time[run_func](1)
     var flops = 2 * M * N * K
     var sectime = nstime / 1000000000
     print("WARP-TILING MATMUL:")
@@ -524,14 +515,14 @@ fn run_matmul_mma_warptiling() raises:
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Perform naive matmul to compare results & performance.
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             c_type = DType.float32,
             a_type = DType.float32,
@@ -541,29 +532,29 @@ fn run_matmul_mma_warptiling() raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, a_device, b_device, c_device)
+    @__copy_capture(a_buffer, b_buffer, c_buffer, func_naive)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
-            c_device,
-            a_device,
-            b_device,
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
+            c_buffer,
+            a_buffer,
+            b_buffer,
             M,
             N,
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    nstime = time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](1)
     var sectime2 = nstime / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_naive, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host_naive, c_device)
 
     var failed = False
     for i in range(M * N):
@@ -581,9 +572,9 @@ fn run_matmul_mma_warptiling() raises:
     else:
         print("Failed ❌: results mismatch")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    _ = a_device
+    _ = b_device
+    _ = c_device
 
     _ = a_host
     _ = b_host
@@ -591,13 +582,12 @@ fn run_matmul_mma_warptiling() raises:
     _ = c_host_naive
 
     _ = func^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_matmul_mma_warptiling()
+        with DeviceContext() as ctx:
+            run_matmul_mma_warptiling(ctx)
     except e:
         print("CUDA_ERROR:", e)
