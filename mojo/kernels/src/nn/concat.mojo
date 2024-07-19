@@ -19,8 +19,7 @@ from algorithm.functional import (
 from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceContext, DeviceBuffer
-from memory import memcpy
-from memory.unsafe import DTypePointer
+from memory import memcpy, UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 
@@ -65,7 +64,7 @@ struct _Span:
 @value
 @register_passable("trivial")
 struct _CanonicallyReshapedBuffer:
-    var data: DTypePointer[DType.uint8]
+    var data: UnsafePointer[UInt8]
     var h: Int
     var w: Int
     var c: Int
@@ -78,7 +77,7 @@ fn _canonical_reshape[
     var h = product(shape, 0, axis)
     var w = buf.dim(axis)
     var c = product(shape, axis + 1, rank) * sizeof[type]()
-    return _CanonicallyReshapedBuffer(buf.data.bitcast[DType.uint8](), h, w, c)
+    return _CanonicallyReshapedBuffer(buf.data.bitcast[UInt8](), h, w, c)
 
 
 fn _canonical_reshape_output[
@@ -93,7 +92,7 @@ fn _canonical_reshape_output[
     for i in range(1, len(inputs)):
         out_w += inputs[i].dim(axis)
     return _CanonicallyReshapedBuffer(
-        out_buf.data.bitcast[DType.uint8](),
+        out_buf.data.bitcast[UInt8](),
         input0_canon.h,
         out_w,
         input0_canon.c,

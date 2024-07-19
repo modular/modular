@@ -11,7 +11,7 @@ from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -68,10 +68,10 @@ fn test[
 
     var C_per_group = C // num_groups
 
-    var input_ptr = DTypePointer[type].alloc(N * W * C)
-    var filter_ptr = DTypePointer[type].alloc(S * C_per_group * F)
-    var output_ptr = DTypePointer[type].alloc(N * WO * F)
-    var output_ref_ptr = DTypePointer[type].alloc(N * WO * F)
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(N * W * C)
+    var filter_ptr = UnsafePointer[Scalar[type]].alloc(S * C_per_group * F)
+    var output_ptr = UnsafePointer[Scalar[type]].alloc(N * WO * F)
+    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(N * WO * F)
 
     rand[type](input_ptr.address, N * W * C)
     rand[type](filter_ptr.address, S * C_per_group * F)
@@ -88,7 +88,7 @@ fn test[
     var filter = NDBuffer[type, 3](filter_ptr, Index(S, C_per_group, F))
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
 
-    var packed_filter_ptr = DTypePointer[type].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
         packed_filter_shape.flattened_length()
     )
     var packed_filter = NDBuffer[type, 4](

@@ -7,7 +7,7 @@
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.concat import (
     _concat_parallel,
     _concat_serial,

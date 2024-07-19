@@ -72,7 +72,7 @@ def reference_attention[
 
     assert_equal(q_4d.get_shape(), output_4d.get_shape())
 
-    var score_ptr = DTypePointer[type].alloc(seq_len * kv_seq_len)
+    var score_ptr = UnsafePointer[Scalar[type]].alloc(seq_len * kv_seq_len)
     var score_2d = NDBuffer[type, 2](score_ptr, Index(seq_len, kv_seq_len))
 
     for b in range(batch_count):
@@ -222,7 +222,7 @@ def build_ndbuffer[
     *,
     static_shape: DimList = DimList.create_unknown[rank](),
 ](shape: StaticIntTuple[rank]) -> NDBuffer[type, rank, static_shape]:
-    var ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var ptr = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     rand(ptr.address, shape.flattened_length())
     return NDBuffer[type, rank, static_shape](ptr, shape)
 

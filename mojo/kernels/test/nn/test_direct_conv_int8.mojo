@@ -11,7 +11,7 @@ from sys.info import num_physical_cores, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -75,10 +75,12 @@ fn test[
         num_groups: 1,
     }
 
-    var input_ptr = DTypePointer[input_type].alloc(N * H * W * C)
-    var filter_ptr = DTypePointer[filter_type].alloc(R * S * C * F)
-    var output_ptr = DTypePointer[output_type].alloc(N * HO * WO * F)
-    var output_ref_ptr = DTypePointer[output_type].alloc(N * HO * WO * F)
+    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(N * H * W * C)
+    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(R * S * C * F)
+    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(N * HO * WO * F)
+    var output_ref_ptr = UnsafePointer[Scalar[output_type]].alloc(
+        N * HO * WO * F
+    )
 
     rand[input_type](input_ptr.address, N * H * W * C)
     rand[filter_type](filter_ptr.address, R * S * C * F)
@@ -96,7 +98,7 @@ fn test[
     # Rounded C and F size for pre-packed filter.
     alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-    var packed_filter_ptr = DTypePointer[filter_type].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
         R * S * C * rounded_F
     )
 

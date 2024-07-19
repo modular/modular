@@ -41,9 +41,9 @@ from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.transpose import transpose
 from linalg._multistage_gemm_gpu import multistage_mma
-from memory import stack_allocation
+from memory import stack_allocation, UnsafePointer
 from memory.reference import AddressSpace as _AddressSpace
-from memory.unsafe import DTypePointer, bitcast
+from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
@@ -126,7 +126,7 @@ fn fused_attention[
         score_size = q.dim[0]() * M * N
 
     alias score_type = output_type
-    var score_ptr = DTypePointer[score_type].alloc(score_size)
+    var score_ptr = UnsafePointer[Scalar[score_type]].alloc(score_size)
 
     var score_shape: StaticIntTuple[rank]
 
@@ -349,11 +349,11 @@ fn flash_attention_impl[
     target: StringLiteral = "cpu",
     use_tensor_core: Bool = False,
 ](
-    output: DTypePointer[output_type],
-    q: DTypePointer[q_type],
-    k: DTypePointer[k_type],
-    v: DTypePointer[v_type],
-    mask: DTypePointer[mask_type],
+    output: UnsafePointer[Scalar[output_type]],
+    q: UnsafePointer[Scalar[q_type]],
+    k: UnsafePointer[Scalar[k_type]],
+    v: UnsafePointer[Scalar[v_type]],
+    mask: UnsafePointer[Scalar[mask_type]],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -547,13 +547,13 @@ fn _mm[
     TN: Int,
     transpose_a: Bool,
 ](
-    a: DTypePointer[DType.float32, AddressSpace.SHARED],
-    b: DTypePointer[DType.float32, AddressSpace.SHARED],
+    a: UnsafePointer[Float32, AddressSpace.SHARED],
+    b: UnsafePointer[Float32, AddressSpace.SHARED],
     row: Int,
     col: Int,
-    reg_m: DTypePointer[DType.float32],
-    reg_n: DTypePointer[DType.float32],
-    reg_res: DTypePointer[DType.float32],
+    reg_m: UnsafePointer[Float32],
+    reg_n: UnsafePointer[Float32],
+    reg_res: UnsafePointer[Float32],
 ):
     """Helper function for flash attention to do gemm with inputs from
     shared memory and results in registers."""
@@ -600,7 +600,7 @@ fn _mm[
 @always_inline
 fn _fill[
     len: Int, type: DType, address_space: _AddressSpace
-](ptr: DTypePointer[type, address_space], val: Scalar[type]):
+](ptr: UnsafePointer[Scalar[type], address_space], val: Scalar[type]):
     alias simd_width = simdwidthof[val.type]()
     alias vector_end = align_down(len, simd_width)
 
@@ -624,11 +624,11 @@ fn flash_attention_kernel[
     TN: Int,
     num_threads: Int,
 ](
-    q_ptr: DTypePointer[DType.float32],
-    k_ptr: DTypePointer[DType.float32],
-    v_ptr: DTypePointer[DType.float32],
-    mask_ptr: DTypePointer[DType.float32],
-    output_ptr: DTypePointer[DType.float32],
+    q_ptr: UnsafePointer[Float32],
+    k_ptr: UnsafePointer[Float32],
+    v_ptr: UnsafePointer[Float32],
+    mask_ptr: UnsafePointer[Float32],
+    output_ptr: UnsafePointer[Float32],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -972,11 +972,11 @@ fn flash_attention_kernel_flexible_seqlen[
     TN: Int,
     num_threads: Int,
 ](
-    q_ptr: DTypePointer[DType.float32],
-    k_ptr: DTypePointer[DType.float32],
-    v_ptr: DTypePointer[DType.float32],
-    mask_ptr: DTypePointer[DType.float32],
-    output_ptr: DTypePointer[DType.float32],
+    q_ptr: UnsafePointer[Float32],
+    k_ptr: UnsafePointer[Float32],
+    v_ptr: UnsafePointer[Float32],
+    mask_ptr: UnsafePointer[Float32],
+    output_ptr: UnsafePointer[Float32],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -1378,14 +1378,14 @@ fn _naive_attention_with_transpose[
     var depth = q.dim[3]()
 
     # Q, K, V transposed
-    var qt_ptr = DTypePointer[type].alloc(q.num_elements())
-    var kt_ptr = DTypePointer[type].alloc(k.num_elements())
-    var vt_ptr = DTypePointer[type].alloc(v.num_elements())
+    var qt_ptr = UnsafePointer[Scalar[type]].alloc(q.num_elements())
+    var kt_ptr = UnsafePointer[Scalar[type]].alloc(k.num_elements())
+    var vt_ptr = UnsafePointer[Scalar[type]].alloc(v.num_elements())
     # Score = softmax(Q * K)
     var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_ptr = DTypePointer[type].alloc(score_size)
+    var score_ptr = UnsafePointer[Scalar[type]].alloc(score_size)
     # O = Score * V. It's transposed and will be transposed back to output.
-    var ot_ptr = DTypePointer[type].alloc(output.num_elements())
+    var ot_ptr = UnsafePointer[Scalar[type]].alloc(output.num_elements())
 
     var qt = NDBuffer[type, 4](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
@@ -1477,7 +1477,7 @@ fn _naive_attention[
 
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_ptr = DTypePointer[type].alloc(score_size)
+    var score_ptr = UnsafePointer[Scalar[type]].alloc(score_size)
     var score = NDBuffer[type, 4](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
@@ -1534,11 +1534,11 @@ fn mha[
     num_pipeline_stages: Int,
     group: Int = 1,
 ](
-    q_ptr: DTypePointer[q_type],
-    k_ptr: DTypePointer[k_type],
-    v_ptr: DTypePointer[v_type],
-    mask_ptr: DTypePointer[mask_type],
-    output_ptr: DTypePointer[output_type],
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    v_ptr: UnsafePointer[Scalar[v_type]],
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -1592,11 +1592,11 @@ fn mha_single_batch[
     num_pipeline_stages: Int,
     group: Int = 1,
 ](
-    q_ptr: DTypePointer[q_type],
-    k_ptr: DTypePointer[k_type],
-    v_ptr: DTypePointer[v_type],
-    mask_ptr: DTypePointer[mask_type],
-    output_ptr: DTypePointer[output_type],
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    v_ptr: UnsafePointer[Scalar[v_type]],
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     seq_len: Int,
 ):
@@ -1925,11 +1925,11 @@ fn mha_gpu_naive[
     mask_type: DType,
     output_type: DType,
 ](
-    q_ptr: DTypePointer[q_type],
-    k_ptr: DTypePointer[k_type],
-    v_ptr: DTypePointer[v_type],
-    mask_ptr: DTypePointer[mask_type],
-    output_ptr: DTypePointer[output_type],
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    v_ptr: UnsafePointer[Scalar[v_type]],
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -2019,10 +2019,10 @@ fn _bmm0[
     p_type: DType,
     mask_type: DType,
 ](
-    p_ptr: DTypePointer[p_type],
-    q_ptr: DTypePointer[q_type],
-    k_ptr: DTypePointer[k_type],
-    mask_ptr: DTypePointer[mask_type],
+    p_ptr: UnsafePointer[Scalar[p_type]],
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -2077,9 +2077,9 @@ fn _bmm1[
     v_type: DType,
     output_type: DType,
 ](
-    output_ptr: DTypePointer[output_type],
-    p_ptr: DTypePointer[p_type],
-    v_ptr: DTypePointer[v_type],
+    output_ptr: UnsafePointer[Scalar[output_type]],
+    p_ptr: UnsafePointer[Scalar[p_type]],
+    v_ptr: UnsafePointer[Scalar[v_type]],
     seq_len: Int,
     num_keys: Int,
     num_heads: Int,

@@ -14,7 +14,7 @@ from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention_impl,
@@ -69,12 +69,12 @@ fn test[
     var mask_size = (num_heads if mask_rank == 4 else 1) * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = DTypePointer[qkv_type].alloc(q_size)
-    var k_ptr = DTypePointer[qkv_type].alloc(k_size)
-    var v_ptr = DTypePointer[qkv_type].alloc(v_size)
-    var mask_ptr = DTypePointer[mask_type].alloc(mask_size)
-    var output_ptr = DTypePointer[qkv_type].alloc(o_size)
-    var flash_output_ptr = DTypePointer[qkv_type].alloc(o_size)
+    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
+    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
+    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
+    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
+    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Q, K, V are randomly initalized.
     if use_index_input:

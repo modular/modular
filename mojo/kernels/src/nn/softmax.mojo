@@ -986,8 +986,8 @@ fn _online_softmax_iter_for_mma_output[
         address_space = AddressSpace.SHARED,
         masked=_,
     ],
-    rowmax: DTypePointer[type],
-    rowsum: DTypePointer[type],
+    rowmax: UnsafePointer[Scalar[type]],
+    rowsum: UnsafePointer[Scalar[type]],
 ):
     constrained[num_m_mmas * num_n_mmas == p_reg_tile.dim[0]()]()
 

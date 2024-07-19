@@ -10,7 +10,7 @@ from random import rand
 
 from buffer.buffer import NDBuffer, _compute_nd_index
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.mha import _naive_attention, fused_attention
 from testing import assert_true
 
@@ -76,12 +76,12 @@ def test_mha[type: DType]():
     alias qkv_size = batch_size * num_heads * seq_len * depth
 
     # Allocate memory for all variables.
-    var q_ptr = DTypePointer[type].alloc(qkv_size)
-    var k_ptr = DTypePointer[type].alloc(qkv_size)
-    var v_ptr = DTypePointer[type].alloc(qkv_size)
-    var mask_ptr = DTypePointer[type].alloc(seq_len * seq_len)
-    var output_ptr = DTypePointer[type].alloc(qkv_size)
-    var mha_output_ptr = DTypePointer[type].alloc(qkv_size)
+    var q_ptr = UnsafePointer[Scalar[type]].alloc(qkv_size)
+    var k_ptr = UnsafePointer[Scalar[type]].alloc(qkv_size)
+    var v_ptr = UnsafePointer[Scalar[type]].alloc(qkv_size)
+    var mask_ptr = UnsafePointer[Scalar[type]].alloc(seq_len * seq_len)
+    var output_ptr = UnsafePointer[Scalar[type]].alloc(qkv_size)
+    var mha_output_ptr = UnsafePointer[Scalar[type]].alloc(qkv_size)
 
     # Q, K, V are randomly initialized.
     rand(q_ptr.address, qkv_size)

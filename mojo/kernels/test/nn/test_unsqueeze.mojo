@@ -8,7 +8,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from MOGG import calculate_unsqueeze_shape, to_buffer
 
 from utils.index import StaticIntTuple

@@ -164,21 +164,21 @@ fn test_gelu_libm():
     alias dtype = DType.float32
     alias alignment = 64
     # generate input values and write them to file
-    var x32 = DTypePointer[dtype].alloc(N, alignment=alignment)
+    var x32 = UnsafePointer[Scalar[dtype]].alloc[alignment=alignment](N)
     randn[dtype](x32.address, N, 0, 9.0)
     print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = DTypePointer[dtype].alloc(N, alignment=alignment)
+    var y32 = UnsafePointer[Scalar[dtype]].alloc[alignment=alignment](N)
     for i in range(N):
         y32[i] = gelu(x32[i])  # gelu using math.erf
 
     ####################
     ## libm erf result
     ####################
-    var libm_out = DTypePointer[dtype].alloc(N, alignment=alignment)
+    var libm_out = UnsafePointer[Scalar[dtype]].alloc[alignment=alignment](N)
     for i in range(N):
         libm_out[i] = gelu_libm(x32[i])
 

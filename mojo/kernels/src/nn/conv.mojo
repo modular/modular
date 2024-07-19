@@ -25,8 +25,7 @@ from buffer.buffer import (
 from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import stack_allocation, UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import parallelism_level
 
@@ -60,9 +59,9 @@ struct Naive2dConvolution[
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
-    var output: DTypePointer[output_type]
-    var input: DTypePointer[input_type]
-    var filter: DTypePointer[filter_type]
+    var output: UnsafePointer[Scalar[output_type]]
+    var input: UnsafePointer[Scalar[input_type]]
+    var filter: UnsafePointer[Scalar[filter_type]]
     var pad_d: StaticIntTuple[2]
     var pad_h: StaticIntTuple[2]
     var pad_w: StaticIntTuple[2]
@@ -77,9 +76,9 @@ struct Naive2dConvolution[
 
     @staticmethod
     fn run(
-        output: DTypePointer[output_type],
-        input: DTypePointer[input_type],
-        filter: DTypePointer[filter_type],
+        output: UnsafePointer[Scalar[output_type]],
+        input: UnsafePointer[Scalar[input_type]],
+        filter: UnsafePointer[Scalar[filter_type]],
         output_shape: StaticIntTuple[5],
         input_shape: StaticIntTuple[5],
         filter_shape: StaticIntTuple[5],
@@ -113,9 +112,9 @@ struct Naive2dConvolution[
 
     fn __init__(
         inout self,
-        output: DTypePointer[output_type],
-        input: DTypePointer[input_type],
-        filter: DTypePointer[filter_type],
+        output: UnsafePointer[Scalar[output_type]],
+        input: UnsafePointer[Scalar[input_type]],
+        filter: UnsafePointer[Scalar[filter_type]],
         output_shape: StaticIntTuple[5],
         input_shape: StaticIntTuple[5],
         filter_shape: StaticIntTuple[5],
@@ -259,11 +258,12 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> StaticIntTuple[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
+    type: DType, //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    scratch: DTypePointer,
-    output: DTypePointer[scratch.type],
+    scratch: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[type]],
     N: Int,
     output_space_dims: StaticIntTuple,
     F: Int,
@@ -725,7 +725,7 @@ struct ConvDirectNHWC[
                 self.conv_shape.f,
                 self.conv_shape.f_per_group() % simd_size,
             )
-        var filter_ptr: DTypePointer[filter_type] = self.filter.data
+        var filter_ptr: UnsafePointer[Scalar[filter_type]] = self.filter.data
 
         @parameter
         if filter_packed:
@@ -865,7 +865,7 @@ struct ConvDirectNHWC[
         has_residual: Bool,
     ](
         self,
-        output_base: DTypePointer[output_type],
+        output_base: UnsafePointer[Scalar[output_type]],
         output_micro_tile: NDBuffer[
             output_type,
             2,
@@ -928,7 +928,7 @@ struct ConvDirectNHWC[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
         ],
-        output_base: DTypePointer[output_type],
+        output_base: UnsafePointer[Scalar[output_type]],
     ):
         """Store a micro tile from the output buffer.
         Parameters:
@@ -985,8 +985,8 @@ struct ConvDirectNHWC[
         input_base_offsets: Buffer[DType.int32, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
-        input: DTypePointer[input_type],
-        filter: DTypePointer[filter_type],
+        input: UnsafePointer[Scalar[input_type]],
+        filter: UnsafePointer[Scalar[filter_type]],
         inout acc: _Accumulator[
             output_type,
             micro_kernel_height,
@@ -1025,8 +1025,8 @@ struct ConvDirectNHWC[
         self,
         c_tile_size: Int,
         input_stride: Int,
-        input_base: DTypePointer[input_type],
-        filter_base: DTypePointer[filter_type],
+        input_base: UnsafePointer[Scalar[input_type]],
+        filter_base: UnsafePointer[Scalar[filter_type]],
         inout acc_in: _Accumulator[
             output_type, micro_kernel_height, micro_kernel_width, simd_size
         ],
@@ -1126,7 +1126,7 @@ struct ConvDirectNHWC[
         var g = self.conv_shape.f_to_group(f_tile_offset)
 
         # Filter pointer to the current cf tile offset location.
-        var filter_ptr: DTypePointer[filter_type]
+        var filter_ptr: UnsafePointer[Scalar[filter_type]]
 
         @parameter
         if filter_packed:
@@ -1235,11 +1235,14 @@ struct ConvDirectNHWC[
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
+        output_dt: DType,
+        input_dt: DType,
+        filter_dt: DType,
     ](
         self,
-        output: DTypePointer,
-        input: DTypePointer,
-        filter: DTypePointer,
+        output: UnsafePointer[Scalar[output_dt]],
+        input: UnsafePointer[Scalar[input_dt]],
+        filter: UnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1302,11 +1305,14 @@ struct ConvDirectNHWC[
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
+        output_dt: DType,
+        input_dt: DType,
+        filter_dt: DType,
     ](
         self,
-        output: DTypePointer,
-        input: DTypePointer,
-        filter: DTypePointer,
+        output: UnsafePointer[Scalar[output_dt]],
+        input: UnsafePointer[Scalar[input_dt]],
+        filter: UnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1378,11 +1384,14 @@ struct ConvDirectNHWC[
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
+        output_dt: DType,
+        input_dt: DType,
+        filter_dt: DType,
     ](
         self,
-        output: DTypePointer,
-        input: DTypePointer,
-        filter: DTypePointer,
+        output: UnsafePointer[Scalar[output_dt]],
+        input: UnsafePointer[Scalar[input_dt]],
+        filter: UnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1539,7 +1548,7 @@ struct ConvDirectNHWC[
         alias WO = output_shape.get[2]()  # NHWC
         alias F = output_shape.get[3]()  # NHWC
 
-        var filter_base: DTypePointer[filter_type]
+        var filter_base: UnsafePointer[Scalar[filter_type]]
 
         @parameter
         if filter_packed:
@@ -1698,11 +1707,15 @@ struct ConvDirectNHWC[
         last_c_tile: Bool,
     ](
         self,
-        input_base: DTypePointer[
-            input_type
+        input_base: UnsafePointer[
+            Scalar[input_type]
         ],  # points to (ho, wo) mapped in input
-        filter_base: DTypePointer[filter_type],  # point to filter in cf tile
-        output_base: DTypePointer[output_type],  # point to (ho, wo) in output
+        filter_base: UnsafePointer[
+            Scalar[filter_type]
+        ],  # point to filter in cf tile
+        output_base: UnsafePointer[
+            Scalar[output_type]
+        ],  # point to (ho, wo) in output
         f_tile_offset: Int,
         f_tile_size: Int,
         c_tile_offset: Int,
@@ -1855,14 +1868,16 @@ fn accumulate_wo_tile_1d[
     simd_size: Int,
     partial_load_filter: Bool,
     effected_by_padding: Bool,
+    input_dt: DType,
+    filter_dt: DType,
 ](
     c_tile_size: Int,
     S: Int,
     inout acc: _Accumulator,
-    input: DTypePointer,
+    input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
     input_stride_to_nbr: Int,
-    filter: DTypePointer,
+    filter: UnsafePointer[Scalar[filter_dt]],
     filter_stride: Int,
     filter_stride_to_nbr: Int,
     partial_load_filter_size: Int,
@@ -1878,6 +1893,8 @@ fn accumulate_wo_tile_1d[
         simd_size: Number of elements in a SIMD register.
         partial_load_filter: Whether using partial load for filter.
         effected_by_padding: Whether the tile is effected by padding.
+        input_dt: DType of input.
+        filter_dt: DType of filter.
 
     Args:
         c_tile_size: Tile size in input channel.
@@ -1933,11 +1950,14 @@ fn conv1d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
+    output_dt: DType,
+    input_dt: DType,
+    filter_dt: DType,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: DTypePointer,
-    input: DTypePointer,
-    filter: DTypePointer,
+    output: UnsafePointer[Scalar[output_dt]],
+    input: UnsafePointer[Scalar[input_dt]],
+    filter: UnsafePointer[Scalar[filter_dt]],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -1969,7 +1989,7 @@ fn conv1d_update_wo_tile[
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
     var acc = _Accumulator[
-        output.type, micro_kernel_height, micro_kernel_width, simd_size
+        output_dt, micro_kernel_height, micro_kernel_width, simd_size
     ]()
 
     if first_c_tile:
@@ -2042,14 +2062,16 @@ fn accumulate_wo_tile_2d[
     simd_size: Int,
     partial_load_filter: Bool,
     effected_by_padding: Bool,
+    input_dt: DType,
+    filter_dt: DType,
 ](
     c_tile_size: Int,
     RS: StaticIntTuple[2],
     inout acc: _Accumulator,
-    input: DTypePointer,
+    input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
     input_stride_to_nbr: StaticIntTuple[2],
-    filter: DTypePointer,
+    filter: UnsafePointer[Scalar[filter_dt]],
     filter_stride: Int,
     filter_stride_to_nbr: StaticIntTuple[2],
     partial_load_filter_size: Int,
@@ -2097,11 +2119,14 @@ fn conv2d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
+    output_dt: DType,
+    input_dt: DType,
+    filter_dt: DType,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: DTypePointer,
-    input: DTypePointer,
-    filter: DTypePointer,
+    output: UnsafePointer[Scalar[output_dt]],
+    input: UnsafePointer[Scalar[input_dt]],
+    filter: UnsafePointer[Scalar[filter_dt]],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2141,7 +2166,7 @@ fn conv2d_update_wo_tile[
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
     var acc = _Accumulator[
-        output.type, micro_kernel_height, micro_kernel_width, simd_size
+        output_dt, micro_kernel_height, micro_kernel_width, simd_size
     ]()
 
     if first_c_tile:
@@ -2220,14 +2245,16 @@ fn accumulate_wo_tile_3d[
     simd_size: Int,
     partial_load_filter: Bool,
     effected_by_padding: Bool,
+    input_dt: DType,
+    filter_dt: DType,
 ](
     c_tile_size: Int,
     QRS: StaticIntTuple[3],
     inout acc: _Accumulator,
-    input: DTypePointer,
+    input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
     input_stride_to_nbr: StaticIntTuple[3],
-    filter: DTypePointer,
+    filter: UnsafePointer[Scalar[filter_dt]],
     filter_stride: Int,
     filter_stride_to_nbr: StaticIntTuple[3],
     partial_load_filter_size: Int,
@@ -2274,11 +2301,14 @@ fn conv3d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
+    output_dt: DType,
+    input_dt: DType,
+    filter_dt: DType,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: DTypePointer,
-    input: DTypePointer,
-    filter: DTypePointer,
+    output: UnsafePointer[Scalar[output_dt]],
+    input: UnsafePointer[Scalar[input_dt]],
+    filter: UnsafePointer[Scalar[filter_dt]],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2321,7 +2351,7 @@ fn conv3d_update_wo_tile[
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
     var acc = _Accumulator[
-        output.type, micro_kernel_height, micro_kernel_width, simd_size
+        output_dt, micro_kernel_height, micro_kernel_width, simd_size
     ]()
 
     if first_c_tile:
@@ -2539,7 +2569,7 @@ fn pack_filter_shape[
 @always_inline
 fn _get_group_filter_base(
     packed_filter: NDBuffer, group_idx: Int, f_per_group: Int
-) -> DTypePointer[packed_filter.type, packed_filter.address_space]:
+) -> UnsafePointer[Scalar[packed_filter.type], packed_filter.address_space]:
     """Returns the pointer of the input group's start in the packed filter."""
     # Each group is zero padded to
     #     ceildiv(F_per_group, micro_kernel_width)

@@ -18,7 +18,7 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import parallelism_level
 
@@ -601,7 +601,7 @@ struct ConvTransposedPacked[
         var g = self.conv_shape.f_to_group(f_tile_offset)
 
         # Filter pointer to the current cf tile offset location.
-        var filter_ptr: DTypePointer[filter_type]
+        var filter_ptr: UnsafePointer[Scalar[filter_type]]
 
         # Move the pointer to the current group's start.
         filter_ptr = _get_group_filter_base(
@@ -690,11 +690,14 @@ struct ConvTransposedPacked[
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
+        output_dt: DType,
+        input_dt: DType,
+        filter_dt: DType,
     ](
         self,
-        output: DTypePointer,
-        input: DTypePointer,
-        filter: DTypePointer,
+        output: UnsafePointer[Scalar[output_dt]],
+        input: UnsafePointer[Scalar[input_dt]],
+        filter: UnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -767,11 +770,14 @@ struct ConvTransposedPacked[
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
+        output_dt: DType,
+        input_dt: DType,
+        filter_dt: DType,
     ](
         self,
-        output: DTypePointer,
-        input: DTypePointer,
-        filter: DTypePointer,
+        output: UnsafePointer[Scalar[output_dt]],
+        input: UnsafePointer[Scalar[input_dt]],
+        filter: UnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -890,10 +896,13 @@ fn update_w_tile_2d[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
+    output_dt: DType,
+    input_dt: DType,
+    filter_dt: DType,
 ](
-    output: DTypePointer,
-    input: DTypePointer,
-    filter: DTypePointer,
+    output: UnsafePointer[Scalar[output_dt]],
+    input: UnsafePointer[Scalar[input_dt]],
+    filter: UnsafePointer[Scalar[filter_dt]],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -972,10 +981,13 @@ fn update_w_tile_3d[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
+    output_dt: DType,
+    input_dt: DType,
+    filter_dt: DType,
 ](
-    output: DTypePointer,
-    input: DTypePointer,
-    filter: DTypePointer,
+    output: UnsafePointer[Scalar[output_dt]],
+    input: UnsafePointer[Scalar[input_dt]],
+    filter: UnsafePointer[Scalar[filter_dt]],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -1063,18 +1075,21 @@ fn accumulate_wo_tile[
     micro_kernel_width: Int,
     simd_size: Int,
     partial_load: Bool,
+    output_dt: DType,
+    input_dt: DType,
+    filter_dt: DType,
 ](
     c_tile_size: Int,
-    output: DTypePointer,
+    output: UnsafePointer[Scalar[output_dt]],
     output_stride: Int,
-    input: DTypePointer,
+    input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
-    filter: DTypePointer,
+    filter: UnsafePointer[Scalar[filter_dt]],
     filter_stride: Int,
     partial_load_size: Int,
 ):
     var acc = _Accumulator[
-        output.type, micro_kernel_height, micro_kernel_width, simd_size
+        output_dt, micro_kernel_height, micro_kernel_width, simd_size
     ]()
 
     acc.load[partial_load=partial_load](
@@ -1107,7 +1122,7 @@ fn accumulate_wo_tile[
 @always_inline
 fn _get_group_filter_base(
     packed_filter: NDBuffer, group_idx: Int, f_per_group: Int
-) -> DTypePointer[packed_filter.type, packed_filter.address_space]:
+) -> UnsafePointer[Scalar[packed_filter.type], packed_filter.address_space]:
     # TODO: support groups > 1.
     return packed_filter.data
 
@@ -1208,7 +1223,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
                             packed_filter_ptr,
                             f,
                             Scalar.load(filter_ptr, f * C).cast[
-                                packed_filter_ptr.type
+                                packed_filter_ptr.type.type
                             ](),
                         )
 
@@ -1245,7 +1260,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
                             packed_filter_ptr,
                             f,
                             Scalar.load(filter_ptr, f * C).cast[
-                                packed_filter_ptr.type
+                                packed_filter_ptr.type.type
                             ](),
                         )
 

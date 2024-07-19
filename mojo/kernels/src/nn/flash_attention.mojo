@@ -21,8 +21,7 @@ from linalg.accumulate import _Accumulator
 from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer
+from memory import memset_zero, stack_allocation, UnsafePointer
 from runtime.asyncrt import parallelism_level
 
 from utils import Index, InlineArray
@@ -89,9 +88,9 @@ struct _Matmul[
         tile_m: Int, tile_n: Int
     ](
         K: Int,
-        a_ptr: DTypePointer[type],
+        a_ptr: UnsafePointer[Scalar[type]],
         a_stride: Int,
-        b_ptr: DTypePointer[type],
+        b_ptr: UnsafePointer[Scalar[type]],
         b_stride: Int,
         inout c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
     ):
@@ -134,9 +133,9 @@ struct _Matmul[
         tile_m: Int, tile_n: Int
     ](
         K: Int,
-        a_ptr: DTypePointer[type],
+        a_ptr: UnsafePointer[Scalar[type]],
         a_stride: Int,
-        b_ptr: DTypePointer[type],
+        b_ptr: UnsafePointer[Scalar[type]],
         b_stride: Int,
         inout c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
     ):
@@ -178,10 +177,10 @@ struct _Matmul[
         M: Int,
         N: Int,
         K: Int,
-        a_ptr: DTypePointer[type],
+        a_ptr: UnsafePointer[Scalar[type]],
         a_stride: Int,
-        b_ptr: DTypePointer[type],
-        c_ptr: DTypePointer[type],
+        b_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         accumulate: Bool = False,
     ):
@@ -198,7 +197,7 @@ struct _Matmul[
                 var c_tile = _Accumulator[type, tile_m, tile_n, simd_width]()
 
                 if accumulate:
-                    c_tile.load(cn_ptr.address, c_stride)
+                    c_tile.load(cn_ptr, c_stride)
                 else:
                     c_tile.init(0.0)
 
@@ -212,7 +211,7 @@ struct _Matmul[
                         K, am_ptr, a_stride, bn_ptr, N, c_tile
                     )
 
-                c_tile.store(cn_ptr.address, c_stride)
+                c_tile.store(cn_ptr, c_stride)
 
                 bn_ptr += tile_n * simd_width
                 cn_ptr += tile_n * simd_width
@@ -234,7 +233,7 @@ struct _Matmul[
     @staticmethod
     fn _pack_buffer_transposed[
         input_b_fn: Self._input_fn_type, static_k: Dim
-    ](packed_ptr: DTypePointer[type], N: Int, dynamic_k: Int):
+    ](packed_ptr: UnsafePointer[Scalar[type]], N: Int, dynamic_k: Int):
         var K = int(static_k) if static_k else dynamic_k
 
         var aligned_n = align_up(N, simd_width)
@@ -291,15 +290,13 @@ struct _Matmul[
 
         if aligned_n != N:
             for k in range(K):
-                memset_zero(
-                    packed_ptr.address + k * aligned_n + N, aligned_n - N
-                )
+                memset_zero(packed_ptr + k * aligned_n + N, aligned_n - N)
 
     @no_inline
     @staticmethod
     fn _pack_buffer[
         input_b_fn: Self._input_fn_type
-    ](packed_ptr: DTypePointer[type], N: Int, K: Int):
+    ](packed_ptr: UnsafePointer[Scalar[type]], N: Int, K: Int):
         var output_ptr = packed_ptr
         var aligned_n = align_up(N, simd_width)
 
@@ -315,7 +312,7 @@ struct _Matmul[
             _ = k
 
             if aligned_n != N:
-                memset_zero(output_ptr.address + N, aligned_n - N)
+                memset_zero(output_ptr + N, aligned_n - N)
 
             output_ptr += aligned_n
 
@@ -326,8 +323,8 @@ struct _Matmul[
     ](
         N: Int,
         dynamic_k: Int,
-        a_ptr: DTypePointer[type],
-        c_ptr: DTypePointer[type],
+        a_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[type]],
     ):
         var K = int(static_k) if static_k else dynamic_k
 
@@ -402,8 +399,8 @@ struct _Matmul[
     ](
         N: Int,
         K: Int,
-        a_ptr: DTypePointer[type],
-        c_ptr: DTypePointer[type],
+        a_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[type]],
         accumulate: Bool = False,
     ):
         var cn_ptr = c_ptr
@@ -560,10 +557,10 @@ struct _FlashAttention[
             type, simd_width
         ],
     ](
-        qk_block_ptr: DTypePointer[type],
-        o_block_ptr: DTypePointer[type],
-        max_vals: DTypePointer[type],
-        sum_vals: DTypePointer[type],
+        qk_block_ptr: UnsafePointer[Scalar[type]],
+        o_block_ptr: UnsafePointer[Scalar[type]],
+        max_vals: UnsafePointer[Scalar[type]],
+        sum_vals: UnsafePointer[Scalar[type]],
         count_m: Int,
         count_n: Int,
         kv_seq_cnt: Int,
@@ -696,11 +693,12 @@ struct _FlashAttention[
                 type, Dim(Self._config.block_m)
             ]().stack_allocation()
 
-            var packed_ptr = DTypePointer[
-                type
-            ]() if seq_len == 1 else DTypePointer[type].alloc(
+            var packed_ptr = UnsafePointer[
+                Scalar[type]
+            ]() if seq_len == 1 else UnsafePointer[Scalar[type]].alloc[
+                alignment = alignof[SIMD[type, simd_width]]()
+            ](
                 packed_size,
-                alignment=alignof[SIMD[type, simd_width]](),
             )
 
             var block_range = partition_work(
@@ -767,9 +765,9 @@ struct _FlashAttention[
                         count_m,
                         kv_seq_cnt,
                         depth_dim,
-                        q_ptr.address,
+                        q_ptr,
                         depth_dim,
-                        packed_ptr.address,
+                        packed_ptr,
                         qk_block_ptr,
                         Self._config.qk_block_n,
                     )
@@ -807,10 +805,10 @@ struct _FlashAttention[
                         count_m,
                         count_n,
                         kv_seq_cnt,
-                        qk_block_ptr.address,
+                        qk_block_ptr,
                         Self._config.qk_block_n,
-                        packed_ptr.address,
-                        o_block_ptr.address,
+                        packed_ptr,
+                        o_block_ptr,
                         Self._config.o_block_n,
                         accumulate=(kv_seq_idx > 0),
                     )

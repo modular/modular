@@ -322,7 +322,9 @@ fn index_tensor[
     var reshaped_data_shape = reshaped_data.get_shape()
 
     # idx[] stores the index from where to gather the requested elements.
-    var idx_ptr = DTypePointer[DType.index].alloc(reshaped_indices_shape[2])
+    var idx_ptr = UnsafePointer[Scalar[DType.index]].alloc(
+        reshaped_indices_shape[2]
+    )
     var idx = NDBuffer[DType.index, 1](idx_ptr, reshaped_indices_shape[2])
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,

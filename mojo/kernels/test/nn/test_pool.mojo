@@ -16,14 +16,12 @@ from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from utils.index import StaticIntTuple
 
 
-fn fill_tensor(tensor: DTypePointer[DType.float32], num_elements: Int):
+fn fill_tensor(tensor: UnsafePointer[Float32], num_elements: Int):
     for j in range(num_elements):
         tensor[j] = Float32(j)
 
 
-fn fill_tensor(
-    tensor: DTypePointer[DType.float32], num_elements: Int, val: Float32
-):
+fn fill_tensor(tensor: UnsafePointer[Float32], num_elements: Int, val: Float32):
     for j in range(num_elements):
         tensor[j] = val
 

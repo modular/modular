@@ -58,12 +58,12 @@ fn test[
         num_groups: num_groups,
     }
 
-    var input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    var filter_ptr = DTypePointer[type].alloc(R * S * C * F)
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(N * H * W * C)
+    var filter_ptr = UnsafePointer[Scalar[type]].alloc(R * S * C * F)
 
     # output from conv w/ dynamic and static shapes.
-    var output_ptr_static = DTypePointer[type].alloc(N * HO * WO * F)
-    var output_ptr_dynamic = DTypePointer[type].alloc(N * HO * WO * F)
+    var output_ptr_static = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
+    var output_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
 
     rand[type](input_ptr.address, N * H * W * C)
     rand[type](filter_ptr.address, R * S * C * F)
@@ -83,7 +83,7 @@ fn test[
     var rounded_F_dynamic = ceildiv(
         F, micro_kernel_f_size_default
     ) * micro_kernel_f_size_default
-    var packed_filter_ptr_dynamic = DTypePointer[type].alloc(
+    var packed_filter_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_dynamic
     )
     var packed_filter_dynamic = NDBuffer[type, 5](
@@ -137,7 +137,7 @@ fn test[
     alias packed_filter_shape = DimList(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size
     )
-    var packed_filter_ptr_static = DTypePointer[type].alloc(
+    var packed_filter_ptr_static = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_static
     )
     var packed_filter_static = NDBuffer[type, 5, packed_filter_shape](

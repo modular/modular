@@ -8,8 +8,7 @@ from sys.info import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import memcpy
-from memory.unsafe import DTypePointer
+from memory import memcpy, UnsafePointer
 
 # ===----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -181,8 +180,8 @@ fn broadcast_impl[
 fn _tile_1d[
     type: DType
 ](
-    init_dst_ptr: DTypePointer[type],
-    src_ptr: DTypePointer[type],
+    init_dst_ptr: UnsafePointer[Scalar[type]],
+    src_ptr: UnsafePointer[Scalar[type]],
     tile_num_elems: Int,
     n: Int,
 ):

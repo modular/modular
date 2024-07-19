@@ -20,7 +20,7 @@ fn test_cumsum_1d():
     alias reverse = False
     var axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    var matrix_data = UnsafePointer[Float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota(matrix_data.address, 5, 1)
@@ -48,7 +48,7 @@ fn test_cumsum_1d_exclusive():
     alias reverse = False
     var axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    var matrix_data = UnsafePointer[Float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota(matrix_data.address, 5, 1)
@@ -76,7 +76,7 @@ fn test_cumsum_1d_reverse():
     alias reverse = True
     var axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    var matrix_data = UnsafePointer[Float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota(matrix_data.address, 5, 1)
@@ -104,7 +104,7 @@ fn test_cumsum_1d_reverse_exclusive():
     alias reverse = True
     alias axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    var matrix_data = UnsafePointer[Float64].alloc(5)
     var matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota(matrix_data.address, 5, 1)
@@ -132,7 +132,7 @@ fn test_cumsum_2d_axis_0():
     alias reverse = False
     var axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    var matrix_data = UnsafePointer[Float64].alloc(6)
     var matrix = NDBuffer[
         DType.float64,
         2,
@@ -167,7 +167,7 @@ fn test_cumsum_2d_axis_1():
     alias reverse = False
     var axis = 1
 
-    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    var matrix_data = UnsafePointer[Float64].alloc(6)
     var matrix = NDBuffer[
         DType.float64,
         2,
@@ -202,7 +202,7 @@ fn test_cumsum_2d_negative_axis():
     alias reverse = False
     var axis = -1
 
-    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    var matrix_data = UnsafePointer[Float64].alloc(6)
     var matrix = NDBuffer[
         DType.float64,
         2,

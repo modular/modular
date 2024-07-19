@@ -36,7 +36,7 @@ fn fill_boxes[
 ]:
     var num_boxes = len(box_list) // batch_size
     var shape = StaticIntTuple[3](batch_size, num_boxes, 4)
-    var storage = DTypePointer[type].alloc(shape.flattened_length())
+    var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     var boxes = NDBuffer[type, 3](storage, shape)
     for i in range(len(box_list)):
         var coords = linear_offset_to_coords(
@@ -70,7 +70,7 @@ fn fill_scores[
     var num_boxes = len(scores_list) // batch_size // num_classes
 
     var shape = StaticIntTuple[3](batch_size, num_classes, num_boxes)
-    var storage = DTypePointer[type].alloc(shape.flattened_length())
+    var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     var scores = NDBuffer[type, 3](storage, shape)
     for i in range(len(scores_list)):
         var coords = linear_offset_to_coords(i, shape)
@@ -102,9 +102,7 @@ fn test_case[
         score_threshold,
     )
     var idxs_shape = StaticIntTuple[2](shape[0], shape[1])
-    var idxs_storage = DTypePointer[DType.int64].alloc(
-        idxs_shape.flattened_length()
-    )
+    var idxs_storage = UnsafePointer[Int64].alloc(idxs_shape.flattened_length())
     var selected_idxs = NDBuffer[DType.int64, 2](idxs_storage, idxs_shape)
     non_max_suppression(
         boxes,

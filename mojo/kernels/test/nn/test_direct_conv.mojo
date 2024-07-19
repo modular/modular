@@ -11,7 +11,7 @@ from sys.info import num_physical_cores, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -72,10 +72,10 @@ fn test[
         num_groups: num_groups,
     }
 
-    var input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    var filter_ptr = DTypePointer[type].alloc(R * S * C * F)
-    var output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
-    var output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(N * H * W * C)
+    var filter_ptr = UnsafePointer[Scalar[type]].alloc(R * S * C * F)
+    var output_ptr = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
+    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
 
     rand[type](input_ptr.address, N * H * W * C)
     rand[type](filter_ptr.address, R * S * C * F)
@@ -97,7 +97,7 @@ fn test[
     var input = NDBuffer[type, 4](input_ptr, Index(N, H, W, C))
     var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C // num_groups, F))
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = DTypePointer[type].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
         packed_filter_shape.flattened_length()
     )
     var packed_filter = NDBuffer[type, 5, DimList.create_unknown[5]()](

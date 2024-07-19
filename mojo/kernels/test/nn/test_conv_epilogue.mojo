@@ -12,7 +12,7 @@ from sys.info import simdwidthof
 from algorithm.functional import vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -94,18 +94,18 @@ fn test[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = DTypePointer[type].alloc(input_size)
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(input_size)
     rand(input_ptr.address, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = DTypePointer[type].alloc(filter_size)
+    var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_size)
     rand(filter_ptr.address, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = DTypePointer[type].alloc(output_size)
-    var output_ref_ptr = DTypePointer[type].alloc(output_size)
+    var output_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
+    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
 
-    var bias_ptr = DTypePointer[type].alloc(F)
+    var bias_ptr = UnsafePointer[Scalar[type]].alloc(F)
     rand(bias_ptr.address, F)
 
     # Find the tile size used in packing.
@@ -125,7 +125,7 @@ fn test[
     var filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
 
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = DTypePointer[type].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
         packed_filter_shape.flattened_length()
     )
     var packed_filter = NDBuffer[type, rank + 3](

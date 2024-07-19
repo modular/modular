@@ -705,7 +705,7 @@ fn test_pad_reflect_4d_big_input():
     alias out_size = 2 * 3 * 1024 * 1024
 
     # create a big input matrix and fill it with ones
-    var input_ptr = DTypePointer[DType.index].alloc(in_size)
+    var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
     var input = NDBuffer[DType.index, 4, in_shape](input_ptr, in_shape)
     input.fill(1)
 
@@ -722,7 +722,7 @@ fn test_pad_reflect_4d_big_input():
     paddings[7] = 256
 
     # create an even bigger output matrix and fill it with zeros
-    var output_ptr = DTypePointer[DType.index].alloc(out_size)
+    var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
     var output = NDBuffer[DType.index, 4, out_shape](output_ptr, out_shape)
     output.fill(0)
 

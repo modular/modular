@@ -16,15 +16,16 @@ from buffer.dimlist import Dim, DimList
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
-from memory import memcpy
-from memory.unsafe import DTypePointer
+from memory import memcpy, UnsafePointer
 from register import mogg_register
 
 from utils import StaticIntTuple, StaticTuple, unroll
 
 
 @always_inline
-fn _fill[type: DType](dst: DTypePointer[type], value: Scalar[type], count: Int):
+fn _fill[
+    type: DType
+](dst: UnsafePointer[Scalar[type]], value: Scalar[type], count: Int):
     _ = Buffer[type](dst, count).fill(value)
 
 
@@ -112,7 +113,7 @@ fn pad_constant[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    paddings: DTypePointer[paddings_type],
+    paddings: UnsafePointer[Scalar[paddings_type]],
     constant: SIMD[constant_type, 1],
 ):
     """
@@ -140,12 +141,12 @@ fn pad_constant[
     @__copy_capture(constant_cast)
     @parameter
     fn pad_constant_wrapper(
-        output: DTypePointer[type],
-        input: DTypePointer[type],
-        paddings: DTypePointer[paddings_type],
+        output: UnsafePointer[Scalar[type]],
+        input: UnsafePointer[Scalar[type]],
+        paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: StaticIntTuple[rank],
-        output_strides: DTypePointer[DType.index],
-        input_strides: DTypePointer[DType.index],
+        output_strides: UnsafePointer[Scalar[DType.index]],
+        input_strides: UnsafePointer[Scalar[DType.index]],
     ):
         return _pad_constant_impl[rank, type, paddings_type](
             output,
@@ -176,7 +177,7 @@ fn pad_reflect[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    paddings: DTypePointer[paddings_type],
+    paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
     Fill `output` with values from `input`, and edges padded with reflected
@@ -203,12 +204,12 @@ fn pad_reflect[
 
     @parameter
     fn pad_reflect_wrapper(
-        output: DTypePointer[type],
-        input: DTypePointer[type],
-        paddings: DTypePointer[paddings_type],
+        output: UnsafePointer[Scalar[type]],
+        input: UnsafePointer[Scalar[type]],
+        paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: StaticIntTuple[rank],
-        output_strides: DTypePointer[DType.index],
-        input_strides: DTypePointer[DType.index],
+        output_strides: UnsafePointer[Scalar[DType.index]],
+        input_strides: UnsafePointer[Scalar[DType.index]],
     ):
         return _pad_reflect_impl[rank, type, paddings_type](
             output, input, paddings, output_shape, output_strides, input_strides
@@ -277,17 +278,17 @@ fn _do_pad[
     type: DType,
     paddings_type: DType,
     pad_impl_fn: fn (
-        DTypePointer[type],
-        DTypePointer[type],
-        DTypePointer[paddings_type],
+        UnsafePointer[Scalar[type]],
+        UnsafePointer[Scalar[type]],
+        UnsafePointer[Scalar[paddings_type]],
         StaticIntTuple[rank],
-        DTypePointer[DType.index],
-        DTypePointer[DType.index],
+        UnsafePointer[Scalar[DType.index]],
+        UnsafePointer[Scalar[DType.index]],
     ) capturing -> None,
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    paddings: DTypePointer[paddings_type],
+    paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     var input_strides_buf = Buffer[DType.index, rank].stack_allocation()
     var output_strides_buf = Buffer[DType.index, rank].stack_allocation()
@@ -328,7 +329,7 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
     fn __init__(
         inout self: Self,
         axis: Int,
-        paddings: DTypePointer[paddings_type],
+        paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: StaticIntTuple[rank],
     ):
         var axis_dim = output_shape[axis]
@@ -376,8 +377,8 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
     @always_inline
     fn base(
         inout self: Self,
-        output: DTypePointer[type],
-        input: DTypePointer[type],
+        output: UnsafePointer[Scalar[type]],
+        input: UnsafePointer[Scalar[type]],
         constant: Scalar[type],
         axis_dim: Int,
     ):
@@ -401,12 +402,12 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
 fn _pad_constant_axis[
     rank: Int, type: DType, paddings_type: DType, axis: Int
 ](
-    output: DTypePointer[type],
-    input: DTypePointer[type],
+    output: UnsafePointer[Scalar[type]],
+    input: UnsafePointer[Scalar[type]],
     constant: Scalar[type],
     output_shape: StaticIntTuple[rank],
-    output_strides: DTypePointer[DType.index],
-    input_strides: DTypePointer[DType.index],
+    output_strides: UnsafePointer[Scalar[DType.index]],
+    input_strides: UnsafePointer[Scalar[DType.index]],
     owned axis_params: StaticTuple[
         _AxisParams[rank, type, paddings_type], rank
     ],
@@ -441,13 +442,13 @@ fn _pad_constant_axis[
 fn _pad_constant_impl[
     rank: Int, type: DType, paddings_type: DType
 ](
-    output: DTypePointer[type],
-    input: DTypePointer[type],
-    paddings: DTypePointer[paddings_type],
+    output: UnsafePointer[Scalar[type]],
+    input: UnsafePointer[Scalar[type]],
+    paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[type],
     output_shape: StaticIntTuple[rank],
-    output_strides: DTypePointer[DType.index],
-    input_strides: DTypePointer[DType.index],
+    output_strides: UnsafePointer[Scalar[DType.index]],
+    input_strides: UnsafePointer[Scalar[DType.index]],
 ):
     """
     Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
@@ -499,7 +500,7 @@ fn _memcpy_regions_fast[
     post_pad: Int,
     non_pad: Int,
     output_axis_stride: Int,
-    pre_pad_start_ptr: DTypePointer[type],
+    pre_pad_start_ptr: UnsafePointer[Scalar[type]],
 ):
     @always_inline
     fn modulo_inc(inout cnt: Int, modulo: Int):
@@ -565,7 +566,7 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
     fn __init__(
         inout self: Self,
         axis: Int,
-        paddings: DTypePointer[paddings_type],
+        paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: StaticIntTuple[rank],
     ):
         var axis_dim = output_shape[axis]
@@ -605,8 +606,8 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
         inout self: Self,
         output_offset: Int,
         input_offset: Int,
-        output: DTypePointer[type],
-        input: DTypePointer[type],
+        output: UnsafePointer[Scalar[type]],
+        input: UnsafePointer[Scalar[type]],
     ):
         # no more dimensions to recurse, copy from input to unpadded region
         var non_pad_start_ptr = output.offset(output_offset + self.pre_pad)
@@ -618,7 +619,7 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
         inout self: Self,
         output_axis_stride: Int,
         output_offset: Int,
-        output: DTypePointer[type],
+        output: UnsafePointer[Scalar[type]],
     ):
         var pre_pad_start_ptr = output.offset(output_offset)
 
@@ -638,10 +639,10 @@ fn _pad_reflect_axis[
     paddings_type: DType,
     axis: Int,
 ](
-    output: DTypePointer[type],
-    input: DTypePointer[type],
-    output_strides: DTypePointer[DType.index],
-    input_strides: DTypePointer[DType.index],
+    output: UnsafePointer[Scalar[type]],
+    input: UnsafePointer[Scalar[type]],
+    output_strides: UnsafePointer[Scalar[DType.index]],
+    input_strides: UnsafePointer[Scalar[DType.index]],
     owned axis_params: StaticTuple[
         _AxisParamsReflect[rank, type, paddings_type], rank
     ],
@@ -694,12 +695,12 @@ fn _pad_reflect_impl[
     type: DType,
     paddings_type: DType,
 ](
-    output: DTypePointer[type],
-    input: DTypePointer[type],
-    paddings: DTypePointer[paddings_type],
+    output: UnsafePointer[Scalar[type]],
+    input: UnsafePointer[Scalar[type]],
+    paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: StaticIntTuple[rank],
-    output_strides: DTypePointer[DType.index],
-    input_strides: DTypePointer[DType.index],
+    output_strides: UnsafePointer[Scalar[DType.index]],
+    input_strides: UnsafePointer[Scalar[DType.index]],
 ):
     """
     Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
@@ -738,7 +739,7 @@ fn pad_repeat[
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
-    paddings: DTypePointer[paddings_type],
+    paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
     Fill `output` with values from `input`, and edges padded boundary
