@@ -922,7 +922,7 @@ struct NDBuffer[
     @always_inline
     fn _offset(
         self, idx: VariadicList[Int]
-    ) -> DTypePointer[type, address_space]:
+    ) -> UnsafePointer[Scalar[type], address_space]:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
@@ -939,13 +939,13 @@ struct NDBuffer[
     @always_inline
     fn _offset(
         self, idx: StaticIntTuple[rank]
-    ) -> DTypePointer[type, address_space]:
+    ) -> UnsafePointer[Scalar[type], address_space]:
         return self._offset(idx.as_tuple())
 
     @always_inline
     fn _offset(
         self, idx: StaticTuple[Int, rank]
-    ) -> DTypePointer[type, address_space]:
+    ) -> UnsafePointer[Scalar[type], address_space]:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
