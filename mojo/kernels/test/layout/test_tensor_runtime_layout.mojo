@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo %s | FileCheck %s
-# COM: TODO(KERN-645)
+# RUN: %mojo %s | FileCheck %s
 
 from layout import LayoutTensor, Layout, RuntimeLayout, RuntimeTuple
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE

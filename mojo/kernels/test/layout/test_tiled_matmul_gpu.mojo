@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %bare-mojo %s | FileCheck %s
-# COM: TODO(KERN-645)
+# RUN: %mojo %s | FileCheck %s
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

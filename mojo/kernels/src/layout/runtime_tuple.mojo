@@ -78,7 +78,7 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
         alias offset = Self.offset_until[i]()
 
         @parameter
-        for i in range(Self.scalar_length - offset):
+        for i in range(res.scalar_length):
             res.value[i] = self.value[i + offset]
         return res
 

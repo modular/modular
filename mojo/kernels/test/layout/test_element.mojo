@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %bare-mojo %s | FileCheck %s
-# COM: TODO(KERN-645)
+# RUN: %mojo %s | FileCheck %s
 
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.element import Element
