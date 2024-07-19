@@ -59,5 +59,100 @@ fn test_select() raises:
     _testing.assert_tensors_almost_equal(expected, actual, 1e-4)
 
 
+fn test_select_broadcast() raises:
+    var g = Graph(TensorType(DType.bool, 2))
+
+    var x = g.constant(
+        Tensor[DType.float32](
+            TensorShape(1, 2, 1),
+            -3.5,
+            4.5,
+        )
+    )
+
+    var y = g.constant(
+        Tensor[DType.float32](
+            TensorShape(1, 1, 2),
+            -2.5,
+            1.5,
+        )
+    )
+
+    g.output(
+        select(
+            g[0],
+            x,
+            y,
+        )
+    )
+    g.verify()
+
+    # fmt: off
+    var input = Tensor[DType.bool](
+        TensorShape(2),
+        True, False,
+    )
+    var expected = Tensor[DType.float32](
+        TensorShape(1, 2, 2),
+        -3.5, 1.5,
+        4.5, 1.5,
+    )
+    # fmt: on
+
+    var actual = _testing.execute_unary(g, input)
+    _testing.assert_tensors_almost_equal(expected, actual, 1e-4)
+
+
+fn test_select_dtype_cast() raises:
+    var g = Graph(TensorType(DType.bool, 1, 2, 2))
+
+    var x = g.constant(
+        Tensor[DType.int8](
+            TensorShape(1, 2, 2),
+            -1,
+            2,
+            -3,
+            4,
+        )
+    )
+
+    var y = g.constant(
+        Tensor[DType.float32](
+            TensorShape(1, 2, 2),
+            -4.5,
+            3.5,
+            -2.5,
+            1.5,
+        )
+    )
+
+    g.output(
+        select(
+            g[0],
+            x,
+            y,
+        )
+    )
+    g.verify()
+
+    # fmt: off
+    var input = Tensor[DType.bool](
+        TensorShape(1, 2, 2),
+        True, False,
+        False, True,
+    )
+    var expected = Tensor[DType.float32](
+        TensorShape(1, 2, 2),
+        -1, 3.5,
+        -2.5, 4,
+    )
+    # fmt: on
+
+    var actual = _testing.execute_unary(g, input)
+    _testing.assert_tensors_almost_equal(expected, actual, 1e-4)
+
+
 def main():
     test_select()
+    test_select_broadcast()
+    test_select_dtype_cast()

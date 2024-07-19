@@ -150,7 +150,13 @@ def slice(
     )
 
 
-def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
+@always_inline
+def select(
+    condition: Symbol,
+    x: Symbol,
+    y: Symbol,
+    location: Optional[_SourceLocation] = None,
+) -> Symbol:
     """Returns `condition ? x : y` (element-wise), where `cond`, `x` and `y`
     are input tensors.
 
@@ -161,17 +167,21 @@ def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
            position in this tensor will be selected.
         y: If the condition is false at a position, the value from the same
            position in this tensor will be selected.
+        location: An optional location for a more specific error message.
 
     Returns:
         A new symbolic tensor holding either values from either `x` or `y`,
         based on the elements in `condition`.
     """
     var g = condition.graph()
-    return g.op(
-        "rmo.mo.select",
-        List[Symbol](condition, x, y),
-        x.tensor_type(),
-    )
+    try:
+        return g.nvop(
+            "rmo.select",
+            List(condition, x, y),
+            enable_result_type_inference=True,
+        )[0]
+    except e:
+        raise error(g, e, location or __call_location())
 
 
 def _slice_size(s: Slice, length: Optional[Int64]) -> Optional[Int]:
