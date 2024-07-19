@@ -44,8 +44,6 @@ constexpr auto kExportInterval = std::chrono::seconds(600);
 /// (OTel-managed thread). NOTE: this value must be smaller than the export
 /// interval.
 constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
-/// Modular's public telemetry endpoint.
-constexpr StringRef kTelemetryUrl = MODULAR_TELEMETRY_URL;
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.

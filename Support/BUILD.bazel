@@ -456,7 +456,8 @@ modular_cc_library(
         # unilaterally set sensible configurations for now.
         "MODULAR_ENABLE_TELEMETRY",
         "HAVE_CPP_STDLIB",
-    ] + select({
+    ],
+    local_defines = select({
         "//:ProdBuild": [
             'MODULAR_TELEMETRY_URL=\\"https://telemetry.modular.com:443\\"',
         ],
