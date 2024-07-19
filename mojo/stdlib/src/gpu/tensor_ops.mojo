@@ -8,6 +8,45 @@ from gpu.mma import mma
 from gpu.shuffle import shuffle_down
 
 
+@always_inline
+fn tc_reduce_gevm_8x[
+    out_type: DType, in_type: DType, simd_width: Int
+](val1: SIMD[in_type, simd_width], val2: SIMD[in_type, simd_width]) -> SIMD[
+    out_type, simd_width
+]:
+    """Using Tensor Cores to do warp level reduction."""
+
+    constrained[
+        out_type == DType.float32 and in_type == DType.bfloat16,
+        "unsupported input/output type",
+    ]()
+
+    var d_reg = SIMD[out_type, simd_width]()
+    var a_reg = SIMD[in_type, simd_width * 2](1)
+    mma(d_reg, a_reg, val1, d_reg)
+
+    var c_reg = SIMD[out_type, simd_width]()
+    mma(c_reg, a_reg, val2, d_reg)
+    return c_reg
+
+
+@always_inline
+fn tc_reduce_gevm_4x[
+    out_type: DType, in_type: DType, simd_width: Int
+](val1: SIMD[in_type, simd_width]) -> SIMD[out_type, simd_width]:
+    """Using Tensor Cores to do warp level reduction."""
+
+    constrained[
+        out_type == DType.float32 and in_type == DType.bfloat16,
+        "unsupported input/output type",
+    ]()
+
+    var d_reg = SIMD[out_type, simd_width]()
+    var a_reg = SIMD[in_type, simd_width * 2](1)
+    mma(d_reg, a_reg, val1, d_reg)
+    return d_reg
+
+
 @always_inline("nodebug")
 fn tc_reduce_vector[
     out_type: DType, in_type: DType, simd_width: Int
