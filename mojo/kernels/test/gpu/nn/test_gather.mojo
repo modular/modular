@@ -25,9 +25,7 @@ fn test_gather(ctx: DeviceContext) raises:
         alias num_rows = 16
         alias row_size = 4
 
-        var input_host_ptr = DTypePointer[DType.float32].alloc(
-            num_rows * row_size
-        )
+        var input_host_ptr = UnsafePointer[Float32].alloc(num_rows * row_size)
         var input_host = NDBuffer[
             DType.float32,
             2,
@@ -47,7 +45,9 @@ fn test_gather(ctx: DeviceContext) raises:
         ](input_device_ptr.ptr)
 
         alias num_indices = 16
-        var indices_host_ptr = DTypePointer[indices_type].alloc(num_indices)
+        var indices_host_ptr = UnsafePointer[Scalar[indices_type]].alloc(
+            num_indices
+        )
         var indices_host = NDBuffer[
             indices_type,
             1,
@@ -72,7 +72,7 @@ fn test_gather(ctx: DeviceContext) raises:
         )
 
         # create output
-        var output_host_ptr = DTypePointer[DType.float32].alloc(
+        var output_host_ptr = UnsafePointer[Float32].alloc(
             num_indices * row_size
         )
         var output_host = NDBuffer[

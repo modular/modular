@@ -24,7 +24,7 @@ fn _create_buffer_host[
     rank: Int, dtype: DType
 ](dims: DimList) -> NDBuffer[dtype, rank]:
     var total_size: Int = dims.product[rank]().get()
-    var mem_ptr = DTypePointer[dtype].alloc(total_size)
+    var mem_ptr = UnsafePointer[Scalar[dtype]].alloc(total_size)
     var buffer = NDBuffer[dtype, rank](mem_ptr, dims)
     return buffer
 
