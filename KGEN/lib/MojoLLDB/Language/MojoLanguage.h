@@ -102,6 +102,10 @@ public:
 
   // PluginInterface protocol
   llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+
+  bool SupportsExceptionBreakpointsOnThrow() const override { return true; }
+
+  llvm::StringRef GetThrowKeyword() const override { return "raise"; }
 };
 
 } // namespace M::KGEN::Mojo
