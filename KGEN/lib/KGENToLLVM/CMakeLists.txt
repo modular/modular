@@ -28,5 +28,6 @@ add_modular_library(KGENToLLVM
 
   MLIRIR
   MLIRIndexToLLVM
+  MLIRNVVMToLLVM
   MLIRLLVMCommonConversion
 )
