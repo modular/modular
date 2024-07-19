@@ -785,7 +785,7 @@ fn get_conv_num_partitions[
     # Time a factor to M to var the heuristic bias on partitioning M.
     # TODO: make this bias factor part of function parameter/argument and
     # unifies interface with matmul partition, e.x. bias=1 for matmul.
-    var bias = 0.25
+    alias bias = 0.25
     var matmul_M_biased = max(
         (Float32(matmul_M) * bias).cast[DType.index]().value, 1
     )

@@ -37,13 +37,13 @@ fn coord_transform[
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
-        return (out_coord + 0.5) / scale - 0.5
+        return (out_coord + Float32(0.5)) / scale - 0.5
     elif mode == CoordinateTransformationMode.HalfPixel1D:
         # Same as HalfPixel except for 1D output. Described here:
         # https://onnx.ai/onnx/operators/onnx__Resize.html
         if out_dim == 1:
             return 0
-        return (out_coord + 0.5) / scale - 0.5
+        return (out_coord + Float32(0.5)) / scale - 0.5
     elif mode == CoordinateTransformationMode.AlignCorners:
         # aligning "corners" when output is 1D isn't well defined
         # this matches pytorch
@@ -215,7 +215,7 @@ fn interpolate_point_1d[
     var ss = 1 / filter_scale
     for k in range(xmax - xmin):
         in_coords[dim] = k + xmin
-        var dist_from_center = ((k + xmin + 0.5) - center) * ss
+        var dist_from_center = ((k + xmin + Float32(0.5)) - center) * ss
         var filter_coeff = interpolator.filter(dist_from_center).cast[type]()
         acc += input[in_coords] * filter_coeff
         sum += filter_coeff

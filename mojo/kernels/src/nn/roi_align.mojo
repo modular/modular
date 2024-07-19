@@ -54,10 +54,10 @@ fn _bilinear_interpolate[
     # Compute central point (y, x) by mapping (py, ph) into a grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
     var y = roi_start_h + ph * bin_size_h + (
-        iy + 0.5
+        iy + Float32(0.5)
     ) * bin_size_h / roi_bin_grid_h
     var x = roi_start_w + pw * bin_size_w + (
-        ix + 0.5
+        ix + Float32(0.5)
     ) * bin_size_w / roi_bin_grid_w
 
     if not (Float32(-1.0) <= y <= height) or not (Float32(-1.0) <= x <= width):
@@ -158,7 +158,7 @@ fn roi_align_nhwc[
 
     var pooled_height = output_height
     var pooled_width = output_width
-    var offset = 0.5 if aligned else 0.0
+    alias offset = 0.5 if aligned else 0.0
 
     for ri in range(n_regions):
         # Region coordinates and batch indix
