@@ -283,11 +283,11 @@ def test_matmul[
 
     for i in range(m):
         for p in range(k):
-            a[StaticIntTuple[2]((i, p))] = 0.001 * i
+            a[StaticIntTuple[2]((i, p))] = Scalar[a_type](0.001) * i
 
     for p in range(n if transpose_b else k):
         for j in range(k if transpose_b else n):
-            b[StaticIntTuple[2]((p, j))] = 0.002 * p
+            b[StaticIntTuple[2]((p, j))] = Scalar[b_type](0.002) * p
             if b_packed and not transpose_b:
                 bp[StaticIntTuple[2]((j, p))] = b[StaticIntTuple[2]((p, j))]
             else:
@@ -464,11 +464,11 @@ fn bmm_naive(
 
 
 def test_batched_matmul[
-    has_lambda: Bool, c_type: DType, a_type: DType, b_type: DType
+    has_lambda: Bool
 ](
-    c: NDBuffer[c_type, 3],
-    a: NDBuffer[a_type, 3],
-    b: NDBuffer[b_type, 3],
+    c: NDBuffer[_, 3],
+    a: NDBuffer[_, 3],
+    b: NDBuffer[_, 3],
     batches: Int,
     m: Int,
     n: Int,
@@ -486,12 +486,12 @@ def test_batched_matmul[
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[(batch, i, j)] = i * 0.001 + j * 0.001
+                a[(batch, i, j)] = (i + j) * Scalar[a.type](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[(batch, i, j)] = i * 0.001 + k * 0.001
+                b[(batch, i, j)] = (i + k) * Scalar[b.type](0.001)
 
     for batch in range(batches):
         for i in range(m):
@@ -507,7 +507,7 @@ def test_batched_matmul[
     ](coords: StaticIntTuple[rank], val: SIMD[_type, width]) capturing -> None:
         c.store(
             rebind[StaticIntTuple[3]](coords),
-            rebind[SIMD[c_type, width]](val + some_constant),
+            rebind[SIMD[c.type, width]](val + some_constant),
         )
 
     @always_inline

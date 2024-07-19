@@ -353,8 +353,8 @@ fn apple_matmul[
         var ldb = n if not transpose_b else k
         var ldc = n
 
-        var alpha = 1.0
-        var beta = 0.0
+        alias alpha = 1.0
+        alias beta = 0.0
 
         _cblas_f32[transpose_b=transpose_b](
             cblas_gemm_fn,
