@@ -125,7 +125,6 @@ struct Trace {
     //   ATenProfilerEntry for fallback ATen primitives.
     //   TFProfilerEntry for fallback TF primitives.
     //   TFLProfilerEntry for fallback TFL primitives.
-    //   MallocProfilerEntry for memory profiling by overriding the system
     //   malloc.
     // Level 2:
     //   RuntimeCacheProfilerEntry for cache transforms.
