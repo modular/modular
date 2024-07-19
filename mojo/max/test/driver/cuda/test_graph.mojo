@@ -92,7 +92,7 @@ def test_mnist():
             .to_tensor[DType.float32, 2]()
         )
 
-        expected_output = 2.511993e04
+        expected_output = Float32(2.511993e04)
         for i in range(10):
             assert_almost_equal(tensor[0, i], expected_output, atol=0.1)
         assert_equal(tensor.rank, 2)

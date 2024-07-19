@@ -670,16 +670,16 @@ struct Graph(CollectionElement, Stringable, Formattable):
         @parameter
         if not has_neon():
             if dtype is DType.bfloat16:
-                return self.scalar(BFloat16(value))
+                return self.scalar(value.cast[DType.bfloat16]())
 
         # TODO(#33932): Enable once KGENCompilerRT provides __truncdfhf2.
         # if dtype is DType.float16:
         #     return self.scalar(Float16(value))
 
         if dtype is DType.float32:
-            return self.scalar(Float32(value))
+            return self.scalar(value.cast[DType.float32]())
         if dtype is DType.float64:
-            return self.scalar(Float64(value))
+            return self.scalar(value)
 
         raise error(
             self, "unimplemented FloatLiteral conversion dtype: " + str(dtype)
