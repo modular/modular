@@ -369,6 +369,12 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       // that variables are in memory for GPU debugging.
       bool useDbgValueMode = !(useDerefMode || declareDirectMode);
 
+      // The LLVM docs say that alignment=1 is always safe.  NVIDIA GPUs have
+      // had issues with using alignment=0.  If we continue to do this
+      // allocation, we can explore other alignments as an optimization, but
+      // with care that they don't crash GPU programs.
+      uint64_t alignment = 1;
+
       auto valueOpHasDeref = [](LLVM::DbgValueOp valueOp) -> bool {
         if (valueOp.getLocationExpr().getOperations().empty())
           return false;
@@ -422,7 +428,8 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
         Type pointerType = LLVM::LLVMPointerType::get(varInfo.getContext());
 
         LLVM::AllocaOp newAlloc = allocBuilder.create<LLVM::AllocaOp>(
-            erasedLoc, pointerType, allocType, allocSize, 0);
+            erasedLoc, pointerType, allocType, allocSize,
+            /*alignment=*/alignment);
         if (!useDbgValueMode)
           allocaOp = newAlloc;
         else
@@ -518,7 +525,7 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
             storeToPointer = uglyGep;
           }
           storeBuilder.create<LLVM::StoreOp>(storeLoc, oldValue, storeToPointer,
-                                             /*alignment=*/0,
+                                             /*alignment=*/alignment,
                                              /*isVolatile=*/true);
         };
 
