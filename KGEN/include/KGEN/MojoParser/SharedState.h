@@ -17,6 +17,7 @@
 #include "Support/Compiler/Diags.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/MapVector.h"
 
 namespace M::KGEN {
 class CompilationOptions;

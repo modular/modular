@@ -14,6 +14,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/MDialect/MDialect.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Export.h"

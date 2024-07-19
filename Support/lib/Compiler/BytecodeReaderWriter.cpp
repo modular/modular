@@ -7,6 +7,7 @@
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/StringExtras.h"
