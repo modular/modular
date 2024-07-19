@@ -68,10 +68,10 @@ fn tc_reduce_vector[
 
         else:
             constrained[False, "unsupported simd_width for BF16"]()
-            return val[0]
+            return val[0].cast[out_type]()
     else:
         constrained[False, "unsupported input/output type"]()
-        return val[0]
+        return val[0].cast[out_type]()
 
 
 @always_inline("nodebug")
