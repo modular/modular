@@ -40,7 +40,7 @@ from linalg.packing import (
 )
 from linalg.utils import GemmShape
 from memory import memset_zero, UnsafePointer
-from memory.unsafe import DTypePointer, bitcast
+from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
@@ -343,7 +343,12 @@ fn extensibility_tensor_to_ndbuffer[
 @always_inline
 fn to_buffer[
     type: DType, rank: Int
-](data: DTypePointer[type], shape: UnsafePointer[Int],) -> NDBuffer[type, rank]:
+](
+    data: UnsafePointer[Scalar[type]],
+    shape: UnsafePointer[Int],
+) -> NDBuffer[
+    type, rank
+]:
     var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
 
@@ -529,7 +534,7 @@ fn to_tensor[
     static_shape: DimList = DimList(),
     static_strides: DimList = DimList(),
 ](
-    data: DTypePointer[type],
+    data: UnsafePointer[Scalar[type]],
     raw_shape_ptr: UnsafePointer[Int],
     length: Int,
 ) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
@@ -572,11 +577,9 @@ fn to_tensor[
 fn to_extensibility_tensor[
     type: DType, rank: Int
 ](
-    data: DTypePointer[type],
+    data: UnsafePointer[Scalar[type]],
     shape: UnsafePointer[Int],
-) -> ExtensibilityTensor[
-    type, rank
-]:
+) -> ExtensibilityTensor[type, rank]:
     var shape_ptr = shape
     var shape_tuple = StaticIntTuple[rank]()
     var stride_tuple = StaticIntTuple[rank]()

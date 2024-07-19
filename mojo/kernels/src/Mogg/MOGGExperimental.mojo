@@ -28,7 +28,7 @@ alias MAX_BENEFIT = 1000
 fn empty_tensor[
     type: DType,
 ](shape: IntList) -> Tensor[type, shape.static_values]:
-    var ptr = DTypePointer[type].alloc(shape.nelems())
+    var ptr = UnsafePointer[Scalar[type]].alloc(shape.nelems())
     var ref_cnt = UnsafePointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values](ptr, shape, ref_cnt)
@@ -42,7 +42,7 @@ fn empty_strided_tensor[
 ](shape: IntList, strides: IntList) -> Tensor[
     type, shape.static_values, strides.static_values
 ]:
-    var ptr = DTypePointer[type].alloc(shape.nelems())
+    var ptr = UnsafePointer[Scalar[type]].alloc(shape.nelems())
     var ref_cnt = UnsafePointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values, strides.static_values](
@@ -1112,7 +1112,7 @@ fn test_my_abs(
     x: Tensor,
 ) -> Tensor[x.type]:
     var new_shape = IntList(3, 2)
-    var ptr = DTypePointer[x.type].alloc(new_shape.nelems())
+    var ptr = UnsafePointer[Scalar[x.type]].alloc(new_shape.nelems())
     var ref_cnt = UnsafePointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     var out = Tensor[x.type](ptr, new_shape, ref_cnt)

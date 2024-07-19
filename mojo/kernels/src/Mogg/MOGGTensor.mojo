@@ -81,7 +81,7 @@ struct Tensor[
         static_shape
     ) == 0 else len(static_shape)
 
-    var data: DTypePointer[type]
+    var data: UnsafePointer[Scalar[type]]
     var shape: IntList[static_shape]
     var strides: IntList[static_strides]
     var dyn_rank: Int
@@ -91,7 +91,7 @@ struct Tensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         shape: IntList,
         ref_count_ptr: UnsafePointer[Scalar[DType.index]],
     ):
@@ -125,7 +125,7 @@ struct Tensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         shape: IntList,
         strides: IntList,
         ref_count_ptr: UnsafePointer[Scalar[DType.index]],

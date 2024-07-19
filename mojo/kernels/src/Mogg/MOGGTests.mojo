@@ -146,7 +146,9 @@ fn test_static_shape_output[
 
     unroll[body, rank]()
     return NDBuffer[type, rank, output_0_static_shape](
-        DTypePointer[type](), StaticIntTuple[rank](), StaticIntTuple[rank]()
+        UnsafePointer[Scalar[type]](),
+        StaticIntTuple[rank](),
+        StaticIntTuple[rank](),
     )
 
 

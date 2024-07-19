@@ -113,10 +113,11 @@ struct StateContext:
 
 @always_inline
 fn byte_buffer_alloc[
-    target: StringLiteral
-](
-    byte_size: Int, alignment: Int, callCtx: MojoCallContextPtr
-) raises -> NDBuffer[DType.int8, 1]:
+    target: StringLiteral,
+    alignment: Int,
+](byte_size: Int, callCtx: MojoCallContextPtr) raises -> NDBuffer[
+    DType.int8, 1
+]:
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
     """
     # This primitive has a byte-size input, so always assume a byte format
@@ -133,7 +134,7 @@ fn byte_buffer_alloc[
         )
     else:
         return NDBuffer[DType.int8, 1](
-            DTypePointer[DType.int8].alloc(byte_size, alignment=alignment),
+            UnsafePointer[Int8].alloc[alignment=alignment](byte_size),
             shape,
         )
 
@@ -216,7 +217,7 @@ fn create_tensor_spec_async[
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
-    var shape_ptr = DTypePointer[DType.index].alloc(rank)
+    var shape_ptr = UnsafePointer[Int].alloc(rank)
     for i in range(rank):
         shape_ptr[i] = spec.shape[i]
     external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
@@ -283,7 +284,7 @@ fn unpack_buffer[
 fn unpack_tensor_spec[
     rank: Int
 ](async_ptr: UnsafePointer[NoneType]) -> StaticTensorSpec[rank]:
-    var shape_ptr = DTypePointer[DType.index].alloc(rank)
+    var shape_ptr = UnsafePointer[Int].alloc(rank)
     var raw_dtype = external_call[
         "KGEN_CompilerRT_GetTensorSpecFromAsync",
         UInt8,
@@ -313,9 +314,7 @@ fn unpack_context(
 @mogg_register("builtin.get_buffer_data")
 @always_inline
 @export
-fn get_buffer_data(
-    buffer: NDBuffer[DType.uint8, 1]
-) -> DTypePointer[DType.uint8]:
+fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
     return buffer.data
 
 
@@ -492,11 +491,11 @@ fn mgp_buffer_alloc_static[
 ](
     dummy_chain: Int, stateCtx: StateContext, callCtx: MojoCallContextPtr
 ) raises -> NDBuffer[DType.int8, 1]:
-    var alignment = int(cRawAlign)
-    if cRawAlign == UInt64.MAX:
-        # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
-        alignment = alignof[DType.int8]()
-    return byte_buffer_alloc[dDevice](int(bSize), alignment, callCtx)
+    # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
+    alias alignment = alignof[DType.int8]() if cRawAlign == UInt64.MAX else int(
+        cRawAlign
+    )
+    return byte_buffer_alloc[dDevice, alignment=alignment](int(bSize), callCtx)
 
 
 @mogg_register("mgp.buffer.alloc.dynamic")
@@ -512,11 +511,11 @@ fn mgp_buffer_alloc_dynamic[
     byte_size: Int,
     callCtx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
-    var alignment = int(bRawAlign)
-    if bRawAlign == UInt64.MAX:
-        # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
-        alignment = alignof[DType.int8]()
-    return byte_buffer_alloc[cDevice](byte_size, alignment, callCtx)
+    # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
+    alias alignment = alignof[DType.int8]() if bRawAlign == UInt64.MAX else int(
+        bRawAlign
+    )
+    return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, callCtx)
 
 
 @always_inline
