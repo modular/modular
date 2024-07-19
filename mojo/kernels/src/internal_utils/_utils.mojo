@@ -146,7 +146,7 @@ fn linspace(buffer: NDBuffer):
 fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
-            buffer[(i, j)] = random_float64(min, max)
+            buffer[(i, j)] = random_float64(min, max).cast[buffer.type]()
 
 
 fn zero(buffer: NDBuffer):
@@ -158,4 +158,4 @@ fn zero(buffer: NDBuffer):
 fn fill[type: DType](buffer: NDBuffer, val: Scalar[type]):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
-            buffer[(i, j)] = val
+            buffer[(i, j)] = val.cast[buffer.type]()

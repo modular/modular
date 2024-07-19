@@ -41,9 +41,11 @@ fn kl_div(out: DTypePointer, x: __type_of(out), y: __type_of(out), len: Int):
     fn kl_div_elementwise[
         simd_width: Int, rank: Int
     ](idx: StaticIntTuple[rank]):
-        out[idx[0]] = kl_div(
-            SIMD[size=simd_width].load(x + idx[0]),
-            SIMD[size=simd_width].load(y + idx[0]),
+        out[idx[0]] = rebind[Scalar[out.type]](
+            kl_div(
+                SIMD[size=simd_width].load(x + idx[0]),
+                SIMD[size=simd_width].load(y + idx[0]),
+            )
         )
 
     elementwise[kl_div_elementwise, simdwidthof[out.type]()](len)
@@ -144,7 +146,9 @@ fn cosine(
 fn _sqrt(out: DTypePointer, x: __type_of(out), len: Int):
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        out[idx[0]] = sqrt(SIMD[size=simd_width].load(x + idx[0]))
+        out[idx[0]] = rebind[Scalar[out.type]](
+            sqrt(SIMD[size=simd_width].load(x + idx[0]))
+        )
 
     elementwise[apply_fn, simdwidthof[out.type]()](len)
 
@@ -152,9 +156,10 @@ fn _sqrt(out: DTypePointer, x: __type_of(out), len: Int):
 fn _mul(out: DTypePointer, x: __type_of(out), y: __type_of(out), len: Int):
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        out[idx[0]] = SIMD[size=simd_width].load(x + idx[0]) * SIMD[
-            size=simd_width
-        ].load(y + idx[0])
+        out[idx[0]] = rebind[Scalar[out.type]](
+            SIMD[size=simd_width].load(x + idx[0])
+            * SIMD[size=simd_width].load(y + idx[0])
+        )
 
     elementwise[apply_fn, simdwidthof[out.type]()](len)
 
@@ -162,7 +167,9 @@ fn _mul(out: DTypePointer, x: __type_of(out), y: __type_of(out), len: Int):
 fn _div(out: DTypePointer, x: __type_of(out), c: Scalar[out.type], len: Int):
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        out[idx[0]] = SIMD[size=simd_width].load(x + idx[0]) / c
+        out[idx[0]] = (
+            rebind[Scalar[out.type]](SIMD[size=simd_width].load(x + idx[0])) / c
+        )
 
     elementwise[apply_fn, simdwidthof[out.type]()](len)
 
