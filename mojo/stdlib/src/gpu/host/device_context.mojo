@@ -111,8 +111,13 @@ struct DeviceBuffer[type: DType](Sized):
     var owning: Bool
 
     fn __init__(inout self, ctx: DeviceContext, size: Int) raises:
+        """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
+        using the stream in the device context.
+        """
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
-        self.ptr = self.ctx_ptr[].cuda_context.malloc[Scalar[type]](size)
+        self.ptr = self.ctx_ptr[].cuda_context.malloc_async[Scalar[type]](
+            size, self.ctx_ptr[].cuda_stream
+        )
         self.size = size
         self.owning = True
 
@@ -153,9 +158,13 @@ struct DeviceBuffer[type: DType](Sized):
 
     @always_inline
     fn __del__(owned self):
+        """This function schedules an owned buffer free using the stream in the device context.
+        """
         try:
             if self.owning and self.ptr:
-                self.ctx_ptr[].cuda_context.free(self.ptr)
+                self.ctx_ptr[].cuda_context.free_async(
+                    self.ptr, self.ctx_ptr[].cuda_stream
+                )
         except e:
             abort(e)
 
@@ -275,6 +284,7 @@ struct DeviceContext:
         return self^
 
     fn create_buffer[type: DType](self, size: Int) raises -> DeviceBuffer[type]:
+        """Creates a buffer using the DeviceBuffer constructor."""
         return DeviceBuffer[type](self, size)
 
     fn compile_function[
