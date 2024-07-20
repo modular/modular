@@ -45,17 +45,6 @@ class TypeSignatureType;
 /// talking about and when inference is complete, so we keep a flag.
 class ParamBindings : public TypeCheckScopeInfo {
 public:
-  struct Binding {
-    /// This is the expression tree that produced the binding in the case of an
-    /// Attribute, or null in the case of TypedAttr.
-    const ExprNode *expr;
-    /// This is the value of the binding.
-    TypedAttr value;
-
-    /// Return the type of the TypedAttr or the binding.
-    ASTType getType() const { return value.getType(); }
-  };
-
   /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
   ParamBindings(const TypeCheckScopeInfo &scopeInfo)
@@ -83,9 +72,9 @@ public:
   /// Return the total number of bindings, including keyword and positional.
   size_t size() const { return posBindings.size() + kwBindings.size(); }
 
-  ArrayRef<ASTExprAnd<PValue>> getPosBindings() const { return posBindings; }
+  ArrayRef<ASTExprAnd<AnyValue>> getPosBindings() const { return posBindings; }
   /// This contains the bound parameters given by a keyword.
-  const llvm::MapVector<StringAttr, ASTExprAnd<PValue>,
+  const llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
                         SmallDenseMap<StringAttr, size_t>> &
   getKWBindings() const {
     return kwBindings;
@@ -130,9 +119,9 @@ public:
     /// number of positional-only parameters.
     std::function<void(size_t, bool)> emitParamCount;
     /// Emit diagnostics for incorrect type in a positional parameter.
-    std::function<void(size_t, ASTExprAnd<PValue>, ASTType)> emitPosType;
+    std::function<void(size_t, ASTExprAnd<AnyValue>, ASTType)> emitPosType;
     /// Emit diagnostics for incorrect type in a keyword parameter.
-    std::function<void(StringAttr, ASTExprAnd<PValue>, ASTType)> emitKwType;
+    std::function<void(StringAttr, ASTExprAnd<AnyValue>, ASTType)> emitKwType;
     /// Emit diagnostics for parameters specified by an unknown keyword.
     std::function<void(ArrayRef<StringAttr>)> emitUnknownKeywords;
     /// Emit diagnostics for a parameter specified both by position and keyword.
@@ -143,9 +132,9 @@ public:
     std::function<void(size_t)> emitDeductionFailure;
     /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic
     /// signature.
-    std::function<void(ASTExprAnd<PValue>)> emitUnboundPackInVariadic;
+    std::function<void(ASTExprAnd<AnyValue>)> emitUnboundPackInVariadic;
     /// Emit diagnostic when unbound pack is not at the end of the param list.
-    std::function<void(ASTExprAnd<PValue>)> emitUnboundPackNotEnd;
+    std::function<void(ASTExprAnd<AnyValue>)> emitUnboundPackNotEnd;
     /// Emit diagnostics for failure to deduce an infer-only parameter.
     std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).
@@ -206,10 +195,10 @@ private:
                      const DiagEmitter *diagEmitter, bool partial) const;
 
   /// This contains a list of bound parameters given positionally.
-  SmallVector<ASTExprAnd<PValue>> posBindings;
+  SmallVector<ASTExprAnd<AnyValue>> posBindings;
 
   /// This contains the bound parameters given by a keyword.
-  llvm::MapVector<StringAttr, ASTExprAnd<PValue>,
+  llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
                   SmallDenseMap<StringAttr, size_t>>
       kwBindings;
 

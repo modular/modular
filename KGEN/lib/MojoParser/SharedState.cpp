@@ -1938,7 +1938,7 @@ void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
 
 void SharedState::notifyListenerOnCall(ArrayRef<ASTDecl *> decls,
                                        SMLoc rParenLoc, CallSyntax syntax,
-                                       const CallOperands &callOperands) {
+                                       const OperandContainer &callOperands) {
   // Ignore synthetic calls to functions.
   if (syntax == CallSyntax::kMethodCallSynthetic ||
       syntax == CallSyntax::kImplicitConvert)

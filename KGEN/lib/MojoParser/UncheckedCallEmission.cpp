@@ -56,7 +56,8 @@ static CValue emitVariadicPackConstructor(
 
   // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
   // bool indicating whether the argument is owned.
-  FuncOperand operands[2] = {{refPackValue, expr}, {isOwnedAttr, expr}};
+  ASTExprAnd<AnyValue> operands[2] = {{refPackValue, expr},
+                                      {isOwnedAttr, expr}};
   ValueDest packDest(ExprContext::EC_PackArgument);
 
   // Construct the pack type without parameters so we reinfer the lifetime which
@@ -99,7 +100,7 @@ public:
   /// the operand list and emitted as the appropriate variadic/pack type to the
   /// callee.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
-  emitArgValues(const CallOperands &operands);
+  emitArgValues(const OperandContainer &operands);
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
@@ -123,7 +124,7 @@ public:
 
   /// Emit warnings about incorrect code in a direct call.
   void emitDirectCallWarnings(LIT::CallOp call,
-                              const CallOperands &callOperands);
+                              const OperandContainer &callOperands);
 
   /// The underlying expression emitter instance.
   ExprEmitter &emitter;
@@ -497,7 +498,7 @@ static bool isPlaceholderInitSelf(const AnyValue &value) {
 }
 
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
-CallEmitter::emitArgValues(const CallOperands &operands) {
+CallEmitter::emitArgValues(const OperandContainer &operands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   size_t posOperandIdx = 0;
 
@@ -637,7 +638,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
          "typechecking confirmed that we would use up all positional operands");
 
   // Find all keyword operands that we didn't bind to an argument.
-  SmallVector<std::pair<StringAttr, FuncOperand>> variadicKwOperands;
+  SmallVector<std::pair<StringAttr, ASTExprAnd<AnyValue>>> variadicKwOperands;
   if (operands.kwOperands) {
     for (auto [name, operand] : *operands.kwOperands)
       if (!passedByKw.contains(name))
@@ -657,16 +658,16 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     auto nameAttr =
         StringAttr::get(name.strref(), StringType::get(emitter.getContext()));
     CValue literalKey = emitter.emitConstructorCall(
-        stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
+        stringLiteralType, OperandContainer({{PValue(nameAttr), operand.expr}}),
         callExpr, CallSyntax::kImplicitConvert, kwargsDest);
 
     // Then we set the element with the given key and the operand as value.
-    emitter.emitNamedMethodCall("_insert",
-                                CallOperands({{MLValue(kwargsDict), callExpr},
-                                              {literalKey, operand.expr},
-                                              operand}),
-                                kwargsDest, CallSyntax::kImplicitConvert,
-                                callExpr);
+    emitter.emitNamedMethodCall(
+        "_insert",
+        OperandContainer({{MLValue(kwargsDict), callExpr},
+                          {literalKey, operand.expr},
+                          operand}),
+        kwargsDest, CallSyntax::kImplicitConvert, callExpr);
   }
 
   return argumentValues;
@@ -1059,7 +1060,7 @@ static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
 /// Emit warnings about incorrect code in a direct call.  This is invoked after
 /// the full IR for the call is emitted, so we know that it was a valid call.
 void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
-                                         const CallOperands &callOperands) {
+                                         const OperandContainer &callOperands) {
   // Check for a known callee.
   auto symbol = dyn_cast<SymbolConstantAttr>(call.getCallee());
   if (!symbol)
@@ -1126,7 +1127,7 @@ computeArgumentsLifetime(AsyncCallOp call,
 }
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
-                                      const CallOperands &callOperands,
+                                      const OperandContainer &callOperands,
                                       ValueDest &dest,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);

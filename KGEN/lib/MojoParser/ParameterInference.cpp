@@ -814,7 +814,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   auto nonParamType =
       knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
-      nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
+      nonParamType, OperandContainer({{argVal, curArgExpr}}), curArgExpr,
       emitter.getScopeInfo(), /*allowImplicitConversions=*/false);
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
@@ -860,13 +860,15 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   return failure();
 }
 
-void ParameterInferenceState::inferOneParam(ASTExprAnd<PValue> binding,
+void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
                                             Type expectedType) {
   // Don't infer from unpacked parameters.
-  if (isa<UnpackedAttr>(binding.ir.get()))
+  PValue bindingVal = binding.ir.getIfPValue();
+  assert(bindingVal && "parameters are always PValues");
+  if (isa<UnpackedAttr>(bindingVal.get()))
     return;
   curArgExpr = binding.expr;
-  (void)matchTypes(binding.ir.getType(), expectedType);
+  (void)matchTypes(bindingVal.getType(), expectedType);
 }
 
 /// Helper that returns true if the parameter list has any inferred parameters.
@@ -917,7 +919,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     // If we're out of positional bindings, try looking for a provided keyword
     // parameter binding.
     if (posIdx == numPosParams) {
-      if (std::optional<ASTExprAnd<PValue>> param =
+      if (std::optional<ASTExprAnd<AnyValue>> param =
               givenBindings.findKwArg(paramListAttr.getName(idx))) {
         inferOneParam(*param, expectedType);
         continue;
@@ -938,10 +940,9 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   }
 }
 
-LogicalResult
-ParameterInferenceState::infer(LITSignatureType signature,
-                               const CallOperands &callOperands,
-                               const KeywordOperands &variadicKwOperands) {
+LogicalResult ParameterInferenceState::infer(
+    LITSignatureType signature, const OperandContainer &callOperands,
+    const KeywordOperandContainer &variadicKwOperands) {
   // First try to infer parameters from parameters.
   infer(signature.getParamTypes(), signature.getParamListAttrs());
 
@@ -1090,7 +1091,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
 /// of a method from the first argument.
 LogicalResult
 ParameterInferenceState::inferCTADParams(LITSignatureType signature,
-                                         const CallOperands &callOperands) {
+                                         const OperandContainer &callOperands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       fn foo[B: Movable](self: X[B]): ...

@@ -273,7 +273,7 @@ OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
 // InitializerUValue
 //===----------------------------------------------------------------------===//
 
-/// This provides a wrapper around CallOperands which is reference counted,
+/// This provides a wrapper around OperandContainer which is reference counted,
 /// allowing InitializerUValue to maintain it while still being copyable.
 struct InitializerUValue::CallOperandsWrapper
     : public NonAtomicallyReferenceCounted<CallOperandsWrapper> {
@@ -301,6 +301,6 @@ InitializerUValue::create(ArrayRef<ASTExprAnd<AnyValue>> operands) {
       takeRCRef(new CallOperandsWrapper{std::move(operands)}));
 }
 
-CallOperands InitializerUValue::get() const {
-  return CallOperands(storage->operands);
+OperandContainer InitializerUValue::get() const {
+  return OperandContainer(storage->operands);
 }

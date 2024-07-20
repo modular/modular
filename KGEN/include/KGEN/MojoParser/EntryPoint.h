@@ -30,7 +30,7 @@ class ASTDecl;
 class ExprNode;
 class PackageOp;
 class ParserListener;
-class CallOperands;
+class OperandContainer;
 
 //===----------------------------------------------------------------------===//
 // ParserConfig
@@ -200,7 +200,7 @@ public:
 
   /// Notify the listener that a call is being resolved with the given operands.
   virtual void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
-                      const CallOperands &operands);
+                      const OperandContainer &operands);
 
   /// Notify the listener that parameters are being bound to one of the given
   /// decls.
