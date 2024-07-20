@@ -32,7 +32,7 @@ struct HostNDBuffer[
         dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
     ):
         self.tensor = NDBuffer[type, rank, shape](
-            DTypePointer[type].alloc(product(dynamic_shape, rank)),
+            UnsafePointer[Scalar[type]].alloc(product(dynamic_shape, rank)),
             dynamic_shape,
         )
 
@@ -118,7 +118,7 @@ struct TestTensor[type: DType, rank: Int]:
         self.num_elements = int(shape.product[rank]())
         self.shape = shape
         self.ndbuffer = NDBuffer[type, rank](
-            DTypePointer[type].alloc(self.num_elements), shape
+            UnsafePointer[Scalar[type]].alloc(self.num_elements), shape
         )
         if len(values) == self.num_elements:
             for i in range(self.num_elements):
@@ -128,7 +128,7 @@ struct TestTensor[type: DType, rank: Int]:
         self.num_elements = other.num_elements
         self.shape = other.shape
         self.ndbuffer = NDBuffer[type, rank](
-            DTypePointer[type].alloc(self.num_elements), self.shape
+            UnsafePointer[Scalar[type]].alloc(self.num_elements), self.shape
         )
         for i in range(self.num_elements):
             self.ndbuffer.data[i] = other.ndbuffer.data[i]

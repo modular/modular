@@ -13,15 +13,17 @@ from builtin._location import _SourceLocation, __call_location
 
 
 @always_inline
-fn assert_almost_equal(
-    x: DTypePointer,
+fn assert_almost_equal[
+    type: DType, //,
+](
+    x: UnsafePointer[Scalar[type]],
     y: __type_of(x),
     num_elements: Int,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
-    atol: Scalar[x.type] = 1e-08,
-    rtol: Scalar[x.type] = 1e-05,
+    atol: Scalar[type] = 1e-08,
+    rtol: Scalar[type] = 1e-05,
     equal_nan: Bool = False,
 ) raises:
     for i in range(num_elements):
@@ -114,7 +116,9 @@ fn assert_equal(
     )
 
 
-fn _minmax(x: DTypePointer, N: Int) -> Tuple[Scalar[x.type], Scalar[x.type]]:
+fn _minmax[
+    type: DType, //
+](x: UnsafePointer[Scalar[type]], N: Int) -> Tuple[Scalar[type], Scalar[type]]:
     var max_val = x[0]
     var min_val = x[0]
     for i in range(1, N):
@@ -128,14 +132,14 @@ fn _minmax(x: DTypePointer, N: Int) -> Tuple[Scalar[x.type], Scalar[x.type]]:
 fn compare[
     dtype: DType, verbose: Bool = True
 ](
-    x: DTypePointer[dtype],
-    y: DTypePointer[dtype],
+    x: UnsafePointer[Scalar[dtype]],
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     *,
     msg: String = "",
 ) -> SIMD[dtype, 4]:
-    var atol = DTypePointer[dtype].alloc(num_elements)
-    var rtol = DTypePointer[dtype].alloc(num_elements)
+    var atol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
+    var rtol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
 
     for i in range(num_elements):
         var d = abs(x[i] - y[i])
