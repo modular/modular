@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %bare-mojo %s -t | FileCheck %s
+# RUN: %mojo %s -t | FileCheck %s
 # CHECK: Benchmark results
 
 from math import *
@@ -127,7 +127,6 @@ fn ldexp2kf[
     # return d * (pow2if[simd_width](e >> 1) * pow2if[simd_width](e - (e >> 1))).cast[dtype]();
     var ans = d * (pow2if[simd_width](e)).cast[dtype]()
     var y = bitcast[DType.int32, simd_width, dtype, simd_width](ans)
-    var mask = (1 << (e - 23)) - 1
 
     var msb = y
     var idx = 0
