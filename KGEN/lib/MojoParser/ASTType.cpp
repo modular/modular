@@ -84,16 +84,6 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
-/// Get the types of any unbound parameters of the type.
-ArrayRef<Type> ASTType::getParameters() const {
-  // Query the metatype for the parameter signature.
-  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
-    return metaType.getSignature().getParamTypes();
-  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(getMetaType()))
-    return metaType.getSignature().getParamTypes();
-  return {};
-}
-
 /// Return this type with any parameter bindings removed.
 ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)
@@ -123,6 +113,30 @@ bool ASTType::isEqualCanon(ASTType other) const {
     if (meta == other.getMetaType())
       return true;
   return false;
+}
+
+/// Return true if this is the same as another ASTType are the same, or if they
+/// match when UnknownAttr parameters in the 'this' type are treated as
+/// the same as the corresponding parameter in the second type.
+///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
+bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
+                                         SharedState &shared) const {
+  if (isEqualCanon(other))
+    return true;
+
+  // Must have the same struct declarations.
+  if (getDecl(shared) != other.getDecl(shared))
+    return false;
+
+  ArrayRef<TypedAttr> lhsParams = getParamBindings();
+  ArrayRef<TypedAttr> rhsParams = other.getParamBindings();
+  assert(lhsParams.size() == rhsParams.size() &&
+         "Type with the same decl should have consistent number of params");
+  for (auto [lhsParam, rhsParam] : llvm::zip(lhsParams, rhsParams)) {
+    if (lhsParam != rhsParam && !isa<UnboundAttr>(lhsParam))
+      return false;
+  }
+  return true;
 }
 
 /// Return true if this is a None type.

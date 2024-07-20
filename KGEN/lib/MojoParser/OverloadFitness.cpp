@@ -407,19 +407,17 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (auto pValue = operand.ir.getIfPValue())
       if (isa<UnknownAttr>(pValue.get())) {
         // FIXME: This should be modeled as an LValue to merge into the normal
-        // logic.
-        ASTType elementType = expectedType.getReferenceElementType();
+        // logic.  We don't have LValue's that are PValue's though.
+        ASTType expElementType = expectedType.getReferenceElementType();
         ASTType argElementType =
             pValue.getRValueType().getReferenceElementType();
-        // If the types are non-equal, treat this as an extra implicit
-        // conversion.  This is needed to distinguish between nonmaterializable
-        // types and their materialized type.  We should really be *rejecting*
-        // this as incompatible, but that breaks VariadicPack parameter
-        // inference somehow.
-        // FIXME: clean this up.
-        if (!argElementType.isEqualCanon(elementType))
-          ++numImplicitConversions;
-        return {kValidType, expectedType};
+
+        // This is valid if the types obviously match or if the arg type has
+        // unbound parameters that are inferred.
+        if (argElementType.isEqualAllowingUnknownAttr(expElementType,
+                                                      scopeInfo.shared))
+          return {kValidType, expectedType};
+        return {kWrongType, argElementType};
       }
     [[fallthrough]];
   case ArgConvention::InOut:

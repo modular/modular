@@ -94,3 +94,15 @@ fn ambiguous_ctor_call(x: Int):
 
     # expected-error @below {{ambiguous call to '__init__', each candidate requires 1 implicit conversion}}
     AmbiguousConversion(x)
+
+
+# MOCO-990: Conditional conformance trick fails on SIMD constructor from Bool
+struct MySIMD[value: Int]:
+    fn __init__(inout self: MySIMD[0], value: MyBool):
+        pass
+struct MyBool:
+    fn __init__(inout self, value: MySIMD[0]):
+        pass
+fn test_bad_conversion(a: MySIMD[0]):
+    # expected-error @+1 {{cannot implicitly convert 'MySIMD[0]' value to 'MySIMD[1]'}}
+    var b : MySIMD[1] = a
