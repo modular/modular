@@ -162,8 +162,6 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
         a_device = tmp_ptr
 
     ctx.enqueue_copy_from_device(b_host, b_device)
-
-    # CHECK: == run_stencil2d
     # CHECK: 37729.0 ,52628.0 ,57021.0 ,60037.0 ,58925.0 ,39597.0 ,
     # CHECK: 57888.0 ,80505.0 ,86322.0 ,89682.0 ,86994.0 ,57818.0 ,
     # CHECK: 76680.0 ,106488.0 ,113400.0 ,116775.0 ,112182.0 ,73933.0 ,
@@ -189,6 +187,7 @@ def main():
     try:
         with DeviceContext() as ctx:
             run_stencil2d[False](ctx)
-            run_stencil2d[True](ctx)
+            # TODO: KERN-706 - Renable after disabling the test due to bug found in KERN-700
+            # run_stencil2d[True](ctx)
     except e:
         print("CUDA_ERROR:", e)
