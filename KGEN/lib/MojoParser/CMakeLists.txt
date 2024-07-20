@@ -20,6 +20,7 @@ add_modular_library(MojoParser
   IRValues.cpp
   Lexer.cpp
   MojoUtils.cpp
+  OperandContainer.cpp
   OverloadFitness.cpp
   ParamBindings.cpp
   ParameterInference.cpp

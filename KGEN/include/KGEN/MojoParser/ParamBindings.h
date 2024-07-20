@@ -7,9 +7,7 @@
 #ifndef KGEN_MOJOPARSER_PARAMBINDINGS_H
 #define KGEN_MOJOPARSER_PARAMBINDINGS_H
 
-#include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/TypeCheckScopeInfo.h"
-#include "llvm/ADT/MapVector.h"
+#include "KGEN/MojoParser/OperandContainer.h"
 
 namespace M::KGEN {
 class ParameterExprArrayAttr;
@@ -74,11 +72,7 @@ public:
 
   ArrayRef<ASTExprAnd<AnyValue>> getPosBindings() const { return posBindings; }
   /// This contains the bound parameters given by a keyword.
-  const llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
-                        SmallDenseMap<StringAttr, size_t>> &
-  getKWBindings() const {
-    return kwBindings;
-  }
+  const KeywordOperandContainer &getKWBindings() const { return kwBindings; }
 
   /// Add a bound value for pre-checked positional parameter binding. The caller
   /// is responsible for ensuring the keyword is not already present.
@@ -198,9 +192,7 @@ private:
   SmallVector<ASTExprAnd<AnyValue>> posBindings;
 
   /// This contains the bound parameters given by a keyword.
-  llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
-                  SmallDenseMap<StringAttr, size_t>>
-      kwBindings;
+  KeywordOperandContainer kwBindings;
 
   /// A list of all default parameter values declared for a type, if these are
   /// bindings for an overload set on a method.
