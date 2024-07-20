@@ -41,14 +41,14 @@ def test_erf_libm():
     alias test_dtype = DType.float32
 
     # generate input values and write them to file
-    var x32 = DTypePointer[test_dtype].alloc(N)
+    var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
     randn[test_dtype](x32.address, N, 0, 9.0)
     print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = DTypePointer[test_dtype].alloc(N)
+    var y32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
     for i in range(N):
         y32[i] = erf(x32[i])  # math.erf
 
@@ -61,7 +61,7 @@ def test_erf_libm():
     ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
         return libm_call[type, simd_width, "erff", "err"](arg)
 
-    var libm_out = DTypePointer[test_dtype].alloc(N)
+    var libm_out = UnsafePointer[Scalar[test_dtype]].alloc(N)
     for i in range(N):
         libm_out[i] = erf_libm(x32[i])
 
