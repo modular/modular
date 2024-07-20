@@ -4,45 +4,33 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares diagnostic utilities used by call check and emission code.
+// This file contains code pertaining to manipulation and diagnostics for
+// operand/parameter list processing.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MOJOPARSER_OPERANDDIAGNOSTICS_H
-#define MOJOPARSER_OPERANDDIAGNOSTICS_H
-
+#include "KGEN/MojoParser/OperandContainer.h"
 #include "MojoUtils.h"
 
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
-
-#include "KGEN/MojoParser/CallEmission.h"
-#include "llvm/ADT/StringSet.h"
-
-namespace M::KGEN::LIT {
-
-/// Designates the kind of keyword-operand errors.
-enum class KwDiagResult {
-  kValid,
-  kMissingKwOnly,
-  kPosOnlyPassedByKw,
-  kUnknownKeywords
-};
-
-// FIXME: Move these out of a header.
+#include "llvm/ADT/SmallPtrSet.h"
+using namespace M;
+using namespace KGEN;
+using namespace LIT;
 
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
 /// missing kw-only arg/param). If the function accepts variadic keyword
 /// args/params, this function also collects them.
-static inline std::pair<KwDiagResult, SmallVector<StringAttr>>
-diagnoseKeywordOperands(PogListAttr pogListAttr,
-                        KeywordOperandContainer &variadicKwOperands,
-                        const OperandContainer &operands,
-                        bool allowMissingKwOnly = false) {
+std::pair<OperandContainer::KwDiagResult, SmallVector<StringAttr>>
+OperandContainer::diagnoseKeywordOperands(
+    PogListAttr pogListAttr, KeywordOperandContainer &variadicKwOperands,
+    bool allowMissingKwOnly) const {
   // First, we collect any (named) pos-only args/params passed by keyword
   // operand, and missing kw-only args/params. We also collect all arg/param
   // names that might be specified by keyword.
-  StringSet<> kwPassableNames;
+  SmallPtrSet<StringAttr, 4> kwPassableNames;
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
 
@@ -55,13 +43,13 @@ diagnoseKeywordOperands(PogListAttr pogListAttr,
     if (pogListAttr.isPack(argIdx) || pogListAttr.isVariadic(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.
     if (passingKind == PassingKind::KwOnly &&
-        !defaultHandler.getKwOnlyDefault(argIdx) && !operands.findKwArg(name)) {
+        !defaultHandler.getKwOnlyDefault(argIdx) && !findKwArg(name)) {
       if (!allowMissingKwOnly)
         missingKwOnly.push_back(name);
       continue;
     }
     if (passingKind == PassingKind::PosOnly) {
-      if (!name.empty() && operands.findKwArg(name))
+      if (!name.empty() && findKwArg(name))
         posOnlyPassedByKw.push_back(name);
       continue;
     }
@@ -75,8 +63,8 @@ diagnoseKeywordOperands(PogListAttr pogListAttr,
     return {KwDiagResult::kPosOnlyPassedByKw, std::move(posOnlyPassedByKw)};
 
   // Collect all the keyword operands with unknown names.
-  if (operands.hasKwOperands()) {
-    for (auto [name, operand] : *operands.kwOperands)
+  if (hasKwOperands()) {
+    for (auto [name, operand] : *kwOperands)
       if (!kwPassableNames.contains(name))
         variadicKwOperands.try_emplace(name, operand);
   }
@@ -92,19 +80,16 @@ diagnoseKeywordOperands(PogListAttr pogListAttr,
   return {KwDiagResult::kValid, {}};
 }
 
-/// Designates the kind of positional operand errors.
-enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
-
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/parameter (too many positionals, missing positionals,
 /// argument/parameter specified both by positional and keyword operands).
-static inline std::pair<PosDiagResult, SmallVector<StringAttr>>
-diagnosePosOperands(PogListAttr pogListAttr, const OperandContainer &operands,
-                    bool allowCountMismatch = false) {
+std::pair<OperandContainer::PosDiagResult, SmallVector<StringAttr>>
+OperandContainer::diagnosePosOperands(PogListAttr pogListAttr,
+                                      bool allowCountMismatch) const {
   SmallVector<StringAttr> missingPosNames;
   SmallVector<StringAttr> byPosAndKw;
 
-  size_t numPosOperands = operands.posOperands.size();
+  size_t numPosOperands = posOperands.size();
   size_t numPosMaximum = countNumPositional(pogListAttr);
   bool hasVariadicOrPack = false;
 
@@ -121,7 +106,7 @@ diagnosePosOperands(PogListAttr pogListAttr, const OperandContainer &operands,
     // keyword.
     if (idx < numPosOperands) {
       StringAttr name = pogListAttr.getName(idx);
-      if (operands.findKwArg(name))
+      if (findKwArg(name))
         byPosAndKw.push_back(name);
       continue;
     }
@@ -133,7 +118,7 @@ diagnosePosOperands(PogListAttr pogListAttr, const OperandContainer &operands,
 
     // If the arg/param was passed by keyword, we are okay.
     StringAttr name = pogListAttr.getName(idx);
-    if (operands.findKwArg(name))
+    if (findKwArg(name))
       continue;
 
     // Otherwise, we have a missing positional arg/param.
@@ -159,7 +144,3 @@ diagnosePosOperands(PogListAttr pogListAttr, const OperandContainer &operands,
 
   return {PosDiagResult::kValid, {}};
 }
-
-} // namespace M::KGEN::LIT
-
-#endif // MOJOPARSER_OPERANDDIAGNOSTICS_H

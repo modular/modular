@@ -15,7 +15,7 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/OverloadFitness.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "OperandDiagnostics.h"
+#include "MojoUtils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"

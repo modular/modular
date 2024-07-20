@@ -15,7 +15,7 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParameterInference.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "OperandDiagnostics.h"
+#include "MojoUtils.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -622,14 +622,14 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   KeywordOperandContainer variadicKwOperands;
-  auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
-      signature.getArgListAttrs(), variadicKwOperands, callOperands);
+  auto [kwDiagRes, kwDiagNames] = callOperands.diagnoseKeywordOperands(
+      signature.getArgListAttrs(), variadicKwOperands);
   switch (kwDiagRes) {
-  case KwDiagResult::kMissingKwOnly:
+  case OperandContainer::KwDiagResult::kMissingKwOnly:
     return emitDiagFor.missingArgs(kwDiagNames, "keyword-only");
-  case KwDiagResult::kPosOnlyPassedByKw:
+  case OperandContainer::KwDiagResult::kPosOnlyPassedByKw:
     return emitDiagFor.posOnlyPassedByKw(kwDiagNames);
-  case KwDiagResult::kUnknownKeywords:
+  case OperandContainer::KwDiagResult::kUnknownKeywords:
     return emitDiagFor.unexpectedKwArgs(kwDiagNames);
   default:
     break;
@@ -637,15 +637,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   PogListAttr argListAttr = signature.getArgListAttrs();
   auto [posDiagRes, posDiagNames] =
-      diagnosePosOperands(argListAttr, callOperands);
+      callOperands.diagnosePosOperands(argListAttr);
   switch (posDiagRes) {
-  case PosDiagResult::kMissingPos:
+  case OperandContainer::PosDiagResult::kMissingPos:
     return emitDiagFor.missingArgs(posDiagNames, "positional");
-  case PosDiagResult::kTooManyPos: {
+  case OperandContainer::PosDiagResult::kTooManyPos: {
     size_t numPosMaximum = countNumPositional(argListAttr);
     return emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
   }
-  case PosDiagResult::kByPosAndKw:
+  case OperandContainer::PosDiagResult::kByPosAndKw:
     return emitDiagFor.byPosAndKw(posDiagNames);
   default:
     break;

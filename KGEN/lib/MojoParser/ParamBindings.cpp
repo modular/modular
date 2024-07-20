@@ -5,9 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/ParamBindings.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
@@ -15,7 +12,12 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 
-#include "OperandDiagnostics.h"
+#include "MojoUtils.h"
+
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -171,19 +173,19 @@ ParamBindings::verifyBindingsImpl(
 
   KeywordOperandContainer variadicKwOperands;
   bool allowMissingKwOnly = partial || parameterInferenceHook;
-  auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
-      paramListAttr, variadicKwOperands, operands, allowMissingKwOnly);
-  if (kwDiagRes != KwDiagResult::kValid) {
+  auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
+      paramListAttr, variadicKwOperands, allowMissingKwOnly);
+  if (kwDiagRes != OperandContainer::KwDiagResult::kValid) {
     switch (kwDiagRes) {
-    case KwDiagResult::kMissingKwOnly:
+    case OperandContainer::KwDiagResult::kMissingKwOnly:
       if (diagEmitter)
         diagEmitter->emitMissing(kwDiagNames, "keyword-only");
       break;
-    case KwDiagResult::kPosOnlyPassedByKw:
+    case OperandContainer::KwDiagResult::kPosOnlyPassedByKw:
       if (diagEmitter)
         diagEmitter->emitPosOnlyPassedByKw(kwDiagNames);
       break;
-    case KwDiagResult::kUnknownKeywords:
+    case OperandContainer::KwDiagResult::kUnknownKeywords:
       if (diagEmitter)
         diagEmitter->emitUnknownKeywords(kwDiagNames);
       break;
@@ -194,8 +196,8 @@ ParamBindings::verifyBindingsImpl(
   }
 
   auto [posDiagRes, posDiagNames] =
-      diagnosePosOperands(paramListAttr, operands, /*allowCountMismatch=*/true);
-  if (posDiagRes == PosDiagResult::kByPosAndKw) {
+      operands.diagnosePosOperands(paramListAttr, /*allowCountMismatch=*/true);
+  if (posDiagRes == OperandContainer::PosDiagResult::kByPosAndKw) {
     if (diagEmitter)
       diagEmitter->emitRedundantKeywords(posDiagNames);
     return {{}, fitness};
@@ -203,7 +205,7 @@ ParamBindings::verifyBindingsImpl(
 
   // Parameter inference and call emission rely on this function not failing
   // early due to missing or too many positional parameters.
-  assert(posDiagRes == PosDiagResult::kValid &&
+  assert(posDiagRes == OperandContainer::PosDiagResult::kValid &&
          "positional parameter operand check failed unexpectedly");
 
   /// We will attempt to find a binding for every expected parameter.
