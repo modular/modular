@@ -1790,22 +1790,6 @@ fn calculate_squeeze_shape[
         var remove_index_normalize = remove_index + num_input_dims * int(
             remove_indices[remove_index_index] < 0
         )
-
-        debug_assert(
-            remove_index_normalize >= 0 and remove_index_normalize < final_rank,
-            (
-                "Remove indices must be between [-r, r-1] where r is the final"
-                " output rank."
-            ),
-        )
-        debug_assert(
-            output_shape[remove_index_normalize] != -1,
-            "Multiple indices point to the same dimension.",
-        )
-        debug_assert(
-            output_shape[remove_index_normalize] == 1,
-            "Attempting to unsqueeze a dimension that is not 1.",
-        )
         input_shape_copy[remove_index_normalize] = -1
 
     # # Copy over the non -1 dimensions
