@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -62,6 +62,10 @@ fn test_calculate_squeeze_shape():
         final_shape[3],
         final_shape[4],
     )
+
+    _ = data_matrix
+    _ = remove_indices
+    _ = final_shape
 
 
 fn main():
