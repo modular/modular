@@ -61,9 +61,9 @@ public:
   StringAttr setterValueName;
 
   // Positional operands (including self) for the setter/getter call.
-  SmallVector<FuncOperand> posOperands;
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
   // Keyword operands for the setter/getter call.
-  KeywordOperands kwOperands;
+  KeywordOperandContainer kwOperands;
 
   const ExprNode *expr;
 
@@ -71,8 +71,8 @@ public:
   bool isSubscript() const;
 
   SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                   SmallVectorImpl<FuncOperand> &&posOperands,
-                   KeywordOperands &&kwOperands, ASTType elementType,
+                   SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
+                   KeywordOperandContainer &&kwOperands, ASTType elementType,
                    const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
@@ -85,9 +85,9 @@ class TupleDLValue : public BaseDLValue {
 public:
   const ExprNode *expr;
   // These are the LValues for the sub-elements.
-  std::vector<FuncOperand> eltLValues;
+  std::vector<ASTExprAnd<AnyValue>> eltLValues;
 
-  TupleDLValue(ArrayRef<FuncOperand> eltLValues, ASTType tupleType,
+  TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues, ASTType tupleType,
                const ExprNode *expr);
 
   void print(raw_ostream &os) const override;

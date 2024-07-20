@@ -192,8 +192,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // Construct the call operands from the function block arguments. Ensure
   // keyword-only arguments are specified accordingly.
   SyntheticNode node(structDecl.getLoc());
-  SmallVector<FuncOperand> posOperands;
-  KeywordOperands kwOperands;
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
+  KeywordOperandContainer kwOperands;
   bool hasLegacyInitSelfArg = false;
   for (auto [arg, conv, pogAttr] :
        llvm::zip(thunk.getArguments(), memSig.getArgConventions(),
@@ -257,14 +257,15 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   }
 
   CValue callResult = emitter.emitIndirectCall(
-      PValue(callee), CallOperands(posOperands, &kwOperands), dest, node);
+      PValue(callee), OperandContainer(posOperands, &kwOperands), dest, node);
   if (!callResult)
     return;
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (memSig.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
-    if (!emitter.emitNamedMethodCall("__await__", FuncOperand{callResult, node},
+    if (!emitter.emitNamedMethodCall("__await__",
+                                     ASTExprAnd<AnyValue>{callResult, node},
                                      dest, CallSyntax::kMethodCall, node))
       return;
   }

@@ -79,7 +79,7 @@ void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
 
 /// Check a single binding and emit a parameter value if possible. If an
 /// implicit conversion is required, the provided counter is incremented.
-static PValue emitSingleParameterValue(ASTExprAnd<PValue> binding,
+static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
                                        ASTType expectedType,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
@@ -88,17 +88,20 @@ static PValue emitSingleParameterValue(ASTExprAnd<PValue> binding,
   // conversion if needed.
   expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
+  PValue bindingVal = binding.ir.getIfPValue();
+  assert(bindingVal && "Parameters are always PValue's");
+
   // We don't typecheck the '_' magic parameter, we propagate it.
-  if (isa<UnboundAttr>(binding.ir.get()))
+  if (isa<UnboundAttr>(bindingVal.get()))
     return PValue(UnboundAttr::get(expectedType));
 
   // If the parameter already has the right type, then we're good.
-  if (expectedType.isEqualCanon(binding.ir.getType()))
-    return binding.ir;
+  if (expectedType.isEqualCanon(bindingVal.getType()))
+    return bindingVal;
 
   // If the parameter can be implicitly converted, do so.
-  if (OverloadSet::canImplicitlyConvertToType(binding, expectedType,
-                                              emitter.getScopeInfo())) {
+  if (OverloadSet::canImplicitlyConvertToType(
+          {bindingVal, binding.expr}, expectedType, emitter.getScopeInfo())) {
     numImplicitConversions += 2;
     return emitter.emitPValue(binding, EC_CallParamValue, expectedType);
   }
@@ -114,11 +117,11 @@ ParamBindings::verifyBindingsImpl(
 
   // Handle *_ if it is present expanding posBindings into unpackedPosBindings.
   Fitness fitness{0, false};
-  SmallVector<ASTExprAnd<PValue>> unpackedPosBindings;
+  SmallVector<ASTExprAnd<AnyValue>> unpackedPosBindings;
   unpackedPosBindings.reserve(numParams);
 
   for (auto [idx, binding] : llvm::enumerate(posBindings)) {
-    if (!isa<UnpackedAttr>(binding.ir.get())) {
+    if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get())) {
       unpackedPosBindings.push_back(binding);
       continue;
     }
@@ -164,10 +167,9 @@ ParamBindings::verifyBindingsImpl(
   }
 
   // Create a view of the operands for ease of access.
-  OperandContainer<ASTExprAnd<PValue>> operands(unpackedPosBindings,
-                                                &kwBindings);
+  OperandContainer operands(unpackedPosBindings, &kwBindings);
 
-  KeywordOperandContainer<ASTExprAnd<PValue>> variadicKwOperands;
+  KeywordOperandContainer variadicKwOperands;
   bool allowMissingKwOnly = partial || parameterInferenceHook;
   auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
       paramListAttr, variadicKwOperands, operands, allowMissingKwOnly);
@@ -292,7 +294,7 @@ ParamBindings::verifyBindingsImpl(
     StringAttr paramName = pogAttr.getName();
     if (posBindingIdx == numPosBindings) {
       // We first check if we have a keyword parameter.
-      if (std::optional<ASTExprAnd<PValue>> binding =
+      if (std::optional<ASTExprAnd<AnyValue>> binding =
               operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
 
@@ -349,8 +351,10 @@ ParamBindings::verifyBindingsImpl(
 
     // If we still have positional bindings left, first check if we are dealing
     // with an UnboundAttr we might have to deduce.
-    ASTExprAnd<PValue> binding = operands.posOperands[posBindingIdx];
-    if (!partial && isa<UnboundAttr>(binding.ir.get())) {
+    ASTExprAnd<AnyValue> binding = operands.posOperands[posBindingIdx];
+    PValue bindingVal = binding.ir.getIfPValue();
+    assert(bindingVal && "Parameters are always PValues");
+    if (!partial && isa<UnboundAttr>(bindingVal.get())) {
       if (PValue value = fulfillValue(requestedType)) {
         setParamValue(value);
         ++posBindingIdx;
@@ -365,7 +369,7 @@ ParamBindings::verifyBindingsImpl(
     // If this value was already bound and checked, use it.
     /// FIXME: Remove this, why is this needed?
     if (posBindingIdx < numPreTypeChecked) {
-      setParamValue(binding.ir);
+      setParamValue(bindingVal);
       ++posBindingIdx;
       continue;
     }
@@ -404,7 +408,7 @@ ParamBindings::verifyBindingsImpl(
     // This lambda hides the diagnostic and error handling logic for checking a
     // single positional parameter binding.
     auto handlePosBinding = [&, &kwDiagNames = kwDiagNames](
-                                size_t index, ASTExprAnd<PValue> binding,
+                                size_t index, ASTExprAnd<AnyValue> binding,
                                 ASTType expectedType) -> PValue {
       if (passingKind == PassingKind::KwOnly) {
         // If this is a keyword-only passed positionally, we remember it.
@@ -426,7 +430,7 @@ ParamBindings::verifyBindingsImpl(
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
     if (!paramListAttr.isVariadic(idx) ||
-        binding.ir.getType().isEqualCanon(requestedType)) {
+        bindingVal.getType().isEqualCanon(requestedType)) {
       PValue paramValue = handlePosBinding(idx, binding, requestedType);
       if (!paramValue)
         return {{}, fitness};
@@ -441,7 +445,7 @@ ParamBindings::verifyBindingsImpl(
     SmallVector<TypedAttr> elements;
     auto variadicType = cast<VariadicType>(requestedType);
     do {
-      ASTExprAnd<PValue> binding = unpackedPosBindings[posBindingIdx++];
+      ASTExprAnd<AnyValue> binding = unpackedPosBindings[posBindingIdx++];
       PValue pValue = handlePosBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
@@ -532,20 +536,22 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         inferenceDiags.attach(paramListAttr, *diag, numActual);
       },
       /*emitPosType=*/
-      [&](size_t index, ASTExprAnd<PValue> binding, ASTType expectedType) {
+      [&](size_t index, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
+        PValue paramVal = binding.ir.getIfPValue();
         diag = shared.emitError(binding.expr->getLoc(), baseName)
                << " parameter #" << index << " has " << expectedType
-               << " type, but value has type " << binding.ir.getType()
+               << " type, but value has type " << paramVal.getType()
                << binding.expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitKwType=*/
-      [&](StringAttr paramName, ASTExprAnd<PValue> binding,
+      [&](StringAttr paramName, ASTExprAnd<AnyValue> binding,
           ASTType expectedType) {
+        PValue paramVal = binding.ir.getIfPValue();
         diag = shared.emitError(binding.expr->getLoc(), baseName)
                << " parameter " << paramName << " has " << expectedType
-               << " type, but value has type " << binding.ir.getType()
+               << " type, but value has type " << paramVal.getType()
                << binding.expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
@@ -588,7 +594,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
       },
       /*emitUnboundPackInVariadic=*/
-      [&](ASTExprAnd<PValue> binding) {
+      [&](ASTExprAnd<AnyValue> binding) {
         diag = shared.emitError(binding.expr->getLoc());
         *diag << "unbound pack syntax cannot be used where variadic parameters "
                  "are expected";
@@ -596,7 +602,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitUnboundPackNotEnd=*/
-      [&](ASTExprAnd<PValue> binding) {
+      [&](ASTExprAnd<AnyValue> binding) {
         diag = shared.emitError(binding.expr->getLoc());
         *diag << "unbound pack must be at the end of the parameter list";
       },
@@ -675,7 +681,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   // to the current trait type) that ultimately expands to the concrete type
   // that conforms to the trait.
   assert(!posBindings.empty());
-  PValue selfExpr = posBindings.front().ir;
+  PValue selfExpr = posBindings.front().ir.getIfPValue();
+  assert(selfExpr && "parameters are always PValues");
 
   // When referencing a trait function, bind the reference using a parameter
   // expression instead of the direct reference. Also, drop the implicit trait
@@ -719,9 +726,9 @@ void ParamBindings::dump() const {
   os << "Positional bindings:\n";
   for (auto [i, binding] : llvm::enumerate(posBindings)) {
     os << "  " << i << "[" << (i < numPreTypeChecked)
-       << "]: " << binding.ir.get() << "\n";
+       << "]: " << binding.ir.getIfPValue().get() << "\n";
   }
   os << "Keyword bindings:\n";
   for (auto [name, binding] : kwBindings)
-    os << "  " << name.getValue() << ": " << binding.ir << "\n";
+    os << "  " << name.getValue() << ": " << binding.ir.getIfPValue() << "\n";
 }

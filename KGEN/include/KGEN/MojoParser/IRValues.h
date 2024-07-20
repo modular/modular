@@ -53,7 +53,7 @@ class FuncOp;
 class ValueDest;
 class StructFieldOp;
 class GlobalVarDeclOp;
-class CallOperands;
+class OperandContainer;
 class AnyValue;
 
 //===----------------------------------------------------------------------===//
@@ -288,7 +288,7 @@ public:
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  CallOperands get() const;
+  OperandContainer get() const;
 
   static InitializerUValue create(ArrayRef<ASTExprAnd<AnyValue>> operands);
 

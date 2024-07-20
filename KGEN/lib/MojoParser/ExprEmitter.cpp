@@ -1313,8 +1313,9 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
       // We disable implicit conversions to prevent converting T -> S -> U in
       // one step, and to avoid infinite conversion cycles.
-      return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
-                                 expr, CallSyntax::kImplicitConvert, dest,
+      return emitConstructorCall(requiredType,
+                                 OperandContainer({{cValue, expr}}), expr,
+                                 CallSyntax::kImplicitConvert, dest,
                                  /*allowImplicitConversion=*/false);
     }
   }
@@ -1471,8 +1472,9 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       }
       // Register passable __copyinit__ has signature `(self)->Self`.
       if (!hasInitSelfResult)
-        return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
-                                   CallSyntax::kImplicitConvert, value.expr);
+        return emitNamedMethodCall("__copyinit__", OperandContainer({value}),
+                                   dest, CallSyntax::kImplicitConvert,
+                                   value.expr);
     }
     [[fallthrough]];
   case TypeConvention::MemoryOnly:
@@ -1550,7 +1552,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       ValueDest nmConversionDest =
           destML ? ValueDest(destML, context) : ValueDest(context);
       CValue nmConversionVal =
-          emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
+          emitConstructorCall(nmTarget, OperandContainer({value}), value.expr,
                               CallSyntax::kIndirectCall, nmConversionDest,
                               /*allowImplicitConversion=*/true);
       if (destML)

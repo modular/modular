@@ -21,44 +21,36 @@ namespace M::KGEN::LIT {
 // OperandContainer
 //===----------------------------------------------------------------------===//
 
-/// A shorthand to make positional operand handling more readable.
-using FuncOperand = ASTExprAnd<AnyValue>;
-
 /// A shorthand to make keyword operand handling more readable.
-template <typename OperandType>
 using KeywordOperandContainer =
-    llvm::MapVector<StringAttr, OperandType, SmallDenseMap<StringAttr, size_t>>;
-
-/// A shorthand to make keyword argument handling more readable.
-using KeywordOperands = KeywordOperandContainer<FuncOperand>;
+    llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
+                    SmallDenseMap<StringAttr, size_t>>;
 
 /// Struct that carries both positional and keyword operands for a call or
 /// parameter binding. This does not own any values, only references pointers
 /// to their containers.
-template <typename OperandType>
 class OperandContainer {
 public:
   /// Create call operands with positional and optional keyword arguments.
-  OperandContainer(
-      ArrayRef<OperandType> posOperands = {},
-      const KeywordOperandContainer<OperandType> *kwOperands = nullptr)
+  OperandContainer(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {},
+                   const KeywordOperandContainer *kwOperands = nullptr)
       : posOperands(posOperands), kwOperands(kwOperands) {}
 
   /// Create call operands with positional arguments given a value implicitly
   /// convertible to `ArrayRef`.
-  template <typename OperandsT,
-            typename = std::enable_if_t<
-                !std::is_same_v<OperandsT, ArrayRef<OperandType>> &&
-                std::is_convertible_v<OperandsT, ArrayRef<OperandType>>>>
-  OperandContainer(
-      OperandsT &&posOperands,
-      const KeywordOperandContainer<OperandType> *kwOperands = nullptr)
-      : OperandContainer(
-            ArrayRef<OperandType>(std::forward<OperandsT>(posOperands)),
-            kwOperands) {}
+  template <
+      typename OperandsT,
+      typename = std::enable_if_t<
+          !std::is_same_v<OperandsT, ArrayRef<ASTExprAnd<AnyValue>>> &&
+          std::is_convertible_v<OperandsT, ArrayRef<ASTExprAnd<AnyValue>>>>>
+  OperandContainer(OperandsT &&posOperands,
+                   const KeywordOperandContainer *kwOperands = nullptr)
+      : OperandContainer(ArrayRef<ASTExprAnd<AnyValue>>(
+                             std::forward<OperandsT>(posOperands)),
+                         kwOperands) {}
 
   /// Return a keyword argument value if present, or null otherwise.
-  std::optional<OperandType> findKwArg(StringAttr argName) const {
+  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
     if (hasKwOperands())
       if (auto it = kwOperands->find(argName); it != kwOperands->end())
         return it->second;
@@ -74,28 +66,18 @@ public:
   bool hasKwOperands() const { return getNumKwOperands(); }
 
   /// The values passed as positional operands.
-  ArrayRef<OperandType> posOperands;
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands;
 
   /// The values passed as keyword operands.
-  const KeywordOperandContainer<OperandType> *kwOperands;
-};
+  const KeywordOperandContainer *kwOperands;
 
-//===----------------------------------------------------------------------===//
-// CallOperands
-//===----------------------------------------------------------------------===//
-
-/// Struct that carries both positional and keyword operands for a call. This
-/// does not own any values, only references pointers to their containers.
-class CallOperands : public OperandContainer<FuncOperand> {
-public:
-  using OperandContainer::OperandContainer;
-
-  /// Inidicates if the positional operands include a self operand.
+  /// Indicates if the positional operands include a self operand.
   bool hasSelfOperand = false;
 
   void dump() const;
 };
-raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
+
+raw_ostream &operator<<(raw_ostream &os, const OperandContainer &value);
 
 //===----------------------------------------------------------------------===//
 // CallSyntax
@@ -192,7 +174,7 @@ public:
   /// about overload resolution when 'shouldPrintOverloadErrors' is true.
   static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
                                  ASTType type, StringRef methodName,
-                                 CallOperands &callOperands,
+                                 OperandContainer &callOperands,
                                  const ExprNode *callExpr, CallSyntax syntax,
                                  function_ref<void()> lookupFailureErrorHandler,
                                  bool shouldPrintOverloadErrors);
@@ -200,7 +182,7 @@ public:
   /// Same as the above but a convenience when never emitting an error.
   static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
                                  ASTType type, StringRef methodName,
-                                 CallOperands &callOperands,
+                                 OperandContainer &callOperands,
                                  const ExprNode *callExpr, CallSyntax syntax) {
     return lookupAndResolve(scopeInfo, type, methodName, callOperands, callExpr,
                             syntax, {}, false);
@@ -232,7 +214,7 @@ public:
   ///
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
-  PValue filterOverloadSet(CallOperands &operands,
+  PValue filterOverloadSet(OperandContainer &operands,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure) const;
 
@@ -262,7 +244,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(const CallOperands &callOperands, ValueDest &dest,
+  CValue emitCall(const OperandContainer &callOperands, ValueDest &dest,
                   ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
@@ -283,7 +265,7 @@ public:
   /// constructor that likely would have applied, which should be considered in
   /// any error reporting. This does not generate any IR.
   static FailureOr<PValue>
-  canConstructType(ASTType requiredType, const CallOperands &operands,
+  canConstructType(ASTType requiredType, const OperandContainer &operands,
                    const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
                    bool allowImplicitConversions = true);
 

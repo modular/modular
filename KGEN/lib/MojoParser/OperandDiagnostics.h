@@ -28,16 +28,17 @@ enum class KwDiagResult {
   kUnknownKeywords
 };
 
+// FIXME: Move these out of a header.
+
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
 /// missing kw-only arg/param). If the function accepts variadic keyword
 /// args/params, this function also collects them.
-template <typename OperandType>
-static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
-    PogListAttr pogListAttr,
-    KeywordOperandContainer<OperandType> &variadicKwOperands,
-    const OperandContainer<OperandType> &operands,
-    bool allowMissingKwOnly = false) {
+static inline std::pair<KwDiagResult, SmallVector<StringAttr>>
+diagnoseKeywordOperands(PogListAttr pogListAttr,
+                        KeywordOperandContainer &variadicKwOperands,
+                        const OperandContainer &operands,
+                        bool allowMissingKwOnly = false) {
   // First, we collect any (named) pos-only args/params passed by keyword
   // operand, and missing kw-only args/params. We also collect all arg/param
   // names that might be specified by keyword.
@@ -97,10 +98,8 @@ enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/parameter (too many positionals, missing positionals,
 /// argument/parameter specified both by positional and keyword operands).
-template <typename OperandType>
-static std::pair<PosDiagResult, SmallVector<StringAttr>>
-diagnosePosOperands(PogListAttr pogListAttr,
-                    const OperandContainer<OperandType> &operands,
+static inline std::pair<PosDiagResult, SmallVector<StringAttr>>
+diagnosePosOperands(PogListAttr pogListAttr, const OperandContainer &operands,
                     bool allowCountMismatch = false) {
   SmallVector<StringAttr> missingPosNames;
   SmallVector<StringAttr> byPosAndKw;

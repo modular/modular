@@ -137,10 +137,11 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                                   SmallVectorImpl<FuncOperand> &&posOperands,
-                                   KeywordOperands &&kwOperands,
-                                   ASTType elementType, const ExprNode *expr)
+SubscriptDLValue::SubscriptDLValue(
+    PValue getter, StringAttr setterValueName,
+    SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
+    KeywordOperandContainer &&kwOperands, ASTType elementType,
+    const ExprNode *expr)
     : BaseDLValue(elementType), getter(getter),
       setterValueName(setterValueName), posOperands(std::move(posOperands)),
       kwOperands(std::move(kwOperands)), expr(expr) {}
@@ -165,15 +166,15 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   return emitter.emitIndirectCall(
-      getter, CallOperands(posOperands, &kwOperands), dest, expr);
+      getter, OperandContainer(posOperands, &kwOperands), dest, expr);
 }
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
   // Add the set value to the keyword arguments list.
-  KeywordOperands kwOperandsWithValue(kwOperands);
+  KeywordOperandContainer kwOperandsWithValue(kwOperands);
   kwOperandsWithValue.try_emplace(setterValueName, value);
-  CallOperands setterCallOperands(posOperands, &kwOperandsWithValue);
+  OperandContainer setterCallOperands(posOperands, &kwOperandsWithValue);
 
   ValueDest storeDest(EC_Assignment);
 
@@ -190,8 +191,8 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
 // TupleDLValue
 //===----------------------------------------------------------------------===//
 
-TupleDLValue::TupleDLValue(ArrayRef<FuncOperand> eltLValues, ASTType tupleType,
-                           const ExprNode *expr)
+TupleDLValue::TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues,
+                           ASTType tupleType, const ExprNode *expr)
     : BaseDLValue(tupleType), expr(expr),
       eltLValues(eltLValues.begin(), eltLValues.end()) {
   for (auto &elt : eltLValues)

@@ -1724,8 +1724,8 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
     MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
     ValueDest dest(EC_Destructor);
     (void)emitter.emitNamedMethodCall("__del__",
-                                      CallOperands({{owned, initExpr}}), dest,
-                                      CallSyntax::kDestructor, initExpr);
+                                      OperandContainer({{owned, initExpr}}),
+                                      dest, CallSyntax::kDestructor, initExpr);
   }
 
   // Run signature decorators, if any.

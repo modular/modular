@@ -38,14 +38,14 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// CallOperands
+// OperandContainer
 //===----------------------------------------------------------------------===//
 
-void CallOperands::dump() const { llvm::errs() << *this << '\n'; }
+void OperandContainer::dump() const { llvm::errs() << *this << '\n'; }
 
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
-                                      const CallOperands &value) {
-  os << "CallOperands{ " << value.posOperands.size() << " pos args, "
+                                      const OperandContainer &value) {
+  os << "OperandContainer{ " << value.posOperands.size() << " pos args, "
      << value.getNumKwOperands() << " kw args";
   if (value.hasSelfOperand)
     os << " <HAS SELF OPERAND>";
@@ -275,7 +275,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   return {};
 }
 
-PValue OverloadSet::filterOverloadSet(CallOperands &operands,
+PValue OverloadSet::filterOverloadSet(OperandContainer &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure) const {
   // Evaluate the fitness of each candidate in our overload set.
@@ -286,7 +286,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
-    CallOperands callOperands(operands);
+    OperandContainer callOperands(operands);
     callOperands.hasSelfOperand = operands.hasSelfOperand;
     if (callOperands.hasSelfOperand && func.getIsStatic()) {
       callOperands.posOperands = callOperands.posOperands.drop_front();
@@ -680,12 +680,11 @@ OverloadSet OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo,
 /// Lookup of a named named method on the specified type, filtered to match a
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
-PValue
-OverloadSet::lookupAndResolve(const TypeCheckScopeInfo &scopeInfo, ASTType type,
-                              StringRef methodName, CallOperands &callOperands,
-                              const ExprNode *callExpr, CallSyntax syntax,
-                              function_ref<void()> lookupFailureErrorHandler,
-                              bool shouldPrintOverloadErrors) {
+PValue OverloadSet::lookupAndResolve(
+    const TypeCheckScopeInfo &scopeInfo, ASTType type, StringRef methodName,
+    OperandContainer &callOperands, const ExprNode *callExpr, CallSyntax syntax,
+    function_ref<void()> lookupFailureErrorHandler,
+    bool shouldPrintOverloadErrors) {
   auto ovSet = OverloadSet::lookup(scopeInfo, type, methodName, callExpr,
                                    syntax, lookupFailureErrorHandler);
 
@@ -791,15 +790,15 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
-                             ExprEmitter &emitter) {
+CValue OverloadSet::emitCall(const OperandContainer &callOperands,
+                             ValueDest &dest, ExprEmitter &emitter) {
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
 
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
-  CallOperands operands = callOperands;
+  OperandContainer operands = callOperands;
   if (baseValue) {
     ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
     posOperandsWithSelf.reserve(posOperands.size() + 1);
@@ -822,7 +821,7 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
 }
 
 CValue ExprEmitter::emitIndirectCall(CValue callee,
-                                     const CallOperands &callOperands,
+                                     const OperandContainer &callOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
@@ -834,7 +833,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     llvm::append_range(posOperandsWithCallee, callOperands.posOperands);
     return emitNamedMethodCall(
         "__call__",
-        CallOperands(posOperandsWithCallee, callOperands.kwOperands), dest,
+        OperandContainer(posOperandsWithCallee, callOperands.kwOperands), dest,
         CallSyntax::kDirectCall, callExpr);
   }
 
@@ -885,7 +884,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
 }
 
 CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
-                                        const CallOperands &callOperands,
+                                        const OperandContainer &callOperands,
                                         ValueDest &dest, CallSyntax syntax,
                                         const ExprNode *callNode) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
@@ -909,7 +908,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     posOperands = updatedPosOperands;
   }
 
-  CallOperands operands(posOperands, callOperands.kwOperands);
+  OperandContainer operands(posOperands, callOperands.kwOperands);
 
   ASTType type = selfVal.getRValueType();
 
@@ -948,7 +947,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
 CValue ExprEmitter::emitConstructorCall(ASTType type,
-                                        const CallOperands &callOperands,
+                                        const OperandContainer &callOperands,
                                         const ExprNode *expr, CallSyntax syntax,
                                         ValueDest &dest,
                                         bool allowImplicitConversion) {
@@ -1105,8 +1104,9 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
 /// constructor that likely would have applied, which should be considered in
 /// any error reporting. This does not generate any IR.
 FailureOr<PValue> OverloadSet::canConstructType(
-    ASTType requiredType, const CallOperands &operands, const ExprNode *expr,
-    const TypeCheckScopeInfo &scopeInfo, bool allowImplicitConversions) {
+    ASTType requiredType, const OperandContainer &operands,
+    const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
+    bool allowImplicitConversions) {
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
@@ -1146,7 +1146,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   callee.paramBindings =
       ParamBindings::getForDeclaredType(scopeInfo, requiredType, expr);
 
-  CallOperands adjOperands(posOperands, operands.kwOperands);
+  OperandContainer adjOperands(posOperands, operands.kwOperands);
   adjOperands.hasSelfOperand = hasInitSelf;
 
   // If we have at least one candidate, we check to see if any of them can
@@ -1221,7 +1221,7 @@ bool OverloadSet::canImplicitlyConvertToType(
   // Disable implicit conversions though, to prevent converting T -> S -> U in
   // one step.
   FailureOr<PValue> result = OverloadSet::canConstructType(
-      requiredType, CallOperands({value}), value.expr, scopeInfo,
+      requiredType, OperandContainer({value}), value.expr, scopeInfo,
       /*allowImplicitConversions=*/false);
   return cacheAndReturnVal(succeeded(result) && result.value());
 }

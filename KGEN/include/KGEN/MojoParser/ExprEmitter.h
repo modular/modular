@@ -22,7 +22,7 @@ struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
 enum class CallSyntax : uint8_t;
 class ExprEmitter;
-class CallOperands;
+class OperandContainer;
 class AliasDeclOp;
 class TraitType;
 class VarDeclOp;
@@ -372,7 +372,7 @@ public:
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
-  CValue emitIndirectCall(CValue callee, const CallOperands &operands,
+  CValue emitIndirectCall(CValue callee, const OperandContainer &operands,
                           ValueDest &dest, const ExprNode *callExpr);
 
   /// This helper emits a named method call with the provided `operands`,
@@ -384,14 +384,14 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitNamedMethodCall(StringRef methodName, const CallOperands &operands,
-                             ValueDest &dest, CallSyntax syntax,
-                             const ExprNode *callNode);
+  CValue emitNamedMethodCall(StringRef methodName,
+                             const OperandContainer &operands, ValueDest &dest,
+                             CallSyntax syntax, const ExprNode *callNode);
 
   /// Emit a call to __new__ or __init__, returning an instance of the specified
   /// type.  If `allowImplicitConversion` is true, the provided args are allowed
   /// to implicitly convert to the expectations of the constructor signatures.
-  CValue emitConstructorCall(ASTType type, const CallOperands &operands,
+  CValue emitConstructorCall(ASTType type, const OperandContainer &operands,
                              const ExprNode *expr, CallSyntax syntax,
                              ValueDest &dest,
                              bool allowImplicitConversion = true);
@@ -543,7 +543,7 @@ public:
 
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.
-  CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
+  CValue emitCallUnchecked(RValue callee, const OperandContainer &operands,
                            ValueDest &dest, const ExprNode *callExpr);
 };
 

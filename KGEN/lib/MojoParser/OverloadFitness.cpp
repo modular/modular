@@ -40,8 +40,8 @@ struct DiagEmitter : public SharedStateUser {
         callSyntax(callSyntax) {}
 
   InflightDiag unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
-  InflightDiag wrongParamType(ASTExprAnd<PValue> actualBinding, size_t paramIdx,
-                              ASTType expectedType) const;
+  InflightDiag wrongParamType(ASTExprAnd<AnyValue> actualBinding,
+                              size_t paramIdx, ASTType expectedType) const;
   InflightDiag wrongParamCount(size_t expectedNumParams,
                                size_t actualNumParams) const;
   InflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
@@ -107,12 +107,12 @@ DiagEmitter::unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const {
   return diag;
 }
 
-InflightDiag DiagEmitter::wrongParamType(ASTExprAnd<PValue> actualBinding,
+InflightDiag DiagEmitter::wrongParamType(ASTExprAnd<AnyValue> actualBinding,
                                          size_t paramIdx,
                                          ASTType expectedType) const {
   return initDiag() << "callee parameter #" << paramIdx << " has "
                     << ASTType(expectedType) << " type, but value has type "
-                    << actualBinding.ir.getType()
+                    << actualBinding.ir.getIfPValue().getType()
                     << actualBinding.expr->getRange();
 }
 
@@ -609,7 +609,7 @@ OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
-                                          const CallOperands &callOperands,
+                                          const OperandContainer &callOperands,
                                           bool allowImplicitConversions) {
   // We set up diagnostics.
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
@@ -621,7 +621,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
-  KeywordOperands variadicKwOperands;
+  KeywordOperandContainer variadicKwOperands;
   auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
       signature.getArgListAttrs(), variadicKwOperands, callOperands);
   switch (kwDiagRes) {
@@ -679,15 +679,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         inferenceDiags.attach(paramListAttr, diag, numActual);
       },
       /*emitPosType=*/
-      [&](size_t paramIdx, ASTExprAnd<PValue> binding, ASTType expectedType) {
+      [&](size_t paramIdx, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
         diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
       },
       /*emitKwType=*/
-      [&](StringAttr paramName, ASTExprAnd<PValue> binding,
+      [&](StringAttr paramName, ASTExprAnd<AnyValue> binding,
           ASTType expectedType) {
         diag << "callee parameter " << paramName << " has " << expectedType
-             << " type, but value has type " << binding.ir.getType()
-             << binding.expr->getRange();
+             << " type, but value has type "
+             << binding.ir.getIfPValue().getType() << binding.expr->getRange();
       },
       /*emitUnknownKeywords=*/
       [&](ArrayRef<StringAttr> unknownKeywords) {
@@ -732,13 +732,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         inferenceDiags.attach(paramListAttr, diag);
       },
       /*emitUnboundPackInVariadic=*/
-      [&](ASTExprAnd<PValue> binding) {
+      [&](ASTExprAnd<AnyValue> binding) {
         diag << "unbound pack syntax (i.e. `*_`) cannot be used where variadic "
                 "parameters are expected"
              << binding.expr->getRange();
       },
       /*emitUnboundPackNotEnd=*/
-      [&](ASTExprAnd<PValue> binding) {
+      [&](ASTExprAnd<AnyValue> binding) {
         diag << "unbound pack must be at the end of the parameter list"
              << binding.expr->getRange();
       },

@@ -346,7 +346,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTType type =
       emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
   return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
+                                     OperandContainer({{AnyValue(attr), this}}),
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -360,7 +360,7 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
   return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
+                                     OperandContainer({{AnyValue(attr), this}}),
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -371,9 +371,9 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
   ASTType type = emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(boolAttr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(
+      type, OperandContainer({{AnyValue(boolAttr), this}}), this,
+      CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
@@ -431,7 +431,7 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
   ASTType type =
       emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
   return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
+                                     OperandContainer({{AnyValue(attr), this}}),
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -985,7 +985,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // operands and determine whether they are arguments or parameters (e.g. for
   // indexing into Tuple with parameter for the index).
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  KeywordOperands kwOperands;
+  KeywordOperandContainer kwOperands;
 
   // Reserve an extra element so we can handle setter lookup easily.
   posOperands.reserve(exprOperands.size() + 1);
@@ -1050,7 +1050,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // If we /just/ have a getter, emit this as a call to the getter, allowing
   // us to get nice tuned diagnostics.
   if (!setterSet)
-    return getterSet.emitCall(CallOperands(posOperands, &kwOperands), dest,
+    return getterSet.emitCall(OperandContainer(posOperands, &kwOperands), dest,
                               emitter);
 
   // Okay, we definitely have a setter, and we might have a getter.  The problem
@@ -1062,7 +1062,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   ASTType elementType;
   PValue getter;
   if (getterSet) {
-    CallOperands getOperands(posOperands, &kwOperands);
+    OperandContainer getOperands(posOperands, &kwOperands);
     getter = getterSet.filterOverloadSet(getOperands,
                                          /*allowImplicitConversions=*/true,
                                          /*emitDiagnosticOnFailure*/ true);
@@ -1664,7 +1664,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   /// Emit all the operands that we'll need.
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  KeywordOperands kwOperands;
+  KeywordOperandContainer kwOperands;
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
@@ -1689,7 +1689,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       assert(addedNew && "duplicate keyword argument");
     }
   }
-  CallOperands operands(posOperands, &kwOperands);
+  OperandContainer operands(posOperands, &kwOperands);
 
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type.
@@ -2146,7 +2146,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
-    CallOperands operands(argValues);
+    OperandContainer operands(argValues);
     if (PValue callee = OverloadSet::lookupAndResolve(
             emitter.getScopeInfo(), lhsCV.getRValueType(), specialFnInfo.name,
             operands, callExpr, CallSyntax::kOperator))
@@ -2159,7 +2159,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
-      CallOperands operands(argValues);
+      OperandContainer operands(argValues);
       if (PValue callee = OverloadSet::lookupAndResolve(
               emitter.getScopeInfo(), rhsCV.getRValueType(),
               reversedFnInfo.name, operands, callExpr,
@@ -2631,9 +2631,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
     ValueDest subDest(EC_OperatorOperandValue);
-    argValue.ir =
-        emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
-                                    CallSyntax::kImplicitConvert, expr);
+    argValue.ir = emitter.emitNamedMethodCall(
+        "__bool__", OperandContainer(argValue), subDest,
+        CallSyntax::kImplicitConvert, expr);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -2645,8 +2645,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name, CallOperands(argValue),
-                                     dest, CallSyntax::kOperator, expr);
+  return emitter.emitNamedMethodCall(specialFnInfo.name,
+                                     OperandContainer(argValue), dest,
+                                     CallSyntax::kOperator, expr);
 }
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
