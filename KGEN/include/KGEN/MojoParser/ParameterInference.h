@@ -89,7 +89,10 @@ public:
                           const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions)
-      : TypeCheckScopeInfo(scopeInfo), givenBindings(posBindings, kwBindings),
+      : TypeCheckScopeInfo(scopeInfo),
+        // TODO: ParamBindings should own and mutate an OperandContainer, we
+        // should pass it by ref instead of copying.
+        givenBindings(posBindings, KeywordOperandContainer(*kwBindings)),
         evaluator(evaluator),
         inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
         diags(diags), allowImplicitConversions(allowImplicitConversions) {}

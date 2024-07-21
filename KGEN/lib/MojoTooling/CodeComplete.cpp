@@ -253,7 +253,8 @@ struct SignatureHelpListener : public BaseCompletionListener {
       }
 
       // Consider the rparen location if it is within the completion range.
-      if (!operands.hasKwOperands() && containsLoc(completionRange, rparenLoc))
+      if (operands.getNumKwOperands() == 0 &&
+          containsLoc(completionRange, rparenLoc))
         return operands.posOperands.size();
 
       // TODO: Consider kwargs.

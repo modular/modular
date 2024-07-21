@@ -399,7 +399,6 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
   // If we're generating a memory location, use a required type if present or
   // the value type if not.
-  // TODO(autopromotion).
   ASTType slotType = resultType;
   if (auto requiredType = dyn_cast_or_null<ASTType>(representation)) {
     if (allowIncompatibleTypes || requiredType.isEqualCanon(slotType))
@@ -1511,9 +1510,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       return {};
     }
 
-    SmallVector<ASTExprAnd<AnyValue>> posOperands{
-        ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
-    OperandContainer operands(posOperands);
+    OperandContainer operands(
+        {ASTExprAnd<AnyValue>{destBuffer, value.expr}, value});
     ValueDest copyDest(dest.getContext());
     if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
                              CallSyntax::kImplicitConvert, value.expr))

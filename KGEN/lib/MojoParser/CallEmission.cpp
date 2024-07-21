@@ -289,7 +289,7 @@ PValue OverloadSet::filterOverloadSet(OperandContainer &operands,
     OperandContainer callOperands(operands);
     callOperands.hasSelfOperand = operands.hasSelfOperand;
     if (callOperands.hasSelfOperand && func.getIsStatic()) {
-      callOperands.posOperands = callOperands.posOperands.drop_front();
+      callOperands.posOperands.erase(callOperands.posOperands.begin());
       callOperands.hasSelfOperand = false;
     }
 
@@ -422,7 +422,7 @@ PValue OverloadSet::filterOverloadSet(OperandContainer &operands,
     // operand list so it doesn't get passed.
     if (operands.hasSelfOperand &&
         cast<LIT::FuncOp>(newFnDecls[0]).getIsStatic()) {
-      operands.posOperands = operands.posOperands.drop_front();
+      operands.posOperands.erase(operands.posOperands.begin());
       operands.hasSelfOperand = false;
     }
 
@@ -790,7 +790,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(OperandContainer &&callOperands, ValueDest &dest,
+CValue OverloadSet::emitCall(OperandContainer &&operands, ValueDest &dest,
                              ExprEmitter &emitter) {
 
   // Used in some cases below, lifetime needs to exist for this whole method.
@@ -798,15 +798,8 @@ CValue OverloadSet::emitCall(OperandContainer &&callOperands, ValueDest &dest,
 
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
-  OperandContainer operands = callOperands;
-  if (baseValue) {
-    ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
-    posOperandsWithSelf.reserve(posOperands.size() + 1);
-    posOperandsWithSelf.push_back(baseValue);
-    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    operands.posOperands = posOperandsWithSelf;
-    operands.hasSelfOperand = true;
-  }
+  if (baseValue)
+    operands.addSelf(baseValue);
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
@@ -820,21 +813,16 @@ CValue OverloadSet::emitCall(OperandContainer &&callOperands, ValueDest &dest,
   return emitter.emitCallUnchecked(callee, operands, dest, expr);
 }
 
-CValue ExprEmitter::emitIndirectCall(CValue callee,
-                                     OperandContainer &&callOperands,
+CValue ExprEmitter::emitIndirectCall(CValue callee, OperandContainer &&operands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.
-    SmallVector<ASTExprAnd<AnyValue>> posOperandsWithCallee;
-    posOperandsWithCallee.push_back({callee, callExpr});
-    llvm::append_range(posOperandsWithCallee, callOperands.posOperands);
-    return emitNamedMethodCall(
-        "__call__",
-        OperandContainer(posOperandsWithCallee, callOperands.kwOperands), dest,
-        CallSyntax::kDirectCall, callExpr);
+    operands.addSelf({callee, callExpr});
+    return emitNamedMethodCall("__call__", std::move(operands), dest,
+                               CallSyntax::kDirectCall, callExpr);
   }
 
   // If we have a function pointer, resolve it to an RValue.
@@ -848,7 +836,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(getScopeInfo()),
                        callExpr, CallSyntax::kIndirectCall};
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
-                                           bindings, callOperands,
+                                           bindings, operands,
                                            /*allowImplicitConversions=*/true);
   if (!fitness.isValid()) {
     // If not, diagnose it with an error.
@@ -880,35 +868,28 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
   }
 
-  return emitCallUnchecked(calleeRV, callOperands, dest, callExpr);
+  return emitCallUnchecked(calleeRV, operands, dest, callExpr);
 }
 
 CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
                                         OperandContainer &&operands,
                                         ValueDest &dest, CallSyntax syntax,
                                         const ExprNode *callNode) {
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
+  SmallVector<ASTExprAnd<AnyValue>, 4> &posOperands = operands.posOperands;
   assert(!posOperands.empty() &&
          "Cannot emit a method call without a receiver!");
 
   // Emit the first/self operand to a CValue so we can figure out which type to
   // lookup on.
   CValue selfVal = posOperands[0].ir.getIfCValue();
-  SmallVector<ASTExprAnd<AnyValue>> updatedPosOperands;
   if (!selfVal) {
     selfVal = emitCValue(posOperands[0], EC_CallArgValue);
     if (!selfVal) {
       dest.resetForError();
       return {};
     }
-    // We can't mutate posOperands because it's an ArrayRef.  If something
-    // changed, recurse with a temporary buffer.
-    updatedPosOperands.append(posOperands.begin(), posOperands.end());
-    updatedPosOperands[0].ir = selfVal;
-    posOperands = updatedPosOperands;
+    posOperands[0].ir = selfVal;
   }
-
-  OperandContainer updatedOperands(posOperands, operands.kwOperands);
 
   ASTType type = selfVal.getRValueType();
 
@@ -932,15 +913,15 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   };
 
   // If the type doesn't have the specified method, emit an error.
-  PValue callee = OverloadSet::lookupAndResolve(
-      getScopeInfo(), type, methodName, updatedOperands, callNode, syntax,
-      emitNoMethodError, true);
+  PValue callee =
+      OverloadSet::lookupAndResolve(getScopeInfo(), type, methodName, operands,
+                                    callNode, syntax, emitNoMethodError, true);
   if (!callee) {
     dest.resetForError();
     return {};
   }
 
-  return emitIndirectCall(callee, std::move(updatedOperands), dest, callNode);
+  return emitIndirectCall(callee, std::move(operands), dest, callNode);
 }
 
 /// Emit a call to __init__, returning an instance of the specified type.  If
@@ -1104,9 +1085,8 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
 /// constructor that likely would have applied, which should be considered in
 /// any error reporting. This does not generate any IR.
 FailureOr<PValue> OverloadSet::canConstructType(
-    ASTType requiredType, const OperandContainer &operands,
-    const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
-    bool allowImplicitConversions) {
+    ASTType requiredType, OperandContainer &&operands, const ExprNode *expr,
+    const TypeCheckScopeInfo &scopeInfo, bool allowImplicitConversions) {
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
@@ -1146,7 +1126,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   callee.paramBindings =
       ParamBindings::getForDeclaredType(scopeInfo, requiredType, expr);
 
-  OperandContainer adjOperands(posOperands, operands.kwOperands);
+  OperandContainer adjOperands(posOperands, std::move(operands.kwOperands));
   adjOperands.hasSelfOperand = hasInitSelf;
 
   // If we have at least one candidate, we check to see if any of them can

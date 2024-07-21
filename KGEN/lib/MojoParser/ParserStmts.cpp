@@ -1532,16 +1532,15 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // We are about to generate the call to __enter__ but need to decide how to
   // pass the context expression, either as an LValue referring to the bound
-  // variable, or as a transfered RValue if it takes it owned (enabling some
+  // variable, or as a transferred RValue if it takes it owned (enabling some
   // advanced use cases with unique context managers).
   AnyValue contextVal = MLValue(contextMgrDecl);
 
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  ASTExprAnd<AnyValue> enterOperand[] = {{contextVal, contextExp}};
-  OperandContainer enterOperands(enterOperand, /*kwOperands=*/nullptr);
-  enterOperands.hasSelfOperand = true;
+  OperandContainer enterOperands;
+  enterOperands.addSelf({contextVal, contextExp});
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
           getScopeInfo(), contextRVType, "__enter__", enterOperands, contextExp,
           CallSyntax::kMethodCall)) {
@@ -1573,7 +1572,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         // Make the emission work even if the type isn't copyable.
         contextVal = MRValue(contextMgrDecl);
       }
-      enterOperand[0].ir = contextVal;
+      enterOperands.posOperands[0].ir = contextVal;
     }
   }
 
@@ -1703,11 +1702,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Check if the context manager provides an `__exit__` overload that accepts
   // an error. If it doesn't, then we know the exit is unconditional.
-  ASTExprAnd<AnyValue> exitOperands[] = {
-      {contextVal, contextExp},
-      {PValue(UnknownAttr::get(errorType)), contextExp}};
-  OperandContainer exitCallOperands(exitOperands);
-  exitCallOperands.hasSelfOperand = true;
+  OperandContainer exitCallOperands;
+  exitCallOperands.addSelf({contextVal, contextExp});
+  exitCallOperands.add({PValue(UnknownAttr::get(errorType)), contextExp});
   PValue conditionalExit = OverloadSet::lookupAndResolve(
       getScopeInfo(), contextRVType, "__exit__", exitCallOperands, contextExp,
       CallSyntax::kMethodCall);
@@ -1774,9 +1771,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
     ValueDest exitResultDest(EC_WithExitResult);
-    exitOperands[0].ir = MLValue(contextMgrDecl);
-    exitOperands[1].ir = MBValue(nestedErrDecl);
-    OperandContainer exitOperandList(exitOperands);
+    OperandContainer exitOperandList({{MLValue(contextMgrDecl), contextExp},
+                                      {MBValue(nestedErrDecl), contextExp}});
     CValue exitResult = getEmitter().emitIndirectCall(
         conditionalExit, std::move(exitOperandList), exitResultDest,
         contextExp);

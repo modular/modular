@@ -169,7 +169,10 @@ ParamBindings::verifyBindingsImpl(
   }
 
   // Create a view of the operands for ease of access.
-  OperandContainer operands(unpackedPosBindings, &kwBindings);
+  // TODO: ParamBindings should contain the bindings in an owning
+  // OperandContainer instead of copying here.
+  OperandContainer operands(unpackedPosBindings,
+                            KeywordOperandContainer(kwBindings));
 
   KeywordOperandContainer variadicKwOperands;
   bool allowMissingKwOnly = partial || parameterInferenceHook;

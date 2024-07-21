@@ -256,7 +256,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     hasRegisterResult = true;
   }
 
-  OperandContainer operands(posOperands, &kwOperands);
+  OperandContainer operands(posOperands, std::move(kwOperands));
   CValue callResult =
       emitter.emitIndirectCall(PValue(callee), std::move(operands), dest, node);
   if (!callResult)

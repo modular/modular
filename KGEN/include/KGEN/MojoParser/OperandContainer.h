@@ -34,35 +34,54 @@ class OperandContainer {
 public:
   /// Create call operands with positional and optional keyword arguments.
   OperandContainer(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {},
-                   const KeywordOperandContainer *kwOperands = nullptr)
-      : posOperands(posOperands), kwOperands(kwOperands) {}
+                   KeywordOperandContainer &&kwOperands = {})
+      : posOperands(posOperands), kwOperands(std::move(kwOperands)) {}
 
   /// Return a keyword argument value if present, or null otherwise.
   std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
-    if (hasKwOperands())
-      if (auto it = kwOperands->find(argName); it != kwOperands->end())
-        return it->second;
+    if (auto it = kwOperands.find(argName); it != kwOperands.end())
+      return it->second;
     return std::nullopt;
   }
 
   /// Return the number of keyword operands.
-  size_t getNumKwOperands() const {
-    return kwOperands ? kwOperands->size() : 0;
-  }
-
-  /// Return if there are any keyword operands specified.
-  bool hasKwOperands() const { return getNumKwOperands(); }
+  size_t getNumKwOperands() const { return kwOperands.size(); }
 
   /// The values passed as positional operands.
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands;
+  SmallVector<ASTExprAnd<AnyValue>, 4> posOperands;
 
   /// The values passed as keyword operands.
-  const KeywordOperandContainer *kwOperands;
+  KeywordOperandContainer kwOperands;
 
   /// Indicates if the positional operands include a self operand.
   bool hasSelfOperand = false;
 
   void dump() const;
+
+  //===--------------------------------------------------------------------===//
+  // Manipulators
+  //===--------------------------------------------------------------------===//
+
+  /// Add a positional argument to the list.
+  void add(ASTExprAnd<AnyValue> &&value) { posOperands.push_back(value); }
+
+  /// Add positional arguments to the list.
+  void add(ArrayRef<ASTExprAnd<AnyValue>> values) {
+    posOperands.append(values.begin(), values.end());
+  }
+
+  /// Add a keyword argument.  This returns true if there was a conflict.
+  [[nodiscard]] bool add(StringAttr name, ASTExprAnd<AnyValue> value) {
+    auto [_, addedNew] = kwOperands.try_emplace(name, std::move(value));
+    return !addedNew;
+  }
+
+  /// This adds a "self" argument to the start of the positional argument list.
+  void addSelf(ASTExprAnd<AnyValue> value) {
+    assert(!hasSelfOperand && "Cannot add a self when one is already present");
+    posOperands.insert(posOperands.begin(), value);
+    hasSelfOperand = true;
+  }
 
   //===--------------------------------------------------------------------===//
   // Diagnostic helpers.

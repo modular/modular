@@ -165,7 +165,7 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  OperandContainer operands(posOperands, &kwOperands);
+  OperandContainer operands(posOperands, KeywordOperandContainer(kwOperands));
   return emitter.emitIndirectCall(getter, std::move(operands), dest, expr);
 }
 
@@ -174,7 +174,8 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // Add the set value to the keyword arguments list.
   KeywordOperandContainer kwOperandsWithValue(kwOperands);
   kwOperandsWithValue.try_emplace(setterValueName, value);
-  OperandContainer setterCallOperands(posOperands, &kwOperandsWithValue);
+  OperandContainer setterCallOperands(posOperands,
+                                      std::move(kwOperandsWithValue));
 
   ValueDest storeDest(EC_Assignment);
 

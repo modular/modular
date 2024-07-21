@@ -63,11 +63,9 @@ OperandContainer::diagnoseKeywordOperands(
     return {KwDiagResult::kPosOnlyPassedByKw, std::move(posOnlyPassedByKw)};
 
   // Collect all the keyword operands with unknown names.
-  if (hasKwOperands()) {
-    for (auto [name, operand] : *kwOperands)
-      if (!kwPassableNames.contains(name))
-        variadicKwOperands.try_emplace(name, operand);
-  }
+  for (auto [name, operand] : kwOperands)
+    if (!kwPassableNames.contains(name))
+      variadicKwOperands.try_emplace(name, operand);
 
   // If the function doesn't accept variadic kwargs, this is an error.
   if (!pogListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
