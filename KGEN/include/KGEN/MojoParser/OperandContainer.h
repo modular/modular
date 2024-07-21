@@ -37,6 +37,10 @@ public:
                    KeywordOperandContainer &&kwOperands = {})
       : posOperands(posOperands), kwOperands(std::move(kwOperands)) {}
 
+  OperandContainer(OperandContainer &&) = default;
+  explicit OperandContainer(const OperandContainer &) = default;
+  OperandContainer &operator=(OperandContainer &&) = default;
+
   /// Return a keyword argument value if present, or null otherwise.
   std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
     if (auto it = kwOperands.find(argName); it != kwOperands.end())

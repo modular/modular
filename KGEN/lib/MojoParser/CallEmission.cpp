@@ -38,29 +38,6 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// OperandContainer
-//===----------------------------------------------------------------------===//
-
-void OperandContainer::dump() const { llvm::errs() << *this << '\n'; }
-
-raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
-                                      const OperandContainer &value) {
-  os << "OperandContainer{ " << value.posOperands.size() << " pos args, "
-     << value.getNumKwOperands() << " kw args";
-  if (value.hasSelfOperand)
-    os << " <HAS SELF OPERAND>";
-  os << '\n';
-
-  for (auto operand : value.posOperands)
-    os << "  " << operand.ir << "\n";
-
-  if (value.getNumKwOperands())
-    os << "TODO: print KWArgs\n";
-
-  return os << '}';
-}
-
-//===----------------------------------------------------------------------===//
 // CallSyntax
 //===----------------------------------------------------------------------===//
 

@@ -984,15 +984,11 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // Otherwise we'll be calling the getter and/or setter.  Let's emit any index
   // operands and determine whether they are arguments or parameters (e.g. for
   // indexing into Tuple with parameter for the index).
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  KeywordOperandContainer kwOperands;
+  OperandContainer operands;
+  operands.addSelf(base);
 
-  // Reserve an extra element so we can handle setter lookup easily.
-  posOperands.reserve(exprOperands.size() + 1);
-  posOperands.push_back(base);
-
-  // We emit the operands with one of the sets so we can detect whether we're
-  // emitting the operands as parameters or dynamic values.
+  // We look at one of the sets so we can detect whether we're emitting the
+  // operands as parameters or dynamic values.
   bool isGetterPresent = (bool)getterSet;
   OverloadSet *nonemptySet = isGetterPresent ? &getterSet : &setterSet;
   assert(*nonemptySet && "at least one of the two should be nonempty");
@@ -1039,20 +1035,20 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
       if (!exprVal)
         return {};
-      if (operand.isKeywordOrUnpackedKeyword())
-        kwOperands.try_emplace(operand.name,
-                               ASTExprAnd<AnyValue>{exprVal, expr});
-      else
-        posOperands.push_back({exprVal, expr});
+      if (operand.isKeywordOrUnpackedKeyword()) {
+        bool conflict =
+            operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
+        assert(!conflict && "already diagnosed");
+      } else {
+        operands.add({exprVal, expr});
+      }
     }
   }
 
   // If we /just/ have a getter, emit this as a call to the getter, allowing
   // us to get nice tuned diagnostics.
-  if (!setterSet) {
-    OperandContainer operands(posOperands, std::move(kwOperands));
+  if (!setterSet)
     return getterSet.emitCall(std::move(operands), dest, emitter);
-  }
 
   // Okay, we definitely have a setter, and we might have a getter.  The problem
   // is that we don't know in which context this expression will be used - it
@@ -1063,9 +1059,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   ASTType elementType;
   PValue getter;
   if (getterSet) {
-    OperandContainer getOperands(posOperands,
-                                 KeywordOperandContainer(kwOperands));
-    getter = getterSet.filterOverloadSet(getOperands,
+    getter = getterSet.filterOverloadSet(operands,
                                          /*allowImplicitConversions=*/true,
                                          /*emitDiagnosticOnFailure*/ true);
     if (!getter) // Error already emitted.
@@ -1104,7 +1098,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     }
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
-    size_t setValueIdx = posOperands.size();
+    size_t setValueIdx = operands.posOperands.size();
     if (sigType.getNumArguments() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
@@ -1151,7 +1145,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   } while (SignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
 
   StringAttr setterValueName = firstFnSig.getArgName(argNo);
-  if (kwOperands.contains(setterValueName)) {
+  if (operands.kwOperands.contains(setterValueName)) {
     auto diag = emitter.emitError(node->getLoc())
                 << "keyword argument " << setterValueName
                 << " may not be specified in the index list, it is needed "
@@ -1162,8 +1156,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
-      getter, setterValueName, std::move(posOperands), std::move(kwOperands),
-      elementType, node));
+      getter, setterValueName, std::move(operands), elementType, node));
   return emitter.emitResult(result, node, dest);
 }
 

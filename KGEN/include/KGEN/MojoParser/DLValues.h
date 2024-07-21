@@ -61,9 +61,7 @@ public:
   StringAttr setterValueName;
 
   // Positional operands (including self) for the setter/getter call.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  // Keyword operands for the setter/getter call.
-  KeywordOperandContainer kwOperands;
+  OperandContainer operands;
 
   const ExprNode *expr;
 
@@ -71,8 +69,7 @@ public:
   bool isSubscript() const;
 
   SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                   SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
-                   KeywordOperandContainer &&kwOperands, ASTType elementType,
+                   OperandContainer &&operands, ASTType elementType,
                    const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
