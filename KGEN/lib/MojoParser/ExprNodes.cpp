@@ -1645,7 +1645,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   for (OpResult opResult : resultOp->getResults())
     posOperands.push_back({SRValue(opResult), &call});
-  return emitter.emitConstructorCall(tupleType, posOperands, &call,
+  OperandContainer operands(posOperands);
+  return emitter.emitConstructorCall(tupleType, operands, &call,
                                      CallSyntax::kImplicitConvert, dest,
                                      /*allowImplicitConversion=*/true);
 }
@@ -1908,7 +1909,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(type, elements, node,
+  OperandContainer operands(elements);
+  return emitter.emitConstructorCall(type, operands, node,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -2172,7 +2174,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
+  OperandContainer operands(argValues);
+  return emitter.emitNamedMethodCall(specialFnInfo.name, operands, dest,
                                      CallSyntax::kOperator, callExpr);
 }
 
@@ -3267,6 +3270,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(tupleType, elements, this,
+  OperandContainer operands(elements);
+  return emitter.emitConstructorCall(tupleType, operands, this,
                                      CallSyntax::kImplicitConvert, dest);
 }

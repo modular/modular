@@ -1513,8 +1513,9 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
     SmallVector<ASTExprAnd<AnyValue>> posOperands{
         ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
+    OperandContainer operands(posOperands);
     ValueDest copyDest(dest.getContext());
-    if (!emitNamedMethodCall("__copyinit__", posOperands, copyDest,
+    if (!emitNamedMethodCall("__copyinit__", operands, copyDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     // If we required an implicit conversion, make sure it happens.

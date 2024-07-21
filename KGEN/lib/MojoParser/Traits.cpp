@@ -264,9 +264,10 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (memSig.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
-    if (!emitter.emitNamedMethodCall("__await__",
-                                     ASTExprAnd<AnyValue>{callResult, node},
-                                     dest, CallSyntax::kMethodCall, node))
+    ASTExprAnd<AnyValue> opValue{callResult, node};
+    OperandContainer operands(opValue);
+    if (!emitter.emitNamedMethodCall("__await__", operands, dest,
+                                     CallSyntax::kMethodCall, node))
       return;
   }
 

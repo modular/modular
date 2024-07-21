@@ -65,8 +65,10 @@ static CValue emitVariadicPackConstructor(
   // the declared callee side (a parameter).
   variadicPackType = variadicPackType.getWithoutParameters(emitter.shared);
 
-  auto callResult = emitter.emitConstructorCall(
-      variadicPackType, operands, expr, CallSyntax::kTypeCall, packDest);
+  OperandContainer operandContainer(operands);
+  auto callResult =
+      emitter.emitConstructorCall(variadicPackType, operandContainer, expr,
+                                  CallSyntax::kTypeCall, packDest);
 
   if (isOwned)
     return callResult;

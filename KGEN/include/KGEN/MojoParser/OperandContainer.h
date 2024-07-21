@@ -37,19 +37,6 @@ public:
                    const KeywordOperandContainer *kwOperands = nullptr)
       : posOperands(posOperands), kwOperands(kwOperands) {}
 
-  /// Create call operands with positional arguments given a value implicitly
-  /// convertible to `ArrayRef`.
-  template <
-      typename OperandsT,
-      typename = std::enable_if_t<
-          !std::is_same_v<OperandsT, ArrayRef<ASTExprAnd<AnyValue>>> &&
-          std::is_convertible_v<OperandsT, ArrayRef<ASTExprAnd<AnyValue>>>>>
-  OperandContainer(OperandsT &&posOperands,
-                   const KeywordOperandContainer *kwOperands = nullptr)
-      : OperandContainer(ArrayRef<ASTExprAnd<AnyValue>>(
-                             std::forward<OperandsT>(posOperands)),
-                         kwOperands) {}
-
   /// Return a keyword argument value if present, or null otherwise.
   std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
     if (hasKwOperands())
