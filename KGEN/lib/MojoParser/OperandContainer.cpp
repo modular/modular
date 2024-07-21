@@ -19,6 +19,27 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+void OperandContainer::dump() const { llvm::errs() << *this << '\n'; }
+
+raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
+                                      const OperandContainer &value) {
+  os << "OperandContainer{ " << value.posOperands.size() << " pos args, "
+     << value.getNumKwOperands() << " kw args";
+  if (value.hasSelfOperand)
+    os << " <HAS SELF OPERAND>";
+  os << '\n';
+
+  for (auto operand : value.posOperands)
+    os << "  " << operand.ir << "\n";
+
+  if (!value.kwOperands.empty()) {
+    os << "Keyword bindings:\n";
+    for (auto [name, binding] : value.kwOperands)
+      os << "  " << name.getValue() << ": " << binding.ir.getIfPValue() << "\n";
+  }
+  return os << '}';
+}
+
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
 /// missing kw-only arg/param). If the function accepts variadic keyword

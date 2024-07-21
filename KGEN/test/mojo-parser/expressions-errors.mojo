@@ -538,3 +538,8 @@ fn test_bad_ref_errors[T: AnyType](a: Reference[T, _], b: Reference[T, _]):
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[1, T, #lit.lifetime, 0]'}}
   var y : Reference[T,  __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
+
+fn test_subscript_conflict(a: Int):
+  # expected-error @below {{duplicate keyword parameter 'idx'}}
+  # expected-note @below {{previously specified here}}
+  _ = a[idx=4, idx=7]

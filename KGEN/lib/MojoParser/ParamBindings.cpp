@@ -30,8 +30,7 @@ using namespace M::KGEN::LIT;
 /// Replace our bindings with another set.  This can't be done with operator=
 /// because we have
 void ParamBindings::operator=(ParamBindings &&other) {
-  posBindings = std::move(other.posBindings);
-  kwBindings = std::move(other.kwBindings);
+  parameters = std::move(other.parameters);
   defaultTypeParams = other.defaultTypeParams;
   numCtadParams = other.numCtadParams;
   numPreTypeChecked = other.numPreTypeChecked;
@@ -59,20 +58,19 @@ ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
 
 void ParamBindings::addPrechecked(const ExprNode *expr,
                                   TypedAttr precheckedBinding) {
-  assert(numPreTypeChecked == posBindings.size() &&
+  assert(numPreTypeChecked == parameters.posOperands.size() &&
          "Cannot add type prechecked after other bindings!");
-  posBindings.push_back({precheckedBinding, expr});
+  parameters.add({precheckedBinding, expr});
   ++numPreTypeChecked;
 }
 
 void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
-  posBindings.push_back({value, expr});
+  parameters.add({value, expr});
 }
 
 void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
-  auto [_, addedNew] =
-      kwBindings.try_emplace(name, ASTExprAnd<PValue>{value, expr});
-  assert(addedNew && "duplicate keyword parameter");
+  bool duplicate = parameters.add(name, {value, expr});
+  assert(!duplicate && "duplicate keyword parameter");
 }
 
 //===----------------------------------------------------------------------===//
@@ -112,25 +110,19 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
-    ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
-    ParameterInferenceHookTy parameterInferenceHook,
+    const OperandContainer &operands, ArrayRef<Type> expectedParamTypes,
+    PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
     const DiagEmitter *diagEmitter, bool partial) const {
-  size_t numParams = expectedParamTypes.size();
-
-  // Handle *_ if it is present expanding posBindings into unpackedPosBindings.
   Fitness fitness{0, false};
-  SmallVector<ASTExprAnd<AnyValue>> unpackedPosBindings;
-  unpackedPosBindings.reserve(numParams);
 
-  for (auto [idx, binding] : llvm::enumerate(posBindings)) {
-    if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get())) {
-      unpackedPosBindings.push_back(binding);
+  // Check to see if we have *_, diagnosing invalid uses and unpacking it if so.
+  for (auto [idx, binding] : llvm::enumerate(operands.posOperands)) {
+    if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get()))
       continue;
-    }
 
     // UnpackedAttr is aka "*_": it fills up all remaining positional slots and
     // must be at the end of the parameter list.
-    if (idx != posBindings.size() - 1) {
+    if (idx != operands.posOperands.size() - 1) {
       if (diagEmitter)
         diagEmitter->emitUnboundPackNotEnd(binding);
       return {{}, fitness};
@@ -146,33 +138,34 @@ ParamBindings::verifyBindingsImpl(
 
     // Check if we have too many parameters after unpacking.
     size_t numPosPassable = countNumPositional(paramListAttr);
-    size_t numUnpackedPositionals = unpackedPosBindings.size();
-    if (unpackedPosBindings.size() > numPosPassable) {
-      if (diagEmitter) {
-        diagEmitter->emitTooManyPositional(numPosPassable,
-                                           numUnpackedPositionals);
-      }
+    if (idx > numPosPassable) {
+      if (diagEmitter)
+        diagEmitter->emitTooManyPositional(numPosPassable, idx);
       return {{}, fitness};
     }
 
-    // If missing at least one positional parameter, we inject some number of
-    // UnboundAttr's, just like the user wrote the right number of _'s.
+    // We replace *_ with some number of UnboundAttr's, just like the user wrote
+    // the right number of _'s, then recurse.
     auto unboundAttr =
         UnboundAttr::get(UnresolvedType::get(shared.getContext()));
     ASTExprAnd<PValue> unboundBinding{PValue(unboundAttr), binding.expr};
 
     // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
     // where the *_ was found.
-    ssize_t numUnbounds = numPosPassable - numUnpackedPositionals;
-    unpackedPosBindings.append(numUnbounds, unboundBinding);
-    assert(unpackedPosBindings.size() == numPosPassable);
+    ssize_t numUnbounds = numPosPassable - idx;
+
+    OperandContainer expandedOperands(operands);
+    expandedOperands.posOperands.pop_back();
+    expandedOperands.posOperands.append(numUnbounds, unboundBinding);
+    assert(expandedOperands.posOperands.size() == numPosPassable);
+    return verifyBindingsImpl(expandedOperands, expectedParamTypes,
+                              paramListAttr, parameterInferenceHook,
+                              diagEmitter, partial);
   }
 
-  // Create a view of the operands for ease of access.
-  // TODO: ParamBindings should contain the bindings in an owning
-  // OperandContainer instead of copying here.
-  OperandContainer operands(unpackedPosBindings,
-                            KeywordOperandContainer(kwBindings));
+  // With that out of the way, we can now get onto normal type checking of
+  // 'operands'.
+  size_t numParams = expectedParamTypes.size();
 
   KeywordOperandContainer variadicKwOperands;
   bool allowMissingKwOnly = partial || parameterInferenceHook;
@@ -450,7 +443,7 @@ ParamBindings::verifyBindingsImpl(
     SmallVector<TypedAttr> elements;
     auto variadicType = cast<VariadicType>(requestedType);
     do {
-      ASTExprAnd<AnyValue> binding = unpackedPosBindings[posBindingIdx++];
+      ASTExprAnd<AnyValue> binding = operands.posOperands[posBindingIdx++];
       PValue pValue = handlePosBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
@@ -485,8 +478,9 @@ ParamBindings::verifyBindings(LITSignatureType sig,
                               const DiagEmitter *diagEmitter,
                               ParameterInferenceHookTy parameterInferenceHook,
                               bool partial) const {
-  return verifyBindingsImpl(sig.getParamTypes(), sig.getParamListAttrs(),
-                            parameterInferenceHook, diagEmitter, partial);
+  return verifyBindingsImpl(parameters, sig.getParamTypes(),
+                            sig.getParamListAttrs(), parameterInferenceHook,
+                            diagEmitter, partial);
 }
 
 ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
@@ -635,16 +629,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    ParameterInferenceState inferrence(*this, getPosBindings(),
-                                       &getKWBindings(), bindingsSoFar,
-                                       evaluator, inferenceDiags,
-                                       /*allowImplicitConversions=*/true);
+    ParameterInferenceState inference(*this, getParameters(), bindingsSoFar,
+                                      evaluator, inferenceDiags,
+                                      /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.
-    inferrence.infer(expectedParamTypes, paramListAttr);
+    inference.infer(expectedParamTypes, paramListAttr);
 
     // See if we inferred information about the next value.
-    if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
+    if (auto result = inference.getInferredValue(bindingsSoFar.size()))
       return PValue(result);
 
     // If we succeeded inference but didn't get a value for this parameter, then
@@ -654,7 +647,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     return PValue();
   };
   auto [bindings, fitness] =
-      verifyBindingsImpl(expectedParamTypes, paramListAttr,
+      verifyBindingsImpl(parameters, expectedParamTypes, paramListAttr,
                          parameterInferenceHook, &diagEmitter, partial);
   return {bindings, fitness, std::move(diag)};
 }
@@ -685,8 +678,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   // The first parameter to the fully bound signature will be the type (confined
   // to the current trait type) that ultimately expands to the concrete type
   // that conforms to the trait.
-  assert(!posBindings.empty());
-  PValue selfExpr = posBindings.front().ir.getIfPValue();
+  assert(!parameters.posOperands.empty());
+  PValue selfExpr = parameters.posOperands.front().ir.getIfPValue();
   assert(selfExpr && "parameters are always PValues");
 
   // When referencing a trait function, bind the reference using a parameter
@@ -696,8 +689,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   SmallVector<TypedAttr> paramValues;
   paramValues.push_back(selfExpr);
 
-  auto it = bindings.posBindings.begin();
-  bindings.posBindings.erase(it, it + 1);
+  auto it = bindings.parameters.posOperands.begin();
+  bindings.parameters.posOperands.erase(it, it + 1);
   for (Type type : signature.getParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
   signature = signature.getSpecializedSignature(paramValues, [&]() {
@@ -726,14 +719,4 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   return ParamOperatorAttr::get(POC::BindSignature, bindSigOperands);
 }
 
-void ParamBindings::dump() const {
-  auto &os = llvm::errs();
-  os << "Positional bindings:\n";
-  for (auto [i, binding] : llvm::enumerate(posBindings)) {
-    os << "  " << i << "[" << (i < numPreTypeChecked)
-       << "]: " << binding.ir.getIfPValue().get() << "\n";
-  }
-  os << "Keyword bindings:\n";
-  for (auto [name, binding] : kwBindings)
-    os << "  " << name.getValue() << ": " << binding.ir.getIfPValue() << "\n";
-}
+void ParamBindings::dump() const { llvm::errs() << parameters; }

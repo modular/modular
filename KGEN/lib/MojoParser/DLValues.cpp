@@ -137,14 +137,12 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(
-    PValue getter, StringAttr setterValueName,
-    SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
-    KeywordOperandContainer &&kwOperands, ASTType elementType,
-    const ExprNode *expr)
+SubscriptDLValue::SubscriptDLValue(PValue getter, StringAttr setterValueName,
+                                   OperandContainer &&operands,
+                                   ASTType elementType, const ExprNode *expr)
     : BaseDLValue(elementType), getter(getter),
-      setterValueName(setterValueName), posOperands(std::move(posOperands)),
-      kwOperands(std::move(kwOperands)), expr(expr) {}
+      setterValueName(setterValueName), operands(std::move(operands)),
+      expr(expr) {}
 
 /// Return true if this is a subscript, false if this is an attribute access.
 bool SubscriptDLValue::isSubscript() const {
@@ -165,17 +163,16 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  OperandContainer operands(posOperands, KeywordOperandContainer(kwOperands));
-  return emitter.emitIndirectCall(getter, std::move(operands), dest, expr);
+  return emitter.emitIndirectCall(getter, OperandContainer(operands), dest,
+                                  expr);
 }
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
   // Add the set value to the keyword arguments list.
-  KeywordOperandContainer kwOperandsWithValue(kwOperands);
-  kwOperandsWithValue.try_emplace(setterValueName, value);
-  OperandContainer setterCallOperands(posOperands,
-                                      std::move(kwOperandsWithValue));
+  OperandContainer operandsWithValue(operands);
+  bool conflict = operandsWithValue.add(setterValueName, value);
+  assert(!conflict && "Already checked this");
 
   ValueDest storeDest(EC_Assignment);
 
@@ -185,7 +182,7 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
 
-  emitter.emitNamedMethodCall(setterName, std::move(setterCallOperands),
+  emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
                               storeDest, CallSyntax::kMethodCall, expr);
 }
 //===----------------------------------------------------------------------===//

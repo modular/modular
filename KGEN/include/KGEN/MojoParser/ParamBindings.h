@@ -65,14 +65,12 @@ public:
                                  const ExprNode *expr) const;
 
   /// Return whether there are any bindings given.
-  bool empty() const { return posBindings.empty() && kwBindings.empty(); }
+  bool empty() const {
+    return parameters.posOperands.empty() && parameters.kwOperands.empty();
+  }
 
-  /// Return the total number of bindings, including keyword and positional.
-  size_t size() const { return posBindings.size() + kwBindings.size(); }
-
-  ArrayRef<ASTExprAnd<AnyValue>> getPosBindings() const { return posBindings; }
-  /// This contains the bound parameters given by a keyword.
-  const KeywordOperandContainer &getKWBindings() const { return kwBindings; }
+  // Provide access to the parameter list this represents.
+  const OperandContainer &getParameters() const { return parameters; }
 
   /// Add a bound value for pre-checked positional parameter binding. The caller
   /// is responsible for ensuring the keyword is not already present.
@@ -183,16 +181,14 @@ private:
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindingsImpl(ArrayRef<Type> expectedParamTypes,
+  verifyBindingsImpl(const OperandContainer &operands,
+                     ArrayRef<Type> expectedParamTypes,
                      PogListAttr paramListAttr,
                      ParameterInferenceHookTy parameterInferenceHook,
                      const DiagEmitter *diagEmitter, bool partial) const;
 
-  /// This contains a list of bound parameters given positionally.
-  SmallVector<ASTExprAnd<AnyValue>> posBindings;
-
-  /// This contains the bound parameters given by a keyword.
-  KeywordOperandContainer kwBindings;
+  /// This contains the values that are bound into this parameter list.
+  OperandContainer parameters;
 
   /// A list of all default parameter values declared for a type, if these are
   /// bindings for an overload set on a method.

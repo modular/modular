@@ -793,17 +793,16 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    ParameterInferenceState inferrence(
-        callable.paramBindings, callable.paramBindings.getPosBindings(),
-        &callable.paramBindings.getKWBindings(), bindingsSoFar, evaluator,
-        inferenceDiags, allowImplicitConversions);
+    ParameterInferenceState inference(
+        callable.paramBindings, callable.paramBindings.getParameters(),
+        bindingsSoFar, evaluator, inferenceDiags, allowImplicitConversions);
 
     // Infer information from this signature holistically.
-    if (failed(inferrence.infer(signature, callOperands, variadicKwOperands)))
+    if (failed(inference.infer(signature, callOperands, variadicKwOperands)))
       return PValue();
 
     // See if we inferred information about the next value.
-    if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
+    if (auto result = inference.getInferredValue(bindingsSoFar.size()))
       return PValue(result);
 
     // Check to see if this is a CTAD parameter - a parameter on the struct
@@ -825,9 +824,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (funcIfDirect) {
       auto func = cast<LIT::FuncOp>(*funcIfDirect);
       if (!func.getIsStatic() && isa<StructDeclOp>(func->getParentOp())) {
-        if (failed(inferrence.inferCTADParams(signature, callOperands)))
+        if (failed(inference.inferCTADParams(signature, callOperands)))
           return PValue();
-        if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
+        if (auto result = inference.getInferredValue(bindingsSoFar.size()))
           return PValue(result);
       }
     }
