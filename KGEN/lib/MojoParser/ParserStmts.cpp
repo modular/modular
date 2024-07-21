@@ -1776,8 +1776,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     ValueDest exitResultDest(EC_WithExitResult);
     exitOperands[0].ir = MLValue(contextMgrDecl);
     exitOperands[1].ir = MBValue(nestedErrDecl);
+    OperandContainer exitOperandList(exitOperands);
     CValue exitResult = getEmitter().emitIndirectCall(
-        conditionalExit, exitOperands, exitResultDest, contextExp);
+        conditionalExit, exitOperandList, exitResultDest, contextExp);
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =

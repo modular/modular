@@ -962,9 +962,11 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   ValueDest closureDest(EC_Closure);
   Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
       paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
+
+  OperandContainer implInitOperands(closureImplInitArgs);
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), closureImplInitArgs, node,
-      CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
+      ASTType(closureImplType), implInitOperands, node, CallSyntax::kTypeCall,
+      closureDest, /*allowImplicitConversion=*/false);
 
   // Emit the Closure Wrapper instance.
   VarDeclOp var = exprEmitter.emitVarDecl(
@@ -980,8 +982,10 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   LIT::StructType closureWrapperType =
       closureWrapper.bindReference(llvm::map_to_vector(
           capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
+
+  OperandContainer wrapperInitOperands(closureWrapperInitArgs);
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  closureWrapperInitArgs, node,
+                                  wrapperInitOperands, node,
                                   CallSyntax::kTypeCall, closureWrapperDest,
                                   /*allowImplicitConversion=*/false);
   return MLValue(var);
@@ -1255,8 +1259,9 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   // type checker will deduce all the parameters.
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
   ASTExprAnd<AnyValue> ctorArg = {argValue, srcLoc};
+  OperandContainer operands(ctorArg);
   CValue ctorResult = emitter.emitConstructorCall(
-      varListType, ctorArg, srcLoc, CallSyntax::kTypeCall, ctorDest);
+      varListType, operands, srcLoc, CallSyntax::kTypeCall, ctorDest);
   if (!ctorResult) {
     ctorDest.resetForError();
     return {};
