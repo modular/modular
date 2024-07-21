@@ -640,17 +640,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   assert(posOperandIdx == posOperands.size() &&
          "typechecking confirmed that we would use up all positional operands");
 
-  // Find all keyword operands that we didn't bind to an argument.
-  SmallVector<std::pair<StringAttr, ASTExprAnd<AnyValue>>> variadicKwOperands;
-  for (auto [name, operand] : operands.kwOperands)
-    if (!passedByKw.contains(name))
-      variadicKwOperands.emplace_back(name, operand);
-  assert((variadicKwOperands.empty() || kwargsDict) &&
-         "typechecking confirmed we have no **kwargs");
-
-  // Fill the **kwargs dict with values.
+  // Fill the **kwargs dict with values that we didn't bind to an argument.
   ValueDest kwargsDest(EC_KWArgsArgument);
-  for (auto [name, operand] : variadicKwOperands) {
+  for (auto [name, operand] : operands.kwOperands) {
+    if (passedByKw.contains(name))
+      continue;
+
+    assert(kwargsDict && "typechecking confirmed we have no **kwargs");
+
     SMLoc loc = operand.expr->getLoc();
 
     // We first construct a String key from the operand name.

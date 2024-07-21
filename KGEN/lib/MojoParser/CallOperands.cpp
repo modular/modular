@@ -45,9 +45,9 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
 /// missing kw-only arg/param). If the function accepts variadic keyword
 /// args/params, this function also collects them.
 std::pair<CallOperands::KwDiagResult, SmallVector<StringAttr>>
-CallOperands::diagnoseKeywordOperands(
-    PogListAttr pogListAttr, KeywordOperandContainer &variadicKwOperands,
-    bool allowMissingKwOnly) const {
+CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
+                                      OperandValueList &variadicKwOperands,
+                                      bool allowMissingKwOnly) const {
   // First, we collect any (named) pos-only args/params passed by keyword
   // operand, and missing kw-only args/params. We also collect all arg/param
   // names that might be specified by keyword.
@@ -86,13 +86,13 @@ CallOperands::diagnoseKeywordOperands(
   // Collect all the keyword operands with unknown names.
   for (auto [name, operand] : kwOperands)
     if (!kwPassableNames.contains(name))
-      variadicKwOperands.try_emplace(name, operand);
+      variadicKwOperands.push_back({name, operand});
 
   // If the function doesn't accept variadic kwargs, this is an error.
   if (!pogListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
     SmallVector<StringAttr> unknownKwOperands;
-    for (auto [name, _] : variadicKwOperands)
-      unknownKwOperands.push_back(name);
+    for (auto &operand : variadicKwOperands)
+      unknownKwOperands.push_back(operand.keyword);
     return {KwDiagResult::kUnknownKeywords, unknownKwOperands};
   }
 

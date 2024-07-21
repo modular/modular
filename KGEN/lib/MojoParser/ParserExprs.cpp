@@ -891,17 +891,17 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
                                       bool isArgument) {
   std::string argOrParam = isArgument ? "argument" : "parameter";
   // We keep a map of "name -> operand" so that we can emit better diagnostics.
-  llvm::SmallDenseMap<StringAttr, const Operand *> kwOperands;
+  llvm::SmallDenseMap<StringAttr, const Operand *> kwOperandMap;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
     if (operand.isUnpackedKeyword())
       return emitError(loc, "keyword unpacking not supported yet");
-    if (operand.isPositional() && !kwOperands.empty()) {
+    if (operand.isPositional() && !kwOperandMap.empty()) {
       return emitError(loc, "positional ")
              << argOrParam << " follows keyword " << argOrParam;
     }
     if (operand.isKeyword()) {
-      auto [it, addedNew] = kwOperands.try_emplace(operand.name, &operand);
+      auto [it, addedNew] = kwOperandMap.try_emplace(operand.name, &operand);
       if (!addedNew) {
         auto diag = emitError(loc, "duplicate keyword ")
                     << argOrParam << " " << operand.name;

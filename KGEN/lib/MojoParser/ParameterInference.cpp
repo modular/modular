@@ -940,9 +940,10 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   }
 }
 
-LogicalResult ParameterInferenceState::infer(
-    LITSignatureType signature, const CallOperands &callOperands,
-    const KeywordOperandContainer &variadicKwOperands) {
+LogicalResult
+ParameterInferenceState::infer(LITSignatureType signature,
+                               const CallOperands &callOperands,
+                               const OperandValueList &variadicKwOperands) {
   // First try to infer parameters from parameters.
   infer(signature.getParamTypes(), signature.getParamListAttrs());
 
@@ -970,7 +971,7 @@ LogicalResult ParameterInferenceState::infer(
 
     if (signature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
-      for (auto [name, operand] : variadicKwOperands) {
+      for (auto operand : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value
         // type is not a reference type (and doesn't have a lifetime), but we
         // still want to type check it. So, passing it as if it was reg-passable

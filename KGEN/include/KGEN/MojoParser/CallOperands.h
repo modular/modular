@@ -22,10 +22,16 @@ class PogListAttr;
 // CallOperands
 //===----------------------------------------------------------------------===//
 
-/// A shorthand to make keyword operand handling more readable.
-using KeywordOperandContainer =
-    llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
-                    SmallDenseMap<StringAttr, size_t>>;
+/// This is an operand record, maintaining the IR repre that might
+struct OperandValue : public ASTExprAnd<AnyValue> {
+  // Null for positional arguments.
+  StringAttr keyword;
+
+  OperandValue(StringAttr keyword, ASTExprAnd<AnyValue> value)
+      : ASTExprAnd<AnyValue>(std::move(value)), keyword(keyword) {}
+};
+
+using OperandValueList = SmallVector<OperandValue, 4>;
 
 /// Struct that carries both positional and keyword operands for a call or
 /// parameter binding. This does not own any values, only references pointers
@@ -42,7 +48,8 @@ public:
 
   /// Return a keyword argument value if present, or null otherwise.
   std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
-    if (auto it = kwOperands.find(argName); it != kwOperands.end())
+    auto it = kwOperands.find(argName);
+    if (it != kwOperands.end())
       return it->second;
     return std::nullopt;
   }
@@ -54,12 +61,16 @@ public:
   SmallVector<ASTExprAnd<AnyValue>, 4> posOperands;
 
   /// The values passed as keyword operands.
-  KeywordOperandContainer kwOperands;
+  llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
+                  SmallDenseMap<StringAttr, size_t>>
+      kwOperands;
 
   /// Indicates if the positional operands include a self operand.
   bool hasSelfOperand = false;
 
   void dump() const;
+
+  bool empty() const { return posOperands.empty() && kwOperands.empty(); }
 
   //===--------------------------------------------------------------------===//
   // Manipulators
@@ -73,10 +84,13 @@ public:
     posOperands.append(values.begin(), values.end());
   }
 
-  /// Add a keyword argument.  This returns true if there was a conflict.
-  [[nodiscard]] bool add(StringAttr name, ASTExprAnd<AnyValue> value) {
+  /// Add a keyword argument, there can never be conflicts here because keyword
+  /// argument conflicts should be checked in the parser before any semantic
+  /// analysis is attempted.
+  void add(StringAttr name, ASTExprAnd<AnyValue> value) {
     auto [_, addedNew] = kwOperands.try_emplace(name, std::move(value));
-    return !addedNew;
+    assert(addedNew && "duplicate keywords should be detected at parse time, "
+                       "before semantic analysis");
   }
 
   /// This adds a "self" argument to the start of the positional argument list.
@@ -104,7 +118,7 @@ public:
   /// keyword args/params, this function also collects them.
   std::pair<KwDiagResult, SmallVector<StringAttr>>
   diagnoseKeywordOperands(PogListAttr pogListAttr,
-                          KeywordOperandContainer &variadicKwOperands,
+                          OperandValueList &variadicKwOperands,
                           bool allowMissingKwOnly = false) const;
 
   /// Designates the kind of positional operand errors.

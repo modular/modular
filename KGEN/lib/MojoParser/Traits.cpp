@@ -235,8 +235,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       llvm_unreachable("unexpected input convention");
     }
     if (pogAttr.getPassingKind() == PassingKind::KwOnly) {
-      bool conflict = operands.add(pogAttr.getName(), {value, node});
-      assert(!conflict && "kw arg conflict in trait stub");
+      operands.add(pogAttr.getName(), {value, node});
     } else {
       operands.add({value, node});
     }

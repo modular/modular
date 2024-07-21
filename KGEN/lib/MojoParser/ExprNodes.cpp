@@ -1036,9 +1036,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       if (!exprVal)
         return {};
       if (operand.isKeywordOrUnpackedKeyword()) {
-        bool conflict =
-            operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
-        assert(!conflict && "already diagnosed");
+        operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
       } else {
         operands.add({exprVal, expr});
       }
@@ -1145,7 +1143,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   } while (SignatureType::isResultSlot(firstFnSig.getArgConvention(argNo)));
 
   StringAttr setterValueName = firstFnSig.getArgName(argNo);
-  if (operands.kwOperands.contains(setterValueName)) {
+  if (operands.findKwArg(setterValueName)) {
     auto diag = emitter.emitError(node->getLoc())
                 << "keyword argument " << setterValueName
                 << " may not be specified in the index list, it is needed "
@@ -1678,8 +1676,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       operandsList.add(std::move(exprAndVal));
     } else {
       assert(operand.isKeyword());
-      bool duplicate = operandsList.add(operand.name, std::move(exprAndVal));
-      assert(!duplicate && "duplicate keyword argument");
+      operandsList.add(operand.name, std::move(exprAndVal));
     }
   }
 

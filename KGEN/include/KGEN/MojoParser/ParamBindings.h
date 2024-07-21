@@ -65,9 +65,7 @@ public:
                                  const ExprNode *expr) const;
 
   /// Return whether there are any bindings given.
-  bool empty() const {
-    return parameters.posOperands.empty() && parameters.kwOperands.empty();
-  }
+  bool empty() const { return parameters.empty(); }
 
   // Provide access to the parameter list this represents.
   const CallOperands &getParameters() const { return parameters; }

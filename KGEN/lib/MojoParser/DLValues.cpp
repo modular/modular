@@ -168,10 +168,10 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
-  // Add the set value to the keyword arguments list.
+  // Add the set value to the keyword arguments list.  Semantic analysis already
+  // checked that there can't be a duplicate.
   CallOperands operandsWithValue(operands);
-  bool conflict = operandsWithValue.add(setterValueName, value);
-  assert(!conflict && "Already checked this");
+  operandsWithValue.add(setterValueName, value);
 
   ValueDest storeDest(EC_Assignment);
 

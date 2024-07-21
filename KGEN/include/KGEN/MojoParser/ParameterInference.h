@@ -104,7 +104,7 @@ public:
   /// cannot be inferred, and return success if a value was determined.
   LogicalResult infer(LITSignatureType signature,
                       const CallOperands &callOperands,
-                      const KeywordOperandContainer &variadicKwOperands);
+                      const OperandValueList &variadicKwOperands);
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
