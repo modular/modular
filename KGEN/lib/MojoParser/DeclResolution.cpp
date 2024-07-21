@@ -965,8 +965,8 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 
   OperandContainer implInitOperands(closureImplInitArgs);
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), implInitOperands, node, CallSyntax::kTypeCall,
-      closureDest, /*allowImplicitConversion=*/false);
+      ASTType(closureImplType), std::move(implInitOperands), node,
+      CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
 
   // Emit the Closure Wrapper instance.
   VarDeclOp var = exprEmitter.emitVarDecl(
@@ -985,7 +985,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 
   OperandContainer wrapperInitOperands(closureWrapperInitArgs);
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  wrapperInitOperands, node,
+                                  std::move(wrapperInitOperands), node,
                                   CallSyntax::kTypeCall, closureWrapperDest,
                                   /*allowImplicitConversion=*/false);
   return MLValue(var);
@@ -1260,8 +1260,9 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
   ASTExprAnd<AnyValue> ctorArg = {argValue, srcLoc};
   OperandContainer operands(ctorArg);
-  CValue ctorResult = emitter.emitConstructorCall(
-      varListType, operands, srcLoc, CallSyntax::kTypeCall, ctorDest);
+  CValue ctorResult =
+      emitter.emitConstructorCall(varListType, std::move(operands), srcLoc,
+                                  CallSyntax::kTypeCall, ctorDest);
   if (!ctorResult) {
     ctorDest.resetForError();
     return {};

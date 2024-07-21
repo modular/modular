@@ -67,8 +67,8 @@ static CValue emitVariadicPackConstructor(
 
   OperandContainer operandContainer(operands);
   auto callResult =
-      emitter.emitConstructorCall(variadicPackType, operandContainer, expr,
-                                  CallSyntax::kTypeCall, packDest);
+      emitter.emitConstructorCall(variadicPackType, std::move(operandContainer),
+                                  expr, CallSyntax::kTypeCall, packDest);
 
   if (isOwned)
     return callResult;

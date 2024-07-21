@@ -256,8 +256,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     hasRegisterResult = true;
   }
 
-  CValue callResult = emitter.emitIndirectCall(
-      PValue(callee), OperandContainer(posOperands, &kwOperands), dest, node);
+  OperandContainer operands(posOperands, &kwOperands);
+  CValue callResult =
+      emitter.emitIndirectCall(PValue(callee), std::move(operands), dest, node);
   if (!callResult)
     return;
 
@@ -266,7 +267,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
     ASTExprAnd<AnyValue> opValue{callResult, node};
     OperandContainer operands(opValue);
-    if (!emitter.emitNamedMethodCall("__await__", operands, dest,
+    if (!emitter.emitNamedMethodCall("__await__", std::move(operands), dest,
                                      CallSyntax::kMethodCall, node))
       return;
   }
