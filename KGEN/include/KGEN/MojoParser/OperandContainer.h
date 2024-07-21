@@ -33,9 +33,8 @@ using KeywordOperandContainer =
 class OperandContainer {
 public:
   /// Create call operands with positional and optional keyword arguments.
-  OperandContainer(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {},
-                   KeywordOperandContainer &&kwOperands = {})
-      : posOperands(posOperands), kwOperands(std::move(kwOperands)) {}
+  OperandContainer(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
+      : posOperands(posOperands) {}
 
   OperandContainer(OperandContainer &&) = default;
   explicit OperandContainer(const OperandContainer &) = default;

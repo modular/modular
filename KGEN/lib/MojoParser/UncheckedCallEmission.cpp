@@ -56,8 +56,10 @@ static CValue emitVariadicPackConstructor(
 
   // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
   // bool indicating whether the argument is owned.
-  ASTExprAnd<AnyValue> operands[2] = {{refPackValue, expr},
-                                      {isOwnedAttr, expr}};
+  OperandContainer operands;
+  operands.add({refPackValue, expr});
+  operands.add({isOwnedAttr, expr});
+
   ValueDest packDest(ExprContext::EC_PackArgument);
 
   // Construct the pack type without parameters so we reinfer the lifetime which
@@ -65,10 +67,9 @@ static CValue emitVariadicPackConstructor(
   // the declared callee side (a parameter).
   variadicPackType = variadicPackType.getWithoutParameters(emitter.shared);
 
-  OperandContainer operandContainer(operands);
   auto callResult =
-      emitter.emitConstructorCall(variadicPackType, std::move(operandContainer),
-                                  expr, CallSyntax::kTypeCall, packDest);
+      emitter.emitConstructorCall(variadicPackType, std::move(operands), expr,
+                                  CallSyntax::kTypeCall, packDest);
 
   if (isOwned)
     return callResult;
@@ -662,12 +663,11 @@ CallEmitter::emitArgValues(const OperandContainer &operands) {
         callExpr, CallSyntax::kImplicitConvert, kwargsDest);
 
     // Then we set the element with the given key and the operand as value.
-    emitter.emitNamedMethodCall(
-        "_insert",
-        OperandContainer({{MLValue(kwargsDict), callExpr},
-                          {literalKey, operand.expr},
-                          operand}),
-        kwargsDest, CallSyntax::kImplicitConvert, callExpr);
+    OperandContainer insertOperands(
+        {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
+    emitter.emitNamedMethodCall("_insert", std::move(insertOperands),
+                                kwargsDest, CallSyntax::kImplicitConvert,
+                                callExpr);
   }
 
   return argumentValues;

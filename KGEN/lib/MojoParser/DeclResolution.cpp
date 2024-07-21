@@ -953,9 +953,9 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   // Pass all the captured values into the initializer.  In the case of a move
   // capture, this will be an RValue for the thing captured, transfering to the
   // owned argument in the initializer.
-  SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
+  OperandContainer closureImplInitArgs;
   for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl))
-    closureImplInitArgs.push_back({capture.getValue(), node});
+    closureImplInitArgs.add({capture.getValue(), node});
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
   // DeclType.
@@ -963,9 +963,8 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
       paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
 
-  OperandContainer implInitOperands(closureImplInitArgs);
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), std::move(implInitOperands), node,
+      ASTType(closureImplType), std::move(closureImplInitArgs), node,
       CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
 
   // Emit the Closure Wrapper instance.
@@ -973,8 +972,9 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
       fnName, UnresolvedType::get(shared.getContext()),
       exprEmitter.translateLocation(loc), VarDeclKind::Var);
   ValueDest closureWrapperDest(var, EC_VarInit);
-  SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
-  closureWrapperInitArgs.push_back({value, node});
+
+  OperandContainer closureWrapperInitArgs;
+  closureWrapperInitArgs.add({value, node});
 
   // Create the ClosureWrapper type by binding parent parameters to the
   // ClosureWrapper type.
@@ -983,9 +983,8 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
       closureWrapper.bindReference(llvm::map_to_vector(
           capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
 
-  OperandContainer wrapperInitOperands(closureWrapperInitArgs);
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  std::move(wrapperInitOperands), node,
+                                  std::move(closureWrapperInitArgs), node,
                                   CallSyntax::kTypeCall, closureWrapperDest,
                                   /*allowImplicitConversion=*/false);
   return MLValue(var);
@@ -1225,8 +1224,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
                                    ASTDecl &parentDecl, ExprEmitter &emitter,
                                    SMLoc loc) {
-  // Expr to provide location information.
-  SyntheticNode srcLoc(loc);
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
   auto variadicType = cast<VariadicType>(argValue.getType());
@@ -1258,10 +1255,13 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
-  ASTExprAnd<AnyValue> ctorArg = {argValue, srcLoc};
-  OperandContainer operands(ctorArg);
+  OperandContainer operands;
+
+  // Expr to provide location information.
+  SyntheticNode srcLocNode(loc);
+  operands.add({argValue, &srcLocNode});
   CValue ctorResult =
-      emitter.emitConstructorCall(varListType, std::move(operands), srcLoc,
+      emitter.emitConstructorCall(varListType, std::move(operands), &srcLocNode,
                                   CallSyntax::kTypeCall, ctorDest);
   if (!ctorResult) {
     ctorDest.resetForError();

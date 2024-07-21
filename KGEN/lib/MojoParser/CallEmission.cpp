@@ -255,6 +255,8 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
 PValue OverloadSet::filterOverloadSet(OperandContainer &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure) const {
+  OperandContainer scratchOperands;
+
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -263,16 +265,17 @@ PValue OverloadSet::filterOverloadSet(OperandContainer &operands,
 
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
-    OperandContainer callOperands(operands);
-    callOperands.hasSelfOperand = operands.hasSelfOperand;
-    if (callOperands.hasSelfOperand && func.getIsStatic()) {
-      callOperands.posOperands.erase(callOperands.posOperands.begin());
-      callOperands.hasSelfOperand = false;
+    const OperandContainer *operandsToUse = &operands;
+    if (operands.hasSelfOperand && func.getIsStatic()) {
+      scratchOperands = OperandContainer(operands);
+      scratchOperands.posOperands.erase(scratchOperands.posOperands.begin());
+      scratchOperands.hasSelfOperand = false;
+      operandsToUse = &scratchOperands;
     }
 
     evaluations.push_back(
         OverloadFitness::evaluate(func.getFullSignature(), candidate, *this,
-                                  callOperands, allowImplicitConversions));
+                                  *operandsToUse, allowImplicitConversions));
     anyValid |= evaluations.back().isValid();
   }
 
@@ -1087,15 +1090,15 @@ FailureOr<PValue> OverloadSet::canConstructType(
   }
 
   // If this is InitSelf then we'll pass a self argument with the
-  // destination when invoking the method, use a temporary so we can
-  // conveniently type check this.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands(operands.posOperands.begin(),
-                                                operands.posOperands.end());
+  // destination when invoking the method.
   if (hasInitSelf) {
+    // TODO: We should add a new magic InferSelfLValue() IRValue type.  This
+    // would make the inference and overload resolution logic more consistent
+    // because the selfexpr should really be an LValue.
     auto inferType =
         requiredType.getWithUnknownParametersReplaced(scopeInfo.shared);
     auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
-    posOperands.insert(posOperands.begin(), {PValue(attr), expr});
+    operands.addSelf({PValue(attr), expr});
   }
   // Install the Self type parameters on the callee directly, since they cannot
   // always be inferred. This can happen if a constructor has more specific Self
@@ -1103,15 +1106,11 @@ FailureOr<PValue> OverloadSet::canConstructType(
   callee.paramBindings =
       ParamBindings::getForDeclaredType(scopeInfo, requiredType, expr);
 
-  OperandContainer adjOperands(posOperands, std::move(operands.kwOperands));
-  adjOperands.hasSelfOperand = hasInitSelf;
-
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
   // be able to allow implicit conversions.
-  PValue result =
-      callee.filterOverloadSet(adjOperands, allowImplicitConversions,
-                               /*emitDiagnosticOnFailure=*/false);
+  PValue result = callee.filterOverloadSet(operands, allowImplicitConversions,
+                                           /*emitDiagnosticOnFailure=*/false);
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   return result;
@@ -1178,7 +1177,7 @@ bool OverloadSet::canImplicitlyConvertToType(
   // Disable implicit conversions though, to prevent converting T -> S -> U in
   // one step.
   FailureOr<PValue> result = OverloadSet::canConstructType(
-      requiredType, OperandContainer({value}), value.expr, scopeInfo,
+      requiredType, {{value}}, value.expr, scopeInfo,
       /*allowImplicitConversions=*/false);
   return cacheAndReturnVal(succeeded(result) && result.value());
 }

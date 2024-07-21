@@ -192,8 +192,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // Construct the call operands from the function block arguments. Ensure
   // keyword-only arguments are specified accordingly.
   SyntheticNode node(structDecl.getLoc());
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  KeywordOperandContainer kwOperands;
+
+  OperandContainer operands;
+
   bool hasLegacyInitSelfArg = false;
   for (auto [arg, conv, pogAttr] :
        llvm::zip(thunk.getArguments(), memSig.getArgConventions(),
@@ -233,10 +234,12 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     default:
       llvm_unreachable("unexpected input convention");
     }
-    if (pogAttr.getPassingKind() == PassingKind::KwOnly)
-      kwOperands.insert({pogAttr.getName(), {value, node}});
-    else
-      posOperands.push_back({value, node});
+    if (pogAttr.getPassingKind() == PassingKind::KwOnly) {
+      bool conflict = operands.add(pogAttr.getName(), {value, node});
+      assert(!conflict && "kw arg conflict in trait stub");
+    } else {
+      operands.add({value, node});
+    }
   }
 
   // Allocate the value dest for the call. Set the value dest to the result
@@ -256,7 +259,6 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     hasRegisterResult = true;
   }
 
-  OperandContainer operands(posOperands, std::move(kwOperands));
   CValue callResult =
       emitter.emitIndirectCall(PValue(callee), std::move(operands), dest, node);
   if (!callResult)
@@ -265,10 +267,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (memSig.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
-    ASTExprAnd<AnyValue> opValue{callResult, node};
-    OperandContainer operands(opValue);
-    if (!emitter.emitNamedMethodCall("__await__", std::move(operands), dest,
-                                     CallSyntax::kMethodCall, node))
+    if (!emitter.emitNamedMethodCall("__await__",
+                                     OperandContainer({{callResult, node}}),
+                                     dest, CallSyntax::kMethodCall, node))
       return;
   }
 
