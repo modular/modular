@@ -165,8 +165,8 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  return emitter.emitIndirectCall(
-      getter, OperandContainer(posOperands, &kwOperands), dest, expr);
+  OperandContainer operands(posOperands, &kwOperands);
+  return emitter.emitIndirectCall(getter, std::move(operands), dest, expr);
 }
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
@@ -184,8 +184,8 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
 
-  emitter.emitNamedMethodCall(setterName, setterCallOperands, storeDest,
-                              CallSyntax::kMethodCall, expr);
+  emitter.emitNamedMethodCall(setterName, std::move(setterCallOperands),
+                              storeDest, CallSyntax::kMethodCall, expr);
 }
 //===----------------------------------------------------------------------===//
 // TupleDLValue
@@ -207,7 +207,7 @@ void TupleDLValue::print(raw_ostream &os) const {
 CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the tuple type constructor as an implicit conversion.
   OperandContainer operands(eltLValues);
-  return emitter.emitConstructorCall(elementType, operands, expr,
+  return emitter.emitConstructorCall(elementType, std::move(operands), expr,
                                      CallSyntax::kImplicitConvert, dest);
 }
 

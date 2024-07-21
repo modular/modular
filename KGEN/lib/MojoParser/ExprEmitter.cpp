@@ -1515,7 +1515,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
         ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
     OperandContainer operands(posOperands);
     ValueDest copyDest(dest.getContext());
-    if (!emitNamedMethodCall("__copyinit__", operands, copyDest,
+    if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     // If we required an implicit conversion, make sure it happens.

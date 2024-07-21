@@ -1604,9 +1604,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
-  CValue enterResult =
-      getEmitter().emitNamedMethodCall("__enter__", enterOperands, enterDest,
-                                       CallSyntax::kMethodCall, contextExp);
+  CValue enterResult = getEmitter().emitNamedMethodCall(
+      "__enter__", std::move(enterOperands), enterDest, CallSyntax::kMethodCall,
+      contextExp);
 
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
@@ -1778,7 +1778,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     exitOperands[1].ir = MBValue(nestedErrDecl);
     OperandContainer exitOperandList(exitOperands);
     CValue exitResult = getEmitter().emitIndirectCall(
-        conditionalExit, exitOperandList, exitResultDest, contextExp);
+        conditionalExit, std::move(exitOperandList), exitResultDest,
+        contextExp);
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =

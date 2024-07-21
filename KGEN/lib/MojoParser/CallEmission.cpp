@@ -790,8 +790,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(const OperandContainer &callOperands,
-                             ValueDest &dest, ExprEmitter &emitter) {
+CValue OverloadSet::emitCall(OperandContainer &&callOperands, ValueDest &dest,
+                             ExprEmitter &emitter) {
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
@@ -821,7 +821,7 @@ CValue OverloadSet::emitCall(const OperandContainer &callOperands,
 }
 
 CValue ExprEmitter::emitIndirectCall(CValue callee,
-                                     const OperandContainer &callOperands,
+                                     OperandContainer &&callOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
@@ -884,10 +884,10 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
 }
 
 CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
-                                        const OperandContainer &callOperands,
+                                        OperandContainer &&operands,
                                         ValueDest &dest, CallSyntax syntax,
                                         const ExprNode *callNode) {
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   assert(!posOperands.empty() &&
          "Cannot emit a method call without a receiver!");
 
@@ -908,7 +908,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     posOperands = updatedPosOperands;
   }
 
-  OperandContainer operands(posOperands, callOperands.kwOperands);
+  OperandContainer updatedOperands(posOperands, operands.kwOperands);
 
   ASTType type = selfVal.getRValueType();
 
@@ -932,22 +932,22 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   };
 
   // If the type doesn't have the specified method, emit an error.
-  PValue callee =
-      OverloadSet::lookupAndResolve(getScopeInfo(), type, methodName, operands,
-                                    callNode, syntax, emitNoMethodError, true);
+  PValue callee = OverloadSet::lookupAndResolve(
+      getScopeInfo(), type, methodName, updatedOperands, callNode, syntax,
+      emitNoMethodError, true);
   if (!callee) {
     dest.resetForError();
     return {};
   }
 
-  return emitIndirectCall(callee, operands, dest, callNode);
+  return emitIndirectCall(callee, std::move(updatedOperands), dest, callNode);
 }
 
 /// Emit a call to __init__, returning an instance of the specified type.  If
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
 CValue ExprEmitter::emitConstructorCall(ASTType type,
-                                        const OperandContainer &callOperands,
+                                        OperandContainer &&callOperands,
                                         const ExprNode *expr, CallSyntax syntax,
                                         ValueDest &dest,
                                         bool allowImplicitConversion) {
@@ -1055,7 +1055,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     }
   }
 
-  // Provide a self value so parameter inferrence can infer parameters from
+  // Provide a self value so parameter inference can infer parameters from
   // typeof(self).
   if (hasInitSelfArg) {
     assert(!callee.baseValue && "Shouldn't have a self value yet");
@@ -1063,7 +1063,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     callee.baseValue = {PValue(attr), expr};
   }
 
-  return callee.emitCall(callOperands, dest, *this);
+  return callee.emitCall(std::move(callOperands), dest, *this);
 }
 
 //===----------------------------------------------------------------------===//

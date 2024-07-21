@@ -1646,7 +1646,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   for (OpResult opResult : resultOp->getResults())
     posOperands.push_back({SRValue(opResult), &call});
   OperandContainer operands(posOperands);
-  return emitter.emitConstructorCall(tupleType, operands, &call,
+  return emitter.emitConstructorCall(tupleType, std::move(operands), &call,
                                      CallSyntax::kImplicitConvert, dest,
                                      /*allowImplicitConversion=*/true);
 }
@@ -1702,7 +1702,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     // Check to see if we can invoke an __init__ method to convert it.
-    return emitter.emitConstructorCall(calledType, operands, this,
+    return emitter.emitConstructorCall(calledType, std::move(operands), this,
                                        CallSyntax::kTypeCall, dest);
   }
 
@@ -1711,12 +1711,12 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
                                         overloads->syntax, operands);
     overloads->expr = this;
-    return overloads->emitCall(operands, dest, emitter);
+    return overloads->emitCall(std::move(operands), dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   if (auto crVal = calleeVal.getIfCValue())
-    return emitter.emitIndirectCall(crVal, operands, dest, this);
+    return emitter.emitIndirectCall(crVal, std::move(operands), dest, this);
 
   emitter.emitError(getLoc(), "cannot call this unresolved expression");
   return {};
@@ -1910,7 +1910,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
   OperandContainer operands(elements);
-  return emitter.emitConstructorCall(type, operands, node,
+  return emitter.emitConstructorCall(type, std::move(operands), node,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -2152,7 +2152,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     if (PValue callee = OverloadSet::lookupAndResolve(
             emitter.getScopeInfo(), lhsCV.getRValueType(), specialFnInfo.name,
             operands, callExpr, CallSyntax::kOperator))
-      return emitter.emitIndirectCall(callee, operands, dest, callExpr);
+      return emitter.emitIndirectCall(callee, std::move(operands), dest,
+                                      callExpr);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -2166,7 +2167,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
               emitter.getScopeInfo(), rhsCV.getRValueType(),
               reversedFnInfo.name, operands, callExpr,
               CallSyntax::kReversedOperator))
-        return emitter.emitIndirectCall(callee, operands, dest, callExpr);
+        return emitter.emitIndirectCall(callee, std::move(operands), dest,
+                                        callExpr);
     }
 
     // Swap these back so we emit the right error.
@@ -2175,8 +2177,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Emit an error complaining about the forward version of the operator.
   OperandContainer operands(argValues);
-  return emitter.emitNamedMethodCall(specialFnInfo.name, operands, dest,
-                                     CallSyntax::kOperator, callExpr);
+  return emitter.emitNamedMethodCall(specialFnInfo.name, std::move(operands),
+                                     dest, CallSyntax::kOperator, callExpr);
 }
 
 /// Emit a simple assignment statement. Python evaluates the RHS of an
@@ -3271,6 +3273,6 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
   OperandContainer operands(elements);
-  return emitter.emitConstructorCall(tupleType, operands, this,
+  return emitter.emitConstructorCall(tupleType, std::move(operands), this,
                                      CallSyntax::kImplicitConvert, dest);
 }

@@ -180,7 +180,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(const OperandContainer &callOperands, ValueDest &dest,
+  CValue emitCall(OperandContainer &&callOperands, ValueDest &dest,
                   ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
