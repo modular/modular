@@ -540,7 +540,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return {};
   }
 
-  return emitConstructorCall(expectedType, OperandContainer(initValue.get()),
+  return emitConstructorCall(expectedType, CallOperands(initValue.get()),
                              value.expr, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1312,9 +1312,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
       // We disable implicit conversions to prevent converting T -> S -> U in
       // one step, and to avoid infinite conversion cycles.
-      return emitConstructorCall(requiredType,
-                                 OperandContainer({{cValue, expr}}), expr,
-                                 CallSyntax::kImplicitConvert, dest,
+      return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
+                                 expr, CallSyntax::kImplicitConvert, dest,
                                  /*allowImplicitConversion=*/false);
     }
   }
@@ -1471,9 +1470,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       }
       // Register passable __copyinit__ has signature `(self)->Self`.
       if (!hasInitSelfResult)
-        return emitNamedMethodCall("__copyinit__", OperandContainer({value}),
-                                   dest, CallSyntax::kImplicitConvert,
-                                   value.expr);
+        return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
+                                   CallSyntax::kImplicitConvert, value.expr);
     }
     [[fallthrough]];
   case TypeConvention::MemoryOnly:
@@ -1510,7 +1508,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       return {};
     }
 
-    OperandContainer operands(
+    CallOperands operands(
         {ASTExprAnd<AnyValue>{destBuffer, value.expr}, value});
     ValueDest copyDest(dest.getContext());
     if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
@@ -1551,7 +1549,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       ValueDest nmConversionDest =
           destML ? ValueDest(destML, context) : ValueDest(context);
       CValue nmConversionVal =
-          emitConstructorCall(nmTarget, OperandContainer({value}), value.expr,
+          emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
                               CallSyntax::kIndirectCall, nmConversionDest,
                               /*allowImplicitConversion=*/true);
       if (destML)

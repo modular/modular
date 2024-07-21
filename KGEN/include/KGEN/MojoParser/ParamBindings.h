@@ -7,7 +7,7 @@
 #ifndef KGEN_MOJOPARSER_PARAMBINDINGS_H
 #define KGEN_MOJOPARSER_PARAMBINDINGS_H
 
-#include "KGEN/MojoParser/OperandContainer.h"
+#include "KGEN/MojoParser/CallOperands.h"
 
 namespace M::KGEN {
 class ParameterExprArrayAttr;
@@ -70,7 +70,7 @@ public:
   }
 
   // Provide access to the parameter list this represents.
-  const OperandContainer &getParameters() const { return parameters; }
+  const CallOperands &getParameters() const { return parameters; }
 
   /// Add a bound value for pre-checked positional parameter binding. The caller
   /// is responsible for ensuring the keyword is not already present.
@@ -181,14 +181,14 @@ private:
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindingsImpl(const OperandContainer &operands,
+  verifyBindingsImpl(const CallOperands &operands,
                      ArrayRef<Type> expectedParamTypes,
                      PogListAttr paramListAttr,
                      ParameterInferenceHookTy parameterInferenceHook,
                      const DiagEmitter *diagEmitter, bool partial) const;
 
   /// This contains the values that are bound into this parameter list.
-  OperandContainer parameters;
+  CallOperands parameters;
 
   /// A list of all default parameter values declared for a type, if these are
   /// bindings for an overload set on a method.

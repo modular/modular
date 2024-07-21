@@ -19,7 +19,7 @@ namespace M::KGEN::LIT {
 class PogListAttr;
 
 //===----------------------------------------------------------------------===//
-// OperandContainer
+// CallOperands
 //===----------------------------------------------------------------------===//
 
 /// A shorthand to make keyword operand handling more readable.
@@ -30,15 +30,15 @@ using KeywordOperandContainer =
 /// Struct that carries both positional and keyword operands for a call or
 /// parameter binding. This does not own any values, only references pointers
 /// to their containers.
-class OperandContainer {
+class CallOperands {
 public:
   /// Create call operands with positional and optional keyword arguments.
-  OperandContainer(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
+  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
       : posOperands(posOperands) {}
 
-  OperandContainer(OperandContainer &&) = default;
-  explicit OperandContainer(const OperandContainer &) = default;
-  OperandContainer &operator=(OperandContainer &&) = default;
+  CallOperands(CallOperands &&) = default;
+  explicit CallOperands(const CallOperands &) = default;
+  CallOperands &operator=(CallOperands &&) = default;
 
   /// Return a keyword argument value if present, or null otherwise.
   std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
@@ -118,7 +118,7 @@ public:
                       bool allowCountMismatch = false) const;
 };
 
-raw_ostream &operator<<(raw_ostream &os, const OperandContainer &value);
+raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 
 } // namespace M::KGEN::LIT
 

@@ -110,7 +110,7 @@ public:
   /// about overload resolution when 'shouldPrintOverloadErrors' is true.
   static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
                                  ASTType type, StringRef methodName,
-                                 OperandContainer &callOperands,
+                                 CallOperands &operands,
                                  const ExprNode *callExpr, CallSyntax syntax,
                                  function_ref<void()> lookupFailureErrorHandler,
                                  bool shouldPrintOverloadErrors);
@@ -118,9 +118,9 @@ public:
   /// Same as the above but a convenience when never emitting an error.
   static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
                                  ASTType type, StringRef methodName,
-                                 OperandContainer &callOperands,
+                                 CallOperands &operands,
                                  const ExprNode *callExpr, CallSyntax syntax) {
-    return lookupAndResolve(scopeInfo, type, methodName, callOperands, callExpr,
+    return lookupAndResolve(scopeInfo, type, methodName, operands, callExpr,
                             syntax, {}, false);
   }
 
@@ -150,7 +150,7 @@ public:
   ///
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
-  PValue filterOverloadSet(OperandContainer &operands,
+  PValue filterOverloadSet(CallOperands &operands,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure) const;
 
@@ -180,7 +180,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(OperandContainer &&callOperands, ValueDest &dest,
+  CValue emitCall(CallOperands &&callOperands, ValueDest &dest,
                   ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
@@ -201,7 +201,7 @@ public:
   /// constructor that likely would have applied, which should be considered in
   /// any error reporting. This does not generate any IR.
   static FailureOr<PValue>
-  canConstructType(ASTType requiredType, OperandContainer &&operands,
+  canConstructType(ASTType requiredType, CallOperands &&operands,
                    const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
                    bool allowImplicitConversions = true);
 

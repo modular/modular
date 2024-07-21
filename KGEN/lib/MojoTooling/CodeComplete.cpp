@@ -244,7 +244,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
   }
 
   void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
-              const OperandContainer &operands) override {
+              const CallOperands &operands) override {
     auto findInterestedOperand = [&]() -> std::optional<size_t> {
       for (const auto &[index, operand] :
            llvm::enumerate(operands.posOperands)) {

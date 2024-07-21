@@ -16,7 +16,7 @@
 #include "Support/Compiler/Diags.h"
 
 namespace M::KGEN::LIT {
-class OperandContainer;
+class CallOperands;
 class LITSignatureType;
 class PogListAttr;
 struct TypeCheckScopeInfo;
@@ -71,7 +71,7 @@ public:
   static OverloadFitness evaluate(LITSignatureType signature,
                                   ASTDecl *funcIfDirect,
                                   const OverloadSet &callable,
-                                  const OperandContainer &callOperands,
+                                  const CallOperands &callOperands,
                                   bool allowImplicitConversions);
 
   /// Determine whether the specified signature can be invoked with the

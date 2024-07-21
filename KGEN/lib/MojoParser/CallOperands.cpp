@@ -9,7 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/OperandContainer.h"
+#include "KGEN/MojoParser/CallOperands.h"
 #include "MojoUtils.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -19,11 +19,11 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-void OperandContainer::dump() const { llvm::errs() << *this << '\n'; }
+void CallOperands::dump() const { llvm::errs() << *this << '\n'; }
 
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
-                                      const OperandContainer &value) {
-  os << "OperandContainer{ " << value.posOperands.size() << " pos args, "
+                                      const CallOperands &value) {
+  os << "CallOperands{ " << value.posOperands.size() << " pos args, "
      << value.getNumKwOperands() << " kw args";
   if (value.hasSelfOperand)
     os << " <HAS SELF OPERAND>";
@@ -44,8 +44,8 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
 /// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
 /// missing kw-only arg/param). If the function accepts variadic keyword
 /// args/params, this function also collects them.
-std::pair<OperandContainer::KwDiagResult, SmallVector<StringAttr>>
-OperandContainer::diagnoseKeywordOperands(
+std::pair<CallOperands::KwDiagResult, SmallVector<StringAttr>>
+CallOperands::diagnoseKeywordOperands(
     PogListAttr pogListAttr, KeywordOperandContainer &variadicKwOperands,
     bool allowMissingKwOnly) const {
   // First, we collect any (named) pos-only args/params passed by keyword
@@ -102,9 +102,9 @@ OperandContainer::diagnoseKeywordOperands(
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/parameter (too many positionals, missing positionals,
 /// argument/parameter specified both by positional and keyword operands).
-std::pair<OperandContainer::PosDiagResult, SmallVector<StringAttr>>
-OperandContainer::diagnosePosOperands(PogListAttr pogListAttr,
-                                      bool allowCountMismatch) const {
+std::pair<CallOperands::PosDiagResult, SmallVector<StringAttr>>
+CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
+                                  bool allowCountMismatch) const {
   SmallVector<StringAttr> missingPosNames;
   SmallVector<StringAttr> byPosAndKw;
 

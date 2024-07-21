@@ -193,7 +193,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // keyword-only arguments are specified accordingly.
   SyntheticNode node(structDecl.getLoc());
 
-  OperandContainer operands;
+  CallOperands operands;
 
   bool hasLegacyInitSelfArg = false;
   for (auto [arg, conv, pogAttr] :
@@ -268,8 +268,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   if (memSig.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
     if (!emitter.emitNamedMethodCall("__await__",
-                                     OperandContainer({{callResult, node}}),
-                                     dest, CallSyntax::kMethodCall, node))
+                                     CallOperands({{callResult, node}}), dest,
+                                     CallSyntax::kMethodCall, node))
       return;
   }
 

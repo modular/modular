@@ -83,7 +83,7 @@ private:
 class ParameterInferenceState : public TypeCheckScopeInfo {
 public:
   ParameterInferenceState(const TypeCheckScopeInfo &scopeInfo,
-                          const OperandContainer &givenBindings,
+                          const CallOperands &givenBindings,
                           ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
@@ -103,13 +103,13 @@ public:
   /// parameter. This should always return failure /without/ an error if it
   /// cannot be inferred, and return success if a value was determined.
   LogicalResult infer(LITSignatureType signature,
-                      const OperandContainer &callOperands,
+                      const CallOperands &callOperands,
                       const KeywordOperandContainer &variadicKwOperands);
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
   LogicalResult inferCTADParams(LITSignatureType signature,
-                                const OperandContainer &callOperands);
+                                const CallOperands &callOperands);
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
@@ -138,7 +138,7 @@ private:
 
   /// These are the bindings originally provided to the callable. These are used
   /// to infer parameters from other parameter values.
-  const OperandContainer &givenBindings;
+  const CallOperands &givenBindings;
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
