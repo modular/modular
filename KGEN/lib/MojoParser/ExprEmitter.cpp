@@ -540,8 +540,8 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return {};
   }
 
-  return emitConstructorCall(expectedType, initValue.get(), value.expr,
-                             CallSyntax::kImplicitConvert, dest);
+  return emitConstructorCall(expectedType, OperandContainer(initValue.get()),
+                             value.expr, CallSyntax::kImplicitConvert, dest);
 }
 
 /// Emit an expression providing an immutable borrowed reference to a value.

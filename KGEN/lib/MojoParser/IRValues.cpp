@@ -277,9 +277,9 @@ OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
 /// allowing InitializerUValue to maintain it while still being copyable.
 struct InitializerUValue::CallOperandsWrapper
     : public NonAtomicallyReferenceCounted<CallOperandsWrapper> {
-  CallOperandsWrapper(ArrayRef<ASTExprAnd<AnyValue>> operands)
-      : operands(operands.begin(), operands.end()) {}
-  SmallVector<ASTExprAnd<AnyValue>> operands;
+  CallOperandsWrapper(OperandContainer &&operands)
+      : operands(std::move(operands)) {}
+  OperandContainer operands;
 };
 
 InitializerUValue::InitializerUValue() {}
@@ -295,12 +295,11 @@ InitializerUValue::operator=(const InitializerUValue &existing) {
   return *this;
 }
 
-InitializerUValue
-InitializerUValue::create(ArrayRef<ASTExprAnd<AnyValue>> operands) {
+InitializerUValue InitializerUValue::create(OperandContainer &&operands) {
   return InitializerUValue(
       takeRCRef(new CallOperandsWrapper{std::move(operands)}));
 }
 
-OperandContainer InitializerUValue::get() const {
-  return OperandContainer(storage->operands);
+const OperandContainer &InitializerUValue::get() const {
+  return storage->operands;
 }

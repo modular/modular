@@ -284,13 +284,15 @@ public:
   InitializerUValue &operator=(const InitializerUValue &existing);
   ~InitializerUValue();
 
+  // InitializerUValue must be "nullable" so getIfInitializer() can return an
+  // InitializerUValue.  Maybe it should return optional?
   bool isNull() const { return !storage; }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  OperandContainer get() const;
+  const OperandContainer &get() const;
 
-  static InitializerUValue create(ArrayRef<ASTExprAnd<AnyValue>> operands);
+  static InitializerUValue create(OperandContainer &&operands);
 
 private:
   struct CallOperandsWrapper;

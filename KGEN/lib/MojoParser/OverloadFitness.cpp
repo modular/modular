@@ -489,7 +489,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       if (auto initValue = operand.ir.getIfInitializer()) {
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedType, initValue.get(), operand.expr, scopeInfo);
+            expectedType, OperandContainer(initValue.get()), operand.expr,
+            scopeInfo);
         // If there were declaration errors, assume construction is possible to
         // avoid spurious errors.
         bool valid = (bool)failed(initFn) || initFn.value();

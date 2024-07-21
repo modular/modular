@@ -1724,17 +1724,18 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // TODO: Generalize to more than 3 operands.  We might also want to turn this
   // into a well-known static method instead of overloading onto constructor.
-  SmallVector<ASTExprAnd<AnyValue>, 3> operands;
-  operands.push_back(getOperand(lower));
-  if (!operands.back().ir)
+  OperandContainer operands;
+  operands.add(getOperand(lower));
+  if (!operands.posOperands.back().ir)
     return {};
-  operands.push_back(getOperand(upper));
-  if (!operands.back().ir)
+  operands.add(getOperand(upper));
+  if (!operands.posOperands.back().ir)
     return {};
-  operands.push_back(getOperand(stride));
-  if (!operands.back().ir)
+  operands.add(getOperand(stride));
+  if (!operands.posOperands.back().ir)
     return {};
-  return emitter.emitResult(InitializerUValue::create(operands), this, dest);
+  return emitter.emitResult(InitializerUValue::create(std::move(operands)),
+                            this, dest);
 }
 
 /// Bind parameter operands to a callable parameter.
@@ -1884,14 +1885,14 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   }
 
   // Emit each of the tuple elements.
-  SmallVector<ASTExprAnd<AnyValue>> elements;
+  OperandContainer operands;
   for (ExprNode *expr : exprs) {
     auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
     if (!exprVal) {
       dest.resetForError();
       return {};
     }
-    elements.push_back({std::move(exprVal), expr});
+    operands.add({std::move(exprVal), expr});
   }
 
   // The ASTType will carry around parameters bound, we want to unbind them so
@@ -1900,7 +1901,6 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  OperandContainer operands(elements);
   return emitter.emitConstructorCall(type, std::move(operands), node,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -2130,16 +2130,16 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     emitter.shared.emitError(callExpr->getLoc(), "operator not yet supported");
     return {};
   }
-  ASTExprAnd<AnyValue> argValues[] = {lhs, rhs};
+
+  OperandContainer operands({lhs, rhs});
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
   if (kind == ExprNode::Kind::kCmpIn)
-    std::swap(argValues[0], argValues[1]);
+    std::swap(operands.posOperands[0], operands.posOperands[1]);
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
-    OperandContainer operands(argValues);
     if (PValue callee = OverloadSet::lookupAndResolve(
             emitter.getScopeInfo(), lhsCV.getRValueType(), specialFnInfo.name,
             operands, callExpr, CallSyntax::kOperator))
@@ -2151,9 +2151,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
-    std::swap(argValues[0], argValues[1]);
+    std::swap(operands.posOperands[0], operands.posOperands[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
-      OperandContainer operands(argValues);
       if (PValue callee = OverloadSet::lookupAndResolve(
               emitter.getScopeInfo(), rhsCV.getRValueType(),
               reversedFnInfo.name, operands, callExpr,
@@ -2163,11 +2162,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     }
 
     // Swap these back so we emit the right error.
-    std::swap(argValues[0], argValues[1]);
+    std::swap(operands.posOperands[0], operands.posOperands[1]);
   }
 
   // Emit an error complaining about the forward version of the operator.
-  OperandContainer operands(argValues);
   return emitter.emitNamedMethodCall(specialFnInfo.name, std::move(operands),
                                      dest, CallSyntax::kOperator, callExpr);
 }
@@ -3263,7 +3261,6 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  OperandContainer operands(elements);
-  return emitter.emitConstructorCall(tupleType, std::move(operands), this,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(tupleType, OperandContainer(elements),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }

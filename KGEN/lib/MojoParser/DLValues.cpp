@@ -204,9 +204,8 @@ void TupleDLValue::print(raw_ostream &os) const {
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
 CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the tuple type constructor as an implicit conversion.
-  OperandContainer operands(eltLValues);
-  return emitter.emitConstructorCall(elementType, std::move(operands), expr,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(elementType, OperandContainer(eltLValues),
+                                     expr, CallSyntax::kImplicitConvert, dest);
 }
 
 // TODO: Move this somewhere common like ExprEmitter
