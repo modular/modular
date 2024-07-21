@@ -201,7 +201,7 @@ public:
   /// constructor that likely would have applied, which should be considered in
   /// any error reporting. This does not generate any IR.
   static FailureOr<PValue>
-  canConstructType(ASTType requiredType, const OperandContainer &operands,
+  canConstructType(ASTType requiredType, OperandContainer &&operands,
                    const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
                    bool allowImplicitConversions = true);
 

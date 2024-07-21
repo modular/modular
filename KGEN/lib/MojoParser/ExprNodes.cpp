@@ -1049,9 +1049,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // If we /just/ have a getter, emit this as a call to the getter, allowing
   // us to get nice tuned diagnostics.
-  if (!setterSet)
-    return getterSet.emitCall(OperandContainer(posOperands, &kwOperands), dest,
-                              emitter);
+  if (!setterSet) {
+    OperandContainer operands(posOperands, std::move(kwOperands));
+    return getterSet.emitCall(std::move(operands), dest, emitter);
+  }
 
   // Okay, we definitely have a setter, and we might have a getter.  The problem
   // is that we don't know in which context this expression will be used - it
@@ -1062,7 +1063,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   ASTType elementType;
   PValue getter;
   if (getterSet) {
-    OperandContainer getOperands(posOperands, &kwOperands);
+    OperandContainer getOperands(posOperands,
+                                 KeywordOperandContainer(kwOperands));
     getter = getterSet.filterOverloadSet(getOperands,
                                          /*allowImplicitConversions=*/true,
                                          /*emitDiagnosticOnFailure*/ true);
@@ -1642,10 +1644,9 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Construct the Tuple type without parameters so we infer them.
   tupleType = tupleType.getWithoutParameters(emitter.shared);
 
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
+  OperandContainer operands;
   for (OpResult opResult : resultOp->getResults())
-    posOperands.push_back({SRValue(opResult), &call});
-  OperandContainer operands(posOperands);
+    operands.add({SRValue(opResult), &call});
   return emitter.emitConstructorCall(tupleType, std::move(operands), &call,
                                      CallSyntax::kImplicitConvert, dest,
                                      /*allowImplicitConversion=*/true);
@@ -1664,8 +1665,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   /// Emit all the operands that we'll need.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  KeywordOperandContainer kwOperands;
+  OperandContainer operandsList;
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
@@ -1682,15 +1682,13 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!exprAndVal)
       return {};
     if (operand.isPositional()) {
-      posOperands.emplace_back(std::move(exprAndVal));
+      operandsList.add(std::move(exprAndVal));
     } else {
       assert(operand.isKeyword());
-      StringAttr name = operand.name;
-      auto [_, addedNew] = kwOperands.try_emplace(name, std::move(exprAndVal));
-      assert(addedNew && "duplicate keyword argument");
+      bool duplicate = operandsList.add(operand.name, std::move(exprAndVal));
+      assert(!duplicate && "duplicate keyword argument");
     }
   }
-  OperandContainer operands(posOperands, &kwOperands);
 
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type.
@@ -1702,21 +1700,21 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     // Check to see if we can invoke an __init__ method to convert it.
-    return emitter.emitConstructorCall(calledType, std::move(operands), this,
-                                       CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(calledType, std::move(operandsList),
+                                       this, CallSyntax::kTypeCall, dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
-                                        overloads->syntax, operands);
+                                        overloads->syntax, operandsList);
     overloads->expr = this;
-    return overloads->emitCall(std::move(operands), dest, emitter);
+    return overloads->emitCall(std::move(operandsList), dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   if (auto crVal = calleeVal.getIfCValue())
-    return emitter.emitIndirectCall(crVal, std::move(operands), dest, this);
+    return emitter.emitIndirectCall(crVal, std::move(operandsList), dest, this);
 
   emitter.emitError(getLoc(), "cannot call this unresolved expression");
   return {};

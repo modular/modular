@@ -641,11 +641,9 @@ CallEmitter::emitArgValues(const OperandContainer &operands) {
 
   // Find all keyword operands that we didn't bind to an argument.
   SmallVector<std::pair<StringAttr, ASTExprAnd<AnyValue>>> variadicKwOperands;
-  if (operands.kwOperands) {
-    for (auto [name, operand] : *operands.kwOperands)
-      if (!passedByKw.contains(name))
-        variadicKwOperands.emplace_back(name, operand);
-  }
+  for (auto [name, operand] : operands.kwOperands)
+    if (!passedByKw.contains(name))
+      variadicKwOperands.emplace_back(name, operand);
   assert((variadicKwOperands.empty() || kwargsDict) &&
          "typechecking confirmed we have no **kwargs");
 
