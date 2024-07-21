@@ -1212,7 +1212,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   // continue. Otherwise break
   ValueDest lengthDest(EC_ForIterator);
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", OperandContainer({{MLValue(rangeRef), seqExpr}}), lengthDest,
+      "__len__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
       CallSyntax::kImplicitConvert, seqExpr);
   CValue lengthIndex =
       getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
@@ -1233,8 +1233,8 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   builder.setInsertionPointToStart(bodyBlock);
   ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
-          "__next__", OperandContainer({{MLValue(rangeRef), seqExpr}}),
-          indvarDest, CallSyntax::kImplicitConvert, seqExpr))
+          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
+          CallSyntax::kImplicitConvert, seqExpr))
     return {};
 
   avoidDroppingDeclOnFail.release();
@@ -1539,7 +1539,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  OperandContainer enterOperands;
+  CallOperands enterOperands;
   enterOperands.addSelf({contextVal, contextExp});
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
           getScopeInfo(), contextRVType, "__enter__", enterOperands, contextExp,
@@ -1662,7 +1662,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     if (hasExitMethod) {
       ValueDest exitDest(EC_WithExitResult);
       (void)getEmitter().emitNamedMethodCall(
-          "__exit__", OperandContainer({{MLValue(contextMgrDecl), contextExp}}),
+          "__exit__", CallOperands({{MLValue(contextMgrDecl), contextExp}}),
           exitDest, CallSyntax::kMethodCall, contextExp);
     } else if (auto targetBV = getEmitter().emitBValue(
                    {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
@@ -1702,7 +1702,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Check if the context manager provides an `__exit__` overload that accepts
   // an error. If it doesn't, then we know the exit is unconditional.
-  OperandContainer exitCallOperands;
+  CallOperands exitCallOperands;
   exitCallOperands.addSelf({contextVal, contextExp});
   exitCallOperands.add({PValue(UnknownAttr::get(errorType)), contextExp});
   PValue conditionalExit = OverloadSet::lookupAndResolve(
@@ -1771,8 +1771,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
     ValueDest exitResultDest(EC_WithExitResult);
-    OperandContainer exitOperandList({{MLValue(contextMgrDecl), contextExp},
-                                      {MBValue(nestedErrDecl), contextExp}});
+    CallOperands exitOperandList({{MLValue(contextMgrDecl), contextExp},
+                                  {MBValue(nestedErrDecl), contextExp}});
     CValue exitResult = getEmitter().emitIndirectCall(
         conditionalExit, std::move(exitOperandList), exitResultDest,
         contextExp);

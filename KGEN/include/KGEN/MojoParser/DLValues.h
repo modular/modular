@@ -61,7 +61,7 @@ public:
   StringAttr setterValueName;
 
   // Positional operands (including self) for the setter/getter call.
-  OperandContainer operands;
+  CallOperands operands;
 
   const ExprNode *expr;
 
@@ -69,7 +69,7 @@ public:
   bool isSubscript() const;
 
   SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                   OperandContainer &&operands, ASTType elementType,
+                   CallOperands &&operands, ASTType elementType,
                    const ExprNode *expr);
 
   void print(raw_ostream &os) const override;

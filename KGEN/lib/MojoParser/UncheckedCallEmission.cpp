@@ -56,7 +56,7 @@ static CValue emitVariadicPackConstructor(
 
   // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
   // bool indicating whether the argument is owned.
-  OperandContainer operands;
+  CallOperands operands;
   operands.add({refPackValue, expr});
   operands.add({isOwnedAttr, expr});
 
@@ -103,7 +103,7 @@ public:
   /// the operand list and emitted as the appropriate variadic/pack type to the
   /// callee.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
-  emitArgValues(const OperandContainer &operands);
+  emitArgValues(const CallOperands &operands);
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
@@ -127,7 +127,7 @@ public:
 
   /// Emit warnings about incorrect code in a direct call.
   void emitDirectCallWarnings(LIT::CallOp call,
-                              const OperandContainer &callOperands);
+                              const CallOperands &callOperands);
 
   /// The underlying expression emitter instance.
   ExprEmitter &emitter;
@@ -501,7 +501,7 @@ static bool isPlaceholderInitSelf(const AnyValue &value) {
 }
 
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
-CallEmitter::emitArgValues(const OperandContainer &operands) {
+CallEmitter::emitArgValues(const CallOperands &operands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   size_t posOperandIdx = 0;
 
@@ -659,11 +659,11 @@ CallEmitter::emitArgValues(const OperandContainer &operands) {
     auto nameAttr =
         StringAttr::get(name.strref(), StringType::get(emitter.getContext()));
     CValue literalKey = emitter.emitConstructorCall(
-        stringLiteralType, OperandContainer({{PValue(nameAttr), operand.expr}}),
+        stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
         callExpr, CallSyntax::kImplicitConvert, kwargsDest);
 
     // Then we set the element with the given key and the operand as value.
-    OperandContainer insertOperands(
+    CallOperands insertOperands(
         {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
     emitter.emitNamedMethodCall("_insert", std::move(insertOperands),
                                 kwargsDest, CallSyntax::kImplicitConvert,
@@ -1060,7 +1060,7 @@ static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
 /// Emit warnings about incorrect code in a direct call.  This is invoked after
 /// the full IR for the call is emitted, so we know that it was a valid call.
 void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
-                                         const OperandContainer &callOperands) {
+                                         const CallOperands &callOperands) {
   // Check for a known callee.
   auto symbol = dyn_cast<SymbolConstantAttr>(call.getCallee());
   if (!symbol)
@@ -1127,7 +1127,7 @@ computeArgumentsLifetime(AsyncCallOp call,
 }
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
-                                      const OperandContainer &callOperands,
+                                      const CallOperands &callOperands,
                                       ValueDest &dest,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);

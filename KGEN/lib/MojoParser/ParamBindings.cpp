@@ -110,7 +110,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
-    const OperandContainer &operands, ArrayRef<Type> expectedParamTypes,
+    const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
     PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
     const DiagEmitter *diagEmitter, bool partial) const {
   Fitness fitness{0, false};
@@ -154,7 +154,7 @@ ParamBindings::verifyBindingsImpl(
     // where the *_ was found.
     ssize_t numUnbounds = numPosPassable - idx;
 
-    OperandContainer expandedOperands(operands);
+    CallOperands expandedOperands(operands);
     expandedOperands.posOperands.pop_back();
     expandedOperands.posOperands.append(numUnbounds, unboundBinding);
     assert(expandedOperands.posOperands.size() == numPosPassable);
@@ -171,17 +171,17 @@ ParamBindings::verifyBindingsImpl(
   bool allowMissingKwOnly = partial || parameterInferenceHook;
   auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
       paramListAttr, variadicKwOperands, allowMissingKwOnly);
-  if (kwDiagRes != OperandContainer::KwDiagResult::kValid) {
+  if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
     switch (kwDiagRes) {
-    case OperandContainer::KwDiagResult::kMissingKwOnly:
+    case CallOperands::KwDiagResult::kMissingKwOnly:
       if (diagEmitter)
         diagEmitter->emitMissing(kwDiagNames, "keyword-only");
       break;
-    case OperandContainer::KwDiagResult::kPosOnlyPassedByKw:
+    case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
       if (diagEmitter)
         diagEmitter->emitPosOnlyPassedByKw(kwDiagNames);
       break;
-    case OperandContainer::KwDiagResult::kUnknownKeywords:
+    case CallOperands::KwDiagResult::kUnknownKeywords:
       if (diagEmitter)
         diagEmitter->emitUnknownKeywords(kwDiagNames);
       break;
@@ -193,7 +193,7 @@ ParamBindings::verifyBindingsImpl(
 
   auto [posDiagRes, posDiagNames] =
       operands.diagnosePosOperands(paramListAttr, /*allowCountMismatch=*/true);
-  if (posDiagRes == OperandContainer::PosDiagResult::kByPosAndKw) {
+  if (posDiagRes == CallOperands::PosDiagResult::kByPosAndKw) {
     if (diagEmitter)
       diagEmitter->emitRedundantKeywords(posDiagNames);
     return {{}, fitness};
@@ -201,7 +201,7 @@ ParamBindings::verifyBindingsImpl(
 
   // Parameter inference and call emission rely on this function not failing
   // early due to missing or too many positional parameters.
-  assert(posDiagRes == OperandContainer::PosDiagResult::kValid &&
+  assert(posDiagRes == CallOperands::PosDiagResult::kValid &&
          "positional parameter operand check failed unexpectedly");
 
   /// We will attempt to find a binding for every expected parameter.

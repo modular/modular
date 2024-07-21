@@ -346,7 +346,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTType type =
       emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
   return emitter.emitConstructorCall(type,
-                                     OperandContainer({{AnyValue(attr), this}}),
+                                     CallOperands({{AnyValue(attr), this}}),
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -360,7 +360,7 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
   return emitter.emitConstructorCall(type,
-                                     OperandContainer({{AnyValue(attr), this}}),
+                                     CallOperands({{AnyValue(attr), this}}),
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -371,9 +371,9 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
   ASTType type = emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(
-      type, OperandContainer({{AnyValue(boolAttr), this}}), this,
-      CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(boolAttr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
@@ -431,7 +431,7 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
   ASTType type =
       emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
   return emitter.emitConstructorCall(type,
-                                     OperandContainer({{AnyValue(attr), this}}),
+                                     CallOperands({{AnyValue(attr), this}}),
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
@@ -984,7 +984,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // Otherwise we'll be calling the getter and/or setter.  Let's emit any index
   // operands and determine whether they are arguments or parameters (e.g. for
   // indexing into Tuple with parameter for the index).
-  OperandContainer operands;
+  CallOperands operands;
   operands.addSelf(base);
 
   // We look at one of the sets so we can detect whether we're emitting the
@@ -1637,7 +1637,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Construct the Tuple type without parameters so we infer them.
   tupleType = tupleType.getWithoutParameters(emitter.shared);
 
-  OperandContainer operands;
+  CallOperands operands;
   for (OpResult opResult : resultOp->getResults())
     operands.add({SRValue(opResult), &call});
   return emitter.emitConstructorCall(tupleType, std::move(operands), &call,
@@ -1658,7 +1658,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   /// Emit all the operands that we'll need.
-  OperandContainer operandsList;
+  CallOperands operandsList;
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
@@ -1724,7 +1724,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // TODO: Generalize to more than 3 operands.  We might also want to turn this
   // into a well-known static method instead of overloading onto constructor.
-  OperandContainer operands;
+  CallOperands operands;
   operands.add(getOperand(lower));
   if (!operands.posOperands.back().ir)
     return {};
@@ -1885,7 +1885,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   }
 
   // Emit each of the tuple elements.
-  OperandContainer operands;
+  CallOperands operands;
   for (ExprNode *expr : exprs) {
     auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
     if (!exprVal) {
@@ -2131,7 +2131,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     return {};
   }
 
-  OperandContainer operands({lhs, rhs});
+  CallOperands operands({lhs, rhs});
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
   if (kind == ExprNode::Kind::kCmpIn)
@@ -2625,9 +2625,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
     ValueDest subDest(EC_OperatorOperandValue);
-    argValue.ir = emitter.emitNamedMethodCall(
-        "__bool__", OperandContainer(argValue), subDest,
-        CallSyntax::kImplicitConvert, expr);
+    argValue.ir =
+        emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
+                                    CallSyntax::kImplicitConvert, expr);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -2639,9 +2639,8 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name,
-                                     OperandContainer(argValue), dest,
-                                     CallSyntax::kOperator, expr);
+  return emitter.emitNamedMethodCall(specialFnInfo.name, CallOperands(argValue),
+                                     dest, CallSyntax::kOperator, expr);
 }
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -3261,6 +3260,6 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(tupleType, OperandContainer(elements),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(tupleType, CallOperands(elements), this,
+                                     CallSyntax::kImplicitConvert, dest);
 }

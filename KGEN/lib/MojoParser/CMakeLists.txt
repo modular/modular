@@ -8,6 +8,7 @@ add_modular_library(MojoParser
   ASTDecl.cpp
   ASTType.cpp
   CallEmission.cpp
+  CallOperands.cpp
   ClosureEmitter.cpp
   DLValues.cpp
   DebugInfo.cpp
@@ -20,7 +21,6 @@ add_modular_library(MojoParser
   IRValues.cpp
   Lexer.cpp
   MojoUtils.cpp
-  OperandContainer.cpp
   OverloadFitness.cpp
   ParamBindings.cpp
   ParameterInference.cpp

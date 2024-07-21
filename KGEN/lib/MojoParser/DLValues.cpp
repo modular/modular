@@ -138,8 +138,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 //===----------------------------------------------------------------------===//
 
 SubscriptDLValue::SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                                   OperandContainer &&operands,
-                                   ASTType elementType, const ExprNode *expr)
+                                   CallOperands &&operands, ASTType elementType,
+                                   const ExprNode *expr)
     : BaseDLValue(elementType), getter(getter),
       setterValueName(setterValueName), operands(std::move(operands)),
       expr(expr) {}
@@ -163,14 +163,13 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  return emitter.emitIndirectCall(getter, OperandContainer(operands), dest,
-                                  expr);
+  return emitter.emitIndirectCall(getter, CallOperands(operands), dest, expr);
 }
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
   // Add the set value to the keyword arguments list.
-  OperandContainer operandsWithValue(operands);
+  CallOperands operandsWithValue(operands);
   bool conflict = operandsWithValue.add(setterValueName, value);
   assert(!conflict && "Already checked this");
 
@@ -204,7 +203,7 @@ void TupleDLValue::print(raw_ostream &os) const {
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
 CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the tuple type constructor as an implicit conversion.
-  return emitter.emitConstructorCall(elementType, OperandContainer(eltLValues),
+  return emitter.emitConstructorCall(elementType, CallOperands(eltLValues),
                                      expr, CallSyntax::kImplicitConvert, dest);
 }
 

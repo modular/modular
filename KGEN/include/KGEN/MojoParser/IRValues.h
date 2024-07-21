@@ -53,7 +53,7 @@ class FuncOp;
 class ValueDest;
 class StructFieldOp;
 class GlobalVarDeclOp;
-class OperandContainer;
+class CallOperands;
 class AnyValue;
 
 //===----------------------------------------------------------------------===//
@@ -290,9 +290,9 @@ public:
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  const OperandContainer &get() const;
+  const CallOperands &get() const;
 
-  static InitializerUValue create(OperandContainer &&operands);
+  static InitializerUValue create(CallOperands &&operands);
 
 private:
   struct CallOperandsWrapper;

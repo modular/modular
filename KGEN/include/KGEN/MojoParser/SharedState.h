@@ -39,7 +39,7 @@ class LookupResult;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
-class OperandContainer;
+class CallOperands;
 struct ParserConfig;
 class CachedTypeLifetimeFinder;
 enum class CallSyntax : uint8_t;
@@ -359,7 +359,7 @@ public:
   /// the given operands.
   void notifyListenerOnCall(ArrayRef<ASTDecl *> decls, SMLoc rparenLoc,
                             CallSyntax syntax,
-                            const OperandContainer &callOperands);
+                            const CallOperands &callOperands);
 
   /// Notify the listener, if present, that parameter operands are being bound
   /// to one of the given decls.

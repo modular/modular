@@ -727,7 +727,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (auto initValue = operand.ir.getIfInitializer()) {
     FailureOr<PValue> initFn = OverloadSet::canConstructType(
         getPartiallySpecializedType().getWithoutParameters(shared),
-        OperandContainer(initValue.get()), operand.expr, *this);
+        CallOperands(initValue.get()), operand.expr, *this);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
@@ -814,7 +814,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   auto nonParamType =
       knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
-      nonParamType, OperandContainer({{argVal, curArgExpr}}), curArgExpr,
+      nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
       emitter.getScopeInfo(), /*allowImplicitConversions=*/false);
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
@@ -941,7 +941,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 }
 
 LogicalResult ParameterInferenceState::infer(
-    LITSignatureType signature, const OperandContainer &callOperands,
+    LITSignatureType signature, const CallOperands &callOperands,
     const KeywordOperandContainer &variadicKwOperands) {
   // First try to infer parameters from parameters.
   infer(signature.getParamTypes(), signature.getParamListAttrs());
@@ -1091,7 +1091,7 @@ LogicalResult ParameterInferenceState::infer(
 /// of a method from the first argument.
 LogicalResult
 ParameterInferenceState::inferCTADParams(LITSignatureType signature,
-                                         const OperandContainer &callOperands) {
+                                         const CallOperands &callOperands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       fn foo[B: Movable](self: X[B]): ...

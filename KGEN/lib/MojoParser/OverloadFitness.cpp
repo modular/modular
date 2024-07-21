@@ -489,7 +489,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       if (auto initValue = operand.ir.getIfInitializer()) {
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedType, OperandContainer(initValue.get()), operand.expr,
+            expectedType, CallOperands(initValue.get()), operand.expr,
             scopeInfo);
         // If there were declaration errors, assume construction is possible to
         // avoid spurious errors.
@@ -610,7 +610,7 @@ OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
-                                          const OperandContainer &callOperands,
+                                          const CallOperands &callOperands,
                                           bool allowImplicitConversions) {
   // We set up diagnostics.
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
@@ -626,11 +626,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto [kwDiagRes, kwDiagNames] = callOperands.diagnoseKeywordOperands(
       signature.getArgListAttrs(), variadicKwOperands);
   switch (kwDiagRes) {
-  case OperandContainer::KwDiagResult::kMissingKwOnly:
+  case CallOperands::KwDiagResult::kMissingKwOnly:
     return emitDiagFor.missingArgs(kwDiagNames, "keyword-only");
-  case OperandContainer::KwDiagResult::kPosOnlyPassedByKw:
+  case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
     return emitDiagFor.posOnlyPassedByKw(kwDiagNames);
-  case OperandContainer::KwDiagResult::kUnknownKeywords:
+  case CallOperands::KwDiagResult::kUnknownKeywords:
     return emitDiagFor.unexpectedKwArgs(kwDiagNames);
   default:
     break;
@@ -640,13 +640,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto [posDiagRes, posDiagNames] =
       callOperands.diagnosePosOperands(argListAttr);
   switch (posDiagRes) {
-  case OperandContainer::PosDiagResult::kMissingPos:
+  case CallOperands::PosDiagResult::kMissingPos:
     return emitDiagFor.missingArgs(posDiagNames, "positional");
-  case OperandContainer::PosDiagResult::kTooManyPos: {
+  case CallOperands::PosDiagResult::kTooManyPos: {
     size_t numPosMaximum = countNumPositional(argListAttr);
     return emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
   }
-  case OperandContainer::PosDiagResult::kByPosAndKw:
+  case CallOperands::PosDiagResult::kByPosAndKw:
     return emitDiagFor.byPosAndKw(posDiagNames);
   default:
     break;

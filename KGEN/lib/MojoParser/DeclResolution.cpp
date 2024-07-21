@@ -953,7 +953,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   // Pass all the captured values into the initializer.  In the case of a move
   // capture, this will be an RValue for the thing captured, transfering to the
   // owned argument in the initializer.
-  OperandContainer closureImplInitArgs;
+  CallOperands closureImplInitArgs;
   for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl))
     closureImplInitArgs.add({capture.getValue(), node});
 
@@ -973,7 +973,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
       exprEmitter.translateLocation(loc), VarDeclKind::Var);
   ValueDest closureWrapperDest(var, EC_VarInit);
 
-  OperandContainer closureWrapperInitArgs;
+  CallOperands closureWrapperInitArgs;
   closureWrapperInitArgs.add({value, node});
 
   // Create the ClosureWrapper type by binding parent parameters to the
@@ -1255,7 +1255,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
-  OperandContainer operands;
+  CallOperands operands;
 
   // Expr to provide location information.
   SyntheticNode srcLocNode(loc);
@@ -1730,8 +1730,8 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
     MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
     ValueDest dest(EC_Destructor);
     (void)emitter.emitNamedMethodCall("__del__",
-                                      OperandContainer({{owned, initExpr}}),
-                                      dest, CallSyntax::kDestructor, initExpr);
+                                      CallOperands({{owned, initExpr}}), dest,
+                                      CallSyntax::kDestructor, initExpr);
   }
 
   // Run signature decorators, if any.

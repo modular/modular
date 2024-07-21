@@ -514,7 +514,7 @@ void ParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                            llvm::SMRange range) {}
 void ParserListener::onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
-                            const OperandContainer &operands) {}
+                            const CallOperands &operands) {}
 void ParserListener::onParameterBinding(ArrayRef<ASTDecl *> decls,
                                         llvm::SMLoc rsquareLoc,
                                         ArrayRef<ExprNode *> parameters) {}
