@@ -69,8 +69,7 @@ void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
 }
 
 void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
-  bool duplicate = parameters.add(name, {value, expr});
-  assert(!duplicate && "duplicate keyword parameter");
+  parameters.add(name, {value, expr});
 }
 
 //===----------------------------------------------------------------------===//
@@ -167,7 +166,7 @@ ParamBindings::verifyBindingsImpl(
   // 'operands'.
   size_t numParams = expectedParamTypes.size();
 
-  KeywordOperandContainer variadicKwOperands;
+  OperandValueList variadicKwOperands;
   bool allowMissingKwOnly = partial || parameterInferenceHook;
   auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
       paramListAttr, variadicKwOperands, allowMissingKwOnly);

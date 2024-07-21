@@ -622,7 +622,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
-  KeywordOperandContainer variadicKwOperands;
+  OperandValueList variadicKwOperands;
   auto [kwDiagRes, kwDiagNames] = callOperands.diagnoseKeywordOperands(
       signature.getArgListAttrs(), variadicKwOperands);
   switch (kwDiagRes) {
@@ -915,7 +915,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (signature.isKwVarArg(expectedArgIdx)) {
       expectedType = ASTType(expectedType).getKwargsDictRefValueType();
 
-      for (auto [name, operand] : variadicKwOperands) {
+      for (auto operand : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value
         // type is not a reference type (and doesn't have a lifetime), but we
         // still want to type check it. So, passing it as if it was reg-passable
