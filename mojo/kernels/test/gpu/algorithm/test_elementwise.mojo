@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %bare-mojo %s
-# COM: TODO(KERN-645)
+# RUN: %mojo %s
 
 from math import exp
 from sys.info import triple_is_nvidia_cuda
@@ -169,7 +168,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
             idx, in_buffer_transposed.load[width=simd_width, alignment=1](idx)
         )
 
-    _elementwise_impl_gpu[func, 4](
+    _elementwise_impl_gpu[func, 1](
         StaticIntTuple[3](4, 2, 5),
         ctx,
     )
