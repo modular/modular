@@ -85,13 +85,13 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = DTypePointer[input_type].alloc(
+    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(
         input_alloc_size * num_copies, alignment=alignment
     )
-    var filter_ptr = DTypePointer[filter_type].alloc(
+    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
         num_copies * filter_alloc_size, alignment=alignment
     )
-    var output_ptr = DTypePointer[output_type].alloc(
+    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(
         num_copies * output_alloc_size, alignment=alignment
     )
 

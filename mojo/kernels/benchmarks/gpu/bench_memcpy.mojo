@@ -37,7 +37,7 @@ fn bench_memcpy[
     direction: Direction
 ](inout b: Bench, *, length: Int, context: DeviceContext) raises:
     alias dtype = DType.float32
-    var mem_host = DTypePointer[dtype].alloc(length)
+    var mem_host = UnsafePointer[Scalar[dtype]].alloc(length)
 
     var mem_device = context.create_buffer[dtype](length)
     var mem2_device = context.create_buffer[dtype](length)

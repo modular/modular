@@ -40,13 +40,11 @@ fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec) capturing:
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
 
-    var data_ptr = DTypePointer[DType.float32].alloc(
-        input_shape.flattened_length()
-    )
+    var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
     rand(data_ptr.address, input_shape.flattened_length())
     var data_tensor = NDBuffer[DType.float32, 2](data_ptr, input_shape)
 
-    var indices_ptr = DTypePointer[DType.int32].alloc(
+    var indices_ptr = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
     )
     randint(
@@ -57,13 +55,13 @@ fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec) capturing:
     )
     var indices_tensor = NDBuffer[DType.int32, 2](indices_ptr, indices_shape)
 
-    var updates_ptr = DTypePointer[DType.float32].alloc(
+    var updates_ptr = UnsafePointer[Float32].alloc(
         indices_shape.flattened_length()
     )
     rand(updates_ptr.address, indices_shape.flattened_length())
     var updates_tensor = NDBuffer[DType.float32, 2](updates_ptr, indices_shape)
 
-    var output_ptr = DTypePointer[DType.float32].alloc(
+    var output_ptr = UnsafePointer[Float32].alloc(
         input_shape.flattened_length()
     )
     var output_tensor = NDBuffer[DType.float32, 2](output_ptr, input_shape)

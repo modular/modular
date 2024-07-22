@@ -16,7 +16,6 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import gemv_kernel, gemv_tc_kernel, matmul_kernel_naive
 from memory import memset
-from memory.unsafe import DTypePointer
 from gpu.host._compile import _get_nvptx_target
 from internal_utils import DeviceNDBuffer
 from buffer import DimList, NDBuffer
@@ -31,9 +30,9 @@ fn bench_gemv_tc[
     var M = dims[0]
     var N = dims[1]
     var K = dims[2]
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[type].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
 
     randn(a_host.address, M * K)
     randn(b_host.address, K * N)
@@ -106,9 +105,9 @@ fn bench_gemv_ws[
     var M = dims[0]
     var N = dims[1]
     var K = dims[2]
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[type].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
 
     randn(a_host.address, M * K)
     randn(b_host.address, K * N)
@@ -181,9 +180,9 @@ fn bench_gemv_naive[
     var M = dims[0]
     var N = dims[1]
     var K = dims[2]
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[type].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
 
     randn(a_host.address, M * K)
     randn(b_host.address, K * N)

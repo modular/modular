@@ -147,9 +147,9 @@ fn gemm[
 # kgen --emit-asm Kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
 fn gemm_export_dynamic(
-    a_ptr: DTypePointer[dtype],
-    b_packed_ptr: DTypePointer[dtype],
-    c_ptr: DTypePointer[dtype],
+    a_ptr: UnsafePointer[Scalar[dtype]],
+    b_packed_ptr: UnsafePointer[Scalar[dtype]],
+    c_ptr: UnsafePointer[Scalar[dtype]],
     M: Int,
 ):
     alias N = 1024
@@ -179,13 +179,11 @@ fn main():
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
-    var a_ptr = DTypePointer[DType.float32].alloc(M * K, alignment=alignment)
-    var b_ptr = DTypePointer[DType.float32].alloc(K * N, alignment=alignment)
-    var b_packed_ptr = DTypePointer[DType.float32].alloc(
-        K * N, alignment=alignment
-    )
-    var c_ptr = DTypePointer[DType.float32].alloc(M * N, alignment=alignment)
-    var c2_ptr = DTypePointer[DType.float32].alloc(M * N, alignment=alignment)
+    var a_ptr = UnsafePointer[Float32].alloc(M * K, alignment=alignment)
+    var b_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
+    var b_packed_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
+    var c_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
+    var c2_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
 
     var a = NDBuffer[dtype, 2](a_ptr, (M, K))
 

@@ -10,7 +10,7 @@ from sys.intrinsics import PrefetchOptions
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 alias mr = 6
 alias nr = 64
@@ -19,9 +19,9 @@ alias simd_size = 16
 
 
 fn kernel6x4(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
+    c_ptr: UnsafePointer[Float32],
     n: Int,
     k: Int,
     kc: Int,
@@ -136,9 +136,9 @@ fn kernel6x4(
 
 
 fn kernel6x4_naive(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
+    c_ptr: UnsafePointer[Float32],
     n: Int,
     k: Int,
     kc: Int,

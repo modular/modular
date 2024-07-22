@@ -52,11 +52,15 @@ def bench_attention[
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
     var output_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
 
-    var q_ptr = DTypePointer[type].alloc(q_shape.flattened_length())
-    var k_ptr = DTypePointer[type].alloc(k_shape.flattened_length())
-    var v_ptr = DTypePointer[type].alloc(v_shape.flattened_length())
-    var mask_ptr = DTypePointer[type].alloc(mask_shape.flattened_length())
-    var output_ptr = DTypePointer[type].alloc(output_shape.flattened_length())
+    var q_ptr = UnsafePointer[Scalar[type]].alloc(q_shape.flattened_length())
+    var k_ptr = UnsafePointer[Scalar[type]].alloc(k_shape.flattened_length())
+    var v_ptr = UnsafePointer[Scalar[type]].alloc(v_shape.flattened_length())
+    var mask_ptr = UnsafePointer[Scalar[type]].alloc(
+        mask_shape.flattened_length()
+    )
+    var output_ptr = UnsafePointer[Scalar[type]].alloc(
+        output_shape.flattened_length()
+    )
 
     rand(q_ptr.address, q_shape.flattened_length())
     rand(k_ptr.address, k_shape.flattened_length())

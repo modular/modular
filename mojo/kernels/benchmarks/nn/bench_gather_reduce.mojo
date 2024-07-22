@@ -33,11 +33,13 @@ fn bench_gather_reduce(inout b: Bencher):
     var input_shape = StaticIntTuple[2](num_rows, embedding_dim)
     var output_shape = StaticIntTuple[2](num_indices, embedding_dim)
     var indices_shape = StaticIntTuple[2](num_indices, multi_hot_dim)
-    var input_storage = DTypePointer[type].alloc(input_shape.flattened_length())
-    var output_storage = DTypePointer[type].alloc(
+    var input_storage = UnsafePointer[Scalar[type]].alloc(
+        input_shape.flattened_length()
+    )
+    var output_storage = UnsafePointer[Scalar[type]].alloc(
         output_shape.flattened_length()
     )
-    var indices_storage = DTypePointer[DType.int32].alloc(
+    var indices_storage = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
     )
     var input = NDBuffer[type, 2](input_storage, input_shape)

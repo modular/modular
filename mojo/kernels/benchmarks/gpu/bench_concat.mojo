@@ -41,7 +41,9 @@ fn bench_concat[
     var size = shape.flattened_length()
     var input0_ptr = ctx.create_buffer[type](size)
     inputs[0] = NDBuffer[type, rank](input0_ptr.ptr, shape)
-    inputs_host[0] = NDBuffer[type, rank](DTypePointer[type].alloc(size), shape)
+    inputs_host[0] = NDBuffer[type, rank](
+        UnsafePointer[Scalar[type]].alloc(size), shape
+    )
     randn(inputs_host[0].data.address, size)
     ctx.enqueue_copy_to_device(input0_ptr, inputs_host[0].data.address)
     name += str(shape)
@@ -51,7 +53,9 @@ fn bench_concat[
     size = shape.flattened_length()
     var input1_ptr = ctx.create_buffer[type](size)
     inputs[1] = NDBuffer[type, rank](input1_ptr.ptr, shape)
-    inputs_host[1] = NDBuffer[type, rank](DTypePointer[type].alloc(size), shape)
+    inputs_host[1] = NDBuffer[type, rank](
+        UnsafePointer[Scalar[type]].alloc(size), shape
+    )
     randn(inputs_host[1].data.address, size)
     ctx.enqueue_copy_to_device(input1_ptr, inputs_host[1].data.address)
     name += str(shape)
@@ -63,7 +67,7 @@ fn bench_concat[
     var output_ptr = ctx.create_buffer[type](out_shape.flattened_length())
     var output = NDBuffer[type, rank](output_ptr.ptr, out_shape)
     var output_host = NDBuffer[type, rank](
-        DTypePointer[type].alloc(output.size()), out_shape
+        UnsafePointer[Scalar[type]].alloc(output.size()), out_shape
     )
     randn(output_host.data.address, output.size())
 

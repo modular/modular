@@ -25,21 +25,21 @@ alias dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
-    var data: DTypePointer[dtype]
+    var data: UnsafePointer[Scalar[dtype]]
 
     # Initialize zeroeing all values
     fn __init__(inout self):
-        self.data = DTypePointer[dtype].alloc(rows * cols)
+        self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
         memset_zero(self.data.address, rows * cols)
 
     # Initialize taking a pointer, don't set any elements
-    fn __init__(inout self, data: DTypePointer[dtype]):
+    fn __init__(inout self, data: UnsafePointer[Scalar[dtype]]):
         self.data = data
 
     ## Initialize with random values
     @staticmethod
     fn rand() -> Self:
-        var data = DTypePointer[dtype].alloc(rows * cols)
+        var data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
         rand(data.address, rows * cols)
         return Self(data)
 
@@ -182,10 +182,14 @@ fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
     _ = rhs^
 
 
-fn alloc_aligned_tile[M: Int, N: Int, dtype: DType]() -> DTypePointer[dtype]:
+fn alloc_aligned_tile[
+    M: Int, N: Int, dtype: DType
+]() -> UnsafePointer[Scalar[dtype]]:
     alias alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     alias cache_width = ((N + alignment - 1) // alignment) * alignment
-    return DTypePointer[dtype].alloc(M * cache_width, alignment=alignment)
+    return UnsafePointer[Scalar[dtype]].alloc(
+        M * cache_width, alignment=alignment
+    )
 
 
 fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):

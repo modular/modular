@@ -16,7 +16,7 @@ from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index
 from utils.loop import unroll
@@ -36,7 +36,7 @@ alias NR = kernel_shape.simd_cols * simd_size
 alias prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
-fn print_mat(a_ptr: DTypePointer[dtype], m: Int, n: Int):
+fn print_mat(a_ptr: UnsafePointer[Scalar[dtype]], m: Int, n: Int):
     var a = NDBuffer[dtype, 2](a_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
@@ -59,9 +59,9 @@ fn gemm_naive(
 
 
 fn kernel(
-    a_ptr: DTypePointer[dtype],
-    b_ptr: DTypePointer[dtype],
-    c_ptr: DTypePointer[dtype],
+    a_ptr: UnsafePointer[Scalar[dtype]],
+    b_ptr: UnsafePointer[Scalar[dtype]],
+    c_ptr: UnsafePointer[Scalar[dtype]],
     n: Int,
     k: Int,
     kc: Int,
@@ -115,8 +115,8 @@ fn kernel(
 
 
 fn pack_B(
-    b_ptr: DTypePointer[dtype],
-    b2_ptr: DTypePointer[dtype],
+    b_ptr: UnsafePointer[Scalar[dtype]],
+    b2_ptr: UnsafePointer[Scalar[dtype]],
     k: Int,
     n: Int,
     kc: Int,
@@ -131,8 +131,8 @@ fn pack_B(
 
 
 fn prepack_B(
-    b_ptr: DTypePointer[dtype],
-    b2_ptr: DTypePointer[dtype],
+    b_ptr: UnsafePointer[Scalar[dtype]],
+    b2_ptr: UnsafePointer[Scalar[dtype]],
     k: Int,
     n: Int,
     kc: Int,
@@ -144,9 +144,9 @@ fn prepack_B(
 
 
 fn gemm(
-    a_ptr: DTypePointer[dtype],
-    b_ptr: DTypePointer[dtype],
-    c_ptr: DTypePointer[dtype],
+    a_ptr: UnsafePointer[Scalar[dtype]],
+    b_ptr: UnsafePointer[Scalar[dtype]],
+    c_ptr: UnsafePointer[Scalar[dtype]],
     m: Int,
     n: Int,
     k: Int,
@@ -189,11 +189,11 @@ fn main():
     print("x", end="")
     print(k)
 
-    var a_ptr = DTypePointer[dtype].alloc(m * k, alignment=alignment)
-    var b_ptr = DTypePointer[dtype].alloc(k * n, alignment=alignment)
-    var b2_ptr = DTypePointer[dtype].alloc(k * n, alignment=alignment)
-    var c_ptr = DTypePointer[dtype].alloc(m * n, alignment=alignment)
-    var c2_ptr = DTypePointer[dtype].alloc(m * n, alignment=alignment)
+    var a_ptr = UnsafePointer[Scalar[dtype]].alloc(m * k, alignment=alignment)
+    var b_ptr = UnsafePointer[Scalar[dtype]].alloc(k * n, alignment=alignment)
+    var b2_ptr = UnsafePointer[Scalar[dtype]].alloc(k * n, alignment=alignment)
+    var c_ptr = UnsafePointer[Scalar[dtype]].alloc(m * n, alignment=alignment)
+    var c2_ptr = UnsafePointer[Scalar[dtype]].alloc(m * n, alignment=alignment)
     var a = Buffer[dtype](a_ptr, m * k)
     var b = Buffer[dtype](b_ptr, k * n)
     var b2 = Buffer[dtype](b2_ptr, k * n)
