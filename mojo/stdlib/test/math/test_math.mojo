@@ -28,6 +28,7 @@ from math import (
     sqrt,
     trunc,
     ulp,
+    clamp,
 )
 from utils.numerics import isnan, isinf
 from sys.info import has_neon
@@ -451,6 +452,21 @@ def test_align_up():
     assert_equal(align_up(UInt(546), UInt(7)), UInt(546))
 
 
+def test_clamp():
+    assert_equal(clamp(Int(1), 0, 1), 1)
+    assert_equal(clamp(Int(2), 0, 1), 1)
+    assert_equal(clamp(Int(-2), 0, 1), 0)
+
+    assert_equal(clamp(UInt(1), UInt(0), UInt(1)), UInt(1))
+    assert_equal(clamp(UInt(2), UInt(0), UInt(1)), UInt(1))
+    assert_equal(clamp(UInt(1), UInt(2), UInt(4)), UInt(2))
+
+    assert_equal(
+        clamp(SIMD[DType.float32, 4](0, 1, 3, 4), 0, 1),
+        SIMD[DType.float32, 4](0, 1, 1, 1),
+    )
+
+
 def main():
     test_sin()
     test_cos()
@@ -473,3 +489,4 @@ def main():
     test_ceildiv()
     test_align_down()
     test_align_up()
+    test_clamp()
