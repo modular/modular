@@ -957,6 +957,7 @@ cc_distributable_static_library(
         "@llvm-project//llvm:Demangle",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
+        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
     ] + select({
         "@platforms//os:linux": ["@gperftools//:tcmalloc_objects"],
