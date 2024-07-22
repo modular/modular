@@ -395,8 +395,6 @@ std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
 OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  ArgConvention expectedConvention,
                                  ASTType expectedType,
-                                 size_t &numImplicitConversions,
-                                 size_t &numMismatchedConventions,
                                  bool allowImplicitConversions, SMLoc loc,
                                  const TypeCheckScopeInfo &scopeInfo) {
   SharedState &shared = scopeInfo.shared;
@@ -434,7 +432,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       return {kWrongLVType, expectedType};
     // Notice if a register-passable type is being passed in-memory. This allows
     // 'inout' arguments overloads to be more expensive than borrowed.
-    numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
+    payload.numMismatchedConventions +=
+        elementType.isRegisterPassable(loc, shared);
     return {kValidType, expectedType};
   }
   case ArgConvention::Ref: {
@@ -476,7 +475,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // but we could add this if there is a reason to.
     expectedType = expectedType.getReferenceElementType();
     // If a register-passable type is being passed in-memory, remember this.
-    numMismatchedConventions += expectedType.isRegisterPassable(loc, shared);
+    payload.numMismatchedConventions +=
+        expectedType.isRegisterPassable(loc, shared);
     [[fallthrough]];
   case ArgConvention::BorrowedInReg:
   case ArgConvention::OwnedInReg: {
@@ -528,7 +528,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         // as much of a mismatch as a normal implicit conversion.  This enables
         // exact matches to be more specific, and literals to be more compatible
         // than an actual conversion.
-        ++numImplicitConversions;
+        ++payload.numImplicitConversions;
         return {kValidType, expectedType};
       }
     }
@@ -543,7 +543,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         OverloadSet::canImplicitlyConvertToType({argVal, operand.expr},
                                                 expectedType, scopeInfo)) {
       // If we had one, this bumps our # implicit conversions.
-      numImplicitConversions += 2;
+      payload.numImplicitConversions += 2;
       return {kValidType, expectedType};
     }
 
@@ -597,8 +597,11 @@ OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
       /*opLoc=*/{}, /*partial=*/true);
   if (!bindings)
     return std::move(*diag);
-  return {bindings, Payload{fitness.numImplicitConversions, 0, 0,
-                            fitness.hasVariadicParams}};
+
+  OverloadFitness result(bindings);
+  result.payload.numImplicitConversions = fitness.numImplicitConversions;
+  result.payload.hasVariadicParams = fitness.hasVariadicParams;
+  return result;
 }
 
 /// Determine whether the specified signature can be invoked with the
@@ -849,6 +852,14 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   std::tie(signature, newBindings) =
       getUnboundSpecializedSignature(signature, newBindings);
 
+  // This is the result we will return if we succeed.
+  OverloadFitness result(newBindings);
+
+  // We will accumulate the implicit conversion in arguments to those counted
+  // for the parameter bindings.
+  result.payload.numImplicitConversions = bindingFitness.numImplicitConversions;
+  result.payload.hasVariadicParams = bindingFitness.hasVariadicParams;
+
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
   for (Type outputType : signature.getResults())
@@ -866,30 +877,19 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   SMLoc loc = callable.expr->getLoc();
 
-  // We will accumulate the implicit conversion in arguments to those counted
-  // for the parameter bindings.
-  size_t numImplicitConversions = bindingFitness.numImplicitConversions;
-
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
   // take note if variadic arguments are passed, and accumulate implicit
   // conversions required for a match.  This value indicates the next operand
   // to consider as a positional argument.
   size_t posOperandIdx = 0;
-  bool passesVarArgArgument = false;
-
-  // For each mismatch in "preferred" argument convention, penalize the
-  // overload. This is to resolve ambiguities that can arise from synthesized
-  // thunks for converting calling conventions.
-  size_t numMismatchedConventions = 0;
 
   auto checkAnOperand = [&](ASTExprAnd<AnyValue> operand,
                             ArgConvention expectedConvention,
                             ASTType expectedType) {
-    return checkOneOperand(operand, expectedConvention, expectedType,
-                           numImplicitConversions, numMismatchedConventions,
-                           allowImplicitConversions, loc,
-                           callable.paramBindings);
+    return result.checkOneOperand(operand, expectedConvention, expectedType,
+                                  allowImplicitConversions, loc,
+                                  callable.paramBindings);
   };
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
@@ -905,9 +905,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (expectedConvention == ArgConvention::ByRefError)
       continue;
     if (expectedConvention == ArgConvention::ByRefResult) {
-      numMismatchedConventions += ASTType(expectedType)
-                                      .getReferenceElementType()
-                                      .isRegisterPassable(loc, shared);
+      result.payload.numMismatchedConventions +=
+          ASTType(expectedType)
+              .getReferenceElementType()
+              .isRegisterPassable(loc, shared);
       continue;
     }
 
@@ -951,7 +952,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           signature.isPackVarArg(expectedArgIdx)) {
         // We consider an empty varargs list to be an implicit conversion,
         // so an exact signature match takes precedence.
-        ++numImplicitConversions;
+        ++result.payload.numImplicitConversions;
         continue;
       }
 
@@ -997,7 +998,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         if (auto result = processPositionalOperand(
                 varArgsEltType, expectedVariadic.getConvention()))
           return std::move(*result);
-        passesVarArgArgument = true;
+        result.payload.passesVarArgArgument = true;
       }
       continue;
     }
@@ -1014,7 +1015,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         if (auto result =
                 processPositionalOperand(refType, actualArgConvention))
           return std::move(*result);
-        passesVarArgArgument = true;
+        result.payload.passesVarArgArgument = true;
       }
       continue;
     }
@@ -1035,7 +1036,5 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
          "should handle argument mismatch above");
 
   // Otherwise we succeeded!
-  return {newBindings,
-          Payload{numImplicitConversions, numMismatchedConventions,
-                  passesVarArgArgument, bindingFitness.hasVariadicParams}};
+  return result;
 }
