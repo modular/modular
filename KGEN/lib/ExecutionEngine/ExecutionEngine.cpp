@@ -45,6 +45,7 @@ using namespace Cache;
 /// address space.
 static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
 static constexpr StringLiteral compilerRTlibName = "$compilerrt-lib";
+static constexpr StringLiteral mlirclibName = "$mlirc-lib";
 
 //===----------------------------------------------------------------------===//
 // ExecutionEngine implementation
@@ -154,12 +155,24 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
   return success();
 }
 
-/// Initialize the CompilerRT dylib.
+/// Initialize the mlirc and CompilerRT dylib.
 static ErrorOrSuccess
 initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
                      const llvm::DataLayout &layout,
                      const ExecutionEngineOptions &options) {
   std::error_code ec;
+
+  // mlirc dylib. Grab the symbols from the current process.
+  {
+    auto *libJD = &session.createBareJITDylib(mlirclibName.str());
+    libJD->addGenerator(llvm::cantFail(
+        llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
+            session, [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
+              return (*symbolStringPtr).starts_with("mlir");
+            })));
+  }
+
+  // CompilerRT dylib.
   std::string compilerRTPath = cfg.getCompilerRTPath().str();
   if (!std::filesystem::exists(compilerRTPath, ec) || ec)
     return Error(std::string("unable to locate compiler_rt ") + compilerRTPath);
@@ -455,10 +468,12 @@ ErrorOrSuccess ExecutionEngine::addToSearchOrder(StringRef name,
   [[maybe_unused]] auto [_, didInsert] = knownDylibs.insert(name);
   assert(didInsert && "must have uniquely-named dylibs");
 
-  // If this isn't the platform stdlib, setup CompilerRT.
-  if (name != platformStdlibName)
+  // If this isn't the platform stdlib, setup CompilerRT and mlirc.
+  if (name != platformStdlibName) {
     dylib->addToLinkOrder(
         *executionSession->getJITDylibByName(compilerRTlibName));
+    dylib->addToLinkOrder(*executionSession->getJITDylibByName(mlirclibName));
+  }
 
   // Use higher preference for newer dylibs.
   searchOrder.insert(searchOrder.begin(),

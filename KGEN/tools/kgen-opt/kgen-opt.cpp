@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -151,6 +152,10 @@ struct TestAlwaysFailPass
 } // namespace
 
 int main(int argc, char **argv) {
+  // Force linking of MLIR C symbols to JIT Mojo code relying on the mlir
+  // bindings.
+  KGEN::forceLinkMLIRC();
+
   // HACK: Read in the option early.
   bool asyncrtSingleThread = false;
   if (argc >= 2 && StringRef(argv[1]) == "--asyncrt-single-thread")

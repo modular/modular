@@ -37,6 +37,7 @@ add_modular_library(KGENTransforms
 
   DEPENDS
   MLIRKGENPasses
+  mlirc
 
   LINK_LIBS PUBLIC
   CODialect

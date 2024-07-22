@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "modular_cc_binary")
 modular_cc_binary(
     name = "kgen-opt",
     srcs = glob(["*.cpp"]),
+    linkopts = select({
+        "@platforms//os:linux": ["-rdynamic"],
+        "@platforms//os:macos": ["-bundle_loader"],
+    }),
     deps = [
         "//AsyncRT:Init",
         "//AsyncRT:Runtime",
@@ -17,6 +21,7 @@ modular_cc_binary(
         "//KGEN:ObjectCompiler",
         "//KGEN:Pipeline",
         "//KGEN:Support",
+        "//KGEN:SupportForceLinkMLIRC",
         "//KGEN:ToolCommon",
         "//Support:Base",
         "//Support:Compiler",

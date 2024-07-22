@@ -1024,10 +1024,13 @@ modular_shared_library(
 modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/Support/*.h",
-        "include/KGEN/KGENDialect/*.h",
-    ]),
+    hdrs = glob(["include/KGEN/KGENDialect/*.h"]) + [
+        "include/KGEN/Support/CompilerProfiling.h",
+        "include/KGEN/Support/Configuration.h",
+        "include/KGEN/Support/DebugInfoEncoding.h",
+        "include/KGEN/Support/Debugging.h",
+        "include/KGEN/Support/NameMangling.h",
+    ],
     local_defines = MOJO_CONFIG_SECTION_LOCAL_DEFINES,
     deps = [
         "//AsyncRT:Support",
@@ -1038,6 +1041,22 @@ modular_cc_library(
         "//Support:Settings",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_cc_library(
+    name = "SupportForceLinkMLIRC",
+    srcs = glob([
+        "lib/Support/ForceLinkMLIRC/*.cpp",
+        "lib/Support/ForceLinkMLIRC/*.cpp.inc",
+    ]),
+    hdrs = [
+        "include/KGEN/Support/ForceLinkMLIRC.h",
+    ],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:CAPIIR",
+        "@llvm-project//mlir:CAPITransforms",
     ],
 )
 

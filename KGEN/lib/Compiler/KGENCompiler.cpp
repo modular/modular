@@ -472,14 +472,15 @@ compileCustomCanonicalizationFns(ModuleOp module, SymbolTable &table,
   // Run the KGEN pipeline, and compile it to an archive.
   KGENCompiler compiler(*ctx, options);
   if (ErrorOrSuccess err = compiler.runKGENPipeline(*newModule, target))
-    assert(false);
+    return err.takeError();
   ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(*newModule);
-  assert(succeeded(archiveOr));
+  if (archiveOr.isError())
+    return archiveOr.takeError();
 
   // Add the canonicalization pattern layer.
-  ErrorOrSuccess err = engine->addIfAbsent<StaticArchiveLayer>(
-      "canonicalization_patterns", archiveOr.takeValue());
-  assert(succeeded(err));
+  if (ErrorOrSuccess err = engine->addIfAbsent<StaticArchiveLayer>(
+          "canonicalization_patterns", archiveOr.takeValue()))
+    return err.takeError();
 
   // The map of compiled functions.
   DenseMap<StringAttr, CAPICanonicalizationFn> compiledFns;
