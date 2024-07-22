@@ -443,7 +443,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (operand.ir.isMValue())
       valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
     else if (auto pv = operand.ir.getIfPValue(); pv && scopeInfo.isParamContext)
-      valueRefType = RefType::getImmortal(pv.getType(), /*isMut=*/true);
+      valueRefType = RefType::getImmortal(pv.getType(), /*isMut=*/false);
 
     // As a special hack, look through DefArgumentWrapperDLValue to the
     // underlying MBValue that it may contain.  This is for two reasons:
