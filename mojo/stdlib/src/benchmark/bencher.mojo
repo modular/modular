@@ -436,7 +436,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
                 x.size < N, "Attempted to access outside array bounds!"
             )
 
-        _append["%-*s, "](name_width, self.name)
+        _append["%-*s, "](name_width, self.name.rstrip())
         _append["%*.6f, "](time_width, self.result.mean(unit=Unit.ms))
         _append["%*d"](iters_width, self.result.iters())
 
