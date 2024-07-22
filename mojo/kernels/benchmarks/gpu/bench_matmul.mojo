@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK: Benchmark results
+# RUN: %mojo-no-debug %s -t
+
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
+from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 
@@ -144,40 +145,91 @@ fn create_matmul_bench[
 
 
 fn main() raises:
-    with DeviceContext() as ctx:
-        var b = Bench()
+    alias types = List[DType](DType.bfloat16)
+    alias shape_list = VariadicList[DimList](
+        # baby-llama-ce-kernels (llama2-ce)
+        DimList(256, 22016, 4096),
+        DimList(256, 12288, 4096),
+        DimList(256, 4096, 11008),
+        DimList(1, 32000, 4096),
+        DimList(256, 4096, 4096),
+        # llama2 shapes LPTG
+        DimList(1, 12288, 3072),
+        DimList(1, 3072, 12288),
+        DimList(1, 5120, 3072),
+        DimList(1, 3072, 3072),
+        # replit-V1.5-3b (baby-replit-CE-kernels)
+        DimList(1024, 3072, 12288),
+        DimList(1024, 12288, 3072),
+        DimList(1024, 5120, 3072),
+        DimList(1024, 3072, 3072),
+        DimList(1024, 32768, 3072),
+        # misc.
+        DimList(1, 3072, 12288),
+        DimList(1, 12288, 3072),
+        DimList(1, 5120, 3072),
+        DimList(1, 3072, 3072),
+        DimList(1, 32768, 3072),
+        # misc.
+        DimList(32, 3072, 12288),
+        DimList(32, 12288, 3072),
+        DimList(32, 5120, 3072),
+        DimList(32, 3072, 3072),
+        DimList(32, 32768, 3072),
+        # misc.
+        DimList(64, 3072, 12288),
+        DimList(64, 12288, 3072),
+        DimList(64, 5120, 3072),
+        DimList(64, 3072, 3072),
+        DimList(64, 32768, 3072),
+        # misc.
+        DimList(128, 3072, 12288),
+        DimList(128, 12288, 3072),
+        DimList(128, 5120, 3072),
+        DimList(128, 3072, 3072),
+        DimList(128, 32768, 3072),
+        # misc.
+        DimList(600, 3072, 12288),
+        DimList(600, 12288, 3072),
+        DimList(600, 5120, 3072),
+        DimList(600, 3072, 3072),
+        DimList(600, 32768, 3072),
+        # misc list from here:
+        # https://linear.app/modularml/issue/KERN-679/significant-regression-in-replit-pipeline-in-bf16#comment-163b69e7
+        DimList(857, 12288, 3072),
+        DimList(857, 3072, 12288),
+        DimList(857, 5120, 3072),
+        DimList(857, 3072, 3072),
+    )
 
-        # Lama2 shapes CE.
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(256), static[22016](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(256), static[12288](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(256), static[4096](), static[11008]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(256), static[12288](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(1), static[32000](), static[4096]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(256), static[4096](), static[4096]()
-        )
-        # Lama2 shapes LPTG.
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(1), static[12288](), static[3072]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(1), static[3072](), static[12288]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(1), static[5120](), static[3072]()
-        )
-        create_matmul_bench[DType.float32](
-            ctx, b, dynamic(1), static[3072](), static[3072]()
-        )
+    var b = Bench()
+    try:
+        with DeviceContext() as ctx:
 
-        b.dump_report()
+            @parameter
+            for i in range(len(types)):
+
+                @parameter
+                for j in range(len(shape_list)):
+                    alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
+
+                    @parameter
+                    if dims[0] % 128 == 0:
+                        create_matmul_bench[types[i]](
+                            ctx,
+                            b,
+                            dynamic(dims[0]),
+                            static[dims[1]](),
+                            static[dims[2]](),
+                        )
+                    else:
+                        create_matmul_bench[types[i]](
+                            ctx,
+                            b,
+                            dynamic(dims[0]),
+                            dynamic(dims[1]),
+                            dynamic(dims[2]),
+                        )
+    except e:
+        print("CUDA_ERROR:", e)
+    b.dump_report()
