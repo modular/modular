@@ -11,14 +11,8 @@ from sys import argv
 
 from buffer import DimList, NDBuffer
 from gpu import WARP_SIZE
-from gpu.host import Context, Function, Stream, synchronize
+from gpu.host import DeviceContext
 from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
 from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier
@@ -152,7 +146,7 @@ fn gemm_kernel[
     )
 
 
-fn test_gemm_kernel_dynamic() raises:
+fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     alias NUM_THREADS = 256
     alias BM = 64
     alias BN = 64
@@ -177,10 +171,10 @@ fn test_gemm_kernel_dynamic() raises:
     for i in range(K * N):
         b_host[i] = i
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
     alias gemm_kernel_func_t = gemm_kernel[
         DType.float32,
@@ -199,46 +193,47 @@ fn test_gemm_kernel_dynamic() raises:
         TN,
     ]
 
-    var stream = Stream()
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    _copy_host_to_device(a_device, a_host.address, M * K)
-    _copy_host_to_device(b_device, b_host.address, K * N)
-
-    synchronize()
-
-    var gemm_kernel_func = Function[gemm_kernel_func_t](
+    var gemm_kernel_func = ctx.compile_function[gemm_kernel_func_t](
         dump_ptx=dump_ptx(), dump_llvm=dump_llvm()
     )
 
     var mat_a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        a_device, dynamic_shape=Index(M, K)
+        a_device.ptr, dynamic_shape=Index(M, K)
     )
     var mat_b = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        b_device, dynamic_shape=Index(K, M)
+        b_device.ptr, dynamic_shape=Index(K, M)
     )
     var mat_c = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        c_device, dynamic_shape=Index(N, M)
+        c_device.ptr, dynamic_shape=Index(N, M)
     )
 
-    gemm_kernel_func(
+    ctx.enqueue_function(
+        gemm_kernel_func,
         mat_c,
         mat_a,
         mat_b,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
-    synchronize()
 
-    _copy_device_to_host(c_host.address, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var func_naive = Function[gemm_naive](threads_per_block=NUM_THREADS)
-    var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](c_device_ref)
-    func_naive(
+    var func_naive = ctx.compile_function[gemm_naive](
+        threads_per_block=NUM_THREADS
+    )
+    var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](
+        c_device_ref.ptr
+    )
+    ctx.enqueue_function(
+        func_naive,
         c_buffer_ref,
         mat_a,
         mat_b,
@@ -248,8 +243,8 @@ fn test_gemm_kernel_dynamic() raises:
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
-    synchronize()
-    _copy_device_to_host(c_host_ref.address, c_device_ref, M * N)
+
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):
             print(i, c_host[i], c_host_ref[i])
@@ -261,29 +256,35 @@ fn test_gemm_kernel_dynamic() raises:
 
         @always_inline
         @parameter
-        fn run_func(stream: Stream) raises:
-            for i in range(nrun):
-                gemm_kernel_func(
-                    mat_c,
-                    mat_a,
-                    mat_b,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(NUM_THREADS),
-                    stream=stream,
-                )
+        fn run_func(ctx: DeviceContext) raises:
+            ctx.enqueue_function(
+                gemm_kernel_func,
+                mat_c,
+                mat_a,
+                mat_b,
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(NUM_THREADS),
+            )
 
         # Warmup
         for i in range(nwarmup):
-            run_func(stream)
-        var nstime = time_function[run_func](stream) / nrun
+            ctx.enqueue_function(
+                gemm_kernel_func,
+                mat_c,
+                mat_a,
+                mat_b,
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(NUM_THREADS),
+            )
+        var nstime = ctx.execution_time[run_func](nrun) / nrun
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    _free(c_device)
-    _free(c_device_ref)
-    _free(a_device)
-    _free(b_device)
+    _ = c_device
+    _ = c_device_ref
+    _ = a_device
+    _ = b_device
 
     c_host.free()
     c_host_ref.free()
@@ -291,12 +292,12 @@ fn test_gemm_kernel_dynamic() raises:
     b_host.free()
 
     _ = gemm_kernel_func^
-    _ = stream^
+    _ = func_naive^
 
 
 fn main():
     try:
-        with Context() as ctx:
-            test_gemm_kernel_dynamic()
+        with DeviceContext() as ctx:
+            test_gemm_kernel_dynamic(ctx)
     except e:
         print("CUDA err:", e)

@@ -6,8 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import Context, Function
-from gpu.host.memory import _malloc_managed
+from gpu.host import DeviceContext
 
 
 fn kernel_with_list(res: UnsafePointer[Float32]):
@@ -17,10 +16,12 @@ fn kernel_with_list(res: UnsafePointer[Float32]):
     res[] = list[0] * list[1] + list[2] * list[3]
 
 
-fn test_kernel_with_list() raises:
+fn test_kernel_with_list(ctx: DeviceContext) raises:
     print("== test_kernel_with_list")
-    var res = _malloc_managed[Float32](1)
-    res[] = 0
+    var res_host = UnsafePointer[Float32].alloc(1)
+    var res_device = ctx.create_buffer[DType.float32](1)
+    res_host[0] = 0
+    ctx.enqueue_copy_to_device(res_device, res_host.address)
     # CHECK: call.uni
     # CHECK: malloc,
     # CHECK: (
@@ -31,16 +32,20 @@ fn test_kernel_with_list() raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    var kernel = Function[kernel_with_list](dump_ptx=True)
-    kernel(res, block_dim=(1), grid_dim=(1))
+    var kernel = ctx.compile_function[kernel_with_list](dump_ptx=True)
+    ctx.enqueue_function(kernel, res_device, block_dim=(1), grid_dim=(1))
+    ctx.enqueue_copy_from_device(res_host.address, res_device)
     # CHECK: 16.0
-    print("Res=", res[0])
+    print("Res=", res_host[0])
+
+    _ = res_device
+    res_host.free()
 
 
 fn main():
     try:
-        with Context() as ctx:
-            test_kernel_with_list()
+        with DeviceContext() as ctx:
+            test_kernel_with_list(ctx)
 
     except e:
         print("CUDA error", e)

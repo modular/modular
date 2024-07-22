@@ -6,15 +6,8 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc_managed,
-)
+from gpu.host import DeviceContext
 from gpu.intrinsics import convert
-from memory import UnsafePointer
 from testing import *
 from gpu.host._compile import _compile_code, _get_nvptx_target
 
@@ -53,7 +46,7 @@ fn convert_kernel[
         SIMD.store(dst_ptr, i, dst_vec)
 
 
-fn test_convert[src_type: DType, dst_type: DType]() raises:
+fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     """Test the convertion ptx instruction.
 
     We can't verify this just by compilation. The instruction converts two values
@@ -61,26 +54,32 @@ fn test_convert[src_type: DType, dst_type: DType]() raises:
     """
 
     alias size = 4
-    var ptr = _malloc_managed[dst_type](size)
+    var host_ptr = UnsafePointer[Scalar[dst_type]].alloc(size)
+    var device_buf = ctx.create_buffer[dst_type](size)
 
     for i in range(size):
-        ptr[i] = 0
+        host_ptr[i] = 0
 
-    var kernel = Function[convert_kernel[src_type, dst_type, size]]()
-    kernel(ptr, grid_dim=(1), block_dim=(1))
-    synchronize()
+    ctx.enqueue_copy_to_device(device_buf, host_ptr)
+
+    var kernel = ctx.compile_function[
+        convert_kernel[src_type, dst_type, size]
+    ]()
+    ctx.enqueue_function(kernel, device_buf, grid_dim=(1), block_dim=(1))
+    ctx.enqueue_copy_from_device(host_ptr, device_buf)
 
     for i in range(size):
-        assert_equal(ptr[i], i)
+        assert_equal(host_ptr[i], i)
 
-    _free(ptr)
+    _ = device_buf
+    host_ptr.free()
 
 
 fn main() raises:
     try:
-        with Context():
+        with DeviceContext() as ctx:
             test_convert_asm()
             # Only support 2xFP32 -> 2xBF16 convertion via ptx.
-            test_convert[DType.float32, DType.bfloat16]()
+            test_convert[DType.float32, DType.bfloat16](ctx)
     except e:
         print("CUDA_ERROR:", e)

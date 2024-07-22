@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 
-from gpu.host import Context, CudaInstance, Device, Function
+from gpu.host import DeviceContext
 from gpu.id import BlockIdx, ThreadIdx
 from layout import *
 
@@ -28,17 +28,40 @@ fn gpu_kernel(
 
 
 def main():
-    with CudaInstance() as instance:
-        with Context(Device(instance)) as ctx:
-            var vec_a = ctx.malloc_managed[Float32](16)
-            var vec_b = ctx.malloc_managed[Float32](16)
-            var vec_c = ctx.malloc_managed[Float32](16)
-            for i in range(16):
-                vec_a[i] = i
-                vec_b[i] = i
-                vec_c[i] = 0
-            var kernel = Function[gpu_kernel](ctx)
-            kernel(vec_c, vec_a, vec_b, block_dim=(4), grid_dim=(4))
+    try:
+        with DeviceContext() as ctx:
+            var vec_a_ptr = UnsafePointer[Float32].alloc(16)
+            var vec_b_ptr = UnsafePointer[Float32].alloc(16)
+            var vec_c_ptr = UnsafePointer[Float32].alloc(16)
+
+            var vec_a_dev = ctx.create_buffer[DType.float32](16)
+            var vec_b_dev = ctx.create_buffer[DType.float32](16)
+            var vec_c_dev = ctx.create_buffer[DType.float32](16)
 
             for i in range(16):
-                print(vec_a[i], "+", vec_b[i], "=", vec_c[i])
+                vec_a_ptr[i] = i
+                vec_b_ptr[i] = i
+                vec_c_ptr[i] = 0
+
+            ctx.enqueue_copy_to_device(vec_a_dev, vec_a_ptr)
+            ctx.enqueue_copy_to_device(vec_b_dev, vec_b_ptr)
+            ctx.enqueue_copy_to_device(vec_c_dev, vec_c_ptr)
+
+            var kernel = ctx.compile_function[gpu_kernel]()
+            ctx.enqueue_function(
+                kernel,
+                vec_c_dev,
+                vec_a_dev,
+                vec_b_dev,
+                block_dim=(4),
+                grid_dim=(4),
+            )
+
+            ctx.enqueue_copy_from_device(vec_a_ptr, vec_a_dev)
+            ctx.enqueue_copy_from_device(vec_b_ptr, vec_b_dev)
+            ctx.enqueue_copy_from_device(vec_c_ptr, vec_c_dev)
+
+            for i in range(16):
+                print(vec_a_ptr[i], "+", vec_b_ptr[i], "=", vec_c_ptr[i])
+    except e:
+        print("CUDA_ERROR:", e)
