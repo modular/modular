@@ -27,11 +27,7 @@ struct TypeCheckScopeInfo;
 /// the reason for the mismatch.
 class OverloadFitness {
 public:
-  OverloadFitness(OverloadFitness &&other)
-      : paramBindings(other.paramBindings),
-        diag(other.diag ? std::optional<InflightDiag>(other.takeDiag())
-                        : std::nullopt),
-        payload(other.payload) {}
+  OverloadFitness(OverloadFitness &&other) = default;
 
   ~OverloadFitness() {
     if (diag)
@@ -88,11 +84,23 @@ public:
     kWrongType,   //< An argument value not convertible to the expected type.
   };
 
+  /// Return the set of args that need to be emitted to MValues to select this
+  /// candidate.
+  const llvm::SmallBitVector &getArgsNeedingLifetimes() const {
+    return argsNeedingLifetimes;
+  }
+
 private:
   /// For valid candidates, this defines the parameter bindings to use.
   ParameterExprArrayAttr paramBindings;
   /// The diagnostic for invalid candidates, or null for valid ones.
   std::optional<InflightDiag> diag = std::nullopt;
+
+  /// If this candidate requires any arguments to be emitted (from a PValue or
+  /// SValue to an MValue) so a lifetime can be inferred, their corresponding
+  /// argument # is tracked in this bitset.  If not, the bit will be zero or
+  /// missing.
+  llvm::SmallBitVector argsNeedingLifetimes;
 
   /// Describes the metrics that can be used to compare candidates.
   struct Payload {
@@ -122,7 +130,7 @@ private:
   /// problems with the operand type and also returns the type to be used for
   /// error propagation.
   std::pair<ArgTypeMismatchKind, ASTType>
-  checkOneOperand(ASTExprAnd<AnyValue> operand,
+  checkOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                   ArgConvention expectedConvention, ASTType expectedType,
                   bool allowImplicitConversions, SMLoc loc,
                   const TypeCheckScopeInfo &scopeInfo);

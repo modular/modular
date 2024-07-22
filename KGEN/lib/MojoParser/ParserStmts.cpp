@@ -1541,9 +1541,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // diagnosed when emitting the method call.
   CallOperands enterOperands;
   enterOperands.addSelf({contextVal, contextExp});
+  auto enterEmitter = getEmitter();
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
-          getScopeInfo(), contextRVType, "__enter__", enterOperands, contextExp,
-          CallSyntax::kMethodCall)) {
+          contextRVType, "__enter__", enterOperands, contextExp,
+          CallSyntax::kMethodCall, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self inout.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
@@ -1705,9 +1706,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   CallOperands exitCallOperands;
   exitCallOperands.addSelf({contextVal, contextExp});
   exitCallOperands.add({PValue(UnknownAttr::get(errorType)), contextExp});
+  auto exitEmitter = getEmitter();
   PValue conditionalExit = OverloadSet::lookupAndResolve(
-      getScopeInfo(), contextRVType, "__exit__", exitCallOperands, contextExp,
-      CallSyntax::kMethodCall);
+      contextRVType, "__exit__", exitCallOperands, contextExp,
+      CallSyntax::kMethodCall, exitEmitter);
 
   // Otherwise, we have to emit a conditional finally. PEP343 states that the
   // general 'with' statement corresponds to:

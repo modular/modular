@@ -393,6 +393,7 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
 /// positions.
 std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
 OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                 size_t operandIdx,
                                  ArgConvention expectedConvention,
                                  ASTType expectedType,
                                  bool allowImplicitConversions, SMLoc loc,
@@ -440,27 +441,37 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // Element type and address have to match and the mutability has to be
     // compatible.
     RefType valueRefType;
-    if (operand.ir.isMValue())
+    if (operand.ir.isMValue()) {
       valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
-    else if (auto pv = operand.ir.getIfPValue(); pv && scopeInfo.isParamContext)
+    } else if (auto pv = operand.ir.getIfPValue();
+               pv && scopeInfo.isParamContext) {
+      // TODO: Remove isParamContext and this handling.
       valueRefType = RefType::getImmortal(pv.getType(), /*isMut=*/false);
+    } else if (auto cv = operand.ir.getIfCValue()) {
+      // Otherwise, we are binding something like a PValue or SRValue to a
+      // reference argument, which doesn't have a lifetime.  This is a problem
+      // because lifetimes can be propagated through the type system of the
+      // function call to other arguments and they all need to line up.  We
+      // handle this in two phases: during overload resolution we bind this to
+      // an immortal lifetime, and then after the candidate is selected, we
+      // re-emit these arguments to memory and re-infer all the parameters.
+      //
+      // One detail is how we do this: we bind these arguments to immutable
+      // temporaries, because we specifically do NOT want 'ref' arguments with
+      // parametric mutability to treat these things as mutable.
+      valueRefType = RefType::getImmortal(cv.getRValueType(), /*isMut=*/false);
 
-    // As a special hack, look through DefArgumentWrapperDLValue to the
-    // underlying MBValue that it may contain.  This is for two reasons:
-    //  1) We don't want to infer mutability from the argument even though
-    //     it is a DLValue, because we'd force copy-out + writeback,
-    //     materializing the def argument box.
-    //  2) We have significant bugs around lifetime inference from SBValues
-    //     and DLValues because we're not materializing the box in time.  This
-    //     is tracked by MOCO-684.
-    // Solve this by hacking this important case specifically.
-    if (auto dlValue = operand.ir.getIfDLValue())
-      if (auto refType = dlValue->getMBValueTypeFromDefArgument())
-        valueRefType = refType;
+      // Remember that this argument needs to be emitted.
+      argsNeedingLifetimes.resize(operandIdx + 1);
+      argsNeedingLifetimes[operandIdx] = true;
+    } else {
+      // TODO: See if we can resolve the OValue based on the expectedType.
+      return {kWrongType, expectedType};
+    }
 
-    // The argument must be an MValue in the case of a dynamic call.
-    if (valueRefType &&
-        canConvertWithRebind(valueRefType, expectedType, shared))
+    // If the available reference type is compatible with what we need, then
+    // we succeed.
+    if (canConvertWithRebind(valueRefType, expectedType, shared))
       return {kValidType, expectedType};
 
     // Otherwise this is the wrong type for the argument.
@@ -884,12 +895,27 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // to consider as a positional argument.
   size_t posOperandIdx = 0;
 
-  auto checkAnOperand = [&](ASTExprAnd<AnyValue> operand,
+  // Type check a single argument.  When operandIdx is -1, the operand number is
+  // looked up from the operand list by name.
+  auto checkAnOperand = [&](const OperandValue &operand, ssize_t operandIdx,
                             ArgConvention expectedConvention,
                             ASTType expectedType) {
-    return result.checkOneOperand(operand, expectedConvention, expectedType,
-                                  allowImplicitConversions, loc,
-                                  callable.paramBindings);
+    // If the caller didn't know the operand index, recompute it.  The operand
+    // must be a keyword argument.
+    if (operandIdx < 0) {
+      assert(operand.keyword && "must have index for positional args");
+      for (auto [idx, operandToCheck] : llvm::enumerate(operands.values)) {
+        if (operandToCheck.keyword == operand.keyword) {
+          operandIdx = idx;
+          break;
+        }
+      }
+      assert(operandIdx >= 0 && "Must have found the keyword argument");
+    }
+
+    return result.checkOneOperand(
+        operand, ssize_t(operandIdx), expectedConvention, expectedType,
+        allowImplicitConversions, loc, callable.paramBindings);
   };
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
@@ -923,7 +949,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `CollectionElement`.
         auto [kind, ty] =
-            checkAnOperand(operand, ArgConvention::OwnedInReg, expectedType);
+            checkAnOperand(operand, /*findByName=*/-1,
+                           ArgConvention::OwnedInReg, expectedType);
         if (kind != kValidType)
           return emitDiagFor.argTypeMismatch(kind, ty, operand, expectedArgIdx);
       }
@@ -957,11 +984,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       }
 
       // Check if the argument was passed as a keyword operand.
-      if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
-              operands.findKwArg(argName)) {
+      if (const OperandValue *kwOperandOr = operands.findKwArg(argName)) {
         // If we found a keyword argument, we check it normally.
-        auto [kind, ty] =
-            checkAnOperand(*kwOperandOr, expectedConvention, expectedType);
+        auto [kind, ty] = checkAnOperand(*kwOperandOr, /*findByName=*/-1,
+                                         expectedConvention, expectedType);
         if (kind != kValidType) {
           return emitDiagFor.argTypeMismatch(kind, ty, *kwOperandOr,
                                              expectedArgIdx);
@@ -981,8 +1007,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     auto processPositionalOperand =
         [&](ASTType expectedType,
             ArgConvention conv) -> std::optional<InflightDiag> {
-      ASTExprAnd<AnyValue> operand = operands[posOperandIdx];
-      auto [kind, ty] = checkAnOperand(operand, conv, expectedType);
+      auto &operand = operands[posOperandIdx];
+      auto [kind, ty] =
+          checkAnOperand(operand, posOperandIdx, conv, expectedType);
       if (kind != kValidType)
         return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
       ++posOperandIdx;

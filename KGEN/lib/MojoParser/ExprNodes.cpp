@@ -1057,9 +1057,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   ASTType elementType;
   PValue getter;
   if (getterSet) {
-    getter = getterSet.filterOverloadSet(operands,
-                                         /*allowImplicitConversions=*/true,
-                                         /*emitDiagnosticOnFailure*/ true);
+    getter =
+        getterSet.filterOverloadSet(operands,
+                                    /*allowImplicitConversions=*/true,
+                                    /*emitDiagnosticOnFailure*/ true, emitter);
     if (!getter) // Error already emitted.
       return {};
     // ElementType is the result of the getter.
@@ -2128,6 +2129,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     return {};
   }
 
+  // Use one 'operands' set for the arg values even though we switch them back
+  // and forth.  Resolving a set can mutate the argument list (e.g. emitting
+  // PValues to dynamic values) even if the lookup fails and we don't want to
+  // materialize them multiple times
   CallOperands operands({lhs, rhs});
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
@@ -2138,8 +2143,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     if (PValue callee = OverloadSet::lookupAndResolve(
-            emitter.getScopeInfo(), lhsCV.getRValueType(), specialFnInfo.name,
-            operands, callExpr, CallSyntax::kOperator))
+            lhsCV.getRValueType(), specialFnInfo.name, operands, callExpr,
+            CallSyntax::kOperator, emitter))
       return emitter.emitIndirectCall(callee, std::move(operands), dest,
                                       callExpr);
   }
@@ -2151,9 +2156,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     std::swap(operands[0], operands[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       if (PValue callee = OverloadSet::lookupAndResolve(
-              emitter.getScopeInfo(), rhsCV.getRValueType(),
-              reversedFnInfo.name, operands, callExpr,
-              CallSyntax::kReversedOperator))
+              rhsCV.getRValueType(), reversedFnInfo.name, operands, callExpr,
+              CallSyntax::kReversedOperator, emitter))
         return emitter.emitIndirectCall(callee, std::move(operands), dest,
                                         callExpr);
     }
