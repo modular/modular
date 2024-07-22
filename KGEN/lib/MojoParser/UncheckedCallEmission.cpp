@@ -502,7 +502,8 @@ static bool isPlaceholderInitSelf(const AnyValue &value) {
 
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
+  // This is the index into the operands list for the next operand value to look
+  // at for positional arguments.
   size_t posOperandIdx = 0;
 
   // We will collect argument names that were passed by keyword, so that we can
@@ -537,113 +538,122 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If this is an `init_self` slot that has not been explicitly provided by
     // the user, we will have to find a slot later.
     if (convention == ArgConvention::InitSelf &&
-        isPlaceholderInitSelf(posOperands.front().ir)) {
+        isPlaceholderInitSelf(operands.values.front().ir)) {
       ++posOperandIdx;
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
     }
 
-    // If we ran out of operands, fulfill this with a keyword argument, default
-    // value, empty variadic list, or empty pack.
-    if (posOperandIdx == posOperands.size()) {
-      if (calleeSig.isPosVarArg(argIdx)) {
-        // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
-        auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
-                                         cast<VariadicType>(expectedType));
-        argumentValues.push_back({PValue(argAttr), callExpr});
-        continue;
-      }
+    // See what the next positional argument is, skipping over any keywords.
+    while (posOperandIdx < operands.size() && operands[posOperandIdx].keyword)
+      ++posOperandIdx;
 
-      // Pack arguments are fulfilled with an empty #lit.ref.pack.
-      if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-        assert(variadicPackType.getVariadicPackInfo()
-                   .getVariadicIfResolved()
-                   .getValues()
-                   .empty() &&
-               "pack type already checked against operand count");
-        auto argConv = calleeSig.getPackVarArgConvention(argIdx);
-        // Emit a VariadicPack constructor call.
-        auto variadicPack = emitVariadicPackConstructor(
-            variadicPackType, argConv, /*lifetime*/ {}, callExpr, emitter,
-            [&](RefPackType adjustedPackType) -> CValue {
-              return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
-            });
-        if (!variadicPack)
-          return failure();
-        argumentValues.push_back({variadicPack, callExpr});
-        continue;
-      }
-
-      if (calleeSig.isKwVarArg(argIdx)) {
-        assert(!kwargsDict && "multiple **kwargs not supported yet");
-        // If this is a variadic keyword argument, we initialize a dictionary.
-        ValueDest dictDest(ExprContext::EC_KWArgsArgument);
-        auto dict = emitter.emitConstructorCall(
-            cast<RefType>(expectedType).getElementType(), {}, callExpr,
-            CallSyntax::kImplicitConvert, dictDest,
-            /*allowImplicitConversion=*/false);
-        kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
-        argumentValues.push_back({kwargsDict, callExpr});
-        continue;
-      }
-      StringAttr argName = pogAttr.getName();
-      if (auto kwOperandOr = operands.findKwArg(argName);
-          kwOperandOr.has_value()) {
-        // The argument is passed as a keyword operand.
+    // Process positional arguments.
+    if (posOperandIdx < operands.size()) {
+      // For a normal (not a vararg or a pack) positional argument, we just emit
+      // it and add it to our list.
+      if (!calleeSig.isPosVarArg(argIdx) && !calleeSig.isPackVarArg(argIdx)) {
+        ASTExprAnd<AnyValue> operand = operands[posOperandIdx++];
         AnyValue argVal =
-            emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);
+            emitOneArgVal(operand, argIdx, convention, expectedType);
         if (!argVal)
           return failure();
-        passedByKw.insert(argName);
-        argumentValues.push_back({argVal, kwOperandOr->expr});
+        argumentValues.push_back({argVal, operand.expr});
         continue;
       }
 
-      // Otherwise, apply the default argument. We've ensured before that we
-      // have a default argument for each missing operand.
-      TypedAttr defaultOr = defaultHandler.getDefault(argIdx);
-      assert(defaultOr);
-      assert(convention != ArgConvention::InOut &&
-             "by_ref argument cannot have defaults");
-      argumentValues.push_back({PValue(defaultOr), callExpr});
+      // At this point, we must be dealing with variadic or pack arguments. We
+      // handle these all at once (or fail).
+      SmallVector<ASTExprAnd<AnyValue>> remainingOperands;
+      do {
+        auto &operand = operands[posOperandIdx];
+        if (!operand.keyword)
+          remainingOperands.push_back(operand);
+        ++posOperandIdx;
+      } while (posOperandIdx < operands.size());
+
+      // NOTE: this implicitly assumes that variadics/packs are at the end.
+      if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
+                                             convention, expectedType,
+                                             argumentValues)))
+        continue;
+
+      return failure();
+    }
+
+    // If we ran out of operands, fulfill this with a keyword argument, default
+    // value, empty variadic list, or empty pack.
+    if (calleeSig.isPosVarArg(argIdx)) {
+      // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
+      auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
+                                       cast<VariadicType>(expectedType));
+      argumentValues.push_back({PValue(argAttr), callExpr});
       continue;
     }
 
-    // Otherwise, we're applying one or more arguments to this.
-    // For a normal (not a vararg or a pack) positional argument, we just emit
-    // it and add it to our list.
-    if (!calleeSig.isPosVarArg(argIdx) && !calleeSig.isPackVarArg(argIdx)) {
-      ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
+    // Pack arguments are fulfilled with an empty #lit.ref.pack.
+    if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
+      assert(variadicPackType.getVariadicPackInfo()
+                 .getVariadicIfResolved()
+                 .getValues()
+                 .empty() &&
+             "pack type already checked against operand count");
+      auto argConv = calleeSig.getPackVarArgConvention(argIdx);
+      // Emit a VariadicPack constructor call.
+      auto variadicPack = emitVariadicPackConstructor(
+          variadicPackType, argConv, /*lifetime*/ {}, callExpr, emitter,
+          [&](RefPackType adjustedPackType) -> CValue {
+            return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
+          });
+      if (!variadicPack)
+        return failure();
+      argumentValues.push_back({variadicPack, callExpr});
+      continue;
+    }
+
+    if (calleeSig.isKwVarArg(argIdx)) {
+      assert(!kwargsDict && "multiple **kwargs not supported yet");
+      // If this is a variadic keyword argument, we initialize a dictionary.
+      ValueDest dictDest(ExprContext::EC_KWArgsArgument);
+      auto dict = emitter.emitConstructorCall(
+          cast<RefType>(expectedType).getElementType(), {}, callExpr,
+          CallSyntax::kImplicitConvert, dictDest,
+          /*allowImplicitConversion=*/false);
+      kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
+      argumentValues.push_back({kwargsDict, callExpr});
+      continue;
+    }
+
+    StringAttr argName = pogAttr.getName();
+    if (auto kwOperandOr = operands.findKwArg(argName);
+        kwOperandOr.has_value()) {
+      // The argument is passed as a keyword operand.
       AnyValue argVal =
-          emitOneArgVal(operand, argIdx, convention, expectedType);
+          emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);
       if (!argVal)
         return failure();
-      argumentValues.push_back({argVal, operand.expr});
+      passedByKw.insert(argName);
+      argumentValues.push_back({argVal, kwOperandOr->expr});
       continue;
     }
 
-    // At this point, we must be dealing with variadic or pack arguments. We
-    // handle these all at once (or fail).
-    SmallVector<ASTExprAnd<AnyValue>> remainingOperands(
-        posOperands.begin() + posOperandIdx, posOperands.end());
-    posOperandIdx = posOperands.size();
-
-    // NOTE: this implicitly assumes that variadics/packs are at the end.
-    if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
-                                           convention, expectedType,
-                                           argumentValues)))
-      continue;
-
-    return failure();
+    // Otherwise, apply the default argument. We've ensured before that we
+    // have a default argument for each missing operand.
+    TypedAttr defaultOr = defaultHandler.getDefault(argIdx);
+    assert(defaultOr);
+    assert(convention != ArgConvention::InOut &&
+           "by_ref argument cannot have defaults");
+    argumentValues.push_back({PValue(defaultOr), callExpr});
+    continue;
   }
 
-  assert(posOperandIdx == posOperands.size() &&
+  assert(posOperandIdx == operands.size() &&
          "typechecking confirmed that we would use up all positional operands");
 
   // Fill the **kwargs dict with values that we didn't bind to an argument.
   ValueDest kwargsDest(EC_KWArgsArgument);
-  for (auto [name, operand] : operands.kwOperands) {
-    if (passedByKw.contains(name))
+  for (auto &operand : operands.values) {
+    if (!operand.keyword || passedByKw.contains(operand.keyword))
       continue;
 
     assert(kwargsDict && "typechecking confirmed we have no **kwargs");
@@ -653,8 +663,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // We first construct a String key from the operand name.
     ASTType stringLiteralType =
         emitter.shared.getBuiltinStringLiteralType(emitter.declScope, loc);
-    auto nameAttr =
-        StringAttr::get(name.strref(), StringType::get(emitter.getContext()));
+    auto nameAttr = StringAttr::get(operand.keyword.strref(),
+                                    StringType::get(emitter.getContext()));
     CValue literalKey = emitter.emitConstructorCall(
         stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
         callExpr, CallSyntax::kImplicitConvert, kwargsDest);
@@ -1077,11 +1087,11 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
   // actually cause a COPY of the source value, and then explicitly destroy
   // this copy of the value.  Emit a warning in this case.
   if (calleeFunc.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
-      callOperands.posOperands.size() == 1 && // defensive.
-      callOperands.posOperands[0].ir.getIfRValue().isNull()) {
+      callOperands.size() == 1 && // defensive.
+      callOperands[0].ir.getIfRValue().isNull()) {
     emitter.emitWarning(loc) << "explicit call to '__del__' destroys a copy of "
                                 "the value; consider removing this call"
-                             << callOperands.posOperands[0].expr->getRange();
+                             << callOperands[0].expr->getRange();
     return;
   }
 }

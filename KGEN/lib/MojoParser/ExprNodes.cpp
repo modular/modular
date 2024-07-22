@@ -1096,7 +1096,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     }
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
-    size_t setValueIdx = operands.posOperands.size();
+    size_t setValueIdx = operands.getNumPositional();
     if (sigType.getNumArguments() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
@@ -1723,13 +1723,13 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // into a well-known static method instead of overloading onto constructor.
   CallOperands operands;
   operands.add(getOperand(lower));
-  if (!operands.posOperands.back().ir)
+  if (!operands.values.back().ir)
     return {};
   operands.add(getOperand(upper));
-  if (!operands.posOperands.back().ir)
+  if (!operands.values.back().ir)
     return {};
   operands.add(getOperand(stride));
-  if (!operands.posOperands.back().ir)
+  if (!operands.values.back().ir)
     return {};
   return emitter.emitResult(InitializerUValue::create(std::move(operands)),
                             this, dest);
@@ -2132,7 +2132,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
   if (kind == ExprNode::Kind::kCmpIn)
-    std::swap(operands.posOperands[0], operands.posOperands[1]);
+    std::swap(operands[0], operands[1]);
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
@@ -2148,7 +2148,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
-    std::swap(operands.posOperands[0], operands.posOperands[1]);
+    std::swap(operands[0], operands[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       if (PValue callee = OverloadSet::lookupAndResolve(
               emitter.getScopeInfo(), rhsCV.getRValueType(),
@@ -2159,7 +2159,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     }
 
     // Swap these back so we emit the right error.
-    std::swap(operands.posOperands[0], operands.posOperands[1]);
+    std::swap(operands[0], operands[1]);
   }
 
   // Emit an error complaining about the forward version of the operator.
