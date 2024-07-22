@@ -20,6 +20,8 @@ struct CustomOpWithCanonicalize:
         # We only print during canonicalization, as the MLIR C API is not yet
         # fully supported in the JIT.
         print("canonicalization is called")
+        # This tests that the C API is correctly linked
+        var context = x.context()
         return
 
 

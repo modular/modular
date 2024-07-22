@@ -18,6 +18,7 @@ add_modular_tool(kgen-opt
   DebugInfoToLLVM
   KGENCompiler
   KGENElaborator
+  KGENSupportForceLinkMLIRC
   KGENToLLVM
   KGENTransforms
   LowerLIT
@@ -35,3 +36,5 @@ add_modular_tool(kgen-opt
   MLIRSupport
   MLIRTransforms
   )
+
+set_property(TARGET kgen-opt PROPERTY ENABLE_EXPORTS ON)

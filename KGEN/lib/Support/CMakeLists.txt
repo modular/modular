@@ -19,3 +19,11 @@ add_modular_library(KGENSupport
 target_compile_definitions(KGENSupport
   PRIVATE -DMOJO_CONFIG_SECTION=${MOJO_CONFIG_SECTION}
 )
+
+add_modular_library(KGENSupportForceLinkMLIRC
+  ForceLinkMLIRC/ForceLinkMLIRC.cpp
+
+  LINK_LIBS PUBLIC
+  MLIRCAPIIR
+  MLIRCAPITransforms
+)
