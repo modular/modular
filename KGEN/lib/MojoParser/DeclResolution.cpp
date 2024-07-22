@@ -1484,12 +1484,6 @@ MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
   return argRef.getIfMBValue();
 }
 
-RefType DefArgumentWrapperDLValue::getMBValueTypeFromDefArgument() const {
-  if (auto mbVal = argRef.getIfMBValue())
-    return cast<RefType>(mbVal.getType());
-  return {};
-}
-
 MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
     ExprEmitter &emitter) const {
   auto baseRef = baseVal.ir->emitMBValueFromDefArgument(emitter);

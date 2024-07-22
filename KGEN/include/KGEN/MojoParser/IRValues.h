@@ -692,9 +692,6 @@ public:
     return MBValue();
   }
 
-  /// If this is a def argument shadow whose argument is backed by an MBValue,
-  /// return the effective type of the reference.
-  virtual RefType getMBValueTypeFromDefArgument() const;
   virtual bool isDefArgument() const { return false; }
 };
 

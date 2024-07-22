@@ -40,7 +40,6 @@ public:
                             ASTType elementType, const ExprNode *expr);
 
   StructFieldOp getField() const;
-  RefType getMBValueTypeFromDefArgument() const override;
   MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const override;
 
   void print(raw_ostream &os) const override;
@@ -112,7 +111,6 @@ public:
 
   /// If this is a def argument shadow, resolve it to the incoming immutable
   /// borrowed value without forming a local copy.  Otherwise return null.
-  RefType getMBValueTypeFromDefArgument() const override;
   MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const override;
   bool isDefArgument() const override { return true; }
 
