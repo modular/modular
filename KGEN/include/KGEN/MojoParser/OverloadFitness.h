@@ -99,30 +99,33 @@ private:
     /// The number of implicit conversions required.  Normal implicit
     /// conversions count as 2 each, non-materializable value conversions count
     /// as 1.
-    size_t numImplicitConversions;
-    /// The number of input conventions conversions required.
-    size_t numMismatchedConventions;
+    size_t numImplicitConversions = 0;
+
+    /// For each mismatch in "preferred" argument convention, penalize the
+    /// overload. This is to resolve ambiguities that can arise from synthesized
+    /// thunks for converting calling conventions.
+    size_t numMismatchedConventions = 0;
     /// Whether the candidate has a (non-empty) variadic argument.
-    bool passesVarArgArgument;
+    bool passesVarArgArgument = false;
     /// Whether the bindings include variadic parameters.
-    bool hasVariadicParams;
+    bool hasVariadicParams = false;
 
     /// Return a numeric value that allows easy comparison of boolean metrics.
     int8_t getBoolMask() const;
   } payload;
 
   OverloadFitness(InflightDiag &&diag) : diag(std::move(diag)) {}
-  OverloadFitness(ParameterExprArrayAttr paramBindings, Payload payload)
-      : paramBindings(paramBindings), payload(payload) {}
+  OverloadFitness(ParameterExprArrayAttr paramBindings)
+      : paramBindings(paramBindings) {}
 
   /// Check the expected type against the provided operand. This identifies any
   /// problems with the operand type and also returns the type to be used for
   /// error propagation.
-  static std::pair<ArgTypeMismatchKind, ASTType> checkOneOperand(
-      ASTExprAnd<AnyValue> operand, ArgConvention expectedConvention,
-      ASTType expectedType, size_t &numImplicitConversions,
-      size_t &numMismatchedConventions, bool allowImplicitConversions,
-      SMLoc loc, const TypeCheckScopeInfo &scopeInfo);
+  std::pair<ArgTypeMismatchKind, ASTType>
+  checkOneOperand(ASTExprAnd<AnyValue> operand,
+                  ArgConvention expectedConvention, ASTType expectedType,
+                  bool allowImplicitConversions, SMLoc loc,
+                  const TypeCheckScopeInfo &scopeInfo);
 };
 
 } // namespace M::KGEN::LIT
