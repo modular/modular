@@ -58,7 +58,7 @@ ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
 
 void ParamBindings::addPrechecked(const ExprNode *expr,
                                   TypedAttr precheckedBinding) {
-  assert(numPreTypeChecked == parameters.posOperands.size() &&
+  assert(numPreTypeChecked == parameters.size() &&
          "Cannot add type prechecked after other bindings!");
   parameters.add({precheckedBinding, expr});
   ++numPreTypeChecked;
@@ -115,13 +115,14 @@ ParamBindings::verifyBindingsImpl(
   Fitness fitness{0, false};
 
   // Check to see if we have *_, diagnosing invalid uses and unpacking it if so.
-  for (auto [idx, binding] : llvm::enumerate(operands.posOperands)) {
-    if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get()))
+  for (auto [idx, binding] : llvm::enumerate(operands.values)) {
+    // TODO: Emit an error when there is a keyword argument?
+    if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get()) || binding.keyword)
       continue;
 
     // UnpackedAttr is aka "*_": it fills up all remaining positional slots and
     // must be at the end of the parameter list.
-    if (idx != operands.posOperands.size() - 1) {
+    if (idx != operands.size() - 1) {
       if (diagEmitter)
         diagEmitter->emitUnboundPackNotEnd(binding);
       return {{}, fitness};
@@ -154,9 +155,9 @@ ParamBindings::verifyBindingsImpl(
     ssize_t numUnbounds = numPosPassable - idx;
 
     CallOperands expandedOperands(operands);
-    expandedOperands.posOperands.pop_back();
-    expandedOperands.posOperands.append(numUnbounds, unboundBinding);
-    assert(expandedOperands.posOperands.size() == numPosPassable);
+    expandedOperands.values.pop_back();
+    expandedOperands.values.append(numUnbounds, {StringAttr(), unboundBinding});
+    assert(expandedOperands.size() == numPosPassable);
     return verifyBindingsImpl(expandedOperands, expectedParamTypes,
                               paramListAttr, parameterInferenceHook,
                               diagEmitter, partial);
@@ -227,7 +228,7 @@ ParamBindings::verifyBindingsImpl(
   ExprEmitter emitter(shared, declScope, EC_ParameterList);
 
   size_t posBindingIdx = 0;
-  size_t numPosBindings = operands.posOperands.size();
+  size_t numBindings = operands.size();
 
   auto inferParameter = [&](Type requestedType) {
     if (parameterInferenceHook) {
@@ -285,11 +286,15 @@ ParamBindings::verifyBindingsImpl(
       if (auto varType = dyn_cast<VariadicType>(expectedType))
         expectedType = ASTType(varType.getElementType());
 
+    // Find the next positional binding.
+    while (posBindingIdx < numBindings && operands[posBindingIdx].keyword)
+      ++posBindingIdx;
+
     // Check to see if we ran out of bindings to provide to this param decl.
     // Implicit parameters are infer-only. They cannot be explicitly passed.
     PassingKind passingKind = pogAttr.getPassingKind();
     StringAttr paramName = pogAttr.getName();
-    if (posBindingIdx == numPosBindings) {
+    if (posBindingIdx == numBindings) {
       // We first check if we have a keyword parameter.
       if (std::optional<ASTExprAnd<AnyValue>> binding =
               operands.findKwArg(paramName)) {
@@ -348,7 +353,7 @@ ParamBindings::verifyBindingsImpl(
 
     // If we still have positional bindings left, first check if we are dealing
     // with an UnboundAttr we might have to deduce.
-    ASTExprAnd<AnyValue> binding = operands.posOperands[posBindingIdx];
+    ASTExprAnd<AnyValue> binding = operands[posBindingIdx];
     PValue bindingVal = binding.ir.getIfPValue();
     assert(bindingVal && "Parameters are always PValues");
     if (!partial && isa<UnboundAttr>(bindingVal.get())) {
@@ -375,7 +380,7 @@ ParamBindings::verifyBindingsImpl(
     // complain about too many parameters.
     if (passingKind == PassingKind::Implicit) {
       if (diagEmitter) {
-        diagEmitter->emitParamCount(numPosBindings,
+        diagEmitter->emitParamCount(operands.getNumPositional(),
                                     passingKind == PassingKind::PosOnly);
       }
       return {{}, fitness};
@@ -442,12 +447,15 @@ ParamBindings::verifyBindingsImpl(
     SmallVector<TypedAttr> elements;
     auto variadicType = cast<VariadicType>(requestedType);
     do {
-      ASTExprAnd<AnyValue> binding = operands.posOperands[posBindingIdx++];
+      auto &binding = operands[posBindingIdx++];
+      if (binding.keyword)
+        continue;
+
       PValue pValue = handlePosBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
       elements.emplace_back(pValue);
-    } while (posBindingIdx != numPosBindings);
+    } while (posBindingIdx != numBindings);
 
     auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
                                      variadicType.getConvention());
@@ -462,9 +470,10 @@ ParamBindings::verifyBindingsImpl(
   }
 
   // Check and complain if we have bindings that didn't get used.
-  if (posBindingIdx != numPosBindings) {
+  if (posBindingIdx != numBindings) {
     if (diagEmitter)
-      diagEmitter->emitParamCount(numPosBindings, /*posOnly=*/false);
+      diagEmitter->emitParamCount(operands.getNumPositional(),
+                                  /*posOnly=*/false);
     return {{}, fitness};
   }
 
@@ -677,8 +686,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   // The first parameter to the fully bound signature will be the type (confined
   // to the current trait type) that ultimately expands to the concrete type
   // that conforms to the trait.
-  assert(!parameters.posOperands.empty());
-  PValue selfExpr = parameters.posOperands.front().ir.getIfPValue();
+  assert(!parameters.values.empty());
+  PValue selfExpr = parameters.values.front().ir.getIfPValue();
   assert(selfExpr && "parameters are always PValues");
 
   // When referencing a trait function, bind the reference using a parameter
@@ -688,8 +697,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   SmallVector<TypedAttr> paramValues;
   paramValues.push_back(selfExpr);
 
-  auto it = bindings.parameters.posOperands.begin();
-  bindings.parameters.posOperands.erase(it, it + 1);
+  auto it = bindings.parameters.values.begin();
+  bindings.parameters.values.erase(it, it + 1);
   for (Type type : signature.getParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
   signature = signature.getSpecializedSignature(paramValues, [&]() {

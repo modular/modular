@@ -895,7 +895,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   std::tie(types, paramListAttr) = getPartiallySpecializedSignature(
       inferredParams, evaluator, types, paramListAttr);
 
-  size_t posIdx = 0, numPosParams = givenBindings.posOperands.size();
+  size_t posIdx = 0, numParams = givenBindings.size();
   for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
     // Inferred parameters won't have supplied values because they cannot be
     // specified by the user. We want to infer them from other parameters.
@@ -906,49 +906,56 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     // llvm::enumerate on the argument type list!
     Type expectedType = types[idx];
 
+    // Zoom up to the next positional param.
+    while (posIdx < numParams && givenBindings[posIdx].keyword)
+      ++posIdx;
+
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
     if (paramListAttr.isVariadic(idx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
       Type varArgsEltType = expectedVariadic.getElementType();
-      while (posIdx != numPosParams)
-        inferOneParam(givenBindings.posOperands[posIdx++], varArgsEltType);
+      while (posIdx != numParams) {
+        if (!givenBindings[posIdx].keyword)
+          inferOneParam(givenBindings[posIdx], varArgsEltType);
+        ++posIdx;
+      }
+      continue;
+    }
+
+    // This must be a positional binding.
+    if (posIdx < numParams) {
+      inferOneParam(givenBindings[posIdx], expectedType);
+      ++posIdx;
       continue;
     }
 
     // If we're out of positional bindings, try looking for a provided keyword
     // parameter binding.
-    if (posIdx == numPosParams) {
-      if (std::optional<ASTExprAnd<AnyValue>> param =
-              givenBindings.findKwArg(paramListAttr.getName(idx))) {
-        inferOneParam(*param, expectedType);
-        continue;
-      }
-
-      // If not, and this parameter has a default value, then just skip it. We
-      // can't infer from default values.
-      if (defaultHandler.getDefault(idx))
-        continue;
-
-      // Otherwise, this is a missing parameter. Just skip it.
+    if (std::optional<ASTExprAnd<AnyValue>> param =
+            givenBindings.findKwArg(paramListAttr.getName(idx))) {
+      inferOneParam(*param, expectedType);
       continue;
     }
 
-    // In the typical case, this isn't a variadic or keyword parameter. It
-    // must be a positional binding.
-    inferOneParam(givenBindings.posOperands[posIdx++], expectedType);
+    // If not, and this parameter has a default value, then just skip it. We
+    // can't infer from default values.
+    if (defaultHandler.getDefault(idx))
+      continue;
+
+    // Otherwise, this is a missing parameter. Just skip it.
+    // TODO: Seems like we should reject??
   }
 }
 
 LogicalResult
 ParameterInferenceState::infer(LITSignatureType signature,
-                               const CallOperands &callOperands,
+                               const CallOperands &operands,
                                const OperandValueList &variadicKwOperands) {
   // First try to infer parameters from parameters.
   infer(signature.getParamTypes(), signature.getParamListAttrs());
 
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
-  size_t numPosOperands = posOperands.size();
+  size_t numOperands = operands.size();
 
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   std::tie(signature) =
@@ -981,6 +988,8 @@ ParameterInferenceState::infer(LITSignatureType signature,
         if (failed(inferOneOperand(operand, valTy, ArgConvention::OwnedInReg)))
           return failure();
       }
+      // This is always last in the operand list.
+      posOperandIdx = numOperands;
       continue;
     }
 
@@ -989,10 +998,14 @@ ParameterInferenceState::infer(LITSignatureType signature,
     if (signature.isPosVarArg(expectedArgIdx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
-      while (posOperandIdx != numPosOperands)
-        if (failed(inferOneOperand(posOperands[posOperandIdx++], varArgsEltType,
+      while (posOperandIdx != numOperands) {
+        auto &operand = operands[posOperandIdx];
+        if (!operand.keyword &&
+            failed(inferOneOperand(operand, varArgsEltType,
                                    expectedVariadic.getConvention())))
           return failure();
+        ++posOperandIdx;
+      }
       continue;
     }
 
@@ -1009,8 +1022,11 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
       SmallVector<TypedAttr> types;
       ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
-      while (posOperandIdx != numPosOperands) {
-        ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
+      while (posOperandIdx != numOperands) {
+        const auto &operand = operands[posOperandIdx++];
+        if (operand.keyword) // Ignore keyword operands.
+          continue;
+
         ASTType toPush = operand.ir.getRValueTypeIfResolvable();
         if (!toPush) {
           shared.emitWarning(operand.expr->getLoc(),
@@ -1045,38 +1061,41 @@ ParameterInferenceState::infer(LITSignatureType signature,
       continue;
     }
 
-    // Handle case when there are no more provided positional operands.
-    if (posOperandIdx == numPosOperands) {
-      // Check if a keyword operand was provided for this argument
-      if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
-              callOperands.findKwArg(signature.getArgName(expectedArgIdx))) {
-        if (failed(inferOneOperand(*kwOperandOr, expectedType,
-                                   expectedConvention)))
-          return failure();
-        continue;
-      }
+    // Check for any more positional operands.
+    while (posOperandIdx != numOperands && operands[posOperandIdx].keyword)
+      ++posOperandIdx;
 
-      // If not, and this argument has a default value, then just skip it. We
-      // can't infer from default values since its type already matches the
-      // argument type. If its type is dependent, we already know the value is
-      // well-formed regardless of the parameter's value.
-      if (defaultHandler.getDefault(expectedArgIdx))
-        continue;
-
-      // Otherwise we have an argument count mismatch, just fail.
-      return failure();
+    // Handle positional arguments.
+    if (posOperandIdx < numOperands) {
+      if (failed(inferOneOperand(operands[posOperandIdx++], expectedType,
+                                 expectedConvention)))
+        return failure();
+      continue;
     }
 
-    // In the typical case, this argument isn't varargs or a pack, so just check
-    // it.  If there was a problem, report it, otherwise continue on to the next
-    // expected argument to check.
-    if (failed(inferOneOperand(posOperands[posOperandIdx++], expectedType,
-                               expectedConvention)))
-      return failure();
+    // Handle case when there are no more provided positional operands.
+    // Check if a keyword operand was provided for this argument
+    if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
+            operands.findKwArg(signature.getArgName(expectedArgIdx))) {
+      if (failed(
+              inferOneOperand(*kwOperandOr, expectedType, expectedConvention)))
+        return failure();
+      continue;
+    }
+
+    // If not, and this argument has a default value, then just skip it. We
+    // can't infer from default values since its type already matches the
+    // argument type. If its type is dependent, we already know the value is
+    // well-formed regardless of the parameter's value.
+    if (defaultHandler.getDefault(expectedArgIdx))
+      continue;
+
+    // Otherwise we have an argument count mismatch, just fail.
+    return failure();
   }
 
   // If we have left over operands, then this signature cannot match.
-  if (posOperandIdx != numPosOperands && !signature.hasParamVarArgs())
+  if (posOperandIdx != numOperands && !signature.hasParamVarArgs())
     return failure();
 
   for (unsigned idx : initSelfParams) {
@@ -1092,7 +1111,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
 /// of a method from the first argument.
 LogicalResult
 ParameterInferenceState::inferCTADParams(LITSignatureType signature,
-                                         const CallOperands &callOperands) {
+                                         const CallOperands &operands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       fn foo[B: Movable](self: X[B]): ...
@@ -1111,7 +1130,7 @@ ParameterInferenceState::inferCTADParams(LITSignatureType signature,
   // that doesn't have us shadowing parameters like this!
 
   // We can only do this if we have an argument.
-  if (callOperands.posOperands.empty() ||
+  if (operands.empty() || operands[0].keyword ||
       // TODO: This happens due to `-> Self` initializers.  Turn this into
       // an assertion when kInitReg initializers are removed.
       signature.getArgConventions().empty())
@@ -1149,5 +1168,5 @@ ParameterInferenceState::inferCTADParams(LITSignatureType signature,
 
   // Infer the first operand against this type - it was presumably already
   // inferred against the methods declared type of 'self' as well.
-  return inferOneOperand(callOperands.posOperands[0], selfType, selfConvention);
+  return inferOneOperand(operands[0], selfType, selfConvention);
 }

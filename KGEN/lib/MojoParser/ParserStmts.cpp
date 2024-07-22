@@ -1572,7 +1572,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         // Make the emission work even if the type isn't copyable.
         contextVal = MRValue(contextMgrDecl);
       }
-      enterOperands.posOperands[0].ir = contextVal;
+      enterOperands[0].ir = contextVal;
     }
   }
 

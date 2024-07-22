@@ -610,20 +610,19 @@ OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
-                                          const CallOperands &callOperands,
+                                          const CallOperands &operands,
                                           bool allowImplicitConversions) {
   // We set up diagnostics.
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
-  size_t numPosOperands = posOperands.size();
+  size_t numPosOperands = operands.getNumPositional();
+  size_t numOperands = operands.size();
 
-  size_t numOperands = numPosOperands + callOperands.getNumKwOperands();
   SMLoc callLoc = callable.expr->getLoc();
   SharedState &shared = callable.getShared();
-  DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
+  DiagEmitter emitDiagFor(shared, callLoc, operands.size(), callable.syntax);
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   OperandValueList variadicKwOperands;
-  auto [kwDiagRes, kwDiagNames] = callOperands.diagnoseKeywordOperands(
+  auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
       signature.getArgListAttrs(), variadicKwOperands);
   switch (kwDiagRes) {
   case CallOperands::KwDiagResult::kMissingKwOnly:
@@ -637,8 +636,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   }
 
   PogListAttr argListAttr = signature.getArgListAttrs();
-  auto [posDiagRes, posDiagNames] =
-      callOperands.diagnosePosOperands(argListAttr);
+  auto [posDiagRes, posDiagNames] = operands.diagnosePosOperands(argListAttr);
   switch (posDiagRes) {
   case CallOperands::PosDiagResult::kMissingPos:
     return emitDiagFor.missingArgs(posDiagNames, "positional");
@@ -799,7 +797,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         bindingsSoFar, evaluator, inferenceDiags, allowImplicitConversions);
 
     // Infer information from this signature holistically.
-    if (failed(inference.infer(signature, callOperands, variadicKwOperands)))
+    if (failed(inference.infer(signature, operands, variadicKwOperands)))
       return PValue();
 
     // See if we inferred information about the next value.
@@ -825,7 +823,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (funcIfDirect) {
       auto func = cast<LIT::FuncOp>(*funcIfDirect);
       if (!func.getIsStatic() && isa<StructDeclOp>(func->getParentOp())) {
-        if (failed(inference.inferCTADParams(signature, callOperands)))
+        if (failed(inference.inferCTADParams(signature, operands)))
           return PValue();
         if (auto result = inference.getInferredValue(bindingsSoFar.size()))
           return PValue(result);
@@ -875,7 +873,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
   // take note if variadic arguments are passed, and accumulate implicit
-  // conversions required for a match.
+  // conversions required for a match.  This value indicates the next operand
+  // to consider as a positional argument.
   size_t posOperandIdx = 0;
   bool passesVarArgArgument = false;
 
@@ -927,6 +926,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         if (kind != kValidType)
           return emitDiagFor.argTypeMismatch(kind, ty, operand, expectedArgIdx);
       }
+      // This comes after all the positionals.
+      posOperandIdx = numOperands;
       continue;
     }
 
@@ -937,9 +938,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (!ASTType(expectedType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
+    // Figure out the next positional argument to process.
+    while (posOperandIdx < numOperands && operands[posOperandIdx].keyword)
+      ++posOperandIdx;
+
     // Handle case when there are no more provided positional operands.
     StringAttr argName = argListAttr.getName(expectedArgIdx);
-    if (posOperandIdx == numPosOperands) {
+    if (posOperandIdx == numOperands) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
       if (signature.isPosVarArg(expectedArgIdx) ||
@@ -952,7 +957,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
       // Check if the argument was passed as a keyword operand.
       if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
-              callOperands.findKwArg(argName)) {
+              operands.findKwArg(argName)) {
         // If we found a keyword argument, we check it normally.
         auto [kind, ty] =
             checkAnOperand(*kwOperandOr, expectedConvention, expectedType);
@@ -975,7 +980,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     auto processPositionalOperand =
         [&](ASTType expectedType,
             ArgConvention conv) -> std::optional<InflightDiag> {
-      ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
+      ASTExprAnd<AnyValue> operand = operands[posOperandIdx];
       auto [kind, ty] = checkAnOperand(operand, conv, expectedType);
       if (kind != kValidType)
         return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
@@ -1019,14 +1024,14 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // operand, so we process it as usual.
     assert(
         (argListAttr.getPassingKind(expectedArgIdx) == PassingKind::PosOnly ||
-         (!argName.empty() && !callOperands.findKwArg(argName))) &&
+         (!argName.empty() && !operands.findKwArg(argName))) &&
         "redundant argument not caught by diagnostics");
     if (auto result =
             processPositionalOperand(expectedType, expectedConvention))
       return std::move(*result);
   }
 
-  assert(posOperandIdx == numPosOperands &&
+  assert(posOperandIdx == numOperands &&
          "should handle argument mismatch above");
 
   // Otherwise we succeeded!

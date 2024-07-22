@@ -27,5 +27,5 @@ fn test_unbound_pack():
     # CHECK: lit.alias.decl *"first_bound`1": anystruct<#StructWithDefault <5, ?, ?, ?>, <"b": index, "c": index = 1, "d": index = 2>>
     alias first_bound = StructWithDefault[`5`, *_]
 
-    # CHECK: lit.alias.decl *"last_bound_with_kw`2": anystruct<#StructWithDefaultKwOnly <8, ?, ?, ?>, <"b": index, "c": index = 1, *, "d": index = 2>>
-    alias last_bound_with_kw = StructWithDefaultKwOnly[`8`, *_, d=_]
+    # CHECK: lit.alias.decl *"last_bound_with_kw`2": anystruct<#StructWithDefaultKwOnly <8, ?, 1, ?>, <"b": index, *, "d": index = 2>>
+    alias last_bound_with_kw = StructWithDefaultKwOnly[`8`, d=_, *_]

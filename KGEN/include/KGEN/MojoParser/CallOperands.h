@@ -13,7 +13,6 @@
 
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/TypeCheckScopeInfo.h"
-#include "llvm/ADT/MapVector.h"
 
 namespace M::KGEN::LIT {
 class PogListAttr;
@@ -38,65 +37,78 @@ using OperandValueList = SmallVector<OperandValue, 4>;
 /// to their containers.
 class CallOperands {
 public:
-  /// Create call operands with positional and optional keyword arguments.
-  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
-      : posOperands(posOperands) {}
+  /// Initialize with some positional arguments.
+  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands) {
+    for (const auto &operand : posOperands)
+      values.emplace_back(StringAttr(), operand);
+  }
 
+  CallOperands() = default;
   CallOperands(CallOperands &&) = default;
   explicit CallOperands(const CallOperands &) = default;
   CallOperands &operator=(CallOperands &&) = default;
 
   /// Return a keyword argument value if present, or null otherwise.
-  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
-    auto it = kwOperands.find(argName);
-    if (it != kwOperands.end())
-      return it->second;
+  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr keyword) const {
+    assert(keyword && "cannot look up null keyword");
+    for (auto &elt : values) {
+      if (elt.keyword == keyword)
+        return elt;
+    }
     return std::nullopt;
   }
 
+  /// Return the number of positional operands.
+  size_t getNumPositional() const {
+    size_t result = 0;
+    for (auto &value : values)
+      if (!value.keyword)
+        ++result;
+    return result;
+  }
+
   /// Return the number of keyword operands.
-  size_t getNumKwOperands() const { return kwOperands.size(); }
+  size_t getNumKwOperands() const { return values.size() - getNumPositional(); }
 
-  /// The values passed as positional operands.
-  SmallVector<ASTExprAnd<AnyValue>, 4> posOperands;
-
-  /// The values passed as keyword operands.
-  llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
-                  SmallDenseMap<StringAttr, size_t>>
-      kwOperands;
+  /// The values passed in.  The keyword field will be null for positional
+  /// arguments and present for keyword operands.
+  OperandValueList values;
 
   /// Indicates if the positional operands include a self operand.
   bool hasSelfOperand = false;
 
   void dump() const;
 
-  bool empty() const { return posOperands.empty() && kwOperands.empty(); }
+  //===--------------------------------------------------------------------===//
+  // Element Accessors
+  //===--------------------------------------------------------------------===//
+
+  bool empty() const { return values.empty(); }
+  size_t size() const { return values.size(); }
+
+  const OperandValue &operator[](size_t index) const { return values[index]; }
+  OperandValue &operator[](size_t index) { return values[index]; }
 
   //===--------------------------------------------------------------------===//
   // Manipulators
   //===--------------------------------------------------------------------===//
 
   /// Add a positional argument to the list.
-  void add(ASTExprAnd<AnyValue> &&value) { posOperands.push_back(value); }
-
-  /// Add positional arguments to the list.
-  void add(ArrayRef<ASTExprAnd<AnyValue>> values) {
-    posOperands.append(values.begin(), values.end());
+  void add(ASTExprAnd<AnyValue> value) {
+    values.emplace_back(StringAttr(), std::move(value));
   }
 
   /// Add a keyword argument, there can never be conflicts here because keyword
   /// argument conflicts should be checked in the parser before any semantic
   /// analysis is attempted.
   void add(StringAttr name, ASTExprAnd<AnyValue> value) {
-    auto [_, addedNew] = kwOperands.try_emplace(name, std::move(value));
-    assert(addedNew && "duplicate keywords should be detected at parse time, "
-                       "before semantic analysis");
+    values.push_back({name, std::move(value)});
   }
 
   /// This adds a "self" argument to the start of the positional argument list.
   void addSelf(ASTExprAnd<AnyValue> value) {
     assert(!hasSelfOperand && "Cannot add a self when one is already present");
-    posOperands.insert(posOperands.begin(), value);
+    values.insert(values.begin(), {StringAttr(), value});
     hasSelfOperand = true;
   }
 

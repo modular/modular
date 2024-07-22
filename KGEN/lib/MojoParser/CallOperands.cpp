@@ -22,20 +22,18 @@ using namespace LIT;
 void CallOperands::dump() const { llvm::errs() << *this << '\n'; }
 
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
-                                      const CallOperands &value) {
-  os << "CallOperands{ " << value.posOperands.size() << " pos args, "
-     << value.getNumKwOperands() << " kw args";
-  if (value.hasSelfOperand)
+                                      const CallOperands &operands) {
+  os << "CallOperands{ " << operands.getNumPositional() << " pos args, "
+     << operands.getNumKwOperands() << " kw args";
+  if (operands.hasSelfOperand)
     os << " <HAS SELF OPERAND>";
   os << '\n';
 
-  for (auto operand : value.posOperands)
-    os << "  " << operand.ir << "\n";
-
-  if (!value.kwOperands.empty()) {
-    os << "Keyword bindings:\n";
-    for (auto [name, binding] : value.kwOperands)
-      os << "  " << name.getValue() << ": " << binding.ir.getIfPValue() << "\n";
+  for (auto &operand : operands.values) {
+    os << "  ";
+    if (operand.keyword)
+      os << operand.keyword.getValue() << ": ";
+    os << operand.ir << "\n";
   }
   return os << '}';
 }
@@ -84,9 +82,9 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     return {KwDiagResult::kPosOnlyPassedByKw, std::move(posOnlyPassedByKw)};
 
   // Collect all the keyword operands with unknown names.
-  for (auto [name, operand] : kwOperands)
-    if (!kwPassableNames.contains(name))
-      variadicKwOperands.push_back({name, operand});
+  for (auto &operand : values)
+    if (operand.keyword && !kwPassableNames.contains(operand.keyword))
+      variadicKwOperands.push_back(operand);
 
   // If the function doesn't accept variadic kwargs, this is an error.
   if (!pogListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
@@ -108,11 +106,16 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
   SmallVector<StringAttr> missingPosNames;
   SmallVector<StringAttr> byPosAndKw;
 
-  size_t numPosOperands = posOperands.size();
+  size_t numOperands = values.size();
   size_t numPosMaximum = countNumPositional(pogListAttr);
   bool hasVariadicOrPack = false;
 
+  size_t nextPosOperand = 0;
+
   DefaultValueHandler defaultHandler(pogListAttr);
+
+  // This loop is walking 'idx' in order of posListAttr, checking just the
+  // positional arguments, not walking the operands list.
   for (size_t idx = 0; idx != numPosMaximum; ++idx) {
     if (pogListAttr.isPosVariadic(idx) || pogListAttr.isPack(idx)) {
       // Positional variadics and packs don't require any operands. But we
@@ -121,12 +124,17 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
       continue;
     }
 
+    // Figure out the next positional operand.
+    while (nextPosOperand < numOperands && values[nextPosOperand].keyword)
+      ++nextPosOperand;
+
     // If we found a positional operand, check if it was also provided by
     // keyword.
-    if (idx < numPosOperands) {
+    if (nextPosOperand < numOperands) {
       StringAttr name = pogListAttr.getName(idx);
       if (findKwArg(name))
         byPosAndKw.push_back(name);
+      ++nextPosOperand;
       continue;
     }
 
@@ -154,7 +162,7 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
 
   if (!allowCountMismatch) {
     // If there are no positional variadics, we can check for too many operands.
-    if (!hasVariadicOrPack && numPosOperands > numPosMaximum)
+    if (!hasVariadicOrPack && getNumPositional() > numPosMaximum)
       return {PosDiagResult::kTooManyPos, {}};
 
     if (!missingPosNames.empty())

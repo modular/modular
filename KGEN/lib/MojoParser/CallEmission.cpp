@@ -268,7 +268,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     const CallOperands *operandsToUse = &operands;
     if (operands.hasSelfOperand && func.getIsStatic()) {
       scratchOperands = CallOperands(operands);
-      scratchOperands.posOperands.erase(scratchOperands.posOperands.begin());
+      scratchOperands.values.erase(scratchOperands.values.begin());
       scratchOperands.hasSelfOperand = false;
       operandsToUse = &scratchOperands;
     }
@@ -294,11 +294,11 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // If we have one operand, get it to help tailor type conversion errors.
     ASTType selfOperandType, singleOperandType;
-    if (operands.posOperands.size() == 2) {
-      if (auto cValue = operands.posOperands[0].ir.getIfCValue())
+    if (operands.size() == 2 && !operands[0].keyword && !operands[1].keyword) {
+      if (auto cValue = operands[0].ir.getIfCValue())
         if (auto selfRef = dyn_cast<RefType>(cValue.getRValueType()))
           selfOperandType = selfRef.getElementType();
-      if (auto cValue = operands.posOperands[1].ir.getIfCValue())
+      if (auto cValue = operands[1].ir.getIfCValue())
         singleOperandType = cValue.getRValueType();
     }
 
@@ -311,7 +311,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       // because we don't want to introduce precedence problems.
       diag << "cannot construct " << selfOperandType
            << " with itself, you can remove the constructor call"
-           << operands.posOperands[0].expr->getRange()
+           << operands[0].expr->getRange()
            << FixIt::remove(callNode.callee->getRange());
       return {};
     }
@@ -402,7 +402,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // operand list so it doesn't get passed.
     if (operands.hasSelfOperand &&
         cast<LIT::FuncOp>(newFnDecls[0]).getIsStatic()) {
-      operands.posOperands.erase(operands.posOperands.begin());
+      operands.values.erase(operands.values.begin());
       operands.hasSelfOperand = false;
     }
 
@@ -856,20 +856,19 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
                                         CallOperands &&operands,
                                         ValueDest &dest, CallSyntax syntax,
                                         const ExprNode *callNode) {
-  SmallVector<ASTExprAnd<AnyValue>, 4> &posOperands = operands.posOperands;
-  assert(!posOperands.empty() &&
+  assert(!operands.values.empty() &&
          "Cannot emit a method call without a receiver!");
 
   // Emit the first/self operand to a CValue so we can figure out which type to
   // lookup on.
-  CValue selfVal = posOperands[0].ir.getIfCValue();
+  CValue selfVal = operands[0].ir.getIfCValue();
   if (!selfVal) {
-    selfVal = emitCValue(posOperands[0], EC_CallArgValue);
+    selfVal = emitCValue(operands[0], EC_CallArgValue);
     if (!selfVal) {
       dest.resetForError();
       return {};
     }
-    posOperands[0].ir = selfVal;
+    operands[0].ir = selfVal;
   }
 
   ASTType type = selfVal.getRValueType();
@@ -883,10 +882,10 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     case CallSyntax::kMethodCall:
       [[fallthrough]];
     case CallSyntax::kOperator:
-      diag << posOperands[0].expr->getRange();
+      diag << operands[0].expr->getRange();
       break;
     case CallSyntax::kReversedOperator:
-      diag << posOperands[1].expr->getRange();
+      diag << operands[1].expr->getRange();
       break;
     default:
       break;
@@ -948,9 +947,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     // Diagnose implicit conversions with a custom message
     if (syntax == CallSyntax::kImplicitConvert) {
       ASTType singleOperandType;
-      assert(callOperands.posOperands.size() == 1 &&
+      assert(callOperands.size() == 1 &&
              "implicit conversions have one operand");
-      if (auto cValue = callOperands.posOperands[0].ir.getIfCValue())
+      if (auto cValue = callOperands[0].ir.getIfCValue())
         singleOperandType = cValue.getRValueType();
 
       auto diag = emitError(expr->getLoc());

@@ -246,16 +246,15 @@ struct SignatureHelpListener : public BaseCompletionListener {
   void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
               const CallOperands &operands) override {
     auto findInterestedOperand = [&]() -> std::optional<size_t> {
-      for (const auto &[index, operand] :
-           llvm::enumerate(operands.posOperands)) {
+      for (const auto &[index, operand] : llvm::enumerate(operands.values)) {
         if (containsLoc(completionRange, operand.expr->getRangeStart()))
           return index;
       }
 
       // Consider the rparen location if it is within the completion range.
-      if (operands.getNumKwOperands() == 0 &&
-          containsLoc(completionRange, rparenLoc))
-        return operands.posOperands.size();
+      bool noKWArgs = operands.getNumKwOperands() == 0;
+      if (noKWArgs && containsLoc(completionRange, rparenLoc))
+        return operands.size();
 
       // TODO: Consider kwargs.
       return std::nullopt;
@@ -273,7 +272,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
       if (!declView)
         continue;
       if (auto *fnView = dyn_cast<FunctionDeclView>(declView.get())) {
-        if (operands.posOperands.size() > fnView->getArguments().size())
+        if (operands.size() > fnView->getArguments().size())
           continue;
 
         // If this is the first function and it's a method, bump the active
