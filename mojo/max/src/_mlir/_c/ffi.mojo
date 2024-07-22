@@ -48,14 +48,21 @@ fn MLIR_func[
     name: StringLiteral, T: AnyTrivialRegType, *Args: AnyType
 ](*args: *Args) -> T:
     var loaded_args_pack = _LITRefPackHelper(args._value).get_loaded_kgen_pack()
-    var f = _get_dylib_function[
-        "MOF_LIB",
-        name,
-        _init_dylib,
-        _destroy_dylib,
-        fn (__type_of(loaded_args_pack)) -> T,
-    ]()
-    var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
-    if not ptr:
-        abort("cannot load " + String(name) + " from graph library")
-    return f(loaded_args_pack)
+
+    @parameter
+    if not is_defined["MLIRCAPI_LINKED"]():
+        var f = _get_dylib_function[
+            "MOF_LIB",
+            name,
+            _init_dylib,
+            _destroy_dylib,
+            fn (__type_of(loaded_args_pack)) -> T,
+        ]()
+        var ptr = UnsafePointer.address_of(f).bitcast[
+            UnsafePointer[NoneType]
+        ]()[]
+        if not ptr:
+            abort("cannot load " + String(name) + " from graph library")
+        return f(loaded_args_pack)
+    else:
+        return external_call[name, T](loaded_args_pack)
