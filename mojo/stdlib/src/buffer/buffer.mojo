@@ -1693,7 +1693,7 @@ struct DynamicRankBuffer:
     interacting with external functions. In particular the shape is represented
     as a fixed (ie _MAX_RANK) array of dimensions to simplify the ABI."""
 
-    var data: DTypePointer[DType.invalid.value]
+    var data: UnsafePointer[NoneType]
     """The pointer to the buffer."""
     var rank: Int
     """The buffer rank. Has a max value of `_MAX_RANK`."""
@@ -1705,7 +1705,7 @@ struct DynamicRankBuffer:
     @always_inline
     fn __init__(
         inout self,
-        data: DTypePointer[DType.invalid.value],
+        data: UnsafePointer[NoneType],
         rank: Int,
         shape: StaticIntTuple[_MAX_RANK],
         type: DType,
