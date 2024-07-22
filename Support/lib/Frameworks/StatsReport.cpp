@@ -183,4 +183,8 @@ void M::Frameworks::StatsReport::emitTelemetry(
                           {"failed_ops.histogram.values", failureCounts},
                       });
 #endif
+  // If the MODULAR_STATS_FILENAME env var is set, dump the telemetry to that
+  // file.
+  if (llvm::sys::Process::GetEnv("MODULAR_STATS_FILENAME"))
+    writeToFile();
 }
