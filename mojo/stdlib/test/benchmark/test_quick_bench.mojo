@@ -13,7 +13,9 @@ from time import sleep
 from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
 
 
-fn vec_reduce[N: Int, type: DType](x: DTypePointer[type]) -> Scalar[type]:
+fn vec_reduce[
+    N: Int, type: DType
+](x: UnsafePointer[Scalar[type]]) -> Scalar[type]:
     var total: Scalar[type] = 0
     for i in range(N):
         total += x[i]
@@ -22,7 +24,9 @@ fn vec_reduce[N: Int, type: DType](x: DTypePointer[type]) -> Scalar[type]:
 
 fn vec_add[
     N: Int, type: DType
-](x: DTypePointer[type], y: DTypePointer[type]) -> DTypePointer[type]:
+](
+    x: UnsafePointer[Scalar[type]], y: UnsafePointer[Scalar[type]]
+) -> UnsafePointer[Scalar[type]]:
     for i in range(N):
         x[i] += y[i]
     return x
@@ -282,8 +286,8 @@ fn test_custom() raises:
     alias N = 1024
     alias alignment = 64
     alias type = DType.int32
-    var x = DTypePointer[type].alloc(N, alignment=alignment)
-    var y = DTypePointer[type].alloc(N, alignment=alignment)
+    var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
+    var y = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
     randint[type](x.address, N, 0, 255)
     randint[type](y.address, N, 0, 255)
 
