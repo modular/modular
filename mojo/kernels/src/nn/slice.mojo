@@ -7,6 +7,7 @@
 from algorithm import elementwise
 from buffer import NDBuffer
 from register import mogg_register
+from math import clamp
 
 from utils.index import StaticIntTuple
 
@@ -19,17 +20,14 @@ fn select[T: AnyTrivialRegType](c: Bool, lhs: T, rhs: T) -> T:
 @always_inline("nodebug")
 fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
     # Normalize the start/stop indices
-    var new_start = select(start < 0, start + dim_i, start)
+    var normalized_idx = select(start < 0, start + dim_i, start)
 
     # Compute the min/max for clamping start/end
     var idx_min = select(step > 0, 0, -1)
     var idx_max = select(step > 0, dim_i, dim_i - 1)
 
     # Allow start and stop to truncate like numpy and torch allow.
-    new_start = select(new_start < idx_min, idx_min, new_start)
-    new_start = select(new_start > idx_max, idx_max, new_start)
-
-    return new_start
+    return clamp(normalized_idx, idx_min, idx_max)
 
 
 # ===----------------------------------------------------------------------===#
