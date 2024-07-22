@@ -20,6 +20,7 @@ add_modular_library(MSupport
   DynamicLibrary.cpp
   Error.cpp
   ErrorOr.cpp
+  HashUtils.cpp
   FileSystemExtras.cpp
   IPInt.cpp
   IPRational.cpp

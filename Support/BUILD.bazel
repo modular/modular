@@ -27,6 +27,7 @@ modular_cc_library(
         "lib/DynamicLibrary.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
+        "lib/HashUtils.cpp",
         "lib/PlatformLibNames.cpp",
         "lib/Process.cpp",
         "lib/Random.cpp",
@@ -47,6 +48,7 @@ modular_cc_library(
         "include/Support/ErrorOr.h",
         "include/Support/ForwardDecls.h",
         "include/Support/FunctionExtras.h",
+        "include/Support/HashUtils.h",
         "include/Support/LLVMCompilerForwardDecls.h",
         "include/Support/LLVMForwardDecls.h",
         "include/Support/LLVMYAMLForwardDecls.h",
@@ -75,6 +77,7 @@ modular_cc_library(
     }),
     deps = [
         "//Config",
+        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
     ],
