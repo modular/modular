@@ -10,7 +10,6 @@ from sys import external_call
 from sys.ffi import C_char
 from sys.info import os_is_windows
 
-from memory.unsafe import DTypePointer
 from memory import UnsafePointer
 
 from utils import StringRef
