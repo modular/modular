@@ -43,16 +43,20 @@ fn test_gemv():
     alias m = 4096
     alias k = 11008
 
-    var lhs_storage = DTypePointer[type].alloc(m * k, alignment=alignment)
+    var lhs_storage = UnsafePointer[Scalar[type]].alloc(
+        m * k, alignment=alignment
+    )
     var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
-    var rhs_storage = DTypePointer[type].alloc(k, alignment=alignment)
+    var rhs_storage = UnsafePointer[Scalar[type]].alloc(k, alignment=alignment)
     var rhs = Buffer[type, Dim(k)](rhs_storage)
 
-    var out_storage = DTypePointer[type].alloc(m, alignment=alignment)
+    var out_storage = UnsafePointer[Scalar[type]].alloc(m, alignment=alignment)
     var out = Buffer[type, Dim(m)](out_storage)
 
-    var ref_out_storage = DTypePointer[type].alloc(m, alignment=alignment)
+    var ref_out_storage = UnsafePointer[Scalar[type]].alloc(
+        m, alignment=alignment
+    )
     var ref_out = Buffer[type, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage.address, m * k)

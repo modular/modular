@@ -31,7 +31,7 @@ from linalg.intel_amx_intrinsics import (
 from linalg.matmul import Matrix, naive_matmul
 from linalg.transpose import transpose, transpose_inplace
 from memory import memcmp, memset_zero, UnsafePointer
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.loop import unroll
 
@@ -40,14 +40,16 @@ alias int32_pop = __mlir_type.`!pop.scalar<si32>`
 alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
-fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
+fn print_buffer[n: Int, type: DType](a_ptr: UnsafePointer[Scalar[void]]):
     var a = Buffer[type](a_ptr.bitcast[type](), n)
     for i in range(n):
         var v = __mlir_op.`pop.cast`[_type=int32_pop](a[i].value)
         print(v)
 
 
-fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
+fn print_matrix[
+    m: Int, n: Int, type: DType
+](a_ptr: UnsafePointer[Scalar[void]]):
     var a = Buffer[type](a_ptr.bitcast[type](), m * n)
     for i in range(m):
         print("row")
@@ -71,10 +73,10 @@ fn identity_epilogue_elemwise_func[
 
 
 fn init_matrices(
-    a_ptr: DTypePointer[DType.int8],
-    b_ptr: DTypePointer[DType.int8],
-    c_ptr: DTypePointer[DType.int32],
-    c2_ptr: DTypePointer[DType.int32],
+    a_ptr: UnsafePointer[Int8],
+    b_ptr: UnsafePointer[Int8],
+    c_ptr: UnsafePointer[Int32],
+    c2_ptr: UnsafePointer[Int32],
 ):
     var a = Buffer[DType.int8](a_ptr.address, 1024)
     var b = Buffer[DType.int8](b_ptr.address, 1024)
@@ -115,7 +117,7 @@ fn init_matrices(
 fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
     var ptr = UnsafePointer.address_of(tc)
-    var tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
+    var tc_ptr = UnsafePointer[Int8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr.address, 64)
 
     var nrows: UInt8 = 16
@@ -154,7 +156,7 @@ fn main():
         print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()
         var ptr = UnsafePointer[tileconfig].address_of(tc)
-        var tc_ptr = DTypePointer[void](
+        var tc_ptr = UnsafePointer[Scalar[void]](
             ptr.bitcast[__mlir_type.`!pop.scalar<invalid>`]().address
         )
 

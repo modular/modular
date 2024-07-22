@@ -9,7 +9,7 @@ from math import iota
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index, StaticIntTuple
 
