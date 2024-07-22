@@ -6,7 +6,6 @@
 
 from sys._assembly import inlined_assembly
 
-from memory.unsafe import DTypePointer
 from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------===#
