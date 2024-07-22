@@ -57,8 +57,8 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     var b_device = _malloc[Float32](K * N)
     var c_device = _malloc[Float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    _copy_host_to_device(a_device, a_host.address, M * K)
+    _copy_host_to_device(b_device, b_host.address, K * N)
 
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
@@ -130,11 +130,11 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    _copy_device_to_host(c_host.address, c_device, M * N)
 
     # running naive
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    _copy_host_to_device(a_device, a_host.address, M * K)
+    _copy_host_to_device(b_device, b_host.address, K * N)
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
@@ -171,7 +171,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_naive, c_device, M * N)
+    _copy_device_to_host(c_host_naive.address, c_device, M * N)
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
@@ -242,8 +242,8 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     var c_device_nd = NDBuffer[DType.float32, 2](
         c_device, Index(M, N), Index(N * c_stride, c_stride)
     )
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    _copy_host_to_device(a_device, a_host.address, M * K)
+    _copy_host_to_device(b_device, b_host.address, K * N)
 
     @parameter
     @__copy_capture(c_device_nd)
@@ -306,7 +306,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             stream=stream,
         )
 
-    _copy_host_to_device(c_device, c_host, M * N * c_stride)
+    _copy_host_to_device(c_device, c_host.address, M * N * c_stride)
 
     var nstime = 0.0
     var kernelType = ""
@@ -330,11 +330,11 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N * c_stride)
+    _copy_device_to_host(c_host.address, c_device, M * N * c_stride)
 
     # running naive
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    _copy_host_to_device(a_device, a_host.address, M * K)
+    _copy_host_to_device(b_device, b_host.address, K * N)
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
@@ -363,7 +363,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             stream=stream,
         )
 
-    _copy_host_to_device(c_device, c_host_naive, M * N * c_stride)
+    _copy_host_to_device(c_device, c_host_naive.address, M * N * c_stride)
 
     nstime = 0.0
     for i in range(iterations):
@@ -374,7 +374,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_naive, c_device, M * N * c_stride)
+    _copy_device_to_host(c_host_naive.address, c_device, M * N * c_stride)
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.

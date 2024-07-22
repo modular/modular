@@ -201,8 +201,8 @@ fn test_gemm_kernel_dynamic() raises:
 
     var stream = Stream()
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    _copy_host_to_device(a_device, a_host.address, M * K)
+    _copy_host_to_device(b_device, b_host.address, K * N)
 
     synchronize()
 
@@ -229,7 +229,7 @@ fn test_gemm_kernel_dynamic() raises:
     )
     synchronize()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    _copy_device_to_host(c_host.address, c_device, M * N)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
@@ -249,7 +249,7 @@ fn test_gemm_kernel_dynamic() raises:
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
     synchronize()
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    _copy_device_to_host(c_host_ref.address, c_device_ref, M * N)
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):
             print(i, c_host[i], c_host_ref[i])

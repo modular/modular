@@ -32,7 +32,7 @@ fn _kernel_launch_helper[
     kernel_fn: fn (SIMD[type, simd_width]) capturing -> SIMD[type, simd_width],
 ](host_ptr: DTypePointer[type], buffer_size: Int, block_size: Int) raises:
     var device_ptr = _malloc[type](buffer_size)
-    _copy_host_to_device(device_ptr, host_ptr, buffer_size)
+    _copy_host_to_device(device_ptr, host_ptr.address, buffer_size)
 
     @parameter
     @__copy_capture(device_ptr)
@@ -51,7 +51,7 @@ fn _kernel_launch_helper[
     gpu_func(grid_dim=1, block_dim=block_size, stream=stream)
     stream.synchronize()
 
-    _copy_device_to_host(host_ptr, device_ptr, buffer_size)
+    _copy_device_to_host(host_ptr.address, device_ptr, buffer_size)
     _free(device_ptr)
 
 

@@ -319,8 +319,8 @@ fn test[type: DType, transpose_b: Bool](ctx: DeviceContext) raises:
     var c_device = ctx.create_buffer[type](M * N)
     var c_device_ref = ctx.create_buffer[type](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host)
-    ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
     var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
@@ -425,7 +425,7 @@ fn test[type: DType, transpose_b: Bool](ctx: DeviceContext) raises:
     )
     check_cublas_error(cublasDestroy(handle))
 
-    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.enqueue_copy_from_device(c_host_ref.address, c_device_ref)
 
     alias rtol = 1e-3 if type == DType.float32 else 1e-4
     for i in range(M * N):

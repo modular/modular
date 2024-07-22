@@ -37,7 +37,7 @@ fn run_func[
     func(val, grid_dim=1, block_dim=1)
     synchronize()
     var out_h = DTypePointer[type].alloc(1)
-    _copy_device_to_host(out_h, out, 1)
+    _copy_device_to_host(out_h.address, out, 1)
     assert_almost_equal(out_h[0], ref_)
     _free(out)
 
