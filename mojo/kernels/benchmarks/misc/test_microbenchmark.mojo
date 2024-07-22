@@ -13,7 +13,7 @@ import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory.unsafe import DTypePointer, bitcast
+from memory import UnsafePointer, bitcast
 from microbenchmark import Benchmarkable
 
 from utils.index import Index, StaticIntTuple
@@ -46,9 +46,9 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
     var m: Int
     var n: Int
     var k: Int
-    var a_ptr: DTypePointer[a_type]
-    var b_ptr: DTypePointer[b_type]
-    var c_ptr: DTypePointer[c_type]
+    var a_ptr: UnsafePointer[Scalar[a_type]]
+    var b_ptr: UnsafePointer[Scalar[b_type]]
+    var c_ptr: UnsafePointer[Scalar[c_type]]
     var am: NDBuffer[a_type, 2, DimList.create_unknown[2]()]
     var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
     var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
@@ -57,9 +57,15 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         self.m = m
         self.n = n
         self.k = k
-        self.a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
-        self.b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
-        self.c_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
+        self.a_ptr = UnsafePointer[Scalar[a_type]].alloc(
+            m * k, alignment=alignment
+        )
+        self.b_ptr = UnsafePointer[Scalar[b_type]].alloc(
+            k * n, alignment=alignment
+        )
+        self.c_ptr = UnsafePointer[Scalar[c_type]].alloc(
+            m * n, alignment=alignment
+        )
         self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
         )
@@ -124,9 +130,9 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
     var m: Int
     var n: Int
     var k: Int
-    var a_ptr: DTypePointer[a_type]
-    var b_ptr: DTypePointer[b_type]
-    var c_ptr: DTypePointer[c_type]
+    var a_ptr: UnsafePointer[Scalar[a_type]]
+    var b_ptr: UnsafePointer[Scalar[b_type]]
+    var c_ptr: UnsafePointer[Scalar[c_type]]
     var am: NDBuffer[a_type, 2, DimList.create_unknown[2]()]
     var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
     var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
@@ -135,13 +141,13 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
         self.m = m
         self.n = n
         self.k = k
-        self.a_ptr = DTypePointer[a_type].alloc(
+        self.a_ptr = UnsafePointer[Scalar[a_type]].alloc(
             self.m * self.k, alignment=alignment
         )
-        self.b_ptr = DTypePointer[b_type].alloc(
+        self.b_ptr = UnsafePointer[Scalar[b_type]].alloc(
             self.k * self.n, alignment=alignment
         )
-        self.c_ptr = DTypePointer[c_type].alloc(
+        self.c_ptr = UnsafePointer[Scalar[c_type]].alloc(
             self.m * self.n, alignment=alignment
         )
         self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
