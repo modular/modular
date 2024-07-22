@@ -14,7 +14,7 @@ from gpu.host.memory import (
     _malloc_managed,
 )
 from gpu.intrinsics import convert
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import *
 from gpu.host._compile import _compile_code, _get_nvptx_target
 
@@ -45,7 +45,7 @@ def test_convert_asm():
 
 fn convert_kernel[
     src_type: DType, dst_type: DType, size: Int
-](dst_ptr: DTypePointer[dst_type]):
+](dst_ptr: UnsafePointer[Scalar[dst_type]]):
     @parameter
     for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](i, i + 1)

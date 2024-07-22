@@ -166,10 +166,10 @@ fn test_gemm_kernel_dynamic() raises:
     alias N = 1024
     alias K = 128
 
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var c_host_ref = DTypePointer[DType.float32].alloc(M * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         a_host[i] = i

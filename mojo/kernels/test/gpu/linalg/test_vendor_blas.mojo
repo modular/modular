@@ -22,7 +22,7 @@ from gpu.host.memory import (
 )
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
@@ -38,10 +38,10 @@ fn test_cublas() raises:
 
     var stream = Stream()
 
-    var a_host = DTypePointer[type].alloc(M * K)
-    var b_host = DTypePointer[type].alloc(K * N)
-    var c_host = DTypePointer[type].alloc(M * N)
-    var c_host_ref = DTypePointer[type].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
+    var c_host_ref = UnsafePointer[Scalar[type]].alloc(M * N)
 
     for m in range(M):
         for k in range(K):

@@ -12,8 +12,8 @@ from testing import *
 
 
 fn add_constant_fn(
-    out: DTypePointer[DType.float32],
-    input: DTypePointer[DType.float32],
+    out: UnsafePointer[Float32],
+    input: UnsafePointer[Float32],
     constant: Float32,
     len: Int,
 ):

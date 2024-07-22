@@ -14,7 +14,7 @@ from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index
 
@@ -22,8 +22,8 @@ alias BLOCK_DIM = 4
 
 
 fn stencil2d(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
     arr_size: Int,
     num_rows: Int,
     num_cols: Int,
@@ -50,8 +50,8 @@ fn stencil2d(
 
 
 fn stencil2d_smem(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
     arr_size: Int,
     num_rows: Int,
     num_cols: Int,

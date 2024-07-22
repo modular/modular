@@ -22,9 +22,9 @@ alias tile_size = 32
 
 
 fn matmul_sram(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
+    c_ptr: UnsafePointer[Float32],
     M: Int,
     N: Int,
     K: Int,

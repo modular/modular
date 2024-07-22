@@ -22,7 +22,7 @@ from gpu.shuffle import (
     shuffle_xor,
     warp_reduce,
 )
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_equal
 
 
@@ -30,7 +30,9 @@ fn _kernel_launch_helper[
     type: DType,
     simd_width: Int,
     kernel_fn: fn (SIMD[type, simd_width]) capturing -> SIMD[type, simd_width],
-](host_ptr: DTypePointer[type], buffer_size: Int, block_size: Int) raises:
+](
+    host_ptr: UnsafePointer[Scalar[type]], buffer_size: Int, block_size: Int
+) raises:
     var device_ptr = _malloc[type](buffer_size)
     _copy_host_to_device(device_ptr, host_ptr.address, buffer_size)
 
@@ -59,7 +61,7 @@ fn _shuffle_idx_launch_helper[type: DType, simd_width: Int]() raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias constant_add: Scalar[type] = 42.0
-    var host_ptr = DTypePointer[type].alloc(buffer_size)
+    var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = i + constant_add
@@ -106,7 +108,7 @@ fn _shuffle_up_launch_helper[type: DType, simd_width: Int]() raises:
     alias constant_add: Scalar[type] = 42.0
     alias offset = 16
 
-    var host_ptr = DTypePointer[type].alloc(buffer_size)
+    var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = i + constant_add
@@ -162,7 +164,7 @@ fn _shuffle_down_launch_helper[type: DType, simd_width: Int]() raises:
     alias constant_add: Scalar[type] = 42.0
     alias offset = 16
 
-    var host_ptr = DTypePointer[type].alloc(buffer_size)
+    var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = i + constant_add
@@ -218,7 +220,7 @@ fn _shuffle_xor_launch_helper[type: DType, simd_width: Int]() raises:
     alias constant_add: Scalar[type] = 42.0
     alias offset = 1
 
-    var host_ptr = DTypePointer[type].alloc(buffer_size)
+    var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = i + constant_add
@@ -266,7 +268,7 @@ fn _warp_reduce_launch_helper[type: DType, simd_width: Int]() raises:
     alias buffer_size = block_size * simd_width
     alias offset = 1
 
-    var host_ptr = DTypePointer[type].alloc(buffer_size)
+    var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = 1
 

@@ -14,7 +14,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from gpu import WARP_SIZE
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_almost_equal
 from utils.index import StaticTuple, StaticIntTuple, Index
 from gpu.host._compile import _compile_code, _get_nvptx_target

@@ -41,7 +41,7 @@ fn _create_device_buffer[
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: StaticIntTuple[rank]) raises -> NDBuffer[dtype, rank, shape]:
-    var storage_ptr = DTypePointer[dtype].alloc(_size(dynamic_shape))
+    var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
     return NDBuffer[dtype, rank, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )

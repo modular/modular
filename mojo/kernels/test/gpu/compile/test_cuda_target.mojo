@@ -26,7 +26,7 @@ from gpu.host._compile import _compile_code, _get_nvptx_target
 
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import *
 
 from utils.index import StaticIntTuple
@@ -116,9 +116,7 @@ def test_hello_mojo_sm90():
 # ===----------------------------------------------------------------------===#
 
 
-fn erf_elementwise(
-    buf: DTypePointer[DType.float32], len: Int, ctx: DeviceContext
-):
+fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
 
@@ -164,7 +162,7 @@ def test_erf_elementwise_sm90():
 # ===----------------------------------------------------------------------===#
 
 
-fn erf_kernel(buf: DTypePointer[DType.float32], len: Int):
+fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
     var tid = ThreadIdx.x() + BlockDim.y() * BlockIdx.y()
 
     if tid >= len:
@@ -200,9 +198,7 @@ def test_erf_kernel_sm90():
 # ===----------------------------------------------------------------------===#
 
 
-fn test_shared_stack_allocation() -> (
-    DTypePointer[DType.int8, AddressSpace.SHARED]
-):
+fn test_shared_stack_allocation() -> UnsafePointer[Int8, AddressSpace.SHARED]:
     return stack_allocation[
         999, DType.int8, 8, address_space = AddressSpace.SHARED
     ]()
@@ -267,9 +263,9 @@ def test_barrier_sm90():
 
 
 fn gemm(
-    c: DTypePointer[DType.float32],
-    a: DTypePointer[DType.float32],
-    b: DTypePointer[DType.float32],
+    c: UnsafePointer[Float32],
+    a: UnsafePointer[Float32],
+    b: UnsafePointer[Float32],
     m: Int,
     n: Int,
     k: Int,

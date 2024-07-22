@@ -13,9 +13,9 @@ from layout import *
 
 
 fn gpu_kernel(
-    dst: DTypePointer[DType.float32],
-    rhs: DTypePointer[DType.float32],
-    lhs: DTypePointer[DType.float32],
+    dst: UnsafePointer[Float32],
+    rhs: UnsafePointer[Float32],
+    lhs: UnsafePointer[Float32],
 ):
     dst[BlockIdx.x() * 4 + ThreadIdx.x()] = (
         rhs[BlockIdx.x() * 4 + ThreadIdx.x()]

@@ -21,16 +21,16 @@ from testing import assert_equal
 
 
 fn copy_via_shared(
-    src: DTypePointer[DType.float32],
-    dst: DTypePointer[DType.float32],
+    src: UnsafePointer[Float32],
+    dst: UnsafePointer[Float32],
 ):
     var thread_id = Int(ThreadIdx.x())
     var mem_buff: UnsafePointer[
         Float32, AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
-    var src_global: UnsafePointer[
-        Float32, AddressSpace.GLOBAL
-    ] = src._as_scalar_pointer().bitcast[address_space = AddressSpace.GLOBAL]()
+    var src_global: UnsafePointer[Float32, AddressSpace.GLOBAL] = src.bitcast[
+        address_space = AddressSpace.GLOBAL
+    ]()
 
     async_copy[4](
         src_global.offset(thread_id),
@@ -81,8 +81,8 @@ fn run_copy_via_shared(ctx: Context) raises:
 
 
 fn copy_with_src_size(
-    src: DTypePointer[DType.float32, address_space = AddressSpace.GLOBAL],
-    dst: DTypePointer[DType.float32, address_space = AddressSpace.GLOBAL],
+    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
+    dst: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
     src_size: Int,
 ):
     var smem = stack_allocation[
@@ -101,8 +101,8 @@ fn test_copy_with_src_size(ctx: Context) raises:
     var stream = Stream(ctx)
 
     alias size = 4
-    var a_host = DTypePointer[DType.float32].alloc(size)
-    var b_host = DTypePointer[DType.float32].alloc(size)
+    var a_host = UnsafePointer[Float32].alloc(size)
+    var b_host = UnsafePointer[Float32].alloc(size)
 
     for i in range(size):
         a_host[i] = i + 1

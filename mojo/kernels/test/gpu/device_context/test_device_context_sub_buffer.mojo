@@ -11,9 +11,9 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext, DeviceFunction
 
 
 fn vec_func(
-    in0: DTypePointer[DType.float32],
-    in1: DTypePointer[DType.float32],
-    out: DTypePointer[DType.float32],
+    in0: UnsafePointer[Float32],
+    in1: UnsafePointer[Float32],
+    out: UnsafePointer[Float32],
     len: Int,
     supplement: Int,
 ):
@@ -27,8 +27,8 @@ fn test(ctx: DeviceContext) raises:
     alias length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one
-    var in_host = DTypePointer[DType.float32].alloc(2 * length)
-    var out_host = DTypePointer[DType.float32].alloc(length)
+    var in_host = UnsafePointer[Float32].alloc(2 * length)
+    var out_host = UnsafePointer[Float32].alloc(length)
 
     for i in range(length):
         in_host[i] = i

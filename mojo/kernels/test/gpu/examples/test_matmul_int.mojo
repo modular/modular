@@ -21,9 +21,9 @@ alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 fn matmul(
-    a_ptr: DTypePointer[DType.index],
-    b_ptr: DTypePointer[DType.index],
-    c_ptr: DTypePointer[DType.index],
+    a_ptr: UnsafePointer[Scalar[DType.index]],
+    b_ptr: UnsafePointer[Scalar[DType.index]],
+    c_ptr: UnsafePointer[Scalar[DType.index]],
     m: Int,
     n: Int,
     k: Int,

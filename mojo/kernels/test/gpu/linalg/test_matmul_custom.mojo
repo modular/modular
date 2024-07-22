@@ -14,7 +14,7 @@ from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils.index import Index

@@ -21,7 +21,7 @@ fn run_func[
     ],
 ](ctx: DeviceContext, val: Scalar[type] = 0) raises:
     @parameter
-    fn kernel(out: DTypePointer[type], input: Scalar[type]):
+    fn kernel(out: UnsafePointer[Scalar[type]], input: Scalar[type]):
         out[0] = kernel_fn(input)
 
     var func = ctx.compile_function[kernel]()

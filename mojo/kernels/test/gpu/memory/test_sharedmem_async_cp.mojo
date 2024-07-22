@@ -14,16 +14,16 @@ from memory import stack_allocation
 
 
 fn copy_via_shared(
-    src: DTypePointer[DType.float32],
-    dst: DTypePointer[DType.float32],
+    src: UnsafePointer[Float32],
+    dst: UnsafePointer[Float32],
 ):
     var thId = int(ThreadIdx.x())
     var mem_buff: UnsafePointer[
         Float32, AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
-    var src_global: UnsafePointer[
-        Float32, AddressSpace.GLOBAL
-    ] = src._as_scalar_pointer().bitcast[address_space = AddressSpace.GLOBAL]()
+    var src_global: UnsafePointer[Float32, AddressSpace.GLOBAL] = src.bitcast[
+        address_space = AddressSpace.GLOBAL
+    ]()
 
     memory.async_copy[4](
         src_global.offset(thId),

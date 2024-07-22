@@ -18,14 +18,14 @@ from gpu.mma import mma
 from linalg.matmul_gpu import matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, bitcast
+from memory import UnsafePointer, bitcast
 
 from utils import Index, StaticTuple, unroll
 from utils.numerics import isnan
 
 
 @always_inline
-fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
+fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
     # Load a register variable from global state space via non-coherent cache.
 
     alias alignment = Int32(alignof[SIMD[type, 4]]())
@@ -331,7 +331,7 @@ fn sgemm_warp_tiling_kernel[
         @parameter
         for w_sub_col_idx in range(WNITER):
             # Move C pointer to current sub-warp tile.
-            var C_interim: DTypePointer[c_type] = cc_ptr.offset(
+            var C_interim: UnsafePointer[Scalar[c_type]] = cc_ptr.offset(
                 (w_sub_row_idx * MMA_M) * N + w_sub_col_idx * MMA_N
             )
 

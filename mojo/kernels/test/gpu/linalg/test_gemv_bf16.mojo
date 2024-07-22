@@ -11,7 +11,7 @@ from math import ceildiv
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import gemv_tc_kernel, matmul_kernel_naive
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.numerics import isnan
 

@@ -24,7 +24,7 @@ from memory import UnsafePointer
 
 fn reduce(
     res: UnsafePointer[Float32],
-    vec: DTypePointer[DType.float32],
+    vec: UnsafePointer[Float32],
     len: Int,
 ):
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()

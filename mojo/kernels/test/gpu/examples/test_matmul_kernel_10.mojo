@@ -15,7 +15,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx
 from gpu.host.device_context import DeviceContext
 from linalg.matmul_gpu import sgemm_warp_tiling_kernel
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index
 from utils.numerics import isnan
@@ -24,9 +24,9 @@ alias BLOCK_DIM = 8
 
 
 fn matmul_naive(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
+    c_ptr: UnsafePointer[Float32],
     m: Int,
     n: Int,
     k: Int,

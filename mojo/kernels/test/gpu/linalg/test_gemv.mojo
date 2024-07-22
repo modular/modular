@@ -25,7 +25,7 @@ from linalg.matmul_gpu import (
     matmul_kernel,
     matmul_kernel_naive,
 )
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index
 from utils.numerics import isnan
@@ -216,14 +216,14 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
 
     var iterations = 100
     var stream = Stream()
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(K * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
 
     seed(seed_val)
 
     # over-allocate C to simulate a view tensor
-    var c_host = DTypePointer[DType.float32].alloc(M * N * c_stride)
-    var c_host_naive = DTypePointer[DType.float32].alloc(M * N * c_stride)
+    var c_host = UnsafePointer[Float32].alloc(M * N * c_stride)
+    var c_host_naive = UnsafePointer[Float32].alloc(M * N * c_stride)
 
     randn(a_host.address, M * K)
 

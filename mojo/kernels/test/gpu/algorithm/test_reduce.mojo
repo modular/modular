@@ -45,9 +45,9 @@ fn fused_reduce_inner_test[
         "expected vals must match output shape",
     )
 
-    var vec_host = DTypePointer[type].alloc(in_size)
-    var res_host0 = DTypePointer[type].alloc(out_size)
-    var res_host1 = DTypePointer[type].alloc(out_size)
+    var vec_host = UnsafePointer[Scalar[type]].alloc(in_size)
+    var res_host0 = UnsafePointer[Scalar[type]].alloc(out_size)
+    var res_host1 = UnsafePointer[Scalar[type]].alloc(out_size)
 
     for i in range(in_size):
         vec_host[i] = i // shape[axis] + 1
@@ -136,8 +136,8 @@ fn reduce_inner_test[
         len(expected_vals) == out_size, "expected vals must match output shape"
     )
 
-    var vec_host = DTypePointer[type].alloc(in_size)
-    var res_host = DTypePointer[type].alloc(out_size)
+    var vec_host = UnsafePointer[Scalar[type]].alloc(in_size)
+    var res_host = UnsafePointer[Scalar[type]].alloc(out_size)
 
     for i in range(in_size):
         vec_host[i] = i // shape[axis] + 1

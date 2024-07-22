@@ -11,7 +11,7 @@ from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from testing import *
 
 
-fn gpu_kernel(buff: DTypePointer[DType.int64]):
+fn gpu_kernel(buff: UnsafePointer[Int64]):
     var idx = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     buff[idx] = idx
 

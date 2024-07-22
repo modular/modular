@@ -25,7 +25,7 @@ from layout.layout_tensor import (
 )
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory.reference import _GPUAddressSpace as AddressSpace
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import InlineArray, unroll
@@ -270,10 +270,10 @@ fn test(ctx: DeviceContext) raises:
     alias b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
     alias c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var c_host_ref = DTypePointer[DType.float32].alloc(M * N)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
         a_host[i] = i

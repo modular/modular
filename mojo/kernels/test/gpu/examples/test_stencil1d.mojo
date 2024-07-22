@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 
 from utils.index import Index
 
@@ -27,8 +27,8 @@ alias BLOCK_DIM = 8
 
 
 fn stencil1d(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
     arr_size: Int,
     coeff0: Int,
     coeff1: Int,
@@ -44,8 +44,8 @@ fn stencil1d(
 
 
 fn stencil1d_smem(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
+    a_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[Float32],
     arr_size: Int,
     coeff0: Int,
     coeff1: Int,

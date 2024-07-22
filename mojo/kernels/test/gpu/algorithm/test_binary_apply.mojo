@@ -16,9 +16,9 @@ from gpu.host import DeviceContext, Dim
 fn vec_func[
     op: fn (Float32, Float32) capturing -> Float32
 ](
-    in0: DTypePointer[DType.float32],
-    in1: DTypePointer[DType.float32],
-    out: DTypePointer[DType.float32],
+    in0: UnsafePointer[Float32],
+    in1: UnsafePointer[Float32],
+    out: UnsafePointer[Float32],
     len: Int,
 ):
     var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()

@@ -29,9 +29,9 @@ fn run_cuda_mem_ops(ctx: Context) raises:
 
 
 fn vec_func(
-    in0: DTypePointer[DType.float32],
-    in1: DTypePointer[DType.float32],
-    out: DTypePointer[DType.float32],
+    in0: UnsafePointer[Float32],
+    in1: UnsafePointer[Float32],
+    out: UnsafePointer[Float32],
     len: Int,
 ):
     pass

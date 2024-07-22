@@ -9,7 +9,7 @@ from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import mbarrier, mbarrier_init, mbarrier_test_wait
 from memory import stack_allocation
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import *
 
 

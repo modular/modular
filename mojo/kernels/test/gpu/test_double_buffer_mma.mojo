@@ -17,7 +17,7 @@ from gpu.host import CacheConfig, DeviceContext
 from gpu.memory import async_copy, async_copy_wait_all
 from gpu.mma import mma
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 
@@ -42,8 +42,8 @@ fn loada[
     K: Scalar[itype],
     warp_id: Scalar[itype],
     lane_id: Scalar[itype],
-    gptr: DTypePointer[atype, address_space = AddressSpace.GLOBAL],
-    sptr: DTypePointer[atype, address_space = AddressSpace.SHARED],
+    gptr: UnsafePointer[Scalar[atype], address_space = AddressSpace.GLOBAL],
+    sptr: UnsafePointer[Scalar[atype], address_space = AddressSpace.SHARED],
 ):
     alias MMA_M = Scalar[itype](16)
     alias MMA_N = Scalar[itype](8)
@@ -66,19 +66,25 @@ fn loada[
         var mma_tile_id = warp_id // 4 + i * num_loada_tiles_per_iter
         var mma_tile_x = mma_tile_id // num_loada_tiles_m
         var mma_tile_y = mma_tile_id % num_loada_tiles_m
-        var gmem_ptr = gptr + mma_tile_y * MMA_M * K + mma_tile_x * MMA_K + warp_id_in_tile * 2 * K
+        var gmem_ptr = gptr + int(
+            mma_tile_y * MMA_M * K
+            + mma_tile_x * MMA_K
+            + warp_id_in_tile * 2 * K
+        )
         # t0  t1  t2  t3  t4  t5  t6  t7    <- e.g. 1st row in mma tile
         # t16 t17 t18 t19 t20 t21 t22 t23   <- e.g. 2nd row
         # ...
         # t8  t9  t10 t11 t12 t13 t14 t15   <- e.g. 8th row
         # t24 t25 t26 t27 t28 t29 t30 t31   <- e.g. 9th row
-        gmem_ptr += (
+        gmem_ptr += int(
             (lane_id % 16 // 8) * 8 * K + (lane_id // 16) * K + lane_id % 8
         )
         # t0  t4  t8  t12 | t1  t5  t9  t13 | t2  t6  t10 t14 | t3  t7  t11 t15
         # t16 t20 t24 t28 | t17 t21 t25 t29 | t18 t22 t26 t30 | t19 t23 t27 t31
-        var smem_ptr = sptr + mma_tile_id * MMA_M * MMA_K + warp_id_in_tile * WARP_SIZE
-        smem_ptr += lane_id // 16 * 16 + lane_id % 4 * 4 + lane_id // 4 % 4
+        var smem_ptr = sptr + int(
+            mma_tile_id * MMA_M * MMA_K + warp_id_in_tile * WARP_SIZE
+        )
+        smem_ptr += int(lane_id // 16 * 16 + lane_id % 4 * 4 + lane_id // 4 % 4)
         async_copy[4](gmem_ptr.address, smem_ptr.address)
 
 
@@ -96,8 +102,8 @@ fn loadb[
     K: Scalar[itype],
     warp_id: Scalar[itype],
     lane_id: Scalar[itype],
-    gptr: DTypePointer[btype, address_space = AddressSpace.GLOBAL],
-    sptr: DTypePointer[btype, address_space = AddressSpace.SHARED],
+    gptr: UnsafePointer[Scalar[btype], address_space = AddressSpace.GLOBAL],
+    sptr: UnsafePointer[Scalar[btype], address_space = AddressSpace.SHARED],
 ):
     alias MMA_M = Scalar[itype](16)
     alias MMA_N = Scalar[itype](8)
@@ -118,19 +124,19 @@ fn loadb[
         var mma_tile_id = warp_id + i * num_loadb_tiles_per_iter
         var mma_tile_x = mma_tile_id % num_loadb_tiles_n
         var mma_tile_y = mma_tile_id // num_loadb_tiles_n
-        var gmem_ptr = gptr + mma_tile_y * MMA_K * N + mma_tile_x * MMA_N
+        var gmem_ptr = gptr + int(mma_tile_y * MMA_K * N + mma_tile_x * MMA_N)
         # t0  t1  t2  t3  t4  t5  t6  t7
         # t8  t9  t10 t11 t12 t13 t14 t15
         # t16 t17 t18 t19 t20 t21 t22 t23
         # t24 t25 t26 t27 t28 t29 t30 t31
-        gmem_ptr += lane_id // 8 * N + lane_id % 8
+        gmem_ptr += int(lane_id // 8 * N + lane_id % 8)
         # t0, ,t8, ,t16, ,t24, ,t1, ,t9, ,t17, ,t25, ...
-        var smem_ptr = sptr + mma_tile_id * MMA_K * MMA_N
-        smem_ptr += lane_id % 8 * 8 + lane_id // 8 * 2
+        var smem_ptr = sptr + int(mma_tile_id * MMA_K * MMA_N)
+        smem_ptr += int(lane_id % 8 * 8 + lane_id // 8 * 2)
         async_copy[4](gmem_ptr.address, smem_ptr.address)
         # Load next 4 rows.
         # , ,t0, ,t8, ,t16, ,t24, ,t1, ,t9, ,t17, ,t25, ...
-        gmem_ptr += 4 * N
+        gmem_ptr += int(4 * N)
         smem_ptr += 1
         async_copy[4](gmem_ptr.address, smem_ptr.address)
 

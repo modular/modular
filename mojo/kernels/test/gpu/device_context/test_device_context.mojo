@@ -12,9 +12,9 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext, DeviceFunction
 
 # A Simple Kernel performing the sum of two arrays
 fn vec_func(
-    in0: DTypePointer[DType.float32],
-    in1: DTypePointer[DType.float32],
-    out: DTypePointer[DType.float32],
+    in0: UnsafePointer[Float32],
+    in1: UnsafePointer[Float32],
+    out: UnsafePointer[Float32],
     len: Int,
     supplement: Int,
 ):
@@ -28,9 +28,9 @@ fn test(ctx: DeviceContext) raises:
     alias length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = DTypePointer[DType.float32].alloc(length)
-    var in1_host = DTypePointer[DType.float32].alloc(length)
-    var out_host = DTypePointer[DType.float32].alloc(length)
+    var in0_host = UnsafePointer[Float32].alloc(length)
+    var in1_host = UnsafePointer[Float32].alloc(length)
+    var out_host = UnsafePointer[Float32].alloc(length)
 
     # Initialize inputs
     for i in range(length):

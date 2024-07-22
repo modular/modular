@@ -24,10 +24,10 @@ fn scatter_nd_gpu[
     type: DType,
     indices_type: DType,
 ](
-    output_data_ptr: DTypePointer[type],
-    indices_data_ptr: DTypePointer[indices_type],
-    element_counts_and_input_dims_ptr: DTypePointer[DType.int64],
-    updates_data_ptr: DTypePointer[type],
+    output_data_ptr: UnsafePointer[Scalar[type]],
+    indices_data_ptr: UnsafePointer[Scalar[indices_type]],
+    element_counts_and_input_dims_ptr: UnsafePointer[Int64],
+    updates_data_ptr: UnsafePointer[Scalar[type]],
     num_indices: Int,
     last_index_dimension: Int,
     num_updates_elements: Int,
@@ -174,7 +174,7 @@ fn scatter_nd[
 
     # NDBuffer below will store both input_strides and data NDBuffer dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = DTypePointer[DType.int64].alloc(last_shape_of_indices * 2)
+    var ptr = UnsafePointer[Int64].alloc(last_shape_of_indices * 2)
     var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
         ptr, DimList(last_shape_of_indices * 2)
     )
