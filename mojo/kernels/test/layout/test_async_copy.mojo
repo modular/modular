@@ -27,7 +27,7 @@ from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram_async
 from layout.swizzle import Swizzle
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 
@@ -187,8 +187,8 @@ fn test_multistage_copy() raises:
     alias a_layout = Layout.row_major(M, K)
     alias b_layout = Layout.row_major(M, K)
 
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(M * K)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(M * K)
 
     for i in range(M * K):
         a_host[i] = i
@@ -306,8 +306,8 @@ fn test_swizzle_copy() raises:
     alias a_layout = Layout.row_major(M, K)
     alias b_layout = Layout.row_major(M, K)
 
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(M * K)
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(M * K)
 
     for i in range(M * K):
         a_host[i] = i

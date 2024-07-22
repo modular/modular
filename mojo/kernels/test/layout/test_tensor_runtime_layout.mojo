@@ -19,7 +19,7 @@ def test_fill_and_print():
         RuntimeTuple[layout.shape](4, 8), RuntimeTuple[layout.stride](8, 1)
     )
 
-    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
     var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
 
@@ -44,7 +44,7 @@ def test_set_and_get_items():
         RuntimeTuple[layout.shape](4, 4), RuntimeTuple[layout.stride](4, 1)
     )
 
-    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
     var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
 
@@ -71,7 +71,7 @@ def test_tile():
         RuntimeTuple[layout.shape](4, 4), RuntimeTuple[layout.stride](4, 1)
     )
 
-    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
     var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
     tensor.linspace()
@@ -112,7 +112,7 @@ fn test_tile_and_distribute():
         RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
     )
 
-    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
     var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
     tensor.linspace()
@@ -206,7 +206,7 @@ fn test_tile_and_vectorize():
         RuntimeTuple[layout.shape](16, 16), RuntimeTuple[layout.stride](16, 1)
     )
 
-    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
     var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
     tensor.linspace()

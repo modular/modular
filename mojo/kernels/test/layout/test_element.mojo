@@ -150,7 +150,7 @@ fn test_element_dynamic_layout():
         RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
     )
 
-    var storage = DTypePointer[DType.float32].alloc(dynamic_layout.size())
+    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
     var tensor_8x8 = LayoutTensor[DType.float32, layout](
         storage, dynamic_layout

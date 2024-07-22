@@ -77,7 +77,7 @@ fn print_element[
     rank: Int,
     element_shape: StaticIntTuple[rank],
 ](
-    element_ptr: DTypePointer[dtype],
+    element_ptr: UnsafePointer[Scalar[dtype]],
     element_layout: ElementLayout[rank, element_shape],
 ):
     var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)
@@ -187,7 +187,7 @@ fn test_copy_to_nd_buffer_scalars():
 fn test_copy_from_nd_buffer_vectors():
     print("== test_copy_from_nd_buffer_vectors")
 
-    var buff_storage = DTypePointer[DType.float32].alloc(16 * 16)
+    var buff_storage = UnsafePointer[Float32].alloc(16 * 16)
     var buff = NDBuffer[DType.float32, 2, DimList(16, 16)](buff_storage)
     linspace_fill(buff)
 
@@ -253,7 +253,7 @@ fn test_copy_to_nd_buffer_vectors():
     ].stack_allocation()
     layout_tensor.linspace()
 
-    var buff_storage = DTypePointer[DType.float32].alloc(16 * 16)
+    var buff_storage = UnsafePointer[Float32].alloc(16 * 16)
     var buff = NDBuffer[DType.float32, 2, DimList(16, 16)](buff_storage)
     zero_fill(buff)
 
@@ -512,7 +512,7 @@ fn test_vectorize_and_distribute():
 # CHECK-LABEL: test_copy_nd_buffer_to_layout_tensor
 fn test_copy_nd_buffer_to_layout_tensor():
     print("== test_copy_nd_buffer_to_layout_tensor")
-    var buff_storage = DTypePointer[DType.float32].alloc(8 * 8)
+    var buff_storage = UnsafePointer[Float32].alloc(8 * 8)
     var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](buff_storage)
     # FIXME: This doesn't if _copy_nd_buffer_to_layout_tensor is inlined!
     # var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
