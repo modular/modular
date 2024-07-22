@@ -662,24 +662,20 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return failure();
 
     RefType valueRefType;
-    if (value.isMValue())
+    if (value.isMValue()) {
       valueRefType = cast<RefType>(value.getMValueReference().getType());
-    else if (value.getIfPValue() && isParamContext)
+    } else if (value.getIfPValue() && isParamContext) {
+      // TODO: Remove isParamContext and this handling.
       valueRefType =
           RefType::getImmortal(argVal.getRValueType(), /*isMut=*/false);
-
-    // As a special hack, look through DefArgumentWrapperDLValue to the
-    // underlying MBValue that it may contain.  This is for two reasons:
-    //  1) We don't want to infer mutability from the argument even though
-    //     it is a DLValue, because we'd force copy-out + writeback,
-    //     materializing the def argument box.
-    //  2) We have significant bugs around lifetime inference from SBValues
-    //     and DLValues because we're not materializing the box in time.  This
-    //     is tracked by MOCO-684.
-    // Solve this by hacking this important case specifically.
-    if (auto dlValue = value.getIfDLValue())
-      if (auto refType = dlValue->getMBValueTypeFromDefArgument())
-        valueRefType = refType;
+    } else if (auto cv = value.getIfCValue()) {
+      // This argument will need to be emitted to a temporary in a later pass,
+      // but for now we can just infer immortal.
+      valueRefType = RefType::getImmortal(cv.getRValueType(), /*isMut=*/false);
+    } else {
+      // TODO: Could infer from expected type to resolve OValues?
+      return failure();
+    }
 
     if (valueRefType)
       return matchTypes(valueRefType, expectedType);
@@ -932,7 +928,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 
     // If we're out of positional bindings, try looking for a provided keyword
     // parameter binding.
-    if (std::optional<ASTExprAnd<AnyValue>> param =
+    if (const OperandValue *param =
             givenBindings.findKwArg(paramListAttr.getName(idx))) {
       inferOneParam(*param, expectedType);
       continue;
@@ -1075,7 +1071,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
     // Handle case when there are no more provided positional operands.
     // Check if a keyword operand was provided for this argument
-    if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
+    if (const OperandValue *kwOperandOr =
             operands.findKwArg(signature.getArgName(expectedArgIdx))) {
       if (failed(
               inferOneOperand(*kwOperandOr, expectedType, expectedConvention)))

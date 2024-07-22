@@ -49,13 +49,13 @@ public:
   CallOperands &operator=(CallOperands &&) = default;
 
   /// Return a keyword argument value if present, or null otherwise.
-  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr keyword) const {
+  const OperandValue *findKwArg(StringAttr keyword) const {
     assert(keyword && "cannot look up null keyword");
     for (auto &elt : values) {
       if (elt.keyword == keyword)
-        return elt;
+        return &elt;
     }
-    return std::nullopt;
+    return nullptr;
   }
 
   /// Return the number of positional operands.

@@ -116,7 +116,7 @@ static bool isValid(OverloadFitness &eval) {
 ///
 /// To aid downstream diganostics, the function returns the fitness of the best
 /// candidate. All diagnostics from erroneous candidates are dropped.
-static const OverloadFitness *
+static OverloadFitness *
 selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
                      MutableArrayRef<OverloadFitness> evaluations,
                      SmallVectorImpl<ASTDecl *> &newFnDecls) {
@@ -125,7 +125,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
 
   // Find the first valid candidate.
   evaluations = evaluations.drop_until(isValid);
-  const OverloadFitness *bestFitness = &evaluations.front();
+  OverloadFitness *bestFitness = &evaluations.front();
 
   for (auto [candidate, eval] :
        llvm::zip(fnDecls.take_back(evaluations.size()), evaluations)) {
@@ -252,11 +252,22 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   return {};
 }
 
+/// Evaluate the fnDecls candidates and see if there is an unambiguous
+/// candidate that works with the specified parameter bindings and provided
+/// arguments.  If so, return the single entry that works.
+///
+/// NOTE: This can mutate the operand list, e.g. when calling a static method
+/// that doesn't need a self value, and by pre-emitting PValues when not in an
+/// parameter context. The actual emission needs to use the updated argument
+/// list.
+///
+/// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
+/// return null.
 PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                                       bool allowImplicitConversions,
-                                      bool emitDiagnosticOnFailure) const {
+                                      bool emitDiagnosticOnFailure,
+                                      ExprEmitter &emitter) const {
   CallOperands scratchOperands;
-
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -383,7 +394,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
   // Ok, we have at least one valid candidate, so filter for the best matches.
   SmallVector<ASTDecl *> newFnDecls;
-  const OverloadFitness *bestFitness =
+  OverloadFitness *bestFitness =
       selectBestCandidates(fnDecls, evaluations, newFnDecls);
 
   // Notify the listener of the updated decl references for the call now that
@@ -393,20 +404,61 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
   // If we found exactly one viable candidate then we succeed.
   if (newFnDecls.size() == 1) {
-    // On success, wrap things up into one callee.
-    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
-    for (TypedAttr bind : bestFitness->getParamBindings())
-      newBindings.addPrechecked(expr, bind);
+    ASTDecl *selectedDecl = newFnDecls[0];
+    auto selectedFunc = cast<LIT::FuncOp>(selectedDecl);
 
     // If the target is static and there is a self operand, remove it from the
     // operand list so it doesn't get passed.
-    if (operands.hasSelfOperand &&
-        cast<LIT::FuncOp>(newFnDecls[0]).getIsStatic()) {
+    if (operands.hasSelfOperand && selectedFunc.getIsStatic()) {
       operands.values.erase(operands.values.begin());
       operands.hasSelfOperand = false;
     }
 
-    return getCallee(getShared(), newFnDecls[0], baseName, newBindings, expr);
+    // It is possible this candidate needs some arguments emitted as MValues
+    // (from PValue or SValues) to be passed as 'ref' arguments.  If this
+    // happens, emit them now and then re-infer the correct lifetimes.
+    const auto &argsNeedingLifetimes = bestFitness->getArgsNeedingLifetimes();
+    std::optional<OverloadFitness> replaced;
+    if (argsNeedingLifetimes.any()) {
+      // Emit each of the arguments that needs a lifetime to an MValue.
+      for (size_t i = 0, e = argsNeedingLifetimes.size(); i != e; ++i) {
+        if (!argsNeedingLifetimes[i])
+          continue;
+        // If the operand is a positional argument it will be in the normal
+        // operand list, otherwise it will be in the kwargs list.
+        assert(i < operands.size() && "argument index incorrect");
+
+        // We emit this as an MBValue instead of an MRValue specifically so we
+        // do not infer mutability from the temporary.  We don't want ref's with
+        // parametric lifetime to bind to these values.
+        auto newVal =
+            emitter.emitMBValue({operands[i]}, ExprContext::EC_CallRefArgValue);
+        if (!newVal)
+          return {}; // Could not emit the PValue/SValue to an MRValue.
+        operands.values[i].ir = newVal;
+      }
+
+      // Now that we have the operands set, we re-evaluate the bindings, which
+      // will reinfer parameters, getting the correct lifetimes from the MValues
+      // that are required by this overload candidate.
+      replaced.emplace(OverloadFitness::evaluate(
+          selectedFunc.getFullSignature(), selectedDecl, *this, operands,
+          allowImplicitConversions));
+      bestFitness = &replaced.value();
+
+      assert(bestFitness->isValid() &&
+             "Re-emitting function to infer lifetimes didn't work");
+      assert(bestFitness->getArgsNeedingLifetimes().none() &&
+             "Re-emitting function infer lifetimes shouldn't need more MValues "
+             "emitted");
+    }
+
+    // Finally, wrap things up into one callee.
+    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
+    for (TypedAttr bind : bestFitness->getParamBindings())
+      newBindings.addPrechecked(expr, bind);
+
+    return getCallee(getShared(), selectedDecl, baseName, newBindings, expr);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -660,14 +712,18 @@ OverloadSet OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo,
 /// Lookup of a named named method on the specified type, filtered to match a
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
-PValue
-OverloadSet::lookupAndResolve(const TypeCheckScopeInfo &scopeInfo, ASTType type,
-                              StringRef methodName, CallOperands &callOperands,
-                              const ExprNode *callExpr, CallSyntax syntax,
-                              function_ref<void()> lookupFailureErrorHandler,
-                              bool shouldPrintOverloadErrors) {
-  auto ovSet = OverloadSet::lookup(scopeInfo, type, methodName, callExpr,
-                                   syntax, lookupFailureErrorHandler);
+///
+/// NOTE: This can mutate the operand list, e.g. when calling a static method
+/// that doesn't need a self value, and by emitting PValues when not in an
+/// parameter context. The actual emission needs to use the updated argument
+/// list.
+PValue OverloadSet::lookupAndResolve(
+    ASTType type, StringRef methodName, CallOperands &callOperands,
+    const ExprNode *callExpr, CallSyntax syntax,
+    function_ref<void()> lookupFailureErrorHandler,
+    bool shouldPrintOverloadErrors, ExprEmitter &emitter) {
+  auto ovSet = OverloadSet::lookup(emitter.getScopeInfo(), type, methodName,
+                                   callExpr, syntax, lookupFailureErrorHandler);
 
   // If the core lookup failed, don't filter.
   if (ovSet.isNull())
@@ -679,7 +735,7 @@ OverloadSet::lookupAndResolve(const TypeCheckScopeInfo &scopeInfo, ASTType type,
   return ovSet.filterOverloadSet(
       callOperands,
       /*allowImplicitConversions=*/true,
-      /*emitDiagnosticOnFailure=*/shouldPrintOverloadErrors);
+      /*emitDiagnosticOnFailure=*/shouldPrintOverloadErrors, emitter);
 }
 
 /// Try to resolve the overload set to a single function candidate, using the
@@ -773,6 +829,12 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
                              ExprEmitter &emitter) {
+  // The OverloadSet may have been formed in a parameter context (e.g. in an
+  // alias) and used a a non-parameter context.
+  // FIXME: isParamContext isn't like scope info.  We should eliminate this from
+  // `TypeCheckScopeInfo`.
+  llvm::SaveAndRestore x(paramBindings.isParamContext,
+                         emitter.paramContext != EC_InvalidContext);
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
@@ -786,7 +848,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
   // with the bindings list and specified arguments.
   PValue callee = filterOverloadSet(operands,
                                     /*allowImplicitConversions=*/true,
-                                    /*emitDiagnosticOnFailure=*/true);
+                                    /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee) {
     dest.resetForError();
     return {};
@@ -894,8 +956,8 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   // If the type doesn't have the specified method, emit an error.
   PValue callee =
-      OverloadSet::lookupAndResolve(getScopeInfo(), type, methodName, operands,
-                                    callNode, syntax, emitNoMethodError, true);
+      OverloadSet::lookupAndResolve(type, methodName, operands, callNode,
+                                    syntax, emitNoMethodError, true, *this);
   if (!callee) {
     dest.resetForError();
     return {};
@@ -1106,11 +1168,17 @@ FailureOr<PValue> OverloadSet::canConstructType(
   callee.paramBindings =
       ParamBindings::getForDeclaredType(scopeInfo, requiredType, expr);
 
+  // Determine if we can emit this using an ExprEmitter in the parameter domain.
+  // This ensures we don't emit any code converting parameters to MValues etc.
+  ExprEmitter paramEmitter(scopeInfo.shared, scopeInfo.declScope,
+                           ExprContext::EC_CallCalleeValue);
+
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
   // be able to allow implicit conversions.
-  PValue result = callee.filterOverloadSet(operands, allowImplicitConversions,
-                                           /*emitDiagnosticOnFailure=*/false);
+  PValue result =
+      callee.filterOverloadSet(operands, allowImplicitConversions,
+                               /*emitDiagnosticOnFailure=*/false, paramEmitter);
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   return result;

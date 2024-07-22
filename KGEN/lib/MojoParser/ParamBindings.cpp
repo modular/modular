@@ -296,8 +296,7 @@ ParamBindings::verifyBindingsImpl(
     StringAttr paramName = pogAttr.getName();
     if (posBindingIdx == numBindings) {
       // We first check if we have a keyword parameter.
-      if (std::optional<ASTExprAnd<AnyValue>> binding =
-              operands.findKwArg(paramName)) {
+      if (const OperandValue *binding = operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
 
         PValue pValue = emitSingleParameterValue(*binding, expectedType,

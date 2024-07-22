@@ -108,20 +108,25 @@ public:
   /// single callee. If non-null, it invokes lookupFailureErrorHandler if the
   /// lookup of the named method fails.  If that succeeds, it will complain
   /// about overload resolution when 'shouldPrintOverloadErrors' is true.
-  static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
-                                 ASTType type, StringRef methodName,
+  ///
+  /// NOTE: This can mutate the operand list, e.g. when calling a static method
+  /// that doesn't need a self value, and by emitting PValues when not in an
+  /// parameter context. The actual emission needs to use the updated argument
+  /// list.
+  static PValue lookupAndResolve(ASTType type, StringRef methodName,
                                  CallOperands &operands,
                                  const ExprNode *callExpr, CallSyntax syntax,
                                  function_ref<void()> lookupFailureErrorHandler,
-                                 bool shouldPrintOverloadErrors);
+                                 bool shouldPrintOverloadErrors,
+                                 ExprEmitter &emitter);
 
   /// Same as the above but a convenience when never emitting an error.
-  static PValue lookupAndResolve(const TypeCheckScopeInfo &scopeInfo,
-                                 ASTType type, StringRef methodName,
+  static PValue lookupAndResolve(ASTType type, StringRef methodName,
                                  CallOperands &operands,
-                                 const ExprNode *callExpr, CallSyntax syntax) {
-    return lookupAndResolve(scopeInfo, type, methodName, operands, callExpr,
-                            syntax, {}, false);
+                                 const ExprNode *callExpr, CallSyntax syntax,
+                                 ExprEmitter &emitter) {
+    return lookupAndResolve(type, methodName, operands, callExpr, syntax, {},
+                            false, emitter);
   }
 
   bool isNull() const { return fnDecls.empty(); }
@@ -144,15 +149,19 @@ public:
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
-  /// arguments.  If so, return the single entry that works and potentially
-  /// mutate the operand list (when calling a static method that doesn't need
-  /// a self value)).
+  /// arguments.  If so, return the single entry that works.
+  ///
+  /// NOTE: This can mutate the operand list, e.g. when calling a static method
+  /// that doesn't need a self value, and by emitting PValues when not in an
+  /// parameter context. The actual emission needs to use the updated argument
+  /// list.
   ///
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
   PValue filterOverloadSet(CallOperands &operands,
                            bool allowImplicitConversions,
-                           bool emitDiagnosticOnFailure) const;
+                           bool emitDiagnosticOnFailure,
+                           ExprEmitter &emitter) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings on the overload

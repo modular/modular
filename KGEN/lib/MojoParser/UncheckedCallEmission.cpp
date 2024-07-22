@@ -625,8 +625,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     }
 
     StringAttr argName = pogAttr.getName();
-    if (auto kwOperandOr = operands.findKwArg(argName);
-        kwOperandOr.has_value()) {
+    if (const OperandValue *kwOperandOr = operands.findKwArg(argName);
+        kwOperandOr) {
       // The argument is passed as a keyword operand.
       AnyValue argVal =
           emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);

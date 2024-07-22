@@ -419,3 +419,21 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
+
+# CHECK-LABEL: lit.func @"test_pvalue_ref_formation
+fn test_pvalue_ref_formation[a: SelfRefTest]():
+  # This is invoking a method (accepting a ref) on a pvalue.  This need to
+  # materialize into a temporary and use the lifetime of the temporary, not an
+  # immortal lifetime.
+
+  # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest, mut *"anonymous*`1">
+  var r = a.method()
+  # The result reference should have inferred the lifetime of the temp
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :lifetime<1> *"anonymous*`1",
+
+  # This use of the temp should keep it alive.
+  # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r
+  # CHECK: [[REF:%.*]] = lit.call {{.*}}Reference::@"__getitem__{{.*}}([[REFERENCE]])
+  # CHECK-NEXT: lit.call {{.*}}method{{.*}}([[REF]])
+  _ = r[].method()
+  # CHECK-NEXT: lit.call {{.*}}SelfRefTest::@"__del__{{.*}}([[ANONTMP]])
