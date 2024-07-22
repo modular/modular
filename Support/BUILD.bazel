@@ -68,6 +68,7 @@ modular_cc_library(
         "include/Support/VisualizationUtils.h",
     ],
     local_defines = [
+        "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
         "SHARED_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_SUFFIX='\".a\"'",
