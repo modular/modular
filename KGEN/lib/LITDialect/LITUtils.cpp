@@ -699,22 +699,25 @@ void PassingKindParser::populatePassingKinds(
 PassingKindPrinter::PassingKindPrinter(
     raw_ostream &os, size_t numPogs,
     std::function<PassingKind(size_t)> getPassingKind,
-    bool suppressSlashAfterSelf, char slash)
+    bool suppressSlashAfterSelf, char slash, StringRef plus)
     : os(os), numPogs(numPogs), getPassingKind(std::move(getPassingKind)),
       prevPassingKind(PassingKind::Inferred),
-      suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
+      suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash), plus(plus) {
+}
 
 PassingKindPrinter::PassingKindPrinter(raw_ostream &os, PogListAttr pogListAttr,
-                                       bool suppressSlashAfterSelf, char slash)
+                                       bool suppressSlashAfterSelf, char slash,
+                                       StringRef plus)
     : PassingKindPrinter(
           os, pogListAttr.getPogs().size(),
           [pogListAttr](size_t idx) { return pogListAttr.getPassingKind(idx); },
-          suppressSlashAfterSelf, slash) {}
+          suppressSlashAfterSelf, slash, plus) {}
 
 PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
-                                       PogListAttr pogListAttr, char slash)
+                                       PogListAttr pogListAttr, char slash,
+                                       StringRef plus)
     : PassingKindPrinter(printer.getStream(), pogListAttr,
-                         /*suppressSlashAfterSelf=*/false, slash) {}
+                         /*suppressSlashAfterSelf=*/false, slash, plus) {}
 
 void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
   PassingKind passingKind = getPassingKind(idx);
@@ -724,7 +727,7 @@ void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
   switch (prevPassingKind) {
   case PassingKind::Inferred:
     if (idx != 0)
-      os << "+, ";
+      os << plus << ", ";
     if (passingKind == PassingKind::KwOnly)
       os << "*, ";
     else if (passingKind == PassingKind::Implicit)
@@ -767,7 +770,7 @@ void PassingKindPrinter::printOptionalTrailingSlash(size_t idx) const {
     if (prevPassingKind == PassingKind::PosOnly)
       os << ", " << slash;
     else if (prevPassingKind == PassingKind::Inferred)
-      os << ", +";
+      os << ", " << plus;
   }
 }
 
