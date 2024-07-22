@@ -37,7 +37,7 @@ fn gpu_managed_alloc[
 
 fn gpu_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
     try:
-        return _free(ptr.address)
+        return _free(ptr)
     except e:
         abort("Can't free gpu memory")
 

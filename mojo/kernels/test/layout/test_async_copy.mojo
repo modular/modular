@@ -197,7 +197,7 @@ fn test_multistage_copy() raises:
     var a_device = _malloc[Float32](M * K)
     var b_device = _malloc[Float32](M * K)
 
-    _copy_host_to_device(a_device, a_host, M * K)
+    _copy_host_to_device(a_device, a_host.address, M * K)
 
     var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
     var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
@@ -225,7 +225,7 @@ fn test_multistage_copy() raises:
 
     synchronize()
 
-    _copy_device_to_host(b_host, b_device, M * K)
+    _copy_device_to_host(b_host.address, b_device, M * K)
 
     for i in range(M * K):
         assert_almost_equal(a_host[i], b_host[i])
@@ -316,7 +316,7 @@ fn test_swizzle_copy() raises:
     var a_device = _malloc[Float32](M * K)
     var b_device = _malloc[Float32](M * K)
 
-    _copy_host_to_device(a_device, a_host, M * K)
+    _copy_host_to_device(a_device, a_host.address, M * K)
 
     var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
     var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
@@ -341,7 +341,7 @@ fn test_swizzle_copy() raises:
 
     synchronize()
 
-    _copy_device_to_host(b_host, b_device, M * K)
+    _copy_device_to_host(b_host.address, b_device, M * K)
 
     for m in range(M):
         for k in range(K):
