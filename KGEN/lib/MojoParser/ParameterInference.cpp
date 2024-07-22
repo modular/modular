@@ -666,7 +666,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       valueRefType = cast<RefType>(value.getMValueReference().getType());
     else if (value.getIfPValue() && isParamContext)
       valueRefType =
-          RefType::getImmortal(argVal.getRValueType(), /*isMut=*/true);
+          RefType::getImmortal(argVal.getRValueType(), /*isMut=*/false);
 
     // As a special hack, look through DefArgumentWrapperDLValue to the
     // underlying MBValue that it may contain.  This is for two reasons:
