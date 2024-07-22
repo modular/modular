@@ -21,7 +21,8 @@ struct ManagedDLHandle:
         return self.lib
 
     fn __del__(owned self):
-        self.lib.close()
+        if self.lib:
+            self.lib.close()
 
 
 @value

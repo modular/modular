@@ -52,18 +52,11 @@ struct Device(Stringable):
     var lib: DriverLibrary
     var _cdev: _CDevice
 
-    fn __init__(inout self, descriptor: CPUDescriptor = CPUDescriptor()) raises:
-        """Creates a CPU Device from a CPUDescriptor."""
+    fn __init__(inout self):
+        """Creates a default-initialized Device."""
 
-        alias func_name_create = "M_createCPUDevice"
-        self.lib = ManagedDLHandle(DLHandle(_get_driver_path()))
-        self._cdev = _CDevice(
-            call_dylib_func[UnsafePointer[NoneType]](
-                self.lib.get_handle(),
-                func_name_create,
-                Int32(descriptor.numa_id),
-            )
-        )
+        self.lib = ManagedDLHandle(DLHandle(UnsafePointer[Int8]()))
+        self._cdev = _CDevice(UnsafePointer[NoneType]())
 
     fn __init__(
         inout self, lib: DriverLibrary, *, owned owned_ptr: _CDevice
@@ -182,4 +175,14 @@ struct Device(Stringable):
 
 
 fn cpu_device(descriptor: CPUDescriptor = CPUDescriptor()) raises -> Device:
-    return Device(descriptor)
+    """Creates a CPU Device from a CPUDescriptor."""
+    alias func_name_create = "M_createCPUDevice"
+    var lib = ManagedDLHandle(DLHandle(_get_driver_path()))
+    var _cdev = _CDevice(
+        call_dylib_func[UnsafePointer[NoneType]](
+            lib.get_handle(),
+            func_name_create,
+            Int32(descriptor.numa_id),
+        )
+    )
+    return Device(lib^, owned_ptr=_cdev)
