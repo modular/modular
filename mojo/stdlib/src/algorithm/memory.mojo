@@ -22,8 +22,8 @@ from runtime.asyncrt import parallelism_level
 fn parallel_memcpy[
     type: DType
 ](
-    dest: DTypePointer[type],
-    src: DTypePointer[type],
+    dest: UnsafePointer[Scalar[type]],
+    src: UnsafePointer[Scalar[type]],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -63,7 +63,11 @@ fn parallel_memcpy[
 
 fn parallel_memcpy[
     type: DType,
-](dest: DTypePointer[type], src: DTypePointer[type], count: Int):
+](
+    dest: UnsafePointer[Scalar[type]],
+    src: UnsafePointer[Scalar[type]],
+    count: Int,
+):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.
 
     Parameters:

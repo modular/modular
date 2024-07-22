@@ -83,7 +83,7 @@ fn vectorize[
     alias simd_width = simdwidthof[DType.int32]()
 
     fn main():
-        var p = DTypePointer[DType.int32].alloc(size)
+        var p = UnsafePointer[Int32].alloc(size)
 
         # @parameter allows the closure to capture the `p` pointer
         @parameter
@@ -175,7 +175,7 @@ fn vectorize[
     alias simd_width = simdwidthof[DType.int32]()
 
     fn main():
-        var p = DTypePointer[DType.int32].alloc(size)
+        var p = UnsafePointer[Int32].alloc(size)
 
         # @parameter allows the closure to capture the `p` pointer
         @parameter
