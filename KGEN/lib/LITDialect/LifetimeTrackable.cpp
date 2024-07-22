@@ -664,6 +664,9 @@ OverallOpValueEffect LIT::getOperationEffects(
 /// lifetimes. Returns true if any lifetimes were found.
 static bool handleLifetimeAttr(TypedAttr attr,
                                SmallVector<TypedAttr> &results) {
+  if (isa<ImplicitLifetimeRefAttr>(attr))
+    return false;
+
   size_t oldNumResults = results.size();
   // FIXME: Track mutability correctly.
   attr = LifetimeMutCastAttr::strip(attr);

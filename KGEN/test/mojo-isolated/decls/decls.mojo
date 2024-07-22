@@ -1033,6 +1033,28 @@ struct RaisingMemberwiseInit:
 # async/await
 ##===----------------------------------------------------------------------===##
 
+@register_passable("trivial")
+struct Container[T : AnyType]:
+    alias _mlir_type = __mlir_type[
+        `!kgen.pointer<`,
+        T,
+        `>`,
+    ]
+    var address: Self._mlir_type
+    fn __init__() -> Self:
+        return Self {
+            address: __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
+        }
+
+async fn load(server_ptr: Container[__mlir_type.index]):
+    pass
+
+# CHECK-LABEL: lit.func @"awaitSomething()"
+async fn awaitSomething():
+    var ptr = Container[__mlir_type.index]()
+    # CHECK: [[CORO:%.*]] = lit.call @{{.*}}@Coroutine::@"__init__{{.*}}"<:!AnyType [{{.*}}], :lifetime.set {}>(%{{.*}}) :
+    # CHECK-SAME: !lit.signature<("{{.*}}": !co.routine) -> !lit.struct<#Coroutine <:!AnyType [{{.*}}], :lifetime.set {}>>>
+    await load(ptr)
 
 # CHECK-LABEL: lit.func @"coroutine
 # CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<!Int, mut [[LT]]> byref_result) async -> !kgen.none
