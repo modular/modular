@@ -338,11 +338,11 @@ struct ClockType(EqualityComparable):
 @value
 @register_passable("trivial")
 struct _DeviceImpl:
-    var handle: DTypePointer[DType.invalid]
+    var handle: UnsafePointer[NoneType]
 
     @always_inline
     fn __init__(inout self):
-        self.handle = DTypePointer[DType.invalid]()
+        self.handle = UnsafePointer[NoneType]()
 
     @always_inline
     fn __bool__(self) -> Bool:
