@@ -507,6 +507,29 @@ struct Graph(CollectionElement, Stringable, Formattable):
         """
         return self.nvop(name, inputs, out_type, attrs)[0]
 
+    fn op(
+        self,
+        name: String,
+        inputs: List[Symbol],
+        attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
+    ) raises -> Symbol:
+        """Adds a new single-output node to the `Graph` with result type inference.
+
+        See `Graph.nvop` for details. This overload can be used for operations
+        that return a single result.
+
+        Args:
+            name: The name of the operation to use.
+            inputs: The list of symbolic operands.
+            attrs: Any attributes that the operation might require.
+
+        Returns:
+            The symbolic output of the newly-added node.
+        """
+        return self.nvop(
+            name, inputs, attrs=attrs, enable_result_type_inference=True
+        )[0]
+
     # ===------------------------------------------------------------------=== #
     # Factories for various nullary ops
     # ===------------------------------------------------------------------=== #

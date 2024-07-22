@@ -175,11 +175,10 @@ def select(
     """
     var g = condition.graph()
     try:
-        return g.nvop(
+        return g.op(
             "rmo.select",
             List(condition, x, y),
-            enable_result_type_inference=True,
-        )[0]
+        )
     except e:
         raise error(g, e, location or __call_location())
 
@@ -476,12 +475,11 @@ def concat(
 
     var out: Symbol
     try:
-        out = g.nvop(
+        out = g.op(
             "rmo.concat",
             values,
             attrs=attrs,
-            enable_result_type_inference=True,
-        )[0]
+        )
     except e:
         # The graph api does not currently support algebraic expressions in dimensions.
         # There is a chance that concat was unable to simplify the expression and returned an invalid shape.

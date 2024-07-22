@@ -67,9 +67,7 @@ def matmul(
 
     var g = lhs.graph()
     try:
-        return g.nvop(
-            "rmo.matmul", List(lhs, rhs), enable_result_type_inference=True
-        )[0]
+        return g.op("rmo.matmul", List(lhs, rhs))
     except e:
         raise error(g, e, location or __call_location())
 

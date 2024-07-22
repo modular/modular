@@ -79,11 +79,10 @@ from ..error import error
 
 
 def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
-    return lhs.graph().nvop(
+    return lhs.graph().op(
         op_name,
-        inputs=List[Symbol](lhs, rhs),
-        enable_result_type_inference=True,
-    )[0]
+        List[Symbol](lhs, rhs),
+    )
 
 
 @always_inline

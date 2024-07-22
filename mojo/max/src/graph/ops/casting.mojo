@@ -300,12 +300,11 @@ def reshape(v: Symbol, shape: List[Dim]) -> Symbol:
 
     ctx = g._context()
     newShapeAttr = _shape_attr(ctx, "newShape", shape)
-    return g.nvop(
+    return g.op(
         "rmo.reshape",
         List[Symbol](v),
         attrs=List[NamedAttribute](newShapeAttr),
-        enable_result_type_inference=True,
-    )[0]
+    )
 
 
 def reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) -> Symbol:
@@ -469,12 +468,11 @@ def broadcast_to(
     ctx = g._context()
     newShapeAttr = _shape_attr(ctx, "newShape", shape)
     try:
-        return g.nvop(
+        return g.op(
             "rmo.broadcast_to",
             List[Symbol](v),
             attrs=List[NamedAttribute](newShapeAttr),
-            enable_result_type_inference=True,
-        )[0]
+        )
     except e:
         raise error(g, e, location or __call_location())
 
