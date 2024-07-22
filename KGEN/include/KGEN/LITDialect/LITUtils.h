@@ -194,19 +194,21 @@ private:
   std::array<size_t, NUM_MARKERS> idxOfEach{};
 };
 
-/// Handles printing '/' and '*' in lit IR. Optionally, it allows specifying a
-/// character to be used instead of '/'. It also allows specifying a flag to
-/// suppress the '/' if it immediately follows the first argument (useful if
-/// printing methods with mojo syntax).
+/// Handles printing '/', '+', '?', and '*' in lit IR. Optionally, it allows
+/// specifying a replacement to be used instead of '/' and '+'. It also allows
+/// specifying a flag to suppress the '/' if it immediately follows the first
+/// argument (useful if printing methods with mojo syntax).
 class PassingKindPrinter {
 public:
   PassingKindPrinter(raw_ostream &os, size_t numPogs,
                      std::function<PassingKind(size_t)> getPassingKind,
-                     bool suppressSlashAfterSelf = false, char slash = '/');
+                     bool suppressSlashAfterSelf = false, char slash = '/',
+                     StringRef plus = "+");
   PassingKindPrinter(raw_ostream &os, PogListAttr pogListAttr,
-                     bool suppressSlashAfterSelf = false, char slash = '/');
+                     bool suppressSlashAfterSelf = false, char slash = '/',
+                     StringRef plus = "+");
   PassingKindPrinter(AsmPrinter &printer, PogListAttr pogListAttr,
-                     char slash = '/');
+                     char slash = '/', StringRef plus = "+");
 
   /// Print a single '*' or '/' if needed, given the index of the passing kind.
   void printOptionalStarSlash(size_t idx);
@@ -221,6 +223,7 @@ private:
   PassingKind prevPassingKind;
   bool suppressSlashAfterSelf;
   char slash; // TODO: remove this when AsmParser can handle '/'.
+  StringRef plus;
 };
 
 //===----------------------------------------------------------------------===//

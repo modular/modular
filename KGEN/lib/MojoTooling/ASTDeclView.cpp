@@ -637,7 +637,7 @@ static void printArgOrParameterSignature(
     llvm::raw_string_ostream &os, bool suppressSlashAfterSelf = false) {
   PassingKindPrinter passingKindPrinter(
       os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); },
-      suppressSlashAfterSelf);
+      suppressSlashAfterSelf, /*slash=*/'/', /*plus=*/"//");
   size_t idx = 0;
   auto printArg = [&](const T &arg) {
     passingKindPrinter.printOptionalStarSlash(idx);

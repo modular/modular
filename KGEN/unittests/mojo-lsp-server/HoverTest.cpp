@@ -767,3 +767,29 @@ fn main():
                   })
       .execute();
 }
+
+TEST(HoverTest, testInferredParameters) {
+  Document doc("test:///foo.mojo",
+               R"(
+@always_inline
+fn parametric[
+    type: DType, simd_width: Int, //, other: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return x * x
+
+
+fn foo():
+    var v = SIMD[DType.float16, 4](33)
+    _ = parametric[12](v)
+  )");
+
+  createTestClient()
+      .open(doc)
+      .hover(doc, *doc.findLastPos("parametric"),
+             [&](const lsp::Hover &hover) {
+               EXPECT_EQ(hover.contents.value, R"(```mojo
+(function) fn parametric[type: DType, simd_width: Int, //, other: Int](x: SIMD[type, simd_width]) -> SIMD[$0, $1]
+```)");
+             })
+      .execute();
+}
