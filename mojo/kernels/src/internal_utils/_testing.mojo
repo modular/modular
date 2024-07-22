@@ -7,9 +7,15 @@
 
 from buffer import NDBuffer
 import testing
-from ._utils import TestTensor
+from testing.testing import _assert_cmp_error
+from ._utils import TestTensor, HostNDBuffer
 from collections import Optional
 from builtin._location import _SourceLocation, __call_location
+
+
+# ===----------------------------------------------------------------------=== #
+# assert_almost_equal
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -63,6 +69,28 @@ fn assert_almost_equal(
 
 @always_inline
 fn assert_almost_equal(
+    x: HostNDBuffer,
+    y: __type_of(x),
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+    atol: Scalar[x.type] = 1e-08,
+    rtol: Scalar[x.type] = 1e-05,
+    equal_nan: Bool = False,
+) raises:
+    return assert_almost_equal(
+        x.tensor,
+        y.tensor,
+        msg=msg,
+        atol=atol,
+        rtol=rtol,
+        equal_nan=equal_nan,
+        location=location.or_else(__call_location()),
+    )
+
+
+@always_inline
+fn assert_almost_equal(
     x: TestTensor,
     y: __type_of(x),
     msg: String = "",
@@ -81,6 +109,11 @@ fn assert_almost_equal(
         equal_nan=equal_nan,
         location=location.or_else(__call_location()),
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# assert_equal
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -102,6 +135,22 @@ fn assert_equal(
 
 @always_inline
 fn assert_equal(
+    x: HostNDBuffer,
+    y: __type_of(x),
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    return assert_equal(
+        x.tensor,
+        y.tensor,
+        msg=msg,
+        location=location.or_else(__call_location()),
+    )
+
+
+@always_inline
+fn assert_equal(
     x: TestTensor,
     y: __type_of(x),
     msg: String = "",
@@ -114,6 +163,74 @@ fn assert_equal(
         msg=msg,
         location=location.or_else(__call_location()),
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# assert_with_measure
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn assert_with_measure[
+    measure: fn[type: DType] (
+        UnsafePointer[Scalar[type], *_], UnsafePointer[Scalar[type], *_], Int
+    ) -> Bool
+](
+    x: NDBuffer,
+    y: __type_of(x),
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    if not measure(x.data, y.data, x.num_elements()):
+        raise _assert_cmp_error["`left == right` comparison"](
+            str(x), str(y), msg=msg, loc=location.or_else(__call_location())
+        )
+
+
+@always_inline
+fn assert_with_measure[
+    measure: fn[type: DType] (
+        UnsafePointer[Scalar[type], *_], UnsafePointer[Scalar[type], *_], Int
+    ) -> Bool
+](
+    x: HostNDBuffer,
+    y: __type_of(x),
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    return assert_with_measure[measure](
+        x.tensor,
+        y.tensor,
+        msg=msg,
+        location=location.or_else(__call_location()),
+    )
+
+
+@always_inline
+fn assert_with_measure[
+    measure: fn[type: DType] (
+        UnsafePointer[Scalar[type], *_], UnsafePointer[Scalar[type], *_], Int
+    ) -> Bool
+](
+    x: TestTensor,
+    y: __type_of(x),
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    return assert_with_measure[measure](
+        x.ndbuffer,
+        y.ndbuffer,
+        msg=msg,
+        location=location.or_else(__call_location()),
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# utils
+# ===----------------------------------------------------------------------=== #
 
 
 fn _minmax[
