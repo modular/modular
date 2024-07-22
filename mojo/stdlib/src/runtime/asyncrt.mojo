@@ -15,7 +15,7 @@ from sys.param_env import is_defined
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import Context as CudaContext
 from gpu.host import CudaInstance, DeviceContext, Stream, KernelProfilingInfo
-from memory import DTypePointer, UnsafePointer
+from memory import UnsafePointer
 
 from utils import StringRef
 
