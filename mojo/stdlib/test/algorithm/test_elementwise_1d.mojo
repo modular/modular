@@ -21,7 +21,7 @@ fn test_elementwise_1d():
     var num_work_items = num_physical_cores()
 
     alias num_elements = 64
-    var ptr = DTypePointer[DType.float32].alloc(num_elements)
+    var ptr = UnsafePointer[Float32].alloc(num_elements)
 
     var vector = Buffer[DType.float32, num_elements](ptr)
 

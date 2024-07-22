@@ -772,7 +772,7 @@ fn test_argn_parallelize() raises:
     alias batch_size = 8
     alias hidden_dim = 16384
 
-    var input_ptr = DTypePointer[DType.float32].alloc(batch_size * hidden_dim)
+    var input_ptr = UnsafePointer[Float32].alloc(batch_size * hidden_dim)
     var input = NDBuffer[DType.float32, 2, DimList(batch_size, hidden_dim)](
         input_ptr
     )
