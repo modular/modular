@@ -7,7 +7,8 @@
 
 from sys.info import sizeof
 
-from memory.unsafe import DTypePointer, bitcast
+from memory import UnsafePointer
+from memory.unsafe import bitcast
 
 from ._utils import _check_error, _get_dylib_function
 from .stream import Stream, _StreamHandle
@@ -30,7 +31,7 @@ fn _malloc[type: AnyType](count: Int) raises -> UnsafePointer[type]:
     return ptr.bitcast[type]()
 
 
-fn _malloc[type: DType](count: Int) raises -> DTypePointer[type]:
+fn _malloc[type: DType](count: Int) raises -> UnsafePointer[Scalar[type]]:
     return _malloc[Scalar[type]](count)
 
 
@@ -52,7 +53,9 @@ fn _malloc_managed[type: AnyType](count: Int) raises -> UnsafePointer[type]:
     return ptr.bitcast[type]()
 
 
-fn _malloc_managed[type: DType](count: Int) raises -> DTypePointer[type]:
+fn _malloc_managed[
+    type: DType
+](count: Int) raises -> UnsafePointer[Scalar[type]]:
     return _malloc_managed[Scalar[type]](count)
 
 
@@ -64,10 +67,6 @@ fn _free[type: AnyType](ptr: UnsafePointer[type]) raises:
             "cuMemFree_v2", fn (UnsafePointer[Int]) -> Result
         ]()(ptr.bitcast[Int]())
     )
-
-
-fn _free[type: DType](ptr: DTypePointer[type]) raises:
-    _free(ptr._as_scalar_pointer())
 
 
 fn _copy_host_to_device[
@@ -86,18 +85,6 @@ fn _copy_host_to_device[
             host_src.bitcast[NoneType](),
             count * sizeof[type](),
         )
-    )
-
-
-fn _copy_host_to_device[
-    type: DType
-](
-    device_dest: DTypePointer[type], host_src: DTypePointer[type], count: Int
-) raises:
-    _copy_host_to_device[Scalar[type]](
-        device_dest._as_scalar_pointer(),
-        host_src._as_scalar_pointer(),
-        count,
     )
 
 
@@ -126,22 +113,6 @@ fn _copy_host_to_device_async[
     )
 
 
-fn _copy_host_to_device_async[
-    type: DType
-](
-    device_dst: DTypePointer[type],
-    host_src: DTypePointer[type],
-    count: Int,
-    stream: Stream,
-) raises:
-    _copy_host_to_device_async[Scalar[type]](
-        device_dst._as_scalar_pointer(),
-        host_src._as_scalar_pointer(),
-        count,
-        stream,
-    )
-
-
 fn _copy_device_to_host[
     type: AnyType
 ](
@@ -158,18 +129,6 @@ fn _copy_device_to_host[
             device_src.bitcast[Int](),
             count * sizeof[type](),
         )
-    )
-
-
-fn _copy_device_to_host[
-    type: DType
-](
-    host_dest: DTypePointer[type], device_src: DTypePointer[type], count: Int
-) raises:
-    _copy_device_to_host[Scalar[type]](
-        host_dest._as_scalar_pointer(),
-        device_src._as_scalar_pointer(),
-        count,
     )
 
 
@@ -198,22 +157,6 @@ fn _copy_device_to_host_async[
     )
 
 
-fn _copy_device_to_host_async[
-    type: DType
-](
-    host_dest: DTypePointer[type],
-    device_src: DTypePointer[type],
-    count: Int,
-    stream: Stream,
-) raises:
-    _copy_device_to_host_async[Scalar[type]](
-        host_dest._as_scalar_pointer(),
-        device_src._as_scalar_pointer(),
-        count,
-        stream,
-    )
-
-
 fn _copy_device_to_device_async[
     type: AnyType
 ](
@@ -239,16 +182,6 @@ fn _copy_device_to_device_async[
     )
 
 
-fn _copy_device_to_device_async[
-    type: DType
-](
-    dst: DTypePointer[type], src: DTypePointer[type], count: Int, stream: Stream
-) raises:
-    return _copy_device_to_device_async(
-        dst._as_scalar_pointer(), src._as_scalar_pointer(), count, stream
-    )
-
-
 fn _memset[
     type: AnyType
 ](device_dest: UnsafePointer[type], val: UInt8, count: Int) raises:
@@ -265,20 +198,10 @@ fn _memset[
     )
 
 
-fn _memset[
-    type: DType
-](device_dest: DTypePointer[type], val: UInt8, count: Int) raises:
-    _memset[Scalar[type]](
-        device_dest._as_scalar_pointer(),
-        val,
-        count,
-    )
-
-
 fn _memset_async[
     type: DType
 ](
-    device_dest: DTypePointer[type],
+    device_dest: UnsafePointer[Scalar[type]],
     val: Scalar[type],
     count: Int,
     stream: Stream,
@@ -297,9 +220,7 @@ fn _memset_async[
         _check_error(
             _get_dylib_function[
                 "cuMemsetD8Async",
-                fn (
-                    DTypePointer[DType.uint8], UInt8, Int, _StreamHandle
-                ) -> Result,
+                fn (UnsafePointer[UInt8], UInt8, Int, _StreamHandle) -> Result,
             ]()(
                 device_dest.bitcast[DType.uint8](),
                 bitcast[DType.uint8, 1](val),
@@ -312,7 +233,7 @@ fn _memset_async[
             _get_dylib_function[
                 "cuMemsetD16Async",
                 fn (
-                    DTypePointer[DType.uint16], UInt16, Int, _StreamHandle
+                    UnsafePointer[UInt16], UInt16, Int, _StreamHandle
                 ) -> Result,
             ]()(
                 device_dest.bitcast[DType.uint16](),
@@ -326,7 +247,7 @@ fn _memset_async[
             _get_dylib_function[
                 "cuMemsetD32Async",
                 fn (
-                    DTypePointer[DType.uint32], UInt32, Int, _StreamHandle
+                    UnsafePointer[UInt32], UInt32, Int, _StreamHandle
                 ) -> Result,
             ]()(
                 device_dest.bitcast[DType.uint32](),
@@ -360,21 +281,6 @@ fn _copy_device_to_device[
             device_src.bitcast[Int](),
             count * sizeof[type](),
         )
-    )
-
-
-@always_inline
-fn _copy_device_to_device[
-    type: DType
-](
-    device_dest: DTypePointer[type],
-    device_src: DTypePointer[type],
-    count: Int,
-) raises:
-    _copy_device_to_device[Scalar[type]](
-        device_dest._as_scalar_pointer(),
-        device_src._as_scalar_pointer(),
-        count,
     )
 
 
