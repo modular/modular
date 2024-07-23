@@ -37,18 +37,16 @@ std::string mangleParameterValues(GeneratorOp generator,
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ExpansionGraph {
   ExpansionGraph(AsyncRT::Runtime &runtime)
-      : worklistCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
+      : worklistCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
+        quiesceChain(
+            AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
 
   virtual ~ExpansionGraph();
 
   /// Increment the task count.
   void didAddTask();
-
   /// Decrement the task count.
   void didCompleteTask();
-
-  /// Wait on all outstanding tasks.
-  AsyncValueRef<Chain> quiesce();
 
   /// Map from generator instantiation to expansion tree node.
   Shared<llvm::MapVector<std::pair<ParameterExprArrayAttr, GeneratorOp>,
@@ -70,10 +68,8 @@ struct ExpansionGraph {
   /// Concrete functions added directly to the expansion graph.
   std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
 
-  /// Protect access to quiesceChain.
-  std::mutex quiesceMu;
   /// Number of outstanding resources created from this runtime.
-  size_t numOutstandingResources = 0;
+  std::atomic<size_t> numOutstandingResources = 1;
   /// If quiesce() has been called, the chain it returned. Otherwise null.
   AsyncValueRef<Chain> quiesceChain;
 
