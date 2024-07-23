@@ -45,18 +45,6 @@ public:
          MLIRContext &context,
          PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
-  /// Produce a standalone MLIR module by slicing out the dependencies of the
-  /// provided exported ops.
-  OwningOpRef<ModuleOp>
-  produceStandaloneModule(const SymbolTable &symtab,
-                          const ExportMap &exportedSymbols);
-  /// Produce a standalone MLIR module by slicing out the dependencies of the
-  /// provided exported ops. An `IRMapping` can be provided to be able to map
-  /// into the sliced module.
-  OwningOpRef<ModuleOp>
-  produceStandaloneModule(const SymbolTable &symtab,
-                          const ExportMap &exportedSymbols, IRMapping &mapping);
-
   /// Emit the module to a object archive.
   ErrorOr<BufferRef> emitArchive(ModuleOp module);
 

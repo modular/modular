@@ -18,6 +18,7 @@ add_modular_library(KGENCompiler
   KGENObjectCompiler
   KGENPipeline
   KGENTransforms
+  KGENTransformUtils
   LowerLIT
   MSupport
   AsyncRTCompilerSupport
