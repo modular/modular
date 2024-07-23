@@ -5,7 +5,7 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     linkopts = select({
         "@platforms//os:linux": ["-rdynamic"],
-        "@platforms//os:macos": ["-bundle_loader"],
+        "//conditions:default": [],
     }),
     deps = [
         "//AsyncRT:Init",
