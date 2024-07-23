@@ -2097,7 +2097,7 @@ fn _bmm1[
     batch, head = divmod(batch_head, UInt(num_heads))
 
     var p_offset = batch_head * seq_len * num_keys
-    var p = p_ptr + Int(p_offset)
+    var p = p_ptr + p_offset
 
     var kv_num_heads = num_heads // group
     var kv_offset = int(
