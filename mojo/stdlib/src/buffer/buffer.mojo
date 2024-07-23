@@ -18,9 +18,8 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from buffer.dimlist import Dim, DimList, _make_tuple
-from memory import memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation, UnsafePointer
 from memory.reference import AddressSpace, _GPUAddressSpace
-from memory.unsafe import DTypePointer
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
@@ -96,22 +95,6 @@ struct Buffer[
         self.dtype = type
 
     @always_inline
-    fn __init__(inout self, ptr: DTypePointer[type, address_space]):
-        """Constructs a Buffer with statically known size and type.
-
-        Constraints:
-            The size is known.
-
-        Args:
-            ptr: Pointer to the data.
-        """
-        # Construct a Buffer type with statically known size
-        constrained[size.has_value(), "must have known size"]()
-        self.data = ptr.address
-        self.dynamic_size = size.get()
-        self.dtype = type
-
-    @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
@@ -134,30 +117,6 @@ struct Buffer[
                 "if static size is known, static size must equal dynamic size",
             )
         self.data = ptr
-        self.dynamic_size = in_size
-        self.dtype = type
-
-    @always_inline
-    fn __init__(
-        inout self, ptr: DTypePointer[type, address_space], in_size: Int
-    ):
-        """Constructs a Buffer with statically known type.
-
-        Constraints:
-            The size is unknown.
-
-        Args:
-            ptr: Pointer to the data.
-            in_size: Dynamic size of the buffer.
-        """
-
-        @parameter
-        if size:
-            debug_assert(
-                in_size == size.get(),
-                "if static size is known, static size must equal dynamic size",
-            )
-        self.data = ptr.address
         self.dynamic_size = in_size
         self.dtype = type
 
@@ -318,9 +277,7 @@ struct Buffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            var ptr = UnsafePointer[UInt8, address_space]._from_dtype_ptr(
-                self.data.bitcast[DType.uint8]()
-            )
+            var ptr = self.data.bitcast[DType.uint8]()
             f._write(ptr, self.bytecount())
 
     @staticmethod
@@ -338,7 +295,7 @@ struct Buffer[
         var data_pointer = stack_allocation[
             size.get(), type, alignment=alignment, address_space=address_space
         ]()
-        return Self(DTypePointer(data_pointer))
+        return Self(data_pointer)
 
 
 # ===----------------------------------------------------------------------===#
@@ -627,32 +584,6 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type, address_space],
-    ):
-        """Constructs an NDBuffer with statically known rank, shapes and
-        type.
-
-        Constraints:
-            The rank, shapes, and type are known.
-
-        Args:
-            ptr: Pointer to the data.
-        """
-        constrained[
-            shape.all_known[rank](),
-            "dimensions must all be known",
-        ]()
-
-        self.data = ptr.address
-        self.dynamic_shape = _make_tuple[rank](shape)
-        self.dynamic_stride = _compute_ndbuffer_stride[rank](
-            _make_tuple[rank](shape)
-        )
-        self.is_contiguous = True
-
-    @always_inline
-    fn __init__(
-        inout self,
         ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`], address_space
         ],
@@ -676,7 +607,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type, address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
         dynamic_shape: StaticIntTuple[rank],
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
@@ -697,7 +628,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type, address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
         dynamic_shape: DimList,
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
@@ -741,55 +672,6 @@ struct NDBuffer[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
-        dynamic_shape: DimList,
-        dynamic_stride: StaticIntTuple[rank],
-    ):
-        """Constructs a strided NDBuffer with statically known rank, but
-        dynamic shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
-        """
-        self.__init__(
-            ptr=ptr,
-            dynamic_shape=_make_tuple[rank](dynamic_shape),
-            dynamic_stride=dynamic_stride,
-        )
-
-    @always_inline
-    fn __init__(
-        inout self,
-        ptr: DTypePointer[type, address_space],
-        dynamic_shape: StaticIntTuple[rank],
-        dynamic_stride: StaticIntTuple[rank],
-    ):
-        """Constructs a strided NDBuffer with statically known rank, but
-        dynamic shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
-        """
-        self.data = ptr.address
-        self.dynamic_shape = dynamic_shape
-        self.dynamic_stride = dynamic_stride
-        self.is_contiguous = (
-            _compute_ndbuffer_stride[rank](dynamic_shape) == dynamic_stride
-        )
-
-    @always_inline
-    fn __init__(
-        inout self,
-        ptr: DTypePointer[type, address_space],
         dynamic_shape: DimList,
         dynamic_stride: StaticIntTuple[rank],
     ):
@@ -1321,9 +1203,7 @@ struct NDBuffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            var ptr = UnsafePointer[UInt8, address_space]._from_dtype_ptr(
-                self.data.bitcast[DType.uint8]()
-            )
+            var ptr = self.data.bitcast[DType.uint8]()
             f._write(ptr, self.bytecount())
 
     @always_inline
@@ -1597,13 +1477,13 @@ struct NDBuffer[
 
 @always_inline
 fn partial_simd_load[
-    width: Int
+    type: DType, //, width: Int
 ](
-    storage: DTypePointer,
+    storage: UnsafePointer[Scalar[type], *_],
     lbound: Int,
     rbound: Int,
-    pad_value: Scalar[storage.type],
-) -> SIMD[storage.type, width]:
+    pad_value: Scalar[type],
+) -> SIMD[type, width]:
     """Loads a vector with dynamic bound.
 
     Out of bound data will be filled with pad value. Data is valid if
@@ -1615,6 +1495,7 @@ fn partial_simd_load[
         partial_simd_load[4](addr0, 1, 3) #gives [0 42 43 0]
 
     Parameters:
+        type: The DType of storage.
         width: The system simd vector size.
 
     Args:
@@ -1632,17 +1513,17 @@ fn partial_simd_load[
     var incr = iota[DType.int32, width]()
     var mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    return masked_load[width](storage.address, mask, pad_value)
+    return masked_load[width](storage, mask, pad_value)
 
 
 @always_inline
 fn partial_simd_store[
-    width: Int
+    type: DType, //, width: Int
 ](
-    storage: DTypePointer,
+    storage: UnsafePointer[Scalar[type], *_],
     lbound: Int,
     rbound: Int,
-    data: SIMD[storage.type, width],
+    data: SIMD[type, width],
 ):
     """Stores a vector with dynamic bound.
 
@@ -1656,6 +1537,7 @@ fn partial_simd_store[
         partial_simd_load[4](addr0, 1, 3, [-1, 42, 43, -1]) #gives [0 42 43 0]
 
     Parameters:
+        type: The DType of storage.
         width: The system simd vector size.
 
     Args:
@@ -1670,12 +1552,12 @@ fn partial_simd_store[
     var incr = iota[DType.int32, width]()
     var mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    # Rebind for the inconsistency between (1) `ptr: DTypePointer` deduces
-    # address_space as ptr1 and (2) `DTypePointer[type]` sets address_space to
+    # Rebind for the inconsistency between (1) `ptr: UnsafePointer` deduces
+    # address_space as ptr1 and (2) `UnsafePointer[Scalar[type]]` sets address_space to
     # generic by default. The `masked_store` takes (2) to enforce the same type
     # between data and storage. #28834.
     return masked_store(
-        data, rebind[DTypePointer[storage.type]](storage).address, mask
+        data, rebind[UnsafePointer[Scalar[type]]](storage), mask
     )
 
 
