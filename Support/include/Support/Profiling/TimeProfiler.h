@@ -80,7 +80,8 @@
 #include <unordered_set>
 
 #ifdef MODULAR_PROFILING_NSIGHT
-#include "CUDASupport/Globals/Globals.h"
+#include <cuda.h>
+#include <nvtx3/nvToolsExt.h>
 #endif
 
 namespace llvm {
