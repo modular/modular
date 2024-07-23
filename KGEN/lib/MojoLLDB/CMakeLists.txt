@@ -38,6 +38,7 @@ add_modular_library(MojoLLDB SHARED
   KGENCompiler
   KGENObjectCompiler
   KGENSupport
+  KGENTransformUtils
   AsyncRTCompilerSupport
   AsyncRTRuntimeGlobals
   MCrashReporting

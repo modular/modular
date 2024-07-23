@@ -18,6 +18,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/SlicingUtils.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
@@ -274,7 +275,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
   IRMapping mapping;
   OwningOpRef<ModuleOp> module =
-      compiler->produceStandaloneModule(symtab, exportedSymbols, mapping);
+      produceStandaloneModule(symtab, exportedSymbols, mapping);
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -460,7 +461,7 @@ compileCustomCanonicalizationFns(ModuleOp module, SymbolTable &table,
   if (failed(objCompilerOr))
     return objCompilerOr.takeError();
   ObjectCompiler &objCompiler = **objCompilerOr;
-  auto newModule = objCompiler.produceStandaloneModule(table, exportMap);
+  auto newModule = produceStandaloneModule(table, exportMap);
 
   // Add an environment variable to specify that the CAPI is linked in the
   // JIT'ed code.

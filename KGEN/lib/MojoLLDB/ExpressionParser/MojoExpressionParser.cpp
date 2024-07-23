@@ -22,6 +22,7 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/SlicingUtils.h"
 #include "Support/Binary.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
@@ -473,7 +474,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   exportedSymbols.insert({StringAttr::get(module->getContext(), exprFnName),
                           ExportedSymbol(ExportKind::Exported)});
   OwningOpRef<ModuleOp> sliceModule =
-      impl->objCompiler->produceStandaloneModule(symbolTable, exportedSymbols);
+      produceStandaloneModule(symbolTable, exportedSymbols);
   auto bufferOr = impl->objCompiler->emitArchive(*sliceModule);
   if (bufferOr.isError()) {
     impl->expressionLogger->errorLog(
