@@ -411,15 +411,11 @@ struct Module:
             )
 
             if verbose:
-                var info_buffer_str = StringRef(
-                    UnsafePointer[C_char]._from_dtype_ptr(info_buffer)
-                )
+                var info_buffer_str = StringRef(info_buffer)
                 if info_buffer_str:
                     print(info_buffer_str)
 
-                var error_buffer_str = StringRef(
-                    UnsafePointer[C_char]._from_dtype_ptr(error_buffer)
-                )
+                var error_buffer_str = StringRef(error_buffer)
                 if error_buffer_str:
                     print(error_buffer_str)
 
