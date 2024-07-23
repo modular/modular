@@ -842,6 +842,7 @@ struct CallableArg[ArgT: AnyTrivialRegType]:
 
 # CHECK-LABEL: lit.func @"infer_conversion_arg_type
 fn infer_conversion_arg_type(callable: CallableArg[NoneType]):
+    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:type !NoneType>
     callable(None)
 
 fn take_two[a_type: DType, c_type: DType, width: Int](
