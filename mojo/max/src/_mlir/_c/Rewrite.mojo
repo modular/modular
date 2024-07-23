@@ -274,7 +274,7 @@ fn mlirRewriterBaseInlineBlockBefore(
 ) -> None:
     """Inline the operations of block 'source' before the operation 'op'. The
     source block will be deleted and must have no uses. 'argValues' is used to
-    replace the block arguments of 'source'
+    replace the block arguments of 'source'.
 
     The source block must have no successors. Otherwise, the resulting IR
     would have unreachable operations."""
@@ -292,7 +292,7 @@ fn mlirRewriterBaseMergeBlocks(
 ) -> None:
     """Inline the operations of block 'source' into the end of block 'dest'. The
     source block will be deleted and must have no uses. 'argValues' is used to
-    replace the block arguments of 'source'
+    replace the block arguments of 'source'.
 
     The dest block must have no successors. Otherwise, the resulting IR would
     have unreachable operation."""
