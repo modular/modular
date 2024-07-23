@@ -5,14 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from math import erf, exp, iota, log, log1p, rsqrt, sqrt
+from math import erf, exp, iota, log, log1p, rsqrt, sqrt, tanh, ceil, floor
 
 from algorithm.reduction import _reduce_generator
 from buffer.dimlist import DimList
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn.activations import relu
-from nn.math import add, ceil, floor, mul, tanh
 from register import *
 from runtime.tracing import Trace, TraceLevel
 
@@ -753,6 +752,16 @@ fn mo_range[
 
 
 @always_inline
+fn _add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    return x + y
+
+
+@always_inline
+fn _mul(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    return x * y
+
+
+@always_inline
 fn _get_reduce_output_shape(
     input: Tensor, axis: Tensor
 ) -> IntList[DimList.create_unknown[input.static_rank.value()]()]:
@@ -850,7 +859,7 @@ fn reduce_add[
 
     _reduce_wrapper[
         input.type,
-        add,
+        _add,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input, output, Scalar[input.type](0), ax)
@@ -954,7 +963,7 @@ fn reduce_mul[
 
     _reduce_wrapper[
         input.type,
-        mul,
+        _mul,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input, output, Scalar[input.type](1), ax)
