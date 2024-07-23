@@ -462,6 +462,9 @@ struct Operation(CollectionElement, Stringable, Formattable):
     fn context(self) -> Context:
         return _c.IR.mlirOperationGetContext(self.c)
 
+    fn location(self) -> Location:
+        return _c.IR.mlirOperationGetLocation(self.c)
+
     fn verify(self) -> Bool:
         return _c.IR.mlirOperationVerify(self.c)
 
@@ -686,6 +689,12 @@ struct Value(CollectionElement, Stringable):
 
     fn replace_all_uses_with(self, other: Self):
         _c.IR.mlirValueReplaceAllUsesOfWith(of=self.c, `with`=other.c)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return _c.IR.mlirValueEqual(self.c, other.c)
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not _c.IR.mlirValueEqual(self.c, other.c)
 
     fn __str__(self) -> String:
         return _to_string[Self.cType, _c.IR.mlirValuePrint](self.c)
