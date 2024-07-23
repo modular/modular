@@ -1152,16 +1152,32 @@ struct LayoutTensor[
     @always_inline
     fn reshape[
         dst_layout: Layout,
-        reshaped_layout: Layout = composition(layout, dst_layout),
     ](self) -> LayoutTensor[
         dtype,
-        reshaped_layout,
+        dst_layout,
         address_space=address_space,
         element_layout=element_layout,
     ]:
         return LayoutTensor[
             dtype,
-            reshaped_layout,
+            dst_layout,
+            address_space=address_space,
+            element_layout=element_layout,
+        ](self.ptr)
+
+    @always_inline
+    fn composition[
+        rhs_layout: Layout,
+        dst_layout: Layout = composition(layout, rhs_layout),
+    ](self) -> LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space=address_space,
+        element_layout=element_layout,
+    ]:
+        return LayoutTensor[
+            dtype,
+            dst_layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr)

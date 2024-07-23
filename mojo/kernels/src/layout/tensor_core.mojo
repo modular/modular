@@ -104,7 +104,7 @@ struct TensorCore[
             in_type is DType.bfloat16 or in_type is DType.float16
         ) else (layout_tf32)
 
-        var mat_a = a.reshape[layout_a]()
+        var mat_a = a.composition[layout_a]()
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -176,7 +176,7 @@ struct TensorCore[
             in_type is DType.bfloat16 or in_type is DType.float16
         ) else (layout_tf32)
 
-        var mat_b = b.transpose().reshape[layout_b]()
+        var mat_b = b.transpose().composition[layout_b]()
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -229,7 +229,7 @@ struct TensorCore[
 
         alias layout_c = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
 
-        var mat_c = c.reshape[layout_c]()
+        var mat_c = c.composition[layout_c]()
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -270,7 +270,7 @@ struct TensorCore[
 
         alias layout_d = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
 
-        var mat_d = d.reshape[layout_d]()
+        var mat_d = d.composition[layout_d]()
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 

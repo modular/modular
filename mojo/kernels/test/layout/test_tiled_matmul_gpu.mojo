@@ -242,10 +242,10 @@ fn single_warp_mma_sync_m16n8k8[
     mat_a: LayoutTensor[DType.float32, layout_a],
     mat_b: LayoutTensor[DType.float32, layout_b],
 ):
-    var mat_a_mma = mat_a.reshape[layout_a_mma]()
+    var mat_a_mma = mat_a.composition[layout_a_mma]()
     # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
-    var mat_b_mma = mat_b.transpose().reshape[layout_b_mma]()
-    var mat_c_mma = mat_c.reshape[layout_c_mma]()
+    var mat_b_mma = mat_b.transpose().composition[layout_b_mma]()
+    var mat_c_mma = mat_c.composition[layout_c_mma]()
 
     var thread_y: UInt = ThreadIdx.x() // 4
     var thread_x: UInt = ThreadIdx.x() % 4
@@ -281,9 +281,9 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
     alias TH_M = 4
     alias TH_N = 8
 
-    alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    alias layout_b = Layout(IntTuple(K, N))
-    alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    alias layout_a = Layout.row_major(M, K)
+    alias layout_b = Layout.col_major(K, N)
+    alias layout_c = Layout.row_major(M, N)
 
     var mat_a = ManagedLayoutTensor[
         DType.float32, layout_a, gpu_managed_alloc, gpu_free
