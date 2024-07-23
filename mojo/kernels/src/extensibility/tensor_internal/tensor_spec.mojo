@@ -231,5 +231,5 @@ struct TensorSpec(
         Returns:
           Given bytes as TensorSpec.
         """
-        var ptr = UnsafePointer[UInt8]._from_dtype_ptr(data).bitcast[Self]()
+        var ptr = data.bitcast[Self]()
         return ptr.take_pointee()

@@ -47,7 +47,7 @@ fn empty_tensor[
         An empty [`Tensor`](/max/api/mojo/extensibility/Tensor) with
         the specified type and shape.
     """
-    var ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var ptr = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     return Tensor[type, rank](ptr, shape)
 
 
@@ -98,7 +98,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         shape: StaticIntTuple[static_rank],
     ):
         """Constructs a new `Tensor`.
@@ -125,7 +125,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         shape: StaticIntTuple[static_rank],
         strides: StaticIntTuple[static_rank],
     ):
