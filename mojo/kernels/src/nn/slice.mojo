@@ -10,11 +10,7 @@ from register import mogg_register
 from math import clamp
 
 from utils.index import StaticIntTuple
-
-
-@always_inline("nodebug")
-fn select[T: AnyTrivialRegType](c: Bool, lhs: T, rhs: T) -> T:
-    return __mlir_op.`pop.select`(c.value, lhs, rhs)
+from utils._select import _select_register_value as select
 
 
 @always_inline("nodebug")
