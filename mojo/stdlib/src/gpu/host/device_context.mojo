@@ -11,6 +11,7 @@ from gpu.host.cuda_instance import CudaInstance
 from gpu.host.device import Device
 from gpu.host.event import Event
 from gpu.host.function import Function
+from gpu.host.memory import _memset_async
 from gpu.host.stream import Stream
 from sys.param_env import is_defined, env_get_int
 from ._utils import _check_error, _StreamHandle
@@ -434,6 +435,11 @@ struct DeviceContext:
             dst.ptr, src.ptr, len(dst), self.cuda_stream
         )
         self.synchronize()
+
+    fn memset[
+        type: DType
+    ](self, dst: DeviceBuffer[type], val: Scalar[type], count: Int) raises:
+        _memset_async[type](dst.ptr, val, count, self.cuda_stream)
 
     fn synchronize(self) raises:
         self.cuda_stream.synchronize()
