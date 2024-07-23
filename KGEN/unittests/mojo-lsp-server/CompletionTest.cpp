@@ -74,7 +74,7 @@ TEST(CompletionTest, testCompletionRelativeImport) {
 TEST(CompletionTest, testCompletionImportMember) {
   Document doc("test:///foo.mojo",
                R"(
-from memory.unsafe import D
+from memory.unsafe import b
 )");
 
   createTestClient()
@@ -84,8 +84,8 @@ from memory.unsafe import D
           [](const lsp::CompletionList &completionList) {
             EXPECT_TRUE(llvm::any_of(
                 completionList.items, [](const lsp::CompletionItem &item) {
-                  return item.label == "DTypePointer" &&
-                         item.kind == lsp::CompletionItemKind::Struct;
+                  return item.label == "bitcast" &&
+                         item.kind == lsp::CompletionItemKind::Function;
                 }));
           })
       .execute();

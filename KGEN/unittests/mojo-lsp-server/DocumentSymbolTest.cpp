@@ -28,12 +28,12 @@ TEST(DocumentSymbolTest, testDocumentSymbols) {
                R"(
 alias Value = 10
 
-fn foo(a: DTypePointer[DType.float32]) -> Float32:
+fn foo(a: UnsafePointer[Float32]) -> Float32:
   var variable = 15
   fn inner_fn():
     return
   fn inner_closure(arg: Int, arg2: __type_of(arg)) -> Float32:
-    return a.load(arg)
+    return Scalar.load(a, arg)
   return inner_fn(variable)
 
 struct struct_name:
