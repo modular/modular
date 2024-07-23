@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
-from gpu.host import Context, Function
+from gpu.host import DeviceContext
 from layout import Layout
 
 from utils.inline_string import _FixedString
@@ -26,9 +26,14 @@ fn test_gpu_printf() raises:
         # CHECK: printf printed 98 123.456!
         _printf["printf printed %ld %g!\n"](x, y)
 
-    with Context() as ctx:
-        var func = Function[do_print]()
-        func(Int(98), Float64(123.456), grid_dim=1, block_dim=1)
+    try:
+        with DeviceContext() as ctx:
+            var func = ctx.compile_function[do_print]()
+            ctx.enqueue_function(
+                func, Int(98), Float64(123.456), grid_dim=1, block_dim=1
+            )
+    except e:
+        print("CUDA_ERROR:", e)
 
 
 # CHECK-LABEL: == test_gpu_print_formattable
@@ -61,7 +66,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: [0, -1, -inf, 1.79769e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:65:32
+        # CHECK: test_print.mojo:70:32
         print(__source_location())
 
         # ------------------------------
@@ -110,9 +115,14 @@ fn test_gpu_print_formattable() raises:
         # CHECK: layout from GPU: ((2, 3):(3, 1))
         print("layout from GPU: ", layout_str)
 
-    with Context() as ctx:
-        var func = Function[do_print]()
-        func(Int(42), Float64(7.2), grid_dim=1, block_dim=1)
+    try:
+        with DeviceContext() as ctx:
+            var func = ctx.compile_function[do_print]()
+            ctx.enqueue_function(
+                func, Int(42), Float64(7.2), grid_dim=1, block_dim=1
+            )
+    except e:
+        print("CUDA_ERROR:", e)
 
 
 fn main() raises:

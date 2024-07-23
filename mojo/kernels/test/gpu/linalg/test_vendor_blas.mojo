@@ -13,13 +13,7 @@ from random import random_float64
 from buffer import DimList, NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.cublas.cublas import *
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
@@ -28,15 +22,13 @@ from testing import assert_almost_equal, assert_equal
 from utils.index import Index
 
 
-fn test_cublas() raises:
+fn test_cublas(ctx: DeviceContext) raises:
     print("== test_cublas")
 
     alias M = 63
     alias N = 65
     alias K = 66
     alias type = DType.float32
-
-    var stream = Stream()
 
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
@@ -51,32 +43,31 @@ fn test_cublas() raises:
         for n in range(N):
             b_host[k * N + n] = random_float64(-10, 10).cast[type]()
 
-    var a_device = _malloc[type](M * K)
-    var b_device = _malloc[type](K * N)
-    var c_device = _malloc[type](M * N)
-    var c_device_ref = _malloc[type](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[type](M * N)
+    var c_device_ref = ctx.create_buffer[type](M * N)
 
-    _copy_host_to_device(a_device, a_host.address, M * K)
-    _copy_host_to_device(b_device, b_host.address, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
-    synchronize()
-
-    var a = NDBuffer[type, 2, DimList(M, K)](a_device)
-    var b = NDBuffer[type, 2, DimList(K, N)](b_device)
-    var c = NDBuffer[type, 2, DimList(M, N)](c_device)
-    var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
+    var a = NDBuffer[type, 2, DimList(M, K)](a_device.ptr)
+    var b = NDBuffer[type, 2, DimList(K, N)](b_device.ptr)
+    var c = NDBuffer[type, 2, DimList(M, N)](c_device.ptr)
+    var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.ptr)
 
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     check_cublas_error(cublas_matmul(handle, c, a, b, c_row_major=True))
     check_cublas_error(cublasDestroy(handle))
 
-    _copy_device_to_host(c_host.address, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host.address, c_device)
 
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
-    var func_naive = Function[gemm_naive](threads_per_block=256)
-    func_naive(
+    var func_naive = ctx.compile_function[gemm_naive](threads_per_block=256)
+    ctx.enqueue_function(
+        func_naive,
         c_ref,
         a,
         b,
@@ -87,22 +78,20 @@ fn test_cublas() raises:
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    _copy_device_to_host(c_host_ref.address, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref.address, c_device_ref)
 
     for i in range(M * N):
         assert_almost_equal(c_host[i], c_host_ref[i], atol=1e-4, rtol=1e-4)
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = c_device_ref
 
     a_host.free()
     b_host.free()
     c_host.free()
     c_host_ref.free()
-
-    _ = stream^
 
 
 def test_cublas_result_format():
@@ -115,7 +104,7 @@ def main():
     test_cublas_result_format()
 
     try:
-        with Context() as ctx:
-            test_cublas()
+        with DeviceContext() as ctx:
+            test_cublas(ctx)
     except e:
         print("CUDA_ERROR:", e)

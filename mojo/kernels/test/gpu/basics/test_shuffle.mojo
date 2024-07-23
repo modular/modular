@@ -8,13 +8,7 @@
 
 from gpu import ThreadIdx, barrier
 from gpu.globals import WARP_SIZE
-from gpu.host import Context, Function, Stream
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from gpu.shuffle import (
     shuffle_down,
     shuffle_idx,
@@ -26,38 +20,46 @@ from memory import UnsafePointer
 from testing import assert_equal
 
 
+fn kernel_wrapper[
+    type: DType,
+    simd_width: Int,
+    kernel_fn: fn (SIMD[type, simd_width]) capturing -> SIMD[type, simd_width],
+](device_ptr: UnsafePointer[Scalar[type]]):
+    var val = SIMD[size=simd_width].load(device_ptr, ThreadIdx.x() * simd_width)
+    var result = kernel_fn(val)
+    barrier()
+
+    SIMD.store(device_ptr, ThreadIdx.x() * simd_width, result)
+
+
 fn _kernel_launch_helper[
     type: DType,
     simd_width: Int,
     kernel_fn: fn (SIMD[type, simd_width]) capturing -> SIMD[type, simd_width],
 ](
-    host_ptr: UnsafePointer[Scalar[type]], buffer_size: Int, block_size: Int
+    host_ptr: UnsafePointer[Scalar[type]],
+    buffer_size: Int,
+    block_size: Int,
+    ctx: DeviceContext,
 ) raises:
-    var device_ptr = _malloc[type](buffer_size)
-    _copy_host_to_device(device_ptr, host_ptr.address, buffer_size)
+    var device_ptr = ctx.create_buffer[type](buffer_size)
+    ctx.enqueue_copy_to_device(device_ptr, host_ptr.address)
 
-    @parameter
-    @__copy_capture(device_ptr)
-    fn kernel_wrapper():
-        var val = SIMD[size=simd_width].load(
-            device_ptr, ThreadIdx.x() * simd_width
-        )
-        var result = kernel_fn(val)
-        barrier()
+    var gpu_func = ctx.compile_function[
+        kernel_wrapper[type, simd_width, kernel_fn]
+    ]()
 
-        SIMD.store(device_ptr, ThreadIdx.x() * simd_width, result)
+    ctx.enqueue_function(
+        gpu_func, device_ptr, simd_width, grid_dim=1, block_dim=block_size
+    )
 
-    var gpu_func = Function[kernel_wrapper]()
-
-    var stream = Stream.get_current_stream()
-    gpu_func(grid_dim=1, block_dim=block_size, stream=stream)
-    stream.synchronize()
-
-    _copy_device_to_host(host_ptr.address, device_ptr, buffer_size)
-    _free(device_ptr)
+    ctx.enqueue_copy_from_device(host_ptr.address, device_ptr)
+    _ = device_ptr
 
 
-fn _shuffle_idx_launch_helper[type: DType, simd_width: Int]() raises:
+fn _shuffle_idx_launch_helper[
+    type: DType, simd_width: Int
+](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias constant_add: Scalar[type] = 42.0
@@ -72,7 +74,7 @@ fn _shuffle_idx_launch_helper[type: DType, simd_width: Int]() raises:
         return shuffle_idx(val, src_lane)
 
     _kernel_launch_helper[type, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size
+        host_ptr, buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -82,27 +84,29 @@ fn _shuffle_idx_launch_helper[type: DType, simd_width: Int]() raises:
     host_ptr.free()
 
 
-fn test_shuffle_idx_fp32() raises:
-    _shuffle_idx_launch_helper[DType.float32, 1]()
+fn test_shuffle_idx_fp32(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.float32, 1](ctx)
 
 
-fn test_shuffle_idx_bf16() raises:
-    _shuffle_idx_launch_helper[DType.bfloat16, 1]()
+fn test_shuffle_idx_bf16(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.bfloat16, 1](ctx)
 
 
-fn test_shuffle_idx_bf16_packed() raises:
-    _shuffle_idx_launch_helper[DType.bfloat16, 2]()
+fn test_shuffle_idx_bf16_packed(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.bfloat16, 2](ctx)
 
 
-fn test_shuffle_idx_fp16() raises:
-    _shuffle_idx_launch_helper[DType.float16, 1]()
+fn test_shuffle_idx_fp16(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.float16, 1](ctx)
 
 
-fn test_shuffle_idx_fp16_packed() raises:
-    _shuffle_idx_launch_helper[DType.float16, 2]()
+fn test_shuffle_idx_fp16_packed(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.float16, 2](ctx)
 
 
-fn _shuffle_up_launch_helper[type: DType, simd_width: Int]() raises:
+fn _shuffle_up_launch_helper[
+    type: DType, simd_width: Int
+](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias constant_add: Scalar[type] = 42.0
@@ -118,7 +122,7 @@ fn _shuffle_up_launch_helper[type: DType, simd_width: Int]() raises:
         return shuffle_up(val, offset)
 
     _kernel_launch_helper[type, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size
+        host_ptr, buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -138,27 +142,29 @@ fn _shuffle_up_launch_helper[type: DType, simd_width: Int]() raises:
     host_ptr.free()
 
 
-fn test_shuffle_up_fp32() raises:
-    _shuffle_up_launch_helper[DType.float32, 1]()
+fn test_shuffle_up_fp32(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.float32, 1](ctx)
 
 
-fn test_shuffle_up_bf16() raises:
-    _shuffle_up_launch_helper[DType.bfloat16, 1]()
+fn test_shuffle_up_bf16(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.bfloat16, 1](ctx)
 
 
-fn test_shuffle_up_bf16_packed() raises:
-    _shuffle_up_launch_helper[DType.bfloat16, 2]()
+fn test_shuffle_up_bf16_packed(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.bfloat16, 2](ctx)
 
 
-fn test_shuffle_up_fp16() raises:
-    _shuffle_up_launch_helper[DType.float16, 1]()
+fn test_shuffle_up_fp16(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.float16, 1](ctx)
 
 
-fn test_shuffle_up_fp16_packed() raises:
-    _shuffle_up_launch_helper[DType.float16, 2]()
+fn test_shuffle_up_fp16_packed(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.float16, 2](ctx)
 
 
-fn _shuffle_down_launch_helper[type: DType, simd_width: Int]() raises:
+fn _shuffle_down_launch_helper[
+    type: DType, simd_width: Int
+](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias constant_add: Scalar[type] = 42.0
@@ -174,7 +180,7 @@ fn _shuffle_down_launch_helper[type: DType, simd_width: Int]() raises:
         return shuffle_down(val, offset)
 
     _kernel_launch_helper[type, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size
+        host_ptr, buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -194,27 +200,29 @@ fn _shuffle_down_launch_helper[type: DType, simd_width: Int]() raises:
     host_ptr.free()
 
 
-fn test_shuffle_down_fp32() raises:
-    _shuffle_down_launch_helper[DType.float32, 1]()
+fn test_shuffle_down_fp32(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.float32, 1](ctx)
 
 
-fn test_shuffle_down_bf16() raises:
-    _shuffle_down_launch_helper[DType.bfloat16, 1]()
+fn test_shuffle_down_bf16(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.bfloat16, 1](ctx)
 
 
-fn test_shuffle_down_bf16_packed() raises:
-    _shuffle_down_launch_helper[DType.bfloat16, 2]()
+fn test_shuffle_down_bf16_packed(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.bfloat16, 2](ctx)
 
 
-fn test_shuffle_down_fp16() raises:
-    _shuffle_down_launch_helper[DType.float16, 1]()
+fn test_shuffle_down_fp16(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.float16, 1](ctx)
 
 
-fn test_shuffle_down_fp16_packed() raises:
-    _shuffle_down_launch_helper[DType.float16, 2]()
+fn test_shuffle_down_fp16_packed(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.float16, 2](ctx)
 
 
-fn _shuffle_xor_launch_helper[type: DType, simd_width: Int]() raises:
+fn _shuffle_xor_launch_helper[
+    type: DType, simd_width: Int
+](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias constant_add: Scalar[type] = 42.0
@@ -230,7 +238,7 @@ fn _shuffle_xor_launch_helper[type: DType, simd_width: Int]() raises:
         return shuffle_xor(val, offset)
 
     _kernel_launch_helper[type, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size
+        host_ptr, buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -243,27 +251,29 @@ fn _shuffle_xor_launch_helper[type: DType, simd_width: Int]() raises:
     host_ptr.free()
 
 
-fn test_shuffle_xor_fp32() raises:
-    _shuffle_xor_launch_helper[DType.float32, 1]()
+fn test_shuffle_xor_fp32(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.float32, 1](ctx)
 
 
-fn test_shuffle_xor_bf16() raises:
-    _shuffle_xor_launch_helper[DType.bfloat16, 1]()
+fn test_shuffle_xor_bf16(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.bfloat16, 1](ctx)
 
 
-fn test_shuffle_xor_bf16_packed() raises:
-    _shuffle_xor_launch_helper[DType.bfloat16, 2]()
+fn test_shuffle_xor_bf16_packed(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.bfloat16, 2](ctx)
 
 
-fn test_shuffle_xor_fp16() raises:
-    _shuffle_xor_launch_helper[DType.float16, 1]()
+fn test_shuffle_xor_fp16(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.float16, 1](ctx)
 
 
-fn test_shuffle_xor_fp16_packed() raises:
-    _shuffle_xor_launch_helper[DType.float16, 2]()
+fn test_shuffle_xor_fp16_packed(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.float16, 2](ctx)
 
 
-fn _warp_reduce_launch_helper[type: DType, simd_width: Int]() raises:
+fn _warp_reduce_launch_helper[
+    type: DType, simd_width: Int
+](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias offset = 1
@@ -284,7 +294,7 @@ fn _warp_reduce_launch_helper[type: DType, simd_width: Int]() raises:
         return warp_reduce[shuffle_down, reduce_add](val)
 
     _kernel_launch_helper[type, simd_width, do_warp_reduce](
-        host_ptr, buffer_size, block_size
+        host_ptr, buffer_size, block_size, ctx
     )
 
     for i in range(simd_width):
@@ -293,50 +303,50 @@ fn _warp_reduce_launch_helper[type: DType, simd_width: Int]() raises:
     host_ptr.free()
 
 
-fn test_warp_reduce_fp32() raises:
-    _warp_reduce_launch_helper[DType.float32, 1]()
+fn test_warp_reduce_fp32(ctx: DeviceContext) raises:
+    _warp_reduce_launch_helper[DType.float32, 1](ctx)
 
 
-fn test_warp_reduce_bf16() raises:
-    _warp_reduce_launch_helper[DType.bfloat16, 1]()
+fn test_warp_reduce_bf16(ctx: DeviceContext) raises:
+    _warp_reduce_launch_helper[DType.bfloat16, 1](ctx)
 
 
-fn test_warp_reduce_bf16_packed() raises:
-    _warp_reduce_launch_helper[DType.bfloat16, 2]()
+fn test_warp_reduce_bf16_packed(ctx: DeviceContext) raises:
+    _warp_reduce_launch_helper[DType.bfloat16, 2](ctx)
 
 
-fn test_warp_reduce_fp16() raises:
-    _warp_reduce_launch_helper[DType.float16, 1]()
+fn test_warp_reduce_fp16(ctx: DeviceContext) raises:
+    _warp_reduce_launch_helper[DType.float16, 1](ctx)
 
 
-fn test_warp_reduce_fp16_packed() raises:
-    _warp_reduce_launch_helper[DType.float16, 2]()
+fn test_warp_reduce_fp16_packed(ctx: DeviceContext) raises:
+    _warp_reduce_launch_helper[DType.float16, 2](ctx)
 
 
 fn main() raises:
-    with Context() as ctx:
-        test_shuffle_idx_fp32()
-        test_shuffle_idx_bf16()
-        test_shuffle_idx_bf16_packed()
-        test_shuffle_idx_fp16()
-        test_shuffle_idx_fp16_packed()
-        test_shuffle_up_fp32()
-        test_shuffle_up_bf16()
-        test_shuffle_up_bf16_packed()
-        test_shuffle_up_fp16()
-        test_shuffle_up_fp16_packed()
-        test_shuffle_down_fp32()
-        test_shuffle_down_bf16()
-        test_shuffle_down_bf16_packed()
-        test_shuffle_down_fp16()
-        test_shuffle_down_fp16_packed()
-        test_shuffle_xor_fp32()
-        test_shuffle_xor_bf16()
-        test_shuffle_xor_bf16_packed()
-        test_shuffle_xor_fp16()
-        test_shuffle_xor_fp16_packed()
-        test_warp_reduce_fp32()
-        test_warp_reduce_bf16()
-        test_warp_reduce_bf16_packed()
-        test_warp_reduce_fp16()
-        test_warp_reduce_fp16_packed()
+    with DeviceContext() as ctx:
+        test_shuffle_idx_fp32(ctx)
+        test_shuffle_idx_bf16(ctx)
+        test_shuffle_idx_bf16_packed(ctx)
+        test_shuffle_idx_fp16(ctx)
+        test_shuffle_idx_fp16_packed(ctx)
+        test_shuffle_up_fp32(ctx)
+        test_shuffle_up_bf16(ctx)
+        test_shuffle_up_bf16_packed(ctx)
+        test_shuffle_up_fp16(ctx)
+        test_shuffle_up_fp16_packed(ctx)
+        test_shuffle_down_fp32(ctx)
+        test_shuffle_down_bf16(ctx)
+        test_shuffle_down_bf16_packed(ctx)
+        test_shuffle_down_fp16(ctx)
+        test_shuffle_down_fp16_packed(ctx)
+        test_shuffle_xor_fp32(ctx)
+        test_shuffle_xor_bf16(ctx)
+        test_shuffle_xor_bf16_packed(ctx)
+        test_shuffle_xor_fp16(ctx)
+        test_shuffle_xor_fp16_packed(ctx)
+        test_warp_reduce_fp32(ctx)
+        test_warp_reduce_bf16(ctx)
+        test_warp_reduce_bf16_packed(ctx)
+        test_warp_reduce_fp16(ctx)
+        test_warp_reduce_fp16_packed(ctx)

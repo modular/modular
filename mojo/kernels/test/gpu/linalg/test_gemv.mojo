@@ -11,14 +11,7 @@ from random import randn, seed
 
 from buffer import NDBuffer
 from gpu import WARP_SIZE
-from gpu.host import Context, Function, Stream
-from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from linalg.matmul_gpu import (
     gemv_kernel,
     gevm_kernel,
@@ -31,11 +24,10 @@ from utils.index import Index
 from utils.numerics import isnan
 
 
-fn run_matvec(M: Int, N: Int, K: Int) raises:
+fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
-    var stream = Stream()
     var a_host = UnsafePointer[Float32].alloc(M * K)
     var b_host = UnsafePointer[Float32].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -53,15 +45,15 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host.address, M * K)
-    _copy_host_to_device(b_device, b_host.address, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = Function[
+    var func_gemv = ctx.compile_function[
         gemv_kernel[
             DType.float32,
             DType.float32,
@@ -69,7 +61,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
         ]
     ]()
 
-    var func_gevm = Function[
+    var func_gevm = ctx.compile_function[
         gevm_kernel[
             DType.float32,
             DType.float32,
@@ -79,10 +71,10 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_gemv, c_device, a_device, b_device)
     @parameter
-    fn run_func_gemv(stream: Stream) raises:
-        func_gemv(
+    fn run_func_gemv(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_gemv,
             c_device,
             a_device,
             b_device,
@@ -91,14 +83,13 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             K,
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            stream=stream,
         )
 
     @always_inline
-    @__copy_capture(func_gevm, c_device, a_device, b_device)
     @parameter
-    fn run_func_gevm(stream: Stream) raises:
-        func_gevm(
+    fn run_func_gevm(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_gevm,
             c_device,
             a_device,
             b_device,
@@ -107,18 +98,15 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             K,
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            stream=stream,
         )
 
     var nstime = 0.0
     var kernelType = ""
     if N == 1:
-        for i in range(iterations):
-            nstime += time_function[run_func_gemv](stream)
+        nstime = ctx.execution_time[run_func_gemv](iterations)
         kernelType = "GEMV"
     elif M == 1:
-        for i in range(iterations):
-            nstime += time_function[run_func_gevm](stream)
+        nstime = ctx.execution_time[run_func_gevm](iterations)
         kernelType = "GEVM"
     else:
         print("Incorrect input shape [MNK]")
@@ -130,14 +118,14 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host.address, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host.address, c_device)
 
     # running naive
-    _copy_host_to_device(a_device, a_host.address, M * K)
-    _copy_host_to_device(b_device, b_host.address, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel[
             DType.float32,
             DType.float32,
@@ -147,10 +135,10 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, c_device, a_device, b_device)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device,
             a_device,
             b_device,
@@ -159,19 +147,17 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
     nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_naive.address, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host_naive.address, c_device)
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
@@ -195,9 +181,9 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     else:
         print("Failed ❌: results mismatch")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    _ = a_device
+    _ = b_device
+    _ = c_device
 
     _ = a_host
     _ = b_host
@@ -207,15 +193,15 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     _ = func_gemv^
     _ = func_gevm^
     _ = func_naive^
-    _ = stream^
 
 
-fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
+fn test_gevm_with_epilogue_fn(
+    M: Int, N: Int, K: Int, ctx: DeviceContext
+) raises:
     alias c_stride = 5
     alias seed_val = 42
 
     var iterations = 100
-    var stream = Stream()
     var a_host = UnsafePointer[Float32].alloc(M * K)
     var b_host = UnsafePointer[Float32].alloc(K * N)
 
@@ -235,17 +221,18 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     for i in range(M * N * c_stride):
         c_host_naive[i] = 0
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N * c_stride)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = NDBuffer[DType.float32, 2](
-        c_device, Index(M, N), Index(N * c_stride, c_stride)
+        c_device.ptr, Index(M, N), Index(N * c_stride, c_stride)
     )
-    _copy_host_to_device(a_device, a_host.address, M * K)
-    _copy_host_to_device(b_device, b_host.address, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     @parameter
+    @always_inline
     @__copy_capture(c_device_nd)
     fn epilogue_fn[
         type: DType, width: Int
@@ -255,7 +242,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
         )
 
     alias WARPS_PER_BLOCK = 32
-    var func_gemv = Function[
+    var func_gemv = ctx.compile_function[
         gemv_kernel[
             DType.float32,
             DType.float32,
@@ -264,7 +251,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
         ]
     ]()
 
-    var func_gevm = Function[
+    var func_gevm = ctx.compile_function[
         gevm_kernel[
             DType.float32,
             DType.float32,
@@ -275,10 +262,10 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_gemv, c_device, a_device, b_device)
     @parameter
-    fn run_func_gemv(stream: Stream) raises:
-        func_gemv(
+    fn run_func_gemv(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_gemv,
             c_device,
             a_device,
             b_device,
@@ -287,14 +274,13 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             K,
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            stream=stream,
         )
 
     @always_inline
-    @__copy_capture(func_gevm, c_device, a_device, b_device)
     @parameter
-    fn run_func_gevm(stream: Stream) raises:
-        func_gevm(
+    fn run_func_gevm(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_gevm,
             c_device,
             a_device,
             b_device,
@@ -303,20 +289,17 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             K,
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            stream=stream,
         )
 
-    _copy_host_to_device(c_device, c_host.address, M * N * c_stride)
+    ctx.enqueue_copy_to_device(c_device, c_host.address)
 
     var nstime = 0.0
     var kernelType = ""
     if N == 1:
-        for i in range(iterations):
-            nstime += time_function[run_func_gemv](stream)
+        nstime = ctx.execution_time[run_func_gemv](iterations)
         kernelType = "GEMV"
     elif M == 1:
-        for i in range(iterations):
-            nstime += time_function[run_func_gevm](stream)
+        nstime = ctx.execution_time[run_func_gevm](iterations)
         kernelType = "GEVM"
     else:
         print("Incorrect input shape [MNK]")
@@ -330,14 +313,14 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host.address, c_device, M * N * c_stride)
+    ctx.enqueue_copy_from_device(c_host.address, c_device)
 
     # running naive
-    _copy_host_to_device(a_device, a_host.address, M * K)
-    _copy_host_to_device(b_device, b_host.address, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host.address)
+    ctx.enqueue_copy_to_device(b_device, b_host.address)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -348,10 +331,10 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, c_device, a_device, b_device)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device,
             a_device,
             b_device,
@@ -360,21 +343,18 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    _copy_host_to_device(c_device, c_host_naive.address, M * N * c_stride)
+    ctx.enqueue_copy_to_device(c_device, c_host_naive.address)
 
-    nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_naive.address, c_device, M * N * c_stride)
+    ctx.enqueue_copy_from_device(c_host_naive.address, c_device)
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
@@ -399,9 +379,9 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     else:
         print("Failed ❌: results mismatch")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
+    _ = a_device
+    _ = b_device
+    _ = c_device
 
     _ = a_host
     _ = b_host
@@ -409,18 +389,18 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     _ = c_host_naive
 
     _ = func_gevm^
+    _ = func_gemv^
     _ = func_naive^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
+        with DeviceContext() as ctx:
             # gemv for matrix vector multiply and gevm for vector matrix multiply
-            run_matvec(4096, 1, 4096)
-            run_matvec(1, 4096, 4096)
-            test_gevm_with_epilogue_fn(1, 4096, 4096)
-            test_gevm_with_epilogue_fn(4096, 1, 4096)
+            run_matvec(4096, 1, 4096, ctx)
+            run_matvec(1, 4096, 4096, ctx)
+            test_gevm_with_epilogue_fn(1, 4096, 4096, ctx)
+            test_gevm_with_epilogue_fn(4096, 1, 4096, ctx)
     except e:
         print("CUDA_ERROR:", e)

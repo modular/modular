@@ -11,12 +11,8 @@ from os.atomic import Atomic
 
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import Context, Function, Stream
+from gpu.host import DeviceContext
 from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
     _memset,
 )
 from memory import UnsafePointer
@@ -34,52 +30,49 @@ fn reduce(
 
 
 # CHECK-LABEL: run_reduce
-fn run_reduce() raises:
+fn run_reduce(ctx: DeviceContext) raises:
     print("== run_reduce")
 
     alias BLOCK_SIZE = 32
     alias n = 1024
-
-    var stream = Stream()
 
     var vec_host = NDBuffer[DType.float32, 1, DimList(n)].stack_allocation()
 
     for i in range(n):
         vec_host[i] = 1
 
-    var vec_device = _malloc[Float32](n)
-    var res_device = _malloc[Float32](1)
+    var vec_device = ctx.create_buffer[DType.float32](n)
+    var res_device = ctx.create_buffer[DType.float32](1)
 
-    _copy_host_to_device(vec_device, vec_host.data, n)
-    _memset(res_device, 0, 1)
+    ctx.enqueue_copy_to_device(vec_device, vec_host.data)
+    ctx.memset(res_device, 0, 1)
 
-    var func = Function[reduce](verbose=True)
+    var func = ctx.compile_function[reduce](verbose=True)
 
-    func(
+    ctx.enqueue_function(
+        func,
         res_device,
         vec_device,
         n,
         grid_dim=(ceildiv(n, BLOCK_SIZE),),
         block_dim=(BLOCK_SIZE,),
-        stream=stream,
     )
 
     var res = Float32(0)
-    _copy_device_to_host(UnsafePointer.address_of(res), res_device, 1)
+    ctx.enqueue_copy_from_device(UnsafePointer.address_of(res), res_device)
 
     # CHECK: res =  1024.0
     print("res = ", res)
 
-    _free(vec_device)
+    _ = vec_device
 
     _ = func^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_reduce()
+        with DeviceContext() as ctx:
+            run_reduce(ctx)
     except e:
         print("CUDA_ERROR:", e)

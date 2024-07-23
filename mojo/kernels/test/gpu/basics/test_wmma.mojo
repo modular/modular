@@ -10,14 +10,7 @@ from math import ceildiv
 from random import random_si64
 
 from gpu import WARP_SIZE, BlockIdx
-from gpu.host import Context, Function, Stream
-from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import DeviceContext
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from linalg.matmul_gpu import matmul_kernel_naive
@@ -228,10 +221,10 @@ fn run_mma_fp32_tf32(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
+    ctx: DeviceContext,
 ) raises:
     print("== run_matmul fp32.tf32 tensor core kernel")
 
-    var stream = Stream()
     var a_host = UnsafePointer[Float32].alloc(M * K)
     var b_host = UnsafePointer[Float32].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -253,17 +246,17 @@ fn run_mma_fp32_tf32(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var a_device_ref = _malloc[Float32](M * K)
-    var b_device_ref = _malloc[Float32](K * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device_ref = ctx.create_buffer[DType.float32](M * K)
+    var b_device_ref = ctx.create_buffer[DType.float32](K * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = Function[mma_kernel_fp32_tf32](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_tf32](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -271,10 +264,10 @@ fn run_mma_fp32_tf32(
     alias MMA_K = 8
 
     @always_inline
-    @__copy_capture(func_mma, c_device, a_device, b_device)
     @parameter
-    fn run_func_mma(stream: Stream) raises:
-        func_mma(
+    fn run_func_mma(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_mma,
             c_device,
             a_device,
             b_device,
@@ -283,12 +276,10 @@ fn run_mma_fp32_tf32(
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
-            stream=stream,
         )
 
     var nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_mma](stream)
+    nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -296,24 +287,24 @@ fn run_mma_fp32_tf32(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
-    _copy_host_to_device(a_device_ref, a_host_ref, M * K)
-    _copy_host_to_device(b_device_ref, b_host_ref, K * N)
+    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
+    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, c_device_ref, a_device_ref, b_device_ref)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -322,19 +313,16 @@ fn run_mma_fp32_tf32(
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -357,12 +345,12 @@ fn run_mma_fp32_tf32(
     else:
         print("Failed ❌: results mismatch.")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(a_device_ref)
-    _free(b_device_ref)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_device_ref
+    _ = b_device_ref
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -373,7 +361,6 @@ fn run_mma_fp32_tf32(
 
     _ = func_mma^
     _ = func_naive^
-    _ = stream^
 
 
 fn run_mma_fp32_bf16(
@@ -384,10 +371,10 @@ fn run_mma_fp32_bf16(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
+    ctx: DeviceContext,
 ) raises:
     print("== run_matmul fp32.bf16 1688 tensor core kernel")
 
-    var stream = Stream()
     var a_host = UnsafePointer[BFloat16].alloc(M * K)
     var b_host = UnsafePointer[BFloat16].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -409,17 +396,17 @@ fn run_mma_fp32_bf16(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[BFloat16](M * K)
-    var b_device = _malloc[BFloat16](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var a_device_ref = _malloc[Float32](M * K)
-    var b_device_ref = _malloc[Float32](K * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.bfloat16](M * K)
+    var b_device = ctx.create_buffer[DType.bfloat16](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device_ref = ctx.create_buffer[DType.float32](M * K)
+    var b_device_ref = ctx.create_buffer[DType.float32](K * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = Function[mma_kernel_fp32_bf16](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -427,10 +414,10 @@ fn run_mma_fp32_bf16(
     alias MMA_K = 8
 
     @always_inline
-    @__copy_capture(func_mma, a_device, b_device, c_device)
     @parameter
-    fn run_func_mma(stream: Stream) raises:
-        func_mma(
+    fn run_func_mma(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_mma,
             c_device,
             a_device,
             b_device,
@@ -439,12 +426,10 @@ fn run_mma_fp32_bf16(
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
-            stream=stream,
         )
 
     var nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_mma](stream)
+    nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -452,24 +437,24 @@ fn run_mma_fp32_bf16(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
-    _copy_host_to_device(a_device_ref, a_host_ref, M * K)
-    _copy_host_to_device(b_device_ref, b_host_ref, K * N)
+    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
+    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, a_device_ref, b_device_ref, c_device_ref)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -478,19 +463,16 @@ fn run_mma_fp32_bf16(
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -513,12 +495,12 @@ fn run_mma_fp32_bf16(
     else:
         print("Failed ❌: results mismatch.")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(a_device_ref)
-    _free(b_device_ref)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_device_ref
+    _ = b_device_ref
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -529,7 +511,6 @@ fn run_mma_fp32_bf16(
 
     _ = func_mma^
     _ = func_naive^
-    _ = stream^
 
 
 fn run_mma_fp32_bf16_2(
@@ -540,10 +521,10 @@ fn run_mma_fp32_bf16_2(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
+    ctx: DeviceContext,
 ) raises:
     print("== run_matmul fp32.bf16 16816 tensor core kernel")
 
-    var stream = Stream()
     var a_host = UnsafePointer[BFloat16].alloc(M * K)
     var b_host = UnsafePointer[BFloat16].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -565,17 +546,17 @@ fn run_mma_fp32_bf16_2(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[BFloat16](M * K)
-    var b_device = _malloc[BFloat16](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var a_device_ref = _malloc[Float32](M * K)
-    var b_device_ref = _malloc[Float32](K * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.bfloat16](M * K)
+    var b_device = ctx.create_buffer[DType.bfloat16](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device_ref = ctx.create_buffer[DType.float32](M * K)
+    var b_device_ref = ctx.create_buffer[DType.float32](K * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = Function[mma_kernel_fp32_bf16_2](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16_2](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -583,10 +564,10 @@ fn run_mma_fp32_bf16_2(
     alias MMA_K = 8
 
     @always_inline
-    @__copy_capture(func_mma, a_device, b_device, c_device)
     @parameter
-    fn run_func_mma(stream: Stream) raises:
-        func_mma(
+    fn run_func_mma(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_mma,
             c_device,
             a_device,
             b_device,
@@ -595,12 +576,10 @@ fn run_mma_fp32_bf16_2(
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
-            stream=stream,
         )
 
     var nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_mma](stream)
+    nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -608,24 +587,24 @@ fn run_mma_fp32_bf16_2(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
-    _copy_host_to_device(a_device_ref, a_host_ref, M * K)
-    _copy_host_to_device(b_device_ref, b_host_ref, K * N)
+    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
+    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, a_device_ref, b_device_ref, c_device_ref)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -634,19 +613,16 @@ fn run_mma_fp32_bf16_2(
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -669,12 +645,12 @@ fn run_mma_fp32_bf16_2(
     else:
         print("Failed ❌: results mismatch.")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(a_device_ref)
-    _free(b_device_ref)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_device_ref
+    _ = b_device_ref
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -685,7 +661,6 @@ fn run_mma_fp32_bf16_2(
 
     _ = func_mma^
     _ = func_naive^
-    _ = stream^
 
 
 fn run_mma_fp32_fp16(
@@ -696,10 +671,10 @@ fn run_mma_fp32_fp16(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
+    ctx: DeviceContext,
 ) raises:
     print("== run_matmul fp32.fp16 tensor core kernel")
 
-    var stream = Stream()
     var a_host = UnsafePointer[Float16].alloc(M * K)
     var b_host = UnsafePointer[Float16].alloc(K * N)
     var c_host = UnsafePointer[Float32].alloc(M * N)
@@ -721,17 +696,17 @@ fn run_mma_fp32_fp16(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[Float16](M * K)
-    var b_device = _malloc[Float16](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var a_device_ref = _malloc[Float32](M * K)
-    var b_device_ref = _malloc[Float32](K * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float16](M * K)
+    var b_device = ctx.create_buffer[DType.float16](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device_ref = ctx.create_buffer[DType.float32](M * K)
+    var b_device_ref = ctx.create_buffer[DType.float32](K * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = Function[mma_kernel_fp32_fp16](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_fp16](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -739,10 +714,10 @@ fn run_mma_fp32_fp16(
     alias MMA_K = 8
 
     @always_inline
-    @__copy_capture(func_mma, a_device, b_device, c_device)
     @parameter
-    fn run_func_mma(stream: Stream) raises:
-        func_mma(
+    fn run_func_mma(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_mma,
             c_device,
             a_device,
             b_device,
@@ -751,12 +726,11 @@ fn run_mma_fp32_fp16(
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
-            stream=stream,
         )
 
     var nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_mma](stream)
+
+    nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -764,24 +738,24 @@ fn run_mma_fp32_fp16(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
-    _copy_host_to_device(a_device_ref, a_host_ref, M * K)
-    _copy_host_to_device(b_device_ref, b_host_ref, K * N)
+    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
+    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, a_device_ref, b_device_ref, c_device_ref)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -790,19 +764,16 @@ fn run_mma_fp32_fp16(
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -825,12 +796,12 @@ fn run_mma_fp32_fp16(
     else:
         print("Failed ❌: results mismatch.")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(a_device_ref)
-    _free(b_device_ref)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_device_ref
+    _ = b_device_ref
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -841,7 +812,6 @@ fn run_mma_fp32_fp16(
 
     _ = func_mma^
     _ = func_naive^
-    _ = stream^
 
 
 fn run_mma_fp16_fp16(
@@ -852,10 +822,10 @@ fn run_mma_fp16_fp16(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
+    ctx: DeviceContext,
 ) raises:
     print("== run_matmul fp16.fp16 tensor core kernel")
 
-    var stream = Stream()
     var a_host = UnsafePointer[Float16].alloc(M * K)
     var b_host = UnsafePointer[Float16].alloc(K * N)
     var c_host = UnsafePointer[Float16].alloc(M * N)
@@ -877,17 +847,17 @@ fn run_mma_fp16_fp16(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = _malloc[Float16](M * K)
-    var b_device = _malloc[Float16](K * N)
-    var c_device = _malloc[Float16](M * N)
-    var a_device_ref = _malloc[Float32](M * K)
-    var b_device_ref = _malloc[Float32](K * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.create_buffer[DType.float16](M * K)
+    var b_device = ctx.create_buffer[DType.float16](K * N)
+    var c_device = ctx.create_buffer[DType.float16](M * N)
+    var a_device_ref = ctx.create_buffer[DType.float32](M * K)
+    var b_device_ref = ctx.create_buffer[DType.float32](K * N)
+    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = Function[mma_kernel_fp16_fp16](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp16_fp16](dump_ptx=False)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -895,10 +865,10 @@ fn run_mma_fp16_fp16(
     alias MMA_K = 8
 
     @always_inline
-    @__copy_capture(func_mma, c_device, a_device, b_device)
     @parameter
-    fn run_func_mma(stream: Stream) raises:
-        func_mma(
+    fn run_func_mma(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_mma,
             c_device,
             a_device,
             b_device,
@@ -907,12 +877,10 @@ fn run_mma_fp16_fp16(
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
-            stream=stream,
         )
 
     var nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_mma](stream)
+    nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -920,24 +888,24 @@ fn run_mma_fp16_fp16(
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Run naive matmul.
-    _copy_host_to_device(a_device_ref, a_host_ref, M * K)
-    _copy_host_to_device(b_device_ref, b_host_ref, K * N)
+    ctx.enqueue_copy_to_device(a_device_ref, a_host_ref)
+    ctx.enqueue_copy_to_device(b_device_ref, b_host_ref)
 
     alias BLOCK_DIM = 16
-    var func_naive = Function[
+    var func_naive = ctx.compile_function[
         matmul_kernel_naive[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
     @always_inline
-    @__copy_capture(func_naive, c_device_ref, a_device_ref, b_device_ref)
     @parameter
-    fn run_func_naive(stream: Stream) raises:
-        func_naive(
+    fn run_func_naive(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func_naive,
             c_device_ref,
             a_device_ref,
             b_device_ref,
@@ -946,19 +914,16 @@ fn run_mma_fp16_fp16(
             K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
-            stream=stream,
         )
 
-    nstime = 0.0
-    for i in range(iterations):
-        nstime += time_function[run_func_naive](stream)
+    nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     # Check correctness.
     var failed = False
@@ -982,12 +947,12 @@ fn run_mma_fp16_fp16(
     else:
         print("Failed ❌: results mismatch.")
 
-    _free(a_device)
-    _free(b_device)
-    _free(c_device)
-    _free(a_device_ref)
-    _free(b_device_ref)
-    _free(c_device_ref)
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_device_ref
+    _ = b_device_ref
+    _ = c_device_ref
 
     _ = a_host
     _ = b_host
@@ -998,33 +963,32 @@ fn run_mma_fp16_fp16(
 
     _ = func_mma^
     _ = func_naive^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
+        with DeviceContext() as ctx:
             # Run tensor core versions of matmul, verify correctness & compare to naive.
-            run_mma_fp32_fp16(16, 8, 8, -100, 100, 10, 0.01)
-            run_mma_fp32_fp16(1024, 1024, 1024, -100, 100, 10, 0.01)
-            run_mma_fp32_fp16(1024, 4096, 2048, -100, 100, 10, 0.01)
+            run_mma_fp32_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_fp16(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_fp16(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp32_bf16(16, 8, 8, -100, 100, 10, 0.01)
-            run_mma_fp32_bf16(1024, 1024, 1024, -100, 100, 10, 0.01)
-            run_mma_fp32_bf16(1024, 4096, 2048, -100, 100, 10, 0.01)
+            run_mma_fp32_bf16(16, 8, 8, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_bf16(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_bf16(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp32_bf16_2(16, 8, 16, -100, 100, 10, 0.01)
-            run_mma_fp32_bf16_2(2048, 1024, 2048, -100, 100, 10, 0.01)
-            run_mma_fp32_bf16_2(2048, 4096, 2048, -100, 100, 10, 0.01)
+            run_mma_fp32_bf16_2(16, 8, 16, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_bf16_2(2048, 1024, 2048, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_bf16_2(2048, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp32_tf32(16, 8, 8, -100, 100, 10, 0.01)
-            run_mma_fp32_tf32(1024, 1024, 1024, -100, 100, 10, 0.01)
-            run_mma_fp32_tf32(1024, 4096, 2048, -100, 100, 10, 0.01)
+            run_mma_fp32_tf32(16, 8, 8, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_tf32(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
+            run_mma_fp32_tf32(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp16_fp16(16, 8, 8, -100, 100, 10, 0.01)
-            run_mma_fp16_fp16(512, 128, 32, -10, 10, 10, 0.01)
-            run_mma_fp16_fp16(128, 256, 64, -10, 10, 10, 0.01)
+            run_mma_fp16_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)
+            run_mma_fp16_fp16(512, 128, 32, -10, 10, 10, 0.01, ctx)
+            run_mma_fp16_fp16(128, 256, 64, -10, 10, 10, 0.01, ctx)
 
     except e:
         print("CUDA_ERROR:", e)
