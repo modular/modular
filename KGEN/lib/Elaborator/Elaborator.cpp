@@ -725,7 +725,7 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
   }
 
   // If this resolved to a direct function call, there are no parameters.
-  return completeCallProcessing(user, user.getParamDecls(), concrete, parent);
+  return completeCallProcessing(user, concrete, parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -772,7 +772,6 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
 
 ElaborationState
 Elaborator::completeCallProcessing(GeneratorUserOpInterface user,
-                                   ArrayRef<ParamDeclAttr> decls,
                                    ImplNode *thisNode, ImplNode *node) {
   if (thisNode->error) {
     if (thisNode->parent->inputParams.empty()) {
@@ -798,22 +797,6 @@ Elaborator::completeCallProcessing(GeneratorUserOpInterface user,
       newCalleeFunc.getSignature());
   user.concretizeCallee(b, newCallee);
 
-  if (decls.empty())
-    return ElaborationState::advance();
-
-  // If we don't have the result parameters yet, then either no result
-  // parameters are necessary, or we have another problem entirely wherein we
-  // could not complete the callee's result parameter resolution at all - likely
-  // meaning we're in an infinite recursive loop. Essentially, we came back to
-  // the same combination of generator + input parameters without resolving the
-  // result parameters yet.
-  ParameterExprArrayAttr resultParams = thisNode->resultParams;
-  assert(resultParams && "expected result parameters to be set");
-
-  // Bind the result parameters to the output parameter decls.
-  assert(decls.size() == resultParams.size());
-  for (auto [decl, bindValue] : llvm::zip(decls, resultParams))
-    node->getEvaluator().setParameterValue(decl, bindValue);
   return ElaborationState::advance();
 }
 
@@ -1231,8 +1214,7 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
       // Process the multiple concrete nodes. If this causes multi-versioning,
       // the forks will correctly get rescheduled on the worklists with no
       // stacks, and then immediately fallthrough to this function.
-      ElaborationState result =
-          completeCallProcessing(call, {}, *concrete, inode);
+      ElaborationState result = completeCallProcessing(call, *concrete, inode);
       if (result.isError())
         break;
       assert(!result.shouldSkipNode() && !result.shouldSkipFrame() &&
@@ -1587,7 +1569,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       if (!visitParamNode(genNode))
         continue;
       // This `genNode` is cyclic. Handle the cycle. Break the cycle.
-      (void)completeCallProcessing(call, {}, genNode->impl.get(), inode);
+      (void)completeCallProcessing(call, genNode->impl.get(), inode);
       completed.set(idx);
       anyBroken = true;
     }
@@ -1602,32 +1584,6 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       inode->numDependencies -= (completed.count() - 1);
       reschedule.push_back(inode);
       return;
-    }
-
-    // Check if the node got stuck on a recursive call to something with result
-    // parameters, since that's illegal but won't show up in `dependencies`.
-    if (inode->stack.empty())
-      return;
-    if (auto call =
-            dyn_cast<GeneratorUserOpInterface>(inode->stack.back().ops.back());
-        call && !call.getCalleeSignature().getResultParamTypes().empty()) {
-      // We should be able to lookup to concrete callee in the evaluator cache.
-      ParameterEvaluator &eval = inode->getEvaluator();
-      auto callee =
-          cast<SymbolConstantAttr>(eval.getReboundAttribute(call.getCallee()));
-      ParamNode *calleeNode = g.getOrCreate(
-          runtime,
-          ParameterExprArrayAttr::get(call.getContext(),
-                                      callee.getParamValues()),
-          oldSymTab.lookup<GeneratorOp>(
-              cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr()),
-          /*depth=*/0);
-      if (visitParamNode(calleeNode)) {
-        inode->setToError(
-            ErrorTree(call.getLoc(),
-                      "recursive call to function with result parameters"));
-        errComplete.push_back(inode);
-      }
     }
   };
 

@@ -163,11 +163,6 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       a child of a `kgen.func` operation.
     }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>,
     InterfaceMethod<[{
-      Return the declarations of the result parameters bound to the result
-      parameters of the callee.
-    }], "ArrayRef<ParamDeclAttr>", "getParamDecls", (ins), [{}],
-    [{ return {}; }]>,
-    InterfaceMethod<[{
       This method plugs into the elaborator. It is invoked on the operation when
       its callee has been concretized into a symbol constant. The method should
       use the builder to create a new operation that invokes the callee.

@@ -133,9 +133,6 @@ struct ImplNode {
   /// from the actual name of the function.
   std::string baseName;
 
-  /// When you have result parameters, we need to store them to access them from
-  /// outer scopes.
-  ParameterExprArrayAttr resultParams;
   /// An error contained by this node. This allows us to delay error handling in
   /// cases where an error is recoverable.
   std::optional<ErrorTree> error;
