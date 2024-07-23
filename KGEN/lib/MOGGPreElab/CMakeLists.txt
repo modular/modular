@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MOGGPreElabPasses
-  AutoParameterize.cpp
+  MOGGAutoParameterize.cpp
   Helpers.cpp
   MOGGAnnotate.cpp
   OutlineMOGGFuncs.cpp

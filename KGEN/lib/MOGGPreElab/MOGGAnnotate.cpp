@@ -41,10 +41,12 @@ static void annotateTypes(LIT::FuncOp func) {
     if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
       takesTensor |= isMOGGTensor(asDeclRef);
       takesTensor |= isExtensibilityTensor(asDeclRef);
+      takesTensor |= isDPSTensor(asDeclRef);
     }
   }
 
-  if (!isKernel(func) && !isV1ShapeFunc(func) && !takesTensor)
+  if (!isKernel(func) && !isV1ShapeFunc(func) && !isDPSKernel(func) &&
+      !takesTensor)
     return;
 
   OpBuilder builder{func.getContext()};

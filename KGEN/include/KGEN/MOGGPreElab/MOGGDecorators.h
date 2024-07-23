@@ -97,6 +97,11 @@ static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kKernelTensorParameterAttrName =
     "mogg.tensor_params";
 
+inline bool isDPSKernel(Operation *gen) {
+  return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
+                            gen->hasAttr(kMOGGShapeFunctionLabel));
+}
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
