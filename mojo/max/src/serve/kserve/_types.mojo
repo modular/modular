@@ -99,9 +99,7 @@ fn _get_tensors[
 fn _buffer_str[type: DType](map: TensorMap, name: String) raises -> StringRef:
     var buffer = map.buffer[type](name)
 
-    var ptr = UnsafePointer[C_char]._from_dtype_ptr(
-        buffer.data.bitcast[DType.int8]()
-    )
+    var ptr = buffer.data.bitcast[DType.int8]()
 
     return StringRef(ptr, buffer.bytecount())
 

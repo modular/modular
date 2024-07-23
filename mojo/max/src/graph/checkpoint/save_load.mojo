@@ -123,9 +123,7 @@ def save[PathLike: PathLike](tensor_dict: TensorDict, path: PathLike):
         # Write out each tensor.
         for i in range(len(tensor_keys)):
             var key = tensor_keys[i]
-            var ptr = UnsafePointer[UInt8]._from_dtype_ptr(
-                tensor_dict._get(key).ptr
-            )
+            var ptr = tensor_dict._get(key).ptr
             var tensor_size = tensor_dict._get(key).spec.bytecount()
             f._write(ptr, tensor_size)
 
