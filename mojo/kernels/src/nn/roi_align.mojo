@@ -16,7 +16,7 @@ from utils.numerics import min_or_neg_inf
 struct Weighted2DPoint[type: DType]:
 
     """Utility class to wrap 2-d point coordinates and floating point weight for
-    biliniear interpolation.
+    bilinear interpolation.
     """
 
     var y: Int
@@ -161,7 +161,7 @@ fn roi_align_nhwc[
     alias offset = 0.5 if aligned else 0.0
 
     for ri in range(n_regions):
-        # Region coordinates and batch indix
+        # Region coordinates and batch index
         var roi_batch_idx = int(rois[ri, 0])
         var roi_start_w = rois[ri, 1].cast[
             DType.float32
