@@ -317,23 +317,24 @@ fn multistage_mma[
                 barrier()
 
 
-# fmt: off
 @always_inline
-fn block_swizzle_by_scale[scale0: Int](
-    block_idx: StaticIntTuple[2], grid_dim: StaticIntTuple[2]
-) -> StaticIntTuple[2]:
+fn block_swizzle_by_scale[
+    scale0: Int
+](block_idx: StaticIntTuple[2], grid_dim: __type_of(block_idx)) -> __type_of(
+    block_idx
+):
     var scale = scale0
-    var num_partitions = (1 << scale)
+    var num_partitions = 1 << scale
     while (grid_dim[0] & (num_partitions - 1)) != 0 and scale > 1:
         scale -= 1
-        num_partitions = (1 << scale)
+        num_partitions = 1 << scale
 
     var bx = block_idx[0] >> scale
-    var by = (block_idx[1] << scale)  + ((block_idx[0]) & ((1 << scale) - 1))
+    var by = (block_idx[1] << scale) + ((block_idx[0]) & ((1 << scale) - 1))
     bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
     by = by % grid_dim[1]
 
-    return Index(bx, by)
+    return (bx, by)
 
 
 fn multistage_gemm[
@@ -372,32 +373,32 @@ fn multistage_gemm[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var M : UInt= c.dim[0]()
-    alias N : UInt= b_shape.get[0]() if transpose_b else b_shape.get[1]()
-    alias K : UInt= b_shape.get[1]() if transpose_b else b_shape.get[0]()
+    var M: UInt = c.dim[0]()
+    alias N: UInt = b_shape.get[0]() if transpose_b else b_shape.get[1]()
+    alias K: UInt = b_shape.get[1]() if transpose_b else b_shape.get[0]()
 
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
+    alias num_warps_m = UInt(BM // WM)
+    alias num_warps_n = UInt(BN // WN)
 
     constrained[
         num_warps_m * num_warps_n == num_threads // WARP_SIZE,
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid = ThreadIdx.x()
     var ln_id = lane_id()
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle_by_scale[3](
-        Index(Int(BlockIdx.x()), Int(BlockIdx.y())), Index(N // BN, M // BM)
-    ) if swizzle_block else Index(Int(BlockIdx.x()), Int(BlockIdx.y()))
+        (int(BlockIdx.x()), int(BlockIdx.y())), (int(N // BN), int(M // BM))
+    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
 
     # Coordinates of the current warp.
-    var warp_x: Int
-    var warp_y: Int
-    warp_y, warp_x = divmod(int(tid) // WARP_SIZE, num_warps_n)
+    var warp_x: UInt
+    var warp_y: UInt
+    warp_y, warp_x = divmod(tid // WARP_SIZE, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
@@ -419,24 +420,27 @@ fn multistage_gemm[
         b_type, b_smem_layout, AddressSpace.SHARED, circular=True
     ](b_smem, b_smem_size)
 
-
     # create input layout tensors A and B
     var a_gmem_slice = LayoutTensor[
-        a_type, Layout.row_major(BM, K),
+        a_type,
+        Layout.row_major(BM, K),
     ](a.data.offset(BM * block_idx[1] * K))
 
-    alias b_layout = Layout.row_major(N, K) if transpose_b else Layout.row_major(K, N)
+    alias b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
     var b_gmem_tensor = LayoutTensor[
-        b_type, b_layout,
+        b_type,
+        b_layout,
     ](b.data)
 
     # global memory iterator
     var a_gmem_iter = a_gmem_slice.tiled_iterator[BM, BK, axis=1](0, 0)
     var b_tile_coords = (block_idx[0], 0) if transpose_b else (0, block_idx[0])
     alias b_tile_axis = 1 if transpose_b else 0
-    var b_gmem_iter = b_gmem_tensor.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
-        b_tile_coords[0], b_tile_coords[1]
-    )
+    var b_gmem_iter = b_gmem_tensor.tiled_iterator[
+        BD_0, BD_1, axis=b_tile_axis
+    ](b_tile_coords[0], b_tile_coords[1])
 
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -611,9 +615,9 @@ fn multistage_gemm[
                 barrier()
 
     # Map global memory tile down to thread.
-    var c_gmem_slice = LayoutTensor[
-        c_type, Layout.row_major(BM, N)
-    ](c.data.offset(block_idx[1] * BM * N))
+    var c_gmem_slice = LayoutTensor[c_type, Layout.row_major(BM, N)](
+        c.data.offset(block_idx[1] * BM * N)
+    )
     var c_gmem_tile = c_gmem_slice.tile[BM, BN](0, block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
@@ -652,10 +656,11 @@ fn multistage_gemm[
             var c_gmem_frag = c_gmem_tile.vectorize[1, simd_size]().distribute[
                 c_store_layout
             ](ThreadIdx.x())
-            var c_smem_frag = accum_smem_tile.vectorize[1, simd_size]().distribute[
-                c_store_layout
-            ](ThreadIdx.x())
+            var c_smem_frag = accum_smem_tile.vectorize[
+                1, simd_size
+            ]().distribute[c_store_layout](ThreadIdx.x())
             var thread_offset = c_gmem_frag.distance(c.data)
+
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 var src_vec = c_smem_frag.aligned_load[simd_size](i, 0)
@@ -686,6 +691,7 @@ fn multistage_gemm[
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
+
         @parameter
         if elementwise_lambda_fn:
             alias epilogue = elementwise_lambda_fn.value()
@@ -694,6 +700,7 @@ fn multistage_gemm[
             ](ln_id)
             var c_reg_frag = c_reg_tile.vectorize[1, 2]().transpose()
             var thread_offset = c_gmem_frag.distance(c.data)
+
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
@@ -705,7 +712,9 @@ fn multistage_gemm[
                 # var idx_y: Int
                 # idx_y, idx_x = divmod(i, c_reg_frag.dim[0]())
                 # var vec = c_reg_frag.aligned_load[2](idx_x, idx_y)
-                var vec = SIMD[size=2].load[alignment = alignof[SIMD[c_type, 2]]()](c_reg_frag.ptr.offset(src_idx))
+                var vec = SIMD[size=2].load[
+                    alignment = alignof[SIMD[c_type, 2]]()
+                ](c_reg_frag.ptr.offset(src_idx))
                 epilogue((int(m), int(n)), vec)
 
         else:
