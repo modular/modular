@@ -851,4 +851,17 @@ struct Graph(CollectionElement, Stringable, Formattable):
         )
         op.set_inherent_attr("signature", TypeAttr(signature).to_mlir())
 
+        # Set the result_names metadata on the staged op, which is needed by
+        # the engine for execution.
+        var result_names = str("[")
+        for i in range(len(outputs)):
+            result_names += '"output' + str(i) + '"'
+            if i < (len(outputs) - 1):
+                result_names += ", "
+        result_names += "]"
+
+        op.set_discardable_attr(
+            "result_names", _mlir.Attribute.parse(ctx, result_names)
+        )
+
         _ = self.nvop("mo.output", outputs)
