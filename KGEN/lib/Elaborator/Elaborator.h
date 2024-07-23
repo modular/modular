@@ -339,7 +339,6 @@ private:
   ///
   /// See function definition for the meaning of `invertLockOrder`.
   ElaborationState completeCallProcessing(GeneratorUserOpInterface user,
-                                          ArrayRef<ParamDeclAttr> decls,
                                           ImplNode *thisNode, ImplNode *node);
   /// Instantiate a generator reference by retrieving the concrete
   /// implementations of a reference. If this function returns `advance` but

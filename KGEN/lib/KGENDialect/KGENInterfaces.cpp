@@ -36,26 +36,6 @@ LogicalResult impl::verifyGeneratorUser(GeneratorUserOpInterface op) {
       return op.emitOpError("is only allowed in generators pre-elaboration");
   }
 
-  // Verify the result parameter types if the signature is known.
-  auto sig = op.getCalleeSignature();
-  if (!sig)
-    return success();
-
-  ArrayRef<Type> types = sig.getResultParamTypes();
-  if (op.getParamDecls().size() != types.size()) {
-    return op->emitOpError("declares ")
-           << op.getParamDecls().size() << " result parameters, but callee has "
-           << types.size();
-  }
-  for (auto [decl, type, idx] : llvm::zip(
-           op.getParamDecls(), types, llvm::seq<unsigned>(0, types.size()))) {
-    if (decl.getType() == type)
-      continue;
-    return op.emitOpError("result parameter #")
-           << idx << " declared with type " << decl.getType()
-           << " but callee has " << type;
-  }
-
   return success();
 }
 
