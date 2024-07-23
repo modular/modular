@@ -61,3 +61,7 @@ def test_add_op() -> None:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
 
         graph._mlir_op.verify()
+
+        # Check that the arg/result name attributes were added.
+        assert "argument_names = " in str(graph._mlir_op)
+        assert "result_names = " in str(graph._mlir_op)

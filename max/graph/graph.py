@@ -132,13 +132,21 @@ class Graph:
         self._context.append_dialect_registry(registry)
         self._context.load_all_available_dialects()
 
-        with self._context, location():
+        with self._context, location() as loc:
             # Create the top level module op.
             self._module = mlir.Module.create()
 
             with mlir.InsertionPoint(self._module.body):
-                self._mlir_op = mo.GraphOp(
-                    name, [t.to_mlir() for t in input_types], []
+                function_type = mlir.FunctionType.get(
+                    [t.to_mlir() for t in input_types],
+                    [t.to_mlir() for t in output_types],
+                )
+                # Call the C++ builder to build the MO graph op.
+                self._mlir_op = _c.graph(
+                    self._module._CAPIPtr,
+                    loc._CAPIPtr,
+                    name,
+                    function_type._CAPIPtr,
                 )
 
         self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
@@ -206,6 +214,14 @@ class Graph:
             f"#kgen<param.decls[{', '.join(f'{param}: index' for param in self._params)}]>"
         )
         self._mlir_op.attributes["inputParams"] = params
+
+        # Set the result_names metadata on the staged op, which is needed by
+        # the engine for execution.
+        # Note that result_names here needs to match kMgpModelResultNames.
+        output_names = [f'"output{i}"' for i in range(len(self._output_types))]
+        self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
+            f"[{', '.join(output_names)}]"
+        )
 
     def __repr__(self) -> str:
         return (
