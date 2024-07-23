@@ -1167,18 +1167,20 @@ struct LayoutTensor[
         ](self.ptr)
 
     @always_inline
-    fn distance(self, addr: UnsafePointer[Scalar[dtype], address_space]) -> Int:
+    fn distance(
+        self, addr: UnsafePointer[Scalar[dtype], address_space, *_]
+    ) -> UInt:
         """Returns the distance from the input address."""
 
-        return (int(self.ptr) - int(addr)) // sizeof[dtype]()
+        return UInt(int(self.ptr) - int(addr)) // sizeof[dtype]()
 
     @always_inline
     fn distance(
         self, src: LayoutTensor[dtype, _, _, address_space=address_space]
-    ) -> Int:
+    ) -> UInt:
         """Returns the distance from the input address."""
 
-        return (int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
+        return UInt(int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
 
     # Returns the linear index of an elem_i 0 ... size(layout).
     #
@@ -2119,6 +2121,15 @@ struct LayoutTensorIter[
             self.offset = self.offset % self.bound
 
     @always_inline
+    fn __iadd__(inout self, rhs: UInt):
+        """Increment the iterator.
+
+        This function is unsafe. It omits bound checking for performance reasons.
+        Caller must make sure index doesn't go out-of-bound.
+        """
+        self += int(rhs)
+
+    @always_inline
     fn next[T: Intable](self, rhs: T) -> Self:
         """Return an iterator pointing to the next `rhs` layout tensor."""
 
@@ -2133,5 +2144,5 @@ struct LayoutTensorIter[
         ](self.ptr, self.bound, stride=self.stride, offset=next_offset)
 
     @always_inline
-    fn next(self) -> Self:
-        return self.next(1)
+    fn next(self, rhs: UInt = 1) -> Self:
+        return self.next(int(rhs))
