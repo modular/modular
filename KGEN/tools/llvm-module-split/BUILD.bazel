@@ -10,6 +10,7 @@ modular_cc_binary(
         "//KGEN:ObjectCompiler",
         "//KGEN:ToolCommon",
         "//Support:Base",
+        "//Support:Globals",
         "@llvm-project//llvm:Support",
     ],
 )
