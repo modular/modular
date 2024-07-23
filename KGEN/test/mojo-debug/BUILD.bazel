@@ -21,9 +21,6 @@ lit_tests(
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
     ],
-    exec_properties = {
-        "test.EstimatedComputeUnits": "10",
-    },
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
