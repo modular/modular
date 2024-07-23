@@ -331,9 +331,9 @@ fn _matmul_kv_cache[
         StaticIntTuple[2](BS * SEQ_LEN, K),
     )
 
-    var c_ptr = DTypePointer[DType.float32].alloc(
+    var c_ptr = UnsafePointer[Float32].alloc(
         BS * SEQ_LEN * N
-    ) if target == "cpu" else DTypePointer[DType.float32]()
+    ) if target == "cpu" else UnsafePointer[Float32]()
 
     var c_nd = NDBuffer[
         DType.float32, 2, DimList(Dim(), weight.shape.get[1]())
