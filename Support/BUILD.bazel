@@ -7,6 +7,7 @@ load(
     "modular_shared_library",
     "td_library",
 )
+load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
@@ -67,7 +68,7 @@ modular_cc_library(
         "include/Support/Version.h",
         "include/Support/VisualizationUtils.h",
     ],
-    local_defines = [
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + [
         "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
         "SHARED_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_PREFIX='\"lib\"'",
@@ -359,23 +360,30 @@ modular_cc_library(
     name = "Profiling",
     srcs = glob(["lib/Profiling/*.cpp"]),
     hdrs = glob(["include/Support/Profiling/*.h"]),
+    # NOTE: Passed as defines to propagate to dependents
+    defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     deps = [
         ":Base",
         ":Globals.headers",
         ":MArchTargetMinimal",
+        "//third-party/nvidia-headers-cudart",
+        "//third-party/nvidia-headers-nvtx-3",
     ],
 )
 
 modular_cc_library(
     name = "Profiling.headers",
     hdrs = glob(["include/Support/Profiling/*.h"]),
+    # NOTE: Passed as defines to propagate to dependents
+    defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     visibility = ["//AsyncRT:__subpackages__"],
     deps = [
         ":Base",
+        "//third-party/nvidia-headers-cudart",
+        "//third-party/nvidia-headers-nvtx-3",
     ],
 )
 
-# This is the version used by modular internal targets.
 modular_cc_library(
     name = "MArchTarget",
     srcs = glob(["lib/MArchTarget/*.cpp"]),
@@ -383,14 +391,10 @@ modular_cc_library(
     deps = [
         ":Base",
         ":CPUCache",
-        ":MDialect",
         ":DeviceSpecs",
+        ":MDialect",
         ":Threading",
-
-        # Rerquired for diagnostics.
         "@llvm-project//clang:basic",
-
-        # Used by target-info.
         "@llvm-project//llvm:AllTargetsAsmParsers",
         "@llvm-project//llvm:AllTargetsCodeGens",
         "@llvm-project//llvm:AllTargetsDisassemblers",
@@ -415,11 +419,7 @@ modular_cc_library(
         ":CPUCache",
         ":DeviceSpecs",
         ":Threading",
-
-        # Rerquired for diagnostics.
         "@llvm-project//clang:basic",
-
-        # Used by target-info.
         "@llvm-project//llvm:AllTargetsAsmParsers",
         "@llvm-project//llvm:AllTargetsCodeGens",
         "@llvm-project//llvm:AllTargetsDisassemblers",

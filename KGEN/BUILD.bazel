@@ -2,7 +2,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
 load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library", "td_library")
-load("//bazel:config.bzl", "MOJO_CONFIG_SECTION_LOCAL_DEFINES")
+load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "MOJO_CONFIG_SECTION_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 
 td_library(
@@ -858,6 +858,7 @@ modular_cc_library(
     name = "KGENDialect",
     srcs = glob(["lib/KGENDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     deps = [
         ":HLCFDialect",
         ":Interpreter",
@@ -963,6 +964,39 @@ cc_distributable_static_library(
     ] + select({
         "@platforms//os:linux": ["@gperftools//:tcmalloc_objects"],
         "//conditions:default": [],
+    }) + select({
+        "//bazel/internal:profiling_off": [],
+        "//conditions:default": [
+            "//Support:CPUCache",
+            "//Support:DeviceSpecs",
+            "//Support:MArchTargetMinimal",
+            "@llvm-project//clang:ast",
+            "@llvm-project//clang:basic",
+            "@llvm-project//clang:lex",
+            "@llvm-project//llvm:Analysis",
+            "@llvm-project//llvm:AsmParser",
+            "@llvm-project//llvm:BinaryFormat",
+            "@llvm-project//llvm:BitReader",
+            "@llvm-project//llvm:BitstreamReader",
+            "@llvm-project//llvm:Core",
+            "@llvm-project//llvm:DebugInfoBTF",
+            "@llvm-project//llvm:DebugInfoCodeView",
+            "@llvm-project//llvm:DebugInfoDWARF",
+            "@llvm-project//llvm:DebugInfoMSF",
+            "@llvm-project//llvm:DebugInfoPDB",
+            "@llvm-project//llvm:FrontendOffloading",
+            "@llvm-project//llvm:FrontendOpenMP",
+            "@llvm-project//llvm:IRReader",
+            "@llvm-project//llvm:MC",
+            "@llvm-project//llvm:MCParser",
+            "@llvm-project//llvm:Object",
+            "@llvm-project//llvm:ProfileData",
+            "@llvm-project//llvm:Remarks",
+            "@llvm-project//llvm:Scalar",
+            "@llvm-project//llvm:Symbolize",
+            "@llvm-project//llvm:TextAPI",
+            "@llvm-project//llvm:TransformUtils",
+        ],
     }),
 )
 

@@ -9,9 +9,6 @@ modular_cc_library(
     hdrs = glob(["include/**/*.h"]),
     copts = ["-I$(GENDIR)/Config"],
     defines = [
-        # FIXME(amscanne): These are non-hermetic. These will automatically
-        # propagate to all dependent targets and be defined universally.
-        "MODULAR_ASYNCRT_MAX_PROFILING_LEVEL=00000",
         "MODULAR_KERNELS_BUILD_TYPE=\\\"unknown\\\"",
     ],
     visibility = ["//visibility:public"],
