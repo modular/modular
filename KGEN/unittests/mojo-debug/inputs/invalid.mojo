@@ -4,15 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import DTypePointer
+from memory import UnsafePointer
 
 
 @value
 struct A:
-    var x: DTypePointer[DType.invalid]
+    var x: UnsafePointer[Scalar[DType.invalid]]
 
     fn __init__(inout self):
-        var y = DTypePointer[DType.int8].alloc(1)
+        var y = UnsafePointer[Int8].alloc(1)
         self.x = y.bitcast[DType.invalid]()
 
 
