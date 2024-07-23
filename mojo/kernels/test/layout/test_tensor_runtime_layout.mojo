@@ -419,11 +419,11 @@ fn test_copy_from():
         RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
     )
     var src_tensor = LayoutTensor[DType.float32, layout](
-        DTypePointer[DType.float32].alloc(dynamic_layout.size()), dynamic_layout
+        UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
     )
     src_tensor.linspace()
     var dst_tensor = LayoutTensor[DType.float32, layout](
-        DTypePointer[DType.float32].alloc(dynamic_layout.size()), dynamic_layout
+        UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
     )
     dst_tensor.fill(0)
     dst_tensor.print()
