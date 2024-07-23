@@ -21,6 +21,7 @@
 //===----------------------------------------------------------------------===//
 
 class MlirOperation;
+class MlirRewriterBase;
 
 namespace mlir {
 class ModuleOp;
@@ -133,7 +134,8 @@ createElaborateGenerators(TargetInfoAttr target,
 // Custom op registration
 //===----------------------------------------------------------------------===//
 
-using CAPICanonicalizationFn = std::function<void(MlirOperation op)>;
+using CAPICanonicalizationFn =
+    std::function<bool(MlirOperation *, MlirRewriterBase *)>;
 using CompileCanonicalizationFnFn =
     std::function<ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>(
         ModuleOp, SymbolTable &,

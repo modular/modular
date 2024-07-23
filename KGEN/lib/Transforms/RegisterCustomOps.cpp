@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/CAPI/IR.h"
+#include "mlir/CAPI/Rewrite.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
@@ -139,11 +140,11 @@ void RegisterCustomOpsPass::runOnOperation() {
     auto func = funcs.at(generatorOp.getSymNameAttr());
     auto canonFunc = [func = func](Operation *op,
                                    PatternRewriter &rewriter) mutable {
-      // FIXME: Only call the canonicalization function for now without doing
-      // anything. This is for testing purposes, and future commits will fix
-      // this.
-      func(wrap(op));
-      return success();
+      // Both the operation and the rewriter are passed as pointers, as the
+      // mojo canonicalization pattern is marked as inout.
+      MlirOperation c_op = wrap(op);
+      MlirRewriterBase c_rewriter = wrap(&rewriter);
+      return mlir::success(func(&c_op, &c_rewriter));
     };
     customDialect->canonicalizationFns.try_emplace(opName,
                                                    std::move(canonFunc));
