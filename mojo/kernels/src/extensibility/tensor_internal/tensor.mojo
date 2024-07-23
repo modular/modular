@@ -269,7 +269,9 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        inout self, owned shape: TensorShape, owned ptr: DTypePointer[type]
+        inout self,
+        owned shape: TensorShape,
+        owned ptr: UnsafePointer[Scalar[type]],
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
         relinquishes the ownership of the pointer being passed in.
@@ -282,7 +284,9 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        inout self, owned spec: TensorSpec, owned ptr: DTypePointer[type]
+        inout self,
+        owned spec: TensorSpec,
+        owned ptr: UnsafePointer[Scalar[type]],
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
         relinquishes the ownership of the pointer being passed in.
