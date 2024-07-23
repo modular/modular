@@ -14,9 +14,8 @@ from gpu.id import ThreadIdx
 from gpu.intrinsics import convert
 from gpu.memory import async_copy
 from layout.element import Element
-from memory import memcpy
+from memory import memcpy, UnsafePointer
 from memory.reference import AddressSpace, _GPUAddressSpace
-from memory.unsafe import DTypePointer
 
 from utils import InlineArray, StaticIntTuple
 from utils.numerics import max_finite
@@ -160,7 +159,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[dtype, address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space],
     ):
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
         self.ptr = ptr.address
@@ -174,7 +173,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[dtype, address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout],
     ):
         constrained[
@@ -191,7 +190,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[dtype, address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout],
         elemnt_runtime_layout: RuntimeLayout[element_layout],
     ):
@@ -2096,7 +2095,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         inout self,
-        ptr: DTypePointer[type, address_space],
+        ptr: UnsafePointer[Scalar[type], address_space],
         bound: Int,
         stride: Int = layout.size(),
         offset: Int = 0,
