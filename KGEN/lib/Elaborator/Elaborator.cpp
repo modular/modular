@@ -214,16 +214,15 @@ void ParamNode::setToError() {
 }
 
 ExpansionGraph::~ExpansionGraph() {
-  {
-    std::lock_guard<std::mutex> guard(quiesceMu);
-    // If we have outstanding tasks at destruction time, construct the chain to
-    // trigger waiter completion.
-    if (numOutstandingResources > 0) {
-      for (auto &[key, node] : nodes.get())
-        node->setToError();
-    }
+  if (--numOutstandingResources == 0) {
+    quiesceChain.copy().emplace();
+    return;
   }
-  AsyncRT::await(quiesce());
+  // If we have outstanding tasks at destruction time, set all outstanding
+  // tasks to the error state and await completion.
+  for (auto &[key, node] : nodes.get())
+    node->setToError();
+  AsyncRT::await(quiesceChain);
 }
 
 ParamNode *ExpansionGraph::getOrCreate(AsyncRT::Runtime &runtime,
@@ -240,29 +239,11 @@ ParamNode *ExpansionGraph::getOrCreate(AsyncRT::Runtime &runtime,
 }
 
 void ExpansionGraph::didCompleteTask() {
-  std::lock_guard<std::mutex> guard(quiesceMu);
-  assert(numOutstandingResources > 0 &&
-         "mismatched didAddTask/didCompleteTask calls");
-  if (--numOutstandingResources == 0 && quiesceChain)
-    std::move(quiesceChain).emplace();
+  if (--numOutstandingResources == 0)
+    quiesceChain.copy().emplace();
 }
 
-void ExpansionGraph::didAddTask() {
-  std::lock_guard<std::mutex> guard(quiesceMu);
-  assert(!quiesceChain && "cannot create new task using a "
-                          "runtime which is being quiesced");
-  ++numOutstandingResources;
-}
-
-AsyncValueRef<Chain> ExpansionGraph::quiesce() {
-  std::lock_guard<std::mutex> guard(quiesceMu);
-  assert(!quiesceChain && "already waiting for ParamNodeRuntime to quiesce");
-  quiesceChain =
-      numOutstandingResources == 0
-          ? AsyncValueRef<Chain>::createReady(worklistCh.getRuntime())
-          : AsyncValueRef<Chain>::allocate(worklistCh.getRuntime());
-  return quiesceChain.copy();
-}
+void ExpansionGraph::didAddTask() { ++numOutstandingResources; }
 
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
   if (!impl)
