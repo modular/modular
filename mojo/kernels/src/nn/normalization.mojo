@@ -782,6 +782,20 @@ fn layer_norm[
 ) raises:
     constrained[target in ("cpu", "cuda"), "unsupported target"]()
 
+    # Note: we only support reduction along the last dimension
+    if gamma.dynamic_shape[0] != shape[rank - 1]:
+        ctx.set_to_error("Gamma size does not match dimension of reduction.")
+        return
+
+    if beta.dynamic_shape[0] != shape[rank - 1]:
+        print("WHAT WHAT")
+        ctx.set_to_error("Beta size does not match dimension of reduction.")
+        return
+
+    if output.dynamic_shape != shape:
+        ctx.set_to_error("Input and output buffers are not same shape")
+        return
+
     @parameter
     if target == "cpu":
         layer_norm_cpu[type, input_0_fn](shape, gamma, beta, epsilon, output)
