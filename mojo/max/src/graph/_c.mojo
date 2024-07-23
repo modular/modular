@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from builtin._startup import _get_current_or_global_runtime
 from memory import UnsafePointer
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
 from pathlib import Path
 from utils import StringRef
+from runtime.asyncrt import _get_current_runtime
 
 import _mlir
 
@@ -111,7 +111,7 @@ fn attr_new_tensor[
         data.data,
         type.c,
         is_owned,
-        _get_current_or_global_runtime(),
+        _get_current_runtime(),
     )
 
 
@@ -135,7 +135,7 @@ fn attr_new_tensor(
         data,
         type.c,
         is_owned,
-        _get_current_or_global_runtime(),
+        _get_current_runtime(),
     )
 
 
@@ -151,7 +151,7 @@ fn attr_new_tensor_from_file(
         name._strref_dangerous(),
         file_name._strref_dangerous(),
         type.c,
-        _get_current_or_global_runtime(),
+        _get_current_runtime(),
     )
 
 

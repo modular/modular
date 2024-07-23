@@ -7,7 +7,6 @@
 from max.tensor import TensorSpec, TensorShape
 from ._driver_library import DriverLibrary
 from max._utils import call_dylib_func
-from builtin._startup import _get_current_or_global_runtime
 from .device import Device, _CDevice
 from .tensor import Tensor
 from .anytensor import AnyTensor
