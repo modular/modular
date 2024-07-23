@@ -28,6 +28,7 @@
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/CAPI/IR.h"
+#include "mlir/CAPI/Rewrite.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -488,9 +489,12 @@ compileCustomCanonicalizationFns(ModuleOp module, SymbolTable &table,
     ErrorOr<CompiledFunc> funcOrRes = engine->lookup(name);
     if (funcOrRes.isError())
       return funcOrRes.takeError();
+    // Both the operation and the rewriter are passed as pointers, as the
+    // mojo canonicalization pattern is marked as inout.
     compiledFns.try_emplace(
-        name, [engine = engine, func = *funcOrRes](MlirOperation op) mutable {
-          func.invoke<void>(op);
+        name, [engine = engine, func = *funcOrRes](
+                  MlirOperation *op, MlirRewriterBase *rewriter) mutable {
+          return func.invoke<bool>(op, rewriter);
         });
   }
 

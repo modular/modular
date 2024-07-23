@@ -1104,6 +1104,7 @@ modular_cc_library(
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoTransforms",
         "@llvm-project//mlir:CAPIIR",
+        "@llvm-project//mlir:CAPITransforms",
         "@llvm-project//mlir:TransformUtils",
     ],
 )
