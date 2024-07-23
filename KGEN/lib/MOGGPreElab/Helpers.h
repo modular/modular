@@ -58,6 +58,12 @@ inline bool isExtensibilityTensor(LIT::StructType maybeTensor) {
   return isXType(maybeTensor, "extensibility", "Tensor");
 }
 
+inline bool isDPSTensor(LIT::StructType maybeTensor) {
+  return maybeTensor.getSymbol().getRootReference().strref().starts_with(
+             "max") &&
+         maybeTensor.getSymbol().getLeafReference() == "UnsafeTensorSlice";
+}
+
 inline bool isCustomType(LIT::StructType maybeCustom) {
   return !isMOGGTensor(maybeCustom) && !isExtensibilityTensor(maybeCustom);
 }

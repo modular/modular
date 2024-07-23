@@ -35,11 +35,11 @@ namespace M::KGEN::MOGGPreElab {
 } // namespace M::KGEN::MOGGPreElab
 
 static constexpr llvm::StringLiteral SPEC_PREFIX_STR = "__MOGG_SPEC";
-static constexpr llvm::StringLiteral TENSOR_TYPE = "extensibility::Tensor";
+static constexpr llvm::StringLiteral DPS_TENSOR_STR = "max::UnsafeTensorSlice";
 static constexpr llvm::StringLiteral TENSOR_SPEC_NONE = "TENSOR_SPEC_NONE";
 
 static bool isTensorType(Attribute typeName) {
-  return cast<StringAttr>(typeName).strref() == TENSOR_TYPE;
+  return cast<StringAttr>(typeName).strref() == DPS_TENSOR_STR;
 }
 
 namespace {
@@ -277,8 +277,8 @@ public:
 
     // Start at the kernels.
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
-      // If this is not an extensability kernel skip.
-      if (!isKernel(gen) || !gen->hasAttr(ALLOCS_ATTR))
+      // If this is not an DPS kernel skip.
+      if (!isDPSKernel(gen))
         continue;
       CallGraphNode *node = &cg.nodes.find(gen)->second;
 
