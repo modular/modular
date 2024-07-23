@@ -30,8 +30,6 @@ from utils.index import product, Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
-from .math import identity, mul, reciprocal, sub
-
 # ===----------------------------------------------------------------------===#
 # Utilities
 # ===----------------------------------------------------------------------===#
@@ -59,6 +57,26 @@ fn reduce_add_simd[
         # When the step_simd_Width is the same as the simd_width, then we add to
         # the vector value.
         vector += rebind[SIMD[type, simd_width]](val)
+
+
+@always_inline
+fn sub(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    return x - y
+
+
+@always_inline
+fn mul(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    return x * y
+
+
+@always_inline
+fn identity(x: SIMD) -> __type_of(x):
+    return x
+
+
+@always_inline
+fn reciprocal(x: SIMD) -> __type_of(x):
+    return 1 / x
 
 
 # ===----------------------------------------------------------------------===#

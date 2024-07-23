@@ -179,7 +179,6 @@ fn index_tensor_1d[
     var reshaped_data = reshape.reshape[
         data_rank, reshaped_data_rank, type, True
     ](data.make_dims_unknown(), reshaped_data_tuple)
-    var reshaped_data_shape = reshaped_data.get_shape()
 
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.

@@ -36,8 +36,8 @@ from .conv_utils import (
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
+    align_down_residual,
 )
-from .math import align_down_residual
 
 # TODO: All attributes, except for groups and auto_pad, are supported.
 #       - Kernel assumes groups = 1.

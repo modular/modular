@@ -45,8 +45,8 @@ from .conv_utils import (
     get_micro_kernel_shape,
     get_partition,
     reorder_padding,
+    align_down_residual,
 )
-from .math import align_down_residual
 from .shapes import get_sliding_window_out_dim
 
 
