@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from max._utils import call_dylib_func
 from sys.ffi import DLHandle
 from ._tensor_impl import CTensor
@@ -17,7 +17,7 @@ alias CMojoVal = UnsafePointer[UInt8]
 struct CValue:
     """Represents an AsyncValue pointer from Engine."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias _GetTensorFnName = "M_getTensorFromValue"
     alias _GetBoolFnName = "M_getBoolFromValue"
@@ -51,7 +51,7 @@ struct CValue:
 struct CList:
     """Represents an AsyncList pointer from Engine."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias _GetSizeFnName = "M_getListSize"
     alias _GetValueFnName = "M_getListValue"

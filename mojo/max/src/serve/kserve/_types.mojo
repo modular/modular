@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides C bindings to KServe types and data structures."""
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 from max.tensor import TensorSpec
 
@@ -77,7 +77,7 @@ fn _get_tensors[
     size_fn: StringLiteral,
     get_tensor_fn: StringLiteral,
 ](
-    lib: DLHandle, ptr: DTypePointer[DType.invalid], session: InferenceSession
+    lib: DLHandle, ptr: UnsafePointer[NoneType], session: InferenceSession
 ) raises -> TensorMap:
     var map = session.new_tensor_map()
     var size = call_dylib_func[Int64](lib, size_fn, ptr)
@@ -110,7 +110,7 @@ fn _set_tensors[
     add_tensor_fn: StringLiteral,
 ](
     lib: DLHandle,
-    ptr: DTypePointer[DType.invalid],
+    ptr: UnsafePointer[NoneType],
     names: List[String],
     map: TensorMap,
 ) raises:
@@ -195,7 +195,7 @@ struct CInferenceRequest:
     # here and handling creation/destruction internally.
 
     var _lib: DLHandle
-    var _ptr: DTypePointer[DType.invalid]
+    var _ptr: UnsafePointer[NoneType]
     var _owning: Bool
 
     alias _FreeFnName = "M_freeRequest"
@@ -214,7 +214,7 @@ struct CInferenceRequest:
     fn __init__(
         inout self,
         lib: DLHandle,
-        ptr: DTypePointer[DType.invalid],
+        ptr: UnsafePointer[NoneType],
     ):
         self._lib = lib
         self._ptr = ptr
@@ -223,7 +223,7 @@ struct CInferenceRequest:
     fn __init__(
         inout self,
         lib: DLHandle,
-        ptr: DTypePointer[DType.invalid],
+        ptr: UnsafePointer[NoneType],
         owning: Bool = False,
     ):
         self._lib = lib
@@ -232,8 +232,8 @@ struct CInferenceRequest:
 
     fn __moveinit__(inout self, owned existing: Self):
         self._lib = existing._lib
-        self._ptr = exchange[DTypePointer[DType.invalid]](
-            existing._ptr, DTypePointer[DType.invalid]()
+        self._ptr = exchange[UnsafePointer[NoneType]](
+            existing._ptr, UnsafePointer[NoneType]()
         )
         # Regardless of whether existing owned it or not, we copy owning.
         self._owning = existing._owning
@@ -297,7 +297,7 @@ struct CInferenceRequest:
 
 struct CInferenceResponse:
     var _lib: DLHandle
-    var _ptr: DTypePointer[DType.invalid]
+    var _ptr: UnsafePointer[NoneType]
     var _owning: Bool
 
     alias _FreeFnName = "M_freeResponse"
@@ -309,7 +309,7 @@ struct CInferenceResponse:
     fn __init__(
         inout self,
         lib: DLHandle,
-        ptr: DTypePointer[DType.invalid],
+        ptr: UnsafePointer[NoneType],
     ):
         self._lib = lib
         self._ptr = ptr
@@ -318,7 +318,7 @@ struct CInferenceResponse:
     fn __init__(
         inout self,
         lib: DLHandle,
-        ptr: DTypePointer[DType.invalid],
+        ptr: UnsafePointer[NoneType],
         owning: Bool = False,
     ):
         self._lib = lib
@@ -327,8 +327,8 @@ struct CInferenceResponse:
 
     fn __moveinit__(inout self, owned existing: Self):
         self._lib = existing._lib
-        self._ptr = exchange[DTypePointer[DType.invalid]](
-            existing._ptr, DTypePointer[DType.invalid]()
+        self._ptr = exchange[UnsafePointer[NoneType]](
+            existing._ptr, UnsafePointer[NoneType]()
         )
         self._owning = existing._owning
         existing._owning = False

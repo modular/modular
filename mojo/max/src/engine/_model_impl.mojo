@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from max._utils import call_dylib_func
 from sys.ffi import DLHandle
 from .session import InferenceSession
@@ -19,7 +19,7 @@ struct CModel:
     Useful for C inter-op.
     """
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias FreeModelFnName = "M_freeModel"
     alias WaitForModelFnName = "M_waitForModel"

@@ -12,12 +12,12 @@ from collections.dict import _DictKeyIter, _DictEntryIter
 struct _CheckpointTensor:
     """A wrapper around a Tensor pointer that can be saved/loaded from disk."""
 
-    var ptr: DTypePointer[DType.uint8]
+    var ptr: UnsafePointer[UInt8]
     var spec: TensorSpec
 
     fn __init__(
         inout self,
-        owned ptr: DTypePointer[DType.uint8],
+        owned ptr: UnsafePointer[UInt8],
         owned spec: TensorSpec,
     ):
         """Creates a _CheckpointTensor.
@@ -34,16 +34,16 @@ struct _CheckpointTensor:
         var num_elements = self.spec.num_elements()
         var spec = self.spec
         var self_ptr = self.ptr.bitcast[T]()
-        var ptr = DTypePointer[T].alloc(num_elements)
+        var ptr = UnsafePointer[Scalar[T]].alloc(num_elements)
         memcpy(ptr.address, self_ptr.address, num_elements)
-        return Tensor[T](spec, ptr)
+        return Tensor[T](spec, ptr.address)
 
     fn to_tensor[T: DType](owned self) -> Tensor[T]:
         """Converts this object to a Tensor."""
         var spec = self.spec^
         var ptr = self.ptr.bitcast[T]()
         self.spec = TensorSpec()
-        self.ptr = DTypePointer[DType.uint8]()
+        self.ptr = UnsafePointer[UInt8]()
         return Tensor[T](spec, ptr)
 
     @staticmethod

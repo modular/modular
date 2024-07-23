@@ -85,12 +85,12 @@ trait TensorLike:
     fn spec(self) -> TensorSpec:
         ...
 
-    fn unsafe_ptr[type: DType](self) -> DTypePointer[type]:
+    fn unsafe_ptr[type: DType](self) -> UnsafePointer[Scalar[type]]:
         pass
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
-    var _ptr: DTypePointer[type]
+    var _ptr: UnsafePointer[Scalar[type]]
     var _spec: StaticTensorSpec[type, rank]
     var _strides: StaticIntTuple[rank]
     var _device: Device
@@ -103,7 +103,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
 
     fn __init__(inout self) raises:
-        self._ptr = DTypePointer[type]()
+        self._ptr = UnsafePointer[Scalar[type]]()
         self._spec = StaticTensorSpec[type, rank](StaticIntTuple[rank]())
         self._strides = StaticIntTuple[rank]()
         self._device = Device()
@@ -292,9 +292,9 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
             self._ptr, _dot_prod(indices, self._strides), val
         )
 
-    fn _steal_ptr(owned self) -> DTypePointer[type]:
+    fn _steal_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         var tmp = self._ptr
-        self._ptr = DTypePointer[type]()
+        self._ptr = UnsafePointer[Scalar[type]]()
         return tmp
 
     fn _get_device(self) -> Device:
@@ -311,13 +311,13 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
             self._device,
         )
 
-    fn unsafe_ptr[__type: DType = type](self) -> DTypePointer[__type]:
+    fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
         """Returns a pointer to the underlying memory.
 
         Note: The caller is responsible for ensuring that the returned pointer
         is not used after it's owner is last used.
         """
-        return rebind[DTypePointer[__type]](self._ptr)
+        return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
     fn take(inout self) raises -> Self:
         """The returned value takes self's resources and replaces them with default

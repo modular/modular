@@ -8,7 +8,6 @@ from os import abort
 from pathlib import Path
 from sys.ffi import C_char, DLHandle
 
-from memory.unsafe import DTypePointer
 from memory.unsafe_pointer import *
 
 from utils import StringRef

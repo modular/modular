@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Buffer
-from memory.unsafe import bitcast, DTypePointer
+from memory import UnsafePointer
+from memory.unsafe import bitcast
 from python import Python, PythonObject
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, exchange
@@ -23,7 +24,7 @@ from max.tensor import Tensor
 struct CTensor:
     """Represents AsyncTensor ptr from Engine."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias GetTensorNumElementsFnName = "M_getTensorNumElements"
     alias GetTensorDTypeFnName = "M_getTensorType"
@@ -39,8 +40,8 @@ struct CTensor:
             lib, Self.GetTensorDTypeFnName, self
         )
 
-    fn unsafe_ptr(self, lib: DLHandle) -> DTypePointer[DType.invalid]:
-        return call_dylib_func[DTypePointer[DType.invalid]](
+    fn unsafe_ptr(self, lib: DLHandle) -> UnsafePointer[NoneType]:
+        return call_dylib_func[UnsafePointer[NoneType]](
             lib, Self.GetTensorDataFnName, self
         )
 
@@ -75,19 +76,17 @@ struct EngineTensor(Sized):
         self.session = session^
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.ptr = exchange[CTensor](
-            existing.ptr, DTypePointer[DType.invalid]()
-        )
+        self.ptr = exchange[CTensor](existing.ptr, UnsafePointer[NoneType]())
         self.lib = existing.lib
         self.session = existing.session^
 
     fn __len__(self) -> Int:
         return self.ptr.size(self.lib)
 
-    fn unsafe_ptr(self) -> DTypePointer[DType.invalid]:
+    fn unsafe_ptr(self) -> UnsafePointer[NoneType]:
         return self.ptr.unsafe_ptr(self.lib)
 
-    fn data[type: DType](self) raises -> DTypePointer[type]:
+    fn data[type: DType](self) raises -> UnsafePointer[Scalar[type]]:
         var ptr = self.unsafe_ptr()
         return ptr.bitcast[type]()
 
@@ -104,7 +103,8 @@ struct EngineTensor(Sized):
 
     fn buffer(self) -> Buffer[DType.invalid]:
         return Buffer[DType.invalid](
-            self.unsafe_ptr(), len(self) * self.dtype().sizeof()
+            rebind[UnsafePointer[Scalar[DType.invalid]]](self.unsafe_ptr()),
+            len(self) * self.dtype().sizeof(),
         )
 
     fn tensor[type: DType](self) raises -> Tensor[type]:

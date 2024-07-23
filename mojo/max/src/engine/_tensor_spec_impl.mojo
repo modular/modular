@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, CString
 from ._dtypes import EngineDType
@@ -17,7 +17,7 @@ struct CTensorSpec:
     This doesn't free the memory on destruction.
     """
 
-    alias ptr_type = DTypePointer[DType.invalid]
+    alias ptr_type = UnsafePointer[NoneType]
     var ptr: Self.ptr_type
 
     alias FreeTensorSpecFnName = "M_freeTensorSpec"

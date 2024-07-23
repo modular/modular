@@ -54,7 +54,7 @@ def test_device_memory():
     ptr = dt5.unsafe_ptr()
     t5 = dt5^.to_tensor[type, 1]()
     t5[0] = 22
-    assert_equal(Scalar.load(rebind[DTypePointer[type]](ptr)), t5[0])
+    assert_equal(Scalar.load(rebind[UnsafePointer[Scalar[type]]](ptr)), t5[0])
 
 
 def test_take():

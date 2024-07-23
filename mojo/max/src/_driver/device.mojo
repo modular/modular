@@ -40,7 +40,7 @@ struct _CDevice:
             lib.get_handle(), func_name_copy, self
         )
 
-    fn free_data(self, lib: DriverLibrary, data: DTypePointer[DType.uint8]):
+    fn free_data(self, lib: DriverLibrary, data: UnsafePointer[UInt8]):
         alias func_free_data = "M_freeDeviceData"
         call_dylib_func(lib.get_handle(), func_free_data, self, data)
 
@@ -98,7 +98,7 @@ struct Device(Stringable):
 
         return DeviceMemory(bytecount, self, name)
 
-    fn _free(self, data: DTypePointer[DType.uint8]):
+    fn _free(self, data: UnsafePointer[UInt8]):
         self._cdev.free_data(self.lib, data)
 
     fn __str__(self) -> String:

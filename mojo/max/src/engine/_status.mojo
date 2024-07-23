@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, exchange, CString
 
@@ -13,7 +13,7 @@ from max._utils import call_dylib_func, exchange, CString
 struct CStatus:
     """Represents Status ptr from Engine."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias IsErrorFnName = "M_isError"
     alias GetErrorFnName = "M_getError"
@@ -53,9 +53,7 @@ struct Status:
         self.lib = lib
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.ptr = exchange[CStatus](
-            existing.ptr, DTypePointer[DType.invalid]()
-        )
+        self.ptr = exchange[CStatus](existing.ptr, UnsafePointer[NoneType]())
         self.lib = existing.lib
 
     fn __bool__(self) -> Bool:

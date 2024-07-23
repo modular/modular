@@ -510,7 +510,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
         raise "transpose dim outside range"
 
     dims = List[Dim]()
-    ptr = DTypePointer[DType.int64].alloc(input_type.rank())
+    ptr = UnsafePointer[Int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.append(input_type.dims[i])
         Scalar.store(ptr, i, i)
@@ -521,7 +521,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     Scalar.store(ptr, y, x)
 
     transpose_indices = g.constant(
-        Tensor[DType.int64](TensorShape(input_type.rank()), ptr)
+        Tensor[DType.int64](TensorShape(input_type.rank()), ptr.address)
     )
 
     return g.op(

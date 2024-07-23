@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle, C_char
 from sys import external_call
 from collections import List
@@ -52,7 +52,7 @@ struct CCompileConfig:
     option see CompileConfig.
     """
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias FreeCompileConfigFnName = "M_freeCompileConfig"
     alias SetModelSourceFnName = "M_setModelSourceInternal"
@@ -138,7 +138,7 @@ struct TorchInputSpec(Movable):
             lib,
             Self.NewTorchInputSpecFnName,
             self.shape.data,
-            DTypePointer[DType.invalid](),
+            UnsafePointer[NoneType](),
             len(self.shape),
             EngineDType(self.dtype),
             status.ptr,
@@ -341,7 +341,7 @@ struct CCompiledModel:
     Useful for C inter-op.
     """
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias FreeCompiledModelFnName = "M_freeCompiledModel"
     alias GetModelInputSpecByNameFnName = "M_getModelInputSpecByName"
@@ -425,7 +425,7 @@ struct CompiledModel:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CCompiledModel](
-            existing.ptr, DTypePointer[DType.invalid]()
+            existing.ptr, UnsafePointer[NoneType]()
         )
         self.lib = existing.lib
         self.session = existing.session^

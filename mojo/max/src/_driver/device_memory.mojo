@@ -47,7 +47,7 @@ trait DeviceBuffer:
         """
         ...
 
-    fn unsafe_ptr(self) -> DTypePointer[DType.uint8]:
+    fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
         ...
 
     fn device(self) -> Device:
@@ -190,10 +190,10 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         self._impl_ptr = UnsafePointer[NoneType]()
         return tmp
 
-    fn _steal_ptr(owned self) -> DTypePointer[DType.uint8]:
+    fn _steal_ptr(owned self) -> UnsafePointer[UInt8]:
         alias func_name_take_data = "M_takeDataFromDeviceMemory"
         var take_data_func = self.lib.get_handle().get_function[
-            fn (UnsafePointer[NoneType]) -> DTypePointer[DType.uint8]
+            fn (UnsafePointer[NoneType]) -> UnsafePointer[UInt8]
         ](func_name_take_data)
         var data = take_data_func(self._impl_ptr)
         # Extend lifetime of self to avoid the C funtion working on invalid pointer.
@@ -228,7 +228,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         else:
             return self.copy_to(dev)
 
-    fn unsafe_ptr(self) -> DTypePointer[DType.uint8]:
+    fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
         """Returns a pointer to the underlying device memory.
 
         Note: The caller is responsible for ensuring that the returned pointer
@@ -236,10 +236,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         """
 
         alias func_name_get_data = "M_getData"
-        return call_dylib_func[
-            DTypePointer[DType.uint8],
-            UnsafePointer[NoneType],
-        ](
+        return call_dylib_func[UnsafePointer[UInt8], UnsafePointer[NoneType],](
             self.lib.get_handle(),
             func_name_get_data,
             self._impl_ptr,
@@ -293,7 +290,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         else:
             return self.copy_to(dev)
 
-    fn unsafe_ptr(self) -> DTypePointer[DType.uint8]:
+    fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
         return self._storage.unsafe_ptr()
 
     fn to_tensor[

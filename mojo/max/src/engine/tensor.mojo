@@ -11,7 +11,8 @@ You can pass each of the types shown here to
 [`Model.execute()`](/max/api/mojo/engine/model/Model#execute).
 """
 from collections import List
-from memory.unsafe import bitcast, DTypePointer
+from memory import UnsafePointer
+from memory.unsafe import bitcast
 from memory import Arc
 from python import Python, PythonObject
 
@@ -24,9 +25,9 @@ from max.tensor import Tensor
 struct _OwningPointer(Movable):
     """A type that deallocates the specified pointer when it is destroyed."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
-    fn __init__(inout self, ptr: DTypePointer[DType.invalid]):
+    fn __init__(inout self, ptr: UnsafePointer[NoneType]):
         self.ptr = ptr
 
     fn __moveinit__(inout self, owned existing: Self):
@@ -69,7 +70,7 @@ struct NamedTensor:
         # alive and us copyable.  We don't care what `dtype` is, and don't want
         # NamedTensor to have to be generic on `dtype`.
         self._tensor_data = Arc(
-            _OwningPointer(tensor._take_data_ptr().bitcast[DType.invalid]())
+            _OwningPointer(tensor._take_data_ptr().bitcast[NoneType]())
         )
 
         # FIXME(MSDK-230): This is leaking tensors.
@@ -85,7 +86,7 @@ struct EngineTensorView:
     """
 
     var _spec: TensorSpec
-    var _data_ptr: DTypePointer[DType.invalid]
+    var _data_ptr: UnsafePointer[NoneType]
     var _dtype: DType
 
     fn __init__[type: DType](inout self, tensor: Tensor[type]):
@@ -98,17 +99,17 @@ struct EngineTensorView:
             tensor: Tensor backing the view.
         """
         self._spec = tensor._spec
-        self._data_ptr = tensor.unsafe_ptr().bitcast[DType.invalid]()
+        self._data_ptr = tensor.unsafe_ptr().bitcast[NoneType]()
         self._dtype = type
 
-    fn data[type: DType](self) raises -> DTypePointer[type]:
+    fn data[type: DType](self) raises -> UnsafePointer[Scalar[type]]:
         """Returns pointer to the start of tensor.
 
         Parameters:
             type: Expected type of tensor.
 
         Returns:
-            DTypePointer of given type.
+            UnsafePointer of given type.
 
         Raises:
             If the given type does not match the type of tensor.
@@ -117,11 +118,11 @@ struct EngineTensorView:
             raise String("Expected type: ") + self._dtype.__str__()
         return self._data_ptr.bitcast[type]()
 
-    fn unsafe_ptr(self) -> DTypePointer[DType.invalid]:
+    fn unsafe_ptr(self) -> UnsafePointer[NoneType]:
         """Returns type erased pointer to the start of tensor.
 
         Returns:
-            DTypePointer of invalid type.
+            UnsafePointer of invalid type.
         """
         return self._data_ptr
 
@@ -156,13 +157,15 @@ struct EngineNumpyView:
         self._np = _Numpy()
         self._obj = tensor
 
-    fn unsafe_ptr(self) raises -> DTypePointer[DType.invalid]:
+    fn unsafe_ptr(self) raises -> UnsafePointer[NoneType]:
         """Returns type erased pointer to the start of numpy array.
 
         Returns:
-            DTypePointer of given type.
+            UnsafePointer of given type.
         """
-        return self._obj.ctypes.data.unsafe_get_as_pointer[DType.invalid]()
+        return rebind[UnsafePointer[NoneType]](
+            self._obj.ctypes.data.unsafe_get_as_pointer[DType.invalid]()
+        )
 
     fn dtype(self) raises -> DType:
         """Get DataType of the array backing the view.

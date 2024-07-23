@@ -227,7 +227,7 @@ def load[PathLike: PathLike](path: PathLike) -> TensorDict:
             _ = f.seek(tensor_offsets[i])
             var ks = keys_and_specs[i]
             var bytes = f.read_bytes(ks.spec.bytecount())
-            var ptr = DTypePointer(bytes.steal_data()).bitcast[DType.uint8]()
+            var ptr = UnsafePointer(bytes.steal_data()).bitcast[DType.uint8]()
             var tensor = _CheckpointTensor(ptr, ks.spec)
             ret._set(ks.key, tensor)
         return ret

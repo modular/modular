@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 from collections.optional import Optional
 from max.engine import InferenceSession
@@ -15,9 +15,7 @@ from max._utils import call_dylib_func, handle_from_config
 
 
 trait Instrument(Movable):
-    fn __init__(
-        inout self: Self, lib: DLHandle, ptr: DTypePointer[DType.invalid]
-    ):
+    fn __init__(inout self: Self, lib: DLHandle, ptr: UnsafePointer[NoneType]):
         ...
 
     @staticmethod
@@ -30,7 +28,7 @@ trait Instrument(Movable):
 
 
 struct Counter[T: DType](Instrument):
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
     var lib: DLHandle
 
     @staticmethod
@@ -54,9 +52,7 @@ struct Counter[T: DType](Instrument):
         else:
             return "M_addUInt64_Counter"
 
-    fn __init__(
-        inout self: Self, lib: DLHandle, ptr: DTypePointer[DType.invalid]
-    ):
+    fn __init__(inout self: Self, lib: DLHandle, ptr: UnsafePointer[NoneType]):
         """Creates a user defined counter.
 
         Args:
@@ -94,18 +90,18 @@ struct Counter[T: DType](Instrument):
         Args:
             val: [description].
         """
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func[UnsafePointer[NoneType]](
             self.lib, Self._get_add_fn_name(), self.ptr, val
         )
 
     fn __del__(owned self: Self):
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func[UnsafePointer[NoneType]](
             self.lib, Self._get_delete_fn_name(), self.ptr
         )
 
 
 struct Histogram[T: DType](Instrument):
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
     var lib: DLHandle
 
     @staticmethod
@@ -129,9 +125,7 @@ struct Histogram[T: DType](Instrument):
         else:
             return "M_recordUintHistogramVal"
 
-    fn __init__(
-        inout self: Self, lib: DLHandle, ptr: DTypePointer[DType.invalid]
-    ):
+    fn __init__(inout self: Self, lib: DLHandle, ptr: UnsafePointer[NoneType]):
         constrained[
             T == DType.float64 or T == DType.uint64,
             "Type must be uint64 or float64.",
@@ -148,18 +142,18 @@ struct Histogram[T: DType](Instrument):
         self.ptr = existing.ptr
 
     fn record[type: AnyTrivialRegType](inout self: Self, val: type):
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func[UnsafePointer[NoneType]](
             self.lib, Self._get_record_fn_name(), self.ptr, val
         )
 
     fn __del__(owned self: Self):
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func[UnsafePointer[NoneType]](
             self.lib, Self._get_delete_fn_name(), self.ptr
         )
 
 
 struct Gauge[T: DType](Instrument):
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
     var lib: DLHandle
 
     @staticmethod
@@ -183,9 +177,7 @@ struct Gauge[T: DType](Instrument):
         else:
             return "M_addInt64_Gauge"
 
-    fn __init__(
-        inout self: Self, lib: DLHandle, ptr: DTypePointer[DType.invalid]
-    ):
+    fn __init__(inout self: Self, lib: DLHandle, ptr: UnsafePointer[NoneType]):
         """Creates a user defined counter.
 
         Args:
@@ -224,12 +216,12 @@ struct Gauge[T: DType](Instrument):
             val: [description].
         """
 
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func[UnsafePointer[NoneType]](
             self.lib, Self._get_add_fn_name(), self.ptr, val
         )
 
     fn __del__(owned self: Self):
-        call_dylib_func[DTypePointer[DType.invalid]](
+        call_dylib_func[UnsafePointer[NoneType]](
             self.lib, Self._get_delete_fn_name(), self.ptr
         )
 
@@ -241,7 +233,7 @@ struct PrometheusMetricsEndPoint:
     A prometheus metric reader can be used to export user defined
     custom metrics."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
     var lib: DLHandle
 
     fn __init__(inout self: Self, end_point: String):
@@ -252,7 +244,7 @@ struct PrometheusMetricsEndPoint:
             end_point: The end-point url to be used to query the custom metrics, for instance 'localhost:9464'.
         """
         self.lib = handle_from_config("serving", ".serve_lib")
-        self.ptr = DTypePointer[DType.invalid]()
+        self.ptr = UnsafePointer[NoneType]()
         var endpoint_ref = end_point._strref_dangerous()
         call_dylib_func(
             self.lib,
@@ -282,7 +274,7 @@ struct PrometheusMetricsEndPoint:
 
 
 struct TelemetryContext:
-    var context: DTypePointer[DType.invalid]
+    var context: UnsafePointer[NoneType]
     var lib: DLHandle
 
     alias FlushTelemetryContextFnName = "M_flushTelemetryContext"
@@ -357,7 +349,7 @@ struct TelemetryContext:
         attrib_count = len(addresses)
         var res: Counter[T]
 
-        var ctr = call_dylib_func[DTypePointer[DType.invalid]](
+        var ctr = call_dylib_func[UnsafePointer[NoneType]](
             self.lib,
             Counter[T]._get_create_fn_name(),
             self.context.address,
@@ -416,7 +408,7 @@ struct TelemetryContext:
         attrib_count = len(addresses)
         var res: Gauge[T]
 
-        var ctr = call_dylib_func[DTypePointer[DType.invalid]](
+        var ctr = call_dylib_func[UnsafePointer[NoneType]](
             self.lib,
             Gauge[T]._get_create_fn_name(),
             self.context.address,
@@ -458,7 +450,7 @@ struct TelemetryContext:
         attrib_count = len(addresses)
         var res: Histogram[T]
 
-        var ctr = call_dylib_func[DTypePointer[DType.invalid]](
+        var ctr = call_dylib_func[UnsafePointer[NoneType]](
             self.lib,
             Histogram[T]._get_create_fn_name(),
             self.context.address,
@@ -495,7 +487,7 @@ struct TelemetryContext:
 
         attrib_count = len(addresses)
 
-        var ctr = call_dylib_func[DTypePointer[DType.invalid]](
+        var ctr = call_dylib_func[UnsafePointer[NoneType]](
             self.lib,
             T._get_create_fn_name(),
             self.context.address,

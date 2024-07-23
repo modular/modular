@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides bindings to a Python handler."""
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from python import Python, PythonObject
 from python.python import _get_global_python_itf
 from python._cpython import PyObjectPtr
@@ -22,18 +22,18 @@ from .._batch import CBatch, CRequest, CResponse
 
 struct CPythonRequest(CRequest):
     var _lib: DLHandle
-    var _ptr: DTypePointer[DType.invalid]
+    var _ptr: UnsafePointer[NoneType]
 
     alias _LoadFnName = "M_pythonLoadRequest"
 
-    fn __init__(inout self, lib: DLHandle, ptr: DTypePointer[DType.invalid]):
+    fn __init__(inout self, lib: DLHandle, ptr: UnsafePointer[NoneType]):
         self._lib = lib
         self._ptr = ptr
 
     fn __moveinit__(inout self, owned existing: Self):
         self._lib = existing._lib
-        self._ptr = exchange[DTypePointer[DType.invalid]](
-            existing._ptr, DTypePointer[DType.invalid]()
+        self._ptr = exchange[UnsafePointer[NoneType]](
+            existing._ptr, UnsafePointer[NoneType]()
         )
 
     fn load(self) -> PythonObject:
@@ -56,18 +56,18 @@ struct CPythonRequest(CRequest):
 
 struct CPythonResponse(CResponse):
     var _lib: DLHandle
-    var _ptr: DTypePointer[DType.invalid]
+    var _ptr: UnsafePointer[NoneType]
 
     alias _LoadFnName = "M_pythonLoadResponse"
 
-    fn __init__(inout self, lib: DLHandle, ptr: DTypePointer[DType.invalid]):
+    fn __init__(inout self, lib: DLHandle, ptr: UnsafePointer[NoneType]):
         self._lib = lib
         self._ptr = ptr
 
     fn __moveinit__(inout self, owned existing: Self):
         self._lib = existing._lib
-        self._ptr = exchange[DTypePointer[DType.invalid]](
-            existing._ptr, DTypePointer[DType.invalid]()
+        self._ptr = exchange[UnsafePointer[NoneType]](
+            existing._ptr, UnsafePointer[NoneType]()
         )
 
     fn load(self) -> PythonObject:
@@ -90,7 +90,7 @@ struct CPythonResponse(CResponse):
 
 struct CPythonServer:
     var _lib: DLHandle
-    var _ptr: DTypePointer[DType.invalid]
+    var _ptr: UnsafePointer[NoneType]
     var _httpd: PythonObject
 
     alias _NewFnName = "M_newPythonServer"
@@ -161,20 +161,20 @@ def create(ptr, address):
 
     fn __init__(inout self, lib: DLHandle, address: StringRef) raises:
         self._lib = lib
-        self._ptr = DTypePointer[DType.invalid]()
+        self._ptr = UnsafePointer[NoneType]()
         call_dylib_func(
             self._lib,
             Self._NewFnName,
             UnsafePointer.address_of(self._ptr),
         )
         var mod = Python.evaluate(Self._Stub, file=True)
-        var server_ptr = UnsafePointer(self._ptr.address.address)
+        var server_ptr = UnsafePointer(self._ptr)
         self._httpd = mod.create(int(server_ptr), address)
 
     fn __moveinit__(inout self, owned existing: Self):
         self._lib = existing._lib
-        self._ptr = exchange[DTypePointer[DType.invalid]](
-            existing._ptr, DTypePointer[DType.invalid]()
+        self._ptr = exchange[UnsafePointer[NoneType]](
+            existing._ptr, UnsafePointer[NoneType]()
         )
         self._httpd = existing._httpd^
 

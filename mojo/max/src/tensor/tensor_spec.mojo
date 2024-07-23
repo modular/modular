@@ -90,7 +90,7 @@ struct TensorSpec(
         var owned_shape = shape^
         var rep = _as_rep16(owned_shape._rep)
         # Set to null so dims won't get freed for RepOutOfLine.
-        owned_shape._rep.ptr = DTypePointer[DType.invalid]()
+        owned_shape._rep.ptr = UnsafePointer[NoneType]()
         rep.auxillary = type._as_i8()
 
         self.shape = TensorShape()
@@ -222,11 +222,11 @@ struct TensorSpec(
         writer.write(self.shape, "x", self.dtype())
 
     @staticmethod
-    fn from_bytes(data: DTypePointer[DType.uint8]) -> TensorSpec:
+    fn from_bytes(data: UnsafePointer[UInt8]) -> TensorSpec:
         """Create a TensorSpec object from serialized bytes.
 
         Args:
-          data: DTypePointer to serialized bytes.
+          data: UnsafePointer to serialized bytes.
 
         Returns:
           Given bytes as TensorSpec.

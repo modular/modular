@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 from collections.optional import Optional
 from max._driver import Device
@@ -31,7 +31,7 @@ struct AllocatorType:
 @value
 @register_passable("trivial")
 struct CRuntimeConfig:
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias FreeRuntimeConfigFnName = "M_freeRuntimeConfig"
     alias SetAllocatorTypeFnName = "M_setAllocatorType"
@@ -93,7 +93,7 @@ struct RuntimeConfig:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CRuntimeConfig](
-            existing.ptr, DTypePointer[DType.invalid]()
+            existing.ptr, UnsafePointer[NoneType]()
         )
         self.lib = existing.lib
 
@@ -110,7 +110,7 @@ struct RuntimeConfig:
 @value
 @register_passable("trivial")
 struct CRuntimeContext:
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias FreeRuntimeContextFnName = "M_freeRuntimeContext"
 
@@ -135,13 +135,13 @@ struct RuntimeContext:
         )
         if status:
             print(status.__str__())
-            self.ptr = DTypePointer[DType.invalid]()
+            self.ptr = UnsafePointer[NoneType]()
         _ = config^
         self.lib = lib
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CRuntimeContext](
-            existing.ptr, DTypePointer[DType.invalid]()
+            existing.ptr, UnsafePointer[NoneType]()
         )
         self.lib = existing.lib
 

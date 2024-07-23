@@ -51,8 +51,8 @@ struct TensorSlice[
     fn spec(self) -> TensorSpec:
         return self._unsafe_slice._spec.get_tensor_spec()
 
-    fn unsafe_ptr[__type: DType = type](self) -> DTypePointer[__type]:
-        return rebind[DTypePointer[__type]](self._unsafe_slice._ptr)
+    fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
+        return rebind[UnsafePointer[Scalar[__type]]](self._unsafe_slice._ptr)
 
     @always_inline
     fn __getitem__(self, *indices: Int) -> Scalar[type]:
@@ -103,14 +103,14 @@ struct UnsafeTensorSlice[
     until UnsafeTensorSlice's last use.
     """
 
-    var _ptr: DTypePointer[type]
+    var _ptr: UnsafePointer[Scalar[type]]
     var _spec: StaticTensorSpec[type, rank]
     var _start_offset: Int
     var _strides: StaticIntTuple[rank]
 
     fn __init__(
         inout self,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         slices: InlineArray[Slice, rank],
         slicer_spec: StaticTensorSpec[type, rank],
     ):
@@ -148,7 +148,7 @@ struct UnsafeTensorSlice[
 
     fn __init__(
         inout self,
-        ptr: DTypePointer[type],
+        ptr: UnsafePointer[Scalar[type]],
         shape: StaticIntTuple[rank],
     ):
         self._ptr = ptr
@@ -221,8 +221,8 @@ struct UnsafeTensorSlice[
     fn spec(self) -> TensorSpec:
         return self._spec.get_tensor_spec()
 
-    fn unsafe_ptr[__type: DType = type](self) -> DTypePointer[__type]:
-        return rebind[DTypePointer[__type]](self._ptr)
+    fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
+        return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
     @always_inline
     fn load[

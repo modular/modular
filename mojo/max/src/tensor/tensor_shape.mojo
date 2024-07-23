@@ -18,7 +18,6 @@ from collections import List
 from sys.info import is_little_endian, sizeof
 
 from memory import memcpy, UnsafePointer
-from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple
 from utils.loop import unroll
@@ -353,8 +352,8 @@ struct _Rep32(Formattable, EqualityComparable):
 struct _RepOutOfLine(Formattable, EqualityComparable):
     """A general storage kind which stores the dimensions on the heap."""
 
-    alias _padding_size = (13 - sizeof[DTypePointer[DType.invalid]]())
-    var dims: DTypePointer[DType.index]
+    alias _padding_size = (13 - sizeof[UnsafePointer[NoneType]]())
+    var dims: UnsafePointer[Scalar[DType.index]]
     """The heap allocated dimensions."""
     # FIXME: This isn't correct for big endian systems, but we check with
     # static_assert below.
@@ -377,7 +376,7 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
                 " endian systems"
             ),
         ]()
-        self.dims = DTypePointer[DType.index]()
+        self.dims = UnsafePointer[Scalar[DType.index]]()
         self._padding = StaticTuple[UInt8, Self._padding_size]()
         self.rep_kind = _RepKind.KIND_OUT_OF_LINE
         self.rank = 0
@@ -465,7 +464,9 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
         Returns:
           A new copy of the representation.
         """
-        var dims_copy = DTypePointer[DType.index].alloc(self.get_rank())
+        var dims_copy = UnsafePointer[Scalar[DType.index]].alloc(
+            self.get_rank()
+        )
         memcpy(dims_copy.address, self.dims.address, self.get_rank())
 
         return Self {
@@ -507,7 +508,7 @@ struct _TensorShapeStorage:
     """The storage type for the tensor shape. This acts as a union type between
     all the representations."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
     var idx: Int64
 
     @always_inline
@@ -801,7 +802,7 @@ struct TensorShape(
         # Otherwise, we will store out of line.
         var rep = _RepOutOfLine()
         rep.rank = rank
-        rep.dims = DTypePointer[DType.index].alloc(rank)
+        rep.dims = UnsafePointer[Scalar[DType.index]].alloc(rank)
         for i in range(rank):
             rep[i] = shapes[i]
 
@@ -849,7 +850,7 @@ struct TensorShape(
         # Otherwise, we will store out of line.
         var rep = _RepOutOfLine()
         rep.rank = rank
-        rep.dims = DTypePointer[DType.index].alloc(rank)
+        rep.dims = UnsafePointer[Scalar[DType.index]].alloc(rank)
         for i in range(rank):
             rep[i] = shapes[i]
 
@@ -901,7 +902,7 @@ struct TensorShape(
         # Otherwise, we will store out of line.
         var rep = _RepOutOfLine()
         rep.rank = rank
-        rep.dims = DTypePointer[DType.index].alloc(rank)
+        rep.dims = UnsafePointer[Scalar[DType.index]].alloc(rank)
         for i in range(rank):
             rep[i] = shapes[i]
 

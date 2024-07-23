@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max._utils import call_dylib_func, exchange, CString
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 
 from ._compilation import CCompiledModel
@@ -19,7 +19,7 @@ struct CTensorNameArray:
     This doesn't free the memory on destruction.
     """
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias FreeTensorNameArrayFnName = "M_freeTensorNameArray"
     alias GetTensorNameAtFnName = "M_getTensorNameAt"
@@ -78,13 +78,13 @@ struct TensorNames(Sized):
         fn_name._strref_keepalive()
         if status:
             print(status.__str__())
-            self.ptr = DTypePointer[DType.invalid]()
+            self.ptr = UnsafePointer[NoneType]()
         self.length = length
         self.lib = lib
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CTensorNameArray](
-            existing.ptr, DTypePointer[DType.invalid]()
+            existing.ptr, UnsafePointer[NoneType]()
         )
         self.length = existing.length
         self.lib = existing.lib

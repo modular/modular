@@ -117,7 +117,7 @@ fn attr_new_tensor[
 
 fn attr_new_tensor(
     name: String,
-    data: DTypePointer[DType.invalid],
+    data: UnsafePointer[NoneType],
     type: _mlir.Type,
     is_owned: Bool,
 ) -> _mlir.NamedAttribute:
@@ -125,7 +125,7 @@ fn attr_new_tensor(
         "MAXG_attrNewTensor",
         fn (
             StringRef,
-            DTypePointer[DType.invalid],
+            UnsafePointer[NoneType],
             _mlir.Type.cType,
             Bool,
             UnsafePointer[NoneType],

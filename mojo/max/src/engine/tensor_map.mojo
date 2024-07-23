@@ -7,7 +7,8 @@
 Defines the `TensorMap` type that holds input and output tensors for a model.
 """
 from buffer import Buffer
-from memory.unsafe import bitcast, DTypePointer
+from memory import UnsafePointer
+from memory.unsafe import bitcast
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, exchange, CString
 
@@ -89,7 +90,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             existing: Instance of TensorMap to move from.
         """
         self._ptr = exchange[CTensorMap](
-            existing._ptr, DTypePointer[DType.invalid]()
+            existing._ptr, UnsafePointer[NoneType]()
         )
         self._lib = existing._lib
         self._session = existing._session^
@@ -123,13 +124,15 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             self._session,
         )
         self._ptr.borrow_tensor_by_name(
-            value.unsafe_ptr().bitcast[DType.invalid](), spec, self._lib
+            value.unsafe_ptr().bitcast[NoneType](), spec, self._lib
         )
         key._strref_keepalive()
 
     fn borrow[
         type: DType
-    ](self, key: String, spec: TensorSpec, ptr: DTypePointer[type]) raises:
+    ](
+        self, key: String, spec: TensorSpec, ptr: UnsafePointer[Scalar[type]]
+    ) raises:
         """Borrow the given pointer into the map at the key location.
            User needs to make sure the backing array is alive for
            the duration of map.
@@ -150,7 +153,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             self._session,
         )
         self._ptr.borrow_tensor_by_name(
-            ptr.bitcast[DType.invalid](),
+            ptr.bitcast[NoneType](),
             tensor_spec,
             self._lib,
         )

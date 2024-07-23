@@ -31,7 +31,7 @@ fn alloc_device_context() -> UnsafePointer[DeviceContext]:
 
 fn alloc_device_buffer(
     ctx: UnsafePointer[DeviceContext], bytes: Int
-) -> DTypePointer[DType.uint8]:
+) -> UnsafePointer[UInt8]:
     try:
         return ctx[].cuda_context.malloc_async[UInt8](bytes, ctx[].cuda_stream)
     except e:
@@ -40,8 +40,8 @@ fn alloc_device_buffer(
 
 fn copy_device_to_host(
     ctx: UnsafePointer[DeviceContext],
-    dev_ptr: DTypePointer[DType.uint8],
-    host_ptr: DTypePointer[DType.uint8],
+    dev_ptr: UnsafePointer[UInt8],
+    host_ptr: UnsafePointer[UInt8],
     size: Int,
 ):
     try:
@@ -54,8 +54,8 @@ fn copy_device_to_host(
 
 fn copy_host_to_device(
     ctx: UnsafePointer[DeviceContext],
-    dev_ptr: DTypePointer[DType.uint8],
-    host_ptr: DTypePointer[DType.uint8],
+    dev_ptr: UnsafePointer[UInt8],
+    host_ptr: UnsafePointer[UInt8],
     size: Int,
 ):
     try:
@@ -68,8 +68,8 @@ fn copy_host_to_device(
 
 fn copy_device_to_device(
     ctx: UnsafePointer[DeviceContext],
-    dst_ptr: DTypePointer[DType.uint8],
-    src_ptr: DTypePointer[DType.uint8],
+    dst_ptr: UnsafePointer[UInt8],
+    src_ptr: UnsafePointer[UInt8],
     size: Int,
 ):
     try:
@@ -80,9 +80,7 @@ fn copy_device_to_device(
         abort(e)
 
 
-fn free_buffer(
-    ctx: UnsafePointer[DeviceContext], ptr: DTypePointer[DType.uint8]
-):
+fn free_buffer(ctx: UnsafePointer[DeviceContext], ptr: UnsafePointer[UInt8]):
     try:
         ctx[].cuda_context.free_async(ptr.address, ctx[].cuda_stream)
     except e:
@@ -106,28 +104,28 @@ struct ContextAPIFuncPtrs:
     var alloc_device_context: fn () -> UnsafePointer[DeviceContext]
     var alloc_device_buffer: fn (
         UnsafePointer[DeviceContext], Int
-    ) -> DTypePointer[DType.uint8]
+    ) -> UnsafePointer[UInt8]
     var copy_device_to_host: fn (
         UnsafePointer[DeviceContext],
-        DTypePointer[DType.uint8],
-        DTypePointer[DType.uint8],
+        UnsafePointer[UInt8],
+        UnsafePointer[UInt8],
         Int,
     ) -> None
     var copy_host_to_device: fn (
         UnsafePointer[DeviceContext],
-        DTypePointer[DType.uint8],
-        DTypePointer[DType.uint8],
+        UnsafePointer[UInt8],
+        UnsafePointer[UInt8],
         Int,
     ) -> None
     var copy_device_to_device: fn (
         UnsafePointer[DeviceContext],
-        DTypePointer[DType.uint8],
-        DTypePointer[DType.uint8],
+        UnsafePointer[UInt8],
+        UnsafePointer[UInt8],
         Int,
     ) -> None
     var free_buffer: fn (
         UnsafePointer[DeviceContext],
-        DTypePointer[DType.uint8],
+        UnsafePointer[UInt8],
     ) -> None
     var free_context: fn (UnsafePointer[DeviceContext],) -> None
     var synchronize: fn (UnsafePointer[DeviceContext],) -> None

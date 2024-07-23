@@ -7,7 +7,7 @@
 
 from sys.ffi import DLHandle
 from memory import UnsafePointer
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from runtime.asyncrt import Chain
 
 from max._utils import call_dylib_func, exchange, CString
@@ -19,7 +19,7 @@ struct ClientResult:
     """Corresponds to the M_ClientResult C type; should only be used as a UnsafePointer.
     """
 
-    var response: DTypePointer[DType.invalid]
+    var response: UnsafePointer[NoneType]
     var error: CString
     var code: Int
 
@@ -34,7 +34,7 @@ struct CGRPCClient:
     """Corresponds to the M_KServeClient C type."""
 
     var _lib: DLHandle
-    var _ptr: DTypePointer[DType.invalid]
+    var _ptr: UnsafePointer[NoneType]
 
     alias _NewFnName = "M_newKServeClient"
     alias _FreeFnName = "M_freeKServeClient"
@@ -46,7 +46,7 @@ struct CGRPCClient:
 
     fn __init__(inout self, lib: DLHandle, address: StringRef):
         self._lib = lib
-        self._ptr = DTypePointer[DType.invalid]()
+        self._ptr = UnsafePointer[NoneType]()
         call_dylib_func(
             self._lib,
             Self._NewFnName,
@@ -56,8 +56,8 @@ struct CGRPCClient:
 
     fn __moveinit__(inout self, owned existing: Self):
         self._lib = existing._lib
-        self._ptr = exchange[DTypePointer[DType.invalid]](
-            existing._ptr, DTypePointer[DType.invalid]()
+        self._ptr = exchange[UnsafePointer[NoneType]](
+            existing._ptr, UnsafePointer[NoneType]()
         )
 
     fn __del__(owned self):
@@ -80,7 +80,7 @@ struct CGRPCClient:
     fn create_infer_request(
         inout self, name: StringRef, version: StringRef
     ) -> CInferenceRequest:
-        var ptr = DTypePointer[DType.invalid]()
+        var ptr = UnsafePointer[NoneType]()
         call_dylib_func(
             self._lib,
             Self._ModelInferCreateRequestFnName,

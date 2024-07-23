@@ -52,9 +52,7 @@ struct Value:
         Args:
             existing: The value to take ownership of.
         """
-        self._ptr = exchange[CValue](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
+        self._ptr = exchange[CValue](existing._ptr, UnsafePointer[NoneType]())
         self._lib = existing._lib
         self._session = existing._session^
 
@@ -209,9 +207,7 @@ struct List(Sized):
         Args:
             existing: The List to represent.
         """
-        self._ptr = exchange[CList](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
+        self._ptr = exchange[CList](existing._ptr, UnsafePointer[NoneType]())
         self._lib = existing._lib
         self._session = existing._session^
 

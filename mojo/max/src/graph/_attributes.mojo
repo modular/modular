@@ -55,7 +55,7 @@ fn _tensor_attr[
     var t = TensorType(value.spec()).to_mlir(ctx)
     return _c.attr_new_tensor(
         name,
-        value._steal_ptr().bitcast[DType.invalid](),
+        value._steal_ptr().bitcast[NoneType](),
         t,
         is_owned=True,
     )

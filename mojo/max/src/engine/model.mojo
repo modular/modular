@@ -64,9 +64,7 @@ struct Model:
           existing: Model to move.
         """
         self._ctx = existing._ctx
-        self._ptr = exchange[CModel](
-            existing._ptr, DTypePointer[DType.invalid]()
-        )
+        self._ptr = exchange[CModel](existing._ptr, UnsafePointer[NoneType]())
         self._lib = existing._lib
         self._session = existing._session^
         self._compiled_model = existing._compiled_model^

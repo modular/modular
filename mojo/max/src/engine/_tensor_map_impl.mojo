@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from memory import UnsafePointer
 from sys.ffi import DLHandle
 from max._utils import call_dylib_func, CString
 
@@ -22,7 +22,7 @@ fn _destroy_pointee_wrapper[T: AnyType](ptr: UnsafePointer[T]):
 struct CTensorMap:
     """Represents AsyncTensorMap ptr from Engine."""
 
-    var ptr: DTypePointer[DType.invalid]
+    var ptr: UnsafePointer[NoneType]
 
     alias CopyAsyncTensorMapFnName = "M_copyAsyncTensorMap"
     alias FreeAsyncTensorMapFnName = "M_freeAsyncTensorMap"
@@ -54,7 +54,7 @@ struct CTensorMap:
 
     fn borrow_tensor_by_name(
         self,
-        ptr: DTypePointer[DType.invalid],
+        ptr: UnsafePointer[NoneType],
         spec: EngineTensorSpec,
         lib: DLHandle,
     ) raises:
@@ -73,7 +73,7 @@ struct CTensorMap:
     fn borrow_value_by_name(
         self,
         name: String,
-        ptr: DTypePointer[DType.invalid],
+        ptr: UnsafePointer[NoneType],
         lib: DLHandle,
     ) raises:
         var status = Status(lib)
