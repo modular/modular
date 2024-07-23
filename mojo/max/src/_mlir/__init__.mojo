@@ -19,3 +19,5 @@ from .ir import (
     Type,
     Value,
 )
+
+from .rewrite import Rewriter
