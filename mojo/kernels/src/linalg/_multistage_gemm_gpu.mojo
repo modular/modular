@@ -372,9 +372,9 @@ fn multistage_gemm[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var M = c.dim[0]()
-    alias N = b_shape.get[0]() if transpose_b else b_shape.get[1]()
-    alias K = b_shape.get[1]() if transpose_b else b_shape.get[0]()
+    var M : UInt= c.dim[0]()
+    alias N : UInt= b_shape.get[0]() if transpose_b else b_shape.get[1]()
+    alias K : UInt= b_shape.get[1]() if transpose_b else b_shape.get[0]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -656,13 +656,13 @@ fn multistage_gemm[
                 c_store_layout
             ](ThreadIdx.x())
             var thread_offset = c_gmem_frag.distance(c.data)
-            var m: Int
-            var n: Int
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 var src_vec = c_smem_frag.aligned_load[simd_size](i, 0)
                 alias dst_idx = c_gmem_frag.layout(i)
                 var vec: SIMD[c_type, simd_size] = 0
+                var m: UInt
+                var n: UInt
                 m, n = divmod(thread_offset + dst_idx, N)
 
                 @parameter
@@ -672,7 +672,7 @@ fn multistage_gemm[
                     )
                     vec[j] = vec_converted[0]
                     vec[j + 1] = vec_converted[1]
-                epilogue((m, n), vec)
+                epilogue((int(m), int(n)), vec)
 
         else:
             copy_sram_to_dram[
@@ -693,20 +693,20 @@ fn multistage_gemm[
                 Layout.row_major(8, 4)
             ](ln_id)
             var c_reg_frag = c_reg_tile.vectorize[1, 2]().transpose()
-            var m: Int
-            var n: Int
             var thread_offset = c_gmem_frag.distance(c.data)
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
                 alias dst_idx = c_gmem_frag.layout(i)
+                var m: UInt
+                var n: UInt
                 m, n = divmod(thread_offset + dst_idx, N)
                 # var idx_x: Int
                 # var idx_y: Int
                 # idx_y, idx_x = divmod(i, c_reg_frag.dim[0]())
                 # var vec = c_reg_frag.aligned_load[2](idx_x, idx_y)
                 var vec = SIMD[size=2].load[alignment = alignof[SIMD[c_type, 2]]()](c_reg_frag.ptr.offset(src_idx))
-                epilogue((m, n), vec)
+                epilogue((int(m), int(n)), vec)
 
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
