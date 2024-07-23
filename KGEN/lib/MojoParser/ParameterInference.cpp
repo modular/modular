@@ -701,7 +701,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   /// we inferred a value for the parameter from previous arguments, substitute
   /// it into the expected types of subsequent arguments.  This allows us to
   /// handle dependent argument types like:
-  ///     fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
+  ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
+  ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
   auto getPartiallySpecializedType = [&]() -> ASTType {
     SmallVector<TypedAttr> currentParams;
