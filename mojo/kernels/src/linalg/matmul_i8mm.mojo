@@ -193,7 +193,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
             for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](b_ptr.offset(prefetch_offset + idx * simd_size).address)
+                ](b_ptr.offset(prefetch_offset + idx * simd_size))
 
         # Loop over local accumulator tiles.
         @parameter

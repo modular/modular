@@ -90,7 +90,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                         .for_read()
                         .high_locality()
                         .to_data_cache()
-                    ](b_ptr.offset(prefetch_offset + idx * simd_size).address)
+                    ](b_ptr.offset(prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()

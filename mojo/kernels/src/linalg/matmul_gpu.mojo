@@ -991,7 +991,7 @@ fn sgemm_double_buffer_kernel[
             epilogue, c_gmem_frag.layout, c_gmem_frag.element_layout
         ](
             c_reg.vectorize[simd_size, simd_size](),
-            c_gmem_frag.distance(c.address),
+            c_gmem_frag.distance(c),
         )
 
     else:

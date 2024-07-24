@@ -78,29 +78,29 @@ fn init_matrices(
     c_ptr: UnsafePointer[Int32],
     c2_ptr: UnsafePointer[Int32],
 ):
-    var a = Buffer[DType.int8](a_ptr.address, 1024)
-    var b = Buffer[DType.int8](b_ptr.address, 1024)
-    var c = Buffer[DType.int32](c_ptr.address, 256)
-    var c2 = Buffer[DType.int32](c2_ptr.address, 256)
+    var a = Buffer[DType.int8](a_ptr, 1024)
+    var b = Buffer[DType.int8](b_ptr, 1024)
+    var c = Buffer[DType.int32](c_ptr, 256)
+    var c2 = Buffer[DType.int32](c2_ptr, 256)
     var b2 = Buffer[DType.int8, 1024].stack_allocation()
 
     for i in range(1024):
         a[i] = Int8(i & 127)
         b2[i] = Int8(i & 127)
 
-    memset_zero(c.data.address, 1024)
-    memset_zero(c2.data.address, 1024)
+    memset_zero(c.data, 1024)
+    memset_zero(c2.data, 1024)
 
-    var b2m = NDBuffer[DType.int8, 2, DimList(64, 16)](b2.data.address)
-    var bm = NDBuffer[DType.int8, 2, DimList(16, 64)](b_ptr.address)
+    var b2m = NDBuffer[DType.int8, 2, DimList(64, 16)](b2.data)
+    var bm = NDBuffer[DType.int8, 2, DimList(16, 64)](b_ptr)
     # transpose from 64x16 to 16x64
     transpose[2, DimList(16, 64), DimList(64, 16), DType.int8](bm, b2m)
 
     var b32_ptr = b.data.bitcast[DType.int32]()
-    var b32m = NDBuffer[DType.int32, 2, DimList(16, 16)](b32_ptr.address)
+    var b32m = NDBuffer[DType.int32, 2, DimList(16, 16)](b32_ptr)
     transpose_inplace[16, 16, DType.int32](b32m)
-    var am = NDBuffer[DType.int8, 2, DimList(16, 64)](a.data.address)
-    var c2m = NDBuffer[DType.int32, 2, DimList(16, 16)](c2.data.address)
+    var am = NDBuffer[DType.int8, 2, DimList(16, 64)](a.data)
+    var c2m = NDBuffer[DType.int32, 2, DimList(16, 16)](c2.data)
     naive_matmul[
         DimList(16, 64),
         DimList(64, 16),
@@ -117,8 +117,8 @@ fn init_matrices(
 fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
     var ptr = UnsafePointer.address_of(tc)
-    var tc_ptr = UnsafePointer[Int8](ptr.bitcast[int8_pop]().address)
-    memset_zero(tc_ptr.address, 64)
+    var tc_ptr = UnsafePointer[Int8](ptr.bitcast[int8_pop]())
+    memset_zero(tc_ptr, 64)
 
     var nrows: UInt8 = 16
     var colb: UInt16 = 64
@@ -145,19 +145,19 @@ fn main():
     _tile_dpbssd_emulated(c.data, a.data, b.data)
     # print_matrix[16, 16, DType.int32](c.data.bitcast[void]())
     var errors: Int = 0
-    errors = memcmp(c.data.address, c2.data.address, len(c))
+    errors = memcmp(c.data, c2.data, len(c))
     print("Emulated AMX-int8 matmul test.")
     # CHECK: 0
     print(errors)
     if errors != 0:
         print("Matrices don't agree!")
-    memset_zero(c.data.address, 1024)
+    memset_zero(c.data, 1024)
     if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()
         var ptr = UnsafePointer[tileconfig].address_of(tc)
         var tc_ptr = UnsafePointer[Scalar[void]](
-            ptr.bitcast[__mlir_type.`!pop.scalar<invalid>`]().address
+            ptr.bitcast[__mlir_type.`!pop.scalar<invalid>`]()
         )
 
         _tile_loadconfig(tc_ptr)
@@ -170,8 +170,8 @@ fn main():
         _tile_release()
 
         errors = memcmp(
-            c.data.bitcast[void]().address,
-            c2.data.bitcast[void]().address,
+            c.data.bitcast[void](),
+            c2.data.bitcast[void](),
             len(c),
         )
     # CHECK: 0

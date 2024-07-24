@@ -59,8 +59,8 @@ fn test_gemv():
     )
     var ref_out = Buffer[type, Dim(m)](ref_out_storage)
 
-    rand[type](lhs_storage.address, m * k)
-    rand[type](rhs_storage.address, k)
+    rand[type](lhs_storage, m * k)
+    rand[type](rhs_storage, k)
 
     # Compute reference output
     naive_gemv(ref_out, lhs, rhs)

@@ -747,7 +747,7 @@ fn _pack_b_ndbuffer_impl[
     # Matrix by vector pattern -> use gemv
     if b_input.dim(1) == 1:
         # For gemv no packing is necessary
-        memcpy(output_buffer.data.address, b_input.data.address, b_input.dim(0))
+        memcpy(output_buffer.data, b_input.data, b_input.dim(0))
 
     else:
         var n = b_input.dim(0) if transposed else b_input.dim(1)
@@ -771,7 +771,7 @@ fn _pack_b_ndbuffer_impl[
                 except e:
                     abort(e)
             else:
-                memcpy(output_buffer.data.address, b_input.data.address, n * k)
+                memcpy(output_buffer.data, b_input.data, n * k)
             return
 
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
