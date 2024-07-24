@@ -1,5 +1,28 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true allow-multiple-primary-impls=true" -allow-unregistered-dialect | FileCheck %s
 
+kgen.generator @recursive(%arg0: index) -> index {
+  %idx1 = index.constant 1
+  %0 = index.cmp sge(%arg0, %idx1)
+  hlcf.if %0 {
+    %1 = index.sub %arg0, %idx1
+    %2 = kgen.call @recursive(%1) : (index) -> index
+    kgen.return %2 : index
+  } else {
+    hlcf.yield
+  }
+  kgen.return %idx1 : index
+}
+
+// CHECK-LABEL: kgen.func export @recursive_return_after_call
+kgen.generator export @recursive_return_after_call() {
+  kgen.param.apply x = [(index) -> index: @recursive](5)
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <x>
+  kgen.return
+}
+
+// -----
+
 kgen.generator @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
   %0 = index.mul %arg1, %arg2
   %1 = index.add %0, %arg0

@@ -133,10 +133,13 @@ public:
   /// this is indicating that the interpreter should exit. Otherwise, the
   /// current return values are taken as the results of the target operation.
   void transferControlFlowTo(Operation *target) {
-    pc = target;
-    if (pc) {
+    if (target) {
+      block = target->getBlock();
+      pc = target->getIterator();
       mapResults(returnValues);
-      pc = pc->getNextNode();
+    } else {
+      block = nullptr;
+      pc = Block::iterator();
     }
   }
 
@@ -145,7 +148,8 @@ public:
   void transferControlFlowTo(Block *target, ArrayRef<Attribute> arguments) {
     for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
       mapOrOverwrite(arg, value);
-    pc = &target->front();
+    block = target;
+    pc = Block::iterator();
   }
 
   //===--------------------------------------------------------------------===//
@@ -372,10 +376,13 @@ private:
   /// current stack frame.
   ErrorTree addStackTrace(ErrorTree error);
 
-  /// The current operation being interpreted. The interpreter exits when the
-  /// operation is null, in which case the required invariant be that the stack
-  /// frame is empty.
-  Operation *pc = nullptr;
+  /// The current block being interpreter. The interpreter exits when the block
+  /// is null. in which case the required invariant is that the stack frame is
+  /// empty.
+  Block *block = nullptr;
+  /// The operation within the current block being interpreter. If the iterator
+  /// is not valid, then this refers to the beginning of the block.
+  Block::iterator pc;
 
   /// A call stack. The values in the current frame are available to the
   /// operation being interpreted.
