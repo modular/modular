@@ -1591,6 +1591,125 @@ fn test_layout_tensor_copy_from_masked_dst():
     tensor_15x16.print()
 
 
+# CHECK-LABEL: test_element_coords_vectorized
+fn test_element_coords_vectorized():
+    print("test_element_coords_vectorized")
+    var tensor = LayoutTensor[
+        DType.int32, Layout.col_major(8, 8)
+    ].stack_allocation()
+
+    var tensor_2x2 = tensor.vectorize[4, 4]()
+
+    # CHECK: (0, 0) (0, 4)
+    # CHECK: (4, 0) (4, 4
+    @parameter
+    for ii in range(2):
+
+        @parameter
+        for jj in range(2):
+            print(tensor_2x2.element_coords[jj * 2 + ii](), end=" ")
+        print("")
+
+
+# CHECK-LABEL: test_element_coords_tile_and_distribute
+fn test_element_coords_tile_and_distribute():
+    print("== test_element_coords_tile_and_distribute")
+    var tensor = LayoutTensor[
+        DType.int32, Layout.col_major(8, 8)
+    ].stack_allocation()
+    tensor.fill(-1)
+
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: ----tile[ 0 0 ]----
+    # CHECK: (0, 0) (0, 2)
+    # CHECK: (2, 0) (2, 2)
+    # CHECK: ----tile[ 0 1 ]----
+    # CHECK: (0, 4) (0, 6)
+    # CHECK: (2, 4) (2, 6)
+    # CHECK: ----tile[ 1 0 ]----
+    # CHECK: (4, 0) (4, 2)
+    # CHECK: (6, 0) (6, 2)
+    # CHECK: ----tile[ 1 1 ]----
+    # CHECK: (4, 4) (4, 6)
+    # CHECK: (6, 4) (6, 6)
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: ----tile[ 0 0 ]----
+    # CHECK: (0, 1) (0, 3)
+    # CHECK: (2, 1) (2, 3)
+    # CHECK: ----tile[ 0 1 ]----
+    # CHECK: (0, 5) (0, 7)
+    # CHECK: (2, 5) (2, 7)
+    # CHECK: ----tile[ 1 0 ]----
+    # CHECK: (4, 1) (4, 3)
+    # CHECK: (6, 1) (6, 3)
+    # CHECK: ----tile[ 1 1 ]----
+    # CHECK: (4, 5) (4, 7)
+    # CHECK: (6, 5) (6, 7)
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: ----tile[ 0 0 ]----
+    # CHECK: (1, 0) (1, 2)
+    # CHECK: (3, 0) (3, 2)
+    # CHECK: ----tile[ 0 1 ]----
+    # CHECK: (1, 4) (1, 6)
+    # CHECK: (3, 4) (3, 6)
+    # CHECK: ----tile[ 1 0 ]----
+    # CHECK: (5, 0) (5, 2)
+    # CHECK: (7, 0) (7, 2)
+    # CHECK: ----tile[ 1 1 ]----
+    # CHECK: (5, 4) (5, 6)
+    # CHECK: (7, 4) (7, 6)
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: ----tile[ 0 0 ]----
+    # CHECK: (1, 1) (1, 3)
+    # CHECK: (3, 1) (3, 3)
+    # CHECK: ----tile[ 0 1 ]----
+    # CHECK: (1, 5) (1, 7)
+    # CHECK: (3, 5) (3, 7)
+    # CHECK: ----tile[ 1 0 ]----
+    # CHECK: (5, 1) (5, 3)
+    # CHECK: (7, 1) (7, 3)
+    # CHECK: ----tile[ 1 1 ]----
+    # CHECK: (5, 5) (5, 7)
+    # CHECK: (7, 5) (7, 7)
+
+    for th_id in range(4):
+        print("----thread[", th_id, "]----")
+        for tile_m in range(2):
+            for tile_n in range(2):
+                print("----tile[", tile_m, tile_n, "]----")
+                var tensor_4x4 = tensor.tile[4, 4](tile_m, tile_n)
+                var tensor_2x2 = tensor_4x4.distribute[Layout.row_major(2, 2)](
+                    th_id
+                )
+
+                @parameter
+                for m_idx in range(2):
+
+                    @parameter
+                    for n_idx in range(2):
+                        print(
+                            tensor_2x2.element_coords[n_idx * 2 + m_idx](),
+                            end=" ",
+                        )
+                        var coords = tensor_2x2.element_coords[
+                            n_idx * 2 + m_idx
+                        ]()
+                        # Each thread writes each thread_id back to the coords
+                        tensor[coords[0], coords[1]] = th_id
+                    print("")
+
+    # CHECK: 0 1 0 1 0 1 0 1
+    # CHECK: 2 3 2 3 2 3 2 3
+    # CHECK: 0 1 0 1 0 1 0 1
+    # CHECK: 2 3 2 3 2 3 2 3
+    # CHECK: 0 1 0 1 0 1 0 1
+    # CHECK: 2 3 2 3 2 3 2 3
+    # CHECK: 0 1 0 1 0 1 0 1
+    # CHECK: 2 3 2 3 2 3 2 3
+    print("")
+    tensor.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -1615,3 +1734,5 @@ fn main():
     test_layout_tensor_iterator()
     test_layout_tensor_copy_from_masked_src()
     test_layout_tensor_copy_from_masked_dst()
+    test_element_coords_vectorized()
+    test_element_coords_tile_and_distribute()

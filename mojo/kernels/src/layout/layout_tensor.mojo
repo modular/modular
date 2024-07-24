@@ -129,6 +129,11 @@ struct LayoutTensor[
     alias element_size = element_layout.size()
     alias element_type = SIMD[dtype, Self.element_size]
 
+    # An offset of the global coords.
+    var org_coords_offset: StaticIntTuple[rank]
+    # The stride of the global coords.
+    var org_coords_stride: StaticIntTuple[rank]
+
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
@@ -137,17 +142,27 @@ struct LayoutTensor[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
+        /,
+        *,
+        org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
+        org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
     ):
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
         self.ptr = ptr
         self.runtime_layout = RuntimeLayout[layout]()
         self.runtime_element_layout = RuntimeLayout[element_layout]()
+        self.org_coords_offset = org_coords_offset
+        self.org_coords_stride = org_coords_stride
 
     @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout],
+        /,
+        *,
+        org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
+        org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
     ):
         constrained[
             element_layout.all_dims_known(), "Layout must be fully static"
@@ -155,6 +170,8 @@ struct LayoutTensor[
         self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = RuntimeLayout[element_layout]()
+        self.org_coords_offset = org_coords_offset
+        self.org_coords_stride = org_coords_stride
 
     @always_inline
     fn __init__(
@@ -162,10 +179,16 @@ struct LayoutTensor[
         ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout],
         elemnt_runtime_layout: RuntimeLayout[element_layout],
+        /,
+        *,
+        org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
+        org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
     ):
         self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = elemnt_runtime_layout
+        self.org_coords_offset = org_coords_offset
+        self.org_coords_stride = org_coords_stride
 
     fn __init__(inout self, *, other: Self):
         """Explicitly copy the provided value.
@@ -180,6 +203,8 @@ struct LayoutTensor[
         self.ptr = existing.ptr
         self.runtime_layout = existing.runtime_layout
         self.runtime_element_layout = existing.runtime_element_layout
+        self.org_coords_offset = existing.org_coords_offset
+        self.org_coords_stride = existing.org_coords_stride
 
     @always_inline
     fn bitcast[
@@ -477,11 +502,21 @@ struct LayoutTensor[
                 alias stride = to_int(__tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
+            # Update offset to account for tile coords.
+            var org_coords_offset = self.org_coords_offset
+
+            @parameter
+            for i in range(rank):
+                org_coords_offset[i] += tile_sizes[i] * tile_coords[i]
+
             return LayoutTensor[
-                dtype,
-                __tiled_layout[0],
-                address_space=address_space,
-            ](self.ptr.offset(offset))
+                dtype, __tiled_layout[0], address_space=address_space
+            ](
+                self.ptr.offset(offset),
+                org_coords_offset=rebind[
+                    StaticIntTuple[__tiled_layout[0].rank()]
+                ](org_coords_offset),
+            )
 
         else:
             # Dynamic layout, use strides
@@ -639,6 +674,26 @@ struct LayoutTensor[
         some threads share the same vector.
         """
 
+        alias coalesce_thread_layout = coalesce(threads_layout, keep_rank=True)
+
+        alias res_rank = tiled_layout[1].rank()
+
+        # Update org_coords offset and stride according to thread_id.
+        var org_coords_offset = StaticIntTuple[res_rank]()
+        var org_coords_stride = StaticIntTuple[res_rank]()
+
+        @parameter
+        for i in range(res_rank):
+            alias stride_i: UInt = to_int(
+                flatten(coalesce_thread_layout.stride)[axis.value()]
+            ) if axis else to_int(flatten(coalesce_thread_layout.stride)[i])
+            alias shape_i: UInt = to_int(
+                flatten(coalesce_thread_layout.shape)[axis.value()]
+            ) if axis else to_int(flatten(coalesce_thread_layout.shape)[i])
+            var thread_corrrds_i: UInt = (thread_id // stride_i) % shape_i
+            org_coords_offset[i] = thread_corrrds_i + self.org_coords_offset[i]
+            org_coords_stride[i] = self.org_coords_stride[i] * shape_i
+
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
@@ -691,7 +746,15 @@ struct LayoutTensor[
                 tiled_layout[1],
                 address_space=address_space,
                 element_layout=element_layout,
-            ](self.ptr.offset(int(swizzled_offset)))
+            ](
+                self.ptr.offset(int(swizzled_offset)),
+                org_coords_offset=rebind[
+                    StaticIntTuple[tiled_layout[1].rank()]
+                ](org_coords_offset),
+                org_coords_stride=rebind[
+                    StaticIntTuple[tiled_layout[1].rank()]
+                ](org_coords_stride),
+            )
 
         else:
             constrained[
@@ -761,18 +824,45 @@ struct LayoutTensor[
             ](
                 self.ptr.offset(int(swizzled_offset)),
                 RuntimeLayout(runtime_shape, runtime_stride),
+                org_coords_offset=rebind[
+                    StaticIntTuple[tiled_layout[1].rank()]
+                ](org_coords_offset),
+                org_coords_stride=rebind[
+                    StaticIntTuple[tiled_layout[1].rank()]
+                ](org_coords_stride),
             )
+
+    # Returns the original coordiantes a specific tensor element at `idx`.
+    @always_inline
+    fn element_coords[idx: Int](self) -> StaticIntTuple[rank]:
+        constrained[
+            layout.known_shape(),
+            "element_coords only support layouts of know shape",
+        ]()
+        alias layout_coords = Layout(Self.layout.shape)
+        alias coords = Self._toStatic[layout_coords.idx2crd(idx)]()
+        return (
+            self.org_coords_offset
+            + rebind[StaticIntTuple[rank]](coords) * self.org_coords_stride
+        )
 
     @always_inline
     fn vectorize[
-        *tile_sizes: Int,
-        __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
+        *vector_shape: Int,
+        __tiled_layout: Layout = Self._compute_tile_layout[vector_shape](),
     ](self) -> LayoutTensor[
         dtype,
         coalesce(__tiled_layout[1], keep_rank=True),
         address_space=address_space,
         element_layout = coalesce(__tiled_layout[0]),
     ]:
+        # Update element stride to account for vector shapes.
+        var org_coords_stride = StaticIntTuple[rank]()
+
+        @parameter
+        for i in range(rank):
+            org_coords_stride[i] = vector_shape[i]
+
         @parameter
         if layout.all_dims_known():
             return LayoutTensor[
@@ -780,7 +870,19 @@ struct LayoutTensor[
                 coalesce(__tiled_layout[1], keep_rank=True),
                 address_space=address_space,
                 element_layout = coalesce(__tiled_layout[0]),
-            ](self.ptr)
+            ](
+                self.ptr,
+                org_coords_offset=rebind[
+                    StaticIntTuple[
+                        coalesce(__tiled_layout[1], keep_rank=True).rank()
+                    ]
+                ](self.org_coords_offset),
+                org_coords_stride=rebind[
+                    StaticIntTuple[
+                        coalesce(__tiled_layout[1], keep_rank=True).rank()
+                    ]
+                ](org_coords_stride),
+            )
         else:
             constrained[
                 coalesce(__tiled_layout[0]).known_shape(),
@@ -803,10 +905,10 @@ struct LayoutTensor[
             @parameter
             for i in range(runtime_shape.scalar_length):
                 runtime_shape.value[i] = (
-                    self.runtime_layout.shape.value[i] // tile_sizes[i]
+                    self.runtime_layout.shape.value[i] // vector_shape[i]
                 )
                 runtime_stride.value[i] = (
-                    self.runtime_layout.stride.value[i] * tile_sizes[i]
+                    self.runtime_layout.stride.value[i] * vector_shape[i]
                 )
 
             return LayoutTensor[
@@ -825,6 +927,11 @@ struct LayoutTensor[
                         )
                     )
                 ),
+                org_coords_offset=rebind[
+                    StaticIntTuple[
+                        coalesce(__tiled_layout[1], keep_rank=True).rank()
+                    ]
+                ](self.org_coords_offset),
             )
 
     @staticmethod
