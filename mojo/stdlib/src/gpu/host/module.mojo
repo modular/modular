@@ -7,6 +7,7 @@
 
 from collections.optional import Optional
 from os import abort
+from sys import env_get_string, env_get_int
 from pathlib import Path
 
 from memory import memset_zero, stack_allocation
@@ -326,14 +327,12 @@ struct Module:
         inout self,
         ctx: Context,
         content: String,
-        debug: Bool = False,
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
     ) raises:
         self.__init__(
             content=content,
-            debug=debug,
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -343,7 +342,6 @@ struct Module:
     fn __init__(
         inout self,
         content: String,
-        debug: Bool = False,
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
@@ -352,9 +350,10 @@ struct Module:
         """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
         """
 
+        alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
         self.cuda_dll = cuda_dll
         self.module = _ModuleHandle()
-        if debug or verbose:
+        if verbose or debug_level == "full" or debug_level == "line-tables":
             alias buffer_size = 4096
             alias max_num_options = 10
             var num_options = 0
@@ -384,9 +383,23 @@ struct Module:
             option_vals[num_options] = buffer_size
             num_options += 1
 
-            if debug:
+            if debug_level == "full":
                 opts[num_options] = JitOptions.GENERATE_DEBUG_INFO
                 option_vals[num_options] = 1
+                num_options += 1
+
+            if debug_level == "line-tables":
+                opts[num_options] = JitOptions.GENERATE_LINE_INFO
+                option_vals[num_options] = 1
+                num_options += 1
+
+            # Note that NVidia's optimization level goes up to (and defaults to)
+            # 4, while ours only goes up to (and defaults to) 3.  The most
+            # important setting, though, is to set optimization level to 0 when
+            # ours is at 0.
+            if env_get_int["OPTIMIZATION_LEVEL", 4]() == 0:
+                opts[num_options] = JitOptions.OPTIMIZATION_LEVEL
+                option_vals[num_options] = 0
                 num_options += 1
 
             if max_registers:

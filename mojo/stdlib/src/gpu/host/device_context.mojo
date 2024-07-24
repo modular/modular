@@ -206,7 +206,6 @@ struct DeviceFunction[
     fn __init__(
         inout self,
         ctx: DeviceContext,
-        debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -218,7 +217,6 @@ struct DeviceFunction[
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.cuda_function = Function[func, _is_failable=_is_failable](
             self.ctx_ptr,
-            debug,
             verbose,
             dump_ptx,
             dump_llvm,
@@ -295,7 +293,6 @@ struct DeviceContext:
         _is_failable: Bool = False,
     ](
         self,
-        debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -306,7 +303,6 @@ struct DeviceContext:
     ) raises -> DeviceFunction[func, _is_failable=_is_failable]:
         return DeviceFunction[func, _is_failable=_is_failable](
             self,
-            debug=debug,
             verbose=verbose,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,

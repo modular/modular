@@ -161,7 +161,6 @@ struct _CachedFunctionInfo(Boolable):
 @value
 @register_passable("trivial")
 struct _CachedFunctionPayload:
-    var debug: Bool
     var verbose: Bool
     var max_registers: Int32
     var threads_per_block: Int32
@@ -170,7 +169,6 @@ struct _CachedFunctionPayload:
     var device_context_ptr: UnsafePointer[DeviceContext]
 
     fn __init__(
-        debug: Bool,
         verbose: Bool,
         max_registers: Int32,
         threads_per_block: Int32,
@@ -179,7 +177,6 @@ struct _CachedFunctionPayload:
         device_context_ptr: UnsafePointer[DeviceContext],
     ) -> Self:
         return Self {
-            debug: debug,
             verbose: verbose,
             max_registers: max_registers,
             threads_per_block: threads_per_block,
@@ -266,7 +263,6 @@ struct Function[
     fn __init__(
         inout self,
         ctx: Context,
-        debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -276,7 +272,6 @@ struct Function[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.__init__(
-            debug=debug,
             verbose=verbose,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,
@@ -292,7 +287,6 @@ struct Function[
     fn __init__(
         inout self,
         ctx_ptr: UnsafePointer[DeviceContext],
-        debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -302,7 +296,6 @@ struct Function[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.__init__(
-            debug=debug,
             verbose=verbose,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,
@@ -317,7 +310,6 @@ struct Function[
 
     fn __init__(
         inout self,
-        debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -343,7 +335,6 @@ struct Function[
 
         var info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
-            debug=debug,
             verbose=verbose,
             max_registers=max_registers.value() if max_registers else -1,
             threads_per_block=threads_per_block.value() if threads_per_block else -1,
@@ -525,8 +516,7 @@ struct Function[
 
             var module = Module(
                 _impl.asm,
-                debug=payload.debug,
-                verbose=payload.verbose or payload.debug,
+                verbose=payload.verbose,
                 max_registers=Optional[Int]() if payload.max_registers
                 <= 0 else Optional[Int](int(payload.max_registers)),
                 threads_per_block=Optional[Int]() if payload.threads_per_block
@@ -583,7 +573,6 @@ struct Function[
         func_type: AnyTrivialRegType, func: func_type
     ](
         device_context_ptr: UnsafePointer[DeviceContext],
-        debug: Bool = False,
         verbose: Bool = False,
         max_registers: Int = -1,
         threads_per_block: Int = -1,
@@ -596,7 +585,6 @@ struct Function[
         alias fn_name = _get_nvptx_fn_name[func]()
 
         var payload = _CachedFunctionPayload(
-            debug=debug,
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
