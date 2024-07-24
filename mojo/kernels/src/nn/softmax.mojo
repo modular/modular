@@ -1002,7 +1002,6 @@ fn _online_softmax_iter_for_mma_output[
         type,
         _layout2,
         address_space = AddressSpace.SHARED,
-        masked=_,
     ],
     rowmax: UnsafePointer[Scalar[type]],
     rowsum: UnsafePointer[Scalar[type]],
