@@ -110,7 +110,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
             ptr: A pointer to the tensor data.
             shape: The shape of the tensor.
         """
-        self.data = ptr.address
+        self.data = ptr
         self.shape = shape
         self.strides = StaticIntTuple[static_rank]()
 
@@ -139,7 +139,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
             shape: The shape of the tensor.
             strides: The stride size for each dimension.
         """
-        self.data = ptr.address
+        self.data = ptr
         self.shape = shape
         self.strides = strides
 
@@ -303,15 +303,13 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
                 @parameter
                 if type is DType.bool:
                     var v = strided_load[DType.uint8, simd_width](
-                        self.data.bitcast[DType.uint8]()
-                        .offset(flat_index)
-                        .address,
+                        self.data.bitcast[DType.uint8]().offset(flat_index),
                         stride,
                     )
                     return v.cast[type]()
                 else:
                     return strided_load[type, simd_width](
-                        self.data.offset(flat_index).address, stride
+                        self.data.offset(flat_index), stride
                     )
 
         if self.strides[self.rank() - 1] == 0:
@@ -377,7 +375,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
             shape.append(self.shape[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data.address, shape
+            self.data, shape
         )
 
         writer.write(")")

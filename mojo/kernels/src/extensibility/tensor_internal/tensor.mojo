@@ -280,7 +280,7 @@ struct Tensor[type: DType](
           shape: The tensor shapes.
           ptr: The data pointer.
         """
-        self = Self(TensorSpec(type, shape^), ptr.address)
+        self = Self(TensorSpec(type, shape^), ptr)
 
     @always_inline
     fn __init__(
@@ -296,7 +296,7 @@ struct Tensor[type: DType](
           ptr: The data pointer.
         """
         self._spec = spec^
-        self._ptr = ptr.address
+        self._ptr = ptr
 
     @always_inline
     fn __init__(inout self, shape: TensorShape, *data: Scalar[type]):
