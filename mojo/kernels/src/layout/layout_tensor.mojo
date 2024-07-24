@@ -139,7 +139,7 @@ struct LayoutTensor[
         ptr: UnsafePointer[Scalar[dtype], address_space],
     ):
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
-        self.ptr = ptr.address
+        self.ptr = ptr
         self.runtime_layout = RuntimeLayout[layout]()
         self.runtime_element_layout = RuntimeLayout[element_layout]()
 
@@ -152,7 +152,7 @@ struct LayoutTensor[
         constrained[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
-        self.ptr = ptr.address
+        self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = RuntimeLayout[element_layout]()
 
@@ -163,7 +163,7 @@ struct LayoutTensor[
         runtime_layout: RuntimeLayout[layout],
         elemnt_runtime_layout: RuntimeLayout[element_layout],
     ):
-        self.ptr = ptr.address
+        self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = elemnt_runtime_layout
 
@@ -1895,7 +1895,7 @@ struct LayoutTensorIter[
         stride: Int = layout.size(),
         offset: Int = 0,
     ):
-        self.ptr = ptr.address
+        self.ptr = ptr
         self.offset = offset
         self.stride = stride
         self.bound = bound
