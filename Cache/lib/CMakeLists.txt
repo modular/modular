@@ -17,6 +17,7 @@ add_modular_library(MCache
   LLVMSupport
   MCompilerSupport
   MLIRBytecodeWriter
+  MLIRPass
   MSupport
   MSupportEntitlements
   MSupportFilesystem
