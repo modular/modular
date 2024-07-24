@@ -35,7 +35,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
         DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
     )
     mof_lib_path._strref_keepalive()
-    return ptr.bitcast[NoneType]().address
+    return ptr.bitcast[NoneType]()
 
 
 fn _destroy_dylib(ptr: UnsafePointer[NoneType]):

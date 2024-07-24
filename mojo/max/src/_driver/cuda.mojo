@@ -46,7 +46,7 @@ fn copy_device_to_host(
 ):
     try:
         ctx[].cuda_context.copy_device_to_host_async(
-            host_ptr.address, dev_ptr.address, size, ctx[].cuda_stream
+            host_ptr, dev_ptr, size, ctx[].cuda_stream
         )
     except e:
         abort(e)
@@ -60,7 +60,7 @@ fn copy_host_to_device(
 ):
     try:
         ctx[].cuda_context.copy_host_to_device_async(
-            dev_ptr.address, host_ptr.address, size, ctx[].cuda_stream
+            dev_ptr, host_ptr, size, ctx[].cuda_stream
         )
     except e:
         abort(e)
@@ -74,7 +74,7 @@ fn copy_device_to_device(
 ):
     try:
         ctx[].cuda_context.copy_device_to_device_async(
-            dst_ptr.address, src_ptr.address, size, ctx[].cuda_stream
+            dst_ptr, src_ptr, size, ctx[].cuda_stream
         )
     except e:
         abort(e)
@@ -82,7 +82,7 @@ fn copy_device_to_device(
 
 fn free_buffer(ctx: UnsafePointer[DeviceContext], ptr: UnsafePointer[UInt8]):
     try:
-        ctx[].cuda_context.free_async(ptr.address, ctx[].cuda_stream)
+        ctx[].cuda_context.free_async(ptr, ctx[].cuda_stream)
     except e:
         abort(e)
 

@@ -111,7 +111,7 @@ struct EngineTensor(Sized):
         var tensor = Tensor[type](self.spec())
         memcpy(
             tensor.unsafe_ptr(),
-            self.data[type]().address,
+            self.data[type](),
             len(self),
         )
         return tensor^

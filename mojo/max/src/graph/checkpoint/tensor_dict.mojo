@@ -35,8 +35,8 @@ struct _CheckpointTensor:
         var spec = self.spec
         var self_ptr = self.ptr.bitcast[T]()
         var ptr = UnsafePointer[Scalar[T]].alloc(num_elements)
-        memcpy(ptr.address, self_ptr.address, num_elements)
-        return Tensor[T](spec, ptr.address)
+        memcpy(ptr, self_ptr, num_elements)
+        return Tensor[T](spec, ptr)
 
     fn to_tensor[T: DType](owned self) -> Tensor[T]:
         """Converts this object to a Tensor."""

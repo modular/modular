@@ -395,9 +395,7 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
         if self.get_rank() != other.get_rank():
             return False
 
-        return (
-            memcmp(self.dims.address, other.dims.address, self.get_rank()) == 0
-        )
+        return memcmp(self.dims, other.dims, self.get_rank()) == 0
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
@@ -467,7 +465,7 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
         var dims_copy = UnsafePointer[Scalar[DType.index]].alloc(
             self.get_rank()
         )
-        memcpy(dims_copy.address, self.dims.address, self.get_rank())
+        memcpy(dims_copy, self.dims, self.get_rank())
 
         return Self {
             dims: dims_copy,

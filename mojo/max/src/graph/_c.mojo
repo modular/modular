@@ -36,7 +36,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     var ptr = UnsafePointer[DLHandle].alloc(1)
     ptr[] = DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
     mof_lib_path._strref_keepalive()
-    return ptr.bitcast[NoneType]().address
+    return ptr.bitcast[NoneType]()
 
 
 fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
@@ -182,7 +182,7 @@ fn attr_new_param_decl_array(
         ) -> _mlir.Attribute.cType,
     ]()(
         ctx.c,
-        UnsafePointer[_mlir.Attribute](params.data.address).bitcast[
+        UnsafePointer[_mlir.Attribute](params.data).bitcast[
             _mlir.Attribute.cType
         ](),
         len(params),
@@ -203,7 +203,7 @@ fn attr_new_shape(
         ) -> _mlir.Attribute.cType,
     ]()(
         ctx.c,
-        UnsafePointer[_mlir.Attribute](dims.data.address).bitcast[
+        UnsafePointer[_mlir.Attribute](dims.data).bitcast[
             _mlir.Attribute.cType
         ](),
         len(dims),
@@ -245,7 +245,7 @@ fn tensor_type_new(
         ctx.c,
         dtype.c,
         ranked,
-        UnsafePointer[_mlir.Attribute](dims.data.address).bitcast[
+        UnsafePointer[_mlir.Attribute](dims.data).bitcast[
             _mlir.Attribute.cType
         ](),
         len(dims),

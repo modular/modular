@@ -44,7 +44,7 @@ struct _InferenceSessionImpl(Movable):
         var config = RuntimeConfig(
             self.engine.lib,
             device,
-            max_context=_get_global_or_null["MaxContext"]().address,
+            max_context=_get_global_or_null["MaxContext"](),
         )
         self.context = RuntimeContext(config^, self.engine.lib)
 
@@ -372,7 +372,7 @@ struct _TorchLoadOptions(CollectionElement):
             graph: MAX Graph.
         """
         self._source = ModelSource(
-            UnsafePointer(graph._module().c.ptr.address),
+            UnsafePointer(graph._module().c.ptr),
             FrameworkFormat.MAXGraph,
         )
 
