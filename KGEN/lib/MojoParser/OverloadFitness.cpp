@@ -391,13 +391,13 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
 /// This ties into parameter inference, but is only called on the top level
 /// function operands being matched up, not anything in recursive functiontype
 /// positions.
-std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
-OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
-                                 size_t operandIdx,
-                                 ArgConvention expectedConvention,
-                                 ASTType expectedType,
-                                 bool allowImplicitConversions, SMLoc loc,
-                                 const TypeCheckScopeInfo &scopeInfo) {
+auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                      size_t operandIdx,
+                                      ArgConvention expectedConvention,
+                                      ASTType expectedType,
+                                      bool allowImplicitConversions, SMLoc loc,
+                                      const TypeCheckScopeInfo &scopeInfo)
+    -> std::pair<ArgTypeMismatchKind, ASTType> {
   SharedState &shared = scopeInfo.shared;
   switch (expectedConvention) {
   case ArgConvention::InitSelf:
