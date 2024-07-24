@@ -88,20 +88,6 @@ fn __get_len[*var_int: Int]() -> Int:
     return __mlir_op.`pop.variadic.size`(var_int)
 
 
-# Returns True if shape isn't an integer multiple of tile_sizes, otherwise
-# returns False.
-#
-fn _need_mask[*tile_sizes: Int](shape: IntTuple) -> Bool:
-    var no_mask = True
-
-    @parameter
-    for i in range(__get_len[tile_sizes]()):
-        alias tile_size = tile_sizes[i]
-        no_mask = no_mask and (to_int(shape[i]) % tile_size == 0)
-
-    return not no_mask
-
-
 # Returns the size of the slice in layout dim.
 #
 fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
@@ -133,21 +119,12 @@ struct LayoutTensor[
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     index_type: DType = _get_index_type(layout, address_space),
-    masked: Bool = False,
 ](CollectionElement, CollectionElementNew):
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
     var runtime_layout: RuntimeLayout[layout]
 
     var runtime_element_layout: RuntimeLayout[element_layout]
-
-    # When LayoutTensor is masked, we need to store three quantities:
-    # To specify the per dim original coordinates bounds.
-    var max_dim: StaticIntTuple[rank]
-    # To specify the per dim offset for the current tile.
-    var dim_offset: StaticIntTuple[rank]
-    # To specify the per dim stride for the current tile.
-    var dim_stride: StaticIntTuple[rank]
 
     alias element_size = element_layout.size()
     alias element_type = SIMD[dtype, Self.element_size]
@@ -166,10 +143,6 @@ struct LayoutTensor[
         self.runtime_layout = RuntimeLayout[layout]()
         self.runtime_element_layout = RuntimeLayout[element_layout]()
 
-        self.max_dim = StaticIntTuple[rank](Int.MAX)
-        self.dim_offset = StaticIntTuple[rank](0)
-        self.dim_stride = StaticIntTuple[rank](1)
-
     @always_inline
     fn __init__(
         inout self,
@@ -183,10 +156,6 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = RuntimeLayout[element_layout]()
 
-        self.max_dim = StaticIntTuple[rank](Int.MAX)
-        self.dim_offset = StaticIntTuple[rank](0)
-        self.dim_stride = StaticIntTuple[rank](1)
-
     @always_inline
     fn __init__(
         inout self,
@@ -197,10 +166,6 @@ struct LayoutTensor[
         self.ptr = ptr.address
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = elemnt_runtime_layout
-
-        self.max_dim = StaticIntTuple[rank](Int.MAX)
-        self.dim_offset = StaticIntTuple[rank](0)
-        self.dim_stride = StaticIntTuple[rank](1)
 
     fn __init__(inout self, *, other: Self):
         """Explicitly copy the provided value.
@@ -213,9 +178,6 @@ struct LayoutTensor[
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
         self.ptr = existing.ptr
-        self.max_dim = existing.max_dim
-        self.dim_offset = existing.dim_offset
-        self.dim_stride = existing.dim_stride
         self.runtime_layout = existing.runtime_layout
         self.runtime_element_layout = existing.runtime_element_layout
 
@@ -230,23 +192,6 @@ struct LayoutTensor[
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
         return Self.stride[0]() * m + Self.stride[1]() * n
-
-    # Returns True if the idx is accessable (not masked), otherwise False.
-    #
-    @always_inline
-    fn _is_not_masked_elemenet[idx: IntTuple](self) -> Bool:
-        var can_access = True
-        alias rank = len(idx)
-
-        @parameter
-        for i in range(rank):
-            alias dim = to_int(idx[i])
-            var tile_offset_i = self.dim_offset[i]
-            var tile_stride_i = self.dim_stride[i]
-            var offset = tile_offset_i + dim * tile_stride_i
-            can_access = can_access and offset < self.max_dim[i]
-
-        return can_access
 
     @always_inline
     fn __getitem__(self, *dims: Int) -> Self.element_type:
@@ -509,12 +454,10 @@ struct LayoutTensor[
     fn tile[
         *tile_sizes: Int,
         __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
-        __need_mask: Bool = _need_mask[tile_sizes](Self.layout.shape),
     ](self, *tile_coords: Int) -> LayoutTensor[
         dtype,
         __tiled_layout[0],
         address_space=address_space,
-        masked=__need_mask,
     ]:
         alias num_tiles = __get_len[tile_sizes]()
 
@@ -534,26 +477,12 @@ struct LayoutTensor[
                 alias stride = to_int(__tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
-            var res = LayoutTensor[
+            return LayoutTensor[
                 dtype,
                 __tiled_layout[0],
                 address_space=address_space,
-                masked=__need_mask,
             ](self.ptr.offset(offset))
 
-            # If not masked and tiles are not an integer multiple of the shape,
-            # update the bounds to the pre-tiling shape.
-            @parameter
-            if not Self.masked and __need_mask:
-
-                @parameter
-                for i in range(Self.rank):
-                    alias shape_i = to_int(Self.layout.shape[i])
-                    res.max_dim[i] = shape_i
-                    alias tile_size_i = tile_sizes[i]
-                    res.dim_offset[i] = tile_size_i * tile_coords[i]
-
-            return res
         else:
             # Dynamic layout, use strides
             var offset = 0
@@ -570,29 +499,14 @@ struct LayoutTensor[
                 ] = self.runtime_layout.stride.value[i]
                 offset += tile_coords[i] * stride
 
-            var res = LayoutTensor[
+            return LayoutTensor[
                 dtype,
                 __tiled_layout[0],
                 address_space=address_space,
-                masked=__need_mask,
             ](
                 self.ptr.offset(offset),
                 RuntimeLayout(dynamic_layout_shape, dynamic_layout_stride),
             )
-
-            # If not masked and tiles are not an integer multiple of the shape,
-            # update the bounds to the pre-tiling shape.
-            @parameter
-            if not Self.masked and __need_mask:
-
-                @parameter
-                for i in range(Self.rank):
-                    alias shape_i = to_int(Self.layout.shape[i])
-                    res.max_dim[i] = shape_i
-                    alias tile_size_i = tile_sizes[i]
-                    res.dim_offset[i] = tile_size_i * tile_coords[i]
-
-            return res
 
     @always_inline
     fn tiled_iterator[
@@ -713,7 +627,6 @@ struct LayoutTensor[
         tiled_layout[1],
         address_space=address_space,
         element_layout=element_layout,
-        masked = Self.masked,
     ]:
         """Distribute tiled workload to threads.
 
@@ -751,16 +664,6 @@ struct LayoutTensor[
 
             var offset: Scalar[Self.index_type] = 0
 
-            # FIXME: We should set everything once, but its better to fill the
-            # masking data inplace here.
-            var res = LayoutTensor[
-                dtype,
-                tiled_layout[1],
-                address_space=address_space,
-                element_layout=element_layout,
-                masked = Self.masked,
-            ](self.ptr.offset(int(offset)))
-
             @parameter
             for i in range(len(fragments_layout_stride)):
                 alias fragments_stride_i: UInt = to_int(
@@ -770,15 +673,6 @@ struct LayoutTensor[
                 alias stride_i: UInt = to_int(thread_projected_stride[i]).value
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
-
-                # Populate data needed for masked access.
-                @parameter
-                if Self.masked:
-                    res.max_dim[i] = self.max_dim[i]
-                    res.dim_offset[i] = self.dim_offset[i] + Int(
-                        thread_coord_i.value
-                    )
-                    res.dim_stride[i] = Int(shape_i.value)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -792,9 +686,13 @@ struct LayoutTensor[
                     * self.element_size
                 )
 
-            # Adjust to actual offset.
-            res.ptr = res.ptr.offset(int(swizzled_offset))
-            return res
+            return LayoutTensor[
+                dtype,
+                tiled_layout[1],
+                address_space=address_space,
+                element_layout=element_layout,
+            ](self.ptr.offset(int(swizzled_offset)))
+
         else:
             constrained[
                 layout.known_shape() and threads_layout.all_dims_known(),
@@ -835,19 +733,6 @@ struct LayoutTensor[
                     self.runtime_layout.stride.value[i] * thread_shape_i
                 )
 
-            # FIXME: We should set everything once, but its better to fill the
-            # masking data inplace here.
-            var res = LayoutTensor[
-                dtype,
-                tiled_layout[1],
-                address_space=address_space,
-                element_layout=element_layout,
-                masked = Self.masked,
-            ](
-                self.ptr.offset(int(offset)),
-                RuntimeLayout(runtime_shape, runtime_stride),
-            )
-
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
@@ -855,15 +740,6 @@ struct LayoutTensor[
                 alias stride_i: UInt = to_int(thread_projected_stride[i]).value
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
-
-                # Populate data needed for masked access.
-                @parameter
-                if Self.masked:
-                    res.max_dim[i] = self.max_dim[i]
-                    res.dim_offset[i] = self.dim_offset[i] + Int(
-                        thread_coord_i.value
-                    )
-                    res.dim_stride[i] = Int(shape_i.value)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -877,9 +753,15 @@ struct LayoutTensor[
                     * self.element_size
                 )
 
-            # Adjust to actual offset.
-            res.ptr = res.ptr.offset(int(swizzled_offset))
-            return res
+            return LayoutTensor[
+                dtype,
+                tiled_layout[1],
+                address_space=address_space,
+                element_layout=element_layout,
+            ](
+                self.ptr.offset(int(swizzled_offset)),
+                RuntimeLayout(runtime_shape, runtime_stride),
+            )
 
     @always_inline
     fn vectorize[
@@ -1217,7 +1099,6 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from(self, other: LayoutTensor):
-        alias other_mask = other.masked
         alias other_layout = other.layout
 
         alias dst_element_size = int(self.element_size)
@@ -1236,14 +1117,6 @@ struct LayoutTensor[
         ]()
         constrained[
             dst_element_size == src_element_size, "copy_from should move"
-        ]()
-        constrained[
-            not other_mask or dst_element_size == 1,
-            "For masked src only scalar copy is supported",
-        ]()
-        alias is_masked = self.masked or other_mask
-        constrained[
-            not is_masked, "copy_from doesn't support masked tensors."
         ]()
 
         @parameter
@@ -1271,7 +1144,6 @@ struct LayoutTensor[
         other_layout: Layout,
         other_addr_space: AddressSpace,
         other_element_layout: Layout,
-        other_mask: Bool,
     ](
         self,
         other: LayoutTensor[
@@ -1279,7 +1151,6 @@ struct LayoutTensor[
             other_layout,
             address_space=other_addr_space,
             element_layout=other_element_layout,
-            masked=other_mask,
         ],
         offset: Int,
         rows: Int,
@@ -1297,16 +1168,6 @@ struct LayoutTensor[
 
         constrained[
             dst_element_size == src_element_size, "copy_from should move"
-        ]()
-
-        constrained[
-            not other_mask or dst_element_size == 1,
-            "For masked src only scalar copy is supported",
-        ]()
-
-        alias is_masked = self.masked or other_mask
-        constrained[
-            not is_masked, "copy_from doesn't support masked tensors."
         ]()
 
         @parameter
@@ -1337,7 +1198,6 @@ struct LayoutTensor[
         other_layout: Layout,
         other_addr_space: AddressSpace,
         other_element_layout: Layout,
-        other_mask: Bool,
     ](
         self,
         other: LayoutTensor[
@@ -1345,7 +1205,6 @@ struct LayoutTensor[
             other_layout,
             address_space=other_addr_space,
             element_layout=other_element_layout,
-            masked=other_mask,
         ],
         offset: Int,
         rows: Int,
@@ -1363,16 +1222,6 @@ struct LayoutTensor[
 
         constrained[
             dst_element_size == src_element_size, "copy_from should move"
-        ]()
-
-        constrained[
-            not other_mask or dst_element_size == 1,
-            "For masked src only scalar copy is supported",
-        ]()
-
-        alias is_masked = self.masked or other_mask
-        constrained[
-            not is_masked, "copy_from doesn't support masked tensors."
         ]()
 
         @parameter
@@ -1402,7 +1251,6 @@ struct LayoutTensor[
         src_layout: Layout,
         src_addr_space: AddressSpace,
         src_element_layout: Layout,
-        src_mask: Bool,
     ](
         self,
         src: LayoutTensor[
@@ -1410,7 +1258,6 @@ struct LayoutTensor[
             src_layout,
             address_space=src_addr_space,
             element_layout=src_element_layout,
-            masked=src_mask,
         ],
     ):
         constrained[
@@ -1481,7 +1328,6 @@ struct LayoutTensor[
         src_layout: Layout,
         src_addr_space: AddressSpace,
         src_element_layout: Layout,
-        src_mask: Bool,
     ](
         self,
         src: LayoutTensor[
@@ -1489,7 +1335,6 @@ struct LayoutTensor[
             src_layout,
             address_space=src_addr_space,
             element_layout=src_element_layout,
-            masked=src_mask,
         ],
         offset: Int,
         rows: Int,
@@ -1643,17 +1488,12 @@ fn stack_allocation_like[
     dtype: DType,
     *,
     address_space: AddressSpace,
-    masked: Bool,
     target_address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    in_tensor: LayoutTensor[
-        dtype, layout, address_space=address_space, masked=masked
-    ]
-) -> LayoutTensor[
-    dtype, layout, address_space=target_address_space, masked=masked
-]:
+    in_tensor: LayoutTensor[dtype, layout, address_space=address_space]
+) -> LayoutTensor[dtype, layout, address_space=target_address_space]:
     return LayoutTensor[
-        dtype, layout, address_space=target_address_space, masked=masked
+        dtype, layout, address_space=target_address_space
     ].stack_allocation()
 
 
@@ -1669,19 +1509,10 @@ fn outer_product_acc[
     res_layout: Layout,
     lhs_layout: Layout,
     rhs_layout: Layout,
-    res_masked: Bool,
-    lhs_masked: Bool,
-    rhs_masked: Bool,
 ](
-    res: LayoutTensor[
-        dtype, res_layout, address_space=res_address_space, masked=res_masked
-    ],
-    lhs: LayoutTensor[
-        _, lhs_layout, address_space=lhs_address_space, masked=lhs_masked
-    ],
-    rhs: LayoutTensor[
-        _, rhs_layout, address_space=rhs_address_space, masked=rhs_masked
-    ],
+    res: LayoutTensor[dtype, res_layout, address_space=res_address_space],
+    lhs: LayoutTensor[_, lhs_layout, address_space=lhs_address_space],
+    rhs: LayoutTensor[_, rhs_layout, address_space=rhs_address_space],
 ):
     constrained[res.rank == 2, "Only rank 2 res is allowed."]()
     constrained[lhs.rank == 1, "Only rank 1 lhs is allowed."]()
@@ -1712,8 +1543,6 @@ fn copy_dram_to_sram[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
@@ -1721,14 +1550,12 @@ fn copy_dram_to_sram[
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -1748,8 +1575,6 @@ fn copy_dram_to_sram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
@@ -1757,14 +1582,12 @@ fn copy_dram_to_sram[
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     copy_dram_to_sram[
@@ -1775,8 +1598,6 @@ fn copy_dram_to_sram[
         thread_layout,
         src_element_layout,
         dst_element_layout,
-        src_mask,
-        dst_mask,
         swizzle,
     ](dst, src)
 
@@ -1792,8 +1613,6 @@ fn copy_dram_to_sram_async[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
@@ -1801,14 +1620,12 @@ fn copy_dram_to_sram_async[
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -1828,8 +1645,6 @@ fn copy_dram_to_sram_async[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
@@ -1837,14 +1652,12 @@ fn copy_dram_to_sram_async[
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     copy_dram_to_sram_async[
@@ -1855,8 +1668,6 @@ fn copy_dram_to_sram_async[
         thread_layout,
         src_element_layout,
         dst_element_layout,
-        src_mask,
-        dst_mask,
         swizzle,
     ](dst, src)
 
@@ -1870,8 +1681,6 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     swizzle: Optional[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
@@ -1879,14 +1688,12 @@ fn copy_sram_to_dram[
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         src_type,
         src_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
@@ -1939,8 +1746,6 @@ fn copy_sram_to_local[
     src_warp_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     axis: Optional[Int] = None,
 ](
     dst: LayoutTensor[
@@ -1948,14 +1753,12 @@ fn copy_sram_to_local[
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     @parameter
@@ -1979,8 +1782,6 @@ fn copy_local_to_dram[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     src_addr_space: AddressSpace,
 ](
     dst: LayoutTensor[
@@ -1988,14 +1789,12 @@ fn copy_local_to_dram[
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space=src_addr_space,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
@@ -2011,8 +1810,6 @@ fn copy_local_to_sram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    src_mask: Bool,
-    dst_mask: Bool,
     src_addr_space: AddressSpace,
 ](
     dst: LayoutTensor[
@@ -2020,14 +1817,12 @@ fn copy_local_to_sram[
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
-        masked=dst_mask,
     ],
     src: LayoutTensor[
         src_type,
         src_layout,
         address_space=src_addr_space,
         element_layout=src_element_layout,
-        masked=src_mask,
     ],
 ):
     var dst_frag = dst.distribute[thread_layout](ThreadIdx.x())

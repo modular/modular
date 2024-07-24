@@ -25,8 +25,8 @@ fn print_raw_major_tensor[
 
 
 fn print_tile_tensor[
-    layout: Layout, dtype: DType, mask: Bool
-](tensor: LayoutTensor[dtype, layout, masked=mask]):
+    layout: Layout, dtype: DType
+](tensor: LayoutTensor[dtype, layout]):
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
             print(tensor[i, j], "\t", end="")

@@ -312,7 +312,6 @@ struct TensorCore[
         type0: DType,
         layout0: Layout,
         element_layout0: Layout,
-        masked0: Bool,
         type1: DType,
         layout1: Layout,
         element_layout1: Layout,
@@ -323,7 +322,6 @@ struct TensorCore[
             layout0,
             address_space = AddressSpace.SHARED,
             element_layout=element_layout0,
-            masked=masked0,
         ],
         fragments: LayoutTensor[
             type1,
@@ -354,7 +352,6 @@ struct TensorCore[
         type0: DType,
         layout0: Layout,
         element_layout0: Layout,
-        masked0: Bool,
         layout1: Layout,
         element_layout1: Layout,
     ](
@@ -364,7 +361,6 @@ struct TensorCore[
             layout0,
             address_space = AddressSpace.SHARED,
             element_layout=element_layout0,
-            masked=masked0,
         ],
         fragments: LayoutTensor[
             type0,
@@ -529,7 +525,6 @@ fn _load_matrix_frag[
     # Work around parameter deduction MOCO-854.
     __type: DType,
     __layout: Layout,
-    __masked: Bool,
     # Nvidia GPU register is 4B.
     __register_width: Int = 4,
     __num_matrices: Int = 4,
@@ -539,7 +534,6 @@ fn _load_matrix_frag[
         __type,
         __layout,
         address_space = AddressSpace.SHARED,
-        masked=__masked,
     ],
     offset: Int,
 ) -> SIMD[mma_tile.dtype, __output_width]:
