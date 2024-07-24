@@ -13,7 +13,5 @@ add_modular_unittest(
   QueueBenchmark.cpp
 
   LINK_LIBS PRIVATE
-  AsyncRTRuntime
-  AsyncRTRuntimeGlobals
-  MSupportGlobals
+  AsyncRTSupport
 )

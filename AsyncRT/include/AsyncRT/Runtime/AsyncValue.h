@@ -13,6 +13,7 @@
 #define ASYNCRT_RUNTIME_ASYNCVALUE_H
 
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "AsyncRT/Runtime/Globals/Globals.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "AsyncRT/Support/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
@@ -20,8 +21,6 @@
 #include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/TypeName.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <atomic>
@@ -390,7 +389,7 @@ public:
   static ssize_t getNumAllocatedInstances() {
     assert(isAllocationTrackingEnabled() &&
            "AsyncValue instance tracking disabled!");
-    return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
+    return Globals::totalAllocatedAsyncValues.load(std::memory_order_relaxed);
   }
 
   /// Print an internal representation of the AsyncValue. For debugging only.
@@ -541,22 +540,17 @@ protected:
     assert((subclassKind == SubclassKind::kIndirect || typeID != TypeID()) &&
            "require valid type ID when constructing a ConcreteAsyncValue");
     if constexpr (isAllocationTrackingEnabled())
-      ++totalAllocatedAsyncValues;
+      ++Globals::totalAllocatedAsyncValues;
   }
 
   ~AsyncValue() {
     if constexpr (isAllocationTrackingEnabled())
-      --totalAllocatedAsyncValues;
+      --Globals::totalAllocatedAsyncValues;
   }
 
 private:
   AsyncValue(const AsyncValue &) = delete;
   void operator=(const AsyncValue &) = delete;
-
-  /// This is a global counter of the number of AsyncValue instances currently
-  /// live in the process.  This is intended to be used for debugging only, and
-  /// is only kept in sync if `isAllocationTrackingEnabled()` returns true.
-  MODULAR_CXX_EXPORT static std::atomic<ssize_t> totalAllocatedAsyncValues;
 };
 
 //===----------------------------------------------------------------------===//

@@ -4,7 +4,7 @@ modular_cc_test(
     name = "QueueBenchmark",
     srcs = ["QueueBenchmark.cpp"],
     deps = [
-        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
         "@google_benchmark//:benchmark_main",
     ],
 )
