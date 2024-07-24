@@ -536,21 +536,21 @@ kgen.generator @missing_def<() -> out>() {
 // -----
 
 kgen.generator @bad_index_ref() {
-  // expected-error @below {{index reference has no contextual scope}}
+  // expected-error @below {{index reference has no contextual signature}}
   kgen.param.declare a = <*(0,0)>
   kgen.return
 }
 
 // -----
 
-// expected-error @below {{index reference depth 1 exceeds depth of contextual scopes: 1}}
+// expected-error @below {{index reference depth 1 exceeds depth of contextual signatures: 1}}
 kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(1,0), i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
-// expected-error-re @below {{index reference 1 is out of bounds: referenced scope {{.*}} has 1 input parameters}}
+// expected-error-re @below {{index reference 1 is out of bounds: referenced signature {{.*}} has 1 input parameters}}
 kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(0,1), i32>) -> ()>() {
   kgen.return
 }

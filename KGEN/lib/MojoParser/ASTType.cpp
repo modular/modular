@@ -852,13 +852,9 @@ private:
       return it->second;
 
     // Signatures push a parameter scope.
-    if constexpr (std::is_base_of_v<Type, T>) {
+    if constexpr (std::is_base_of_v<Type, T>)
       if (isa<ParameterScopeTypeInterface>(value))
         ++depth;
-    } else {
-      if (isa<ParameterScopeAttrInterface>(value))
-        ++depth;
-    }
 
     bool hasReference = false;
     // Check to see if this is locally an index with the right depth.

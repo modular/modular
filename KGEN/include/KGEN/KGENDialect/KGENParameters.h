@@ -72,36 +72,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ParameterScopeInterface
-//===----------------------------------------------------------------------===//
-struct ParameterScopeInterface {
-  ParameterScopeInterface(ParameterScopeAttrInterface attr) : interface(attr) {}
-  ParameterScopeInterface(ParameterScopeTypeInterface type) : interface(type) {}
-
-  ArrayRef<Type> getInputParamTypes() {
-    if (auto attr = dyn_cast<ParameterScopeAttrInterface>(interface))
-      return attr.getInputParamTypes();
-    return cast<ParameterScopeTypeInterface>(interface).getInputParamTypes();
-  }
-
-  ArrayRef<Type> getResultParamTypes() {
-    if (auto attr = dyn_cast<ParameterScopeAttrInterface>(interface))
-      return attr.getResultParamTypes();
-    return cast<ParameterScopeTypeInterface>(interface).getResultParamTypes();
-  }
-
-  SmartVariant<ParameterScopeAttrInterface, ParameterScopeTypeInterface>
-      interface;
-};
-
-template <typename StreamT>
-StreamT &operator<<(StreamT &os, ParameterScopeInterface value) {
-  if (auto attr = dyn_cast<ParameterScopeAttrInterface>(value.interface))
-    return os << attr;
-  return os << cast<ParameterScopeTypeInterface>(value.interface);
-}
-
-//===----------------------------------------------------------------------===//
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
@@ -141,10 +111,6 @@ public:
                            bool &hasConstExpr);
 
 private:
-  void collectUsesFromAttrsImpl(Attribute attr,
-                                SmallVectorImpl<ParamDeclRefAttr> &uses,
-                                bool &hasConstExpr);
-
   void collectUsesFromTypesImpl(Type type,
                                 SmallVectorImpl<ParamDeclRefAttr> &uses,
                                 bool &hasConstExpr);
@@ -170,8 +136,8 @@ private:
   Analysis &cache;
 
   /// An internal stack of scoped parameter types representing the current
-  /// nested param scopes.
-  SmallVector<ParameterScopeInterface> scopes;
+  /// nested signatures.
+  SmallVector<ParameterScopeTypeInterface> signatures;
 };
 
 //===----------------------------------------------------------------------===//
