@@ -65,9 +65,9 @@ fn run_layer_norm_block_vector[
     var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h.address)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h.address)
-    ctx.enqueue_copy_to_device(beta_d, beta_h.address)
+    ctx.enqueue_copy_to_device(data_d, data_h)
+    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
+    ctx.enqueue_copy_to_device(beta_d, beta_h)
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     var func_ln = ctx.compile_function[
@@ -100,7 +100,7 @@ fn run_layer_norm_block_vector[
     run_func_ln()
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(res.address, data_d)
+    ctx.enqueue_copy_from_device(res, data_d)
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
@@ -155,9 +155,9 @@ fn run_layer_norm_block_scalar[
     var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h.address)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h.address)
-    ctx.enqueue_copy_to_device(beta_d, beta_h.address)
+    ctx.enqueue_copy_to_device(data_d, data_h)
+    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
+    ctx.enqueue_copy_to_device(beta_d, beta_h)
 
     alias simd_width = 1
     var func_ln = ctx.compile_function[
@@ -190,7 +190,7 @@ fn run_layer_norm_block_scalar[
     run_func_ln()
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(res.address, data_d)
+    ctx.enqueue_copy_from_device(res, data_d)
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
@@ -245,9 +245,9 @@ fn run_layer_norm_warp_tiling_vector[
     var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h.address)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h.address)
-    ctx.enqueue_copy_to_device(beta_d, beta_h.address)
+    ctx.enqueue_copy_to_device(data_d, data_h)
+    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
+    ctx.enqueue_copy_to_device(beta_d, beta_h)
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     var func_ln = ctx.compile_function[
@@ -280,7 +280,7 @@ fn run_layer_norm_warp_tiling_vector[
     run_func_ln()
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(res.address, data_d)
+    ctx.enqueue_copy_from_device(res, data_d)
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
@@ -335,9 +335,9 @@ fn run_layer_norm_warp_tiling_scalar[
     var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
     var epsilon = Scalar[type]()
 
-    ctx.enqueue_copy_to_device(data_d, data_h.address)
-    ctx.enqueue_copy_to_device(gamma_d, gamma_h.address)
-    ctx.enqueue_copy_to_device(beta_d, beta_h.address)
+    ctx.enqueue_copy_to_device(data_d, data_h)
+    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
+    ctx.enqueue_copy_to_device(beta_d, beta_h)
 
     alias simd_width = 1
     var func_ln = ctx.compile_function[
@@ -370,7 +370,7 @@ fn run_layer_norm_warp_tiling_scalar[
     run_func_ln()
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(res.address, data_d)
+    ctx.enqueue_copy_from_device(res, data_d)
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)

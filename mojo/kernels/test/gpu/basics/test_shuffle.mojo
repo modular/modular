@@ -43,7 +43,7 @@ fn _kernel_launch_helper[
     ctx: DeviceContext,
 ) raises:
     var device_ptr = ctx.create_buffer[type](buffer_size)
-    ctx.enqueue_copy_to_device(device_ptr, host_ptr.address)
+    ctx.enqueue_copy_to_device(device_ptr, host_ptr)
 
     var gpu_func = ctx.compile_function[
         kernel_wrapper[type, simd_width, kernel_fn]
@@ -53,7 +53,7 @@ fn _kernel_launch_helper[
         gpu_func, device_ptr, simd_width, grid_dim=1, block_dim=block_size
     )
 
-    ctx.enqueue_copy_from_device(host_ptr.address, device_ptr)
+    ctx.enqueue_copy_from_device(host_ptr, device_ptr)
     _ = device_ptr
 
 

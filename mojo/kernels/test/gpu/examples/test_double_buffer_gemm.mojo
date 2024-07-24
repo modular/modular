@@ -286,8 +286,8 @@ fn test(ctx: DeviceContext) raises:
     var c_device = ctx.create_buffer[DType.float32](M * N)
     var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy_to_device(a_device, a_host.address)
-    ctx.enqueue_copy_to_device(b_device, b_host.address)
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
 
     var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device.ptr)
     var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device.ptr)
@@ -350,7 +350,7 @@ fn test(ctx: DeviceContext) raises:
         block_dim=(NUM_THREADS, 1, 1),
     )
 
-    ctx.enqueue_copy_from_device(c_host.address, c_device)
+    ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
@@ -375,7 +375,7 @@ fn test(ctx: DeviceContext) raises:
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy_from_device(c_host_ref.address, c_device_ref)
+    ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):

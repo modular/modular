@@ -60,9 +60,9 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     var rhs_buffer = NDBuffer[DType.float32, 3](lhs_device.ptr, Index(b, k, n))
     var dst_buffer = NDBuffer[DType.float32, 3](dst_device.ptr, Index(b, m, n))
 
-    ctx.enqueue_copy_to_device(lhs_device, lhs_host.data.address)
-    ctx.enqueue_copy_to_device(rhs_device, rhs_host.data.address)
-    ctx.enqueue_copy_to_device(dst_device, dst_host.data.address)
+    ctx.enqueue_copy_to_device(lhs_device, lhs_host.data)
+    ctx.enqueue_copy_to_device(rhs_device, rhs_host.data)
+    ctx.enqueue_copy_to_device(dst_device, dst_host.data)
 
     @always_inline
     @__copy_capture(dst_buffer)
@@ -83,7 +83,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(dst_host.data.address, dst_device)
+    ctx.enqueue_copy_from_device(dst_host.data, dst_device)
 
     # CHECK: [30.0, 36.0],
     # CHECK: [78.0, 100.0]],

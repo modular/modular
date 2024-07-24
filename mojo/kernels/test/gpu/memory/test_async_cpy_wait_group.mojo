@@ -89,7 +89,7 @@ fn copy_with_src_size(
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    async_copy[16](src.address, smem, src_size)
+    async_copy[16](src, smem, src_size)
     async_copy_wait_all()
     dst[0] = smem[0]
     dst[1] = smem[1]
@@ -110,7 +110,7 @@ fn test_copy_with_src_size(ctx: Context) raises:
     var a_device = ctx.malloc[Float32](size)
     var b_device = ctx.malloc[Float32](size)
 
-    ctx.copy_host_to_device(a_device, a_host.address, size)
+    ctx.copy_host_to_device(a_device, a_host, size)
 
     alias kernel = copy_with_src_size
     var func = Function[kernel](ctx, threads_per_block=1)
@@ -121,7 +121,7 @@ fn test_copy_with_src_size(ctx: Context) raises:
 
     ctx.synchronize()
 
-    ctx.copy_device_to_host(b_host.address, b_device, size)
+    ctx.copy_device_to_host(b_host, b_device, size)
 
     assert_equal(b_host[0], 1)
     assert_equal(b_host[1], 2)

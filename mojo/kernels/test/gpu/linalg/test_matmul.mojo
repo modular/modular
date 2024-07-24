@@ -107,25 +107,25 @@ struct test_matmul[
         var ctx = self.ctx
 
         ctx.enqueue_copy_to_device(
-            self.a_device.buffer, self.a_host.tensor.data.address
+            self.a_device.buffer, self.a_host.tensor.data
         )
         ctx.enqueue_copy_to_device(
-            self.b_device.buffer, self.b_host.tensor.data.address
+            self.b_device.buffer, self.b_host.tensor.data
         )
         ctx.enqueue_copy_to_device(
-            self.c_device.buffer, self.c_host.tensor.data.address
+            self.c_device.buffer, self.c_host.tensor.data
         )
         ctx.enqueue_copy_to_device(
-            self.c_device_ref.buffer, self.c_host_ref.tensor.data.address
+            self.c_device_ref.buffer, self.c_host_ref.tensor.data
         )
 
         test_function(self)
 
         ctx.enqueue_copy_from_device(
-            self.c_host.tensor.data.address, self.c_device.buffer
+            self.c_host.tensor.data, self.c_device.buffer
         )
         ctx.enqueue_copy_from_device(
-            self.c_host_ref.tensor.data.address, self.c_device_ref.buffer
+            self.c_host_ref.tensor.data, self.c_device_ref.buffer
         )
         ctx.synchronize()
 

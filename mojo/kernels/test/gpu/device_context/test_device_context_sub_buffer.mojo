@@ -40,7 +40,7 @@ fn test(ctx: DeviceContext) raises:
 
     var out_device = ctx.create_buffer[DType.float32](length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.address)
+    ctx.enqueue_copy_to_device(in_device, in_host)
 
     var func = ctx.compile_function[vec_func]()
 
@@ -61,7 +61,7 @@ fn test(ctx: DeviceContext) raises:
     # Make sure our main input device tensor doesn't disappear
     _ = in_device
 
-    ctx.enqueue_copy_from_device(out_host.address, out_device)
+    ctx.enqueue_copy_from_device(out_host, out_device)
 
     ctx.synchronize()
 

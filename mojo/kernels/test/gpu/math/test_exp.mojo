@@ -32,7 +32,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     var in_device = ctx.create_buffer[type](flattened_length)
     var out_device = ctx.create_buffer[type](flattened_length)
 
-    ctx.enqueue_copy_to_device(in_device, in_host.data.address)
+    ctx.enqueue_copy_to_device(in_device, in_host.data)
 
     var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
     var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
@@ -51,7 +51,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(out_host.data.address, out_device)
+    ctx.enqueue_copy_from_device(out_host.data, out_device)
 
     for i in range(length):
         var msg = (

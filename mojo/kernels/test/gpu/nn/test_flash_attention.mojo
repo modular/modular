@@ -108,10 +108,10 @@ fn test[
                         )
 
     else:
-        rand[qkv_type](q_ptr.address, q_size)
-        rand[qkv_type](k_ptr.address, k_size)
-        rand[qkv_type](v_ptr.address, v_size)
-        rand[mask_type](mask_ptr.address, mask_size)
+        rand[qkv_type](q_ptr, q_size)
+        rand[qkv_type](k_ptr, k_size)
+        rand[qkv_type](v_ptr, v_size)
+        rand[mask_type](mask_ptr, mask_size)
 
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](
@@ -150,10 +150,10 @@ fn test[
     var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
-    ctx.enqueue_copy_to_device(q_device_ptr, q_ptr.address)
-    ctx.enqueue_copy_to_device(k_device_ptr, k_ptr.address)
-    ctx.enqueue_copy_to_device(v_device_ptr, v_ptr.address)
-    ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr.address)
+    ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
+    ctx.enqueue_copy_to_device(k_device_ptr, k_ptr)
+    ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
+    ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
 
     alias q_tile_num_rows = 32
     alias k_tile_num_rows = 128
@@ -203,12 +203,12 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(flash_output_ptr.address, output_device_ptr)
+    ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
 
     @parameter
     if against_gpu_naive:
         var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
-        ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr.address)
+        ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
 
         mha_gpu_naive[mask_rank](
             q_device_ptr.ptr,
@@ -226,7 +226,7 @@ fn test[
             ctx,
         )
 
-        ctx.enqueue_copy_from_device(output_ptr.address, output_ref_device_ptr)
+        ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
     var rtol = Scalar[qkv_type](0.02) if (
