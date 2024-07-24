@@ -50,12 +50,12 @@ fn run_layer_norm_block_vector[
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = Scalar[type](1)
-        beta_h[i] = Scalar[type](0)
+        gamma_h[i] = ((i + cols) / cols).cast[type]()
+        beta_h[i] = (i / cols).cast[type]()
 
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
-    var beta_d = ctx.create_buffer[type](rows)
+    var beta_d = ctx.create_buffer[type](cols)
 
     var data_shape = StaticIntTuple[rank](rows, cols)
     var param_shape = StaticIntTuple[1](cols)
@@ -69,13 +69,26 @@ fn run_layer_norm_block_vector[
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
     ctx.enqueue_copy_to_device(beta_d, beta_h)
 
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn input_fn[
+        width: Int, _r: Int
+    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
+        var r_idx = rebind[StaticIntTuple[rank]](idx)
+        return data_buf.load[width=width](r_idx)
+
+    @__copy_capture(gamma)
+    @always_inline
+    @parameter
+    fn gamma_fn[
+        width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+        return gamma.load[width=width](idx[0])
+
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     var func_ln = ctx.compile_function[
-        layer_norm_gpu_block_vector[
-            type,
-            simd_width,
-            rank,
-        ]
+        layer_norm_gpu_block_vector[type, simd_width, rank, input_fn, gamma_fn]
     ](dump_ptx=False)
 
     var max_warps_per_block = 32
@@ -87,7 +100,6 @@ fn run_layer_norm_block_vector[
         ctx.enqueue_function(
             func_ln,
             data_buf,
-            gamma,
             beta,
             epsilon,
             grid_dim=(rows, 1),
@@ -98,9 +110,8 @@ fn run_layer_norm_block_vector[
         )
 
     run_func_ln()
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(res, data_d)
+    ctx.synchronize()
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
@@ -140,12 +151,12 @@ fn run_layer_norm_block_scalar[
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = Scalar[type](1)
-        beta_h[i] = Scalar[type](0)
+        gamma_h[i] = ((i + cols) / cols).cast[type]()
+        beta_h[i] = (i / cols).cast[type]()
 
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
-    var beta_d = ctx.create_buffer[type](rows)
+    var beta_d = ctx.create_buffer[type](cols)
 
     var data_shape = StaticIntTuple[rank](rows, cols)
     var param_shape = StaticIntTuple[1](cols)
@@ -159,13 +170,26 @@ fn run_layer_norm_block_scalar[
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
     ctx.enqueue_copy_to_device(beta_d, beta_h)
 
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn input_fn[
+        width: Int, _r: Int
+    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
+        var r_idx = rebind[StaticIntTuple[rank]](idx)
+        return data_buf.load[width=width](r_idx)
+
+    @__copy_capture(gamma)
+    @always_inline
+    @parameter
+    fn gamma_fn[
+        width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+        return gamma.load[width=width](idx[0])
+
     alias simd_width = 1
     var func_ln = ctx.compile_function[
-        layer_norm_gpu_block_scalar[
-            type,
-            simd_width,
-            rank,
-        ]
+        layer_norm_gpu_block_scalar[type, simd_width, rank, input_fn, gamma_fn]
     ](dump_ptx=False)
 
     var max_warps_per_block = 32
@@ -177,7 +201,6 @@ fn run_layer_norm_block_scalar[
         ctx.enqueue_function(
             func_ln,
             data_buf,
-            gamma,
             beta,
             epsilon,
             grid_dim=(rows, 1),
@@ -188,9 +211,8 @@ fn run_layer_norm_block_scalar[
         )
 
     run_func_ln()
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(res, data_d)
+    ctx.synchronize()
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
@@ -230,12 +252,12 @@ fn run_layer_norm_warp_tiling_vector[
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = Scalar[type](1)
-        beta_h[i] = Scalar[type](0)
+        gamma_h[i] = ((i + cols) / cols).cast[type]()
+        beta_h[i] = (i / cols).cast[type]()
 
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
-    var beta_d = ctx.create_buffer[type](rows)
+    var beta_d = ctx.create_buffer[type](cols)
 
     var data_shape = StaticIntTuple[rank](rows, cols)
     var param_shape = StaticIntTuple[1](cols)
@@ -249,12 +271,27 @@ fn run_layer_norm_warp_tiling_vector[
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
     ctx.enqueue_copy_to_device(beta_d, beta_h)
 
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn input_fn[
+        width: Int, _r: Int
+    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
+        var r_idx = rebind[StaticIntTuple[rank]](idx)
+        return data_buf.load[width=width](r_idx)
+
+    @__copy_capture(gamma)
+    @always_inline
+    @parameter
+    fn gamma_fn[
+        width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+        return gamma.load[width=width](idx[0])
+
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     var func_ln = ctx.compile_function[
         layer_norm_gpu_warp_tiling_vector[
-            type,
-            simd_width,
-            rank,
+            type, simd_width, rank, input_fn, gamma_fn
         ]
     ](dump_ptx=False)
 
@@ -267,7 +304,6 @@ fn run_layer_norm_warp_tiling_vector[
         ctx.enqueue_function(
             func_ln,
             data_buf,
-            gamma,
             beta,
             epsilon,
             grid_dim=(rows, 1),
@@ -278,9 +314,8 @@ fn run_layer_norm_warp_tiling_vector[
         )
 
     run_func_ln()
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(res, data_d)
+    ctx.synchronize()
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
@@ -320,12 +355,12 @@ fn run_layer_norm_warp_tiling_scalar[
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = Scalar[type](1)
-        beta_h[i] = Scalar[type](0)
+        gamma_h[i] = ((i + cols) / cols).cast[type]()
+        beta_h[i] = (i / cols).cast[type]()
 
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
-    var beta_d = ctx.create_buffer[type](rows)
+    var beta_d = ctx.create_buffer[type](cols)
 
     var data_shape = StaticIntTuple[rank](rows, cols)
     var param_shape = StaticIntTuple[1](cols)
@@ -339,12 +374,27 @@ fn run_layer_norm_warp_tiling_scalar[
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
     ctx.enqueue_copy_to_device(beta_d, beta_h)
 
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn input_fn[
+        width: Int, _r: Int
+    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
+        var r_idx = rebind[StaticIntTuple[rank]](idx)
+        return data_buf.load[width=width](r_idx)
+
+    @__copy_capture(gamma)
+    @always_inline
+    @parameter
+    fn gamma_fn[
+        width: Int, _r: Int
+    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
+        return gamma.load[width=width](idx[0])
+
     alias simd_width = 1
     var func_ln = ctx.compile_function[
         layer_norm_gpu_warp_tiling_scalar[
-            type,
-            simd_width,
-            rank,
+            type, simd_width, rank, input_fn, gamma_fn
         ]
     ](dump_ptx=False)
 
@@ -357,7 +407,6 @@ fn run_layer_norm_warp_tiling_scalar[
         ctx.enqueue_function(
             func_ln,
             data_buf,
-            gamma,
             beta,
             epsilon,
             grid_dim=(rows, 1),
@@ -368,9 +417,8 @@ fn run_layer_norm_warp_tiling_scalar[
         )
 
     run_func_ln()
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(res, data_d)
+    ctx.synchronize()
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
