@@ -133,6 +133,12 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
       global.setInitializer(nullptr);
       global.setComdat(nullptr);
       global.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      // External link should not be DSOLocal anymore,
+      // otherwise position independent code generates
+      // `R_X86_64_PC32` instead of `R_X86_64_REX_GOTPCRELX`
+      // for these symbols and building shared library from
+      // a static archive of this module will error with an `fPIC` confusion.
+      global.setDSOLocal(false);
     }
     ++curIdx;
   }
@@ -144,6 +150,14 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
       func.deleteBody();
       func.setComdat(nullptr);
       func.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      // External link should not be DSOLocal anymore,
+      // otherwise position independent code generates
+      // `R_X86_64_PC32` instead of `R_X86_64_REX_GOTPCRELX`
+      // for these symbols and building shared library from
+      // a static archive of this module will error with an `fPIC` confusion.
+      // External link should not be DSOLocal anymore,
+      // otherwise position independent code generation get confused.
+      func.setDSOLocal(false);
     }
     ++curIdx;
   }
@@ -469,6 +483,7 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   for (auto &global : mainModule->globals()) {
     if (global.hasInternalLinkage()) {
       global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
+      global.setDSOLocal(false);
       continue;
     }
     // TODO: Add special handling for `llvm.global_ctors` and
