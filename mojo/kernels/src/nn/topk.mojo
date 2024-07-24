@@ -143,11 +143,9 @@ fn _top_k[
                     return indices_to_val(lhs) > indices_to_val(rhs)
 
                 if sorted:
-                    sort[DType.int64, _val_greater_than](idxs)
+                    sort[_val_greater_than](idxs)
                 else:
-                    _ = partition[DType.int64, _val_greater_than](
-                        idxs.data, k, len(idxs)
-                    )
+                    _ = partition[_val_greater_than](idxs, k)
             else:
 
                 @parameter
@@ -156,11 +154,9 @@ fn _top_k[
                     return indices_to_val(lhs) < indices_to_val(rhs)
 
                 if sorted:
-                    sort[DType.int64, _val_less_than](idxs)
+                    sort[_val_less_than](idxs)
                 else:
-                    _ = partition[DType.int64, _val_less_than](
-                        idxs.data, k, len(idxs)
-                    )
+                    _ = partition[_val_less_than](idxs, k)
 
             if sorted:
                 # for duplicate vals, the smaller index needs to appear first
@@ -181,7 +177,11 @@ fn _top_k[
                         num_equal += 1
                     if num_equal > 1:
                         var ptr = idxs.data + i
-                        sort[DType.int64](ptr, num_equal)
+                        sort(
+                            Span[idxs.T, __lifetime_of(idxs)](
+                                unsafe_ptr=ptr, len=num_equal
+                            )
+                        )
                     i += num_equal
 
             for i in range(k):

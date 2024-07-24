@@ -200,7 +200,7 @@ fn non_max_suppression[
                 return per_class_scores[int(lhs)] > per_class_scores[int(rhs)]
 
             # sort box_idxs based on corresponding scores
-            sort[DType.int64, _greater_than](box_idxs)
+            sort[_greater_than](box_idxs)
 
             var pred_idx = 0
             while (
@@ -231,9 +231,11 @@ fn non_max_suppression[
                 #   2. the end of the array contains neginf values
                 # note we need to use num_boxes_curr_pred instead of num_boxes_remainig
                 # because num_boxes_remaining has been adjusted for the high IOU boxes above
-                sort[DType.int64, _greater_than](
-                    box_idxs.data + pred_idx,
-                    num_boxes_curr_pred,
+                sort[_greater_than](
+                    Span[box_idxs.T, __lifetime_of(box_idxs)](
+                        unsafe_ptr=box_idxs.data + pred_idx,
+                        len=num_boxes_curr_pred,
+                    )
                 )
 
             @always_inline
