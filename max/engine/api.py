@@ -370,6 +370,18 @@ def _is_torch_mlir_module(obj: Any) -> bool:
     )
 
 
+def _is_max_graph(obj: Any) -> bool:
+    """Checks if an object is `max.graph.Graph`."""
+
+    # TODO(MSDK-677): We should use isinstance here once max.graph
+    # is available in nightlies.
+    object_kind = type(obj)
+    return (
+        object_kind.__name__ == "Graph"
+        and object_kind.__module__.startswith("max.graph")
+    )
+
+
 def _remove_static_info_from_torch_jit_graph(graph: Any):
     """Removes any static tensor type information from a torch.jit graph."""
     import torch
@@ -505,6 +517,10 @@ class InferenceSession:
         if isinstance(model, Path) or isinstance(model, str):
             model_path = Path(str(model))
             _model = self._impl.compile_from_path(model_path, options_dict)
+        elif _is_max_graph(model):
+            _model = self._impl.compile_from_object(
+                model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
+            )
         else:
             if _is_torchscript_module(model):
                 _remove_static_info_from_torch_jit_graph(model.graph)
