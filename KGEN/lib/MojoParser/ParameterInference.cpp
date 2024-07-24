@@ -588,7 +588,7 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
     if constexpr (std::is_base_of_v<Type, decltype(arg)>)
       substitutor.signatureScoped = isa<ParameterScopeTypeInterface>(arg);
     else
-      substitutor.signatureScoped = false;
+      substitutor.signatureScoped = isa<ParameterScopeAttrInterface>(arg);
     auto newArg = substitutor.replace(arg);
     if (newArg == arg)
       return arg;

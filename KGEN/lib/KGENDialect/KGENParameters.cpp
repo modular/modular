@@ -97,9 +97,21 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
+void ParameterCollector::collectUsesFromAttr(
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasConstExpr) {
+  if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
+    scopes.emplace_back(sig);
+    collectUsesFromAttrsImpl(attr, uses, hasConstExpr);
+    scopes.pop_back();
+    return;
+  }
+  return collectUsesFromAttrsImpl(attr, uses, hasConstExpr);
+}
+
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-void ParameterCollector::collectUsesFromAttr(
+void ParameterCollector::collectUsesFromAttrsImpl(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
     bool &hasConstExpr) {
   // If we have already scanned it and know that it has no parameters in it,
@@ -122,23 +134,22 @@ void ParameterCollector::collectUsesFromAttr(
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
     maybeVerify(
         [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
-          if (signatures.empty())
-            return emitError() << "index reference has no contextual signature";
-          if (indexRef.getDepth() >= signatures.size()) {
+          if (scopes.empty())
+            return emitError() << "index reference has no contextual scope";
+          if (indexRef.getDepth() >= scopes.size()) {
             return emitError()
                    << "index reference depth " << indexRef.getDepth()
-                   << " exceeds depth of contextual signatures: "
-                   << signatures.size();
+                   << " exceeds depth of contextual scopes: " << scopes.size();
           }
-          ParameterScopeTypeInterface sig =
-              signatures[signatures.size() - 1 - indexRef.getDepth()];
+          ParameterScopeInterface scope =
+              scopes[scopes.size() - 1 - indexRef.getDepth()];
           ArrayRef<Type> types = indexRef.getIsResult()
-                                     ? sig.getResultParamTypes()
-                                     : sig.getInputParamTypes();
+                                     ? scope.getResultParamTypes()
+                                     : scope.getInputParamTypes();
           if (indexRef.getIndex() >= types.size()) {
             return emitError() << "index reference " << indexRef.getIndex()
-                               << " is out of bounds: referenced signature "
-                               << sig << " has " << types.size() << ' '
+                               << " is out of bounds: referenced scope "
+                               << scope << " has " << types.size() << ' '
                                << (indexRef.getIsResult() ? "result" : "input")
                                << " parameters";
           }
@@ -208,9 +219,9 @@ void ParameterCollector::collectUsesFromAttr(
 void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
-    signatures.push_back(sig);
+    scopes.emplace_back(sig);
     collectUsesFromTypesImpl(type, uses, hasConstExpr);
-    signatures.pop_back();
+    scopes.pop_back();
     return;
   }
   return collectUsesFromTypesImpl(type, uses, hasConstExpr);
