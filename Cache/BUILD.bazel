@@ -19,5 +19,6 @@ modular_cc_library(
         "//Support:HTTP",
         "//Support:Telemetry",
         "//Support:URI",
+        "@llvm-project//mlir:BytecodeWriter",
     ],
 )
