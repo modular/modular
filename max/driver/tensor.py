@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import Any, Tuple
+from __future__ import annotations
+
+from typing import Any, Optional, Tuple
 
 from max.driver.driver_core import Tensor as _Tensor
 
@@ -25,9 +27,18 @@ class Tensor:
     dt: dtype
     _impl: _Tensor
 
-    def __init__(self, dt: dtype, shape: Tuple[int], device: CPU = CPU()):
+    def __init__(
+        self,
+        dt: dtype,
+        shape: Tuple[int, ...] = (),
+        device: CPU = CPU(),
+        **kwargs,
+    ) -> None:
         self.dt = dt
-        self._impl = _Tensor(dt.id, shape, device._device)
+        if "_impl" in kwargs:
+            self._impl = kwargs["_impl"]
+        else:
+            self._impl = _Tensor(dt.id, shape, device._device)
 
     @property
     def dtype(self) -> dtype:
@@ -44,35 +55,21 @@ class Tensor:
         """Tensor rank"""
         return self._impl.rank
 
-    def __setitem__(self, idx: Tuple[int, ...], value: Any):
+    def __repr__(self) -> str:
+        return f"max.driver.Tensor({self.dtype}, {self.shape})"
+
+    def __setitem__(self, idx: Tuple[int, ...], value: Any) -> None:
         """Sets an item in the tensor"""
-        indices = self._canonicalize_indices(idx)
-        self._impl.set_item(indices, value)
+        self._impl.set(idx, value)
 
-    def __getitem__(self, idx: Tuple[int, ...]) -> Any:
+    def __getitem__(self, idx: Tuple[int, ...]) -> Tensor:
         """Gets an item from the tensor"""
-        indices = self._canonicalize_indices(idx)
-        return self._impl.get_item(indices)
+        new_tensor = self._impl.get(idx)
+        return Tensor(self.dt, _impl=new_tensor)
 
-    def _canonicalize_indices(
-        self, indexes: Tuple[int, ...]
-    ) -> Tuple[int, ...]:
-        """Transform arbitrary indexes into unsigned integers usable directly
-        by the underlying C++ methods."""
-        # Validate that indices are integers
-        if not all([isinstance(elt, int) for elt in indexes]):
-            raise TypeError("all indices should be integers")
-
-        canonicalized = ()
-        shape = self.shape
-        for idx, elt in enumerate(indexes):
-            # A negative index N corresponds to "N + 1" elements away from the
-            # last element in the corresponding dimension.
-            adjusted_idx = shape[idx] + elt if elt < 0 else elt
-            if not (0 <= adjusted_idx < shape[idx]):
-                raise IndexError(
-                    "indices should not exceed the bounds of the tensor"
-                )
-            canonicalized = canonicalized + (adjusted_idx,)
-
-        return canonicalized
+    def item(self) -> Any:
+        """Returns the scalar value at a given location. Currently
+        implemented only for zero-rank tensors. The return type is
+        converted to a Python built-in type.
+        """
+        return self._impl.item()
