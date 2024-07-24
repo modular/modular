@@ -1381,6 +1381,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // intra-node parallelism) while correctly handling recursion.
     if (addWaiter) {
       if (genNode->state.addWaiter()) {
+        inode->otherDeps.push_back(genNode);
         genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
         return ElaborationState::skipNode();
       }
@@ -1521,6 +1522,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (addWaiter) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
+    inode->otherDeps.push_back(genNode);
     genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
   }
   assert(genNode->numActive == 0 && "expected first implementation");
@@ -1554,6 +1556,8 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       completed.set(idx);
       anyBroken = true;
     }
+    for (auto [idx, genNode] : llvm::enumerate(inode->otherDeps))
+      visitParamNode(genNode);
     if (anyBroken) {
       // Complete the broken dependencies and reschedule the node.
       std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> newDeps;
@@ -1588,14 +1592,6 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
   for (ParamNode *root : roots)
     visitParamNode(root);
-
-  if (reschedule.empty() && errComplete.empty()) {
-    // As a last ditch attempt, check all the nodes for any "islands", because
-    // not all dependencies are tracked by `dependencies`. It's not worth paying
-    // the cost for that dependency tracking when recursion is uncommon.
-    for (auto &[_, pnode] : g.nodes.get())
-      visitParamNode(pnode.get());
-  }
 
   // Now reschedule the nodes outside the loop to avoid races.
   for (ImplNode *inode : reschedule) {

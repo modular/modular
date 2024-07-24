@@ -172,6 +172,11 @@ struct ImplNode {
   /// to be handled when the implementation node is complete and all its
   /// dependencies are ready.
   std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> dependencies;
+  /// Other non-direct-call dependencies, such as through parameter calls. These
+  /// dependencies cannot be processed in parallel because they indicate a hard
+  /// dependency edge: we need the result to be available to proceed with
+  /// elaboration of the current generator.
+  std::vector<ParamNode *> otherDeps;
   /// This flag is set when the implementation node is done processing. A
   /// separate flag is needed because an error state can cause the node to
   /// complete early. This flag prevents double-completion.
