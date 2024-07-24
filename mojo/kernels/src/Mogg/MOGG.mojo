@@ -676,13 +676,13 @@ fn simd_load[
         @parameter
         if type is DType.bool:
             var v = strided_load[DType.uint8, simd_width](
-                buffer.data.bitcast[DType.uint8]().offset(flat_index).address,
+                buffer.data.bitcast[DType.uint8]().offset(flat_index),
                 stride,
             )
             return v.cast[type]()
         else:
             return strided_load[type, simd_width](
-                buffer.data.offset(flat_index).address, stride
+                buffer.data.offset(flat_index), stride
             )
     return _simd_load_internal[simd_width, type, rank, input_0_static_shape](
         buffer, flat_index
@@ -2692,7 +2692,7 @@ fn random_normal[
     for i in range(len(shape)):
         num_elements *= int(shape[i])
     randn[type](
-        output.data.address,
+        output.data,
         num_elements,
         mean[0].cast[DType.float64](),
         variance[0].cast[DType.float64](),
@@ -2716,7 +2716,7 @@ fn static_random_normal[
     seed(int(op_seed[0]))
     var num_elements = output.num_elements()
     randn(
-        output.data.address,
+        output.data,
         num_elements,
         mean[0].cast[DType.float64](),
         variance[0].cast[DType.float64](),
