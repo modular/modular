@@ -262,7 +262,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ctx->loadDialect<KGENDialect>();
 
   // Populate the module with the user-provided -D options.
-  ErrorOr<EnvAttr> env = EnvAttr::parseDefines(ctx, clOptions.defines);
+  ErrorOr<EnvAttr> env =
+      options.parseDefinesWithDefaults(ctx, clOptions.defines);
   if (env.isError())
     return failure(clOptions.reportError(env.takeError().get()));
   theModule.get()->setAttr(EnvAttr::getEnvAttrName(), env.takeValue());

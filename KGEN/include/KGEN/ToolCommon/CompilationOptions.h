@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 #define KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/Compiler/Sanitizers.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
@@ -75,6 +76,10 @@ public:
 
   /// Print the compilation options to the given stream.
   void print(raw_ostream &os) const;
+
+  /// Parse command line defines, adding defaults based on compilation options.
+  ErrorOr<EnvAttr> parseDefinesWithDefaults(MLIRContext *ctx,
+                                            ArrayRef<std::string> defines);
 
   /// Save temporary files to a file with the given prefix.
   void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }

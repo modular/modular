@@ -214,8 +214,8 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   // user may have specified on the command line.
   ctx->loadDialect<KGENDialect>();
   if (definesId.isValid()) {
-    ErrorOr<EnvAttr> envOrErr =
-        EnvAttr::parseDefines(ctx, args.getAllArgValues(definesId));
+    ErrorOr<EnvAttr> envOrErr = compilationOptions.parseDefinesWithDefaults(
+        ctx, args.getAllArgValues(definesId));
     if (failed(envOrErr)) {
       return Error(
           llvm::formatv("an internal error occurred when initializing the Mojo "
