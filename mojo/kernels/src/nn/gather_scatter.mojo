@@ -834,9 +834,7 @@ fn scatter_nd_generator[
 
     @parameter
     if target != "cuda":
-        memcpy(
-            output_flat.data.address, data_flat.data.address, len(output_flat)
-        )
+        memcpy(output_flat.data, data_flat.data, len(output_flat))
 
     @__copy_capture(
         r_minus_m, data_shape, last_shape_of_indices, output_flat, updates_flat
@@ -1493,7 +1491,7 @@ fn gather_nd[
         DimList(reshaped_data_rank),
     ]().stack_allocation()
     # Zeroing here to avoid doing it selectively within the nested loop below.
-    memset_zero(start_tensor.data.address, reshaped_data_rank)
+    memset_zero(start_tensor.data, reshaped_data_rank)
 
     var output_buffer_copy_ind = 0
     for batch_dim in range(reshaped_indices_shape[0]):

@@ -1004,10 +1004,10 @@ struct ConvDirectNHWC[
             partial_load_b = has_residual and not filter_packed,
         ](
             c_tile_size,
-            input.address,
+            input,
             input_base_offsets,
             input_offset,
-            filter.address,
+            filter,
             filter_stride,
             F % simd_size,
         )
@@ -1053,9 +1053,9 @@ struct ConvDirectNHWC[
             partial_load_b = has_residual and not filter_packed,
         ](
             c_tile_size,
-            input_base.address,
+            input_base,
             input_stride,
-            filter_base.address,
+            filter_base,
             filter_stride,
             F % simd_size,
         )
@@ -1934,9 +1934,9 @@ fn accumulate_wo_tile_1d[
         # Accumulat in output registers.
         acc.accumulate[prefetch_offset=4, partial_load_b=partial_load_filter](
             c_tile_size,
-            input_ptr.address,
+            input_ptr,
             input_stride,
-            filter_ptr.address,
+            filter_ptr,
             filter_stride,
             partial_load_filter_size,
         )
@@ -1996,7 +1996,7 @@ fn conv1d_update_wo_tile[
         acc.init(0)
     else:
         acc.load[partial_load=has_residual](
-            output.address,
+            output,
             conv_shape.f,
             conv_shape.f_per_group() % simd_size,
         )
@@ -2025,7 +2025,7 @@ fn conv1d_update_wo_tile[
 
     # Store the micro tile
     acc.store[partial_store=has_residual](
-        output.address,
+        output,
         conv_shape.f,
         conv_shape.f_per_group() % simd_size,
     )
@@ -2173,7 +2173,7 @@ fn conv2d_update_wo_tile[
         acc.init(0)
     else:
         acc.load[partial_load=has_residual](
-            output.address,
+            output,
             conv_shape.f,
             conv_shape.f_per_group() % simd_size,
         )
@@ -2202,7 +2202,7 @@ fn conv2d_update_wo_tile[
 
     # Store the micro tile
     acc.store[partial_store=has_residual](
-        output.address,
+        output,
         conv_shape.f,
         conv_shape.f_per_group() % simd_size,
     )
@@ -2358,7 +2358,7 @@ fn conv3d_update_wo_tile[
         acc.init(0)
     else:
         acc.load[partial_load=has_residual](
-            output.address,
+            output,
             conv_shape.f,
             conv_shape.f_per_group() % simd_size,
         )
@@ -2387,7 +2387,7 @@ fn conv3d_update_wo_tile[
 
     # Store the micro tile
     acc.store[partial_store=has_residual](
-        output.address,
+        output,
         conv_shape.f,
         conv_shape.f_per_group() % simd_size,
     )

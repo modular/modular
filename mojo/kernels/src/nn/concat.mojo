@@ -173,8 +173,8 @@ fn _concat_parallel[
                             output_wc_offset
                             + overlap_rel_start // input_wc * output_wc
                             + overlap_rel_start % input_wc
-                        ).address,
-                        input_data.offset(overlap_rel_start).address,
+                        ),
+                        input_data.offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
                     )
                 else:
@@ -187,8 +187,8 @@ fn _concat_parallel[
                             output_wc_offset
                             + overlap_rel_start // input_wc * output_wc
                             + overlap_rel_start % input_wc
-                        ).address,
-                        input_data.offset(overlap_rel_start).address,
+                        ),
+                        input_data.offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
                     )
                     # Now, fully-aligned sections:
@@ -199,13 +199,13 @@ fn _concat_parallel[
                         + overlap_full_rel_start // input_wc * output_wc
                     )
                     while in_ptr < end_in_ptr:
-                        memcpy(out_ptr.address, in_ptr.address, input_wc)
+                        memcpy(out_ptr, in_ptr, input_wc)
                         in_ptr += input_wc
                         out_ptr += output_wc
                     # Lastly, trailing stragglers:
                     memcpy(
-                        out_ptr.address,
-                        in_ptr.address,
+                        out_ptr,
+                        in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
                     )
 
@@ -1425,13 +1425,13 @@ fn _concat_gpu[
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
-                    output.data.offset(input_size).address,
+                    output.data.offset(input_size),
                     inputs[i].num_elements(),
                     owning=False,
                 )
                 var inp = DeviceBuffer(
                     ctx,
-                    inputs[i].data.address,
+                    inputs[i].data,
                     inputs[i].num_elements(),
                     owning=False,
                 )

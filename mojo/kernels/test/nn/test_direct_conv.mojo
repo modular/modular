@@ -77,8 +77,8 @@ fn test[
     var output_ptr = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
     var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
 
-    rand[type](input_ptr.address, N * H * W * C)
-    rand[type](filter_ptr.address, R * S * C * F)
+    rand[type](input_ptr, N * H * W * C)
+    rand[type](filter_ptr, R * S * C * F)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()

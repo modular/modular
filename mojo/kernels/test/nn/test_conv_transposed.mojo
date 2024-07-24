@@ -152,11 +152,11 @@ fn test_conv_transposed[
 
     var input_size = N * conv_shape.input_image_flat_size() * C
     var input_ptr = UnsafePointer[Scalar[type]].alloc(input_size)
-    rand(input_ptr.address, input_size)
+    rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
     var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_size)
-    rand(filter_ptr.address, filter_size)
+    rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
     var output_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
@@ -200,7 +200,7 @@ fn test_conv_transposed[
 
     # Bias for epilogue
     var bias_ptr = UnsafePointer[Scalar[type]].alloc(F)
-    rand(bias_ptr.address, F)
+    rand(bias_ptr, F)
 
     pack_filter(filter, packed_filter, num_groups)
 

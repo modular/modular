@@ -82,8 +82,8 @@ fn test[
         N * HO * WO * F
     )
 
-    rand[input_type](input_ptr.address, N * H * W * C)
-    rand[filter_type](filter_ptr.address, R * S * C * F)
+    rand[input_type](input_ptr, N * H * W * C)
+    rand[filter_type](filter_ptr, R * S * C * F)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
