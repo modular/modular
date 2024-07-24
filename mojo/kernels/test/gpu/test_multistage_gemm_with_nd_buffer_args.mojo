@@ -71,7 +71,6 @@ fn ld_mma[
     __layout: Layout,
     __element_layout: Layout,
     __index_type: DType,
-    __masked: Bool,
 ](
     mat: LayoutTensor[
         _,
@@ -79,7 +78,6 @@ fn ld_mma[
         address_space = AddressSpace.SHARED,
         element_layout=__element_layout,
         index_type=__index_type,
-        masked=__masked,
     ],
     offset: Int,
 ) -> SIMD[mat.dtype, num_matrices]:
