@@ -180,10 +180,16 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
         )
-        debug_assert(
-            "CPU" in str(self._device),
+
+        @always_inline
+        @parameter
+        fn _is_cpu() -> Bool:
+            return "CPU" in str(self._device)
+
+        debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
+
         var offset = _dot_prod(indices, self._strides)
         return self._ptr[offset]
 
@@ -240,8 +246,13 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
         )
-        debug_assert(
-            "CPU" in str(self._device),
+
+        @always_inline
+        @parameter
+        fn _is_cpu() -> Bool:
+            return "CPU" in str(self._device)
+
+        debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
         return SIMD[size=width].load(
@@ -263,8 +274,13 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         Returns:
           The SIMD value at the specified indices.
         """
-        debug_assert(
-            "CPU" in str(self._device),
+
+        @always_inline
+        @parameter
+        fn _is_cpu() -> Bool:
+            return "CPU" in str(self._device)
+
+        debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
         return SIMD[size=width].load(
@@ -284,8 +300,13 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
           indices: The indices of the value to set.
           val: The SIMD value to store.
         """
-        debug_assert(
-            "CPU" in str(self._device),
+
+        @always_inline
+        @parameter
+        fn _is_cpu() -> Bool:
+            return "CPU" in str(self._device)
+
+        debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
         SIMD[size=width].store(
