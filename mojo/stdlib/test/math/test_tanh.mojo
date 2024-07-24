@@ -111,7 +111,7 @@ def test_tanh_libm[N: Int = 8192]():
     seed(0)
     alias test_dtype = DType.float32
     var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
-    randn[test_dtype](x32.address, N, 0, 9.0)
+    randn[test_dtype](x32, N, 0, 9.0)
     print("For N=" + str(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
