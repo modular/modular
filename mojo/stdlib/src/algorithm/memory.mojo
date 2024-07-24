@@ -56,7 +56,7 @@ fn parallel_memcpy[
         if to_copy <= 0:
             return
 
-        memcpy(dest.offset(begin).address, src.offset(begin).address, to_copy)
+        memcpy(dest.offset(begin), src.offset(begin), to_copy)
 
     sync_parallelize[_parallel_copy](num_tasks)
 
@@ -86,7 +86,7 @@ fn parallel_memcpy[
     # If number of elements to be copied is less than minimum preset (4048),
     # then use default memcpy.
     if count < min_work_for_parallel:
-        memcpy(dest.address, src.address, count)
+        memcpy(dest, src, count)
     else:
         var work_units = ceildiv(count, min_work_per_task)
         var num_tasks = min(work_units, parallelism_level())

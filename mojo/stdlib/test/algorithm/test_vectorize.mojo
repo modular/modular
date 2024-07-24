@@ -104,7 +104,7 @@ fn test_vectorize_unroll():
     vectorize[double_vec, simd_width, unroll_factor=unroll_factor](len(vec))
     vectorize[double_buf, simd_width](len(buf))
 
-    var err = memcmp(vec.data.address, buf.data.address, len(buf))
+    var err = memcmp(vec.data, buf.data, len(buf))
     # CHECK: 0
     print(err)
 
