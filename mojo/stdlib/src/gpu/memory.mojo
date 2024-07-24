@@ -150,7 +150,7 @@ fn __to_llvm_shared_mem_ptr[
     """
     return __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
-    ](ptr.address)
+    ](ptr)
 
 
 @always_inline
@@ -167,7 +167,7 @@ fn __to_llvm_ptr[
     """
     return __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr`
-    ](ptr.address)
+    ](ptr)
 
 
 @always_inline

@@ -36,7 +36,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     var ptr = UnsafePointer[DLHandle].alloc(1)
     var handle = DLHandle(CUDA_CUBLASLT_LIBRARY_PATH)
     ptr[] = handle
-    return ptr.bitcast[NoneType]().address
+    return ptr.bitcast[NoneType]()
 
 
 fn _destroy_dylib(ptr: UnsafePointer[NoneType]):

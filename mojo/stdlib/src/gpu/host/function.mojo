@@ -559,7 +559,7 @@ struct Function[
             )
         except e:
             res.init_pointee_move(_CachedFunctionInfo(e))
-        return res.address
+        return res
 
     @staticmethod
     fn _init_fn[
@@ -623,6 +623,4 @@ struct Function[
 
             _ = payload
 
-            return UnsafePointer(info_ptr.address).bitcast[
-                _CachedFunctionInfo
-            ]()[]
+            return UnsafePointer(info_ptr).bitcast[_CachedFunctionInfo]()[]
