@@ -89,19 +89,6 @@ public:
   /// Return the current userID.
   ErrorOr<StringRef> userID() const;
 
-  /// Return whether preview features should be enabled or not.
-  ///
-  /// This generally requires the use of a context. For example:
-  ///
-  ///     ContextRef ctx; // Available through context plumbing.
-  ///     if (wantsPreviewFeature && !ctx->get<Settings>->isPreview()) {
-  ///         return Error("previewFeature not available");
-  ///     }
-  ///
-  /// This should always be used over an #ifdef, as this will prevent
-  /// the feature from being compiled or tested properly in CI.
-  bool isPreview();
-
   /// PEM-encoded client private key (not a path).
   const std::string clientKeyPriv();
 

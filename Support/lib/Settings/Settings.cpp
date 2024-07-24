@@ -180,14 +180,6 @@ ErrorOr<StringRef> Settings::userID() const {
   return entitlementStore.getUserID();
 }
 
-bool Settings::isPreview() {
-#ifdef __SETTINGS_ONLY_MODULAR_PREVIEW
-  return true;
-#else
-  return getBool<ModularDeveloperEntitlement>() || getBool<BetaEntitlement>();
-#endif
-}
-
 const std::string Settings::clientKeyPriv() {
   auto ref = entitlementStore.getPrivateKey();
   if (ref->getBufferSize() == 0)
