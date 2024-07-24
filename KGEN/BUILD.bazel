@@ -860,6 +860,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
     local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + select({
         "//:dbg_build": ["BUILD_TYPE=debug"],
+        "//:fastbuild_build": ["BUILD_TYPE=relwithdebinfo"],
         "//:opt_build": ["BUILD_TYPE=release"],
     }),
     deps = [
