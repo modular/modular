@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/Runtime/Globals/Globals.h"
-#include "AsyncRT/Runtime/AsyncValue.h"
+#include "AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "Support/SymbolExport.h"
 
 #include <atomic>
@@ -13,7 +13,7 @@
 using namespace M::AsyncRT;
 
 [[maybe_unused]] MODULAR_CXX_EXPORT std::atomic<ssize_t>
-    M::AsyncRT::AsyncValue::totalAllocatedAsyncValues{0};
+    M::AsyncRT::Globals::totalAllocatedAsyncValues{0};
 
 MODULAR_CXX_EXPORT CompactRuntimePtr &
 M::AsyncRT::Globals::getCurrentRuntimeInTLS() {

@@ -4,7 +4,6 @@ modular_cc_binary(
     name = "llvm-module-split",
     srcs = glob(["*.cpp"]),
     deps = [
-        "//AsyncRT:Runtime",
         "//Config",
         "//KGEN:Compiler",
         "//KGEN:ObjectCompiler",

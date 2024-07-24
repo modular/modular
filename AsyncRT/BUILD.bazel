@@ -74,11 +74,7 @@ modular_shared_library(
     srcs = glob(["lib/Runtime/Globals/*.cpp"]),
     output_name = "AsyncRTRuntimeGlobals",
     deps = [
-        ":CompilerSupport",
         ":Runtime.headers",
-        ":Support.headers",
-        "//Support:Base",
-        "//Support:Profiling",
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],

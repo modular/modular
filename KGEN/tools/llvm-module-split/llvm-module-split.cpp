@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Config/Version.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
