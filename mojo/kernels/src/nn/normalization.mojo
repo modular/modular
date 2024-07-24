@@ -303,7 +303,7 @@ fn layer_norm_gpu_warp_tiling_scalar[
         alias input_fn = input_func.value()
         if tid < num_cols:
             vec_data = input_fn[1, rank](
-                StaticIntTuple[rank](Int(row.value), Int(tid.value))
+                StaticIntTuple[rank](int(row), int(tid))
             )
             welford_update(vec_data, thread_mean, thread_m2, thread_count)
     else:
@@ -342,7 +342,6 @@ fn layer_norm_gpu_block_vector[
     epsilon: Scalar[type],
 ):
     alias align = alignof[SIMD[type, simd_width]]()
-    var num_rows = data.dim[0]()
     var num_cols: UInt = data.dim[1]().value
     var tid = ThreadIdx.x()
     var row = BlockIdx.x()
