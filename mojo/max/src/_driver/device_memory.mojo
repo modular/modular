@@ -67,16 +67,11 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
     var num_bytes: Int
 
     fn __init__(inout self):
-        # Workaround for MOCO-840
-        # Removing this will cause mojo to do a double free!
-        try:
-            self = Self(
-                UnsafePointer[NoneType](),
-                0,
-                Device(),
-            )
-        except e:
-            self = abort[DeviceMemory](e)
+        self = Self(
+            UnsafePointer[NoneType](),
+            0,
+            Device(),
+        )
 
     fn __init__(
         inout self,
@@ -150,6 +145,8 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         anytensor._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
     fn __del__(owned self):
+        if not self._impl_ptr:
+            return
         alias func_name_destroy = "M_destroyDeviceMemory"
         call_dylib_func[NoneType](
             self.lib.get_handle(), func_name_destroy, self._impl_ptr
