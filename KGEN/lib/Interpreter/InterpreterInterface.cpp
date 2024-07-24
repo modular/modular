@@ -636,7 +636,8 @@ InterpreterState::startInterpreterAt(Region &region,
 }
 
 void InterpreterState::reset() {
-  pc = nullptr;
+  block = nullptr;
+  pc = Block::iterator();
   stackIdx = 0;
   for (MemoryTable &table : memory)
     table.reset();
@@ -744,8 +745,12 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
 
 ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
   SmallVector<Attribute> operands;
-  while (pc) {
-    Operation *prev = pc;
+  while (block) {
+    // Advance the iterator.
+    if (pc.isValid())
+      ++pc;
+    else
+      pc = block->begin();
 
     operands.clear();
     // Lookup the operands of the current operation.
@@ -753,34 +758,25 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
       operands.push_back(lookupValue(operand));
 
     // Check for an interpreter interface implementation.
-    if (auto interpItf = dyn_cast<InterpreterOpInterface>(pc)) {
+    if (auto interpItf = dyn_cast<InterpreterOpInterface>(*pc)) {
       ErrorTreeOrSuccess err = interpItf.interpret(operands, *this);
       if (err.isError())
-        return reportFoldError(pc, operands, "failed to interpret operation ")
+        return reportFoldError(&*pc, operands, "failed to interpret operation ")
             .addCause(err.takeError());
 
       // Otherwise, try to use the operation folder.
     } else {
-      ErrorTreeOrSuccess result = interpretOpWithFolder(pc, operands, *this);
+      ErrorTreeOrSuccess result = interpretOpWithFolder(&*pc, operands, *this);
       if (result.isError())
         return result.takeError();
-    }
-
-    // If the operation has not changed, advance to the next operation. If the
-    // current operation is a terminator, return an error.
-    if (prev == pc) {
-      if (LLVM_UNLIKELY(!pc->getNextNode())) {
-        return ErrorTree(pc->getLoc(),
-                         "terminator did not transfer control flow");
-      }
-      pc = pc->getNextNode();
     }
   }
 
   // The stack frame must be empty.
-  if (stackIdx)
+  if (stackIdx) {
     llvm::report_fatal_error(
         "exiting interpreter with remaining stack frames " + Twine(stackIdx));
+  }
   return llvm::to_vector(returnValues);
 }
 
