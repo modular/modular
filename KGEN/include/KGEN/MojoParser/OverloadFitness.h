@@ -12,6 +12,7 @@
 #define KGEN_MOJOPARSER_OVERLOADFITNESS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
 
