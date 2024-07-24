@@ -3,7 +3,10 @@ load("//bazel:api.bzl", "modular_py_test")
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["pytests/**/*.py"]),
+    srcs = glob([
+        "pytests/**/*.py",
+        "graph_tests/**/*.py",
+    ]),
     data = [
         "//CUDASupport/tools/is-cuda-available",
         "//KGEN:CompilerRT",
