@@ -34,9 +34,9 @@ fn bench_gemv_tc[
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
 
-    randn(a_host.address, M * K)
-    randn(b_host.address, K * N)
-    memset(c_host.address, 0, M * N)
+    randn(a_host, M * K)
+    randn(b_host, K * N)
+    memset(c_host, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
     var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
@@ -46,8 +46,8 @@ fn bench_gemv_tc[
     var b_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](K, N), ctx=ctx)
     var c_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, N), ctx=ctx)
 
-    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data.address)
-    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data.address)
+    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data)
+    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data)
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
@@ -109,9 +109,9 @@ fn bench_gemv_ws[
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
 
-    randn(a_host.address, M * K)
-    randn(b_host.address, K * N)
-    memset(c_host.address, 0, M * N)
+    randn(a_host, M * K)
+    randn(b_host, K * N)
+    memset(c_host, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
     var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
@@ -121,8 +121,8 @@ fn bench_gemv_ws[
     var b_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](K, N), ctx=ctx)
     var c_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, N), ctx=ctx)
 
-    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data.address)
-    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data.address)
+    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data)
+    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data)
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32
@@ -184,9 +184,9 @@ fn bench_gemv_naive[
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
 
-    randn(a_host.address, M * K)
-    randn(b_host.address, K * N)
-    memset(c_host.address, 0, M * N)
+    randn(a_host, M * K)
+    randn(b_host, K * N)
+    memset(c_host, 0, M * N)
 
     var a_buf_h = NDBuffer[type, 2](a_host, StaticIntTuple[2](M, K))
     var b_buf_h = NDBuffer[type, 2](b_host, StaticIntTuple[2](K, N))
@@ -196,8 +196,8 @@ fn bench_gemv_naive[
     var b_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](K, N), ctx=ctx)
     var c_buf = DeviceNDBuffer[type, 2](StaticIntTuple[2](M, N), ctx=ctx)
 
-    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data.address)
-    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data.address)
+    ctx.enqueue_copy_to_device(a_buf.buffer, a_buf_h.data)
+    ctx.enqueue_copy_to_device(b_buf.buffer, b_buf_h.data)
 
     alias BLOCK_DIM = 16
     alias WARPS_PER_BLOCK = 32

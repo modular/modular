@@ -62,10 +62,10 @@ def bench_attention[
         output_shape.flattened_length()
     )
 
-    rand(q_ptr.address, q_shape.flattened_length())
-    rand(k_ptr.address, k_shape.flattened_length())
-    rand(v_ptr.address, v_shape.flattened_length())
-    rand(mask_ptr.address, mask_shape.flattened_length())
+    rand(q_ptr, q_shape.flattened_length())
+    rand(k_ptr, k_shape.flattened_length())
+    rand(v_ptr, v_shape.flattened_length())
+    rand(mask_ptr, mask_shape.flattened_length())
 
     var q = NDBuffer[type, 3](q_ptr, q_shape)
     var k = NDBuffer[type, 3](k_ptr, k_shape)

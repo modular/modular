@@ -40,14 +40,14 @@ fn bench_gather(inout bencher: Bencher, spec: GatherSpec) capturing:
     var indices_shape = Index(spec.n1, spec.n2)
 
     var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
-    rand(data_ptr.address, input_shape.flattened_length())
+    rand(data_ptr, input_shape.flattened_length())
     var data_tensor = NDBuffer[DType.float32, 2](data_ptr, input_shape)
 
     var indices_ptr = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
     )
     randint(
-        indices_ptr.address,
+        indices_ptr,
         indices_shape.flattened_length(),
         index_rand_min,
         index_rand_max,

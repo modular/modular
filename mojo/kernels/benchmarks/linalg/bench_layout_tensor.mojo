@@ -30,7 +30,7 @@ struct Matrix[rows: Int, cols: Int]:
     # Initialize zeroeing all values
     fn __init__(inout self):
         self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-        memset_zero(self.data.address, rows * cols)
+        memset_zero(self.data, rows * cols)
 
     # Initialize taking a pointer, don't set any elements
     fn __init__(inout self, data: UnsafePointer[Scalar[dtype]]):
@@ -40,7 +40,7 @@ struct Matrix[rows: Int, cols: Int]:
     @staticmethod
     fn rand() -> Self:
         var data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-        rand(data.address, rows * cols)
+        rand(data, rows * cols)
         return Self(data)
 
     fn __getitem__(self, y: Int, x: Int) -> SIMD[dtype, 1]:

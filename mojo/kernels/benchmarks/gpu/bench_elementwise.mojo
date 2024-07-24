@@ -83,13 +83,13 @@ fn simd_load[
         @parameter
         if type is DType.bool:
             var v = strided_load[DType.uint8, simd_width](
-                buffer.data.bitcast[DType.uint8]().offset(flat_index).address,
+                buffer.data.bitcast[DType.uint8]().offset(flat_index),
                 stride,
             )
             return v.cast[type]()
         else:
             return strided_load[type, simd_width](
-                buffer.data.offset(flat_index).address, stride
+                buffer.data.offset(flat_index), stride
             )
     return _simd_load_internal[simd_width, type, rank, input_0_static_shape](
         buffer, flat_index
@@ -217,7 +217,7 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host.data.address, out_buffer.buffer)
+    ctx.enqueue_copy_from_device(out_host.data, out_buffer.buffer)
 
     _ = in_buffer
     _ = out_buffer

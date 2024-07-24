@@ -95,8 +95,8 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
         num_copies * output_alloc_size, alignment=alignment
     )
 
-    rand[input_type](input_ptr.address, num_copies * input_alloc_size)
-    rand[filter_type](filter_ptr.address, num_copies * filter_alloc_size)
+    rand[input_type](input_ptr, num_copies * input_alloc_size)
+    rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
 
     var pad_d = StaticIntTuple[2](0)
     var pad_h = StaticIntTuple[2](0)

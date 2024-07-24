@@ -44,8 +44,8 @@ fn bench_concat[
     inputs_host[0] = NDBuffer[type, rank](
         UnsafePointer[Scalar[type]].alloc(size), shape
     )
-    randn(inputs_host[0].data.address, size)
-    ctx.enqueue_copy_to_device(input0_ptr, inputs_host[0].data.address)
+    randn(inputs_host[0].data, size)
+    ctx.enqueue_copy_to_device(input0_ptr, inputs_host[0].data)
     name += str(shape)
     out_axis += shape[axis]
 
@@ -56,8 +56,8 @@ fn bench_concat[
     inputs_host[1] = NDBuffer[type, rank](
         UnsafePointer[Scalar[type]].alloc(size), shape
     )
-    randn(inputs_host[1].data.address, size)
-    ctx.enqueue_copy_to_device(input1_ptr, inputs_host[1].data.address)
+    randn(inputs_host[1].data, size)
+    ctx.enqueue_copy_to_device(input1_ptr, inputs_host[1].data)
     name += str(shape)
     out_axis += shape[axis]
 
@@ -69,9 +69,9 @@ fn bench_concat[
     var output_host = NDBuffer[type, rank](
         UnsafePointer[Scalar[type]].alloc(output.size()), out_shape
     )
-    randn(output_host.data.address, output.size())
+    randn(output_host.data, output.size())
 
-    ctx.enqueue_copy_to_device(output_ptr, output_host.data.address)
+    ctx.enqueue_copy_to_device(output_ptr, output_host.data)
 
     @parameter
     @always_inline
@@ -93,7 +93,7 @@ fn bench_concat[
         ),
     )
 
-    ctx.enqueue_copy_from_device(output_host.data.address, output_ptr)
+    ctx.enqueue_copy_from_device(output_host.data, output_ptr)
 
     var offset = 0
     for i in range(num_inputs):

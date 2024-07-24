@@ -21,7 +21,7 @@ fn test[N: Int = 1024 * 1024]() -> UInt32:
     alias alignment = 64
     alias type = DType.uint32
     var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
-    randint[type](x.address, N, 0, 255)
+    randint[type](x, N, 0, 255)
     var s: Scalar[DType.uint32] = 0
     for i in range(N):
         s += 123 * x[i].cast[DType.uint32]()

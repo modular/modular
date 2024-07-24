@@ -50,9 +50,9 @@ fn bench_memcpy[
         fn kernel_launch(ctx: DeviceContext) raises:
             @parameter
             if direction is Direction.DEVICE_TO_HOST:
-                context.enqueue_copy_from_device(mem_host.address, mem_device)
+                context.enqueue_copy_from_device(mem_host, mem_device)
             elif direction is direction.HOST_TO_DEVICE:
-                context.enqueue_copy_to_device(mem_device, mem_host.address)
+                context.enqueue_copy_to_device(mem_device, mem_host)
             else:
                 context.enqueue_copy_device_to_device(mem_device, mem2_device)
 
