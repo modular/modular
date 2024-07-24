@@ -217,7 +217,6 @@ alias CompileArg = Variant[Int, Path, Bool]
 
 @value
 struct CUDACompiledKernelArgs:
-    var debug: Bool
     var verbose: Bool
     var dump_ptx: Optional[Path]
     var dump_llvm: Optional[Path]
@@ -231,7 +230,6 @@ struct CUDACompiledKernelArgs:
         return kwargs.find(key).value()[T] if key in kwargs else Optional[T]()
 
     fn __init__(inout self, kwargs: OwnedKwargsDict[CompileArg]) raises:
-        self.debug = kwargs.find("debug").or_else(False)[Bool]
         self.verbose = kwargs.find("verbose").or_else(False)[Bool]
         self.dump_ptx = Self._get_opt[Path](kwargs, "dump_ptx")
         self.dump_llvm = Self._get_opt[Path](kwargs, "dump_llvm")
@@ -249,7 +247,6 @@ fn compile[
         device: Device for which to compile the function. The returned CompiledDeviceKernel
             can execute on a different Device, as long as the device architecture matches.
         kwargs:
-            debug (Bool): Compiles the kernel with debuginfo (-g).
             verbose (Bool): Prints verbose log messages from cuModuleLoadEx during compilation/linking.
             dump_ptx (Path): File in which to write the PTX for your kernel.
             dump_llvm (Path): File in which to write the LLVM IR for your kernel.
@@ -272,7 +269,6 @@ fn compile[
         func,
         _is_failable=False,
     ](
-        debug=compile_args.debug,
         verbose=compile_args.verbose,
         dump_llvm=Variant[Path, Bool](
             compile_args.dump_llvm.value()
