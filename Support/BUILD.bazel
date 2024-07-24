@@ -70,6 +70,7 @@ modular_cc_library(
     ],
     local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + [
         "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
+        "KERNELS_BUILD_TYPE=\\\"unknown\\\"",
         "SHARED_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_SUFFIX='\".a\"'",

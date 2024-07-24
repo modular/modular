@@ -8,9 +8,6 @@ modular_cc_library(
     ],
     hdrs = glob(["include/**/*.h"]),
     copts = ["-I$(GENDIR)/Config"],
-    defines = [
-        "MODULAR_KERNELS_BUILD_TYPE=\\\"unknown\\\"",
-    ],
     visibility = ["//visibility:public"],
 )
 

@@ -72,7 +72,7 @@ BuildInfo M::getBuildInfo() {
   buildInfo.modularVersion = getModularVersionString();
   buildInfo.gitRevision = modularVersion.revision;
   buildInfo.buildType = modularVersion.buildType;
-  buildInfo.kernelsBuildType = MODULAR_KERNELS_BUILD_TYPE;
+  buildInfo.kernelsBuildType = KERNELS_BUILD_TYPE;
   buildInfo.asyncrtMaxProfilingLevel = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
   buildInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
 
