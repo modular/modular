@@ -88,6 +88,9 @@ ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
 }
 
 Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
+  if (isa<ParameterScopeAttrInterface>(attr))
+    ++rootDepth;
+
   // If a parameter got rebound to an index reference, we need to increase its
   // depth based on the current signature.
   // FIXME: Is there a better way around this? This previously manifested as

@@ -96,9 +96,13 @@ class IndexParameterReplacer
     if (auto result = static_cast<DerivedT *>(this)->tryReplace(value, depth))
       return result;
 
-    if constexpr (std::is_base_of_v<Type, T>)
+    if constexpr (std::is_base_of_v<Type, T>) {
       if (isa<ParameterScopeTypeInterface>(value))
         ++depth;
+    } else {
+      if (isa<ParameterScopeAttrInterface>(value))
+        ++depth;
+    }
 
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
