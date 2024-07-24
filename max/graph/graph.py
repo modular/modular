@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 from contextvars import ContextVar
-from typing import Iterable
+from typing import Callable, Iterable, Optional
 
 from . import core as _c
 from . import mlir
@@ -84,21 +84,23 @@ class Graph:
     example:
 
     ```python
-    from max.graph import Type, Graph, TensorType, ops
-    from max.tensor import Tensor, TensorShape
+    from dataclasses import dataclass
+    import numpy as np
+    from max.graph import DType, Graph, GraphValue, TensorType
 
-    def build_model() -> Graph:
-        graph = Graph(TensorType(DType.float32, (2, 6)))
+    @dataclass
+    class Linear:
+      weight: np.ndarray
+      bias: np.ndarray
 
-        matmul_constant_value = Tensor(TensorShape(6, 1), 0.15)
-        matmul_constant = graph.constant(matmul_constant_value)
+      def __call__(self, x: GraphValue) -> GraphValue:
+          return x @ self.weight + self.bias
 
-        matmul = graph[0] @ matmul_constant
-        relu = ops.elementwise.relu(matmul)
-        softmax = ops.softmax(relu)
-        graph.output(softmax)
-
-        return graph
+    linear_graph = Graph(
+        "linear",
+        Linear(np.ones((2, 2)), np.ones((2,))),
+        input_types=[TensorType(DType.float32, (2,))],
+    )
     ```
 
     You can't call a `Graph` directly from Python. You must compile it and
@@ -112,8 +114,11 @@ class Graph:
     def __init__(
         self,
         name: str,
+        forward: Optional[Callable] = None,
         input_types: Iterable[Type] = (),
         output_types: Iterable[Type] = (),
+        *args,
+        **kwargs,
     ) -> None:
         self.name = name
         self._input_types = list(input_types)
@@ -151,7 +156,13 @@ class Graph:
 
         self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
 
-    # This is really awkward, I just want this to be the generator :(
+        if forward is not None:
+            # If the forward method was passed stage the graph directly in the
+            # constructor.
+            with self:
+                result = forward(*self.inputs, *args, **kwargs)
+                self.output(result)
+
     def __enter__(self) -> Graph:
         self._context_state = self._enter()
         return self._context_state.__enter__()
@@ -222,17 +233,6 @@ class Graph:
         self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
             f"[{', '.join(output_names)}]"
         )
-
-    def build(self, *args, **kwargs) -> Iterable[GraphValue]:
-        """Core op staging logic to build the graph."""
-        raise NotImplementedError
-
-    def __call__(self, *args, **kwargs) -> Graph:
-        """Dispatches to the overridden `.build()` method."""
-        with self:
-            result = self.build(*self.inputs, *args, **kwargs)
-            self.output(result)
-            return self
 
     def __repr__(self) -> str:
         return (
