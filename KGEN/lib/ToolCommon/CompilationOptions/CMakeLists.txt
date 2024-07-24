@@ -10,4 +10,5 @@ add_modular_library(KGENCompilationOptions
   LINK_LIBS PUBLIC
   MDialect
   DebugInfoDialect
+  KGENDialect
   )
