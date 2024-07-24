@@ -15,8 +15,8 @@ fn strsv[
     size: Int
 ](L: Buffer[DType.float32, size * size], x: Buffer[DType.float32, size]):
     # assuming size is a multiple of simd_width
-    var x_ptr = UnsafePointer[Float32](x.data.address)
-    var L_ptr = UnsafePointer[Float32](L.data.address)
+    var x_ptr = UnsafePointer[Float32](x.data)
+    var L_ptr = UnsafePointer[Float32](L.data)
     var n: Int = size
     var x_solved = Buffer[
         DType.float32, simd_width * simd_width

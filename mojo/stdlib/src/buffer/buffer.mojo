@@ -221,7 +221,7 @@ struct Buffer[
         Args:
             idx: The index of the prefetched location.
         """
-        prefetch[params](self.data.offset(idx).address)
+        prefetch[params](self.data.offset(idx))
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -620,7 +620,7 @@ struct NDBuffer[
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
-        self.data = ptr.address
+        self.data = ptr
         self.dynamic_shape = dynamic_shape
         self.dynamic_stride = _compute_ndbuffer_stride[rank](dynamic_shape)
         self.is_contiguous = True
@@ -1255,7 +1255,7 @@ struct NDBuffer[
         Args:
             idx: The N-D index of the prefetched location.
         """
-        prefetch[params](self._offset(idx).address)
+        prefetch[params](self._offset(idx))
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
@@ -1267,7 +1267,7 @@ struct NDBuffer[
         Args:
             indices: The N-D index of the prefetched location.
         """
-        prefetch[params](self._offset(indices).address)
+        prefetch[params](self._offset(indices))
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: Float32):

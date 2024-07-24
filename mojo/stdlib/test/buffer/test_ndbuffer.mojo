@@ -157,21 +157,19 @@ fn test_fill():
     ].stack_allocation()
     filled.fill(1)
 
-    var err = memcmp(
-        buf.data.address, filled.data.address, filled.num_elements()
-    )
+    var err = memcmp(buf.data, filled.data, filled.num_elements())
     # CHECK: 0
     print(err)
 
-    memset_zero(filled.data.address, filled.num_elements())
+    memset_zero(filled.data, filled.num_elements())
     filled.fill(1)
-    err = memcmp(buf.data.address, filled.data.address, filled.num_elements())
+    err = memcmp(buf.data, filled.data, filled.num_elements())
     # CHECK: 0
     print(err)
 
-    memset_zero(buf.data.address, buf.num_elements())
+    memset_zero(buf.data, buf.num_elements())
     filled.fill(0)
-    err = memcmp(buf.data.address, filled.data.address, filled.num_elements())
+    err = memcmp(buf.data, filled.data, filled.num_elements())
     # CHECK: 0
     print(err)
 
