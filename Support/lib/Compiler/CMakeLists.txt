@@ -21,4 +21,6 @@ add_modular_mlir_library(MCompilerSupport
   MSupport
   MSupportML
   MLIRIR
+  MLIRBytecodeReader
+  MLIRBytecodeWriter
 )

@@ -438,6 +438,7 @@ modular_cc_library(
         ":MDialect",
         ":Profiling",
         "@llvm-project//mlir:AllPassesAndDialects",
+        "@llvm-project//mlir:BytecodeReader",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )
