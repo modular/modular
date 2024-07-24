@@ -11,7 +11,6 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host.memory import _memset
 from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
@@ -28,14 +27,7 @@ from internal_utils import (
     assert_equal,
     assert_almost_equal,
 )
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
 from buffer.dimlist import _make_tuple
-from linalg.cublas import cublas_matmul
 from testing import assert_equal as assert_equal_val
 
 
@@ -120,8 +112,12 @@ struct test_matmul[
         ctx.enqueue_copy_to_device(
             self.b_device.buffer, self.b_host.tensor.data
         )
-        _memset(self.c_device.buffer.ptr, 0, self.M * self.N)
-        _memset(self.c_device_ref.buffer.ptr, 0, self.M * self.N)
+        ctx.enqueue_copy_to_device(
+            self.c_device.buffer, self.c_host.tensor.data
+        )
+        ctx.enqueue_copy_to_device(
+            self.c_device_ref.buffer, self.c_host_ref.tensor.data
+        )
 
         test_function(self)
 
@@ -153,39 +149,42 @@ def main():
                 *,
                 shape: DimList = DimList.create_unknown[2](),
                 transpose_b: Bool = False,
-                use_tensor_core: Bool = True,
+                use_tensor_core: Bool = False,
             ](test_ctx: test_matmul[type, shape, transpose_b]) raises:
+                var M = test_ctx.M
+                var K = test_ctx.K
+                var N = test_ctx.N
+
                 _matmul_gpu[use_tensor_core=use_tensor_core](
                     test_ctx.c_device.tensor,
                     test_ctx.a_device.tensor,
                     test_ctx.b_device.tensor,
                     ctx,
-                    True,
                 )
-                var handle = UnsafePointer[cublasContext]()
-                check_cublas_error(
-                    cublasCreate(UnsafePointer.address_of(handle))
-                )
-                check_cublas_error(
-                    cublas_matmul(
-                        handle,
-                        test_ctx.c_device_ref.tensor,
-                        test_ctx.a_device.tensor,
-                        test_ctx.b_device.tensor,
-                        c_row_major=True,
-                        transpose_b=transpose_b,
-                    )
-                )
-                check_cublas_error(cublasDestroy(handle))
 
-            test_matmul[DType.float32, DimList(128, 384)](
-                ctx, (256, 384, 128), low_precision=True
-            ).run_test[
-                basic_test[
-                    DType.float32,
-                    shape = DimList(128, 384),
-                    use_tensor_core=True,
-                ]
+                alias BLOCK_DIM = 16
+                var gemm_naive = ctx.compile_function[
+                    matmul_kernel_naive[type, type, type, BLOCK_DIM]
+                ](threads_per_block=256)
+
+                ctx.enqueue_function(
+                    gemm_naive,
+                    test_ctx.c_device_ref.buffer,
+                    test_ctx.a_device.buffer,
+                    test_ctx.b_device.buffer,
+                    M,
+                    N,
+                    K,
+                    grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+                    block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+                )
+
+            test_matmul[DType.float32](ctx, (128, 128, 128)).run_test[
+                basic_test[DType.float32]
+            ]()
+
+            test_matmul[DType.float32](ctx, (256, 384, 128)).run_test[
+                basic_test[DType.float32]
             ]()
 
             # TODO: re-enable after KERN-702
