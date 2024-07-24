@@ -195,7 +195,7 @@ class Graph:
             return []
         return [GraphValue(result) for result in results]
 
-    def output(self, *outputs: GraphValue):
+    def output(self, *outputs: GraphValue) -> None:
         # mo.output doesn't support infer_type
         self._add_op(mo.output, [o._mlir_value for o in outputs])
         # We have a type mismatch now, these are MLIR types
@@ -222,6 +222,17 @@ class Graph:
         self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
             f"[{', '.join(output_names)}]"
         )
+
+    def build(self, *args, **kwargs) -> Iterable[GraphValue]:
+        """Core op staging logic to build the graph."""
+        raise NotImplementedError
+
+    def __call__(self, *args, **kwargs) -> Graph:
+        """Dispatches to the overridden `.build()` method."""
+        with self:
+            result = self.build(*self.inputs, *args, **kwargs)
+            self.output(result)
+            return self
 
     def __repr__(self) -> str:
         return (

@@ -4,9 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
-import pytest
 import sys
-from max.graph import DType, Graph, TensorType, graph, mlir, ops
+from typing import Iterable
+
+import pytest
+from max.graph import (
+    DType,
+    Graph,
+    GraphValue,
+    TensorType,
+    Type,
+    graph,
+    mlir,
+    ops,
+)
 
 
 def test_mlir_module_create() -> None:
@@ -58,10 +69,35 @@ def test_add_op() -> None:
     """Builds a simple graph with an elementwise addition and checks the IR."""
     input_type = TensorType(dtype=DType.float32, dims=["batch", "channels"])
     with Graph("add", input_types=(input_type, input_type)) as graph:
-        graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
+        lhs, rhs = graph.inputs
+        elemwise_sum = ops.add(lhs, rhs)
+        graph.output(elemwise_sum)
 
         graph._mlir_op.verify()
 
         # Check that the arg/result name attributes were added.
         assert "argument_names = " in str(graph._mlir_op)
         assert "result_names = " in str(graph._mlir_op)
+
+
+class ElementwiseAdd(Graph):
+    """Inheritance-based elementwise add graph op definition."""
+
+    def __init__(self, input_types: Iterable[Type]) -> None:
+        super().__init__("add", input_types)
+
+    def build(self, lhs: GraphValue, rhs: GraphValue) -> GraphValue:
+        return ops.add(lhs, rhs)
+
+
+def test_add_op_class() -> None:
+    """Uses inheritance to build a simple graph with an elementwise addition
+    and checks the IR.
+    """
+    input_type = TensorType(dtype=DType.float32, dims=["batch", "channels"])
+    add_graph = ElementwiseAdd((input_type, input_type))()
+
+    add_graph._mlir_op.verify()
+
+    assert "rmo.add" in str(add_graph._mlir_op)
+    assert "mo.output" in str(add_graph._mlir_op)
