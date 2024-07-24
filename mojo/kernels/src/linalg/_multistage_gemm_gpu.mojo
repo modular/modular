@@ -133,7 +133,7 @@ fn multistage_mma[
         xor_2bits_per8T
     ) if transpose_b else (
         None if a_type
-        == DType.float32 else Optional[_swizzle_signature](xor_3bits_per16T)
+        is DType.float32 else Optional[_swizzle_signature](xor_3bits_per16T)
     )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -391,9 +391,13 @@ fn multistage_gemm[
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
+    # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
+    # for solving mismatches in some shapes
     var block_idx = block_swizzle_by_scale[3](
         (int(BlockIdx.x()), int(BlockIdx.y())), (int(N // BN), int(M // BM))
-    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
+    ) if swizzle_block and not (N // BN & 1) else Index(
+        int(BlockIdx.x()), int(BlockIdx.y())
+    )
 
     # Coordinates of the current warp.
     var warp_x: UInt
