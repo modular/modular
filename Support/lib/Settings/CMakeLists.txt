@@ -11,9 +11,3 @@ add_modular_library(MSupportSettings
   MSupport
   MSupportEntitlements
 )
-
-if (MODULAR_PREVIEW)
-  add_compile_definitions(
-    __SETTINGS_ONLY_MODULAR_PREVIEW=1
-  )
-endif()
