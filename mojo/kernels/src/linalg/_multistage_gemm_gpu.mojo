@@ -8,7 +8,7 @@ from collections.optional import OptionalReg
 from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
@@ -29,6 +29,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
     copy_local_to_sram,
     copy_sram_to_dram,
+    copy_local_to_local,
 )
 from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
@@ -94,9 +95,10 @@ fn multistage_mma[
     # Hack:
     *,
     swizzle_a: Bool = True,
+    static_num_iters: Dim = Dim(),
 ](
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
-    a_iter_arg: LayoutTensorIter[a_type, a_layout, address_space=_, circular=_],
+    a_iter_arg: LayoutTensorIter[_, a_layout, address_space=_, circular=_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout],
     a_smem_iter: LayoutTensorIter[
         a_type, a_smem_layout, address_space = AddressSpace.SHARED, circular=_
@@ -192,12 +194,12 @@ fn multistage_mma[
     alias c_frag_size = frag_size[2]
 
     # Register tiles.
-    # TODO: parameterize fragment size based on data type.
     var a_reg_tiles = LayoutTensor[
         a_type,
         Layout.row_major(2 * num_m_mmas, a_frag_size),
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
+    ].stack_allocation().split[2]()
+    # ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
     var b_reg_tiles = LayoutTensor[
         b_type,
         Layout.row_major(2 * num_n_mmas, b_frag_size),
@@ -216,8 +218,106 @@ fn multistage_mma[
 
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
-    mma_op.load_a[swizzle_a](a_warp_tile, a_reg_tiles[0])
+    @parameter
+    if a_iter.address_space == AddressSpace.LOCAL:
+        # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+        # Need to cast address space because it's not known at parse time to be LOCAL.
+        copy_local_to_local(a_reg_tiles[0], a_iter.get())
+        a_iter += 1
+    else:
+        mma_op.load_a[swizzle_a](
+            a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()
+        )
+
     mma_op.load_b(b_warp_tile, b_reg_tiles[0], warp_tile_coordn=int(warp_x))
+
+    @parameter
+    if a_iter.address_space == AddressSpace.LOCAL:
+        constrained[
+            static_num_iters.has_value(),
+            "Using input in registers requires static iteration bound.\n",
+        ]()
+
+        @parameter
+        for k_tile_id in range(static_num_iters.get()):
+            var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
+            var b_smem_iter_tmp = b_smem_iter.next(k_tile_id)
+
+            var a_warp_tile = a_smem_iter_tmp.get().tile[WM, BK](int(warp_y), 0)
+            var b_warp_tile = b_smem_iter_tmp.get().tile[
+                b_wtile_dim0, b_wtile_dim1
+            ](
+                b_wtile_coord0,
+                b_wtile_coord1,
+            )
+
+            # Perform prefetch registers and mma until current shared memory tile's
+            # data has all been loaded to registers.
+            @parameter
+            for k_mma in range(num_k_mmas):
+                var current = k_mma % 2
+                var next = (k_mma + 1) % 2
+
+                if k_mma == num_k_mmas - 1:
+                    var a_smem_next_tile = a_smem_iter_tmp.next().get()
+                    var b_smem_next_tile = b_smem_iter_tmp.next().get()
+
+                    a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
+                    b_warp_tile = b_smem_next_tile.tile[
+                        b_wtile_dim0, b_wtile_dim1
+                    ](b_wtile_coord0, b_wtile_coord1)
+
+                # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+                copy_local_to_local(a_reg_tiles[next], a_iter.get())
+                a_iter += 1
+
+                mma_op.load_b(
+                    b_warp_tile,
+                    b_reg_tiles[next],
+                    (k_mma + 1) % num_k_mmas,
+                    int(warp_x),
+                )
+
+                mma_op.mma(
+                    a_reg_tiles[current].vectorize[1, a_frag_size](),
+                    b_reg_tiles[current],
+                    c.vectorize[1, c_frag_size](),
+                )
+
+                if k_mma + 2 == num_k_mmas:
+                    var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
+
+                    # Prefetch one k tile (if valid) from global memory to current
+                    # shared memory buffer.
+                    if prefetch_tile_id < num_iters:
+
+                        @parameter
+                        if b_iter.address_space == AddressSpace.GENERIC:
+                            var b_smem_prefetch_tile = b_smem_iter_tmp.next(
+                                num_pipeline_stages - 1
+                            ).get()
+
+                            copy_dram_to_sram_async[
+                                thread_layout=async_copy_b_layout,
+                                swizzle=async_copy_b_swizzle,
+                            ](
+                                b_smem_prefetch_tile.vectorize[1, simd_size](),
+                                b_iter.get()
+                                .bitcast[
+                                    b_type, address_space = AddressSpace.GENERIC
+                                ]()
+                                .vectorize[1, simd_size](),
+                            )
+
+                            b_iter += 1
+
+                    async_copy_commit_group()
+
+                    # Guard the next k tile's shared memory buffer.
+                    async_copy_wait_group(num_pipeline_stages - 2)
+                    barrier()
+
+        return
 
     for k_tile_id in range(num_iters):
         var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
@@ -248,8 +348,11 @@ fn multistage_mma[
                 )
 
             mma_op.load_a[swizzle_a](
-                a_warp_tile, a_reg_tiles[next], (k_mma + 1) % num_k_mmas
+                a_warp_tile,
+                a_reg_tiles[next].vectorize[1, a_frag_size](),
+                (k_mma + 1) % num_k_mmas,
             )
+
             mma_op.load_b(
                 b_warp_tile,
                 b_reg_tiles[next],
@@ -258,7 +361,7 @@ fn multistage_mma[
             )
 
             mma_op.mma(
-                a_reg_tiles[current],
+                a_reg_tiles[current].vectorize[1, a_frag_size](),
                 b_reg_tiles[current],
                 c.vectorize[1, c_frag_size](),
             )
