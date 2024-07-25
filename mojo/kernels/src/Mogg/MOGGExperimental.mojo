@@ -816,7 +816,7 @@ fn _reduce_wrapper[
         )
 
     try:
-        with Trace[TraceLevel.OP]("mojo.reduce") as t:
+        with Trace[TraceLevel.OP]("mojo.reduce"):
             _reduce_generator[
                 load_input,
                 store_output,

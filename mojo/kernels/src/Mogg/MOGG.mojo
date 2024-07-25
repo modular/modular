@@ -510,7 +510,7 @@ fn elementwise_wrapper[
     with Trace[TraceLevel.OP](
         "mojo.elementwise",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         _elementwise_impl[
             func,
             simd_width,
@@ -1043,7 +1043,7 @@ fn concat_from_list[
     output: NDBuffer[input_type, input_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.concat_from_list") as t:
+    with Trace[TraceLevel.OP]("mojo.concat_from_list"):
         _concat[input_rank, input_type, single_thread_blocking_override](
             output,
             int(normalize_neg_index(axis, input_rank)),
@@ -1067,7 +1067,7 @@ fn concat[
     ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[type, rank],
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.concat") as t:
+    with Trace[TraceLevel.OP]("mojo.concat"):
         var ins = variadic_list_to_vector(variadic_ins)
         _concat[rank, type, single_thread_blocking_override, target](
             output, int(normalize_neg_index(axis, rank)), ins, context=ctx
@@ -1370,7 +1370,7 @@ fn mean[
 
     with Trace[TraceLevel.OP](
         "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
-    ) as t:
+    ):
         _mean[
             type,
             input_0_fn,
@@ -1557,7 +1557,7 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
+    with Trace[TraceLevel.OP]("mojo.reduce_add"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1608,7 +1608,7 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
-    with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
+    with Trace[TraceLevel.OP]("mojo.reduce_max"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1659,7 +1659,7 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
-    with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
+    with Trace[TraceLevel.OP]("mojo.reduce_min"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1710,7 +1710,7 @@ fn reduce_mul[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
-    with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
+    with Trace[TraceLevel.OP]("mojo.reduce_mul"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1985,7 +1985,7 @@ fn mogg_gather_sum[
     with Trace[TraceLevel.OP](
         "mojo.gather_sum",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         gather_reduce[type, 0, 1, simdwidthof[type](), add](
             output, input, indices, 0
         )
@@ -2122,7 +2122,7 @@ fn matmul[
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP](
         "mojo.matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
-    ) as t:
+    ):
         _matmul[
             a_type,
             input_0_static_shape,
@@ -2199,7 +2199,7 @@ fn batched_matmul[
     with Trace[TraceLevel.OP](
         "mojo.batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         _batched_matmul[
             rank,
             a_type,
@@ -3029,7 +3029,7 @@ fn conv[
 
     with Trace[TraceLevel.OP](
         "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
-    ) as t:
+    ):
         conv_nhwc_direct[
             input_rank,
             filter_rank,
@@ -3161,7 +3161,7 @@ fn conv_transpose[
     with Trace[TraceLevel.OP](
         "mojo.conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         try:
             conv_transpose_impl[
                 input_rank,
@@ -3707,7 +3707,7 @@ fn reduce_min_and_max[
     var init_max = Scalar[type].MIN
     var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
 
-    with Trace[TraceLevel.OP]("reduce_min_and_max") as t:
+    with Trace[TraceLevel.OP]("reduce_min_and_max"):
         _reduce_generator[
             num_reductions,
             type,
@@ -3825,7 +3825,7 @@ fn masked_flash_attention_gpu[
     with Trace[TraceLevel.OP](
         "mojo.flash_attention",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         gpu_flash_attention[
             rank,
             mask_rank,
@@ -3894,7 +3894,7 @@ fn no_mask_fused_attention_cpu[
     var mask = NDBuffer[mask_type, rank, mask_shape]()
     var scale_f32 = scale[0].cast[DType.float32]()
     var causal_mask: Float32 = 0
-    with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
+    with Trace[TraceLevel.OP]("mojo.fused_attention"):
         cpu_fused_attention_impl[
             rank,
             input_0_static_shape,
@@ -3962,7 +3962,7 @@ fn with_mask_fused_attention_cpu[
     # TODO: Unimplemented and not used
     var scale_f32 = scale[0].cast[DType.float32]()
     var causal_mask: Float32 = 0
-    with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
+    with Trace[TraceLevel.OP]("mojo.fused_attention"):
         cpu_fused_attention_impl[
             rank,
             input_0_static_shape,
@@ -4020,7 +4020,7 @@ fn no_mask_flash_attention_cpu[
     with Trace[TraceLevel.OP](
         "mojo.flash_attention_no_mask",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
 
         @parameter
         @always_inline
@@ -4204,7 +4204,7 @@ fn with_mask_flash_attention_cpu[
     with Trace[TraceLevel.OP](
         "mojo.flash_attention",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         cpu_flash_attention[
             type,
             rank,
