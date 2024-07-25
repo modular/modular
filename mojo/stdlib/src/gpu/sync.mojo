@@ -51,7 +51,7 @@ fn syncwarp(mask: Int = -1):
 @always_inline("nodebug")
 fn _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[type, address_space]):
+](address: UnsafePointer[type, address_space, *_]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -78,7 +78,7 @@ fn _mbarrier_impl[
 @always_inline("nodebug")
 fn mbarrier[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[type, address_space]):
+](address: UnsafePointer[type, address_space, *_]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -92,7 +92,10 @@ fn mbarrier[
 @always_inline("nodebug")
 fn mbarrier_init[
     type: AnyType
-](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED], num_threads: Int32):
+](
+    shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED, *_],
+    num_threads: Int32,
+):
     """Initialize shared memory barrier for N number of threads.
 
     Args:
@@ -107,7 +110,7 @@ fn mbarrier_init[
 @always_inline("nodebug")
 fn mbarrier_arrive[
     type: AnyType
-](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED]) -> Int:
+](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED, *_]) -> Int:
     """Commits the arrival of thead to a shared memory barrier.
 
     Args:
@@ -122,7 +125,10 @@ fn mbarrier_arrive[
 @always_inline("nodebug")
 fn mbarrier_test_wait[
     type: AnyType
-](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED], state: Int) -> Bool:
+](
+    shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED, *_],
+    state: Int,
+) -> Bool:
     """Test waiting for the memory barrier.
 
     Args:
