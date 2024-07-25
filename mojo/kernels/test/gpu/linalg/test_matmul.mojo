@@ -204,12 +204,79 @@ def main():
             #     basic_test[DType.float32]
             # ]()
 
+            print("===> test float32 with shapes in llama2 with padding rows")
+
+            test_matmul[DType.float32, DimList(128, 384)](
+                ctx, (256, 384, 128), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.float32,
+                    shape = DimList(128, 384),
+                    use_tensor_core=True,
+                ]
+            ]()
+
             test_matmul[DType.float32, DimList(4096, 4096)](
                 ctx, (256, 4096, 4096), low_precision=True
             ).run_test[
                 basic_test[
                     DType.float32,
                     shape = DimList(4096, 4096),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(4096, 12288)](
+                ctx, (256, 12288, 4096), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.float32,
+                    shape = DimList(4096, 12288),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(11008, 4096)](
+                ctx, (256, 4096, 11008), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.float32,
+                    shape = DimList(11008, 4096),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(12288, 4096)](
+                ctx, (256, 4096, 12288), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.float32,
+                    shape = DimList(12288, 4096),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            print(
+                "===> test bfloat16 using shape in context encoding in"
+                " replit 3B"
+            )
+
+            test_matmul[DType.bfloat16, DimList(12288, 3072)](
+                ctx, (1024, 3072, 12288), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.bfloat16,
+                    shape = DimList(12288, 3072),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.bfloat16, DimList(3072, 12288)](
+                ctx, (1024, 12288, 3072), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.bfloat16,
+                    shape = DimList(3072, 12288),
                     use_tensor_core=True,
                 ]
             ]()
@@ -230,6 +297,16 @@ def main():
                 basic_test[
                     DType.bfloat16,
                     shape = DimList(32768, 3072),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.bfloat16, DimList(3072, 3072)](
+                ctx, (1024, 3072, 3072), low_precision=True
+            ).run_test[
+                basic_test[
+                    DType.bfloat16,
+                    shape = DimList(3072, 3072),
                     use_tensor_core=True,
                 ]
             ]()
