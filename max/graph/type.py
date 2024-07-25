@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable, Union
+from typing import Iterable, TypeGuard, Union
 
-from .dtype import DType
+from max import mlir
+
 from . import core as _c
-from . import mlir
+from .dtype import DType
 
 
 def dim(value: Union[int, str, Dim]) -> Dim:
@@ -133,6 +134,10 @@ class Dim:
         raise NotImplementedError
 
 
+def _is_static_dims(dims: list[Dim]) -> TypeGuard[list[StaticDim]]:
+    return all(dim.is_static() for dim in dims)
+
+
 @dataclass
 class SymbolicDim(Dim):
     """A symbolic tensor dimension.
@@ -205,7 +210,7 @@ class SymbolicDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return SymbolicDim(_c.symbolic_dim_name(dim_attr))
+        return SymbolicDim(_c.dim_symbolic_name(dim_attr))
 
 
 @dataclass
@@ -270,7 +275,7 @@ class StaticDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return StaticDim(_c.static_dim_value(dim_attr))
+        return StaticDim(_c.dim_static_value(dim_attr))
 
 
 @dataclass
@@ -368,7 +373,7 @@ class TensorType(Type):
             Dim.from_mlir(_c.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
 
-        return TensorType(dtype, dims)
+        return TensorType(DType(dtype), dims)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -383,7 +388,7 @@ class TensorType(Type):
         Returns:
             True if the tensor has a fully static shape, False otherwise.
         """
-        return not any(d.is_dynamic() for d in self.dims)
+        return all(d.is_static() for d in self.dims)
 
     def rank(self) -> int:
         """Gets the rank of the tensor type.
@@ -443,12 +448,12 @@ class TensorType(Type):
         Returns:
             The number of elements the tensor contains.
         """
-        if not self.is_static():
+        if not _is_static_dims(self.dims):
             raise Exception(
                 "can't find num elements since tensor has symbolic dims"
             )
 
-        return math.prod(self.dims)
+        return math.prod(dim.dim for dim in self.dims)
 
     def cast(self, dtype: DType) -> TensorType:
         """Constructs a new tensor type of the same shape with the new dtype.
@@ -475,7 +480,7 @@ class _OpaqueType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return _c.opaque_type_new(mlir.Context.current, self.name)
+        return _c.opaque_type(mlir.Context.current, self.name)
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> _OpaqueType:

@@ -4,10 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
+
 import sys
 
 import pytest
-from max.graph import DType, Graph, GraphValue, TensorType, graph, mlir, ops
+from max import mlir
+from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
 
 
 def test_mlir_module_create() -> None:

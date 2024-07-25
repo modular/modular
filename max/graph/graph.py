@@ -12,11 +12,12 @@ import inspect
 from contextvars import ContextVar
 from typing import Callable, Iterable, Optional
 
+from max import mlir
+from max.mlir.dialects import mo
+
 from . import core as _c
-from . import mlir
 from .graph_value import GraphValue
-from .mlir.dialects import mo
-from .type import TensorType, Type
+from .type import SymbolicDim, TensorType, Type
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
@@ -126,12 +127,13 @@ class Graph:
         self._params = {
             dim.name
             for t in input_types
+            if isinstance(t, TensorType)
             for dim in t.dims
-            if isinstance(t, TensorType) and dim.is_symbolic()
+            if isinstance(dim, SymbolicDim)
         }
 
         registry = mlir.DialectRegistry()
-        _c.load_modular_dialects(registry._CAPIPtr)
+        _c.load_modular_dialects(registry)
 
         self._context = mlir.Context()
         self._context.append_dialect_registry(registry)
@@ -147,12 +149,7 @@ class Graph:
                     [t.to_mlir() for t in output_types],
                 )
                 # Call the C++ builder to build the MO graph op.
-                self._mlir_op = _c.graph(
-                    self._module._CAPIPtr,
-                    loc._CAPIPtr,
-                    name,
-                    function_type._CAPIPtr,
-                )
+                self._mlir_op = _c.graph(self._module, loc, name, function_type)
 
         self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
 

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import mlir, ops
+from max import mlir
+
+from . import ops
 
 
 @dataclass

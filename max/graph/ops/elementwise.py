@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
+from max.mlir.dialects import rmo
+
 from ..graph import Graph
 from ..graph_value import GraphValue
-from ..mlir.dialects import rmo
 
 
 def _elementwise_binary(op):

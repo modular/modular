@@ -3,18 +3,11 @@ load("//bazel:api.bzl", "modular_pybind_extension")
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
-    name = "modular_py_srcs",
-    srcs = glob(["**/*.py"]) + [
-        "//SDK/lib/GraphAPI/python/max/graph/mlir:modular_py_srcs",
-    ],
-)
-
-filegroup(
-    name = "py_srcs",
-    srcs = [
-        ":modular_py_srcs",
-        "//SDK/lib/GraphAPI/python/max/graph/mlir:py_srcs",
-    ],
+    name = "graph",
+    srcs = glob([
+        "**/*.py",
+        "**/*.pyi",
+    ]),
 )
 
 # max.graph.core C extension module.
@@ -40,14 +33,10 @@ modular_pybind_extension(
     }),
     local_defines = [
         # Set definition used in Interop.h to prefix the MLIR package.
-        "MLIR_PYTHON_PACKAGE_PREFIX=max.graph.mlir.",
+        "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
     ],
-    pybind_data = [
-        "//SDK/lib/GraphAPI/python/max/graph/mlir:_mlir_libs/_mlir",
-    ],
-    pybind_deps = [
-        "//SDK:GraphPython",
-    ],
+    pybind_data = ["//SDK/lib/GraphAPI/python/max/_mlir/_mlir_libs:_mlir"],
+    pybind_deps = ["//SDK:GraphPython"],
     deps = [
         "//GenericML:modular-framework-common",
         "//ModularFramework/tools/mof",

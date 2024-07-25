@@ -8,8 +8,8 @@ import os
 from pathlib import Path
 
 import pytest
-
-from max.graph import core as _c, mlir
+from max import mlir
+from max.graph import core as _c
 
 
 @pytest.fixture

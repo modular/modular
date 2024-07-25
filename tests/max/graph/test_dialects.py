@@ -7,8 +7,8 @@
 
 
 def test_mo():
-    from max.graph.mlir.dialects import mo
+    from max.mlir.dialects import mo
 
 
 def test_rmo():
-    from max.graph.mlir.dialects import rmo
+    from max.mlir.dialects import rmo
