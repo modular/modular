@@ -6,8 +6,9 @@
 """This module includes NVIDIA GPUs intrinsics operations."""
 
 from sys._assembly import inlined_assembly
-from sys.info import alignof
+from sys.info import alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic
+from builtin.dtype import _int_type_of_width
 
 from memory import UnsafePointer
 from memory.unsafe import bitcast
@@ -20,52 +21,48 @@ from .sys import is_sm_greater_equal
 
 
 @always_inline
+fn _bitwidthof_str[type: DType]() -> StringLiteral:
+    alias bitwidth = bitwidthof[type]()
+
+    @parameter
+    if bitwidth == 8:
+        return "8"
+    elif bitwidth == 16:
+        return "16"
+    elif bitwidth == 32:
+        return "32"
+    elif bitwidth == 64:
+        return "64"
+    constrained[False, "invalid dtype"]()
+    return "invalid"
+
+
+@always_inline
 fn ldg[type: DType](x: UnsafePointer[Scalar[type]]) -> Scalar[type]:
     """Load a register variable from global state space via non-coherent cache.
     """
+    constrained[type.is_numeric(), "the type must be numeric"]()
 
-    alias alignment = Int32(alignof[Scalar[type]]())
+    alias prefix = "llvm.nvvm.ldg.global."
+    alias suffix = _bitwidthof_str[type]()
+
+    alias alignment = Int32(alignof[type]())
 
     @parameter
-    if type is DType.uint8 or type is DType.int8:
+    if type.is_integral():
+        alias integral_type = _int_type_of_width[bitwidthof[type]()]()
         return bitcast[type, 1](
-            llvm_intrinsic["llvm.nvvm.ldg.global.i.i8", Int8](
-                x.bitcast[Int8](), alignment
+            llvm_intrinsic[prefix + "i.i" + suffix, Scalar[integral_type]](
+                x.bitcast[integral_type](), alignment
             )
-        )
-    elif type is DType.uint16 or type is DType.int16:
-        return bitcast[type, 1](
-            llvm_intrinsic["llvm.nvvm.ldg.global.i.i16", Int16](
-                x.bitcast[Int16](), alignment
-            )
-        )
-    elif type is DType.uint32 or type is DType.int32:
-        return bitcast[type, 1](
-            llvm_intrinsic["llvm.nvvm.ldg.global.i.i32", Int32](
-                x.bitcast[Int32](), alignment
-            )
-        )
-    elif type is DType.uint64 or type is DType.int64:
-        return bitcast[type, 1](
-            llvm_intrinsic["llvm.nvvm.ldg.global.i.i64", Int64](
-                x.bitcast[Int64](), alignment
-            )
-        )
-    elif type is DType.float32:
-        return llvm_intrinsic["llvm.nvvm.ldg.global.f.f32", Scalar[type]](
-            x, alignment
-        )
-    elif type is DType.float64:
-        return llvm_intrinsic["llvm.nvvm.ldg.global.f.f64", Scalar[type]](
-            x, alignment
-        )
-    elif type is DType.bfloat16:
-        return llvm_intrinsic["llvm.nvvm.ldg.global.f.bf16", Scalar[type]](
-            x, alignment
         )
     else:
-        constrained[False, "Unhandled DType"]()
-        return 0
+        constrained[
+            type.is_floating_point(), "the type must be floating point"
+        ]()
+        return llvm_intrinsic[prefix + "f.f" + suffix, Scalar[type]](
+            x, alignment
+        )
 
 
 # ===----------------------------------------------------------------------===#
