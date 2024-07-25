@@ -1058,6 +1058,7 @@ fn _matmul_gpu[
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
     ctx: DeviceContext,
+    experimental: Bool = False,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
     # single_thread_blocking_override should not be allowed, but the graph
@@ -1085,7 +1086,7 @@ fn _matmul_gpu[
             transpose_b=transpose_b,
             use_tensor_core=use_tensor_core,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
+        ](c, a, b, ctx, experimental)
 
     else:
         _matmul_gpu_dispatch[
@@ -1097,7 +1098,7 @@ fn _matmul_gpu[
             c.shape,
             transpose_b=transpose_b,
             use_tensor_core=use_tensor_core,
-        ](c, a, b, ctx)
+        ](c, a, b, ctx, experimental)
 
 
 @always_inline
@@ -1116,6 +1117,7 @@ fn _matmul_gpu_dispatch[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
     ctx: DeviceContext,
+    experimental: Bool = False,
 ):
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
