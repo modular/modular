@@ -32,7 +32,7 @@ def test_elementwise_add_graph() -> None:
     with Graph(
         "elementwise_add",
         input_types=[
-            TensorType(dtype=DType.float32, dims=["batch", "channels"])
+            TensorType(dtype=DType.float32, shape=["batch", "channels"])
         ],
     ) as graph:
         graph.output(graph.inputs[0] + 1)
@@ -59,7 +59,7 @@ def test_location() -> None:
 
 def test_add_op() -> None:
     """Builds a simple graph with an elementwise addition and checks the IR."""
-    input_type = TensorType(dtype=DType.float32, dims=["batch", "channels"])
+    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with Graph("add", input_types=(input_type, input_type)) as graph:
         lhs, rhs = graph.inputs
         elemwise_sum = ops.add(lhs, rhs)
@@ -80,7 +80,7 @@ def test_add_op_closure() -> None:
     def elementwise_add(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
         return ops.add(lhs, rhs)
 
-    input_type = TensorType(dtype=DType.float32, dims=["batch", "channels"])
+    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     add_graph = Graph("add", elementwise_add, (input_type, input_type))
 
     add_graph._mlir_op.verify()

@@ -13,7 +13,7 @@ from max.graph import DType, Graph, TensorType, ops
 
 def test_max_graph():
     session = me.InferenceSession()
-    input_type = TensorType(dtype=DType.float32, dims=["batch", "channels"])
+    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with Graph("add", input_types=(input_type, input_type)) as graph:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
         compiled = session.load(graph)

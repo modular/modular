@@ -19,7 +19,7 @@ from max.mlir.dialects import mo
 from . import core as _c
 from .dtype import DType
 from .graph_value import GraphValue
-from .type import Dim, SymbolicDim, TensorType, Type
+from .type import SymbolicDim, TensorType, Type
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -134,7 +134,7 @@ class Graph:
             dim.name
             for t in input_types
             if isinstance(t, TensorType)
-            for dim in t.dims
+            for dim in t.shape
             if isinstance(dim, SymbolicDim)
         }
 
@@ -248,7 +248,7 @@ class Graph:
         self,
         name: str,
         dtype: Optional[DType] = None,
-        dims: Optional[Iterable[Union[int, str, Dim]]] = None,
+        shape: Optional[ShapeLike] = None,
         filepath: Union[PathLike, str, None] = None,
         offset: Optional[int] = None,
     ):
@@ -258,7 +258,7 @@ class Graph:
             name: The name of this weight. All weights in a graph must have
               unique names.
             dtype: The DType of the weight. Defaults to Float32.
-            dims: The shape of the weight. Defaults to a scalar (`dims=[1]`).
+            shape: The shape of the weight. Defaults to a scalar (`shape=[1]`).
             filepath: File pointing to file containing weight value.
             offset: Offset to weight in the file (defaults to 0).
 
@@ -271,7 +271,7 @@ class Graph:
         """
         if name in self.weights:
             raise ValueError(f"Weight '{name}' already exists in Graph {self}")
-        tensor_type = TensorType(dtype or DType.float32, dims or [1])
+        tensor_type = TensorType(dtype or DType.float32, shape or [1])
 
         # TODO: Allow file path to be set later.
         if filepath is None:

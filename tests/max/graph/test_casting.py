@@ -17,17 +17,17 @@ def test_reshape() -> None:
     with Graph(
         "simple_reshape",
         input_types=[
-            TensorType(dtype=DType.float32, dims=[6, 5]),
-            TensorType(dtype=DType.float32, dims=["batch", "channels"]),
+            TensorType(dtype=DType.float32, shape=[6, 5]),
+            TensorType(dtype=DType.float32, shape=["batch", "channels"]),
         ],
     ) as graph:
         # TODO(MSDK-662): Add shape checks to these test cases once we can get the shape of a value.
 
-        static_reshape = graph.inputs[0].reshape(3, 10)
-        static_reshape_neg_one = graph.inputs[0].reshape(2, -1)
+        static_reshape = graph.inputs[0].reshape((3, 10))
+        static_reshape_neg_one = graph.inputs[0].reshape((2, -1))
 
-        symbolic_reshape = graph.inputs[1].reshape("channels", "batch")
-        symbolic_reshape_neg_one = graph.inputs[1].reshape("channels", -1)
+        symbolic_reshape = graph.inputs[1].reshape(("channels", "batch"))
+        symbolic_reshape_neg_one = graph.inputs[1].reshape(("channels", -1))
 
         graph.output(
             static_reshape,

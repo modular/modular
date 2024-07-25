@@ -17,17 +17,6 @@ from . import core as _c
 from .dtype import DType
 
 
-def dim(value: Union[int, str, Dim]) -> Dim:
-    """Converts valid input values to Dim."""
-    if isinstance(value, int):
-        return StaticDim(value)
-    elif isinstance(value, str):
-        return SymbolicDim(value)
-    elif isinstance(value, Dim):
-        return value
-    raise TypeError(f"Unsupported dimension type {value}")
-
-
 @dataclass
 class Dim:
     """A tensor dimension.
@@ -132,10 +121,6 @@ class Dim:
             The dimension represented by the MLIR Attr value.
         """
         raise NotImplementedError
-
-
-def _is_static_dims(dims: list[Dim]) -> TypeGuard[list[StaticDim]]:
-    return all(dim.is_static() for dim in dims)
 
 
 @dataclass
@@ -278,6 +263,28 @@ class StaticDim(Dim):
         return StaticDim(_c.dim_static_value(dim_attr))
 
 
+Shape = list[Dim]
+StaticShape = list[StaticDim]
+
+DimLike = Union[int, str, Dim]
+ShapeLike = Iterable[DimLike]
+
+
+def dim(value: DimLike) -> Dim:
+    """Converts valid input values to Dim."""
+    if isinstance(value, int):
+        return StaticDim(value)
+    elif isinstance(value, str):
+        return SymbolicDim(value)
+    elif isinstance(value, Dim):
+        return value
+    raise TypeError(f"Unsupported dimension type {value}")
+
+
+def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
+    return all(dim.is_static() for dim in dims)
+
+
 @dataclass
 class Type:
     """Represents any possible type for Graph values.
@@ -329,12 +336,10 @@ class TensorType(Type):
 
     dtype: DType
     """The element type of the tensor value."""
-    dims: list[Dim]
+    shape: Shape
     """The dimensions of the tensor value."""
 
-    def __init__(
-        self, dtype: DType, dims: Iterable[Union[int, str, Dim]]
-    ) -> None:
+    def __init__(self, dtype: DType, shape: ShapeLike) -> None:
         """Constructs a tensor type.
 
         Args:
@@ -343,7 +348,7 @@ class TensorType(Type):
                   is the rank of the tensor.
         """
         self.dtype = dtype
-        self.dims = [dim(d) for d in dims]
+        self.shape = [dim(d) for d in shape]
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an mlir.Type instance.
@@ -354,7 +359,7 @@ class TensorType(Type):
         return _c.tensor_type(
             mlir.Context.current,
             _c.dtype_type(mlir.Context.current, self.dtype._mlir),
-            [d.to_mlir() for d in self.dims],
+            [d.to_mlir() for d in self.shape],
         )
 
     @staticmethod
@@ -369,11 +374,11 @@ class TensorType(Type):
         """
         dtype = _c.tensor_type_get_dtype(t)
         rank = _c.tensor_type_get_rank(t)
-        dims = [
+        shape = [
             Dim.from_mlir(_c.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
 
-        return TensorType(DType(dtype), dims)
+        return TensorType(DType(dtype), shape)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -388,7 +393,7 @@ class TensorType(Type):
         Returns:
             True if the tensor has a fully static shape, False otherwise.
         """
-        return all(d.is_static() for d in self.dims)
+        return all(d.is_static() for d in self.shape)
 
     def rank(self) -> int:
         """Gets the rank of the tensor type.
@@ -396,7 +401,7 @@ class TensorType(Type):
         Returns:
             The tensor's static rank.
         """
-        return len(self.dims)
+        return len(self.shape)
 
     def dim(self, pos: int) -> Dim:
         """Gets the pos'th dimension of the tensor type.
@@ -413,7 +418,7 @@ class TensorType(Type):
         Raises:
             If the dimension is out-of-bounds.
         """
-        return self.dims[pos + (self.rank() if pos < 0 else 0)]
+        return self.shape[pos + (self.rank() if pos < 0 else 0)]
 
     def __eq__(self, other: TensorType) -> bool:
         """Checks whether the two tensors have the same rank, type, and shape.
@@ -428,7 +433,7 @@ class TensorType(Type):
         return (
             (self.dtype == other.dtype)
             and (self.rank() == other.rank())
-            and all(d == d_other for d, d_other in zip(self.dims, other.dims))
+            and all(d == d_other for d, d_other in zip(self.shape, other.shape))
         )
 
     # ===------------------------------------------------------------------=== #
@@ -448,12 +453,12 @@ class TensorType(Type):
         Returns:
             The number of elements the tensor contains.
         """
-        if not _is_static_dims(self.dims):
+        if not _is_static_shape(self.shape):
             raise Exception(
                 "can't find num elements since tensor has symbolic dims"
             )
 
-        return math.prod(dim.dim for dim in self.dims)
+        return math.prod(dim.dim for dim in self.shape)
 
     def cast(self, dtype: DType) -> TensorType:
         """Constructs a new tensor type of the same shape with the new dtype.
@@ -464,7 +469,7 @@ class TensorType(Type):
         Returns:
             A new tensor type with the same shape, and the new element type.
         """
-        return TensorType(dtype, self.dims)
+        return TensorType(dtype, self.shape)
 
 
 @dataclass

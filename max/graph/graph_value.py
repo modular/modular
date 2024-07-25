@@ -7,12 +7,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
 
 from max import mlir
 
 from . import ops
-from .type import Dim
+from .type import ShapeLike
 
 
 @dataclass
@@ -41,5 +40,5 @@ class GraphValue:
     def __add__(self, other: GraphValue) -> GraphValue:
         return ops.add(self, other)
 
-    def reshape(self, *args: Union[int, str, Dim]) -> GraphValue:
-        return ops.reshape(self, *args)
+    def reshape(self, shape: ShapeLike) -> GraphValue:
+        return ops.reshape(self, shape)

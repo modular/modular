@@ -23,7 +23,7 @@ def test_add_weight() -> None:
             w = graph.add_weight(
                 "random_weight",
                 dtype=DType.int64,
-                dims=weight_shape,
+                shape=weight_shape,
                 filepath=f.name,
             )
 
