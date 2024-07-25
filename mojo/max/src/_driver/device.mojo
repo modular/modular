@@ -10,7 +10,7 @@ from sys.ffi import DLHandle, _get_global_or_null
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from pathlib import Path
 from max.tensor import TensorSpec
-from ._driver_library import DriverLibrary, ManagedDLHandle
+from ._driver_library import DriverLibrary
 from .device_memory import DeviceMemory, DeviceTensor
 from .graph import CompiledGraph, _CCompiledGraph, _CExecutableGraph
 from max.graph import Graph
@@ -34,30 +34,26 @@ fn _get_driver_path() raises -> String:
 struct _CDevice:
     var _ptr: UnsafePointer[NoneType]
 
-    fn copy(self, lib: DriverLibrary) -> Self:
-        if not self._ptr:
+    fn copy(self, lib: Optional[DriverLibrary]) -> Self:
+        if not lib:
             return self
-        alias func_name_copy = "M_copyDevice"
-        return call_dylib_func[UnsafePointer[NoneType]](
-            lib.get_handle(), func_name_copy, self
-        )
+        return lib.value().copy_device_fn(self._ptr)
 
     fn free_data(self, lib: DriverLibrary, data: UnsafePointer[UInt8]):
-        alias func_free_data = "M_freeDeviceData"
-        call_dylib_func(lib.get_handle(), func_free_data, self, data)
+        lib.free_device_data_fn(self._ptr, data)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._ptr == other._ptr
 
 
 struct Device(Stringable):
-    var lib: DriverLibrary
+    var lib: Optional[DriverLibrary]
     var _cdev: _CDevice
 
     fn __init__(inout self):
         """Creates a default-initialized Device."""
 
-        self.lib = ManagedDLHandle(DLHandle(UnsafePointer[Int8]()))
+        self.lib = None
         self._cdev = _CDevice(UnsafePointer[NoneType]())
 
     fn __init__(
@@ -76,7 +72,7 @@ struct Device(Stringable):
         """
 
         self.lib = existing.lib
-        self._cdev = existing._cdev.copy(self.lib)
+        self._cdev = existing._cdev.copy(existing.lib)
 
     fn __moveinit__(inout self, owned existing: Self):
         self.lib = existing.lib^
@@ -101,17 +97,12 @@ struct Device(Stringable):
         return DeviceMemory(bytecount, self, name)
 
     fn _free(self, data: UnsafePointer[UInt8]):
-        self._cdev.free_data(self.lib, data)
+        self._cdev.free_data(self.lib.value(), data)
 
     fn __str__(self) -> String:
         """Returns a descriptor of the device."""
 
-        alias func_name_desc = "M_getDeviceDesc"
-        return StringRef(
-            call_dylib_func[UnsafePointer[UInt8]](
-                self.lib.get_handle(), func_name_desc, self._cdev
-            )
-        )
+        return StringRef(self.lib.value().get_device_desc_fn(self._cdev._ptr))
 
     fn __del__(owned self):
         """Decrements the refcount to Device and destroys it if this object holds
@@ -119,12 +110,7 @@ struct Device(Stringable):
 
         if not self._cdev._ptr:
             return
-        alias func_name_destroy = "M_destroyDevice"
-        call_dylib_func[NoneType](
-            self.lib.get_handle(), func_name_destroy, self._cdev
-        )
-        # Extend lifetime of library until C function returns.
-        _ = self.lib^
+        self.lib.value().destroy_device_fn(self._cdev._ptr)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._cdev == other._cdev
@@ -141,9 +127,9 @@ struct Device(Stringable):
         # Graph compiler shares the context with Mojo. This context
         # contains AsyncRT Runtime, Telemetery etc.
         var max_context = _get_global_or_null["MaxContext"]().address
-        var status = Status(self.lib)
+        var status = Status(self.lib.value())
         var compiled_ptr = call_dylib_func[_CCompiledGraph](
-            self.lib.get_handle(),
+            self.lib.value().get_handle(),
             "M_compileGraph",
             graph._module().c.ptr,
             self._cdev,
@@ -165,9 +151,9 @@ struct Device(Stringable):
         Returns:
             Model ready for execution.
         """
-        var status = Status(self.lib)
+        var status = Status(self.lib.value())
         var executable_ptr = call_dylib_func[_CExecutableGraph](
-            self.lib.get_handle(),
+            self.lib.value().get_handle(),
             "M_loadGraph",
             compiled_graph._impl,
             self._cdev,
@@ -180,13 +166,5 @@ struct Device(Stringable):
 
 fn cpu_device(descriptor: CPUDescriptor = CPUDescriptor()) raises -> Device:
     """Creates a CPU Device from a CPUDescriptor."""
-    alias func_name_create = "M_createCPUDevice"
-    var lib = ManagedDLHandle(DLHandle(_get_driver_path()))
-    var _cdev = _CDevice(
-        call_dylib_func[UnsafePointer[NoneType]](
-            lib.get_handle(),
-            func_name_create,
-            Int32(descriptor.numa_id),
-        )
-    )
-    return Device(lib^, owned_ptr=_cdev)
+    var lib = DriverLibrary()
+    return Device(lib, owned_ptr=lib.create_cpu_device_fn(descriptor.numa_id))

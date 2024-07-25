@@ -7,7 +7,7 @@
 from .device import Device, _get_driver_path, _CDevice
 from max._utils import call_dylib_func
 from sys.ffi import DLHandle
-from ._driver_library import DriverLibrary, ManagedDLHandle
+from ._driver_library import DriverLibrary
 from gpu.host import (
     DeviceContext,
     KernelProfilingInfo,
@@ -142,23 +142,19 @@ struct ContextAPIFuncPtrs:
 
 
 fn cuda_device(gpu_id: Int = 0) raises -> Device:
-    var lib = ManagedDLHandle(DLHandle(_get_driver_path()))
-    alias func_name_create = "M_createCUDADevice"
-
+    var lib = DriverLibrary()
     var device_context_func_ptrs = ContextAPIFuncPtrs()
-
-    var _cdev = _CDevice(
-        call_dylib_func[UnsafePointer[NoneType]](
-            lib.get_handle(),
-            func_name_create,
+    var cuda_dev = Device(
+        lib,
+        owned_ptr=lib.create_cuda_device_fn(
             gpu_id,
             UnsafePointer[ContextAPIFuncPtrs].address_of(
                 device_context_func_ptrs
             ),
-        )
+        ),
     )
     _ = device_context_func_ptrs
-    return Device(lib^, owned_ptr=_cdev)
+    return cuda_dev
 
 
 # TODO: Make this polymorphic on Device type.
@@ -199,7 +195,7 @@ struct CompiledDeviceKernel[
         var shared_mem_bytes = kwargs.find("shared_mem_bytes").or_else(0)
 
         var device_context = call_dylib_func[UnsafePointer[DeviceContext]](
-            device.lib.get_handle(), "M_getDeviceContext", device._cdev
+            device.lib.value().get_handle(), "M_getDeviceContext", device._cdev
         )
         # need to call _enqueue function, not enqueue_function, otherwise the whole
         # pack is passed as a single argument
@@ -261,7 +257,7 @@ fn compile[
         raise "compile() expects CUDA device."
 
     var device_context = call_dylib_func[UnsafePointer[DeviceContext]](
-        device.lib.get_handle(), "M_getDeviceContext", device._cdev
+        device.lib.value().get_handle(), "M_getDeviceContext", device._cdev
     )
 
     var compile_args = CUDACompiledKernelArgs(kwargs)

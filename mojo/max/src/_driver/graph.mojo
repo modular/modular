@@ -80,9 +80,9 @@ struct ExecutableGraph:
         # to compiled graph.
         var output_list = List[AnyTensor]()
         var output_list_address = UnsafePointer.address_of(output_list)
-        var status = Status(self._device.lib)
+        var status = Status(self._device.lib.value())
 
-        var execute_func = self._device.lib.get_handle().get_function[
+        var execute_func = self._device.lib.value().get_handle().get_function[
             fn (
                 _CExecutableGraph,
                 UnsafePointer[UnsafePointer[NoneType]],
@@ -118,7 +118,7 @@ struct ExecutableGraph:
 
     fn __del__(owned self):
         var lib = self._device.lib
-        call_dylib_func(lib.get_handle(), "M_destroyGraph", self._impl)
+        call_dylib_func(lib.value().get_handle(), "M_destroyGraph", self._impl)
         _ = self._device^
 
 
@@ -134,5 +134,7 @@ struct CompiledGraph:
 
     fn __del__(owned self):
         var lib = self._device.lib
-        call_dylib_func(lib.get_handle(), "M_destroyCompiledGraph", self._impl)
+        call_dylib_func(
+            lib.value().get_handle(), "M_destroyCompiledGraph", self._impl
+        )
         _ = self._device^
