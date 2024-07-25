@@ -1970,6 +1970,90 @@ fn copy_local_to_sram[
             ](dst_frag.ptr + dst_idx, dst_vec)
 
 
+@always_inline
+fn copy_local_to_local[
+    dst_type: DType,
+    src_type: DType,
+    dst_layout: Layout,
+    src_layout: Layout,
+    dst_element_layout: Layout,
+    src_addr_space: AddressSpace,
+](
+    dst: LayoutTensor[
+        dst_type,
+        dst_layout,
+        address_space = _GPUAddressSpace.LOCAL,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[src_type, src_layout, address_space=src_addr_space],
+):
+    constrained[
+        dst.dtype.is_half_float() and src.dtype == DType.float32,
+        "Only support copy float32 to bfloat16 for now",
+    ]()
+
+    constrained[
+        dst.layout.size() == src.layout.size(),
+        "dst and src should have the same size.",
+    ]()
+
+    # Fast for 2D fragments
+    @parameter
+    if (
+        dst.rank == 2
+        and src.rank == 2
+        and dst.stride[1]() == 1
+        and src.stride[1]() == 1
+    ):
+        # This path is to map 16x8x16 mma output (16x8) to 16x8x16 mma input (16x16).
+        # Output fragment has layout [2 * num_m_mmas, 4]
+        # Input  fragment has layout [num_m_mmas, 8]
+        alias num_mmas = src_layout.shape[0].value()
+        alias src_frag_size = src_layout.shape[1].value()
+        alias a_frag_layout = composition(
+            src_layout,
+            make_layout(Layout.row_major(num_mmas // 2, 2), src_layout[1]),
+        )
+        # [num_m_mmas, 8] vectorized and transposed to [2, num_m_mmas] x 4
+        var dst_vectorized = dst.vectorize[1, src_frag_size]().transpose()
+        # [2*num_m_mmas, 4] reshaped and vectorized row_major(num_m_mmas, 2) x 4
+        var src_vectorized = src.reshape[a_frag_layout]().vectorize[
+            1, src_frag_size
+        ]()
+
+        @parameter
+        for i in range(dst_vectorized.layout.size()):
+            alias dst_idx = dst_vectorized.layout(i)
+            alias src_idx = src_vectorized.layout(i)
+
+            var src_vec = SIMD[size=src_frag_size].load(
+                src_vectorized.ptr + src_idx
+            )
+            var dst_vec = SIMD[dst_type, src_frag_size](0.0)
+
+            @parameter
+            for j in range(0, src_frag_size, 2):
+                var vec_converted = convert[src.dtype, dst.dtype, 2](
+                    SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
+                )
+                dst_vec[j] = vec_converted[0]
+                dst_vec[j + 1] = vec_converted[1]
+
+            SIMD[size=src_frag_size].store(
+                dst_vectorized.ptr + dst_idx, dst_vec
+            )
+
+    # Default elementwise copy
+    else:
+
+        @parameter
+        for i in range(dst.layout.size()):
+            alias dst_idx = dst.layout(i)
+            alias src_idx = src.layout(i)
+            var src_val = src.ptr[src_idx]
+            SIMD.store(dst.ptr + dst_idx, src_val.cast[dst.dtype]())
+
+
 # ===-----------------------------------------------------------------------===#
 # LayoutTensorIter                                                             #
 # ===-----------------------------------------------------------------------===#
