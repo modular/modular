@@ -7,6 +7,7 @@
 # Utilities to fetch paths of python libraries.
 #
 # ===----------------------------------------------------------------------=== #
+import importlib.util
 from importlib import machinery
 import sys
 import os
@@ -39,13 +40,12 @@ def get_libtorch_python_path() -> Optional[Path]:
     Returns:
         Path to the libtorch_python library.
     """
-    try:
-        import torch
-    except ImportError:
-        return None
+    spec = importlib.util.find_spec("torch")
+    if spec and spec.origin:
+        torch_path = Path(os.path.dirname(spec.origin)) / "lib"
+        return get_lib_path(torch_path, "libtorch_python")
 
-    torch_path = Path(os.path.dirname(torch.__file__)) / "lib"
-    return get_lib_path(torch_path, "libtorch_python")
+    return None
 
 
 def get_libtorchvision_path() -> Optional[Path]:
