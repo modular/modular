@@ -752,3 +752,76 @@ fn mgp_device_context_profile_end[
     except e:
         abort(e)
     return 1
+
+
+# ===----------------------------------------------------------------------===#
+# Opaque Test Primitives
+# ===----------------------------------------------------------------------===#
+
+
+struct MyInt(Movable):
+    var val: Int
+
+    fn __init__(inout self, val: Int):
+        self.val = val
+
+    fn __moveinit__(inout self, owned other: MyInt):
+        print("MyInt.__moveinit__", other.val)
+        self.val = other.val
+
+    fn __del__(owned self):
+        print("MyInt.__del__", self.val)
+
+
+@mogg_register("testfuse.my_int.from_index")
+@always_inline
+@export
+fn test_my_int_from_index(x: Int) -> MyInt:
+    return MyInt(x)
+
+
+@mogg_register("testfuse.my_int.square")
+@always_inline
+@export
+fn test_my_int_square(x: MyInt) -> MyInt:
+    return MyInt(x.val * x.val)
+
+
+@mogg_register("testfuse.my_int.to_index")
+@always_inline
+@export
+fn test_my_int_to_index(x: MyInt) -> Int:
+    return x.val
+
+
+@value
+@register_passable
+struct MyIntReg:
+    var val: Int
+
+    fn __init__(inout self, val: Int):
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyIntReg.__del__", self.val)
+
+
+@mogg_register("testfuse.my_int_reg.from_index")
+@always_inline
+@export
+fn test_my_int_reg_from_index(x: Int) -> MyIntReg:
+    return MyIntReg(x)
+
+
+@mogg_register("testfuse.my_int_reg.square")
+@always_inline
+@export
+fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
+    return MyIntReg(x.val * x.val)
+
+
+@mogg_register("testfuse.my_int_reg.to_index")
+@always_inline
+@export
+fn test_my_int_reg_to_index(x: MyIntReg) -> Int:
+    return x.val
