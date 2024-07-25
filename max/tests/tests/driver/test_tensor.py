@@ -51,3 +51,75 @@ def test_get_and_set():
     # Cannot call item (without arguments) on a non-zero-rank tensor
     with pytest.raises(ValueError):
         tensor.item()
+
+
+def test_slice():
+    # Tensor slices should have the desired shape and should preserve
+    # reference semantics.
+    tensor = md.Tensor(md.int32, (3, 3, 3))
+    subtensor = tensor[:2, :2, :2]
+    assert subtensor.shape == (2, 2, 2)
+    subtensor[0, 0, 0] = 25
+    assert tensor[0, 0, 0].item() == 25
+
+    # We can take arbitrary slices of slices and preserve reference
+    # semantics to the original tensor and any derived slices.
+    subsubtensor = subtensor[:1, :1, :1]
+    assert subsubtensor[0, 0, 0].item() == 25
+    subsubtensor[0, 0, 0] = 37
+    assert tensor[0, 0, 0].item() == 37
+    assert subtensor[0, 0, 0].item() == 37
+
+    # Users should be able to specify step sizes and get tensors of
+    # an expected size and beginning at the expected offset.
+    strided_subtensor = tensor[1::2, 1::2, 1::2]
+    assert strided_subtensor.shape == (1, 1, 1)
+    strided_subtensor[0, 0, 0] = 256
+    assert tensor[1, 1, 1].item() == 256
+
+    # Invalid slice semantics should throw an exception
+    with pytest.raises(ValueError):
+        tensor[::0, ::0, ::0]
+
+
+def test_drop_dimensions():
+    tensor = md.Tensor(md.int32, (5, 5, 5))
+    # When indexing into a tensor with a mixture of slices and integral
+    # indices, the slice should drop any dimensions that correspond to
+    # integral indices.
+    droptensor = tensor[:, 2, :]
+    assert droptensor.rank == 2
+    assert droptensor.shape == (5, 5)
+
+    for i in range(4):
+        droptensor[i, i] = i
+    droptensor[-1, -1] = 4
+    for i in range(5):
+        assert tensor[i, 2, i].item() == i
+
+
+def test_negative_step():
+    tensor = md.Tensor(md.int32, (3, 3))
+    elt = 0
+    for x in range(3):
+        for y in range(3):
+            tensor[x, y] = elt
+            elt += 1
+    elt -= 1
+    # Tensors should support slices with negative steps.
+    revtensor = tensor[::-1, ::-1]
+    for x in range(3):
+        for y in range(3):
+            assert revtensor[x, y].item() == elt
+            elt -= 1
+
+
+def test_out_of_bounds_slices():
+    tensor = md.Tensor(md.int32, (3, 3, 3))
+
+    # Out of bounds indexes are allowed in slices.
+    assert tensor[4:, :2, 8:10:-1].shape == (0, 2, 0)
+
+    # Out of bounds indexes are not allowed in integral indexing.
+    with pytest.raises(IndexError):
+        tensor[4:, :2, 4]
