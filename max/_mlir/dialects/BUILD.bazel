@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "copy_files")
+
+copy_files(
+    name = "dialects",
+    srcs = [
+        "//GenericML:MOBindingIncGen",
+        "//GenericML:RMOBindingIncGen",
+        "@llvm-project//mlir/python:DialectCorePyFiles",
+    ],
+    outs = [
+        "_ods_common.py",
+        "mo.py",
+        "rmo.py",
+    ],
+    visibility = ["//visibility:public"],
+)
