@@ -10,3 +10,4 @@ from .dtype import DType
 from .graph import Graph
 from .graph_value import GraphValue
 from .type import TensorType, Type
+from .weight import Weight

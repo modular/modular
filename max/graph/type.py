@@ -320,7 +320,7 @@ class TensorType(Type):
     their element type (dtype) and dimensions (dims) at a specific point during
     model computation. It allows us to do some optimistic optimizations and
     shape inference during graph construction, and to provide more detailed
-    shape information to the compiler for further optimizatino passes.
+    shape information to the compiler for further optimization passes.
 
     It can also represent a fully dynamic rank tensor. The presence of dynamic
     rank tensors in a graph will often degrade performance dramatically and
