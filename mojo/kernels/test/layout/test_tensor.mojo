@@ -1601,7 +1601,7 @@ fn test_element_coords_vectorized():
     var tensor_2x2 = tensor.vectorize[4, 4]()
 
     # CHECK: (0, 0) (0, 4)
-    # CHECK: (4, 0) (4, 4
+    # CHECK: (4, 0) (4, 4)
     @parameter
     for ii in range(2):
 
@@ -1710,6 +1710,59 @@ fn test_element_coords_tile_and_distribute():
     tensor.print()
 
 
+# CHECK-LABEL: test_element_coords_tiles_do_not_div
+fn test_element_coords_tiles_do_not_div():
+    print("== test_element_coords_tiles_do_not_div")
+    var tensor = LayoutTensor[
+        DType.int32, Layout.col_major(9, 6)
+    ].stack_allocation()
+
+    # CHECK: ----tile[ 0 0 ]----
+    # CHECK: (0, 0) (0, 1) (0, 2) (0, 3)
+    # CHECK: (1, 0) (1, 1) (1, 2) (1, 3)
+    # CHECK: (2, 0) (2, 1) (2, 2) (2, 3)
+    # CHECK: (3, 0) (3, 1) (3, 2) (3, 3)
+    # CHECK: ----tile[ 0 1 ]----
+    # CHECK: (0, 4) (0, 5) (0, 6) (0, 7)
+    # CHECK: (1, 4) (1, 5) (1, 6) (1, 7)
+    # CHECK: (2, 4) (2, 5) (2, 6) (2, 7)
+    # CHECK: (3, 4) (3, 5) (3, 6) (3, 7)
+    # CHECK: ----tile[ 1 0 ]----
+    # CHECK: (4, 0) (4, 1) (4, 2) (4, 3)
+    # CHECK: (5, 0) (5, 1) (5, 2) (5, 3)
+    # CHECK: (6, 0) (6, 1) (6, 2) (6, 3)
+    # CHECK: (7, 0) (7, 1) (7, 2) (7, 3)
+    # CHECK: ----tile[ 1 1 ]----
+    # CHECK: (4, 4) (4, 5) (4, 6) (4, 7)
+    # CHECK: (5, 4) (5, 5) (5, 6) (5, 7)
+    # CHECK: (6, 4) (6, 5) (6, 6) (6, 7)
+    # CHECK: (7, 4) (7, 5) (7, 6) (7, 7)
+    # CHECK: ----tile[ 2 0 ]----
+    # CHECK: (8, 0) (8, 1) (8, 2) (8, 3)
+    # CHECK: (9, 0) (9, 1) (9, 2) (9, 3)
+    # CHECK: (10, 0) (10, 1) (10, 2) (10, 3)
+    # CHECK: (11, 0) (11, 1) (11, 2) (11, 3)
+    # CHECK: ----tile[ 2 1 ]----
+    # CHECK: (8, 4) (8, 5) (8, 6) (8, 7)
+    # CHECK: (9, 4) (9, 5) (9, 6) (9, 7)
+    # CHECK: (10, 4) (10, 5) (10, 6) (10, 7)
+    # CHECK: (11, 4) (11, 5) (11, 6) (11, 7)
+    for tile_m in range(3):
+        for tile_n in range(2):
+            print("----tile[", tile_m, tile_n, "]----")
+            var tensor_4x4 = tensor.tile[4, 4](tile_m, tile_n)
+
+            @parameter
+            for m_idx in range(4):
+
+                @parameter
+                for n_idx in range(4):
+                    print(
+                        tensor_4x4.element_coords[m_idx + n_idx * 4](), end=" "
+                    )
+                print("")
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -1736,3 +1789,4 @@ fn main():
     test_layout_tensor_copy_from_masked_dst()
     test_element_coords_vectorized()
     test_element_coords_tile_and_distribute()
+    test_element_coords_tiles_do_not_div()
