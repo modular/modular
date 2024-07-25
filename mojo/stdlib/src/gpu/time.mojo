@@ -14,13 +14,13 @@ from sys.intrinsics import llvm_intrinsic
 
 
 @always_inline("nodebug")
-fn clock() -> Int:
+fn clock() -> UInt:
     """Returns a 32-bit unsigned cycle counter."""
     return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock", Int32]())
 
 
 @always_inline("nodebug")
-fn clock64() -> Int:
+fn clock64() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
     return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock64", Int64]())
 
@@ -39,7 +39,7 @@ fn now() -> Int:
     """
     return int(
         inlined_assembly[
-            "mov.u64  $0, %globaltimer;", UInt64, constraints="=l"
+            "mov.u64 $0, %globaltimer;", UInt64, constraints="=l"
         ]()
     )
 
