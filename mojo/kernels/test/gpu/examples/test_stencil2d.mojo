@@ -81,17 +81,29 @@ fn stencil2d_smem(
 
     # First column also loads elements left and right to the block.
     if ThreadIdx.x() == 0:
-        a_shared[Index(lindex_y, 0)] = a[tidy * num_cols + (tidx - 1)]
-        a_shared[Index(Int(lindex_y), BLOCK_DIM + 1)] = a[
-            tidy * num_cols + tidx + BLOCK_DIM
-        ]
+        a_shared[Index(lindex_y, 0)] = (
+            a[tidy * num_cols + (tidx - 1)] if 0
+            <= tidy * num_cols + (tidx - 1)
+            < arr_size else 0
+        )
+        a_shared[Index(Int(lindex_y), BLOCK_DIM + 1)] = (
+            a[tidy * num_cols + tidx + BLOCK_DIM] if 0
+            <= tidy * num_cols + tidx + BLOCK_DIM
+            < arr_size else 0
+        )
 
     # First row also loads elements above and below the block.
     if ThreadIdx.y() == 0:
-        a_shared[Index(0, lindex_x)] = a[(tidy - 1) * num_cols + tidx]
-        a_shared[Index(BLOCK_DIM + 1, lindex_x)] = a[
-            (tidy + BLOCK_DIM) * num_cols + tidx
-        ]
+        a_shared[Index(0, lindex_x)] = (
+            a[(tidy - 1) * num_cols + tidx] if 0
+            < (tidy - 1) * num_cols + tidx
+            < arr_size else 0
+        )
+        a_shared[Index(BLOCK_DIM + 1, lindex_x)] = (
+            a[(tidy + BLOCK_DIM) * num_cols + tidx] if 0
+            <= (tidy + BLOCK_DIM) * num_cols + tidx
+            < arr_size else 0
+        )
 
     barrier()
 
@@ -155,7 +167,6 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
             ),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
-        ctx.synchronize()
 
         var tmp_ptr = b_device
         b_device = a_device
@@ -187,7 +198,6 @@ def main():
     try:
         with DeviceContext() as ctx:
             run_stencil2d[False](ctx)
-            # TODO: KERN-706 - Renable after disabling the test due to bug found in KERN-700
-            # run_stencil2d[True](ctx)
+            run_stencil2d[True](ctx)
     except e:
         print("CUDA_ERROR:", e)

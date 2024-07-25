@@ -63,8 +63,10 @@ fn stencil1d_smem(
 
     a_shared[lindex] = a[tid]
     if ThreadIdx.x() == 0:
-        a_shared[lindex - 1] = a[(tid - 1)]
-        a_shared[lindex + BLOCK_DIM] = a[(tid + BLOCK_DIM)]
+        a_shared[lindex - 1] = a[(tid - 1)] if 0 <= tid - 1 < arr_size else 0
+        a_shared[lindex + BLOCK_DIM] = (
+            a[(tid + BLOCK_DIM)] if tid + BLOCK_DIM < arr_size else 0
+        )
 
     barrier()
 
@@ -114,7 +116,6 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
             grid_dim=(ceildiv(m, BLOCK_DIM)),
             block_dim=(BLOCK_DIM),
         )
-        ctx.synchronize()
 
         var tmp_ptr = b_device
         b_device = a_device
@@ -149,7 +150,6 @@ def main():
     try:
         with DeviceContext() as ctx:
             run_stencil1d[False](ctx)
-            # TODO: KERN-706 - Renable after disabling the test due to bug found in KERN-700
-            # run_stencil1d[True](ctx)
+            run_stencil1d[True](ctx)
     except e:
         print("CUDA_ERROR:", e)
