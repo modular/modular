@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import asdict, dataclass, field, is_dataclass
+from __future__ import annotations
+
 from enum import Enum
 from pathlib import Path
-from sys import version_info
-from typing import Any, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
 from max.engine.core import DType as _DType
@@ -17,16 +17,8 @@ from max.engine.core import InferenceSession as _InferenceSession
 from max.engine.core import Model as _Model
 from max.engine.core import TensorSpec as _TensorSpec
 from max.engine.core import TorchInputSpec as _TorchInputSpec
-from max.engine.core import __version__
 
-if version_info.minor <= 8:
-    from typing import Dict, List, Tuple
-else:
-    Dict = dict
-    List = list
-    Tuple = tuple
-
-version_string = __version__
+InputShape = Optional[List[Union[int, str, None]]]
 
 
 class Model:
@@ -46,7 +38,7 @@ class Model:
 
     def execute(
         self, *args, **kwargs
-    ) -> Dict[str, Union[np.ndarray, Dict, List, Tuple]]:
+    ) -> Dict[str, Union[np.ndarray, dict, list, tuple]]:
         """Executes the model with the provided input and returns the outputs.
 
         For example, if the model has one input tensor named "input":
@@ -136,7 +128,7 @@ class Model:
         return f"Model(inputs={self.input_metadata})"
 
     @property
-    def input_metadata(self) -> List["TensorSpec"]:
+    def input_metadata(self) -> List[TensorSpec]:
         """
         Metadata about the model's input tensors, as a list of
         :obj:`TensorSpec` objects.
@@ -151,7 +143,7 @@ class Model:
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
 
     @property
-    def output_metadata(self) -> List["TensorSpec"]:
+    def output_metadata(self) -> List[TensorSpec]:
         """
         Metadata about the model's output tensors, as a list of
         :obj:`TensorSpec` objects.
@@ -232,9 +224,7 @@ class TensorSpec:
 
     _impl: _TensorSpec
 
-    def __init__(
-        self, shape: Optional[List[Optional[int]]], dtype: DType, name: str
-    ):
+    def __init__(self, shape: InputShape, dtype: DType, name: str):
         self._impl = _TensorSpec(shape, dtype._to(), name)
 
     @classmethod
@@ -291,7 +281,7 @@ class TorchInputSpec:
 
     _impl: _TorchInputSpec
 
-    def __init__(self, shape: Optional[List[Union[int, str]]], dtype: DType):
+    def __init__(self, shape: InputShape, dtype: DType):
         self._impl = _TorchInputSpec(shape, dtype._to())
 
     @classmethod
@@ -314,7 +304,7 @@ class TorchInputSpec:
             return f"None x {self.dtype.name}"
 
     @property
-    def shape(self) -> Optional[List[int]]:
+    def shape(self) -> InputShape:
         """The shape of the torch input tensor as a list of integers.
 
         If a dimension size is unknown/dynamic (such as the batch size), the
@@ -449,7 +439,7 @@ class InferenceSession:
         model: Union[str, Path, Any],
         *,
         custom_ops_path: Optional[str] = None,
-        input_specs: Optional[List["TorchInputSpec"]] = None,
+        input_specs: Optional[List[TorchInputSpec]] = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
