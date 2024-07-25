@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Iterable, TypeGuard, Union
 
 from max import mlir
+from max import _graph
 
-from . import core as _c
 from .dtype import DType
 
 
@@ -183,7 +183,7 @@ class SymbolicDim(Dim):
         Returns:
             An mlir.Attribute in the context representing the dimension.
         """
-        return _c.symbolic_dim(mlir.Context.current, self.name)
+        return _graph.symbolic_dim(mlir.Context.current, self.name)
 
     @staticmethod
     def from_mlir(dim_attr: mlir.Attribute) -> Dim:
@@ -195,7 +195,7 @@ class SymbolicDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return SymbolicDim(_c.dim_symbolic_name(dim_attr))
+        return SymbolicDim(_graph.dim_symbolic_name(dim_attr))
 
 
 @dataclass
@@ -248,7 +248,7 @@ class StaticDim(Dim):
         Returns:
             An mlir.Attribute in the context representing the dimension.
         """
-        return _c.static_dim(mlir.Context.current, self.dim)
+        return _graph.static_dim(mlir.Context.current, self.dim)
 
     @staticmethod
     def from_mlir(dim_attr: mlir.Attribute) -> Dim:
@@ -260,7 +260,7 @@ class StaticDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return StaticDim(_c.dim_static_value(dim_attr))
+        return StaticDim(_graph.dim_static_value(dim_attr))
 
 
 Shape = list[Dim]
@@ -356,9 +356,9 @@ class TensorType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return _c.tensor_type(
+        return _graph.tensor_type(
             mlir.Context.current,
-            _c.dtype_type(mlir.Context.current, self.dtype._mlir),
+            _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
             [d.to_mlir() for d in self.shape],
         )
 
@@ -372,10 +372,10 @@ class TensorType(Type):
         Returns:
             The tensor type represented by the MLIR Type value.
         """
-        dtype = _c.tensor_type_get_dtype(t)
-        rank = _c.tensor_type_get_rank(t)
+        dtype = _graph.tensor_type_get_dtype(t)
+        rank = _graph.tensor_type_get_rank(t)
         shape = [
-            Dim.from_mlir(_c.tensor_type_get_dim(t, i)) for i in range(rank)
+            Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
 
         return TensorType(DType(dtype), shape)
@@ -454,7 +454,7 @@ class TensorType(Type):
             The number of elements the tensor contains.
         """
         if not _is_static_shape(self.shape):
-            raise Exception(
+            raise RuntimeError(
                 "can't find num elements since tensor has symbolic dims"
             )
 
@@ -485,7 +485,7 @@ class _OpaqueType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return _c.opaque_type(mlir.Context.current, self.name)
+        return _graph.opaque_type(mlir.Context.current, self.name)
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> _OpaqueType:
@@ -497,4 +497,4 @@ class _OpaqueType(Type):
         Returns:
             The opaque type represented by the MLIR Type value.
         """
-        return _OpaqueType(_c.opaque_type_name(t))
+        return _OpaqueType(_graph.opaque_type_name(t))

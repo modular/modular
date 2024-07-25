@@ -13,10 +13,9 @@ from contextvars import ContextVar
 from os import PathLike
 from typing import Callable, Iterable, Optional, Union
 
-from max import mlir
+from max import _graph, mlir
 from max.mlir.dialects import mo
 
-from . import core as _c
 from .dtype import DType
 from .graph_value import GraphValue
 from .type import SymbolicDim, TensorType, Type
@@ -139,7 +138,7 @@ class Graph:
         }
 
         registry = mlir.DialectRegistry()
-        _c.load_modular_dialects(registry)
+        _graph.load_modular_dialects(registry)
 
         self._context = mlir.Context()
         self._context.append_dialect_registry(registry)
@@ -155,7 +154,9 @@ class Graph:
                     [t.to_mlir() for t in output_types],
                 )
                 # Call the C++ builder to build the MO graph op.
-                self._mlir_op = _c.graph(self._module, loc, name, function_type)
+                self._mlir_op = _graph.graph(
+                    self._module, loc, name, function_type
+                )
 
         self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
         self.weights = {}
@@ -276,7 +277,7 @@ class Graph:
         # TODO: Allow file path to be set later.
         if filepath is None:
             raise ValueError("Filepath must be defined.")
-        weights_attr = _c.weights_attr(
+        weights_attr = _graph.weights_attr(
             filepath or "",
             offset or 0,
             tensor_type.to_mlir(),

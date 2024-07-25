@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from max import mlir
-from max.graph import core as _c
+from max import _graph
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def mlir_context() -> mlir.Context:
     """Set up the MLIR context by registering and loading Modular dialects."""
     with mlir.Context() as ctx, mlir.Location.unknown():
         registry = mlir.DialectRegistry()
-        _c.load_modular_dialects(registry)
+        _graph.load_modular_dialects(registry)
         ctx.append_dialect_registry(registry)
         ctx.load_all_available_dialects()
         yield ctx
