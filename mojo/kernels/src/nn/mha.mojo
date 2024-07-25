@@ -1889,18 +1889,18 @@ fn mha_single_batch[
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(num_m_mmas):
+        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+        var rowsum_inv1 = 1.0 / rowsum[2 * m_mma + 1]
 
         @parameter
         for n_mma in range(num_n_mmas):
 
             @parameter
             for i in range(p_frag_size // 2):
-                output_reg_tile[n_mma * num_m_mmas + m_mma, i] /= rowsum[
-                    2 * m_mma
-                ]
+                output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= rowsum_inv0
                 output_reg_tile[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
-                ] /= rowsum[2 * m_mma + 1]
+                ] *= rowsum_inv1
 
     var output_gmem_tile = LayoutTensor[
         output_type,
