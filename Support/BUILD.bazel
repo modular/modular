@@ -222,22 +222,16 @@ modular_cc_library(
 expand_root_cert_inc(
     name = "CertificatesHeader",
     cert_pem = select({
-        "//:DevBuild": "lib/Entitlements/RootCertificates/dev/cert.pem",
-        "//:LocalBuild": "lib/Entitlements/RootCertificates/local/cert.pem",
-        "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/cert.pem",
-        "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/cert.pem",
+        "//:dev_build": "lib/Entitlements/RootCertificates/local/cert.pem",
+        "//:production_build": "lib/Entitlements/RootCertificates/prod/cert.pem",
     }),
     endpoint = select({
-        "//:DevBuild": "lib/Entitlements/RootCertificates/dev/endpoint.txt",
-        "//:LocalBuild": "lib/Entitlements/RootCertificates/local/endpoint.txt",
-        "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/endpoint.txt",
-        "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/endpoint.txt",
+        "//:dev_build": "lib/Entitlements/RootCertificates/local/endpoint.txt",
+        "//:production_build": "lib/Entitlements/RootCertificates/prod/endpoint.txt",
     }),
     key_pem = select({
-        "//:DevBuild": "lib/Entitlements/RootCertificates/dev/key.pem",
-        "//:LocalBuild": "lib/Entitlements/RootCertificates/local/key.pem",
-        "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/key.pem",
-        "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/key.pem",
+        "//:dev_build": "lib/Entitlements/RootCertificates/local/key.pem",
+        "//:production_build": "lib/Entitlements/RootCertificates/prod/key.pem",
     }),
     source = "lib/Entitlements/RootCertificates/RootCert.inc.in",
     visibility = [":__subpackages__"],
@@ -463,7 +457,7 @@ modular_cc_library(
         "HAVE_CPP_STDLIB",
     ],
     local_defines = select({
-        "//:ProdBuild": [
+        "//:production_build": [
             'MODULAR_TELEMETRY_URL=\\"https://telemetry.modular.com:443\\"',
         ],
         "//conditions:default": [

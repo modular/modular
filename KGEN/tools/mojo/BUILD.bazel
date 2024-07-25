@@ -78,7 +78,8 @@ driver_option_tablegen(
     includes = ["."],
     manual_name = "mojo",
     markdown_name = "index",
-    opts = ["-DMODULAR_MOJO_BUILD_SERVER_PREVIEW"],
+    # TODO: Currently enabling this only for production doesn't work
+    # opts = ["-DMODULAR_MOJO_BUILD_SERVER_PREVIEW"],
     td_file = "DriverOptions.td",
     deps = [
         ":Build.td_library",
@@ -99,18 +100,19 @@ pkg_files(
     name = "docs",
     srcs = [
         ":Build.man_files",
-        # TODO: Feature gated by MODULAR_MOJO_BUILD_SERVER_PREVIEW
-        # ":BuildProject.man_files",
         ":Debug.man_files",
         ":Demangle.man_files",
         ":Doc.man_files",
         ":Format.man_files",
+        ":Index.man_files",
         ":Package.man_files",
         ":REPL.man_files",
         ":Run.man_files",
         ":Test.man_files",
-        ":Index.man_files",
-    ],
+    ] + select({
+        "@//:production_build": [],
+        "//conditions:default": [":BuildProject.man_files"],
+    }),
     visibility = ["//visibility:public"],
 )
 
@@ -121,7 +123,10 @@ modular_cc_binary(
         "**/*.cpp",
     ]),
     includes = ["."],
-    local_defines = ["MODULAR_MOJO_BUILD_SERVER_PREVIEW"],
+    local_defines = select({
+        "@//:production_build": [],
+        "//conditions:default": ["MODULAR_MOJO_BUILD_SERVER_PREVIEW"],
+    }),
     deps = [
         ":Build.inc_files",
         ":BuildProject.inc_files",
