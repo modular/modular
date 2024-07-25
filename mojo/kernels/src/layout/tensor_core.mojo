@@ -467,12 +467,9 @@ struct TensorCore[
                         var vec = _load_matrix_frag[transposed=True](
                             mma_tile_shifted, swizzle_offset
                         )
-                        fragments[i, 0] = rebind[frag_type](
-                            SIMD[type0, 4](vec[0], vec[1], vec[2], vec[3])
-                        )
-                        fragments[i + 1, 0] = rebind[frag_type](
-                            SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
-                        )
+                        var high_low = vec.split()
+                        fragments[i, 0] = rebind[frag_type](high_low[0])
+                        fragments[i + 1, 0] = rebind[frag_type](high_low[1])
                 else:
 
                     @parameter
@@ -480,12 +477,9 @@ struct TensorCore[
                         var vec = _load_matrix_frag[transposed=True](
                             mma_tile, i
                         )
-                        fragments[i, 0] = rebind[frag_type](
-                            SIMD[type0, 4](vec[0], vec[1], vec[2], vec[3])
-                        )
-                        fragments[i + 1, 0] = rebind[frag_type](
-                            SIMD[type0, 4](vec[4], vec[5], vec[6], vec[7])
-                        )
+                        var high_low = vec.split()
+                        fragments[i, 0] = rebind[frag_type](high_low[0])
+                        fragments[i + 1, 0] = rebind[frag_type](high_low[1])
 
     @always_inline
     fn mma(
