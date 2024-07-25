@@ -164,14 +164,14 @@ kgen.func @variant_get_0(%arg0: !kgen.variant<i32>) ->  i32{
   // CHECK: %[[P6:.*]] = llvm.shl %[[P5]], %[[C0]] : i64
   // CHECK: %[[P7:.*]] = llvm.trunc %[[P6]] : i64 to i32
   // CHECK: %[[P8:.*]] = llvm.or %[[C0_i32]], %[[P7]] : i32
-  %0 = kgen.variant.take %arg0, 0 : <i32>
+  %0 = kgen.variant.get %arg0, 0 : <i32>
   kgen.return %0 : i32
 }
 
 // CHECK-LABEL: @variant_get_1
 kgen.func @variant_get_1(%arg0: !kgen.variant<f64>) -> f64 {
   // CHECK: llvm.bitcast %{{.*}} : i64 to f64
-  %0 = kgen.variant.take %arg0, 0 : <f64>
+  %0 = kgen.variant.get %arg0, 0 : <f64>
   kgen.return %0 : f64
 }
 
@@ -192,7 +192,7 @@ kgen.func @variant_get_2(%arg0: !kgen.variant<struct<(i32, i32)>>) -> !kgen.stru
   // CHECK: %[[P14:.*]] = llvm.trunc %[[P13]] : i64 to i32
   // CHECK: %[[P15:.*]] = llvm.or %[[C0_i32]], %[[P14]] : i32
   // CHECK: %[[P16:.*]] = llvm.insertvalue %[[P15]], %[[P11]][1] : !llvm.struct<(i32, i32)>
-  %0 = kgen.variant.take %arg0, 0 : <struct<(i32, i32)>>
+  %0 = kgen.variant.get %arg0, 0 : <struct<(i32, i32)>>
   kgen.return %0 : !kgen.struct<(i32, i32)>
 }
 
@@ -224,7 +224,7 @@ kgen.func @variant_get_3(%arg0: !kgen.variant<struct<(i32, i64, i32)>, array<4, 
   // CHECK: %[[P24:.*]] = llvm.trunc %[[P23]] : i64 to i32
   // CHECK: %[[P25:.*]] = llvm.or %[[C0_i32]], %[[P24]] : i32
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P25]], %[[P21]][2] : !llvm.struct<(i32, i64, i32)>
-  %0 = kgen.variant.take %arg0, 0 : <struct<(i32, i64, i32)>, array<4, i64>>
+  %0 = kgen.variant.get %arg0, 0 : <struct<(i32, i64, i32)>, array<4, i64>>
   kgen.return %0 : !kgen.struct<(i32, i64, i32)>
 }
 
@@ -282,14 +282,14 @@ kgen.func @variant_get_4(%arg0: !kgen.variant<struct<(array<2, i16>, struct<(str
   // CHECK: %[[P61:.*]] = llvm.insertelement %[[P60]], %[[P51]][%[[C1_i32]] : i32] : vector<2xf32>
   // CHECK: %[[P62:.*]] = llvm.insertvalue %[[P61]], %[[P44]][1] : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
   // CHECK: %[[P63:.*]] = llvm.insertvalue %[[P62]], %[[P27]][1] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  %0 = kgen.variant.take %arg0, 0 : <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
+  %0 = kgen.variant.get %arg0, 0 : <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
   kgen.return %0 : !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>
 }
 
 // CHECK-LABEL: @variant_get_5
 kgen.func @variant_get_5(%arg0: !kgen.variant<pointer<index>>) -> !kgen.pointer<index> {
   // CHECK: llvm.inttoptr
-  %0 = kgen.variant.take %arg0, 0 : <pointer<index>>
+  %0 = kgen.variant.get %arg0, 0 : <pointer<index>>
   kgen.return %0 : !kgen.pointer<index>
 }
 
@@ -297,7 +297,7 @@ kgen.func @variant_get_5(%arg0: !kgen.variant<pointer<index>>) -> !kgen.pointer<
 kgen.func @unpack_pointer(%arg0: !kgen.variant<pointer<i8>>) -> !kgen.pointer<i8> {
   // CHECK: trunc %{{.*}} : i64 to i64
   // CHECK: inttoptr %{{.*}} : i64 to !llvm.ptr
-  %0 = kgen.variant.take %arg0, 0 : <pointer<i8>>
+  %0 = kgen.variant.get %arg0, 0 : <pointer<i8>>
   kgen.return %0 : !kgen.pointer<i8>
 }
 

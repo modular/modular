@@ -335,22 +335,22 @@ kgen.func @variant_create_is_false(%a: i32) -> i1 {
 kgen.func @variant_get() -> ui4 {
   // CHECK-NEXT: constant: ui4 = <7>
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
-  %1 = kgen.variant.take %0, 1 : <si4, ui4>
+  %1 = kgen.variant.get %0, 1 : <si4, ui4>
   kgen.return %1 : ui4
 }
 
 // CHECK-LABEL: @variant_get_ub
 kgen.func @variant_get_ub() -> si4 {
-  // CHECK: kgen.variant.take
+  // CHECK: kgen.variant.get
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
-  %1 = kgen.variant.take %0, 0 : <si4, ui4>
+  %1 = kgen.variant.get %0, 0 : <si4, ui4>
   kgen.return %1 : si4
 }
 
 // CHECK-LABEL: @variant_create_get
 kgen.func @variant_create_get(%a: i32) -> i32 {
   %0 = kgen.variant.create %a, 0 : <i32, f32>
-  %1 = kgen.variant.take %0, 0 : <i32, f32>
+  %1 = kgen.variant.get %0, 0 : <i32, f32>
   // CHECK: return %arg0
   kgen.return %1 : i32
 }
@@ -374,7 +374,7 @@ kgen.func @variant_take_then_create(
 ) -> !kgen.variant<f32, i32> {
 
   // These will be folded away.
-  %f32 = kgen.variant.take %input, 0 : !kgen.variant<f32, i32>
+  %f32 = kgen.variant.get %input, 0 : !kgen.variant<f32, i32>
   %res = kgen.variant.create %f32, 0 : !kgen.variant<f32, i32>
 
   // CHECK-NEXT: return %arg0
@@ -386,7 +386,7 @@ kgen.func @variant_create_then_take(%f32: f32) -> f32 {
 
   // These will be folded away.
   %variant = kgen.variant.create %f32, 0 : !kgen.variant<f32, i32>
-  %res = kgen.variant.take %variant, 0 : !kgen.variant<f32, i32>
+  %res = kgen.variant.get %variant, 0 : !kgen.variant<f32, i32>
 
   // CHECK-NEXT: return %arg0
   kgen.return %res : f32
@@ -397,9 +397,9 @@ kgen.func @variant_take_then_create_mismatch_index(
   %input: !kgen.variant<i32, i32>
 ) -> !kgen.variant<i32, i32> {
 
-  // CHECK-NEXT: %0 = kgen.variant.take %arg0, 0
+  // CHECK-NEXT: %0 = kgen.variant.get %arg0, 0
   // CHECK-NEXT: %1 = kgen.variant.create %0, 1
-  %i32 = kgen.variant.take %input, 0 : !kgen.variant<i32, i32>
+  %i32 = kgen.variant.get %input, 0 : !kgen.variant<i32, i32>
   %res = kgen.variant.create %i32, 1 : !kgen.variant<i32, i32>
 
   // CHECK-NEXT: return %1
@@ -410,9 +410,9 @@ kgen.func @variant_take_then_create_mismatch_index(
 kgen.func @variant_create_then_take_mismatch_index(%f32: f32) -> f32 {
 
   // CHECK-NEXT: %0 = kgen.variant.create %arg0, 1
-  // CHECK-NEXT: %1 = kgen.variant.take %0, 0
+  // CHECK-NEXT: %1 = kgen.variant.get %0, 0
   %variant = kgen.variant.create %f32, 1 : !kgen.variant<f32, f32>
-  %res = kgen.variant.take %variant, 0 : !kgen.variant<f32, f32>
+  %res = kgen.variant.get %variant, 0 : !kgen.variant<f32, f32>
 
   // CHECK-NEXT: return %1
   kgen.return %res : f32
@@ -423,9 +423,9 @@ kgen.func @variant_take_then_create_mismatch_types(
   %input: !kgen.variant<i32, i32>
 ) -> !kgen.variant<i32, f32> {
 
-  // CHECK-NEXT: %0 = kgen.variant.take %arg0, 0
+  // CHECK-NEXT: %0 = kgen.variant.get %arg0, 0
   // CHECK-NEXT: %1 = kgen.variant.create %0, 0
-  %i32 = kgen.variant.take %input, 0 : !kgen.variant<i32, i32>
+  %i32 = kgen.variant.get %input, 0 : !kgen.variant<i32, i32>
   %res = kgen.variant.create %i32, 0 : !kgen.variant<i32, f32>
 
   // CHECK-NEXT: return %1
