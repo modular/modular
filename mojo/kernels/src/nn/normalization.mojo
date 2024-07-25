@@ -629,7 +629,7 @@ fn layer_norm_cpu[
     with Trace[TraceLevel.OP](
         "mojo.layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ) as t:
+    ):
         alias simd_width = simdwidthof[type]()
 
         var last_dim = shape[rank - 1]

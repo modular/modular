@@ -611,7 +611,7 @@ fn _softmax_cpu[
     with Trace[TraceLevel.OP](
         "mojo.softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
-    ) as t:
+    ):
         if shape.flattened_length() == 0:
             return
 

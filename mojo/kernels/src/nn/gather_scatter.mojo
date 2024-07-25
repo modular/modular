@@ -603,7 +603,7 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
     gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP]("mojo.gather") as t:
+    with Trace[TraceLevel.OP]("mojo.gather"):
         if (
             input_shape.flattened_length() == 0
             or indices_shape.flattened_length() == 0
@@ -685,7 +685,7 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
     gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP]("mojo.gather") as t:
+    with Trace[TraceLevel.OP]("mojo.gather"):
         if (
             input_shape.flattened_length() == 0
             or indices_shape.flattened_length() == 0
