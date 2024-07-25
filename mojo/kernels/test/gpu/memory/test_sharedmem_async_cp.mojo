@@ -7,8 +7,8 @@
 # Hangs with debug mode Issue #24921
 # RUN: %mojo-no-debug %s | FileCheck %s
 import builtin
-import gpu.host as gpu_host
 from gpu import AddressSpace, ThreadIdx, memory, sync
+from gpu.host import DeviceContext
 import time
 from memory import stack_allocation
 
@@ -45,21 +45,32 @@ fn copy_via_shared(
 
 
 # CHECK-LABEL: run_copy_via_shared
-fn run_copy_via_shared() raises:
+fn run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
-    var in_data = gpu_host.memory._malloc_managed[DType.float32](16)
-    var out_data = gpu_host.memory._malloc_managed[DType.float32](16)
+    var in_data = UnsafePointer[Float32].alloc(16)
+    var out_data = UnsafePointer[Float32].alloc(16)
 
     for i in range(16):
         in_data[i] = i + 1
         out_data[i] = 0
 
-    var copy_via_shared_gpu = gpu_host.Function[copy_via_shared]()
+    var in_device = ctx.create_buffer[DType.float32](16)
+    var out_device = ctx.create_buffer[DType.float32](16)
 
-    var stream = gpu_host.Stream()
-    copy_via_shared_gpu(
-        in_data, out_data, grid_dim=(1,), block_dim=(16,), stream=stream
+    ctx.enqueue_copy_to_device(in_device, in_data)
+    ctx.enqueue_copy_to_device(out_device, out_data)
+
+    var copy_via_shared_gpu = ctx.compile_function[copy_via_shared]()
+
+    ctx.enqueue_function(
+        copy_via_shared_gpu,
+        in_device,
+        out_device,
+        grid_dim=(1,),
+        block_dim=(16,),
     )
+
+    ctx.enqueue_copy_from_device(out_data, out_device)
 
     # CHECK: 1.0
     # CHECK: 2.0
@@ -80,12 +91,16 @@ fn run_copy_via_shared() raises:
     for i in range(16):
         print(Scalar.load(out_data, i))
 
-    pass
+    in_data.free()
+    out_data.free()
+    _ = in_device
+    _ = out_device
+    _ = copy_via_shared_gpu^
 
 
 fn main():
     try:
-        with gpu_host.Context() as ctx:
-            run_copy_via_shared()
+        with DeviceContext() as ctx:
+            run_copy_via_shared(ctx)
     except e:
         print("CUDA_ERROR:", e)
