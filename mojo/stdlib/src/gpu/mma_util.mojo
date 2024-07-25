@@ -32,12 +32,12 @@ fn load_matrix_a[
     var a13_row = group_id + 8
     var a23_col = group_lane_id + 4
 
-    var a = SIMD[DType.float32, 4]()
-    a[0] = a_ptr[int((tile_row + a02_row) * ldm + (tile_col + a01_col))]
-    a[1] = a_ptr[int((tile_row + a13_row) * ldm + (tile_col + a01_col))]
-    a[2] = a_ptr[int((tile_row + a02_row) * ldm + (tile_col + a23_col))]
-    a[3] = a_ptr[int((tile_row + a13_row) * ldm + (tile_col + a23_col))]
-    return a
+    return SIMD[DType.float32, 4](
+        a_ptr[int((tile_row + a02_row) * ldm + (tile_col + a01_col))],
+        a_ptr[int((tile_row + a13_row) * ldm + (tile_col + a01_col))],
+        a_ptr[int((tile_row + a02_row) * ldm + (tile_col + a23_col))],
+        a_ptr[int((tile_row + a13_row) * ldm + (tile_col + a23_col))],
+    )
 
 
 @always_inline
@@ -65,12 +65,12 @@ fn load_matrix_a[
     var a2_col = (group_lane_id * 2) + (2 & 0x1)
     var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
-    var a = SIMD[DType.float16, 4]()
-    a[0] = a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a0_col))]
-    a[1] = a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a1_col))]
-    a[2] = a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a2_col))]
-    a[3] = a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a3_col))]
-    return a
+    return SIMD[DType.float16, 4](
+        a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a0_col))],
+        a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a1_col))],
+        a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a2_col))],
+        a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a3_col))],
+    )
 
 
 @always_inline
@@ -99,12 +99,12 @@ fn load_matrix_a[
         var a2_col = (group_lane_id * 2) + (2 & 0x1)
         var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
-        var a = SIMD[DType.bfloat16, k // 2]()
-        a[0] = a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a0_col))]
-        a[1] = a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a1_col))]
-        a[2] = a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a2_col))]
-        a[3] = a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a3_col))]
-        return a
+        return SIMD[DType.bfloat16, k // 2](
+            a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a0_col))],
+            a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a1_col))],
+            a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a2_col))],
+            a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a3_col))],
+        )
     else:
         constrained[m == 16 and n == 8 and k == 16]()
         var group_id = lane_id() >> 2
@@ -157,10 +157,10 @@ fn load_matrix_b[
     var b01_col = group_id
     var b1_row = group_lane_id + 4
 
-    var b = SIMD[DType.float32, 2]()
-    b[0] = b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))]
-    b[1] = b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))]
-    return b
+    return SIMD[DType.float32, 2](
+        b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))],
+        b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))],
+    )
 
 
 @always_inline
@@ -185,10 +185,10 @@ fn load_matrix_b[
     var b01_col = group_id
     var b1_row = (group_lane_id * 2) + (1 & 0x1)
 
-    var b = SIMD[DType.float16, 2]()
-    b[0] = b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))]
-    b[1] = b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))]
-    return b
+    return SIMD[DType.float16, 2](
+        b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))],
+        b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))],
+    )
 
 
 @always_inline
@@ -214,10 +214,10 @@ fn load_matrix_b[
         var b01_col = group_id
         var b1_row = (group_lane_id * 2) + (1 & 0x1)
 
-        var b = SIMD[DType.bfloat16, k // 4]()
-        b[0] = b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))]
-        b[1] = b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))]
-        return b
+        return SIMD[DType.bfloat16, k // 4](
+            b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))],
+            b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))],
+        )
     else:
         constrained[m == 16 and n == 8 and k == 16]()
         var group_id = lane_id() >> 2
@@ -229,12 +229,12 @@ fn load_matrix_b[
         var b_row_3 = (group_lane_id * 2) + (3 & 0x1) + 8
         var b_col = group_id
 
-        var b = SIMD[DType.bfloat16, k // 4]()
-        b[0] = b_ptr[int((tile_row + b_row_0) * ldm + (tile_col + b_col))]
-        b[1] = b_ptr[int((tile_row + b_row_1) * ldm + (tile_col + b_col))]
-        b[2] = b_ptr[int((tile_row + b_row_2) * ldm + (tile_col + b_col))]
-        b[3] = b_ptr[int((tile_row + b_row_3) * ldm + (tile_col + b_col))]
-        return b
+        return SIMD[DType.bfloat16, k // 4](
+            b_ptr[int((tile_row + b_row_0) * ldm + (tile_col + b_col))],
+            b_ptr[int((tile_row + b_row_1) * ldm + (tile_col + b_col))],
+            b_ptr[int((tile_row + b_row_2) * ldm + (tile_col + b_col))],
+            b_ptr[int((tile_row + b_row_3) * ldm + (tile_col + b_col))],
+        )
 
 
 @always_inline
