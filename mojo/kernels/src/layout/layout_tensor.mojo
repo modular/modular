@@ -1205,7 +1205,10 @@ struct LayoutTensor[
             return idx
 
     @always_inline
-    fn copy_from(self, other: LayoutTensor):
+    fn copy_from[
+        src_coords_bound: Optional[StaticIntTuple[rank]] = None,
+        other_coords_bound: Optional[StaticIntTuple[rank]] = None,
+    ](self, other: LayoutTensor):
         alias other_layout = other.layout
 
         alias dst_element_size = int(self.element_size)
@@ -1226,10 +1229,51 @@ struct LayoutTensor[
             dst_element_size == src_element_size, "copy_from should move"
         ]()
 
+        alias has_copy_bounds = src_coords_bound or other_coords_bound
+
         @parameter
         for i in range(dst_size):
             var src_idx = other.__get_element_idx[i]()
             var dst_idx = self.__get_element_idx[i]()
+
+            @parameter
+            if has_copy_bounds:
+                constrained[
+                    self.element_size == 1 and other.element_size == 1,
+                    "Only supports scalar masked copies",
+                ]()
+
+                @parameter
+                @always_inline
+                fn __is_in_bound[
+                    rank: Int
+                ](
+                    coords: StaticIntTuple[rank], bounds: StaticIntTuple[rank]
+                ) -> Bool:
+                    var in_bound = True
+
+                    @parameter
+                    for dim in range(rank):
+                        in_bound &= coords[dim] < bounds[dim]
+                    return in_bound
+
+                @parameter
+                if src_coords_bound:
+                    if not __is_in_bound(
+                        self.element_coords[i](), src_coords_bound.value()
+                    ):
+                        continue
+
+                @parameter
+                if other_coords_bound:
+                    if not __is_in_bound(
+                        other.element_coords[i](),
+                        rebind[StaticIntTuple[other.rank]](
+                            other_coords_bound.value()
+                        ),
+                    ):
+                        continue
+
             var src_element = Element[dtype, other.element_layout].load[
                 other.address_space
             ](

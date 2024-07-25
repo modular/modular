@@ -932,7 +932,7 @@ fn test_split():
     _ = tensor_4x4^
 
 
-# DISABLED-CHECK-LABEL: test_copy_subtiles_scalars
+# CHECK-LABEL: test_copy_subtiles_scalars
 fn test_copy_subtiles_scalars():
     print("== test_copy_subtiles_scalars")
     var tensor_13x7 = LayoutTensor[
@@ -944,86 +944,86 @@ fn test_copy_subtiles_scalars():
     alias tile_m_size = 4
     alias tile_n_size = 2
 
-    # DISABLED-CHECK: ----tile-data[ 0 , 0 ]----
-    # DISABLED-CHECK: 0.0 1.0
-    # DISABLED-CHECK: 7.0 8.0
-    # DISABLED-CHECK: 14.0 15.0
-    # DISABLED-CHECK: 21.0 22.0
-    # DISABLED-CHECK: ----tile-data[ 0 , 1 ]----
-    # DISABLED-CHECK: 2.0 3.0
-    # DISABLED-CHECK: 9.0 10.0
-    # DISABLED-CHECK: 16.0 17.0
-    # DISABLED-CHECK: 23.0 24.0
-    # DISABLED-CHECK: ----tile-data[ 0 , 2 ]----
-    # DISABLED-CHECK: 4.0 5.0
-    # DISABLED-CHECK: 11.0 12.0
-    # DISABLED-CHECK: 18.0 19.0
-    # DISABLED-CHECK: 25.0 26.0
-    # DISABLED-CHECK: ----tile-data[ 0 , 3 ]----
-    # DISABLED-CHECK: 6.0 0.0
-    # DISABLED-CHECK: 13.0 0.0
-    # DISABLED-CHECK: 20.0 0.0
-    # DISABLED-CHECK: 27.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 1 , 0 ]----
-    # DISABLED-CHECK: 28.0 29.0
-    # DISABLED-CHECK: 35.0 36.0
-    # DISABLED-CHECK: 42.0 43.0
-    # DISABLED-CHECK: 49.0 50.0
-    # DISABLED-CHECK: ----tile-data[ 1 , 1 ]----
-    # DISABLED-CHECK: 30.0 31.0
-    # DISABLED-CHECK: 37.0 38.0
-    # DISABLED-CHECK: 44.0 45.0
-    # DISABLED-CHECK: 51.0 52.0
-    # DISABLED-CHECK: ----tile-data[ 1 , 2 ]----
-    # DISABLED-CHECK: 32.0 33.0
-    # DISABLED-CHECK: 39.0 40.0
-    # DISABLED-CHECK: 46.0 47.0
-    # DISABLED-CHECK: 53.0 54.0
-    # DISABLED-CHECK: ----tile-data[ 1 , 3 ]----
-    # DISABLED-CHECK: 34.0 0.0
-    # DISABLED-CHECK: 41.0 0.0
-    # DISABLED-CHECK: 48.0 0.0
-    # DISABLED-CHECK: 55.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 2 , 0 ]----
-    # DISABLED-CHECK: 56.0 57.0
-    # DISABLED-CHECK: 63.0 64.0
-    # DISABLED-CHECK: 70.0 71.0
-    # DISABLED-CHECK: 77.0 78.0
-    # DISABLED-CHECK: ----tile-data[ 2 , 1 ]----
-    # DISABLED-CHECK: 58.0 59.0
-    # DISABLED-CHECK: 65.0 66.0
-    # DISABLED-CHECK: 72.0 73.0
-    # DISABLED-CHECK: 79.0 80.0
-    # DISABLED-CHECK: ----tile-data[ 2 , 2 ]----
-    # DISABLED-CHECK: 60.0 61.0
-    # DISABLED-CHECK: 67.0 68.0
-    # DISABLED-CHECK: 74.0 75.0
-    # DISABLED-CHECK: 81.0 82.0
-    # DISABLED-CHECK: ----tile-data[ 2 , 3 ]----
-    # DISABLED-CHECK: 62.0 0.0
-    # DISABLED-CHECK: 69.0 0.0
-    # DISABLED-CHECK: 76.0 0.0
-    # DISABLED-CHECK: 83.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 3 , 0 ]----
-    # DISABLED-CHECK: 84.0 85.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 3 , 1 ]----
-    # DISABLED-CHECK: 86.0 87.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 3 , 2 ]----
-    # DISABLED-CHECK: 88.0 89.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 3 , 3 ]----
-    # DISABLED-CHECK: 90.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0
+    # CHECK: 7.0 8.0
+    # CHECK: 14.0 15.0
+    # CHECK: 21.0 22.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 2.0 3.0
+    # CHECK: 9.0 10.0
+    # CHECK: 16.0 17.0
+    # CHECK: 23.0 24.0
+    # CHECK: ----tile-data[ 0 , 2 ]----
+    # CHECK: 4.0 5.0
+    # CHECK: 11.0 12.0
+    # CHECK: 18.0 19.0
+    # CHECK: 25.0 26.0
+    # CHECK: ----tile-data[ 0 , 3 ]----
+    # CHECK: 6.0 0.0
+    # CHECK: 13.0 0.0
+    # CHECK: 20.0 0.0
+    # CHECK: 27.0 0.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 28.0 29.0
+    # CHECK: 35.0 36.0
+    # CHECK: 42.0 43.0
+    # CHECK: 49.0 50.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 30.0 31.0
+    # CHECK: 37.0 38.0
+    # CHECK: 44.0 45.0
+    # CHECK: 51.0 52.0
+    # CHECK: ----tile-data[ 1 , 2 ]----
+    # CHECK: 32.0 33.0
+    # CHECK: 39.0 40.0
+    # CHECK: 46.0 47.0
+    # CHECK: 53.0 54.0
+    # CHECK: ----tile-data[ 1 , 3 ]----
+    # CHECK: 34.0 0.0
+    # CHECK: 41.0 0.0
+    # CHECK: 48.0 0.0
+    # CHECK: 55.0 0.0
+    # CHECK: ----tile-data[ 2 , 0 ]----
+    # CHECK: 56.0 57.0
+    # CHECK: 63.0 64.0
+    # CHECK: 70.0 71.0
+    # CHECK: 77.0 78.0
+    # CHECK: ----tile-data[ 2 , 1 ]----
+    # CHECK: 58.0 59.0
+    # CHECK: 65.0 66.0
+    # CHECK: 72.0 73.0
+    # CHECK: 79.0 80.0
+    # CHECK: ----tile-data[ 2 , 2 ]----
+    # CHECK: 60.0 61.0
+    # CHECK: 67.0 68.0
+    # CHECK: 74.0 75.0
+    # CHECK: 81.0 82.0
+    # CHECK: ----tile-data[ 2 , 3 ]----
+    # CHECK: 62.0 0.0
+    # CHECK: 69.0 0.0
+    # CHECK: 76.0 0.0
+    # CHECK: 83.0 0.0
+    # CHECK: ----tile-data[ 3 , 0 ]----
+    # CHECK: 84.0 85.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 1 ]----
+    # CHECK: 86.0 87.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 2 ]----
+    # CHECK: 88.0 89.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 3 ]----
+    # CHECK: 90.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
     for tile_m in range(ceildiv(13, tile_m_size)):
         for tile_n in range(ceildiv(7, tile_n_size)):
             var tile_4x2 = tensor_13x7.tile[tile_m_size, tile_n_size](
@@ -1034,11 +1034,15 @@ fn test_copy_subtiles_scalars():
                 DType.float32, Layout.row_major(tile_m_size, tile_n_size)
             ].stack_allocation[alignment=16]()
             tile_4x2_cache.fill(0)
-            tile_4x2_cache.copy_from(tile_4x2)
+            tile_4x2_cache.copy_from[
+                other_coords_bound = rebind[
+                    StaticIntTuple[tile_4x2_cache.layout.rank()]
+                ](StaticIntTuple[2](13, 7))
+            ](tile_4x2)
             tile_4x2_cache.print()
 
 
-# DISABLED-CHECK-LABEL: test_copy_distributed_subtiles_scalars
+# CHECK-LABEL: test_copy_distributed_subtiles_scalars
 fn test_copy_distributed_subtiles_scalars():
     print("== test_copy_distributed_subtiles_scalars")
     var tensor_13x7 = LayoutTensor[
@@ -1049,142 +1053,142 @@ fn test_copy_distributed_subtiles_scalars():
     alias tile_m_size = 4
     alias tile_n_size = 4
 
-    # DISABLED-CHECK: ----tile-data[ 0 , 0 ]----
-    # DISABLED-CHECK: 0.0 1.0 2.0 3.0
-    # DISABLED-CHECK: 7.0 8.0 9.0 10.0
-    # DISABLED-CHECK: 14.0 15.0 16.0 17.0
-    # DISABLED-CHECK: 21.0 22.0 23.0 24.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 0.0 2.0
-    # DISABLED-CHECK: 14.0 16.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 1.0 3.0
-    # DISABLED-CHECK: 15.0 17.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 7.0 9.0
-    # DISABLED-CHECK: 21.0 23.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 8.0 10.0
-    # DISABLED-CHECK: 22.0 24.0
-    # DISABLED-CHECK: ----tile-data[ 0 , 1 ]----
-    # DISABLED-CHECK: 4.0 5.0 6.0 0.0
-    # DISABLED-CHECK: 11.0 12.0 13.0 0.0
-    # DISABLED-CHECK: 18.0 19.0 20.0 0.0
-    # DISABLED-CHECK: 25.0 26.0 27.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 4.0 6.0
-    # DISABLED-CHECK: 18.0 20.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 5.0 0.0
-    # DISABLED-CHECK: 19.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 11.0 13.0
-    # DISABLED-CHECK: 25.0 27.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 12.0 0.0
-    # DISABLED-CHECK: 26.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 1 , 0 ]----
-    # DISABLED-CHECK: 28.0 29.0 30.0 31.0
-    # DISABLED-CHECK: 35.0 36.0 37.0 38.0
-    # DISABLED-CHECK: 42.0 43.0 44.0 45.0
-    # DISABLED-CHECK: 49.0 50.0 51.0 52.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 28.0 30.0
-    # DISABLED-CHECK: 42.0 44.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 29.0 31.0
-    # DISABLED-CHECK: 43.0 45.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 35.0 37.0
-    # DISABLED-CHECK: 49.0 51.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 36.0 38.0
-    # DISABLED-CHECK: 50.0 52.0
-    # DISABLED-CHECK: ----tile-data[ 1 , 1 ]----
-    # DISABLED-CHECK: 32.0 33.0 34.0 0.0
-    # DISABLED-CHECK: 39.0 40.0 41.0 0.0
-    # DISABLED-CHECK: 46.0 47.0 48.0 0.0
-    # DISABLED-CHECK: 53.0 54.0 55.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 32.0 34.0
-    # DISABLED-CHECK: 46.0 48.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 33.0 0.0
-    # DISABLED-CHECK: 47.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 39.0 41.0
-    # DISABLED-CHECK: 53.0 55.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 40.0 0.0
-    # DISABLED-CHECK: 54.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 2 , 0 ]----
-    # DISABLED-CHECK: 56.0 57.0 58.0 59.0
-    # DISABLED-CHECK: 63.0 64.0 65.0 66.0
-    # DISABLED-CHECK: 70.0 71.0 72.0 73.0
-    # DISABLED-CHECK: 77.0 78.0 79.0 80.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 56.0 58.0
-    # DISABLED-CHECK: 70.0 72.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 57.0 59.0
-    # DISABLED-CHECK: 71.0 73.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 63.0 65.0
-    # DISABLED-CHECK: 77.0 79.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 64.0 66.0
-    # DISABLED-CHECK: 78.0 80.0
-    # DISABLED-CHECK: ----tile-data[ 2 , 1 ]----
-    # DISABLED-CHECK: 60.0 61.0 62.0 0.0
-    # DISABLED-CHECK: 67.0 68.0 69.0 0.0
-    # DISABLED-CHECK: 74.0 75.0 76.0 0.0
-    # DISABLED-CHECK: 81.0 82.0 83.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 60.0 62.0
-    # DISABLED-CHECK: 74.0 76.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 61.0 0.0
-    # DISABLED-CHECK: 75.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 67.0 69.0
-    # DISABLED-CHECK: 81.0 83.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 68.0 0.0
-    # DISABLED-CHECK: 82.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 3 , 0 ]----
-    # DISABLED-CHECK: 84.0 85.0 86.0 87.0
-    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 84.0 86.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 85.0 87.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----tile-data[ 3 , 1 ]----
-    # DISABLED-CHECK: 88.0 89.0 90.0 0.0
-    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-    # DISABLED-CHECK: 88.0 90.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-    # DISABLED-CHECK: 89.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-    # DISABLED-CHECK: 0.0 0.0
-    # DISABLED-CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 7.0 8.0 9.0 10.0
+    # CHECK: 14.0 15.0 16.0 17.0
+    # CHECK: 21.0 22.0 23.0 24.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 0.0 2.0
+    # CHECK: 14.0 16.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 1.0 3.0
+    # CHECK: 15.0 17.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 7.0 9.0
+    # CHECK: 21.0 23.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 8.0 10.0
+    # CHECK: 22.0 24.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 4.0 5.0 6.0 0.0
+    # CHECK: 11.0 12.0 13.0 0.0
+    # CHECK: 18.0 19.0 20.0 0.0
+    # CHECK: 25.0 26.0 27.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 4.0 6.0
+    # CHECK: 18.0 20.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 5.0 0.0
+    # CHECK: 19.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 11.0 13.0
+    # CHECK: 25.0 27.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 12.0 0.0
+    # CHECK: 26.0 0.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 28.0 29.0 30.0 31.0
+    # CHECK: 35.0 36.0 37.0 38.0
+    # CHECK: 42.0 43.0 44.0 45.0
+    # CHECK: 49.0 50.0 51.0 52.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 28.0 30.0
+    # CHECK: 42.0 44.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 29.0 31.0
+    # CHECK: 43.0 45.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 35.0 37.0
+    # CHECK: 49.0 51.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 36.0 38.0
+    # CHECK: 50.0 52.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 32.0 33.0 34.0 0.0
+    # CHECK: 39.0 40.0 41.0 0.0
+    # CHECK: 46.0 47.0 48.0 0.0
+    # CHECK: 53.0 54.0 55.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 32.0 34.0
+    # CHECK: 46.0 48.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 33.0 0.0
+    # CHECK: 47.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 39.0 41.0
+    # CHECK: 53.0 55.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 40.0 0.0
+    # CHECK: 54.0 0.0
+    # CHECK: ----tile-data[ 2 , 0 ]----
+    # CHECK: 56.0 57.0 58.0 59.0
+    # CHECK: 63.0 64.0 65.0 66.0
+    # CHECK: 70.0 71.0 72.0 73.0
+    # CHECK: 77.0 78.0 79.0 80.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 56.0 58.0
+    # CHECK: 70.0 72.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 57.0 59.0
+    # CHECK: 71.0 73.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 63.0 65.0
+    # CHECK: 77.0 79.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 64.0 66.0
+    # CHECK: 78.0 80.0
+    # CHECK: ----tile-data[ 2 , 1 ]----
+    # CHECK: 60.0 61.0 62.0 0.0
+    # CHECK: 67.0 68.0 69.0 0.0
+    # CHECK: 74.0 75.0 76.0 0.0
+    # CHECK: 81.0 82.0 83.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 60.0 62.0
+    # CHECK: 74.0 76.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 61.0 0.0
+    # CHECK: 75.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 67.0 69.0
+    # CHECK: 81.0 83.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 68.0 0.0
+    # CHECK: 82.0 0.0
+    # CHECK: ----tile-data[ 3 , 0 ]----
+    # CHECK: 84.0 85.0 86.0 87.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 84.0 86.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 85.0 87.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 1 ]----
+    # CHECK: 88.0 89.0 90.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 88.0 90.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 89.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
 
     for tile_m in range(ceildiv(13, tile_m_size)):
         for tile_n in range(ceildiv(7, tile_n_size)):
@@ -1196,7 +1200,11 @@ fn test_copy_distributed_subtiles_scalars():
                 DType.float32, Layout.row_major(tile_m_size, tile_n_size)
             ].stack_allocation[alignment=16]()
             tile_4x4_cache.fill(0)
-            tile_4x4_cache.copy_from(tile_4x4)
+            tile_4x4_cache.copy_from[
+                other_coords_bound = rebind[
+                    StaticIntTuple[tile_4x4_cache.layout.rank()]
+                ](StaticIntTuple[2](13, 7))
+            ](tile_4x4)
             tile_4x4_cache.print()
 
             for th_id in range(UInt(4)):
@@ -1208,7 +1216,11 @@ fn test_copy_distributed_subtiles_scalars():
                     DType.float32, Layout.row_major(2, 2)
                 ].stack_allocation[alignment=16]()
                 tile_2x2_cache.fill(0)
-                tile_2x2_cache.copy_from(tile_2x2)
+                tile_2x2_cache.copy_from[
+                    other_coords_bound = rebind[
+                        StaticIntTuple[tile_2x2_cache.layout.rank()]
+                    ](StaticIntTuple[2](13, 7))
+                ](tile_2x2)
                 tile_2x2_cache.print()
 
 
@@ -1763,6 +1775,62 @@ fn test_element_coords_tiles_do_not_div():
                 print("")
 
 
+# CHECK-LABEL: test_copy_from_bigger_tensor
+fn test_copy_from_bigger_tensor():
+    print("== test_copy_from_bigger_tensor")
+    var tensor_5x7 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation()
+    tensor_5x7.fill(0)
+    var tensor_8x8 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation()
+    tensor_8x8.linspace()
+
+    tensor_5x7.copy_from[
+        rebind[StaticIntTuple[tensor_5x7.layout.rank()]](
+            StaticIntTuple[2](5, 7)
+        )
+    ](tensor_8x8)
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 0.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 0.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    tensor_5x7.print()
+
+
+# CHECK-LABEL: test_copy_from_smaller_tensor
+fn test_copy_from_smaller_tensor():
+    print("== test_copy_from_smaller_tensor")
+    var tensor_5x7 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation()
+    tensor_5x7.linspace()
+    var tensor_8x8 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation()
+    tensor_8x8.fill(0)
+
+    tensor_8x8.copy_from[
+        rebind[StaticIntTuple[tensor_8x8.layout.rank()]](
+            StaticIntTuple[2](5, 7)
+        )
+    ](tensor_5x7)
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 0.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 0.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    tensor_8x8.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -1778,11 +1846,10 @@ fn main():
     test_distribute_vectorized()
     test_distribute_axis_projection()
     test_split()
-    # DISABLE subtiles tests for nw.
-    # test_copy_subtiles_scalars()
-    # test_copy_distributed_subtiles_scalars()
-    # TODO(#38547) re-enable the following test once the non-deterministic behavior is addressed.
-    # test_copy_subtiles_scalars_back()
+    test_copy_subtiles_scalars()
+    test_copy_distributed_subtiles_scalars()
+    # # TODO(#38547) re-enable the following test once the non-deterministic behavior is addressed.
+    # # test_copy_subtiles_scalars_back()
     test_slice_with_offsets()
     test_layout_tensor_iterator()
     test_layout_tensor_copy_from_masked_src()
@@ -1790,3 +1857,5 @@ fn main():
     test_element_coords_vectorized()
     test_element_coords_tile_and_distribute()
     test_element_coords_tiles_do_not_div()
+    test_copy_from_bigger_tensor()
+    test_copy_from_smaller_tensor()
