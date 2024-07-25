@@ -84,13 +84,23 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
           os << *aliasName;
           return AliasResult::OverridableAlias;
         }
-      } else if (auto sourceStruct =
-                     dyn_cast<SourceStructType>(typeCst.getTypeValue())) {
-        os << sourceStruct.getName().getValue();
-        return AliasResult::OverridableAlias;
       }
 
       os << "type_value";
+      return AliasResult::OverridableAlias;
+    } else if (auto sourceStruct = dyn_cast<StructDefAttr>(attr)) {
+      // Do not alias source structs if the user requested inline type-values.
+      if (clOptions->printInlineTypeValues)
+        return AliasResult::NoAlias;
+
+      // Ignore everything until the last "::".
+      StringRef structName = sourceStruct.getName().getValue();
+      size_t lastDelimiter = structName.find_last_of(':');
+      if (lastDelimiter != StringRef::npos &&
+          lastDelimiter + 1 < structName.size())
+        structName = structName.drop_front(lastDelimiter + 1);
+
+      os << structName;
       return AliasResult::OverridableAlias;
     }
     return AliasResult::NoAlias;

@@ -556,9 +556,9 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     This type represents a struct. A struct contains element types arranged in
     their order of declaration and a flag indicating register-passability.
 
-    This is the "anonymous" version of `!kgen.source_struct` that strips away
-    all information except for those necessary for understanding the memory
-    layout of the data it describes.
+    This is the "anonymous" version of `!kgen.concrete_source_struct` that
+    strips away all information except for those necessary for understanding the
+    memory layout of the data it describes.
 
     Example:
 
@@ -607,65 +607,50 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 }
 
 //===----------------------------------------------------------------------===//
-// SourceStructType
+// AppliedStructType
 //===----------------------------------------------------------------------===//
-
-def KGEN_SourceStructType : KGENType<"SourceStruct", "source_struct"> {
-  let summary = "mojo struct type";
+def KGEN_AppliedStructType : KGENType<"AppliedStruct", "applied_struct"> {
+  let summary = "mojo struct type applied with parameters";
   let description = [{
-    This type represents a mojo source struct. It contains everything mojo
-    knows about the struct, including its name, parameters, fields, methods,
-    etc.
+    This type represents a concretized mojo source struct type. It contains the
+    parameterized StructDefAttr, as well as the parameter values used to
+    instantiate it.
 
     In contexts where the only information necessary is the memory layout of a
-    struct, a `!kgen.struct` type should be used instead. A SourceStruct type is
-    necessary in contexts where the type is used as a value itself. As a result,
-    this type does not implement `ParameterTypeInterface`,
+    struct, a `!kgen.struct` type should be used instead. An AppliedStructType
+    is necessary in contexts where the type is used as a value itself. As a
+    result, this type does not implement `ParameterTypeInterface`,
     `MemoryableTypeInterface`, or `DataLayoutInterface`.
-
-    This type does not declare a new parameter scope with its `paramDecls`
-    field. The field is purely for keeping track of the original declaration,
-    and the parameters should not be referenced by its subelements.
 
     Example:
 
     ```mlir
-    // A struct with no parameters and no fields.
-    !kgen.source_struct<"Foo">
+    // A trivially-concretized struct with no parameters and no fields.
+    !kgen.applied_struct<<"Foo">>
 
     // A parameterized memory-only struct with primitive element types.
-    !kgen.source_struct<
-      "Bar"[elemT: dtype, size]<:dtype f32, 16>
-      (first: !kgen.scalar<f32>, second: !kgen.scalar<f64>)
-      memoryOnly
+    !kgen.applied_struct<
+      <
+        "Bar"[elemT: dtype]
+        (first: !kgen.scalar<*("elemT")>, second: !kgen.scalar<*("elemT")>)
+        memoryOnly
+      >
+      <:dtype f32>
     >
     ```
   }];
 
   let parameters = (ins
-    "StringAttr":$name,
-    OptionalParameter<"ParamDeclArrayAttr">:$paramDecls,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    OptionalArrayRefParameter<"SourceStructFieldAttr">:$fields,
-    "bool":$isMemoryOnly
+    "StructDefAttr":$structDef,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues
   );
 
-  let assemblyFormat = [{
-    `<` $name
-        (`[` custom<ParamDecls>($paramDecls)^ `]`)?
-        `` custom<ParameterValues>($paramValues)
-        (`(` custom<SourceStructFields>($fields)^ `)`)?
-        `` custom<IsMemoryOnly>($isMemoryOnly)
-    `>`
-  }];
+  let assemblyFormat =
+    "`<` custom<AppliedStructDef>($structDef, $paramValues) `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins
-        "StringAttr":$name,
-        "ArrayRef<ParamDeclAttr>":$paramDeclsArray,
-        "ArrayRef<TypedAttr>":$paramValues,
-        "ArrayRef<SourceStructFieldAttr>":$fields,
-        "bool":$isMemoryOnly)>
+        "StructDefAttr":$structDef, "ArrayRef<TypedAttr>":$paramValues)>
   ];
 
   let extraClassDeclaration = [{

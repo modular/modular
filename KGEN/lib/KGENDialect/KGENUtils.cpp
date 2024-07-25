@@ -880,8 +880,18 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // If this is a '*'-prefixed double quoted string, then this is a simple
   // parameter reference.
   if (succeeded(p.parseOptionalStar())) {
-    // Try to parse *(0,0) as an index reference.
     if (succeeded(p.parseOptionalLParen())) {
+      // Try to parse *("...") as a SourceStruct parameter name reference.
+      std::string name;
+      if (succeeded(p.parseOptionalString(&name))) {
+        if (p.parseRParen())
+          return failure();
+        value = StructDefParamRefAttr::get(
+            StringAttr::get(p.getContext(), name), type);
+        return success();
+      }
+
+      // Try to parse *(0,0) as an index reference.
       size_t depth, index;
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRParen())
@@ -1185,6 +1195,10 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
       p << '*';
     return;
   }
+  if (auto sourceStructParamRef = dyn_cast<StructDefParamRefAttr>(value)) {
+    p << "*(" << sourceStructParamRef.getName() << ")";
+    return;
+  }
 
   // If this is a dtype constant with simple syntax, we can print it as a
   // keyword.
@@ -1311,6 +1325,17 @@ void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp) {
   moduleOp->setAttr(KGEN::EnvAttr::getEnvAttrName(),
                     KGEN::getModularEnvAttr(moduleOp.getContext())
                         .extend(getModuleEnvAttr(moduleOp)));
+}
+
+void KGEN::printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly) {
+  if (isMemoryOnly)
+    p << " memoryOnly";
+}
+
+ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
+  if (succeeded(p.parseOptionalKeyword("memoryOnly")))
+    isMemoryOnly = true;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
