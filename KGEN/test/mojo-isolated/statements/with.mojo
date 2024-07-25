@@ -33,7 +33,6 @@ struct ExampleCM:
     fn __exit__(self, err: Error) -> Bool:
         return True  # Raise
 
-
 # Cannot use mutating __enter__
 # https://github.com/modularml/modular/issues/27371
 struct MutatingCM:
@@ -286,10 +285,51 @@ fn testCMWithoutExit():
     with CMWithoutExit() as a:
         a.method()
 
-    # Test that we can nest these.
+    # Test that we can nest with statements.
     with CMWithoutExit() as a:
         with CMWithoutExit() as b:
             b.method()
+
+# CHECK-LABEL: lit.func @"testMultiClauseWith
+fn testMultiClauseWith():
+    # Tests that multiple-clause `with` statements (like below) are interpreted
+    # as multiple nested "single" with statements like.
+    #     with MyClass() as a:
+    #         with MyClass() as b:
+    #             ...
+
+    # CHECK: [[CMA:%.*]] = lit.var.decl "$CONTEXTMGR"
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CMA]])
+    # CHECK: %a = lit.var.decl "a"
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CMA]], %a)
+    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
+    # CHECK-NEXT: lit.try %__with_error__
+    #
+    # CHECK: [[CMB:%.*]] = lit.var.decl "$CONTEXTMGR"
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CMB]])
+    # CHECK: %b = lit.var.decl "b"
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CMB]], %b)
+    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
+    # CHECK-NEXT: lit.try %__with_error__
+    with CMWithoutExit() as a, CMWithoutExit() as b:
+        # CHECK:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}
+        a.method()
+        b.method()
+
+    # Make sure that we destroy them in the right order.
+    # CHECK:   lit.ownership.use %b
+    # CHECK:   lit.ownership.use %a
+
+# CHECK-LABEL: lit.func @"testAmbiguousMultiContextWith
+fn testAmbiguousMultiContextWith():
+    # Make sure that we don't interpret the below like this:
+    #     with (CMWithoutExit(), CMWithoutExit()) as b:
+    #         noop(b)
+    # In other words, we don't want to put a tuple into b.
+    # If this compiles it all, it should work, because a tuple would be
+    # rejected as it doesn't have an __enter__.
+    with CMWithoutExit(), CMWithoutExit() as b:
+        pass
 
 
 # CHECK-LABEL: lit.func @"testCMWithoutExitEarlyReturn

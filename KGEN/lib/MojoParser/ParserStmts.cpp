@@ -233,6 +233,7 @@ struct StmtParser : public ParserBase {
                             StringAttr target, SMLoc smLoc, SMLoc targetLoc);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
+  ParseResult parseSingleWithStmt(size_t curIndent, SMLoc smLoc, Location loc);
   ParseResult
   handleRaisingFinallyRegion(TryOp tryOp, ASTType errorType, SMLoc loc,
                              function_ref<ParseResult()> populateFinallyBody);
@@ -1453,6 +1454,25 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   SMLoc smLoc = consumeToken(Token::kw_with).getLoc();
   Location loc = shared.translateLocation(smLoc);
 
+  return parseSingleWithStmt(curIndent, smLoc, loc);
+}
+
+/// Parses a single clause in the `with` statement, and possibly the body as
+/// well.
+/// This could recurse if there are multiple clauses in the `with` statement,
+/// like:
+///     with MyClass() as a, MyClass() as b:
+///         ...
+/// In that case, it interprets it as multiple nested "single" with statements,
+/// like:
+///     with MyClass() as a:
+///         with MyClass() as b:
+///             ...
+/// This function handles just the `MyClass() as a`, then for everything
+/// afterward it either recurses (for other clauses) or calls out to
+/// `parseLocalScopeSuite` (for the body).
+ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
+                                            Location loc) {
   // With statements are just sugar for other constructs.  We desugar this:
   //     with EXPRESSION as TARGET:
   //       SUITE
@@ -1475,7 +1495,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // raising an error (like a non-raising fn).
 
   // Parse and emit the context mgr.
-  // TODO: Generalize to multiple of them.
   ExprNode *contextExp = nullptr;
   if (parseExpression(contextExp))
     return failure();
@@ -1526,9 +1545,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     if (parseIdentifier("expected identifier for target in 'with'"))
       return failure();
   }
-
-  if (parseToken(Token::colon, "expected ':' after 'with' expression"))
-    return failure();
 
   // We are about to generate the call to __enter__ but need to decide how to
   // pass the context expression, either as an LValue referring to the bound
@@ -1650,66 +1666,18 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   builder.create<TryYieldOp>(loc);
   builder.createBlock(&tryOp.getTryRegion());
 
-  // This emits the call to the 'contextMgr.__exit__()' methods on the
-  // context managers in the normal path.  If the type has no __exit__ method,
-  // then we extend the result of the __enter__ method with this pattern:
-  //
-  //   TARGET = contextMgr.__enter__()
-  //   try:
-  //     SUITE
-  //   finally:
-  //     lit.ownership.use(TARGET)
-  auto emitNormalExitLogic = [&]() {
-    if (hasExitMethod) {
-      ValueDest exitDest(EC_WithExitResult);
-      (void)getEmitter().emitNamedMethodCall(
-          "__exit__", CallOperands({{MLValue(contextMgrDecl), contextExp}}),
-          exitDest, CallSyntax::kMethodCall, contextExp);
-    } else if (auto targetBV = getEmitter().emitBValue(
-                   {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
-      // If the target value has no __exit__ method, we need it to be
-      // live all the way across the suite, so add an extra use so it isn't
-      // destroyed early.
-      Value ptrOrScalar;
-      // We don't care about extending PValues if one ever happened.
-      if (enterResult.isMValue())
-        ptrOrScalar = enterResult.getMValueReference();
-      else if (enterResult.isSValue())
-        ptrOrScalar = enterResult.getSValueRegister();
-      if (ptrOrScalar)
-        builder.create<OwnershipUseOp>(loc, ptrOrScalar);
-    }
-  };
-
-  // If we're in a non-raising region (or have no __exit__ method), then we have
-  // a simple pattern to emit:
-  //   contextMgr = EXPRESSION
-  //   TARGET = contextMgr.__enter__()
-  //   try:
-  //     SUITE
-  //   finally:
-  //     contextMgr.__exit__()
-  if (!inExceptRegion || !hasExitMethod) {
-    // Parse the body suite.
-    if (parseLocalScopeSuite(curIndent))
-      return failure();
-    builder.create<TryYieldOp>(loc);
-
-    builder.createBlock(&tryOp.getFinallyRegion());
-    emitNormalExitLogic();
-    builder.create<TryYieldOp>(loc);
-    return success();
-  }
-
   // Check if the context manager provides an `__exit__` overload that accepts
   // an error. If it doesn't, then we know the exit is unconditional.
   CallOperands exitCallOperands;
   exitCallOperands.addSelf({contextVal, contextExp});
   exitCallOperands.add({PValue(UnknownAttr::get(errorType)), contextExp});
-  auto exitEmitter = getEmitter();
-  PValue conditionalExit = OverloadSet::lookupAndResolve(
-      contextRVType, "__exit__", exitCallOperands, contextExp,
-      CallSyntax::kMethodCall, exitEmitter);
+  PValue conditionalExit;
+  if (inExceptRegion && hasExitMethod) {
+    ExprEmitter exitEmitter = getEmitter();
+    conditionalExit = OverloadSet::lookupAndResolve(
+        contextRVType, "__exit__", exitCallOperands, contextExp,
+        CallSyntax::kMethodCall, exitEmitter);
+  }
 
   // Otherwise, we have to emit a conditional finally. PEP343 states that the
   // general 'with' statement corresponds to:
@@ -1753,9 +1721,78 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // Parse the body into the try region.
     builder.createBlock(&nestedTryOp.getTryRegion());
   }
-  if (parseLocalScopeSuite(curIndent))
+
+  if (consumeIf(Token::comma)) {
+    // We get here if the `with` statement had multiple clauses, like:
+    //     with MyClass() as a, MyClass() as b:
+    //         ...
+    // so recurse to handle them and interpret it as:
+    //     with MyClass() as a:
+    //         with MyClass() as b:
+    //             ...
+    // The base case of this recursion call will also handle parsing the body
+    // suite for us, so our current call doesn't have to worry about that.
+    if (parseSingleWithStmt(curIndent, smLoc, loc))
+      return success();
+    builder.create<TryYieldOp>(loc);
+  } else if (consumeIf(Token::colon)) {
+    if (parseLocalScopeSuite(curIndent))
+      return failure();
+    builder.create<TryYieldOp>(loc);
+  } else {
+    // DO NOT SUBMIT Should we be calling a helper method here?
+    auto message = "expected ':' or ',' after 'with' expression";
+    auto diagLoc = getTokenLocOrEndOfPreviousLineIfOnNewLine();
+    // Report the error.
+    auto diag = emitError(diagLoc, message);
     return failure();
-  builder.create<TryYieldOp>(loc);
+  }
+
+  // This emits the call to the 'contextMgr.__exit__()' methods on the
+  // context managers in the normal path.  If the type has no __exit__ method,
+  // then we extend the result of the __enter__ method with this pattern:
+  //
+  //   TARGET = contextMgr.__enter__()
+  //   try:
+  //     SUITE
+  //   finally:
+  //     lit.ownership.use(TARGET)
+  auto emitNormalExitLogic = [&]() {
+    if (hasExitMethod) {
+      ValueDest exitDest(EC_WithExitResult);
+      (void)getEmitter().emitNamedMethodCall(
+          "__exit__", CallOperands({{MLValue(contextMgrDecl), contextExp}}),
+          exitDest, CallSyntax::kMethodCall, contextExp);
+    } else if (auto targetBV = getEmitter().emitBValue(
+                   {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
+      // If the target value has no __exit__ method, we need it to be
+      // live all the way across the suite, so add an extra use so it isn't
+      // destroyed early.
+      Value ptrOrScalar;
+      // We don't care about extending PValues if one ever happened.
+      if (enterResult.isMValue())
+        ptrOrScalar = enterResult.getMValueReference();
+      else if (enterResult.isSValue())
+        ptrOrScalar = enterResult.getSValueRegister();
+      if (ptrOrScalar)
+        builder.create<OwnershipUseOp>(loc, ptrOrScalar);
+    }
+  };
+
+  // If we're in a non-raising region (or have no __exit__ method), then we have
+  // a simple pattern to emit:
+  //   contextMgr = EXPRESSION
+  //   TARGET = contextMgr.__enter__()
+  //   try:
+  //     SUITE
+  //   finally:
+  //     contextMgr.__exit__()
+  if (!inExceptRegion || !hasExitMethod) {
+    builder.createBlock(&tryOp.getFinallyRegion());
+    emitNormalExitLogic();
+    builder.create<TryYieldOp>(loc);
+    return success();
+  }
 
   if (conditionalExit) {
     // Set up the except region.  Pseudo code:
@@ -1819,6 +1856,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     }
     return success();
   });
+
   builder.create<TryYieldOp>(loc);
   return success();
 }

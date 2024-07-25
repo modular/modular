@@ -143,9 +143,9 @@ def withUsingImmutableVariable(owned a: ExampleCM):
     pass
 
 # External Issue #529 https://github.com/modularml/mojo/issues/529
-def withWithNoColon(a: __mlir_type.index):
-  # expected-error @below {{expected ':' after 'with' expression}}
-  with a as b
+def withWithNoColon(owned a: ExampleCM):
+  # expected-error @below {{expected ':' or ',' after 'with' expression}}
+  with a^ as b
 
 fn withNoRaise(owned mgr: ExampleCM): # expected-note {{or mark surrounding function as 'raises'}}
   with mgr^:
