@@ -328,7 +328,7 @@ private:
   /// `skipNode`, indicating that elaboration of the current function should be
   /// suspended.
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
-                                       ParamNode *from, bool addWaiter);
+                                       Location from, bool addWaiter);
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
   /// result parameters from the inner scope to the outer scope.

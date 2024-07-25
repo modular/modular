@@ -498,7 +498,7 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
   // If the node has already been elaborated, just use that result.
   ElaborationState result =
-      specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
+      specializeGenerator(parent, node, loc, /*addWaiter=*/true);
   if (result.shouldSkipNode())
     return FuncOp();
   return node->getFirstConcreteFunc();
@@ -623,7 +623,7 @@ Elaborator::instantiateGeneratorReference(
   ParamNode *calleeNode =
       g.getOrCreate(runtime, inputParamKey, gen, parent->parent->depth + 1);
   ElaborationState result = specializeGenerator(
-      parent, calleeNode, parent->parent, shouldWait(calleeNode));
+      parent, calleeNode, user->getLoc(), shouldWait(calleeNode));
   if (result.shouldSkipNode())
     return {ElaborationState::skipNode(), nullptr};
 
@@ -1234,7 +1234,7 @@ LogicalResult Elaborator::processImplNode(ImplNode *inode) {
   if (!inode->func) {
     // Begin specialization of the parameter node. Immediately suspend
     // execution by returning `failure`.
-    (void)specializeGenerator(inode, inode->parent, /*from=*/nullptr,
+    (void)specializeGenerator(inode, inode->parent, inode->parent->gen.getLoc(),
                               /*addWaiter=*/true);
     return failure();
   }
@@ -1332,7 +1332,7 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
 
 ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                                                  ParamNode *genNode,
-                                                 ParamNode *from,
+                                                 Location from,
                                                  bool addWaiter) {
   switch (genNode->state.markInProgress()) {
   case ParamNodeState::DONE:
@@ -1381,7 +1381,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // intra-node parallelism) while correctly handling recursion.
     if (addWaiter) {
       if (genNode->state.addWaiter()) {
-        inode->otherDeps.push_back(genNode);
+        inode->otherDeps.emplace_back(from, genNode);
         genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
         return ElaborationState::skipNode();
       }
@@ -1522,7 +1522,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (addWaiter) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
-    inode->otherDeps.push_back(genNode);
+    inode->otherDeps.emplace_back(from, genNode);
     genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
   }
   assert(genNode->numActive == 0 && "expected first implementation");
@@ -1556,8 +1556,18 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       completed.set(idx);
       anyBroken = true;
     }
-    for (auto [idx, genNode] : llvm::enumerate(inode->otherDeps))
-      visitParamNode(genNode);
+    for (auto [idx, dep] : llvm::enumerate(inode->otherDeps)) {
+      auto [loc, genNode] = dep;
+      if (!visitParamNode(genNode))
+        continue;
+      // This indicates a cycle across an interpreter edge, which cannot be
+      // resolved. Emit an error.
+      inode->setToError(
+          ErrorTree(loc, "function requires parameter domain instantiation of "
+                         "recursive call that cannot be resolved"));
+      errComplete.push_back(inode);
+      return;
+    }
     if (anyBroken) {
       // Complete the broken dependencies and reschedule the node.
       std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> newDeps;

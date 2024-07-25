@@ -151,3 +151,12 @@ kgen.generator export @invalid_param_ref() {
   kgen.cost_of[<index>() -> (): @function]
   kgen.return
 }
+
+// -----
+
+kgen.generator export @recursive() -> index {
+  // expected-error @below {{function requires parameter domain instantiation of recursive call that cannot be resolved}}
+  kgen.param.apply x = [() -> index: @recursive]()
+  %0 = kgen.param.constant = <x>
+  kgen.return %0 : index
+}
