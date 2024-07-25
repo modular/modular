@@ -249,6 +249,10 @@ def test_shapes[
     test_shapes_helper(2, 65, 1200)
     test_shapes_helper(1, 5, 10)
     test_shapes_helper(1, 768, 384)
+    test_shapes_helper(1, 1, 1)
+    test_shapes_helper(768, 1, 384)
+    test_shapes_helper(1, 384, 1)
+    test_shapes_helper(384, 768, 1)
 
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
