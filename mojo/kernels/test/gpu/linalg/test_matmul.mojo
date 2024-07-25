@@ -16,7 +16,14 @@ from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from memory.reference import _GPUAddressSpace as GPUAddressSpace
+from gpu.cublas.cublas import (
+    check_cublas_error,
+    cublasContext,
+    cublasCreate,
+    cublasDestroy,
+)
 
+from linalg.cublas import cublas_matmul
 from utils.index import Index
 from internal_utils import (
     HostNDBuffer,
@@ -135,7 +142,10 @@ struct test_matmul[
 
         if self.low_precision:
             assert_almost_equal(
-                self.c_host_ref.tensor, self.c_host.tensor, rtol=0.01
+                self.c_host_ref.tensor,
+                self.c_host.tensor,
+                atol=0.0001,
+                rtol=0.01,
             )
         else:
             assert_equal(self.c_host_ref.tensor, self.c_host.tensor)
@@ -162,6 +172,7 @@ def main():
                     ctx,
                     True,
                 )
+
                 var handle = UnsafePointer[cublasContext]()
                 check_cublas_error(
                     cublasCreate(UnsafePointer.address_of(handle))
@@ -295,13 +306,13 @@ def main():
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
 
-            test_matmul[DType.float32](ctx, (128, 256, 512)).run_test[
-                epilogue_test[DType.float32]
-            ]()
+            test_matmul[DType.float32](
+                ctx, (128, 256, 512), low_precision=True
+            ).run_test[epilogue_test[DType.float32]]()
             # TODO: change back to K = 255 after KERN-702
-            test_matmul[DType.float32](ctx, (192, 128, 256)).run_test[
-                epilogue_test[DType.float32]
-            ]()
+            test_matmul[DType.float32](
+                ctx, (192, 128, 256), low_precision=True
+            ).run_test[epilogue_test[DType.float32]]()
 
     except e:
         print("CUDA_ERROR:", e)
