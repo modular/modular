@@ -22,9 +22,17 @@ def ParamDeclArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"ParamDeclAttr">:$value
 )>;
 
-def SourceStructFieldAttr : DialectAttribute<(attr
+def StructDefFieldAttr : DialectAttribute<(attr
   StringAttr:$name,
   Type:$type
+)>;
+
+def StructDefAttr : DialectType<(type
+  StringAttr:$name,
+  ConcreteAttrArray<"StringAttr">:$inputParamNames,
+  TypeArray:$inputParamTypes,
+  ConcreteAttrArray<"StructDefFieldAttr">:$fields,
+  Bool:$isMemoryOnly
 )>;
 
 //===----------------------------------------------------------------------===//
@@ -78,12 +86,9 @@ def StructType : DialectType<(type
   Bool:$isMemoryOnly
 )>;
 
-def SourceStructType : DialectType<(type
-  StringAttr:$name,
-  ParamDeclArrayAttr:$paramDecls,
-  TypedAttrArray:$paramValues,
-  ConcreteAttrArray<"SourceStructFieldAttr">:$fields,
-  Bool:$isMemoryOnly
+def AppliedStructType : DialectType<(type
+  StructDefAttr:$sourceStruct,
+  TypedAttrArray:$paramValues
 )>;
 
 def PackType : DialectType<(type
@@ -210,6 +215,11 @@ def ExportKindAttr : DialectAttribute<(attr
   EnumAttr<"ExportKind">:$value
 )>;
 
+def StructDefParamRefAttr : DialectAttribute<(attr
+  StringAttr:$name,
+  Type:$type
+)>;
+
 def StructAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"StructType">:$type
@@ -249,7 +259,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParamDeclAttr,
     ParamDeclArrayAttr,
-    SourceStructFieldAttr,
+    StructDefFieldAttr,
     ParameterExprArrayAttr,
     VariadicAttr,
     UnknownAttr,

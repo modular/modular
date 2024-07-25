@@ -559,6 +559,104 @@ Type TargetParamAttr::getType() const { return TargetType::get(getContext()); }
 bool TargetParamAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// StructDefParamRefAttr
+//===----------------------------------------------------------------------===//
+
+/// A parameter reference forms the basis of a non-constant parameter attribute.
+bool StructDefParamRefAttr::isConstant() const { return false; }
+
+/// Sort the parameter references by name.
+std::optional<bool> StructDefParamRefAttr::isLessThan(Attribute rhs) const {
+  if (auto ref = llvm::dyn_cast<StructDefParamRefAttr>(rhs))
+    return getName().getValue() < ref.getName().getValue();
+  // Otherwise, named parameters are always to the right.
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// StructDefAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamNamesAndTypes(AsmParser &p,
+                                           SmallVector<StringAttr> &names,
+                                           SmallVector<Type> &types) {
+  // Empty list.
+  if (failed(p.parseOptionalLSquare()))
+    return success();
+
+  if (p.parseCommaSeparatedList([&]() {
+        StringAttr name;
+        Type type;
+        if (parseParamName(p, name) || parseColonTypeOrIndex(p, type))
+          return failure();
+        names.push_back(name);
+        types.push_back(type);
+        return mlir::success();
+      }) ||
+      p.parseRSquare())
+    return failure();
+  return success();
+}
+
+static void printParamNamesAndTypes(AsmPrinter &p, ArrayRef<StringAttr> names,
+                                    ArrayRef<Type> types) {
+  if (names.empty())
+    return;
+
+  p << '[';
+  llvm::interleaveComma(llvm::zip(names, types), p,
+                        [&p](const std::tuple<StringAttr, Type> &decl) {
+                          printParamName(p, std::get<0>(decl));
+                          printColonTypeOrIndex(p, std::get<1>(decl));
+                        });
+  p << ']';
+}
+
+static ParseResult
+parseStructDefFields(AsmParser &p, SmallVector<StructDefFieldAttr> &fields) {
+  MLIRContext *ctx = p.getContext();
+  return p.parseCommaSeparatedList([&]() {
+    StringAttr name;
+    Type type;
+    if (parseParamName(p, name) || p.parseColon() || parseKGENType(p, type))
+      return failure();
+    fields.push_back(StructDefFieldAttr::get(ctx, name, type));
+    return mlir::success();
+  });
+}
+
+static void printStructDefFields(AsmPrinter &p,
+                                 ArrayRef<StructDefFieldAttr> fields) {
+  llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
+    printParamName(p, field.getName());
+    p << ": ";
+    printKGENType(p, field.getType());
+  });
+}
+
+StructDefAttr StructDefAttr::get(StringAttr name,
+                                 ArrayRef<StringAttr> inputParamNames,
+                                 ArrayRef<Type> inputParamTypes,
+                                 ArrayRef<StructDefFieldAttr> fields,
+                                 bool isMemoryOnly) {
+  return get(name.getContext(), name, inputParamNames, inputParamTypes, fields,
+             isMemoryOnly);
+}
+
+LogicalResult StructDefAttr::verify(
+    function_ref<InFlightDiagnostic()> emitError, StringAttr name,
+    ArrayRef<StringAttr> inputParamNames, ArrayRef<Type> inputParamTypes,
+    ::llvm::ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
+  if (inputParamNames.size() != inputParamTypes.size()) {
+    return emitError() << "#kgen.struct_def parameter name and parameter "
+                          "type length mismatch. Expected "
+                       << inputParamNames.size() << ", got "
+                       << inputParamTypes.size();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 

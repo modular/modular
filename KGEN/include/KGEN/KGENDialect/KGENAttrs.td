@@ -569,20 +569,19 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
 }
 
 //===----------------------------------------------------------------------===//
-// SourceStructFieldAttr
+// StructDefFieldAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_SourceStructFieldAttr : KGENAttr<"SourceStructField",
-    "source_struct.field"> {
+def KGEN_StructDefFieldAttr : KGENAttr<"StructDefField", "struct_def.field"> {
   let summary = "A single source struct field declaration.";
   let description = [{
-    The `#kgen.source_struct.field` attribute represents a field declared in a
+    The `#kgen.struct_def.field` attribute represents a field declared in a
     mojo struct. It keeps track of the name and type of the field.
 
     Example:
 
     ```mlir
-    #kgen.source_struct.field<"num" : Int>
+    #kgen.struct_def.field<"num" : Int>
     ```
   }];
 
@@ -594,6 +593,101 @@ def KGEN_SourceStructFieldAttr : KGENAttr<"SourceStructField",
       return get(name.getContext(), name, type);
     }]>,
   ];
+}
+
+//===----------------------------------------------------------------------===//
+// StructDefParamRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructDefParamRefAttr : KGEN_ExprAttr<"StructDefParamRef",
+    "struct_def.paramref",
+    [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
+  let summary = "A reference to a parameter value of a StructDefAttr.";
+  let description = [{
+    The `#kgen.struct_def.paramref` attribute is a typed attribute that
+    represents a reference to a declared parameter of a StructDefAttr. This
+    attribute can only be used inside a StructDefAttr, and references the
+    parameter with the same name from the closest enclosing StructDefAttr.
+    This attribute contains the type of the referenced parameter and its name.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_def.paramref<"num"> : Int
+    ```
+  }];
+
+  let parameters = (ins "StringAttr":$name,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = " `<` $name `>` ";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type), [{
+      return get(name.getContext(), name, type);
+    }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// StructDefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructDefAttr : KGENAttr<"StructDef", "struct_def"> {
+  let summary = "A mojo source struct definition";
+  let description = [{
+    This type represents a mojo source struct. It contains everything mojo
+    knows about the struct, including its name, parameters, fields, methods,
+    etc.
+
+    It represents a struct "generator" in that by itself it is not a type. Its
+    parameters must be concretized with concrete type values by a
+    ConcreteStructType. This applies even if the Struct has no
+    parameters.
+
+    This attr declares a new parameter scope with its `inputParamNames` field.
+    The parameters are referenced inside this type with ParamIndexRef attrs.
+
+    Example:
+
+    ```mlir
+    // A struct with no parameters and no fields.
+    #kgen.struct_def<"Foo">
+
+    // A parameterized memory-only struct with primitive element types.
+    #kgen.struct_def<
+      "Bar"[elemT: dtype]
+      (first: !kgen.scalar<*("elemT")>, second: !kgen.scalar<*("elemT")>)
+      memoryOnly
+    >
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$name,
+    ArrayRefParameter<"StringAttr">:$inputParamNames,
+    ArrayRefParameter<"Type">:$inputParamTypes,
+    OptionalArrayRefParameter<"StructDefFieldAttr">:$fields,
+    "bool":$isMemoryOnly
+  );
+
+  let assemblyFormat = [{
+    `<` $name
+        `` custom<ParamNamesAndTypes>($inputParamNames, $inputParamTypes)
+        (`(` custom<StructDefFields>($fields)^ `)`)?
+        `` custom<IsMemoryOnly>($isMemoryOnly)
+    `>`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name,
+        "ArrayRef<StringAttr>":$inputParamNames,
+        "ArrayRef<Type>":$inputParamTypes,
+        "ArrayRef<StructDefFieldAttr>":$fields,
+        "bool":$isMemoryOnly)>
+  ];
+
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//

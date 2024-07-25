@@ -55,7 +55,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<TargetType>();
   registerMnemonicType<BuildInfoType>();
   registerMnemonicType<StructType>();
-  registerMnemonicType<SourceStructType>();
+  registerMnemonicType<AppliedStructType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
 }
@@ -968,17 +968,6 @@ ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
 // StructType
 //===----------------------------------------------------------------------===//
 
-static void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly) {
-  if (isMemoryOnly)
-    p << " memoryOnly";
-}
-
-static ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
-  if (succeeded(p.parseOptionalKeyword("memoryOnly")))
-    isMemoryOnly = true;
-  return success();
-}
-
 /// Try to narrow all the given type expressions to MLIR types.
 static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {
@@ -1084,73 +1073,66 @@ TypedAttr KGEN::createUninitializedValueOf(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// SourceStructType
+// ConcreteSourceStructType
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseSourceStructFields(AsmParser &p,
-                        SmallVector<SourceStructFieldAttr> &fields) {
-  MLIRContext *ctx = p.getContext();
-  return p.parseCommaSeparatedList([&]() {
-    StringAttr name;
-    Type type;
-    if (parseParamName(p, name) || p.parseColon() || parseKGENType(p, type))
-      return failure();
-    fields.push_back(SourceStructFieldAttr::get(ctx, name, type));
-    return mlir::success();
-  });
+static void printAppliedStructDef(AsmPrinter &p, StructDefAttr sourceStruct,
+                                  ArrayRef<TypedAttr> paramValues) {
+  p.printStrippedAttrOrType(sourceStruct);
+  if (!paramValues.empty()) {
+    p << ' '; // Necessary for parsing when sourceStruct is an alias.
+    printParameterValues(p, paramValues);
+  }
 }
 
-static void printSourceStructFields(AsmPrinter &p,
-                                    ArrayRef<SourceStructFieldAttr> fields) {
-  llvm::interleaveComma(fields, p, [&](SourceStructFieldAttr field) {
-    printParamName(p, field.getName());
-    p << ": ";
-    printKGENType(p, field.getType());
-  });
+static ParseResult parseAppliedStructDef(AsmParser &p,
+                                         StructDefAttr &sourceStruct,
+                                         SmallVector<TypedAttr> &paramValues) {
+  if (p.parseCustomAttributeWithFallback(sourceStruct) ||
+      parseParameterValues(p, paramValues))
+    return failure();
+  return success();
 }
 
-SourceStructType SourceStructType::get(StringAttr name,
-                                       ArrayRef<ParamDeclAttr> paramDeclsArray,
-                                       ArrayRef<TypedAttr> paramValues,
-                                       ArrayRef<SourceStructFieldAttr> fields,
-                                       bool isMemoryOnly) {
-  // Leave decls null if array is empty for cleaner asm.
-  ParamDeclArrayAttr decls;
-  if (!paramDeclsArray.empty())
-    decls = ParamDeclArrayAttr::get(name.getContext(), paramDeclsArray);
-  return get(name.getContext(), name, decls, paramValues, fields, isMemoryOnly);
+AppliedStructType AppliedStructType::get(StructDefAttr structDef,
+                                         ArrayRef<TypedAttr> paramValues) {
+  return get(structDef.getContext(), structDef, paramValues);
 }
 
-StructType SourceStructType::getStructType() const {
+StructType AppliedStructType::getStructType() const {
+  // Need to concretize parameters.
+  ParameterEvaluator evaluator(getParamValues());
+  evaluator.setInputDepth(1);
   SmallVector<Type> types(
-      llvm::map_range(getFields(), [](SourceStructFieldAttr field) -> Type {
-        return field.getType();
-      }));
+      llvm::map_range(getStructDef().getFields(),
+                      [&evaluator](StructDefFieldAttr field) -> Type {
+                        return evaluator.getReboundType(field.getType());
+                      }));
   return StructType::get(types);
 }
 
-/// Verify that all parameter declarations are bound by the parameter values.
-LogicalResult SourceStructType::verify(
-    function_ref<InFlightDiagnostic()> emitError, StringAttr name,
-    ParamDeclArrayAttr paramDecls, ::llvm::ArrayRef<TypedAttr> paramValues,
-    ::llvm::ArrayRef<SourceStructFieldAttr> fields, bool isMemoryOnly) {
-  ArrayRef<ParamDeclAttr> paramDeclArray =
-      paramDecls ? paramDecls.getValue() : ArrayRef<ParamDeclAttr>();
-  if (paramDeclArray.size() != paramValues.size()) {
-    return emitError() << "!kgen.source_struct parameter decl and parameter "
+LogicalResult
+AppliedStructType::verify(function_ref<InFlightDiagnostic()> emitError,
+                          StructDefAttr structDef,
+                          ArrayRef<TypedAttr> paramValues) {
+  ArrayRef<Type> inputParamTypes = structDef.getInputParamTypes();
+  if (inputParamTypes.size() != paramValues.size()) {
+    return emitError() << "!kgen.applied_struct parameter type and parameter "
                           "value length mismatch. Expected "
-                       << paramDeclArray.size() << ", got "
+                       << inputParamTypes.size() << ", got "
                        << paramValues.size();
   }
 
-  for (auto [idx, decl, value] : llvm::enumerate(paramDeclArray, paramValues)) {
-    if (decl.getType() != value.getType()) {
+  ParameterEvaluator evaluator;
+  for (auto [idx, type, value] :
+       llvm::enumerate(inputParamTypes, paramValues)) {
+    Type remappedExpectedType = evaluator.getReboundType(type);
+    if (remappedExpectedType != value.getType()) {
       return emitError()
-             << "!kgen.source_struct parameter type mismatch at index " << idx
-             << ". Expected " << decl.getType() << ", got " << value.getType()
-             << "\n";
+             << "!kgen.applied_struct parameter type mismatch at index " << idx
+             << ". Expected " << type << ", got " << value.getType() << "\n";
     }
+    evaluator.addInputValue(value);
   }
   return success();
 }

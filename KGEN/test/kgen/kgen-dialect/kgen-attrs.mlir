@@ -98,3 +98,12 @@ kgen.generator @entry2() -> index {
   d = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type,
   e = #kgen.type<array<1, i1>, array<1, i1>> : !kgen.type
 } : () -> ()
+
+// CHECK: a = #kgen.struct_def<"Foo">
+// CHECK: b = #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>
+// CHECK: c = #kgen.struct_def<"Baz"[elemT: dtype, size](data: simd<*("size"), *("elemT")>)>
+"some.op"() {
+  a = #kgen.struct_def<"Foo">,
+  b = #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>,
+  c = #kgen.struct_def<"Baz"[elemT: dtype, size](data: simd<*("size"), *("elemT")>)>
+} : () -> ()

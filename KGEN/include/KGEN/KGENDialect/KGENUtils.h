@@ -102,6 +102,10 @@ EnvAttr getModularEnvAttr(MLIRContext *ctx);
 /// the existing EnvAttr module values take precedence here.
 void extendWithModularEnvAttr(ModuleOp moduleOp);
 
+/// Parser & printer for the bool flag "memoryOnly".
+void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly);
+ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly);
+
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
