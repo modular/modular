@@ -202,12 +202,12 @@ static void lowerCallOpImpl(
 
         auto ifOp = b.create<HLCF::IfOp>(isError);
         b.createBlock(&ifOp.getThenRegion());
-        b.create<POP::StoreOp>(b.create<VariantTakeOp>(res, 0),
+        b.create<POP::StoreOp>(b.create<VariantGetOp>(res, 0),
                                oldOperands[s.errIdx]);
         b.create<HLCF::YieldOp>();
 
         b.createBlock(&ifOp.getElseRegion());
-        b.create<POP::StoreOp>(b.create<VariantTakeOp>(res, 1),
+        b.create<POP::StoreOp>(b.create<VariantGetOp>(res, 1),
                                oldOperands[s.valIdx]);
         b.create<HLCF::YieldOp>();
       } else {

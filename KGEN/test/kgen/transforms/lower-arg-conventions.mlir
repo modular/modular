@@ -186,11 +186,11 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
   // CHECK: [[RES:%.*]] = kgen.call @byref_throws()
   // CHECK-NEXT: [[IS_ERR:%.*]] = kgen.variant.is [[RES]], 0
   // CHECK-NEXT: hlcf.if [[IS_ERR]] {
-  // CHECK-NEXT:   [[ERR:%.*]] = kgen.variant.take [[RES]], 0
+  // CHECK-NEXT:   [[ERR:%.*]] = kgen.variant.get [[RES]], 0
   // CHECK-NEXT:   store [[ERR]], [[ERROR]]
   // CHECK-NEXT:   yield
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   [[VAL:%.*]] = kgen.variant.take [[RES]], 1
+  // CHECK-NEXT:   [[VAL:%.*]] = kgen.variant.get [[RES]], 1
   // CHECK-NEXT:   store [[VAL]], [[RESULT]]
   // CHECK-NEXT:   yield
   %res1 = kgen.call @byref_throws(%__error__, %__result__) : (
@@ -203,11 +203,11 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
   // CHECK: [[RES:%.*]] = kgen.call_indirect %arg0()
   // CHECK-NEXT: [[IS_ERR:%.*]] = kgen.variant.is [[RES]], 0
   // CHECK-NEXT: hlcf.if [[IS_ERR]] {
-  // CHECK-NEXT:   [[ERR:%.*]] = kgen.variant.take [[RES]], 0
+  // CHECK-NEXT:   [[ERR:%.*]] = kgen.variant.get [[RES]], 0
   // CHECK-NEXT:   store [[ERR]], [[ERROR]]
   // CHECK-NEXT:   yield
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   [[VAL:%.*]] = kgen.variant.take [[RES]], 1
+  // CHECK-NEXT:   [[VAL:%.*]] = kgen.variant.get [[RES]], 1
   // CHECK-NEXT:   store [[VAL]], [[RESULT]]
   // CHECK-NEXT:   yield
   %res2 = kgen.call_indirect %arg0(%__error__, %__result__) : !byref_throws_sig

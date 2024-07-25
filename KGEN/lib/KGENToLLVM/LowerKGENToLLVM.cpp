@@ -764,11 +764,11 @@ struct ConvertKGENVariantIs : public ConvertPOPToLLVMPattern<VariantIsOp> {
 // ConvertKGENVariantGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantTakeOp> {
+struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantGetOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(VariantTakeOp op, VariantTakeOpAdaptor adaptor,
+  matchAndRewrite(VariantGetOp op, VariantGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type valueType = convertType(op.getType());
     if (!valueType)

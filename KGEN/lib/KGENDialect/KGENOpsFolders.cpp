@@ -1469,8 +1469,8 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
     if (getOperand().getType() == value.getType())
       return VariantAttr::get(value, getIndex(), getType());
 
-  // Canonicalize `kgen.variant.create(kgen.variant.take(x, n), n) -> x`
-  auto takeOp = getOperand().getDefiningOp<VariantTakeOp>();
+  // Canonicalize `kgen.variant.create(kgen.variant.get(x, n), n) -> x`
+  auto takeOp = getOperand().getDefiningOp<VariantGetOp>();
   if (takeOp && takeOp.getIndex() == getIndex() &&
       takeOp.getOperand().getType() == getType())
     return takeOp.getOperand();
@@ -1493,10 +1493,10 @@ OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// VariantTakeOp
+// VariantGetOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult VariantTakeOp::fold(FoldAdaptor adaptor) {
+OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
   if (auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant())) {
     // If the variant value type is not equal to the result type, this is
     // undefined behaviour.
@@ -1505,7 +1505,7 @@ OpFoldResult VariantTakeOp::fold(FoldAdaptor adaptor) {
     return variant.getValue();
   }
 
-  // Canonicalize `kgen.variant.take(kgen.variant.create(x)) -> x`.
+  // Canonicalize `kgen.variant.get(kgen.variant.create(x)) -> x`.
   auto create = getVariant().getDefiningOp<VariantCreateOp>();
   if (!create || create.getOperand().getType() != getType() ||
       create.getIndex() != getIndex())

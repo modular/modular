@@ -110,10 +110,10 @@ kgen.func @select_variant_is_0(%var: !kgen.variant<index, i64>) -> (index, i64) 
   %0 = kgen.param.constant = <*?>
   %1 = kgen.param.constant: i64 = <*?>
   %2 = kgen.variant.is %var, 0 : !kgen.variant<index, i64>
-  // CHECK-NEXT: [[A:%.*]] = kgen.variant.take %arg0, 0
-  // CHECK-NEXT: [[B:%.*]] = kgen.variant.take %arg0, 1
-  %3 = kgen.variant.take %var, 0 : !kgen.variant<index, i64>
-  %4 = kgen.variant.take %var, 1 : !kgen.variant<index, i64>
+  // CHECK-NEXT: [[A:%.*]] = kgen.variant.get %arg0, 0
+  // CHECK-NEXT: [[B:%.*]] = kgen.variant.get %arg0, 1
+  %3 = kgen.variant.get %var, 0 : !kgen.variant<index, i64>
+  %4 = kgen.variant.get %var, 1 : !kgen.variant<index, i64>
   %5 = pop.select %2, %3, %0 : index
   %6 = pop.select %2, %1, %4 : i64
   // CHECK-NEXT: return [[A]], [[B]]
