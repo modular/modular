@@ -15,8 +15,12 @@ from .types import dtype
 
 class Tensor:
     """
-    Device-resident tensor representation. Allocates contiguous memory on provided
-    device to support a tensor of a given dtype and shape.
+    Device-resident tensor representation. Allocates memory onto a given device
+    with the provided shape and dtype. Tensors can be sliced to provide strided
+    views of the underlying memory, but any tensors input into model execution
+    must be contiguous. Does not currently support setting items across multiple
+    indices, but does support numpy-style slicing.
+
     :param dt: DType of tensor
     :param shape: Tuple of positive, non-zero integers denoting the tensor shape.
     :param device: Device to allocate tensor onto.
@@ -63,7 +67,8 @@ class Tensor:
         self._impl.set(idx, value)
 
     def __getitem__(self, idx: Tuple[int, ...]) -> Tensor:
-        """Gets an item from the tensor"""
+        """Gets a tensor slice. Supports full numpy-style slicing. Invocations
+        using only integer-based indexes will return zero-rank tensors."""
         new_tensor = self._impl.get(idx)
         return Tensor(self.dt, _impl=new_tensor)
 
