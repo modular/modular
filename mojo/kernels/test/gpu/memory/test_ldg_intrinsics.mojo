@@ -67,11 +67,10 @@ def test_register_intrinsics_sm80():
 
 
 def test_register_intrinsics_sm90():
-    alias asm = str(
-        _compile_code[
-            register_intrinsics, target = _get_nvptx_target_sm90()
-        ]().asm
-    )
+    alias asm = _compile_code[
+        register_intrinsics,
+        target = _get_nvptx_target_sm90(),
+    ]().asm
     _verify_register_intrinsics(asm)
 
 
