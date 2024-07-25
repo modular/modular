@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from max._compiler import foreach
-
+import max._compiler as compiler
 from max._driver import cpu_device, UnsafeTensorSlice, Tensor
 from utils import Index
 from max.tensor import TensorSpec
@@ -36,7 +35,7 @@ fn test_foreach() raises:
     ](idx: StaticIntTuple[2]) -> SIMD[DType.float32, simd_width]:
         return SIMD[DType.float32, simd_width](1)
 
-    foreach[set_to_one](unsafe_slice1)
+    compiler.foreach[set_to_one](unsafe_slice1)
 
     for i in range(10):
         for j in range(2):
@@ -51,7 +50,7 @@ fn test_foreach() raises:
     ](idx: StaticIntTuple[2]) -> SIMD[DType.float32, simd_width]:
         return 2 * unsafe_slice1.load[simd_width](idx)
 
-    foreach[double_it](unsafe_slice2)
+    compiler.foreach[double_it](unsafe_slice2)
 
     for i in range(10):
         for j in range(2):

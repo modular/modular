@@ -4,89 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 from .device import Device, DeviceMemory, DeviceTensor
-from .tensor_slice import TensorSlice, UnsafeTensorSlice
+from .tensor_slice import TensorSlice
 from max.tensor import TensorSpec, TensorShape
+from max.tensor_utils import UnsafeTensorSlice, TensorLike
+from max_tensor_utils.indexing import (
+    _dot_prod,
+    _row_major_strides,
+)
 from utils import InlineArray
 from utils._serialize import _serialize
-
-
-@always_inline
-fn _dot_prod[
-    rank: Int
-](x: StaticIntTuple[rank], y: StaticIntTuple[rank]) -> Int:
-    var offset = 0
-
-    @parameter
-    for i in range(rank):
-        offset += x[i] * y[i]
-    return offset
-
-
-@always_inline
-fn _slice_to_tuple[
-    func: fn (Slice) capturing -> Int, rank: Int
-](slices: InlineArray[Slice, rank]) -> StaticIntTuple[rank]:
-    """Takes a tuple of `Slice`s and returns a tuple of Ints.
-    `func` is used to extract the appropriate field (i.e. start, stop or end)
-    of the Slice.
-    """
-    var tuple = StaticIntTuple[rank]()
-
-    @parameter
-    for i in range(rank):
-        tuple[i] = func(slices[i])
-    return tuple
-
-
-@always_inline
-fn _row_major_strides[
-    type: DType, rank: Int
-](spec: StaticTensorSpec[type, rank]) -> StaticIntTuple[rank]:
-    var offset = 1
-    var strides = StaticIntTuple[rank]()
-
-    @parameter
-    for i in range(rank - 1, -1, -1):
-        strides[i] = offset
-        offset *= spec.shape[i]
-    return strides
-
-
-@value
-@register_passable
-struct StaticTensorSpec[type: DType, rank: Int]:
-    var shape: StaticIntTuple[rank]
-
-    fn __init__(inout self, spec: TensorSpec):
-        """Construct from TensorSpec.
-
-        Args:
-            spec: TensorSpec of given rank and type.
-        """
-        debug_assert(spec.rank() == rank, "rank mismatch")
-        debug_assert(spec.dtype() == type, "dtype mismatch")
-        self.shape = StaticIntTuple[rank]()
-
-        for i in range(rank):
-            self.shape[i] = spec[i]
-
-    fn get_tensor_spec(self) -> TensorSpec:
-        var shapes = List[Int]()
-        shapes.reserve(rank)
-        for i in range(rank):
-            shapes.append(self[i])
-        return TensorSpec(type, shapes)
-
-    fn __getitem__(self, idx: Int) -> Int:
-        return self.shape[idx]
-
-
-trait TensorLike:
-    fn spec(self) -> TensorSpec:
-        ...
-
-    fn unsafe_ptr[type: DType](self) -> UnsafePointer[Scalar[type]]:
-        pass
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
