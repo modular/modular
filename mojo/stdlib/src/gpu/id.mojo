@@ -24,11 +24,15 @@ struct ThreadIdx:
         Returns:
             The `x` coordinate within the block.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.tid.x", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.tid.x",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -38,11 +42,15 @@ struct ThreadIdx:
         Returns:
             The `y` coordinate within the block.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.tid.y", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.tid.y",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -52,11 +60,15 @@ struct ThreadIdx:
         Returns:
             The `z` coordinate within the block.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.tid.z", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.tid.z",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -76,11 +88,15 @@ struct BlockIdx:
         Returns:
             The `x` coordinate within the grid.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.ctaid.x", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.ctaid.x",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -90,11 +106,15 @@ struct BlockIdx:
         Returns:
             The `y` coordinate within the grid.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.ctaid.y", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.ctaid.y",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -104,11 +124,15 @@ struct BlockIdx:
         Returns:
             The `z` coordinate within the grid.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.ctaid.z", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.ctaid.z",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -128,11 +152,15 @@ struct BlockDim:
         Returns:
             The `x` dimension of the block.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.ntid.x", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.ntid.x",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -142,11 +170,15 @@ struct BlockDim:
         Returns:
             The `y` dimension of the block.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.ntid.y", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.ntid.y",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -156,11 +188,15 @@ struct BlockDim:
         Returns:
             The `z` dimension of the block.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.ntid.z", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.ntid.z",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -180,11 +216,15 @@ struct GridDim:
         Returns:
             The `x` dimension of the grid.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.nctaid.x", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.nctaid.x",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -194,11 +234,15 @@ struct GridDim:
         Returns:
             The `y` dimension of the grid.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.nctaid.y", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.nctaid.y",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
     @staticmethod
     @always_inline("nodebug")
@@ -208,11 +252,15 @@ struct GridDim:
         Returns:
             The `z` dimension of the grid.
         """
-        return int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.nctaid.z", Int32, has_side_effect=False
-            ]()
-        ).value
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.nctaid.z",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -227,11 +275,13 @@ fn lane_id() -> UInt:
     Returns:
         The lane ID of the the current thread.
     """
-    return int(
-        llvm_intrinsic["llvm.nvvm.read.ptx.sreg.laneid", Int32]().cast[
-            DType.uint32
-        ]()
-    ).value
+    return UInt(
+        int(
+            llvm_intrinsic["llvm.nvvm.read.ptx.sreg.laneid", Int32]().cast[
+                DType.uint32
+            ]()
+        )
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -246,8 +296,10 @@ fn sm_id() -> UInt:
     Returns:
         The SM ID of the the current thread.
     """
-    return int(
-        llvm_intrinsic["llvm.nvvm.read.ptx.sreg.smid", Int32]().cast[
-            DType.uint32
-        ]()
-    ).value
+    return UInt(
+        int(
+            llvm_intrinsic["llvm.nvvm.read.ptx.sreg.smid", Int32]().cast[
+                DType.uint32
+            ]()
+        )
+    )
