@@ -20,3 +20,4 @@ convenience methods such as
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
 from .elementwise import add
+from .casting import reshape
