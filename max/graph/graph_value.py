@@ -37,8 +37,27 @@ class GraphValue:
 
     _mlir_value: mlir.Value
 
-    def __add__(self, other: GraphValue) -> GraphValue:
-        return ops.add(self, other)
-
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)
+
+    def __add__(self, rhs: GraphValue) -> GraphValue:
+        """Element-wise addition.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
+        return ops.add(self, rhs)
+
+    def __matmul__(self, rhs: GraphValue) -> GraphValue:
+        """Matrix multiplication.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
+        return ops.matmul(self, rhs)

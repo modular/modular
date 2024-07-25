@@ -21,3 +21,4 @@ convenience methods such as
 """
 from .elementwise import add
 from .casting import reshape
+from .linalg import matmul
