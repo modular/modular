@@ -16,25 +16,6 @@ py_library(
 modular_pybind_extension(
     name = "_mlir",
     srcs = ["//:pybind_mlir_srcs"],
-    # Add max_graph_editable/.libs to RPATH so that the C extension can load
-    # dependent shared libs from this package structure:
-    # max/
-    #   graph/
-    #     mlir/
-    #       _mlir_libs/
-    #         _mlir.cpython-310-aarch64-linux-gnu.so
-    # .libs/
-    #   libmodular-framework-common.so
-    #   libMSupportGlobals.so
-    #   and so on.
-    linkopts = select({
-        "@bazel_tools//src/conditions:darwin": [
-            "-Wl,-rpath,@loader_path/../../../../.libs",
-        ],
-        "//conditions:default": [
-            "-Wl,-rpath,$ORIGIN/../../../../.libs",
-        ],
-    }),
     local_defines = [
         # Set definition used in Interop.h to prefix the MLIR package.
         "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
