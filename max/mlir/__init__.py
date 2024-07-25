@@ -4,4 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max._mlir.dialects import rmo
+from max._mlir._mlir_libs._mlir import *
+from max._mlir._mlir_libs._mlir.ir import *
+from max._mlir._mlir_libs._mlir.ir import (
+    _BaseContext as Context,  # type:ignore
+)
