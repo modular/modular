@@ -556,7 +556,6 @@ fn multistage_gemm[
     alias async_copy_b_layout = Layout.row_major(
         num_threads * simd_size // BD_1, BD_1 // simd_size
     )
-
     alias async_copy_b_swizzle = Optional[_swizzle_signature](
         xor_2bits_per8T
     ) if transpose_b else (
@@ -570,13 +569,25 @@ fn multistage_gemm[
         var a_smem_tile = a_smem_iter.next(stage).get()
         var b_smem_tile = b_smem_iter.next(stage).get()
 
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_a_layout,
-            swizzle=xor_2bits_per8T,
-        ](
-            a_smem_tile.vectorize[1, simd_size](),
-            a_gmem_iter.get().vectorize[1, simd_size](),
-        )
+        if M % BM == 0:
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_a_layout,
+                swizzle=xor_2bits_per8T,
+            ](
+                a_smem_tile.vectorize[1, simd_size](),
+                a_gmem_iter.get().vectorize[1, simd_size](),
+            )
+        else:
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_a_layout,
+                swizzle=xor_2bits_per8T,
+            ](
+                a_smem_tile.vectorize[1, simd_size](),
+                a_gmem_iter.get().vectorize[1, simd_size](),
+                a_gmem_iter.get().distance(a.data),
+                M,
+                K,
+            )
 
         copy_dram_to_sram_async[
             thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
@@ -698,13 +709,25 @@ fn multistage_gemm[
 
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
                     # prefetch for the three two iterations should be dummy.
-                    copy_dram_to_sram_async[
-                        thread_layout=async_copy_a_layout,
-                        swizzle=xor_2bits_per8T,
-                    ](
-                        a_smem_prefetch_tile.vectorize[1, simd_size](),
-                        a_gmem_iter.get().vectorize[1, simd_size](),
-                    )
+                    if M % BM == 0:
+                        copy_dram_to_sram_async[
+                            thread_layout=async_copy_a_layout,
+                            swizzle=xor_2bits_per8T,
+                        ](
+                            a_smem_prefetch_tile.vectorize[1, simd_size](),
+                            a_gmem_iter.get().vectorize[1, simd_size](),
+                        )
+                    else:
+                        copy_dram_to_sram_async[
+                            thread_layout=async_copy_a_layout,
+                            swizzle=xor_2bits_per8T,
+                        ](
+                            a_smem_prefetch_tile.vectorize[1, simd_size](),
+                            a_gmem_iter.get().vectorize[1, simd_size](),
+                            a_gmem_iter.get().distance(a.data),
+                            M,
+                            K,
+                        )
 
                     copy_dram_to_sram_async[
                         thread_layout=async_copy_b_layout,
@@ -775,9 +798,6 @@ fn multistage_gemm[
                 var src_vec = c_smem_frag.aligned_load[simd_size](i, 0)
                 alias dst_idx = c_gmem_frag.layout(i)
                 var vec: SIMD[c_type, simd_size] = 0
-                var m: UInt
-                var n: UInt
-                m, n = divmod(thread_offset + dst_idx, N)
 
                 @parameter
                 for j in range(0, simd_size, 2):
@@ -786,17 +806,38 @@ fn multistage_gemm[
                     )
                     vec[j] = vec_converted[0]
                     vec[j + 1] = vec_converted[1]
-                epilogue((int(m), int(n)), vec)
+                var m = int(thread_offset + dst_idx)._positive_div(N)
+                var n = int(thread_offset + dst_idx)._positive_rem(N)
+                if m < M and n < N:
+                    epilogue((m, n), vec)
+                # if M % BM == 0:
+                #     epilogue((m, n), vec)
+                # else:
+                #     if m < M:
+                #         epilogue((m, n), vec)
 
         else:
-            copy_sram_to_dram[
-                thread_layout = Layout.row_major(
-                    num_threads * simd_size // BN, BN // simd_size
+            if M % BM == 0:
+                copy_sram_to_dram[
+                    thread_layout = Layout.row_major(
+                        num_threads * simd_size // BN, BN // simd_size
+                    )
+                ](
+                    c_gmem_tile.vectorize[1, simd_size](),
+                    accum_smem_tile.vectorize[1, simd_size](),
                 )
-            ](
-                c_gmem_tile.vectorize[1, simd_size](),
-                accum_smem_tile.vectorize[1, simd_size](),
-            )
+            else:
+                copy_sram_to_dram[
+                    thread_layout = Layout.row_major(
+                        num_threads * simd_size // BN, BN // simd_size
+                    )
+                ](
+                    c_gmem_tile.vectorize[1, simd_size](),
+                    accum_smem_tile.vectorize[1, simd_size](),
+                    c_gmem_tile.distance(c.data),
+                    M,
+                    N,
+                )
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
@@ -814,20 +855,20 @@ fn multistage_gemm[
             for i in range(c_gmem_frag.layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
                 alias dst_idx = c_gmem_frag.layout(i)
-                var m: UInt
-                var n: UInt
-                m, n = divmod(thread_offset + dst_idx, N)
-                # var idx_x: Int
-                # var idx_y: Int
-                # idx_y, idx_x = divmod(i, c_reg_frag.dim[0]())
-                # var vec = c_reg_frag.aligned_load[2](idx_x, idx_y)
-                var vec = SIMD[size=2].load[
-                    alignment = alignof[SIMD[c_type, 2]]()
-                ](c_reg_frag.ptr.offset(src_idx))
-                epilogue((int(m), int(n)), vec)
+                var m = int(thread_offset + dst_idx)._positive_div(N)
+                var n = int(thread_offset + dst_idx)._positive_rem(N)
+                # m, n = divmod(thread_offset + dst_idx, N)
+                if m < M and n < N:
+                    var vec = SIMD[size=2].load[
+                        alignment = alignof[SIMD[c_type, 2]]()
+                    ](c_reg_frag.ptr.offset(src_idx))
+                    epilogue((m, n), vec)
 
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
                 c_gmem_warp_tile.vectorize[1, 2](),
                 c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
+                c_gmem_warp_tile.distance(c.data),
+                M,
+                N,
             )
