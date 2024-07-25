@@ -1,4 +1,15 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
+
+bool_flag(
+    name = "worker_stats",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "worker_stats_setting",
+    flag_values = {":worker_stats": "true"},
+)
 
 modular_cc_library(
     name = "CompilerSupport.headers",
@@ -56,6 +67,9 @@ modular_cc_library(
         "//conditions:default": [],
     }) + select({
         "//:asyncrt_no_affinity_setting": ["ASYNCRT_NO_AFFINITY=1"],
+        "//conditions:default": [],
+    }) + select({
+        ":worker_stats_setting": ["ASYNCRT_WORKER_STATS=1"],
         "//conditions:default": [],
     }),
     deps = [
