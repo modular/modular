@@ -242,9 +242,9 @@ fn test[
                 var actual = Scalar.load(
                     flash_output_ptr, d + depth * (h + s * num_heads)
                 )
-                if not isclose(expect, actual, atol=1e-5, rtol=rtol):
+                if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     print(h, s, d, actual, expect)
-                assert_almost_equal(expect, actual, atol=1e-5, rtol=rtol)
+                assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -332,7 +332,7 @@ def main():
                 32,
                 against_gpu_naive=True,
                 use_tensor_core=True,
-            ](1024, 1024, ctx)
+            ](1024, 1024, ctx, is_benchmark())
 
             test[
                 4,

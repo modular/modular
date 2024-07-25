@@ -448,8 +448,17 @@ fn flash_attention_impl[
                 return
 
         @parameter
-        if use_tensor_core:
-            if seq_len == num_keys and seq_len % 128 == 0 and depth % 32 == 0:
+        if use_tensor_core and depth == 128:
+            # Choose matmul parameters based on dtype.
+            alias BM = 32 if q_type is DType.float32 else 64
+            alias BN = depth
+            alias BK = 16 if q_type is DType.float32 else 32
+            alias WM = 32 if q_type is DType.float32 else 16
+            alias WN = 32 if q_type is DType.float32 else depth
+            # num warps in M and N, multipled by warp size.
+            alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+
+            if seq_len == num_keys and seq_len % 128 == 0:
                 var func = ctx.compile_function[
                     mha[
                         mask_rank,
@@ -458,14 +467,14 @@ fn flash_attention_impl[
                         v_type,
                         mask_type,
                         output_type,
-                        BM=qtile_num_rows,
-                        BN=ktile_num_rows,
-                        BK = 16 if q_type == DType.float32 else 32,
-                        WM=qtile_num_rows,
-                        WN=32,  # got from cutlass
+                        BM=BM,
+                        BN=BN,
+                        BK=BK,
+                        WM=WM,
+                        WN=WN,
                         depth=depth,
                         num_heads=num_heads,
-                        num_threads=128,  # (depth // WN) * WARP_SIZE,
+                        num_threads=num_threads,
                         num_pipeline_stages=4,
                         group=group,
                     ]
@@ -473,7 +482,7 @@ fn flash_attention_impl[
                     # TODO: Avoid hard coding shared memory needed.
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         80 * 1024
-                    )
+                    ),
                 )
 
                 ctx.enqueue_function(
@@ -487,12 +496,11 @@ fn flash_attention_impl[
                     batch_size,
                     seq_len,
                     grid_dim=(
-                        ceildiv(seq_len, qtile_num_rows),
+                        ceildiv(seq_len, BM),
                         num_heads,
                         batch_size,
                     ),
-                    # block_dim=(depth // WN * WARP_SIZE, 1, 1),
-                    block_dim=(128, 1, 1),
+                    block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=80 * 1024,
                 )
 
@@ -1652,6 +1660,7 @@ fn mha_single_batch[
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
@@ -1689,9 +1698,16 @@ fn mha_single_batch[
         address_space = AddressSpace.SHARED,
     ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
 
+    # Share memory tile for Value, reuse K's shared memory tile.
+    alias v_smem_size = num_pipeline_stages * BN * BK
+    var v_smem = k_smem.bitcast[Scalar[v_type]]()
+    var v_smem_iter = LayoutTensorIter[
+        v_type, Layout.row_major(BK, BN), AddressSpace.SHARED, circular=True
+    ](v_smem, v_smem_size)
+
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (q_smem + q_smem_size).bitcast[Scalar[v_type]]()
+    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
     alias p_smem_size = BM * BN
     var p_smem_tile = LayoutTensor[
         v_type,
@@ -1701,13 +1717,6 @@ fn mha_single_batch[
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
     var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    # Share memory tile for Value.
-    alias v_smem_size = num_pipeline_stages * BN * BK
-    var v_smem = (p_smem + p_smem_size).bitcast[Scalar[v_type]]()
-    var v_smem_iter = LayoutTensorIter[
-        v_type, Layout.row_major(BK, BN), AddressSpace.SHARED, circular=True
-    ](v_smem, v_smem_size)
-
     # Mask global memory iterator.
     var mask_offset = q_tile_idx * BM * seq_len + (
         Int(head_idx * seq_len * seq_len) if mask_rank == 4 else 0
@@ -1715,8 +1724,7 @@ fn mha_single_batch[
     var warp_offset = warp_y * WM * seq_len + warp_x * WN
     var mask_warp_ptr = mask_ptr + Int(mask_offset) + Int(warp_offset)
 
-    # Key global memory iterator
-    # For group query
+    # Account for group query.
     alias kv_num_heads = num_heads // group
     var kv_offset = depth * (head_idx // group)
 
@@ -1819,38 +1827,64 @@ fn mha_single_batch[
             rowsum,
         )
 
-        # Write p register tiles into shared memory.
-        # TODO: support bypass shared memory.
-        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
-            p_smem_warp_tile.vectorize[1, 2](),
-            p_reg_tile.vectorize[1, 2]().transpose(),
-        )
-        barrier()
-
         var v_gmem_block = LayoutTensor[
             v_type,
             Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
         ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
-        multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
-            False,  # transpose_b
-            swizzle_a=False,
-        ](
-            output_reg_tile,
-            p_smem_iter,
-            v_gmem_iter,
-            p_smem_iter,
-            v_smem_iter,
-            BN // BK,
-        )
+        @parameter
+        if num_warps_n > 1:
+            copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+                p_smem_warp_tile.vectorize[1, 2](),
+                p_reg_tile.vectorize[1, 2]().transpose(),
+            )
+            barrier()
+
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                False,  # transpose_b
+                swizzle_a=False,
+            ](
+                output_reg_tile,
+                p_smem_iter,
+                v_gmem_iter,
+                p_smem_iter,
+                v_smem_iter,
+                BN // BK,
+            )
+        else:
+            # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
+            # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
+            var p_reg_iter = p_reg_tile.tiled_iterator[
+                MMA_K // MMA_N * num_m_mmas, p_frag_size
+            ](0, 0)
+
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                False,  # transpose_b
+                swizzle_a=False,
+                static_num_iters = BN // BK,
+            ](
+                output_reg_tile,
+                p_reg_iter,
+                v_gmem_iter,
+                p_smem_iter,
+                v_smem_iter,
+                BN // BK,
+            )
 
     # Apply softmax denumerator.
     @parameter
