@@ -1341,10 +1341,66 @@ struct LayoutTensor[
             )
             var m: Int
             var n: Int
-            m, n = divmod(offset + dst_idx, cols)
+            m, n = divmod(offset + src_idx, cols)
             if m < rows:
                 var src_element = Element[dtype, other.element_layout].load(
                     other.ptr.offset(src_idx)
+                )
+                alias dst_element_type = Element[dtype, self.element_layout]
+                dst_element_type(
+                    rebind[dst_element_type.element_data_type](
+                        src_element.element_data
+                    )
+                ).store(self.ptr.offset(dst_idx))
+
+    @always_inline
+    fn copy_from(
+        self,
+        other: LayoutTensor,
+        offset: Int,
+        rows: Int,
+        cols: Int,
+    ):
+        alias other_layout = other.layout
+
+        alias dst_size = layout.size()
+        alias src_size = other_layout.size()
+
+        alias dst_element_size = int(self.element_size)
+        alias src_element_size = int(other.element_size)
+
+        constrained[
+            layout.known_shape() and other_layout.known_shape(),
+            "copy_from must move data of statically known shape",
+        ]()
+
+        constrained[
+            dst_size == src_size, "copy_from should move data of the same size"
+        ]()
+
+        constrained[
+            dst_element_size == src_element_size, "copy_from should move"
+        ]()
+
+        @parameter
+        for i in range(dst_size):
+            alias src_idx = make_layout(other.element_layout, other_layout)(
+                i * src_element_size
+            )
+            alias dst_idx = make_layout(self.element_layout, self.layout)(
+                i * dst_element_size
+            )
+            var m: Int
+            var n: Int
+            m, n = divmod(offset + dst_idx, cols)
+            if m < rows:
+                var src_element = Element[dtype, other.element_layout].load[
+                    other.address_space
+                ](
+                    rebind[UnsafePointer[Scalar[dtype], other.address_space]](
+                        other.ptr
+                    ).offset(src_idx),
+                    other.runtime_element_layout,
                 )
                 alias dst_element_type = Element[dtype, self.element_layout]
                 dst_element_type(
@@ -1749,6 +1805,47 @@ fn copy_dram_to_sram_async[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
+    src_thread_layout: Layout,
+    dst_thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    swizzle: Optional[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+    ],
+    offset: Int,
+    rows: Int,
+    cols: Int,
+):
+    var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
+        ThreadIdx.x()
+    )
+    var thrd_offset = offset + src.distribute[src_thread_layout](
+        ThreadIdx.x()
+    ).distance(src.ptr)
+    dst_framgents.copy_from_async_masked_src(
+        src_framgents, thrd_offset, rows, cols
+    )
+
+
+# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline
+fn copy_dram_to_sram_async[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
@@ -1777,6 +1874,46 @@ fn copy_dram_to_sram_async[
         dst_element_layout,
         swizzle,
     ](dst, src)
+
+
+# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline
+fn copy_dram_to_sram_async[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    swizzle: Optional[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+    ],
+    offset: Int,
+    rows: Int,
+    cols: Int,
+):
+    copy_dram_to_sram_async[
+        src_layout,
+        dst_layout,
+        dtype,
+        thread_layout,
+        thread_layout,
+        src_element_layout,
+        dst_element_layout,
+        swizzle,
+    ](dst, src, offset, rows, cols)
 
 
 @always_inline
@@ -1843,6 +1980,78 @@ fn copy_sram_to_dram[
             dst_fragments.aligned_store[simd_size](i, 0, dst_vec)
 
 
+@always_inline
+fn copy_sram_to_dram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    src_type: DType,
+    dst_type: DType,
+    thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    swizzle: Optional[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dst_type,
+        dst_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        src_type,
+        src_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=src_element_layout,
+    ],
+    offset: Int,
+    rows: Int,
+    cols: Int,
+):
+    var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[thread_layout, swizzle=swizzle](
+        ThreadIdx.x()
+    )
+
+    @parameter
+    if src_type == dst_type:
+        dst_fragments.copy_from(src_fragments.bitcast[dst_type]())
+    else:
+        constrained[
+            src_type == DType.float32 and dst_type.is_half_float(),
+            "Only support FP32 -> half precision downcast during copy.",
+        ]()
+
+        alias simd_size = simdwidthof[dst_type]()
+        # TODO: generalize the copy to non-scalar case if possible.
+        constrained[
+            src_element_layout.size() == simd_size
+            and dst_element_layout.size() == simd_size,
+            "Only FP32 -> half precision downcast for vectorized copy.",
+        ]()
+
+        alias num_stores_per_thread = dst_fragments.layout.size()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            alias src_idx = src_fragments.layout(i)
+            var m: Int
+            var n: Int
+            m, n = divmod(offset + src_idx, cols)
+            if m < rows:
+                var src_vec = src_fragments.aligned_load[simd_size](i, 0)
+                var dst_vec: SIMD[dst_type, simd_size] = 0
+
+                @parameter
+                for j in range(0, simd_size, 2):
+                    var vec_converted = convert[src_type, dst_type, 2](
+                        SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
+                    )
+                    dst_vec[j] = vec_converted[0]
+                    dst_vec[j + 1] = vec_converted[1]
+
+                dst_fragments.aligned_store[simd_size](i, 0, dst_vec)
+
+
 # Copy from SRAM to local memory.
 #
 @always_inline
@@ -1906,6 +2115,40 @@ fn copy_local_to_dram[
 ):
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
     dst_fragments.copy_from(src)
+
+
+# Copy local memory to DRAM, thread affinity is needed only for dst fragments.
+#
+@always_inline
+fn copy_local_to_dram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    dst_thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+    ],
+    offset: Int,
+    rows: Int,
+    cols: Int,
+):
+    var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    var thrd_offset = dst.distribute[dst_thread_layout](ThreadIdx.x()).distance(
+        dst.ptr
+    ) + offset
+    dst_framgents.copy_from_masked_dst(src, thrd_offset, rows, cols)
 
 
 @always_inline
