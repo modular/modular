@@ -80,7 +80,7 @@ private:
         }
 
         if (allCallsToSelf)
-          break;
+          continue;
       }
 
       if (!arg.use_empty()) {
