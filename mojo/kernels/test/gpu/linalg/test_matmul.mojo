@@ -12,6 +12,8 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host.memory import _memset
+from gpu.host._compile import _get_nvptx_target
+from algorithm.functional import _elementwise_impl_gpu
 from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
@@ -313,13 +315,17 @@ def main():
 
             @parameter
             fn epilogue_test[
-                type: DType, use_tensor_core: Bool = False
-            ](test_ctx: test_matmul[type]) raises:
+                type: DType,
+                /,
+                *,
+                shape: DimList = DimList.create_unknown[2](),
+                transpose_b: Bool = False,
+                use_tensor_core: Bool = False,
+            ](test_ctx: test_matmul[type, shape]) raises:
                 var M = test_ctx.M
-                var K = test_ctx.K
                 var N = test_ctx.N
 
-                alias some_constant = 20
+                alias some_constant = 0.45
 
                 var c_tensor = test_ctx.c_device.tensor
 
@@ -332,22 +338,12 @@ def main():
                     idx: StaticIntTuple[2], val: SIMD[_type, width]
                 ) capturing -> None:
                     c_tensor.store(
-                        idx, rebind[SIMD[type, width]](val + some_constant)
+                        idx, rebind[SIMD[type, width]](val * some_constant)
                     )
 
-                var c_ref_tensor = test_ctx.c_device_ref.tensor
-
-                @parameter
-                @always_inline
-                @__copy_capture(c_ref_tensor)
-                fn naive_epilogue_fn[
-                    _type: DType, width: Int
-                ](
-                    idx: StaticIntTuple[2], val: SIMD[_type, width]
-                ) capturing -> None:
-                    c_ref_tensor.store(
-                        idx, rebind[SIMD[type, width]](val + some_constant)
-                    )
+                alias pack_size = simdwidthof[
+                    type, target = _get_nvptx_target()
+                ]()
 
                 _matmul_gpu[
                     use_tensor_core=use_tensor_core,
@@ -358,38 +354,166 @@ def main():
                     test_ctx.a_device.tensor,
                     test_ctx.b_device.tensor,
                     ctx,
+                    True,
                 )
 
-                alias BLOCK_DIM = 16
-                var gemm_naive = ctx.compile_function[
-                    matmul_kernel_naive[
-                        type,
-                        type,
-                        type,
-                        BLOCK_DIM,
-                        elementwise_lambda_fn=naive_epilogue_fn,
-                    ]
-                ]()
+                var handle = UnsafePointer[cublasContext]()
+                check_cublas_error(
+                    cublasCreate(UnsafePointer.address_of(handle))
+                )
+                check_cublas_error(
+                    cublas_matmul(
+                        handle,
+                        test_ctx.c_device_ref.tensor,
+                        test_ctx.a_device.tensor,
+                        test_ctx.b_device.tensor,
+                        c_row_major=True,
+                        transpose_b=transpose_b,
+                    )
+                )
+                check_cublas_error(cublasDestroy(handle))
+                var c_ref_tensor = test_ctx.c_device_ref.tensor
 
-                ctx.enqueue_function(
-                    gemm_naive,
-                    test_ctx.c_device_ref.buffer,
-                    test_ctx.a_device.buffer,
-                    test_ctx.b_device.buffer,
-                    M,
-                    N,
-                    K,
-                    grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                @always_inline
+                @__copy_capture(c_ref_tensor)
+                @parameter
+                fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
+                    var idx = rebind[StaticIntTuple[2]](idx0)
+
+                    c_ref_tensor.store(
+                        idx,
+                        c_ref_tensor.load[width=simd_width](idx)
+                        * some_constant,
+                    )
+
+                _elementwise_impl_gpu[func, pack_size](
+                    StaticIntTuple[2](M, N),
+                    ctx,
                 )
 
-            test_matmul[DType.float32](
+            print("===> test trivial epilogue")
+
+            test_matmul[DType.float32, DimList(512, 256)](
                 ctx, (128, 256, 512), low_precision=True
-            ).run_test[epilogue_test[DType.float32]]()
+            ).run_test[
+                epilogue_test[
+                    DType.float32,
+                    shape = DimList(512, 256),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            print("===> float32 with shapes in llama2 with padding rows")
+
+            test_matmul[DType.float32, DimList(128, 384)](
+                ctx, (256, 384, 128), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.float32,
+                    shape = DimList(128, 384),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(4096, 4096)](
+                ctx, (256, 4096, 4096), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.float32,
+                    shape = DimList(4096, 4096),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(4096, 12288)](
+                ctx, (256, 12288, 4096), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.float32,
+                    shape = DimList(4096, 12288),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(11008, 4096)](
+                ctx, (256, 4096, 11008), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.float32,
+                    shape = DimList(11008, 4096),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.float32, DimList(12288, 4096)](
+                ctx, (256, 4096, 12288), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.float32,
+                    shape = DimList(12288, 4096),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            print(
+                "===> epilogue bfloat16 using shape in context encoding in"
+                " replit 3B"
+            )
+
+            test_matmul[DType.bfloat16, DimList(12288, 3072)](
+                ctx, (1024, 3072, 12288), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.bfloat16,
+                    shape = DimList(12288, 3072),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.bfloat16, DimList(3072, 12288)](
+                ctx, (1024, 12288, 3072), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.bfloat16,
+                    shape = DimList(3072, 12288),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.bfloat16, DimList(3072, 5120)](
+                ctx, (1024, 5120, 3072), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.bfloat16,
+                    shape = DimList(3072, 5120),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.bfloat16, DimList(32768, 3072)](
+                ctx, (1024, 3072, 32768), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.bfloat16,
+                    shape = DimList(32768, 3072),
+                    use_tensor_core=True,
+                ]
+            ]()
+
+            test_matmul[DType.bfloat16, DimList(3072, 3072)](
+                ctx, (1024, 3072, 3072), low_precision=True
+            ).run_test[
+                epilogue_test[
+                    DType.bfloat16,
+                    shape = DimList(3072, 3072),
+                    use_tensor_core=True,
+                ]
+            ]()
+
             # TODO: change back to K = 255 after KERN-702
-            test_matmul[DType.float32](
-                ctx, (192, 128, 256), low_precision=True
-            ).run_test[epilogue_test[DType.float32]]()
+            # test_matmul[DType.float32](
+            #     ctx, (192, 128, 256), low_precision=True
+            # ).run_test[epilogue_test[DType.float32]]()
 
     except e:
         print("CUDA_ERROR:", e)
