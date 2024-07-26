@@ -1208,11 +1208,8 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
 
   // If this is the last implementation node for its parent parameter node to
   // complete, then the parameter node is done.
-  assert(p->numActive > 0 && "node already done?");
-  if (--p->numActive == 0) {
-    g.numWorkItems.fetch_add(p->state.markDone());
-    p->emplace();
-  }
+  g.numWorkItems.fetch_add(p->state.markDone());
+  p->emplace();
   signalWorklist();
 }
 
@@ -1526,8 +1523,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     inode->otherDeps.emplace_back(from, genNode);
     genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
   }
-  assert(genNode->numActive == 0 && "expected first implementation");
-  initialScheduleImplNode(newFuncNode);
+  g.numWorkItems.fetch_add(1);
+  scheduleImplNode(newFuncNode);
   return ElaborationState::skipNode();
 }
 
