@@ -19,9 +19,9 @@ from utils.loop import unroll
 @always_inline
 fn reshape[
     rank: Int,
+    type: DType, //,
     output_rank: Int,
-    type: DType,
-    single_thread_blocking_override: Bool,
+    single_thread_blocking_override: Bool = True,
 ](
     input: NDBuffer[type, rank],
     new_shape: StaticIntTuple[output_rank],
@@ -52,9 +52,10 @@ fn ndbuffer_reshape[
     input: NDBuffer[type, rank],
     new_shape: StaticIntTuple[output_rank],
 ) -> NDBuffer[type, output_rank]:
-    return reshape[rank, output_rank, type, single_thread_blocking_override](
-        input, new_shape
-    )
+    return reshape[
+        output_rank,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](input, new_shape)
 
 
 @mogg_register("reshape_shape")

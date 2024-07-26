@@ -1434,7 +1434,7 @@ fn gather_nd[
     # to the innermost.
     # Equivalent to numpy:
     # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
-    var reshaped_indices = reshape[indices_rank, 3, indices_type, True](
+    var reshaped_indices = reshape[3](
         indices.make_dims_unknown(),
         StaticIntTuple[3](
             batch_dims_size,
@@ -1456,7 +1456,7 @@ fn gather_nd[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
     # Do the actual reshaping.
-    var reshaped_data = reshape[data_rank, reshaped_data_rank, type, True](
+    var reshaped_data = reshape[reshaped_data_rank](
         data.make_dims_unknown(), reshaped_data_tuple
     )
 

@@ -176,9 +176,9 @@ fn index_tensor_1d[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
 
-    var reshaped_data = reshape.reshape[
-        data_rank, reshaped_data_rank, type, True
-    ](data.make_dims_unknown(), reshaped_data_tuple)
+    var reshaped_data = reshape.reshape[reshaped_data_rank](
+        data.make_dims_unknown(), reshaped_data_tuple
+    )
 
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.
@@ -315,9 +315,9 @@ fn index_tensor[
         counter += 1
 
     # Do the actual reshaping.
-    var reshaped_data = reshape.reshape[
-        data_rank, reshaped_data_rank, type, True
-    ](data.make_dims_unknown(), reshaped_data_tuple)
+    var reshaped_data = reshape.reshape[reshaped_data_rank](
+        data.make_dims_unknown(), reshaped_data_tuple
+    )
     var reshaped_data_shape = reshaped_data.get_shape()
 
     # idx[] stores the index from where to gather the requested elements.

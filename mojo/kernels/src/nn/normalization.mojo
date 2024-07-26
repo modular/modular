@@ -440,7 +440,7 @@ fn layer_norm_reshape[
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
     var new_shape = StaticIntTuple[output_rank](prod_all_but_last_dim, last_dim)
-    var output_rs = reshape[rank, output_rank, type, True](buf, new_shape)
+    var output_rs = reshape[output_rank](buf, new_shape)
     return output_rs
 
 
@@ -656,7 +656,7 @@ fn layer_norm_cpu[
         var prod_all_but_last_dim = shape.flattened_length() // last_dim
         var flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
 
-        var output_buf = reshape[rank, 2, type, True](output, flat_shape)
+        var output_buf = reshape[2](output, flat_shape)
 
         var num_workers = min(parallelism_level(), prod_all_but_last_dim)
         var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
