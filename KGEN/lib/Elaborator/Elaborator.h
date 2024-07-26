@@ -282,13 +282,6 @@ private:
   // Worklist
   //===--------------------------------------------------------------------===//
 
-  /// Schedule an implementation node on the AsyncRT work queue and increment
-  /// the initial counters.
-  void initialScheduleImplNode(ImplNode *inode) {
-    ++inode->parent->numActive;
-    g.numWorkItems.fetch_add(1);
-    scheduleImplNode(inode);
-  }
   /// Signal the worklist to tell it a job has completed or has been taken off
   /// the workqueue.
   void signalWorklist() {

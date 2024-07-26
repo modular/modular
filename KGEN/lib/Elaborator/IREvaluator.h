@@ -278,8 +278,6 @@ struct ParamNode {
 
   /// The instantiation of the parametric function.
   std::unique_ptr<ImplNode> impl;
-  /// The number of in-progress implementations.
-  std::atomic<size_t> numActive = 0;
 
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;
