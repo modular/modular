@@ -135,6 +135,91 @@ fn run_layer_norm_block_vector[
     _ = func_ln^
 
 
+fn run_layer_norm_gpu[
+    type: DType, rank: Int
+](
+    ctx: DeviceContext, shape: StaticIntTuple[rank], rtol: Scalar[type] = 0.01
+) raises:
+    print("== run_layer_norm_gpu")
+
+    var cols = shape[rank - 1]
+    var rows = shape.flattened_length() // cols
+
+    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
+
+    for i in range(rows * cols):
+        var val = Scalar[type](i)
+        data_h[i] = val
+
+    for i in range(cols):
+        gamma_h[i] = ((i + cols) / cols).cast[type]()
+        beta_h[i] = (i / cols).cast[type]()
+
+    var data_d = ctx.create_buffer[type](rows * cols)
+    var gamma_d = ctx.create_buffer[type](cols)
+    var beta_d = ctx.create_buffer[type](cols)
+
+    var param_shape = StaticIntTuple[1](cols)
+
+    var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
+    var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
+    var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
+    var epsilon = Scalar[type]()
+
+    ctx.enqueue_copy_to_device(data_d, data_h)
+    ctx.enqueue_copy_to_device(gamma_d, gamma_h)
+    ctx.enqueue_copy_to_device(beta_d, beta_h)
+
+    alias rank_rs = 2
+    var data_buf_rs = layer_norm_reshape[type, rank, rank_rs](shape, data_buf)
+
+    @__copy_capture(data_buf_rs)
+    @always_inline
+    @parameter
+    fn input_fn[
+        width: Int, _r: Int
+    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
+        var r_idx = rebind[StaticIntTuple[rank_rs]](idx)
+        return data_buf_rs.load[width=width](r_idx)
+
+    @__copy_capture(gamma)
+    @always_inline
+    @parameter
+    fn gamma_fn[
+        width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+        return gamma.load[width=width](idx[0])
+
+    layer_norm_gpu[type, input_fn, gamma_fn, rank](
+        shape, beta, epsilon, data_buf, ctx
+    )
+    ctx.enqueue_copy_from_device(res, data_d)
+    ctx.synchronize()
+
+    for r in range(rows):
+        var vec = Buffer[type](data_h + r * cols, cols)
+        var mean_ref = mean(vec)
+        var var_ref = variance(vec, 1)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        for c in range(cols):
+            var idx = r * cols + c
+            var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
+                c
+            ] + beta_h[c]
+            assert_almost_equal(val, res[idx], rtol=rtol)
+
+    _ = data_h
+    _ = gamma_h
+    _ = beta_h
+    _ = data_d
+    _ = gamma_d
+    _ = beta_d
+    _ = res
+
+
 fn run_layer_norm_block_scalar[
     type: DType
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
@@ -468,5 +553,15 @@ def main():
             run_layer_norm_warp_tiling_vector[DType.float32](
                 ctx, rows=10, cols=4096
             )
+            # variable rank
+            run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](0))
+            run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](5))
+            run_layer_norm_gpu[DType.float32, 5](
+                ctx, StaticIntTuple[5](3, 4, 10, 20, 8)
+            )
+            run_layer_norm_gpu[DType.float32, 5](
+                ctx, StaticIntTuple[5](1, 5, 6, 10, 128)
+            )
+
     except e:
         print("CUDA_ERROR:", e)
