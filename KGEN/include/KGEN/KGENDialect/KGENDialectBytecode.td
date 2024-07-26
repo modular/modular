@@ -27,7 +27,7 @@ def StructDefFieldAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def StructDefAttr : DialectType<(type
+def StructDefAttr : DialectAttribute<(attr
   StringAttr:$name,
   ConcreteAttrArray<"StringAttr">:$inputParamNames,
   TypeArray:$inputParamTypes,
@@ -87,7 +87,7 @@ def StructType : DialectType<(type
 )>;
 
 def AppliedStructType : DialectType<(type
-  StructDefAttr:$sourceStruct,
+  StructDefAttr:$structDef,
   TypedAttrArray:$paramValues
 )>;
 
@@ -116,6 +116,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     TargetType,
     BuildInfoType,
     StructType,
+    AppliedStructType,
     PackType,
     WrappedVariantType,
     FloatLiteralType
@@ -260,6 +261,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamDeclAttr,
     ParamDeclArrayAttr,
     StructDefFieldAttr,
+    StructDefAttr,
     ParameterExprArrayAttr,
     VariadicAttr,
     UnknownAttr,
