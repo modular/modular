@@ -36,8 +36,12 @@ fn normalize_neg_index[
 
     debug_assert(
         (
-            (-SIMD[type, width](dim_size) <= idx).reduce_and()
-            and (idx < SIMD[type, width](dim_size)).reduce_and()
+            (
+                -SIMD[out_type, width](dim_size) <= idx.cast[out_type]()
+            ).reduce_and()
+            and (
+                idx.cast[out_type]() < SIMD[out_type, width](dim_size)
+            ).reduce_and()
         ),
         "indices must be in range [-dim_size, dim_size)",
     )
