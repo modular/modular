@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %bare-mojo %s -t | FileCheck %s
+# RUN: %mojo %s -t | FileCheck %s
 # CHECK: Benchmark results
 
 from collections.vector import InlinedFixedVector
@@ -34,7 +34,7 @@ fn bench_gather(inout bencher: Bencher, spec: GatherSpec) capturing:
     var indices = InlinedFixedVector[Int32](spec.n1 * spec.n2)
 
     var index_rand_min = 0
-    var index_rand_max = spec.n1 * spec.n2 - 1
+    var index_rand_max = spec.m1 - 1
 
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
