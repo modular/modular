@@ -57,10 +57,10 @@ using namespace M;
 using namespace Telemetry;
 using namespace Exporter;
 
+#ifdef MODULAR_ENABLE_TELEMETRY
+
 /// Modular's public telemetry endpoint.
 constexpr StringRef kTelemetryUrl = MODULAR_TELEMETRY_URL;
-
-#ifdef MODULAR_ENABLE_TELEMETRY
 
 static Level levelFromString(StringRef levelStr) {
   if (levelStr.empty())

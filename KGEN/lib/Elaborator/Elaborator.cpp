@@ -200,17 +200,14 @@ void ParamNode::andThenSync(AsyncValue::Waiter &&waiter) {
 }
 
 void ParamNode::emplace() {
-  std::lock_guard<std::mutex> guard(mu);
-  if (!isReady())
+  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
     paramCh.copy().emplace();
 }
 
 AsyncValueRef<Chain> ParamNode::copy() const { return paramCh.copy(); }
 
 void ParamNode::setToError() {
-  std::lock_guard<std::mutex> guard(mu);
-  isError = true;
-  if (!isReady())
+  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE)
     paramCh.copy().emplace();
 }
 

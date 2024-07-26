@@ -247,7 +247,7 @@ struct ParamNode {
             ExpansionGraph *expansionGraph)
       : gen(gen), inputParams(vals), depth(depth),
         paramCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
-        expansionGraph(expansionGraph), isError(false) {
+        expansionGraph(expansionGraph) {
     assert(expansionGraph && "Expansion graph cannot be null");
   }
   ParamNode() {}
@@ -298,11 +298,7 @@ struct ParamNode {
 
   /// An async value is ready if the underlying async value is in Active or
   /// Error state.
-  bool isReady() const { return paramCh.isReady(); }
-
-  /// An async value is ready if the underlying async value is in Active or
-  /// Error state.
-  bool getIsError() const { return isError; }
+  bool getIsError() const { return done == DoneState::ERROR; }
 
   /// Make explicit copy of this AsyncValueRef, increasing the AsyncValue's
   /// refcount by one.
@@ -312,18 +308,14 @@ private:
   /// The chain to signal when this parameter node is done processing.
   AsyncRT::AsyncValueRef<AsyncRT::Chain> paramCh;
 
-  /// Mutex to prevent race on emplace.
-  std::mutex mu;
+  /// Atomic to prevent race on emplace.
+  std::atomic<uint8_t> done = false;
+  enum DoneState : uint8_t { NOT_DONE, DONE, ERROR };
 
   /// The runtime manages the set of tasks kicked off in a given process. The
   /// ParamNode alerts the runtime upon creation and completion of tasks so that
   /// the runtime can sync tasks.
   ExpansionGraph *expansionGraph;
-
-  /// True if we have set the async value to error. Stored as a separate flag
-  /// because the async value may have been deallocated after setting it to
-  /// error.
-  bool isError = false;
 };
 
 } // namespace M::KGEN
