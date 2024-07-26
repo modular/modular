@@ -52,6 +52,7 @@ from utils.index import Index
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
+from .utils_gpu import block_swizzle
 
 
 # Mask ^ tid's 2 least significant and every 8 threads share one mask.
@@ -420,26 +421,6 @@ fn multistage_mma[
                 barrier()
 
 
-@always_inline
-fn block_swizzle_by_scale[
-    scale0: Int
-](block_idx: StaticIntTuple[2], grid_dim: __type_of(block_idx)) -> __type_of(
-    block_idx
-):
-    var scale = scale0
-    var num_partitions = 1 << scale
-    while (grid_dim[0] & (num_partitions - 1)) != 0 and scale > 1:
-        scale -= 1
-        num_partitions = 1 << scale
-
-    var bx = block_idx[0] >> scale
-    var by = (block_idx[1] << scale) + ((block_idx[0]) & ((1 << scale) - 1))
-    bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
-    by = by % grid_dim[1]
-
-    return (bx, by)
-
-
 fn multistage_gemm[
     c_type: DType,
     c_shape: DimList,
@@ -496,11 +477,9 @@ fn multistage_gemm[
 
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
-    var block_idx = block_swizzle_by_scale[3](
+    var block_idx = block_swizzle(
         (int(BlockIdx.x()), int(BlockIdx.y())), (int(N // BN), int(M // BM))
-    ) if swizzle_block and not (N // BN & 1) else Index(
-        int(BlockIdx.x()), int(BlockIdx.y())
-    )
+    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
 
     # Coordinates of the current warp.
     var warp_x: UInt
