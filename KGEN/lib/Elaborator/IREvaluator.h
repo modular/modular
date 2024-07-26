@@ -181,6 +181,9 @@ struct ImplNode {
   /// separate flag is needed because an error state can cause the node to
   /// complete early. This flag prevents double-completion.
   std::atomic<bool> done = false;
+
+  /// A chain representing SCC completion.
+  AsyncValueRef<Chain> sccCh;
 };
 
 //===----------------------------------------------------------------------===//
