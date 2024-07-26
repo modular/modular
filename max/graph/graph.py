@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import contextlib
 import inspect
-import json
 from contextvars import ContextVar
 from os import PathLike
 from typing import Callable, Iterable, Optional, Union
@@ -19,7 +18,7 @@ from max.mlir.dialects import mo
 
 from .dtype import DType
 from .graph_value import GraphValue
-from .type import SymbolicDim, TensorType, Type
+from .type import ShapeLike, SymbolicDim, TensorType, Type
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")

@@ -22,7 +22,7 @@ Shape: TypeAlias = Iterable[Union[str, int]]
 def matmul_graph(
     name: str,
     shapes: tuple[Shape, Shape],
-    dtype: Optional[DType] = DType.float32,
+    dtype: DType = DType.float32,
 ) -> Graph:
     """Creates a graph op containing a matmul."""
 
@@ -47,7 +47,7 @@ def assert_graph_properties(
     # print([o._mlir_op for o in graph._mlir_op.regions[0].blocks[0].operations])
     assert graph._mlir_op.verify()
     assert "rmo.matmul" in str(graph._mlir_op)
-    assert f"[{', '.join(map(str, expected_output_shape))}]" in str(
+    assert f"[{', '.join([str(s) for s in expected_output_shape])}]" in str(
         # graph._mlir_op.regions[0].blocks[0].operations.result.type
         graph._mlir_op
     )
@@ -195,6 +195,27 @@ def test_matmul_higher_rank_symbolic() -> None:
         )
 
 
+@pytest.mark.skip(reason="Propagate builder error messages (MSDK-701)")
+def test_builder_failure_message() -> None:
+    """Test that we get a reasonable error message for a matmul op builder
+    failure.
+
+    This is really a test that we are able to bubble up MLIR diagnostics into
+    Python exceptions from RMO builders.
+    """
+    with pytest.raises(
+        ValueError,
+        match=(
+            "dimension at axis -1 (value D) must match input rhs (shape [E, F,"
+            " G]) dimension at axis -2 (value F)"
+        ),
+    ):
+        matmul_graph(
+            "symbolic_higher_rank_incompatible",
+            (["A", "B", "C", "D"], ["E", "F", "G"]),
+        )
+
+
 def test_matmul_chaining() -> None:
     """Test chaining multiple matmul operations."""
 
@@ -242,9 +263,8 @@ def test_matmul_chaining() -> None:
     assert "A, B, E" in str(graph._mlir_op)
 
 
-@pytest.mark.skip(reason="Raises unhelpful MLIR error (MSDK-680).")
 def test_matmul_invalid_param_name() -> None:
     """Test edge cases for symbolic matmul."""
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid name"):
         matmul_graph("matmul_invalid_param_name", (["M", "1"], ["1", "N"]))
