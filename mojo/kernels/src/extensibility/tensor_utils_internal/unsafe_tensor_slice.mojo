@@ -7,7 +7,7 @@
 from .indexing import _dot_prod, _slice_to_tuple, _row_major_strides
 from .tensor_like import TensorLike
 
-from max_tensor import TensorSpec, StaticTensorSpec
+from tensor import TensorSpec, StaticTensorSpec
 
 from math import ceil
 from sys.intrinsics import strided_load, strided_store

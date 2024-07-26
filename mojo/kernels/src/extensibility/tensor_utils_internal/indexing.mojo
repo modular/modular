@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max_tensor import StaticTensorSpec
+from tensor import StaticTensorSpec
 
 
 @always_inline
