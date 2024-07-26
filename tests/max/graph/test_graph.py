@@ -8,8 +8,22 @@
 import sys
 
 import pytest
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from max import mlir
 from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
+
+empty_graphs = st.builds(
+    Graph, st.text(), input_types=st.lists(st.from_type(TensorType))
+)
+
+
+@given(graph=empty_graphs)
+def test_simple_graphs(graph: Graph):
+    assume(len(graph.inputs) > 0)
+    with graph:
+        graph.output(graph.inputs[0])
+    assert graph._mlir_op.verify()
 
 
 def test_mlir_module_create() -> None:

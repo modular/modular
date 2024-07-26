@@ -8,11 +8,11 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Iterable, TypeGuard, Union
 
-from max import mlir
-from max import _graph
+from max import _graph, mlir
 
 from .dtype import DType
 
@@ -143,6 +143,12 @@ class SymbolicDim(Dim):
     name: str
     """The name of the dimension."""
 
+    def __init__(self, name: str):
+        self.name = name
+        # TODO(MSDK-695): less restrictive names
+        if not re.match(r"^[a-zA-Z_]\w*$", name):
+            raise ValueError("Invalid name for symbolic dimension")
+
     def is_static(self) -> bool:
         """Checks whether or not the dimension is a static dimension.
 
@@ -183,6 +189,8 @@ class SymbolicDim(Dim):
         Returns:
             An mlir.Attribute in the context representing the dimension.
         """
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
         return _graph.symbolic_dim(mlir.Context.current, self.name)
 
     @staticmethod
@@ -212,6 +220,11 @@ class StaticDim(Dim):
 
     dim: int
     """The size of the static dimension."""
+
+    def __init__(self, dim: int):
+        if not -1 <= dim < 2**63:
+            raise ValueError("Dim value must be -1 <= dim < 2**63")
+        self.dim = dim
 
     def is_static(self) -> bool:
         """Checks whether or not the dimension is a static dimension.
@@ -248,6 +261,8 @@ class StaticDim(Dim):
         Returns:
             An mlir.Attribute in the context representing the dimension.
         """
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
         return _graph.static_dim(mlir.Context.current, self.dim)
 
     @staticmethod
@@ -356,6 +371,8 @@ class TensorType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
         return _graph.tensor_type(
             mlir.Context.current,
             _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
@@ -485,6 +502,8 @@ class _OpaqueType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
         return _graph.opaque_type(mlir.Context.current, self.name)
 
     @staticmethod

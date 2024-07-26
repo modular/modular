@@ -4,19 +4,87 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Tests type factories and accessors."""
-import pytest
 
+import re
+
+import pytest
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
 from max import _graph
 from max.graph import DType
+from max.graph.type import Dim, StaticDim, SymbolicDim, TensorType, _OpaqueType
 
 
-@pytest.mark.parametrize(
-    "dtype_mlir", [dtype._mlir for dtype in DType if dtype._mlir != "bool"]
-)
-def test_dtype_type(mlir_context, dtype_mlir) -> None:
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(dtype=...)
+def test_dtype_type(mlir_context, dtype: DType) -> None:
     """Tests dtype to MLIR type conversion."""
-    dtype = _graph.dtype_type(mlir_context, dtype_mlir)
-    assert str(dtype) == dtype_mlir
+    # bool dtype prints as i1
+    assume(dtype != DType.bool)
+    new_dtype = _graph.dtype_type(mlir_context, dtype._mlir)
+    assert dtype._mlir == str(new_dtype)
+
+
+@given(dim=...)
+def test_static_dim(dim: int):
+    assume(-1 <= dim < 2**63)
+    assert StaticDim(dim).dim == dim
+
+
+@given(dim=...)
+def test_static_dim_negative(dim: int):
+    assume(dim < -1)
+    with pytest.raises(ValueError):
+        StaticDim(dim)
+
+
+@given(dim=st.integers(min_value=2**63))
+def test_static_dim_too_big(dim: int):
+    with pytest.raises(ValueError):
+        StaticDim(dim)
+
+
+# TODO(MSDK-695): less restrictive dim names
+@given(
+    name=st.text(
+        alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z"))
+    )
+)
+def test_symbolic_dim(name: str):
+    assume(name != "")
+    SymbolicDim(name)
+
+
+# TODO(MSDK-695): less restrictive dim names
+@given(name=st.text())
+def test_symbolic_dim_invalid(name: str):
+    assume(not re.match(r"^[a-zA-Z_]\w*$", name))
+    with pytest.raises(ValueError):
+        SymbolicDim(name)
+
+
+@given(dim=...)
+def test_dim_to_mlir_no_context(dim: Dim):
+    with pytest.raises(RuntimeError):
+        print(dim.to_mlir())
+
+
+@pytest.mark.skip("DType.bool doesn't work yet :P")
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(tensor_type=...)
+def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType):
+    assert tensor_type == TensorType.from_mlir(tensor_type.to_mlir())
+
+
+@given(tensor_type=...)
+def test_tensor_type_to_mlir_no_context(tensor_type: TensorType):
+    with pytest.raises(RuntimeError):
+        tensor_type.to_mlir()
+
+
+def test_opaque_type_to_mlir_no_context():
+    with pytest.raises(RuntimeError):
+        _OpaqueType("something").to_mlir()
 
 
 def test_bool_type(mlir_context) -> None:

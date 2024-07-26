@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import json
 from contextvars import ContextVar
 from os import PathLike
 from typing import Callable, Iterable, Optional, Union
