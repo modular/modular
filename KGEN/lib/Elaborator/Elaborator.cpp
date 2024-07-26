@@ -26,6 +26,7 @@
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "llvm/ADT/SCCIterator.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1534,86 +1535,236 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
 // Elaborator::diagnoseAndBreakRecursion
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// This struct represents an edge in the partially instantiated concrete
+/// callgraph in the elaborator. It is represented as a pointer to one of the
+/// dependencies of a ParamNode. Note that the edge actually acts as a "node" as
+/// far as `llvm::GraphTraits` is concerned. It preserves the same graph
+/// properties, but this allows us to iterate over edges in graph SCCs, which is
+/// what we want to do.
+struct GraphEdge {
+  /// In the graph edge, this ParamNode represents the caller node.
+  ParamNode *pnode;
+  /// This is the index into the concatenated range over
+  /// `[dependencies, otherDeps]` pointing to the callee ParamNode.
+  size_t depIdx;
+
+  /// This function returns the callee ParamNode by indexing into the
+  /// appropriate dependency list.
+  ParamNode *getPointee() const {
+    auto &inode = *pnode->impl;
+    if (depIdx < inode.dependencies.size())
+      return inode.dependencies[depIdx].second;
+    return inode.otherDeps[depIdx - inode.dependencies.size()].second;
+  }
+  /// Return the location on the callee side representing where the edge
+  /// originates from, to be used for diagnostic reporting.
+  Location getLoc() const {
+    auto &inode = *pnode->impl;
+    if (depIdx < inode.dependencies.size())
+      return inode.dependencies[depIdx].first.getLoc();
+    return inode.otherDeps[depIdx - inode.dependencies.size()].first;
+  }
+  /// Return true if this edge is an interpreter edge. We know it's an
+  /// interpreter edge if it is in `otherDeps` instead of `dependencies`.
+  bool isInterpreterEdge() const {
+    auto &inode = *pnode->impl;
+    return depIdx >= inode.dependencies.size();
+  }
+
+  // Comparison operators for GraphTraits.
+  bool operator==(const GraphEdge &rhs) const {
+    return pnode == rhs.pnode && depIdx == rhs.depIdx;
+  }
+  bool operator!=(const GraphEdge &rhs) const { return !(*this == rhs); }
+
+  /// Iterate over the children of the edge by iterating the dependencies of the
+  /// callee node. This returns the first dependency.
+  GraphEdge begin() const {
+    ParamNode *next = getPointee();
+    return {next, 0};
+  }
+  /// Iterate over the children of the edge by iterating the dependencies of the
+  /// callee node. This returns the past-the-end iterator, where the index is
+  /// equal to the number of dependencies.
+  GraphEdge end() const {
+    ParamNode *next = getPointee();
+    ImplNode &inode = *next->impl;
+    return {next, inode.dependencies.size() + inode.otherDeps.size()};
+  }
+
+  /// GraphEdge is its own iterator.
+  GraphEdge operator*() const { return *this; }
+
+  // Increment operators required by GraphTraits.
+  GraphEdge operator++() {
+    ++depIdx;
+    return *this;
+  }
+  GraphEdge operator++(int) {
+    GraphEdge tmp = *this;
+    ++*this;
+    return tmp;
+  }
+};
+
+/// This struct just wraps the root nodes and edges of the partial expansion
+/// graph so we can iterate over them with GraphTraits.
+struct PartialExpansionGraph {
+  PartialExpansionGraph(ArrayRef<ParamNode *> roots) {
+    // Gross hack to create a virtual root edge to all root generators.
+    // This node has an edge to each of the root nodes.
+    virtualRoot.impl = std::make_unique<ImplNode>(
+        /*func=*/nullptr, &virtualRoot, ParameterUseDefGraph(&unused), "");
+    for (ParamNode *root : roots)
+      virtualRoot.impl->otherDeps.emplace_back(root->gen.getLoc(), root);
+
+    // The base node just has an edge to the virtual root.
+    baseNode.impl = std::make_unique<ImplNode>(
+        /*func=*/nullptr, &baseNode, ParameterUseDefGraph(&unused), "");
+    baseNode.impl->otherDeps.emplace_back(roots.front()->gen.getLoc(),
+                                          &virtualRoot);
+  }
+
+  /// Dummy region needed by the ParameterUseDefGraph constructor.
+  Region unused;
+  ParamNode virtualRoot;
+  ParamNode baseNode;
+};
+} // namespace
+
+namespace llvm {
+template <>
+struct DenseMapInfo<GraphEdge> {
+  static GraphEdge getEmptyKey() {
+    return {DenseMapInfo<ParamNode *>::getEmptyKey(),
+            DenseMapInfo<size_t>::getEmptyKey()};
+  }
+  static GraphEdge getTombstoneKey() {
+    return {DenseMapInfo<ParamNode *>::getTombstoneKey(),
+            DenseMapInfo<size_t>::getTombstoneKey()};
+  }
+  static unsigned getHashValue(GraphEdge node) {
+    return DenseMapInfo<std::pair<ParamNode *, size_t>>::getHashValue(
+        {node.pnode, node.depIdx});
+  }
+  static bool isEqual(GraphEdge lhs, GraphEdge rhs) { return lhs == rhs; }
+};
+
+template <>
+struct GraphTraits<PartialExpansionGraph> {
+  using NodeRef = GraphEdge;
+  using ChildIteratorType = GraphEdge;
+
+  static NodeRef getEntryNode(const PartialExpansionGraph &g) {
+    return {const_cast<ParamNode *>(&g.baseNode), 0};
+  }
+
+  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
+  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
+};
+} // namespace llvm
+
+/// Build an error stack showing the recursion path that cannot be resolved.
+static ErrorTree buildRecursionError(GraphEdge offending,
+                                     ArrayRef<GraphEdge> edges,
+                                     const DenseSet<GraphEdge> &inSCC) {
+  SmallVector<GraphEdge> path;
+  llvm::SmallDenseSet<GraphEdge, 4> edgesInPath;
+  GraphEdge nextEdge = offending;
+
+  // Find a path in the SCC that loops from `offending` back to itself.
+  while (edgesInPath.insert(nextEdge).second) {
+    GraphEdge it = nextEdge.begin();
+    while (!inSCC.contains(*it)) {
+      ++it;
+      assert(it != nextEdge.end());
+    }
+    path.push_back(it);
+    nextEdge = *it;
+  }
+
+  // Use the path to construct a stack of errors showing the user the path.
+  ErrorTree err(offending.getLoc(), "function instantiation in parameter "
+                                    "domain that recursively requires itself");
+  ErrorTree *stack = &err;
+  for (GraphEdge edge : path) {
+    const char *diag = "recursively instantiated through here";
+    if (path.size() == 1)
+      diag = "function recursively calls itself in the parameter domain";
+    else if (edge == offending)
+      diag = "back to parameter domain function call here";
+
+    stack->addCause({edge.getLoc(), diag});
+    stack = &stack->getCauses().back();
+  }
+  return err;
+}
+
 bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
                                            ArrayRef<ParamNode *> roots) {
-  std::function<bool(ParamNode *)> visitParamNode = nullptr;
+  PartialExpansionGraph graph(roots);
+  DenseSet<GraphEdge> inSCC;
+  llvm::SetVector<ParamNode *> sccNodes;
   std::vector<ImplNode *> reschedule;
-  std::vector<ImplNode *> errComplete;
 
-  std::function<void(ImplNode *)> visitImplNode = [&](ImplNode *inode) {
-    // Skip completed nodes.
-    if (inode->numDependencies == 0 || inode->error)
-      return;
+  // Early increment since we will modify the graph as we go.
+  for (auto sccIt = llvm::scc_begin(graph); !sccIt.isAtEnd();) {
+    if (!sccIt.hasCycle()) {
+      ++sccIt;
+      continue;
+    }
+    std::vector<GraphEdge> scc = *sccIt;
+    ++sccIt;
 
-    llvm::BitVector completed(inode->dependencies.size());
-    bool anyBroken = false;
-    for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
-      auto [call, genNode] = dep;
-      if (!visitParamNode(genNode))
-        continue;
-      // This `genNode` is cyclic. Handle the cycle. Break the cycle.
-      (void)completeCallProcessing(call, genNode->impl.get(), inode);
-      completed.set(idx);
-      anyBroken = true;
+    // First build a set of edges in the SCC for convenient lookup.
+    inSCC.clear();
+    sccNodes.clear();
+    std::optional<GraphEdge> badEdge;
+    for (GraphEdge edge : scc) {
+      inSCC.insert(edge);
+      sccNodes.insert(edge.pnode);
+      // Check if we have an invalid edge in the SCC.
+      if (edge.isInterpreterEdge())
+        badEdge = edge;
     }
-    for (auto [idx, dep] : llvm::enumerate(inode->otherDeps)) {
-      auto [loc, genNode] = dep;
-      if (!visitParamNode(genNode))
-        continue;
-      // This indicates a cycle across an interpreter edge, which cannot be
-      // resolved. Emit an error.
-      inode->setToError(
-          ErrorTree(loc, "function requires parameter domain instantiation of "
-                         "recursive call that cannot be resolved"));
-      errComplete.push_back(inode);
-      return;
+    // If we found an invalid edge, diagnose and set an error. Mark the node as
+    // completed with an error.
+    if (badEdge) {
+      ImplNode *inode = badEdge->pnode->impl.get();
+      inode->setToError(buildRecursionError(*badEdge, scc, inSCC));
+      inode->stack.clear();
+      reschedule.push_back(inode);
+      break;
     }
-    if (anyBroken) {
-      // Complete the broken dependencies and reschedule the node.
+
+    // Now, we break all the edges in the SCC for each node in the SCC.
+    for (ParamNode *node : sccNodes) {
+      ImplNode *inode = node->impl.get();
       std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> newDeps;
       for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
-        if (!completed.test(idx))
+        if (!inSCC.contains(GraphEdge{node, idx})) {
           newDeps.push_back(dep);
+        } else {
+          // If this is an edge in the SCC, complete the dependency.
+          auto [call, genNode] = dep;
+          (void)completeCallProcessing(call, genNode->impl.get(), inode);
+        }
       }
+      // Decrement the number of dependencies and set the new dependencies.
+      inode->numDependencies -=
+          (inode->dependencies.size() - newDeps.size() - 1);
       inode->dependencies = std::move(newDeps);
-      inode->numDependencies -= (completed.count() - 1);
       reschedule.push_back(inode);
-      return;
     }
-  };
-
-  visitParamNode = [&](ParamNode *pnode) -> bool {
-    if (pnode->state.getValue() == ParamNodeState::DONE) {
-      return false;
-    } else if (pnode->cycleGeneration != generation) {
-      pnode->cycleGeneration = generation;
-      pnode->cycleState = ParamNode::VISITED;
-    } else if (pnode->cycleState == ParamNode::VISITED) {
-      return true;
-    } else {
-      assert(pnode->cycleState == ParamNode::DONE);
-      return false;
-    }
-
-    visitImplNode(pnode->impl.get());
-    pnode->cycleState = ParamNode::DONE;
-    return false;
-  };
-
-  for (ParamNode *root : roots)
-    visitParamNode(root);
+  }
 
   // Now reschedule the nodes outside the loop to avoid races.
   for (ImplNode *inode : reschedule) {
     g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
-  for (ImplNode *inode : errComplete) {
-    g.numWorkItems.fetch_add(1);
-    inode->stack.clear();
-    completeImplNodeProcessing(inode);
-  }
-  return !reschedule.empty() || !errComplete.empty();
+  return !reschedule.empty();
 }
 
 //===----------------------------------------------------------------------===//

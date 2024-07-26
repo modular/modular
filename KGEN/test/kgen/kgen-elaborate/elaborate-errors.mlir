@@ -155,8 +155,25 @@ kgen.generator export @invalid_param_ref() {
 // -----
 
 kgen.generator export @recursive() -> index {
-  // expected-error @below {{function requires parameter domain instantiation of recursive call that cannot be resolved}}
+  // expected-error @below {{function instantiation in parameter domain that recursively requires itself}}
+  // expected-note @below {{function recursively calls itself in the parameter domain}}
   kgen.param.apply x = [() -> index: @recursive]()
   %0 = kgen.param.constant = <x>
+  kgen.return %0 : index
+}
+
+// -----
+
+kgen.generator export @recursive0() -> index {
+  // expected-error @below {{function instantiation in parameter domain that recursively requires itself}}
+  // expected-note @below {{back to parameter domain function call here}}
+  kgen.param.apply x = [() -> index: @recursive1]()
+  %0 = kgen.param.constant = <x>
+  kgen.return %0 : index
+}
+
+kgen.generator @recursive1() -> index {
+  // expected-note @below {{recursively instantiated through here}}
+  %0 = kgen.call @recursive0() : () -> index
   kgen.return %0 : index
 }
