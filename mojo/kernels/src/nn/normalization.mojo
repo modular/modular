@@ -205,7 +205,6 @@ fn layer_norm_gpu_warp_tiling_vector[
     ],
 ](data: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type],):
     alias align = alignof[SIMD[type, simd_width]]()
-    var num_rows = data.dim[0]()
     var num_cols = data.dim[1]()
     var tid: UInt = ThreadIdx.x()
     var row: UInt = BlockIdx.x()
@@ -263,7 +262,6 @@ fn layer_norm_gpu_warp_tiling_scalar[
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
 ](data: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type],):
-    var num_rows = data.dim[0]()
     var num_cols = data.dim[1]()
     var tid = ThreadIdx.x()
     var row = BlockIdx.x()
@@ -382,7 +380,6 @@ fn layer_norm_gpu_block_scalar[
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
 ](data: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type],):
-    var num_rows = data.dim[0]()
     var num_cols = data.dim[1]()
     var tid = ThreadIdx.x()
     var row = BlockIdx.x()
@@ -432,6 +429,21 @@ fn layer_norm_gpu_block_scalar[
             data.store(Index(row, offset), norm_val)
 
 
+fn layer_norm_reshape[
+    type: DType, rank: Int, output_rank: Int
+](
+    shape: StaticIntTuple[rank],
+    buf: NDBuffer[type, rank],
+) -> NDBuffer[
+    type, output_rank
+]:
+    var last_dim = shape[rank - 1]
+    var prod_all_but_last_dim = shape.flattened_length() // last_dim
+    var new_shape = StaticIntTuple[output_rank](prod_all_but_last_dim, last_dim)
+    var output_rs = reshape[rank, output_rank, type, True](buf, new_shape)
+    return output_rs
+
+
 fn layer_norm_gpu[
     type: DType,
     input_0_fn: fn[_width: Int, _rank: Int] (
@@ -448,10 +460,18 @@ fn layer_norm_gpu[
     output: NDBuffer[type, rank],
     ctx: DeviceContext,
 ) raises:
-    constrained[rank == 2, "unsupported gpu layer_norm rank"]()
+    if rank == 0:
+        return
 
-    var rows = output.dim[0]()
-    var cols = output.dim[1]()
+    var last_dim = shape[rank - 1]
+
+    if last_dim == 0:
+        return
+
+    alias rank_rs = 2
+    var output_rs = layer_norm_reshape[type, rank, rank_rs](shape, output)
+    var rows = output_rs.dim[0]()
+    var cols = output_rs.dim[1]()
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
@@ -469,12 +489,12 @@ fn layer_norm_gpu[
         if cols % simd_width == 0:
             var gpu_func = ctx.compile_function[
                 layer_norm_gpu_warp_tiling_vector[
-                    type, simd_width, rank, input_0_fn, input_1_fn
+                    type, simd_width, rank_rs, input_0_fn, input_1_fn
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                output,
+                output_rs,
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
@@ -483,12 +503,12 @@ fn layer_norm_gpu[
         else:
             var gpu_func = ctx.compile_function[
                 layer_norm_gpu_warp_tiling_scalar[
-                    type, simd_width, rank, input_0_fn, input_1_fn
+                    type, simd_width, rank_rs, input_0_fn, input_1_fn
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                output,
+                output_rs,
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
@@ -498,12 +518,12 @@ fn layer_norm_gpu[
         if cols % simd_width == 0:
             var gpu_func = ctx.compile_function[
                 layer_norm_gpu_block_vector[
-                    type, simd_width, rank, input_0_fn, input_1_fn
+                    type, simd_width, rank_rs, input_0_fn, input_1_fn
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                output,
+                output_rs,
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
@@ -512,12 +532,12 @@ fn layer_norm_gpu[
         else:
             var gpu_func = ctx.compile_function[
                 layer_norm_gpu_block_scalar[
-                    type, simd_width, rank, input_0_fn, input_1_fn
+                    type, simd_width, rank_rs, input_0_fn, input_1_fn
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                output,
+                output_rs,
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
