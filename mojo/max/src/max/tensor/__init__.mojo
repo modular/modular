@@ -3,6 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements the MAX tensor package."""
 
-from .unsafe_tensor_slice import UnsafeTensorSlice
-from .tensor_like import TensorLike
+from tensor import Tensor, TensorShape, TensorSpec, StaticTensorSpec

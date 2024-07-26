@@ -3,6 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""The root package for the compiler module in MAX."""
 
-from .unsafe_tensor_slice import UnsafeTensorSlice
-from .tensor_like import TensorLike
+from compiler import (
+    foreach,
+    register,
+    elementwise,
+    shapeof,
+    stridesof,
+    output_lambda,
+)

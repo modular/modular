@@ -8,7 +8,7 @@
 # TODO (MSDK-465): Remove env var
 # RUN: TMP_ALLOCATE_ON_DEVICE=1 %mojo %s
 
-import max_tensor
+import tensor
 from max.graph import Graph, TensorType, Type, ops
 from max._driver import cpu_device, cuda_device, Tensor
 
@@ -20,13 +20,13 @@ def build_graph() -> Graph:
         "test_mnist_helpers",
         List[Type](TensorType(DType.float32, 1, 28, 28, 1)),
     )
-    cst_data = max_tensor.Tensor[DType.float32](128, 10)
+    cst_data = tensor.Tensor[DType.float32](128, 10)
     cst_data._to_buffer().fill(0.5)
     cst = g.constant(cst_data)
 
     cst_0 = g.constant(
-        max_tensor.Tensor[DType.float32](
-            max_tensor.TensorShape(1, 10),
+        tensor.Tensor[DType.float32](
+            tensor.TensorShape(1, 10),
             -0.0675942451,
             0.0063267909,
             7.43086217e-4,
@@ -40,11 +40,11 @@ def build_graph() -> Graph:
         )
     )
 
-    cst_1_data = max_tensor.Tensor[DType.float32](784, 128)
+    cst_1_data = tensor.Tensor[DType.float32](784, 128)
     cst_1_data._to_buffer().fill(0.5)
     cst_1 = g.constant(cst_1_data)
 
-    cst_2_data = max_tensor.Tensor[DType.float32](1, 128)
+    cst_2_data = tensor.Tensor[DType.float32](1, 128)
     cst_2_data._to_buffer().fill(0.5)
     cst_2 = g.constant(cst_2_data)
 

@@ -12,7 +12,7 @@
 # RUN: mojo build %s -o %t/driver-graph-test
 # RUN: %t/driver-graph-test
 
-import max_tensor as tensor
+import tensor as tensor
 from max.graph import Graph, TensorType, Type, ops
 from max._driver import cpu_device, Tensor
 

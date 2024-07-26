@@ -4,5 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .unsafe_tensor_slice import UnsafeTensorSlice
-from .tensor_like import TensorLike
+from .directives import (
+    register,
+    elementwise,
+    foreach,
+    shapeof,
+    stridesof,
+    output_lambda,
+)

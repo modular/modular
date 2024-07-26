@@ -11,7 +11,7 @@ from tempfile import NamedTemporaryFile
 from utils.index import Index, StaticIntTuple
 
 from max.tensor import Tensor, TensorShape, TensorSpec
-from max_tensor.tensor import _serialize_as_tensor
+from tensor.tensor import _serialize_as_tensor
 
 from testing import assert_almost_equal, assert_equal, assert_false
 

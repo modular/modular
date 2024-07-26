@@ -6,7 +6,7 @@
 from .tensor import Tensor
 from max.tensor import StaticTensorSpec, TensorSpec
 from max.tensor_utils import TensorLike
-from max_tensor_utils.indexing import (
+from tensor_utils.indexing import (
     _dot_prod,
     _slice_to_tuple,
     _row_major_strides,
