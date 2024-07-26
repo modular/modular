@@ -210,7 +210,7 @@ run_tool(
         "//Kernels/mojo/runtime",
         "//Kernels/mojo/subprocess",
         "//ModularFramework/tools/mof",
-        "//SDK/lib/API/mojo/max",
+        "//SDK/lib/API/mojo/max/max",
         "//open-source/mojo/stdlib/stdlib",
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
