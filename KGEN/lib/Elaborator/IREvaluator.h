@@ -250,6 +250,7 @@ struct ParamNode {
         expansionGraph(expansionGraph), isError(false) {
     assert(expansionGraph && "Expansion graph cannot be null");
   }
+  ParamNode() {}
 
   /// Return the first concrete node in the subtree rooted on `this`. This is
   /// often called from a node that is either concrete, or only has one
@@ -277,20 +278,11 @@ struct ParamNode {
 
   /// The instantiation of the parametric function.
   std::unique_ptr<ImplNode> impl;
-  /// The mutex for accessing the implementation list.
-  llvm::sys::SmartRWMutex<true> implsMutex;
-
   /// The number of in-progress implementations.
   std::atomic<size_t> numActive = 0;
 
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;
-
-  /// This flag is used by cycle detection, which runs DFS and checks for
-  /// already-visited nodes. In order to know when to invalidate the visited
-  /// flag, we set a generation number.
-  uint32_t cycleGeneration = 0;
-  enum { VISITED, DONE } cycleState;
 
   /// Add a waiter to the runtime and report task completion to
   /// ParamNodeRuntime.
