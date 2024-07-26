@@ -1178,6 +1178,17 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
   }
 
   if (!hasError) {
+    // If this node is part of an SCC, we need to wait for the chain to
+    // complete. We know we're the only thread in here due to the atomic. When
+    // we reset `done` to false, it's possible an error state will cause another
+    // thread to enter, but that should be okay.
+    if (inode->sccCh) {
+      inode->numDependencies = 1;
+      inode->done = false;
+      std::move(inode->sccCh).emplace();
+      return;
+    }
+
     // Complete processing of outstanding dependencies. Process in reverse with
     // `pop_back` so that forks will end up in the same state.
     while (!inode->dependencies.empty()) {
@@ -1698,8 +1709,13 @@ static ErrorTree buildRecursionError(GraphEdge offending,
 bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
                                            ArrayRef<ParamNode *> roots) {
   PartialExpansionGraph graph(roots);
+
+  // Re-used data structures to reduce memory pressure.
   DenseSet<GraphEdge> inSCC;
-  llvm::SetVector<ParamNode *> sccNodes;
+  std::vector<AnyAsyncValueRef> sccChains;
+  llvm::SetVector<ParamNode *> sccNodes; // this one gets moved
+
+  // These are the nodes we are going to reschedule at the end.
   std::vector<ImplNode *> reschedule;
 
   // Early increment since we will modify the graph as we go.
@@ -1713,7 +1729,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
     // First build a set of edges in the SCC for convenient lookup.
     inSCC.clear();
-    sccNodes.clear();
+    sccChains.clear();
     std::optional<GraphEdge> badEdge;
     for (GraphEdge edge : scc) {
       inSCC.insert(edge);
@@ -1749,8 +1765,19 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       inode->numDependencies -=
           (inode->dependencies.size() - newDeps.size() - 1);
       inode->dependencies = std::move(newDeps);
+      inode->sccCh = AsyncValueRef<Chain>::allocate(runtime);
+      sccChains.push_back(inode->sccCh.copy());
       reschedule.push_back(inode);
     }
+
+    // When all of them are done as individual nodes, they will reset their
+    // dependency counter to 1 and wait for all chains to complete.
+    AsyncRT::andThenSyncMoving(sccChains,
+                               [this, nodes = sccNodes.takeVector()](
+                                   MutableArrayRef<AnyAsyncValueRef>) {
+                                 for (ParamNode *node : nodes)
+                                   completeImplNodeProcessing(node->impl.get());
+                               });
   }
 
   // Now reschedule the nodes outside the loop to avoid races.
