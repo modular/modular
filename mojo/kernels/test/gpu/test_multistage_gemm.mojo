@@ -48,32 +48,13 @@ from layout.tensor_core import (
 )
 from linalg.cublas import cublas_matmul
 from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.utils_gpu import block_swizzle
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
 from random import rand
 from testing import assert_almost_equal
 
 from utils.index import Index, StaticIntTuple
-
-
-# fmt: off
-@always_inline
-fn block_swizzle_by_scale[scale0: Int](
-    block_idx: StaticIntTuple[2], grid_dim: StaticIntTuple[2]
-) -> StaticIntTuple[2]:
-    var scale = scale0
-    var num_partitions = (1 << scale)
-    while (grid_dim[0] & (num_partitions - 1)) != 0 and scale > 1:
-        scale -= 1
-        num_partitions = (1 << scale)
-
-    var bx = block_idx[0] >> scale
-    var by = (block_idx[1] << scale)  + ((block_idx[0]) & ((1 << scale) - 1))
-    bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
-    by = by % grid_dim[1]
-
-    return Index(bx, by)
-# fmt: on
 
 
 fn is_benchmark() -> Bool:
@@ -163,7 +144,7 @@ fn multistage_gemm[
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
-    var block_idx = block_swizzle_by_scale[3](
+    var block_idx = block_swizzle(
         Index(BlockIdx.x(), BlockIdx.y()), Index(N // BN, M // BM)
     ) if swizzle_block else Index(BlockIdx.x(), BlockIdx.y())
 
