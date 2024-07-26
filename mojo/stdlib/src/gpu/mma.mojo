@@ -306,11 +306,12 @@ fn ld_matrix[
     ]()
 
     # The register width is fixed at 4 Bytes (32 bits)
-    alias register_width = 4
-    alias num_registers = (sizeof[type]() * simd_width) // register_width
-    alias base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
+    alias register_btypes = 4
+    alias register_width = register_btypes // sizeof[type]()
+    alias num_registers = simd_width // register_width
 
-    var d = SIMD[type, simd_width]()
+    # Full intrinsic is base + suffix
+    alias base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
     @parameter
     fn get_suffix() -> StringLiteral:
@@ -319,6 +320,8 @@ fn ld_matrix[
             return ".trans" + sfx
         return sfx
 
+    var d = SIMD[type, simd_width]()
+
     # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
     # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
     # and input simd_width being equal to 4
@@ -326,15 +329,18 @@ fn ld_matrix[
     if num_registers == 1:
         alias ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
-        var r_ptr = UnsafePointer.address_of(r).bitcast[__type_of(d)]()
-        d = rebind[SIMD[d.type, d.size]](r_ptr[0])
-        _ = r
+        var r0 = bitcast[type, register_width](r[0])
+
+        d = rebind[SIMD[type, simd_width]](r0)
+
     elif num_registers == 2:
         alias ins = base + ".x2" + get_suffix()
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
-        var r_ptr = UnsafePointer.address_of(r).bitcast[__type_of(d)]()
-        d = rebind[SIMD[d.type, d.size]](r_ptr[0])
-        _ = r
+        var r0 = bitcast[type, register_width](r[0])
+        var r1 = bitcast[type, register_width](r[1])
+
+        d = rebind[SIMD[type, simd_width]](r0.join(r1))
+
     else:
         constrained[
             num_registers == 4,
@@ -344,7 +350,23 @@ fn ld_matrix[
         var r = llvm_intrinsic[
             ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
         ](ptr)
-        var r_ptr = UnsafePointer.address_of(r).bitcast[__type_of(d)]()
-        d = rebind[SIMD[d.type, d.size]](r_ptr[0])
-        _ = r
+
+        # Unpack result to 4 vectors (one per register), then concat them to return.
+        var r0 = bitcast[type, register_width](r[0])
+        var r1 = bitcast[type, register_width](r[1])
+        var r2 = bitcast[type, register_width](r[2])
+        var r3 = bitcast[type, register_width](r[3])
+        d = rebind[SIMD[type, simd_width]](r0.join(r1).join(r2.join(r3)))
+
+        # The following creates additional copies uint32 <-> 2xbf16 in matmul.
+        # @parameter
+        # for i in range(num_registers):
+        #     var vec_per_register = bitcast[type, register_width](
+        #         rebind[UInt32](r[i])
+        #     )
+
+        #     @parameter
+        #     for j in range(register_width):
+        #         d[i * register_width + j] = vec_per_register[j]
+
     return d
