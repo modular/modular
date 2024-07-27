@@ -36,7 +36,7 @@ def matmul_graph(
     )
 
 
-def assert_graph_properties(
+def assert_matmul_properties(
     graph: Graph,
     expected_output_shape: Iterable[Union[str, int]],
     dtype: Optional[DType] = None,
@@ -44,12 +44,18 @@ def assert_graph_properties(
     """Asserts that the graph contains a matmul, has the expected shape and
     dtype.
     """
-    # print([o._mlir_op for o in graph._mlir_op.regions[0].blocks[0].operations])
+    # Get the all the mo.graph body's operations (no nested operations).
+    graph_block_ops = graph._mlir_op.regions[0].blocks[0].operations
+    # Get the type of the terminator mo.output.
+    # This is the output of the graph.
+    graph_output_type = (
+        graph_block_ops[len(graph_block_ops) - 1].operation.operands[0].type
+    )
+
     assert graph._mlir_op.verify()
     assert "rmo.matmul" in str(graph._mlir_op)
     assert f"[{', '.join([str(s) for s in expected_output_shape])}]" in str(
-        # graph._mlir_op.regions[0].blocks[0].operations.result.type
-        graph._mlir_op
+        graph_output_type
     )
     if dtype:
         assert dtype._mlir in str(graph._mlir_op)
@@ -60,15 +66,15 @@ def test_matmul_static(dtype: DType) -> None:
     """Tests for static matmul."""
 
     graph = matmul_graph("matmul_static", ([2, 3], [3, 2]), dtype)
-    assert_graph_properties(graph, (2, 2), dtype)
+    assert_matmul_properties(graph, (2, 2), dtype)
 
     # Test matrix-vector multiplication.
     graph = matmul_graph("matmul_static_matrix_vector", ([2, 3], [3]), dtype)
-    assert_graph_properties(graph, (2,), dtype)
+    assert_matmul_properties(graph, (2,), dtype)
 
     # Test vector-matrix multiplication.
     graph = matmul_graph("matmul_static_vector_matrix", ([3], [3, 2]), dtype)
-    assert_graph_properties(graph, (2,), dtype)
+    assert_matmul_properties(graph, (2,), dtype)
 
     with pytest.raises(ValueError):
         # Test that a shape error is raised.
@@ -79,7 +85,7 @@ def test_matmul_symbolic() -> None:
     """Tests for symbolic matmul."""
 
     graph = matmul_graph("matmul_symbolic", (["M", "K"], ["K", "N"]))
-    assert_graph_properties(graph, ["M", "N"])
+    assert_matmul_properties(graph, ["M", "N"])
 
     # Test that a shape error is raised for incompatible symbolic dims.
     with pytest.raises(ValueError):
@@ -87,11 +93,11 @@ def test_matmul_symbolic() -> None:
 
     # Test symbolic matrix-vector multiplication.
     graph = matmul_graph("matmul_symbolic_matrix_vector", (["M", "K"], ["K"]))
-    assert_graph_properties(graph, ["M"])
+    assert_matmul_properties(graph, ["M"])
 
     # Test symbolic vector-matrix multiplication
     graph = matmul_graph("matmul_symbolic_vector_matrix", (["K"], ["K", "N"]))
-    assert_graph_properties(graph, ["N"])
+    assert_matmul_properties(graph, ["N"])
 
 
 def test_batch_matmul() -> None:
@@ -99,15 +105,15 @@ def test_batch_matmul() -> None:
 
     # Test basic batch matmul.
     graph = matmul_graph("batch_matmul", ([2, 3, 4], [2, 4, 5]))
-    assert_graph_properties(graph, [2, 3, 5])
+    assert_matmul_properties(graph, [2, 3, 5])
 
     # Test broadcasting in the batch dimension.
     graph = matmul_graph("batch_matmul_broadcast", ([1, 3, 4], [2, 4, 5]))
-    assert_graph_properties(graph, [2, 3, 5])
+    assert_matmul_properties(graph, [2, 3, 5])
 
     # Test multiple batch dimensions.
     graph = matmul_graph("multi_batch_matmul", ([2, 3, 4, 5], [2, 3, 5, 6]))
-    assert_graph_properties(graph, [2, 3, 4, 6])
+    assert_matmul_properties(graph, [2, 3, 4, 6])
 
     # Test non-broadcastable inputs raise an error.
     with pytest.raises(ValueError):
@@ -119,12 +125,12 @@ def test_matmul_edge_cases() -> None:
 
     # Test 1x1 matrix multiplication
     graph = matmul_graph("matmul_1x1", ([1, 1], [1, 1]))
-    assert_graph_properties(graph, [1, 1])
+    assert_matmul_properties(graph, [1, 1])
 
     # Test vector-vector matmul.
     graph = matmul_graph("matmul_1d_tensors", ([3], [3]))
     # Vector-vector matmul should produce a scalar.
-    assert_graph_properties(graph, [])
+    assert_matmul_properties(graph, [])
 
     # Test that an error is raised for matmul with a scalar.
     with pytest.raises(ValueError):
@@ -136,25 +142,25 @@ def test_matmul_symbolic_edge_cases() -> None:
 
     # Test symbolic matmul with 1 in inner dimension.
     graph = matmul_graph("symbolic_matmul_1_inner", (["M", 1], [1, "N"]))
-    assert_graph_properties(graph, ["M", "N"])
+    assert_matmul_properties(graph, ["M", "N"])
 
     # Test symbolic batch matmul.
     graph = matmul_graph(
         "symbolic_batch_matmul", (["B", "M", "K"], ["B", "K", "N"])
     )
-    assert_graph_properties(graph, ["B", "M", "N"])
+    assert_matmul_properties(graph, ["B", "M", "N"])
 
     # Test symbolic batch matmul with broadcasting.
     graph = matmul_graph(
         "symbolic_batch_matmul_broadcast", ([1, "M", "K"], ["B", "K", "N"])
     )
-    assert_graph_properties(graph, ["B", "M", "N"])
+    assert_matmul_properties(graph, ["B", "M", "N"])
 
     # Test symbolic matmul with mixed static and dynamic dimensions
     graph = matmul_graph(
         "symbolic_matmul_mixed_static_dynamic", (["M", 3], [3, "N"])
     )
-    assert_graph_properties(graph, ["M", "N"])
+    assert_matmul_properties(graph, ["M", "N"])
     # Check static dimension exists in op signature.
     assert "3" in str(graph._mlir_op)
 
@@ -172,20 +178,20 @@ def test_matmul_higher_rank_symbolic() -> None:
 
     # Test 3D tensor multiplication.
     graph = matmul_graph("symbolic_3d_matmul", (["A", "B", "C"], ["C", "D"]))
-    assert_graph_properties(graph, ["A", "B", "D"])
+    assert_matmul_properties(graph, ["A", "B", "D"])
 
     # Test 4D tensor multiplication.
     graph = matmul_graph(
         "symbolic_4d_matmul", (["A", "B", "C", "D"], ["D", "E"])
     )
-    assert_graph_properties(graph, ["A", "B", "C", "E"])
+    assert_matmul_properties(graph, ["A", "B", "C", "E"])
 
     # Test higher rank tensor multiplication with broadcasting.
     graph = matmul_graph(
         "symbolic_higher_rank_broadcast_matmul",
         (["A", 1, "B", "C"], ["D", "C", "E"]),
     )
-    assert_graph_properties(graph, ["A", "D", "B", "E"])
+    assert_matmul_properties(graph, ["A", "D", "B", "E"])
 
     # Test that an error is raised for incompatible higher rank tensors.
     with pytest.raises(ValueError):
