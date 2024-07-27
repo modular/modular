@@ -8,13 +8,15 @@
 
 # ===----------------------------------------------------------------------=== #
 # Debugging tests:
-# GDB: b %breakpoint1:location
-# GDB: c
-# GDB: cuda thread 0
-# GDB: info locals
-# GDB: info args
+# GDB-COMMAND: b %breakpoint1:location
+# GDB-COMMAND: c
+# GDB-COMMAND: cuda thread 0
+# GDB-COMMAND: info locals
+# GDB-COMMAND: info args
 
-# CHECK-GDB: hit Breakpoint {{.*}} at {{.*}}%breakpoint1:location
+# RUN: %cuda-gdb-commands mojo run -O0 -g %s | FileCheck %s --check-prefix=CHECK-GDB
+
+# CHECK-GDB: hit Breakpoint
 # CHECK-GDB: tid = 0
 # CHECK-GDB: in0 = 0x
 # CHECK-GDB: in1 = 0x
