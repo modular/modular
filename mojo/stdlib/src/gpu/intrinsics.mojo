@@ -118,16 +118,10 @@ fn convert[
     var bf16x2_as_uint32 = inlined_assembly[
         "cvt.rn.bf16x2.f32 $0, $1, $2;",
         UInt32,
-        Float32,
-        Float32,
         constraints="=r,f,f",
-    ](src[1].cast[DType.float32](), src[0].cast[DType.float32]())
+        has_side_effect=False,
+    ](rebind[Float32](src[1]), rebind[Float32](src[0]))
 
-    # Reinterpret cast uint32 to 2 bf16.
-    var ptr = UnsafePointer.address_of(bf16x2_as_uint32).bitcast[
-        SIMD[dst_type, width]
-    ]()
-
-    var result = ptr[0]
-    _ = bf16x2_as_uint32
-    return result
+    return rebind[SIMD[dst_type, width]](
+        bitcast[DType.bfloat16, 2](bf16x2_as_uint32)
+    )
