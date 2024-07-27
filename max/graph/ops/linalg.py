@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Linear algebra operations."""
-from max.mlir.dialects import rmo
+import numpy as np
+from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..graph_value import GraphValue, ValueLike
 
 
 def matmul(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
@@ -40,3 +41,27 @@ def matmul(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
         along the innermost two dimension of each tensor.
     """
     return Graph.current._add_op(rmo.matmul, lhs, rhs)[0]
+
+
+def layer_norm(
+    input: GraphValue, gamma: ValueLike, beta: ValueLike, epsilon: float
+) -> GraphValue:
+    """Performs layer normalization.
+
+    Args:
+        input: The input tensor to normalize.
+        gamma: The gamma parameter of the normalization.
+        beta: The beta parameter of the normalization.
+        epsilon: The epsilon parameter of the normalization.
+
+    Returns:
+        A graph tensor value with the normalization applied.
+    """
+    return Graph.current._add_op(
+        mo.layer_norm,
+        input._mlir_value.type,
+        input,
+        GraphValue(gamma),
+        GraphValue(beta),
+        GraphValue(np.array(epsilon)),
+    )[0]

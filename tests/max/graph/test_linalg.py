@@ -7,9 +7,11 @@
 import sys
 from typing import Iterable, Optional, Union
 
+import numpy as np
 import pytest
 
-from max.graph import DType, Graph, TensorType
+from max.graph import ops, DType, Graph, GraphValue, TensorType
+from max import mlir
 
 if sys.version_info[:2] >= (3, 10):
     from typing import TypeAlias
@@ -17,6 +19,15 @@ else:
     from typing_extensions import TypeAlias
 
 Shape: TypeAlias = Iterable[Union[str, int]]
+
+
+def graph_result_type(graph: Graph) -> mlir.Type:
+    """Returns the graph's result type."""
+    # Get the all the mo.graph body's operations (no nested operations).
+    graph_block_ops = graph._mlir_op.regions[0].blocks[0].operations
+    # Get the type of the terminator mo.output.
+    # This is the output of the graph.
+    return graph_block_ops[len(graph_block_ops) - 1].operation.operands[0].type
 
 
 def matmul_graph(
@@ -44,18 +55,10 @@ def assert_matmul_properties(
     """Asserts that the graph contains a matmul, has the expected shape and
     dtype.
     """
-    # Get the all the mo.graph body's operations (no nested operations).
-    graph_block_ops = graph._mlir_op.regions[0].blocks[0].operations
-    # Get the type of the terminator mo.output.
-    # This is the output of the graph.
-    graph_output_type = (
-        graph_block_ops[len(graph_block_ops) - 1].operation.operands[0].type
-    )
-
     assert graph._mlir_op.verify()
     assert "rmo.matmul" in str(graph._mlir_op)
     assert f"[{', '.join([str(s) for s in expected_output_shape])}]" in str(
-        graph_output_type
+        graph_result_type(graph)
     )
     if dtype:
         assert dtype._mlir in str(graph._mlir_op)
@@ -274,3 +277,24 @@ def test_matmul_invalid_param_name() -> None:
 
     with pytest.raises(ValueError, match="Invalid name"):
         matmul_graph("matmul_invalid_param_name", (["M", "1"], ["1", "N"]))
+
+
+def test_layer_norm() -> None:
+    """Basic test for layer norm."""
+
+    def _layer_norm(input: GraphValue) -> GraphValue:
+        return ops.layer_norm(
+            input,
+            gamma=np.array((0.5, 0.25), np.float32),
+            beta=np.array((3.14, 2.72), np.float32),
+            epsilon=1e-3,
+        )
+
+    graph = Graph(
+        "layer_norm",
+        _layer_norm,
+        input_types=(TensorType(DType.float32, [2, 2]),),
+    )
+
+    assert "mo.layer_norm" in str(graph._mlir_op)
+    graph._mlir_op.verify()

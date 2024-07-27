@@ -22,4 +22,4 @@ convenience methods such as
 from .constant import constant
 from .elementwise import add
 from .casting import reshape
-from .linalg import matmul
+from .linalg import layer_norm, matmul
