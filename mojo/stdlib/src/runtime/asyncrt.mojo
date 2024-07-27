@@ -397,13 +397,13 @@ struct MojoCallContextPtr:
     var ptr: Self.ptr_type
 
     @always_inline
-    fn __init__() -> MojoCallContextPtr:
-        return MojoCallContextPtr {ptr: UnsafePointer[NoneType]()}
+    fn __init__(inout self):
+        self.ptr = UnsafePointer[NoneType]()
 
     @always_inline
-    fn __init__(ptr: Self.ptr_type) -> MojoCallContextPtr:
+    fn __init__(inout self, ptr: Self.ptr_type):
         """Casts a raw pointer to our MojoCallContextPtr."""
-        return MojoCallContextPtr {ptr: ptr}
+        self.ptr = ptr
 
     @always_inline
     fn complete(self):
