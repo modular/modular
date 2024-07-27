@@ -288,10 +288,9 @@ struct RegTraitType(TraitForReg):
 
     # CHECK-LABEL: lit.func @"__copyinit__{{.*}}_thunk"
     # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %existing: !lit.ref<!RegTraitType, imm {{.*}}> borrow_in_mem) -> !kgen.none
-    fn __copyinit__(existing: Self) -> Self:
+    fn __copyinit__(inout self, existing: Self):
         # CHECK: %0 = lit.ref.load %existing
-        # CHECK: %1 = lit.call {{.*}}@RegTraitType{{.*}}__copyinit__{{.*}}(%0)
-        # CHECK: store %1, %self
+        # CHECK: lit.call {{.*}}@RegTraitType{{.*}}__copyinit__{{.*}}(%self, %0)
         pass
 
     @staticmethod
@@ -855,8 +854,8 @@ struct ChildFirst:
 @register_passable
 struct RegisterPassable:
     # CHECK: lit.func @"__copyinit__{{.*}}_thunk"
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {}
+    fn __copyinit__(inout self, existing: Self):
+        pass
 
     # CHECK: lit.func @"implicit{{.*}}_thunk"
     fn implicit(self):
