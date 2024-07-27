@@ -775,7 +775,7 @@ fn multistage_gemm[
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 var src_vec = c_smem_frag.aligned_load[simd_size](i, 0)
-                alias dst_idx = c_gmem_frag.layout(i)
+                alias dst_idx: UInt = c_gmem_frag.layout(i)
                 var vec: SIMD[c_type, simd_size] = 0
 
                 @parameter
@@ -785,8 +785,8 @@ fn multistage_gemm[
                     )
                     vec[j] = vec_converted[0]
                     vec[j + 1] = vec_converted[1]
-                var m = int(thread_offset + dst_idx)._positive_div(N)
-                var n = int(thread_offset + dst_idx)._positive_rem(N)
+                var m = int((thread_offset + dst_idx) // N)
+                var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     epilogue((m, n), vec)
                 # if M % BM == 0:
@@ -833,10 +833,9 @@ fn multistage_gemm[
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
-                alias dst_idx = c_gmem_frag.layout(i)
-                var m = int(thread_offset + dst_idx)._positive_div(N)
-                var n = int(thread_offset + dst_idx)._positive_rem(N)
-                # m, n = divmod(thread_offset + dst_idx, N)
+                alias dst_idx: UInt = c_gmem_frag.layout(i)
+                var m = int((thread_offset + dst_idx) // N)
+                var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     var vec = SIMD[size=2].load[
                         alignment = alignof[SIMD[c_type, 2]]()
