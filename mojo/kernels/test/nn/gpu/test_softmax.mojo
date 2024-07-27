@@ -274,14 +274,11 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            test_gpu_softmax(ctx)
-            test_gpu_softmax_half[DType.bfloat16](ctx)
-            test_gpu_softmax_half[DType.float16](ctx)
-            # Test general online-softmax, communicating data via shared memory.
-            test_gpu_online_softmax[32, 32](ctx)
-            # Test covering entire row within one warp
-            test_gpu_online_softmax[16, 128](ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        test_gpu_softmax(ctx)
+        test_gpu_softmax_half[DType.bfloat16](ctx)
+        test_gpu_softmax_half[DType.float16](ctx)
+        # Test general online-softmax, communicating data via shared memory.
+        test_gpu_online_softmax[32, 32](ctx)
+        # Test covering entire row within one warp
+        test_gpu_online_softmax[16, 128](ctx)
