@@ -56,13 +56,9 @@ fn ldg[type: DType](x: UnsafePointer[Scalar[type]]) -> Scalar[type]:
                 x.bitcast[integral_type](), alignment
             )
         )
-    else:
-        constrained[
-            type.is_floating_point(), "the type must be floating point"
-        ]()
-        return llvm_intrinsic[prefix + "f.f" + suffix, Scalar[type]](
-            x, alignment
-        )
+
+    constrained[type.is_floating_point(), "the type must be floating point"]()
+    return llvm_intrinsic[prefix + "f.f" + suffix, Scalar[type]](x, alignment)
 
 
 # ===----------------------------------------------------------------------===#
