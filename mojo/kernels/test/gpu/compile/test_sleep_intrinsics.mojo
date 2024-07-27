@@ -47,7 +47,5 @@ def test_sleep_intrinsics_sm90():
 
 
 def main():
-    @parameter
-    if not is_defined["MODULAR_PRODUCTION"]():
-        test_sleep_intrinsics_sm80()
-        test_sleep_intrinsics_sm90()
+    test_sleep_intrinsics_sm80()
+    test_sleep_intrinsics_sm90()

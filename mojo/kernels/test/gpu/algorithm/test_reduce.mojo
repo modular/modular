@@ -226,85 +226,82 @@ def main():
         alias func = reduce_max if reduction_idx == 0 else reduce_add
         return func(x, y)
 
-    try:
-        with DeviceContext() as ctx:
-            reduce_inner_test[reduce_add](
-                StaticIntTuple[3](2, 3, 257),
-                Float32(0),
-                List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0, 1542.0),
-                ctx,
-            )
+    with DeviceContext() as ctx:
+        reduce_inner_test[reduce_add](
+            StaticIntTuple[3](2, 3, 257),
+            Float32(0),
+            List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0, 1542.0),
+            ctx,
+        )
 
-            reduce_inner_test[reduce_add](
-                StaticIntTuple[2](5, 257),
-                Float32(0),
-                List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0),
-                ctx,
-            )
+        reduce_inner_test[reduce_add](
+            StaticIntTuple[2](5, 257),
+            Float32(0),
+            List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0),
+            ctx,
+        )
 
-            reduce_inner_test[reduce_add](
-                StaticIntTuple[4](2, 2, 2, 1029),
-                Float32(0),
-                List[Float32](
-                    1029.0,
-                    2058.0,
-                    3087.0,
-                    4116.0,
-                    5145.0,
-                    6174.0,
-                    7203.0,
-                    8232.0,
-                ),
-                ctx,
-            )
+        reduce_inner_test[reduce_add](
+            StaticIntTuple[4](2, 2, 2, 1029),
+            Float32(0),
+            List[Float32](
+                1029.0,
+                2058.0,
+                3087.0,
+                4116.0,
+                5145.0,
+                6174.0,
+                7203.0,
+                8232.0,
+            ),
+            ctx,
+        )
 
-            reduce_inner_test[reduce_max](
-                StaticIntTuple[2](5, 3),
-                Scalar[DType.float32].MIN,
-                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-                ctx,
-            )
+        reduce_inner_test[reduce_max](
+            StaticIntTuple[2](5, 3),
+            Scalar[DType.float32].MIN,
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            ctx,
+        )
 
-            fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
-                StaticIntTuple[2](5, 3),
-                StaticTuple[Scalar[DType.float32], 2](
-                    Scalar[DType.float32].MIN, 0.0
-                ),
-                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-                List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
-                ctx,
-            )
+        fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
+            StaticIntTuple[2](5, 3),
+            StaticTuple[Scalar[DType.float32], 2](
+                Scalar[DType.float32].MIN, 0.0
+            ),
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            ctx,
+        )
 
-            # bf16 tests
-            reduce_inner_test[reduce_max](
-                StaticIntTuple[2](5, 5),
-                BFloat16.MIN,
-                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-                ctx,
-            )
+        # bf16 tests
+        reduce_inner_test[reduce_max](
+            StaticIntTuple[2](5, 5),
+            BFloat16.MIN,
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            ctx,
+        )
 
-            fused_reduce_inner_test[fused_reduce_add_max, 2, DType.bfloat16](
-                StaticIntTuple[2](5, 3),
-                StaticTuple[BFloat16, 2](BFloat16.MIN, 0.0),
-                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-                List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
-                ctx,
-            )
+        fused_reduce_inner_test[fused_reduce_add_max, 2, DType.bfloat16](
+            StaticIntTuple[2](5, 3),
+            StaticTuple[BFloat16, 2](BFloat16.MIN, 0.0),
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            ctx,
+        )
 
-            # fp16 tests
-            reduce_inner_test[reduce_max](
-                StaticIntTuple[2](5, 5),
-                Float16.MIN,
-                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-                ctx,
-            )
+        # fp16 tests
+        reduce_inner_test[reduce_max](
+            StaticIntTuple[2](5, 5),
+            Float16.MIN,
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            ctx,
+        )
 
-            fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float16](
-                StaticIntTuple[2](5, 3),
-                StaticTuple[Float16, 2](Float16.MIN, 0.0),
-                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-                List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
-                ctx,
-            )
-    except e:
-        print("CUDA_ERROR:", e)
+        fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float16](
+            StaticIntTuple[2](5, 3),
+            StaticTuple[Float16, 2](Float16.MIN, 0.0),
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            ctx,
+        )

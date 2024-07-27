@@ -42,10 +42,6 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     res_host.free()
 
 
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            test_kernel_with_list(ctx)
-
-    except e:
-        print("CUDA error", e)
+def main():
+    with DeviceContext() as ctx:
+        test_kernel_with_list(ctx)

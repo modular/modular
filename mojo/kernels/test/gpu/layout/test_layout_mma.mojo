@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug %s
 
 from math import ceildiv
 from random import random_float64
@@ -179,24 +179,21 @@ fn test_layout_mma[
     _ = mat_c_n^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     alias shape_1684 = StaticIntTuple[3](16, 8, 4)
     alias shape_1688 = StaticIntTuple[3](16, 8, 8)
     alias shape_16816 = StaticIntTuple[3](16, 8, 16)
-    try:
-        with DeviceContext() as ctx:
-            test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
-                ctx, rtol=1e-01
-            )
-            test_layout_mma[DType.float32, DType.float32, shape_1688, 16, 8, 8](
-                ctx, rtol=1e-01
-            )
-            test_layout_mma[
-                DType.float32, DType.bfloat16, shape_1688, 16, 8, 8
-            ](ctx, rtol=1e-01)
-            test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
-                ctx, rtol=1e-01
-            )
-    except e:
-        print("CUDA_ERROR:", e)
+
+    with DeviceContext() as ctx:
+        test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
+            ctx, rtol=1e-01
+        )
+        test_layout_mma[DType.float32, DType.float32, shape_1688, 16, 8, 8](
+            ctx, rtol=1e-01
+        )
+        test_layout_mma[DType.float32, DType.bfloat16, shape_1688, 16, 8, 8](
+            ctx, rtol=1e-01
+        )
+        test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
+            ctx, rtol=1e-01
+        )

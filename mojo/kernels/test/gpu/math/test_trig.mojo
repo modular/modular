@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug %s
 
 from math import cos, sin
 from pathlib import Path
@@ -41,7 +41,6 @@ fn run_func[
     _ = func^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     @parameter
     fn cos_fn(val: SIMD[DType.float16, 1]) -> SIMD[DType.float16, 1]:
@@ -59,15 +58,8 @@ def main():
     fn sin_fn(val: SIMD[DType.float32, 1]) -> SIMD[DType.float32, 1]:
         return sin(val)
 
-    try:
-        with DeviceContext() as ctx:
-            run_func[DType.float32, cos_fn](
-                "./cos", 10, -0.83907192945480347, ctx
-            )
-            run_func[DType.float16, cos_fn]("./cos", 10, -0.8388671875, ctx)
-            run_func[DType.float32, sin_fn](
-                "./sin", 10, -0.54402029514312744, ctx
-            )
-            run_func[DType.float16, sin_fn]("./sin", 10, -0.5439453125, ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_func[DType.float32, cos_fn]("./cos", 10, -0.83907192945480347, ctx)
+        run_func[DType.float16, cos_fn]("./cos", 10, -0.8388671875, ctx)
+        run_func[DType.float32, sin_fn]("./sin", 10, -0.54402029514312744, ctx)
+        run_func[DType.float16, sin_fn]("./sin", 10, -0.5439453125, ctx)

@@ -92,22 +92,18 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     print(dst_host)
 
 
-# CHECK-NOT: CUDA_ERROR
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            # Upon first run, an entry for the kernel will be created with the
-            # timing information.
-            test_batched_matmul(ctx)
-            ctx.print_kernel_timing_info()
-            # Here same kernel will be found and time will be added to existing
-            # stats (cumulative time).
-            test_batched_matmul(ctx)
-            ctx.print_kernel_timing_info()
-            # The below command clears the kernel profiling information, so the
-            # subsequent call to the kernel will only include this new run.
-            ctx.clear_kernel_timing_info()
-            test_batched_matmul(ctx)
-            ctx.print_kernel_timing_info()
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        # Upon first run, an entry for the kernel will be created with the
+        # timing information.
+        test_batched_matmul(ctx)
+        ctx.print_kernel_timing_info()
+        # Here same kernel will be found and time will be added to existing
+        # stats (cumulative time).
+        test_batched_matmul(ctx)
+        ctx.print_kernel_timing_info()
+        # The below command clears the kernel profiling information, so the
+        # subsequent call to the kernel will only include this new run.
+        ctx.clear_kernel_timing_info()
+        test_batched_matmul(ctx)
+        ctx.print_kernel_timing_info()

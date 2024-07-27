@@ -88,7 +88,6 @@ def run_elementwise[
     _ = out_device
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     with DeviceContext() as ctx:
         run_elementwise[DType.float16, sqrt](ctx)

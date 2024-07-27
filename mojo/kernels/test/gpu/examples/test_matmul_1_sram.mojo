@@ -204,10 +204,6 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = func^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_matmul(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_matmul(ctx)

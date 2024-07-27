@@ -68,9 +68,6 @@ fn test_dynamic_shared_mem(ctx: DeviceContext) raises:
     res_host_ptr.free()
 
 
-fn main() raises:
-    try:
-        with DeviceContext() as ctx:
-            test_dynamic_shared_mem(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        test_dynamic_shared_mem(ctx)

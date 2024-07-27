@@ -190,15 +190,11 @@ fn create_matmul_test_case[
     ]((m.value, n.value), (m.value, k.value), (k.value, n.value), ctx)
 
 
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            create_matmul_test_case[DType.float32](
-                ctx, dynamic(8), static[8](), static[4]()
-            )
-            create_matmul_test_case[DType.float32](
-                ctx, dynamic(16), static[16](), static[8]()
-            )
-
-    except e:
-        print("CUDA err:", e)
+def main():
+    with DeviceContext() as ctx:
+        create_matmul_test_case[DType.float32](
+            ctx, dynamic(8), static[8](), static[4]()
+        )
+        create_matmul_test_case[DType.float32](
+            ctx, dynamic(16), static[16](), static[8]()
+        )

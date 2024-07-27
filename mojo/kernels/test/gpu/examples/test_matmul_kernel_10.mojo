@@ -274,12 +274,8 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
     _ = func_naive^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    var m = Bench()
-    try:
-        with DeviceContext() as ctx:
-            bench_matmuls(m, ctx)
-    except e:
-        print("CUDA_ERROR:", e)
-    m.dump_report()
+    with DeviceContext() as ctx:
+        var m = Bench()
+        bench_matmuls(m, ctx)
+        m.dump_report()

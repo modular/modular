@@ -70,9 +70,5 @@ def test_tma_tile_copy():
 
 
 def main():
-    try:
-        with Context():
-            test_tma_tile_copy()
-
-    except e:
-        print("CUDA_ERROR", e)
+    with Context():
+        test_tma_tile_copy()

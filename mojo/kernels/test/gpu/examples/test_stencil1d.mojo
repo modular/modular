@@ -145,11 +145,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     _ = func^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_stencil1d[False](ctx)
-            run_stencil1d[True](ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_stencil1d[False](ctx)
+        run_stencil1d[True](ctx)

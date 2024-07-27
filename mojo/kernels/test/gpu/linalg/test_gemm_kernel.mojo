@@ -295,9 +295,6 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     _ = func_naive^
 
 
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            test_gemm_kernel_dynamic(ctx)
-    except e:
-        print("CUDA err:", e)
+def main():
+    with DeviceContext() as ctx:
+        test_gemm_kernel_dynamic(ctx)

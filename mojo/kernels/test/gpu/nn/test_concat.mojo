@@ -216,9 +216,6 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
     _ = output_device
 
 
-fn main() raises:
-    try:
-        with DeviceContext() as ctx:
-            test_concat_4_inputs_rank5(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        test_concat_4_inputs_rank5(ctx)

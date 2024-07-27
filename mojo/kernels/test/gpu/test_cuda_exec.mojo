@@ -107,11 +107,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
     _ = func
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_cuda_mem_ops(ctx)
-            run_vec_add(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_cuda_mem_ops(ctx)
+        run_vec_add(ctx)

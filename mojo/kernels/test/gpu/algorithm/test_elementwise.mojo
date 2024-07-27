@@ -230,7 +230,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         run_elementwise[DType.float32](ctx)
         run_elementwise_uneven_simd[DType.float32](ctx)

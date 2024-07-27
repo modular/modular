@@ -99,12 +99,8 @@ def test_cublas_result_format():
     assert_equal(str(Result.LICENSE_ERROR), "LICENSE_ERROR")
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     test_cublas_result_format()
 
-    try:
-        with DeviceContext() as ctx:
-            test_cublas(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        test_cublas(ctx)

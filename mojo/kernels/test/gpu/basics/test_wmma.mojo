@@ -965,30 +965,25 @@ fn run_mma_fp16_fp16(
     _ = func_naive^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            # Run tensor core versions of matmul, verify correctness & compare to naive.
-            run_mma_fp32_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_fp16(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_fp16(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
+    with DeviceContext() as ctx:
+        # Run tensor core versions of matmul, verify correctness & compare to naive.
+        run_mma_fp32_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_fp16(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_fp16(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp32_bf16(16, 8, 8, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_bf16(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_bf16(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_bf16(16, 8, 8, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_bf16(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_bf16(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp32_bf16_2(16, 8, 16, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_bf16_2(2048, 1024, 2048, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_bf16_2(2048, 4096, 2048, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_bf16_2(16, 8, 16, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_bf16_2(2048, 1024, 2048, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_bf16_2(2048, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp32_tf32(16, 8, 8, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_tf32(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
-            run_mma_fp32_tf32(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_tf32(16, 8, 8, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_tf32(1024, 1024, 1024, -100, 100, 10, 0.01, ctx)
+        run_mma_fp32_tf32(1024, 4096, 2048, -100, 100, 10, 0.01, ctx)
 
-            run_mma_fp16_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)
-            run_mma_fp16_fp16(512, 128, 32, -10, 10, 10, 0.01, ctx)
-            run_mma_fp16_fp16(128, 256, 64, -10, 10, 10, 0.01, ctx)
-
-    except e:
-        print("CUDA_ERROR:", e)
+        run_mma_fp16_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)
+        run_mma_fp16_fp16(512, 128, 32, -10, 10, 10, 0.01, ctx)
+        run_mma_fp16_fp16(128, 256, 64, -10, 10, 10, 0.01, ctx)

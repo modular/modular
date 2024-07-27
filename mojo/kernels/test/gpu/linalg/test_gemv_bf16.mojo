@@ -167,11 +167,6 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
     _ = func_naive^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_matvec(4096, 1, 4096, ctx)
-
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_matvec(4096, 1, 4096, ctx)

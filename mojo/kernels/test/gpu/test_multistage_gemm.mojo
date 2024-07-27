@@ -434,11 +434,8 @@ fn test[type: DType, transpose_b: Bool](ctx: DeviceContext) raises:
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            test[DType.float32, False](ctx)
-            test[DType.float32, True](ctx)
-            test[DType.bfloat16, False](ctx)
-            test[DType.bfloat16, True](ctx)
-    except e:
-        print("ERROR:", e)
+    with DeviceContext() as ctx:
+        test[DType.float32, False](ctx)
+        test[DType.float32, True](ctx)
+        test[DType.bfloat16, False](ctx)
+        test[DType.bfloat16, True](ctx)

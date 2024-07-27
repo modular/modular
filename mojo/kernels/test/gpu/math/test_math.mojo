@@ -85,71 +85,67 @@ fn powf_fn(val: SIMD) -> __type_of(val):
     return val**3.2
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
+    with DeviceContext() as ctx:
 
+        @parameter
+        fn test[
+            *kernel_fns: fn[type: DType, width: Int] (
+                SIMD[type, width]
+            ) -> SIMD[type, width]
+        ](ctx: DeviceContext) raises:
             @parameter
-            fn test[
+            fn variadic_len[
                 *kernel_fns: fn[type: DType, width: Int] (
                     SIMD[type, width]
                 ) -> SIMD[type, width]
-            ](ctx: DeviceContext) raises:
-                @parameter
-                fn variadic_len[
-                    *kernel_fns: fn[type: DType, width: Int] (
-                        SIMD[type, width]
-                    ) -> SIMD[type, width]
-                ]() -> Int:
-                    return __mlir_op.`pop.variadic.size`(kernel_fns)
+            ]() -> Int:
+                return __mlir_op.`pop.variadic.size`(kernel_fns)
 
-                alias ls = variadic_len[kernel_fns]()
+            alias ls = variadic_len[kernel_fns]()
 
-                @parameter
-                for idx in range(ls):
-                    alias kernel_fn = kernel_fns[idx]
-                    run_func[DType.float32, kernel_fn[]](ctx)
-                    run_func[DType.float16, kernel_fn[]](ctx)
+            @parameter
+            for idx in range(ls):
+                alias kernel_fn = kernel_fns[idx]
+                run_func[DType.float32, kernel_fn[]](ctx)
+                run_func[DType.float16, kernel_fn[]](ctx)
 
-            # Anything that's commented does not work atm and needs to be
-            # implemented. This list is also not exhastive and needs to be
-            # expanded.
-            test[
-                sqrt_fn,
-                rsqrt,
-                ldexp_fn,
-                frexp_fn,
-                log,
-                log2,
-                # log10,
-                # log1p,
-                # logb,
-                # cbrt,
-                # hypot_fn,
-                # erfc,
-                # lgamma,
-                # gamma,
-                # remainder_fn,
-                # j0,
-                # j1,
-                # y0,
-                # y1,
-                # scalb_fn,
-                gcd_fn,
-                sin,
-                # asin,
-                cos,
-                # acos,
-                tanh,
-                # atanh,
-                exp,
-                erf,
-                floor_fn,
-                ceil_fn,
-                pow_fn,
-                powi_fn,
-                powf_fn,
-            ](ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+        # Anything that's commented does not work atm and needs to be
+        # implemented. This list is also not exhastive and needs to be
+        # expanded.
+        test[
+            sqrt_fn,
+            rsqrt,
+            ldexp_fn,
+            frexp_fn,
+            log,
+            log2,
+            # log10,
+            # log1p,
+            # logb,
+            # cbrt,
+            # hypot_fn,
+            # erfc,
+            # lgamma,
+            # gamma,
+            # remainder_fn,
+            # j0,
+            # j1,
+            # y0,
+            # y1,
+            # scalb_fn,
+            gcd_fn,
+            sin,
+            # asin,
+            cos,
+            # acos,
+            tanh,
+            # atanh,
+            exp,
+            erf,
+            floor_fn,
+            ceil_fn,
+            pow_fn,
+            powi_fn,
+            powf_fn,
+        ](ctx)

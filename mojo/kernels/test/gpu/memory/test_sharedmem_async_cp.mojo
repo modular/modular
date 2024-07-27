@@ -98,9 +98,6 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     _ = copy_via_shared_gpu^
 
 
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            run_copy_via_shared(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        run_copy_via_shared(ctx)

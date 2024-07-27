@@ -393,14 +393,10 @@ fn test_gevm_with_epilogue_fn(
     _ = func_naive^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            # gemv for matrix vector multiply and gevm for vector matrix multiply
-            run_matvec(4096, 1, 4096, ctx)
-            run_matvec(1, 4096, 4096, ctx)
-            test_gevm_with_epilogue_fn(1, 4096, 4096, ctx)
-            test_gevm_with_epilogue_fn(4096, 1, 4096, ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        # gemv for matrix vector multiply and gevm for vector matrix multiply
+        run_matvec(4096, 1, 4096, ctx)
+        run_matvec(1, 4096, 4096, ctx)
+        test_gevm_with_epilogue_fn(1, 4096, 4096, ctx)
+        test_gevm_with_epilogue_fn(4096, 1, 4096, ctx)

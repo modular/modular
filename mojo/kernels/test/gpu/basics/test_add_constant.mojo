@@ -68,8 +68,5 @@ def run_add_constant(ctx: DeviceContext):
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_add_constant(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_add_constant(ctx)

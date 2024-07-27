@@ -76,10 +76,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
 
 
 fn main() raises:
-    try:
-        with DeviceContext() as ctx:
-            test_convert_asm()
-            # Only support 2xFP32 -> 2xBF16 convertion via ptx.
-            test_convert[DType.float32, DType.bfloat16](ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        test_convert_asm()
+        # Only support 2xFP32 -> 2xBF16 convertion via ptx.
+        test_convert[DType.float32, DType.bfloat16](ctx)

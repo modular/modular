@@ -616,8 +616,5 @@ fn test(ctx: DeviceContext) raises:
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            test(ctx)
-    except e:
-        print("ERROR:", e)
+    with DeviceContext() as ctx:
+        test(ctx)

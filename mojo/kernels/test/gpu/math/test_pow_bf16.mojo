@@ -81,7 +81,6 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     _ = out_device
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     with DeviceContext() as ctx:
         run_elementwise[False](-1, ctx)

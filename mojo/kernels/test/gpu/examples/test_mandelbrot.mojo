@@ -127,8 +127,5 @@ fn run_mandelbrot() raises:
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with Context() as ctx:
-            run_mandelbrot()
-    except e:
-        print("CUDA_ERROR:", e)
+    with Context() as ctx:
+        run_mandelbrot()

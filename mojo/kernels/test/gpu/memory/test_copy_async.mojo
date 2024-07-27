@@ -152,13 +152,11 @@ def test_async_copy_sm90():
 
 
 def main():
-    @parameter
-    if not is_defined["MODULAR_PRODUCTION"]():
-        test_mbarrier_sm80()
-        test_mbarrier_sm90()
-        test_mbarrier_init_sm80()
-        test_mbarrier_init_sm90()
-        test_mbarrier_test_wait_sm80()
-        test_mbarrier_test_wait_sm90()
-        test_async_copy_sm80()
-        test_async_copy_sm90()
+    test_mbarrier_sm80()
+    test_mbarrier_sm90()
+    test_mbarrier_init_sm80()
+    test_mbarrier_init_sm90()
+    test_mbarrier_test_wait_sm80()
+    test_mbarrier_test_wait_sm90()
+    test_async_copy_sm80()
+    test_async_copy_sm90()

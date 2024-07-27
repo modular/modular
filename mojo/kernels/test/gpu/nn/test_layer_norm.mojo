@@ -528,40 +528,28 @@ fn run_layer_norm_warp_tiling_scalar[
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_layer_norm_block_scalar[DType.float32](ctx, rows=3, cols=5)
-            run_layer_norm_block_vector[DType.float32](ctx, rows=3, cols=8)
-            run_layer_norm_block_scalar[DType.float32](ctx, rows=7, cols=33)
-            run_layer_norm_block_vector[DType.float32](ctx, rows=1, cols=1024)
-            run_layer_norm_block_vector[DType.float32](
-                ctx, rows=1, cols=8192, rtol=0.1
-            )
+    with DeviceContext() as ctx:
+        run_layer_norm_block_scalar[DType.float32](ctx, rows=3, cols=5)
+        run_layer_norm_block_vector[DType.float32](ctx, rows=3, cols=8)
+        run_layer_norm_block_scalar[DType.float32](ctx, rows=7, cols=33)
+        run_layer_norm_block_vector[DType.float32](ctx, rows=1, cols=1024)
+        run_layer_norm_block_vector[DType.float32](
+            ctx, rows=1, cols=8192, rtol=0.1
+        )
 
-            run_layer_norm_warp_tiling_scalar[DType.float32](
-                ctx, rows=3, cols=5
-            )
-            run_layer_norm_warp_tiling_vector[DType.float32](
-                ctx, rows=3, cols=8
-            )
-            run_layer_norm_warp_tiling_scalar[DType.float32](
-                ctx, rows=7, cols=33
-            )
-            run_layer_norm_warp_tiling_vector[DType.float32](
-                ctx, rows=1, cols=1024
-            )
-            run_layer_norm_warp_tiling_vector[DType.float32](
-                ctx, rows=10, cols=4096
-            )
-            # variable rank
-            run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](0))
-            run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](5))
-            run_layer_norm_gpu[DType.float32, 5](
-                ctx, StaticIntTuple[5](3, 4, 10, 20, 8)
-            )
-            run_layer_norm_gpu[DType.float32, 5](
-                ctx, StaticIntTuple[5](1, 5, 6, 10, 128)
-            )
-
-    except e:
-        print("CUDA_ERROR:", e)
+        run_layer_norm_warp_tiling_scalar[DType.float32](ctx, rows=3, cols=5)
+        run_layer_norm_warp_tiling_vector[DType.float32](ctx, rows=3, cols=8)
+        run_layer_norm_warp_tiling_scalar[DType.float32](ctx, rows=7, cols=33)
+        run_layer_norm_warp_tiling_vector[DType.float32](ctx, rows=1, cols=1024)
+        run_layer_norm_warp_tiling_vector[DType.float32](
+            ctx, rows=10, cols=4096
+        )
+        # variable rank
+        run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](0))
+        run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](5))
+        run_layer_norm_gpu[DType.float32, 5](
+            ctx, StaticIntTuple[5](3, 4, 10, 20, 8)
+        )
+        run_layer_norm_gpu[DType.float32, 5](
+            ctx, StaticIntTuple[5](1, 5, 6, 10, 128)
+        )

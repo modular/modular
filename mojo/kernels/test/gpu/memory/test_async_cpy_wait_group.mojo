@@ -157,10 +157,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     _ = func^
 
 
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            run_copy_via_shared(ctx)
-            test_copy_with_src_size(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        run_copy_via_shared(ctx)
+        test_copy_with_src_size(ctx)

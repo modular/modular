@@ -584,10 +584,6 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     _ = func^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_matmul_mma_warptiling(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_matmul_mma_warptiling(ctx)

@@ -261,89 +261,85 @@ fn test[
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            # fp32 depth = 128, legacy impl. llama2 shape.
-            test[3, DType.float32, DType.float32, 128, 32](
-                1024, 1024, ctx, is_benchmark()
-            )
+    with DeviceContext() as ctx:
+        # fp32 depth = 128, legacy impl. llama2 shape.
+        test[3, DType.float32, DType.float32, 128, 32](
+            1024, 1024, ctx, is_benchmark()
+        )
 
-            # fp32 depth = 128, seqlen % 128 != 0, legacy impl
-            test[3, DType.float32, DType.float32, 128, 1](100, 100, ctx)
-            test[3, DType.float32, DType.float32, 128, 1](1, 1, ctx)
-            test[3, DType.float32, DType.float32, 128, 1](1, 7, ctx)
-            test[3, DType.float32, DType.float32, 128, 1](1, 13, ctx)
-            test[3, DType.float32, DType.float32, 128, 1](1, 200, ctx)
+        # fp32 depth = 128, seqlen % 128 != 0, legacy impl
+        test[3, DType.float32, DType.float32, 128, 1](100, 100, ctx)
+        test[3, DType.float32, DType.float32, 128, 1](1, 1, ctx)
+        test[3, DType.float32, DType.float32, 128, 1](1, 7, ctx)
+        test[3, DType.float32, DType.float32, 128, 1](1, 13, ctx)
+        test[3, DType.float32, DType.float32, 128, 1](1, 200, ctx)
 
-            # fp32 arbitrary depth and num_heads, baseline impl.
-            test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
-            test[3, DType.float32, DType.float32, 25, 3](1, 1, ctx)
-            test[3, DType.float32, DType.float32, 200, 4](1, 20, ctx)
-            test[3, DType.float32, DType.float32, 97, 5](1, 17, ctx)
-            test[3, DType.float32, DType.float32, 13, 6](1, 100, ctx)
+        # fp32 arbitrary depth and num_heads, baseline impl.
+        test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
+        test[3, DType.float32, DType.float32, 25, 3](1, 1, ctx)
+        test[3, DType.float32, DType.float32, 200, 4](1, 20, ctx)
+        test[3, DType.float32, DType.float32, 97, 5](1, 17, ctx)
+        test[3, DType.float32, DType.float32, 13, 6](1, 100, ctx)
 
-            # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-            test[
-                4,
-                DType.float32,
-                DType.float32,
-                128,
-                32,
-                against_gpu_naive=True,
-                use_tensor_core=True,
-            ](1024, 1024, ctx, is_benchmark())
+        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
+        test[
+            4,
+            DType.float32,
+            DType.float32,
+            128,
+            32,
+            against_gpu_naive=True,
+            use_tensor_core=True,
+        ](1024, 1024, ctx, is_benchmark())
 
-            # bf16 depth == 128, bf16-fp32 mma
-            test[
-                4,
-                DType.bfloat16,
-                DType.bfloat16,
-                depth=128,
-                num_heads=1,
-                against_gpu_naive=True,
-                use_tensor_core=True,
-            ](128, 128, ctx, use_index_input=True)
+        # bf16 depth == 128, bf16-fp32 mma
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+            against_gpu_naive=True,
+            use_tensor_core=True,
+        ](128, 128, ctx, use_index_input=True)
 
-            test[
-                4,
-                DType.bfloat16,
-                DType.float32,
-                depth=128,
-                num_heads=1,
-                against_gpu_naive=True,
-                use_tensor_core=True,
-            ](128, 128, ctx)
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            depth=128,
+            num_heads=1,
+            against_gpu_naive=True,
+            use_tensor_core=True,
+        ](128, 128, ctx)
 
-            test[
-                3,
-                DType.bfloat16,
-                DType.float32,
-                128,
-                3,
-                against_gpu_naive=True,
-                use_tensor_core=True,
-            ](256, 256, ctx)
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+            use_tensor_core=True,
+        ](256, 256, ctx)
 
-            test[
-                4,
-                DType.bfloat16,
-                DType.float32,
-                128,
-                32,
-                against_gpu_naive=True,
-                use_tensor_core=True,
-            ](1024, 1024, ctx, is_benchmark())
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            32,
+            against_gpu_naive=True,
+            use_tensor_core=True,
+        ](1024, 1024, ctx, is_benchmark())
 
-            test[
-                4,
-                DType.bfloat16,
-                DType.float32,
-                128,
-                24,
-                group=3,
-                against_gpu_naive=True,
-                use_tensor_core=True,
-            ](1024, 1024, ctx)
-
-    except e:
-        print("CUDA_ERROR:", e)
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=3,
+            against_gpu_naive=True,
+            use_tensor_core=True,
+        ](1024, 1024, ctx)

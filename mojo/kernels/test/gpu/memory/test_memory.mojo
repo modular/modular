@@ -77,11 +77,7 @@ fn test_memset_async(ctx: DeviceContext) raises:
     test_memset[DType.int8](3)
 
 
-# CHECK-NOT: CUDA_ERROR
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            test_malloc_managed()
-            test_memset_async(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        test_malloc_managed()
+        test_memset_async(ctx)

@@ -93,10 +93,6 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     print(dst_host)
 
 
-# CHECK-NOT: CUDA_ERROR
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            test_batched_matmul(ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with DeviceContext() as ctx:
+        test_batched_matmul(ctx)

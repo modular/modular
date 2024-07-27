@@ -72,8 +72,6 @@ def test_SM80_m16n8k8_F32TF32TF32F32_TN():
 
 
 def main():
-    @parameter
-    if not is_defined["MODULAR_PRODUCTION"]():
-        test_SM80_16x8x8_F16F16F16F16_TN()
-        test_SM80_m16n8k4_F32TF32TF32F32_TN()
-        test_SM80_m16n8k8_F32TF32TF32F32_TN()
+    test_SM80_16x8x8_F16F16F16F16_TN()
+    test_SM80_m16n8k4_F32TF32TF32F32_TN()
+    test_SM80_m16n8k8_F32TF32TF32F32_TN()

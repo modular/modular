@@ -96,10 +96,6 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     _ = func^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
-    try:
-        with DeviceContext() as ctx:
-            run_binary_add(ctx, 2.5)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_binary_add(ctx, 2.5)
