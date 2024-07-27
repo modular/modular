@@ -21,6 +21,7 @@ py_library(
     deps = [
         requirement("find_libpython"),
         requirement("numpy"),
+        requirement("pyyaml"),
         requirement("ruamel.yaml"),
     ],
 )
@@ -28,6 +29,7 @@ py_library(
 modular_py_test(
     name = "unittests",
     srcs = glob(["tests/**/*.py"]),
+    args = ["--doctest-modules"],
     tags = ["requires-network"],
     deps = [
         ":support",

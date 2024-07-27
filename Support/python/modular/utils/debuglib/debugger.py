@@ -30,6 +30,10 @@ _debugger: Optional[SBDebugger] = None
 
 def _load_lldb() -> Any:
     """Loads the lldb python module and caches it."""
+    if os.getenv("TEST_TMPDIR"):
+        # Skip import side effect in tests
+        return
+
     global lldb
     if lldb is None:
         # Fortunately the path to the module can be gotten from LLDB itself.
