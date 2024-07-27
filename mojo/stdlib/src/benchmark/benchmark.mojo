@@ -398,19 +398,18 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) capturing -> Int]:
     var max_runtime_secs: Float64
 
     fn __init__(
+        inout self,
         max_batch_size: Int = 0,
         num_warmup: Int = 2,
         max_iters: Int = 1_000_000_000,
         min_runtime_secs: Float64 = 2,
         max_runtime_secs: Float64 = 60,
-    ) -> Self:
-        return Self {
-            max_batch_size: max_batch_size,
-            num_warmup: num_warmup,
-            max_iters: max_iters,
-            min_runtime_secs: min_runtime_secs,
-            max_runtime_secs: max_runtime_secs,
-        }
+    ):
+        self.max_batch_size = max_batch_size
+        self.num_warmup = num_warmup
+        self.max_iters = max_iters
+        self.min_runtime_secs = min_runtime_secs
+        self.max_runtime_secs = max_runtime_secs
 
 
 # ===----------------------------------------------------------------------===#
