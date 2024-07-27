@@ -169,21 +169,20 @@ struct _CachedFunctionPayload:
     var device_context_ptr: UnsafePointer[DeviceContext]
 
     fn __init__(
+        inout self,
         verbose: Bool,
         max_registers: Int32,
         threads_per_block: Int32,
         cache_config: Int32,
         func_attribute: FuncAttribute,
         device_context_ptr: UnsafePointer[DeviceContext],
-    ) -> Self:
-        return Self {
-            verbose: verbose,
-            max_registers: max_registers,
-            threads_per_block: threads_per_block,
-            cache_config: cache_config,
-            func_attribute: func_attribute,
-            device_context_ptr: device_context_ptr,
-        }
+    ):
+        self.verbose = verbose
+        self.max_registers = max_registers
+        self.threads_per_block = threads_per_block
+        self.cache_config = cache_config
+        self.func_attribute = func_attribute
+        self.device_context_ptr = device_context_ptr
 
 
 struct FunctionCache:
