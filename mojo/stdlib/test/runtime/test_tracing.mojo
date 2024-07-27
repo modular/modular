@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: MODULAR_PROFILE_FILENAME="-" %mojo %s | FileCheck %s
+# RUN: env MODULAR_PROFILE_FILENAME="-" %mojo %s | FileCheck %s
 
 from pathlib import Path
 
