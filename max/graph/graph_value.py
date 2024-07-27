@@ -6,15 +6,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Union
 
+import numpy as np
 from max import mlir
 
 from . import ops
 from .type import ShapeLike
 
 
-@dataclass
 class GraphValue:
     """Represents a symbolic value within a `Graph`.
 
@@ -36,6 +36,16 @@ class GraphValue:
     """
 
     _mlir_value: mlir.Value
+
+    def __init__(self, value: ValueLike) -> None:
+        if isinstance(value, mlir.Value):
+            self._mlir_value = value
+        elif isinstance(value, GraphValue):
+            self._mlir_value = value._mlir_value
+        elif isinstance(value, np.ndarray):
+            self._mlir_value = ops.constant(value)._mlir_value
+        else:
+            raise ValueError(f"can't construct GraphValue from {value}")
 
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)
@@ -61,3 +71,6 @@ class GraphValue:
             The operation result.
         """
         return ops.matmul(self, rhs)
+
+
+ValueLike = Union[mlir.Value, GraphValue, np.ndarray]

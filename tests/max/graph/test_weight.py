@@ -4,12 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
-import sys
 from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
-from max.graph import DType, Graph, TensorType, Weight
+from max.graph import DType, Graph
 
 
 def test_add_weight() -> None:
@@ -32,7 +31,7 @@ def test_add_weight() -> None:
                 filepath=f.name,
             )
 
-            graph.output(w, w2)
+            graph.output(w.value, w2.value)
             graph._mlir_op.verify()
             gen_mlir = str(graph._mlir_op)
             print(gen_mlir)
@@ -48,11 +47,11 @@ def test_add_same_weight() -> None:
     """Tests adding weights to the graph."""
     with Graph("graph_with_weights", input_types=()) as graph:
         with NamedTemporaryFile() as f:
-            w = graph.add_weight(
+            graph.add_weight(
                 "w",
                 filepath=f.name,
             )
-            with pytest.raises(ValueError, match="already exists") as exc_info:
+            with pytest.raises(ValueError, match="already exists"):
                 _ = graph.add_weight(
                     "w",
                     filepath=f.name,

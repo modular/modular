@@ -11,6 +11,7 @@ import contextlib
 import inspect
 from contextvars import ContextVar
 from os import PathLike
+from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
 from max import _graph, mlir
@@ -278,7 +279,7 @@ class Graph:
         if filepath is None:
             raise ValueError("Filepath must be defined.")
         weights_attr = _graph.weights_attr(
-            filepath or "",
+            Path(filepath or ""),
             offset or 0,
             tensor_type.to_mlir(),
             name,
@@ -287,7 +288,7 @@ class Graph:
             mo.constant, result=tensor_type.to_mlir(), value=weights_attr
         )[0]
         weight = Weight(
-            weights_tensor._mlir_value,
+            weights_tensor,
             name=name,
             tensor_type=tensor_type,
             filepath=filepath,

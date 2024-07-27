@@ -29,9 +29,9 @@ class Dim:
     In most cases you don't need to work with a `Dim` directly, but can rely
     on conversion constructors, for instance you can specify a tensor type as
 
-    ```mojo
+    ```python
     from max.graph import Dim, TensorType
-    tensor_type = TensorType(DType.int64, "batch", 10)
+    tensor_type = TensorType(DType.int64, ("batch", 10))
     ```
     will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
     a static dimension of size 10, and a dynamic dimension.

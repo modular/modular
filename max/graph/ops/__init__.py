@@ -19,6 +19,7 @@ convenience methods such as
 [`reshape()`](/max/api/python/graph/graph_value/GraphValue#reshape) and
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
+from .constant import constant
 from .elementwise import add
 from .casting import reshape
 from .linalg import matmul

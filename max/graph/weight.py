@@ -5,16 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 from dataclasses import dataclass
 from os import PathLike
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 from .graph_value import GraphValue
 from .type import TensorType
 
 
 @dataclass
-class Weight(GraphValue):
+class Weight:
     """Represents a value in a Graph that can be loaded at a later time."""
 
+    value: GraphValue
     name: str
     tensor_type: TensorType
 
