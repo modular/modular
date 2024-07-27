@@ -13,6 +13,8 @@ from memory.unsafe import bitcast
 from ._utils import _check_error, _get_dylib_function
 from .stream import Stream, _StreamHandle
 
+from utils import StaticTuple
+
 # ===----------------------------------------------------------------------===#
 # Memory
 # ===----------------------------------------------------------------------===#
@@ -470,3 +472,210 @@ fn create_tma_descriptor[
         )
     )
     return tensor_map_ptr.bitcast[NoneType]()
+
+
+# ===----------------------------------------------------------------------===#
+# Virtual Memory Management
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable
+struct MemLocationType:
+    var _value: Int32
+
+    alias INVALID = Self(0)
+    alias DEVICE = Self(1)
+    alias HOST = Self(2)
+    alias HOST_NUMA = Self(3)
+    alias HOST_NUMA_CURRENT = Self(4)
+    alias MAX = Self(0x7FFFFFFF)
+
+    fn __init__(inout self, value: Int32):
+        self._value = value
+
+    fn __eq__(self, other: MemLocationType) -> Bool:
+        return self._value == other._value
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write_str["(MemLocationType = "]()
+        if self == Self.INVALID:
+            writer.write_str["INVALID"]()
+        elif self == Self.DEVICE:
+            writer.write_str["DEVICE"]()
+        elif self == Self.HOST:
+            writer.write_str["HOST"]()
+        elif self == Self.HOST_NUMA:
+            writer.write_str["HOST_NUMA"]()
+        elif self == Self.HOST_NUMA_CURRENT:
+            writer.write_str["HOST_NUMA_CURRENT"]()
+        else:
+            writer.write_str["MAX"]()
+        writer.write_str[")"]()
+
+
+@value
+@register_passable
+struct MemAllocationType:
+    var _value: Int32
+
+    alias INVALID = Self(0)
+    alias PINNED = Self(1)
+    alias MAX = Self(0x7FFFFFFF)
+
+    fn __init__(inout self, value: Int32):
+        self._value = value
+
+    fn __eq__(self, other: MemAllocationType) -> Bool:
+        return self._value == other._value
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write_str["(MemAllocationType = "]()
+        if self == Self.INVALID:
+            writer.write_str["INVALID"]()
+        elif self == Self.PINNED:
+            writer.write_str["PINNED"]()
+        else:
+            writer.write_str["MAX"]()
+        writer.write_str[")"]()
+
+
+@value
+@register_passable
+struct MemAllocationHandleType:
+    var _value: Int32
+
+    alias NONE = Self(0)
+    alias POSIX_FILE_DESCRIPTOR = Self(1)
+    alias WIN32 = Self(2)
+    alias WIN32_KMT = Self(4)
+    alias FABRIC = Self(8)
+    alias MAX = Self(0x7FFFFFFF)
+
+    fn __init__(inout self, value: Int32):
+        self._value = value
+
+    fn __eq__(self, other: MemAllocationHandleType) -> Bool:
+        return self._value == other._value
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write_str["(MemAllocationHandleType = "]()
+        if self == Self.NONE:
+            writer.write_str["NONE"]()
+        elif self == Self.POSIX_FILE_DESCRIPTOR:
+            writer.write_str["POSIX_FILE_DESCRIPTOR"]()
+        elif self == Self.WIN32:
+            writer.write_str["WIN32"]()
+        elif self == Self.WIN32_KMT:
+            writer.write_str["WIN32_KMT"]()
+        elif self == Self.FABRIC:
+            writer.write_str["FABRIC"]()
+        else:
+            writer.write_str["MAX"]()
+        writer.write_str[")"]()
+
+
+@value
+struct MemLocation:
+    var type: MemLocationType
+    var id: Int32
+
+    fn __init__(inout self, type: MemLocationType, id: Int32):
+        self.type = type
+        self.id = id
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write_str["[MemLocation = "]()
+        writer.write(self.type.__str__())
+        writer.write_str[", id="]()
+        writer.write(self.id)
+        writer.write_str["]"]()
+
+
+@value
+struct MemAllocationProp:
+    var type: MemAllocationType
+    var requested_handle_types: MemAllocationHandleType
+    var location: MemLocation
+    var win32_handle_meta_data: UnsafePointer[NoneType]
+    # alloc_flags reserved bytes sizeof(CUmemAllocationProp::allocFlags)
+    var alloc_flags: StaticTuple[UInt8, 8]
+
+    fn __init__(
+        inout self,
+        type: MemAllocationType,
+        location: MemLocation,
+    ):
+        self.type = type
+        self.location = location
+        self.requested_handle_types = MemAllocationHandleType.NONE
+        self.win32_handle_meta_data = UnsafePointer[NoneType]()
+        self.alloc_flags = StaticTuple[UInt8, 8]()
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write_str["[type = "]()
+        writer.write(self.type)
+        writer.write_str[", requested_handle_types = "]()
+        writer.write(self.requested_handle_types)
+        writer.write_str[", location = "]()
+        writer.write(self.location)
+        writer.write_str["]"]()
+
+
+@value
+@register_passable
+struct MemAllocationGranularityFlags:
+    var _value: Int32
+
+    alias MINIMUM = Self(0)
+    alias RECOMMENDED = Self(1)
+
+    fn __init__(inout self, value: Int32):
+        self._value = value
+
+
+fn _mem_get_allocation_granularity(
+    prop: MemAllocationProp, options: MemAllocationGranularityFlags
+) raises -> Int32:
+    """Calculates either the minimal or recommended granularity."""
+
+    var granularity = stack_allocation[1, Int32]()
+
+    var _prop = stack_allocation[1, MemAllocationProp]()
+    _prop[0] = prop
+
+    _check_error(
+        _get_dylib_function[
+            "cuMemGetAllocationGranularity",
+            fn (
+                UnsafePointer[Int32], UnsafePointer[MemAllocationProp], Int32
+            ) -> Result,
+        ]()(granularity, _prop, options._value)
+    )
+
+    return granularity[0]
