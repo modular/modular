@@ -10,6 +10,7 @@ from builtin._location import __call_location, _SourceLocation
 from .casting import reshape
 from ..error import error
 from ..type import Dim, TensorType
+from max.graph import Symbol
 from max.tensor import Tensor, TensorShape
 
 
