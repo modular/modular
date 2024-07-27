@@ -603,53 +603,44 @@ fn _softmax_cpu[
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
 
-    @always_inline
+    if shape.flattened_length() == 0:
+        return
+
+    var inner_dim = output.dim[rank - 1]()
+    var outer_dim = product[rank](shape, rank - 1)
+    var num_workers = min(parallelism_level(), outer_dim)
+    var chunk_size = ceildiv(outer_dim, num_workers)
+
+    @__copy_capture(chunk_size, inner_dim, outer_dim)
     @parameter
-    fn trace_information() -> String:
-        return trace_arg("input", shape, type)
+    @always_inline
+    fn task_func(task_id: Int):
+        var start_offset = task_id * chunk_size
+        var end_offset = min((task_id + 1) * chunk_size, outer_dim)
+        for i in range(start_offset, end_offset):
+            var buffer_offset = i * inner_dim
+            var output_buffer_view = Buffer[type](
+                output.data.offset(buffer_offset), inner_dim
+            )
+            var indices = _get_nd_indices_from_flat_index[rank](
+                i, shape, rank - 1
+            )
 
-    with Trace[TraceLevel.OP](
-        "mojo.softmax",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
-    ):
-        if shape.flattened_length() == 0:
-            return
+            @parameter
+            @always_inline
+            # Given input lambda accepts N-dimensional coordinates, but the
+            # softmax base routines operate on 1D buffers. Here we wrap the
+            # given input lamda with some 1d-to-Nd translation logic.
+            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
+                indices[rank - 1] = idx
+                return input_fn[_width, rank](indices)
 
-        var inner_dim = output.dim[rank - 1]()
-        var outer_dim = product[rank](shape, rank - 1)
-        var num_workers = min(parallelism_level(), outer_dim)
-        var chunk_size = ceildiv(outer_dim, num_workers)
+            softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
+                output_buffer_view
+            )
+            _ = indices
 
-        @__copy_capture(chunk_size, inner_dim, outer_dim)
-        @parameter
-        @always_inline
-        fn task_func(task_id: Int):
-            var start_offset = task_id * chunk_size
-            var end_offset = min((task_id + 1) * chunk_size, outer_dim)
-            for i in range(start_offset, end_offset):
-                var buffer_offset = i * inner_dim
-                var output_buffer_view = Buffer[type](
-                    output.data.offset(buffer_offset), inner_dim
-                )
-                var indices = _get_nd_indices_from_flat_index[rank](
-                    i, shape, rank - 1
-                )
-
-                @parameter
-                @always_inline
-                # Given input lambda accepts N-dimensional coordinates, but the
-                # softmax base routines operate on 1D buffers. Here we wrap the
-                # given input lamda with some 1d-to-Nd translation logic.
-                fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
-                    indices[rank - 1] = idx
-                    return input_fn[_width, rank](indices)
-
-                softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
-                    output_buffer_view
-                )
-                _ = indices
-
-        sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers)
 
 
 # Softmax (no input lambda)
@@ -842,18 +833,27 @@ fn softmax[
     axis: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    if target == "cpu":
-        _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
-            shape, output, axis
-        )
-    else:
-        _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
-            shape,
-            output,
-            axis,
-            context.get_cuda_device(),
-        )
+    constrained[target in ("cpu", "cuda"), "unsupported target"]()
+
+    @parameter
+    fn trace_information() -> String:
+        return "target_device=" + target + ";" + trace_arg("input", shape, type)
+
+    with Trace[TraceLevel.OP](
+        "mojo.softmax",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+    ):
+        if target == "cpu":
+            _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
+                shape, output, axis
+            )
+        else:
+            _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
+                shape,
+                output,
+                axis,
+                context.get_cuda_device(),
+            )
 
 
 # ===----------------------------------------------------------------------=== #
