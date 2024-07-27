@@ -494,12 +494,15 @@ fn elementwise_wrapper[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        var name_str = String("name=") + trace_description
+        var name_str = str("name=") + trace_description
+        var target = str("target_device=" + target)
         var shape_str = trace_buf("buffer", buffer)
 
         var vector_width_str = String("vector_width=") + str(simd_width)
 
-        var info = String(";").join(name_str, shape_str, vector_width_str)
+        var info = String(";").join(
+            name_str, target, shape_str, vector_width_str
+        )
 
         return (
             info
@@ -651,8 +654,7 @@ fn _simd_load_internal[
             buffer.data.bitcast[DType.uint8](), index
         )
         return v.cast[type]()
-    else:
-        return SIMD[size=simd_width].load(buffer.data, index)
+    return SIMD[size=simd_width].load(buffer.data, index)
 
 
 @mogg_register("simd_load")
