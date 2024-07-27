@@ -5,10 +5,11 @@ lit_tests(
     name = "test",
     srcs = glob(
         [
-            "*.mojo",
             "*.mlir",
+            "*.mojo",
         ],
         exclude = [
+            # Both Handled below
             "canonicalize-custom-ops.mojo",
             "multiresult_asm_mma.mojo",
         ],
@@ -41,7 +42,7 @@ lit_tests(
     name = "test_stdlib_srcs",
     # This tests require the stdlib and mlirc srcs, where other tests do
     # not require them
-    srcs = [
+    srcs = glob(["*.test"]) + [
         "canonicalize-custom-ops.mojo",
         "multiresult_asm_mma.mojo",
     ],
@@ -58,6 +59,7 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib",
     ],
     tools = [
+        "//KGEN/tools/hash-mlir",
         "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
