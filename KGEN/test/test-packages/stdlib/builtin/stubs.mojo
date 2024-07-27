@@ -251,8 +251,8 @@ struct Slice:
 
     fn __init__[
         T0: AnyTrivialRegType, T1: AnyTrivialRegType, T2: AnyTrivialRegType
-    ](start: T0, end: T1, step: T2) -> Self:
-        return Self {}
+    ](inout self, start: T0, end: T1, step: T2):
+        pass
 
 
 # ===----------------------------------------------------------------------=== #
@@ -572,13 +572,11 @@ struct UnsafePointer[
     ]
     var address: Self._mlir_type
 
-    fn __init__() -> Self:
-        return Self {
-            address: __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
-        }
+    fn __init__(inout self):
+        self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
-    fn __init__(value: Self._mlir_type) -> Self:
-        return Self {address: value}
+    fn __init__(inout self, value: Self._mlir_type):
+        self.address = value
 
     @staticmethod
     fn address_of(ref [_, address_space._value.value]arg: T) -> Self:

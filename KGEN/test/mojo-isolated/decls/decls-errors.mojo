@@ -569,17 +569,17 @@ struct WrongType:
   # expected-error @+1 {{'self' in struct '__init__' must be passed 'inout'}}
   def __init__(self): pass
 
-  # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
-  fn __init__() -> Int: pass
+  # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
+  fn __init__(inout self: Int): pass
 
   # expected-error @+1 {{existing value argument must be passed as borrowed}}
-  fn __copyinit__(inout self, inout existing: Int): pass
+  fn __copyinit__(inout self, inout existing: Self): pass
 
-  # expected-error @+1 {{self argument cannot be passed by reference}}
-  fn __copyinit__(inout self) -> WrongType: pass
+  # TODO: Should err.
+  fn __copyinit__(inout self, existing: Int): pass
 
   # expected-error @+1 {{'__moveinit__' is not supported for @register_passable types, they are always movable by copying a register}}
-  fn __moveinit__(owned self) -> Self: pass
+  fn __moveinit__(inout self, owned existing: Self): pass
 
 
 struct WrongSelfType[a: Int]:
@@ -669,7 +669,7 @@ struct OtherInMemStruct:
 struct InvalidMember:
   var x: __mlir_type.index
   # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__copyinit__' method}}
-  fn __copyinit__(self) -> Self: pass
+  fn __copyinit__(inout self, existing: Self): pass
   # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__del__' method}}
   fn __del__(owned self): pass
 

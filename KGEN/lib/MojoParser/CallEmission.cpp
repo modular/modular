@@ -983,6 +983,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       OverloadSet::lookup(getScopeInfo(), type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
+  if (callee.isErroneous())
+    return {};
 
   // If there are no candidates at all, diagnose specific errors.
   if (!callee) {

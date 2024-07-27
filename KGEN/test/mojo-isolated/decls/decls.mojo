@@ -748,8 +748,8 @@ struct StructWithInit:
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
-    fn __copyinit__(self) -> Self:
-        return Self()
+    fn __copyinit__(inout self, other: Self):
+        pass
 
     fn __init__(inout self):
         pass
@@ -859,8 +859,7 @@ struct ValueMem:
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
 # CHECK-NEXT: %5 = lit.ref.load %4
-# CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%5)
-# CHECK-NEXT: lit.ref.store %6, %3
+# CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%3, %5)
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
@@ -931,9 +930,11 @@ struct ValueReg:
 # CHECK-SAME: attributes {{.*}}specialFnKind = 6 : i8
 # CHECK-NEXT: %0 = lit.struct.extract %other[a]
 # CHECK-NEXT: %1 = lit.struct.extract %other[b]
-# CHECK-NEXT: %2 = lit.call {{.*}}__copyinit__{{.*}}(%1)
-# CHECK-NEXT: %3 = lit.struct.create(a=%0, b=%2)
-# CHECK-NEXT: lit.return %3
+# CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
+# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %1)
+# CHECK-NEXT: %3 = lit.load.consume %anonymous2A
+# CHECK-NEXT: %4 = lit.struct.create(a=%0, b=%3)
+# CHECK-NEXT: lit.return %4
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %a: !Int,
@@ -1041,10 +1042,8 @@ struct Container[T : AnyType]:
         `>`,
     ]
     var address: Self._mlir_type
-    fn __init__() -> Self:
-        return Self {
-            address: __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
-        }
+    fn __init__(inout self):
+        self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
 async fn load(server_ptr: Container[__mlir_type.index]):
     pass

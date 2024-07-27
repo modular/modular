@@ -14,8 +14,8 @@ struct BoxedInt:
     fn __init__(inout self, value: int):
         self.value = value
 
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {value: existing.value}
+    fn __copyinit__(inout self, existing: Self):
+        self.value = existing.value
 
     fn boxedAdd(self, rhs: int) -> int:
         return __mlir_op.`index.add`(self.value, rhs)

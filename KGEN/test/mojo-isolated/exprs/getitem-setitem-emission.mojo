@@ -66,26 +66,31 @@ fn test_setitem[x: int](a: WeirdArray, idx: int):
 
 # CHECK-LABEL: lit.func @"test_getitem_slice
 fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}"<:type none, :type none, :type none>
-    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %[[SLICE]])
+    # CHECK: lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}([[SLICEPTR:%.*]], %none, %none_0, %none_1)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
+    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:]
 
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}"<:type none, :type none, :type none>
-    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %[[SLICE]])
+    # CHECK: lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}([[SLICEPTR:%.*]], %none_2, %none_3, %none_4)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
+    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[::]
 
     # CHECK: %[[NONE:.*]] = kgen.param.constant: none
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}"<:type index, :type index, :type none>(%i, %j, %[[NONE]])
-    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %[[SLICE]])
+    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type index, :type index, :type none>([[SLICEPTR:%.*]], %i, %j, %[[NONE]])
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
+    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j]
 
     # CHECK: %[[NONE:.*]] = kgen.param.constant: none
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}"<:type none, :type index, :type index>(%[[NONE]], %i, %j)
-    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %[[SLICE]])
+    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type index, :type index>([[SLICEPTR:%.*]], %[[NONE]], %i, %j)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
+    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:i:j]
 
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}"<:type index, :type index, :type index>(%i, %j, %k)
-    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %[[SLICE]])
+    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type index, :type index, :type index>([[SLICEPTR:%.*]], %i, %j, %k)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
+    # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
 
 

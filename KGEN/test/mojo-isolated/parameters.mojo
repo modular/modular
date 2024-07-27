@@ -164,14 +164,13 @@ struct Pair[dt: DType]:
   var a : SIMD[dt, 42]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}} -> {{.*}}#Pair <:!DType dt>{{.*}}> attributes {{.*}}isStatic
-  fn __init__(a: SIMD[dt, 42]) -> Pair[dt]:
-    # CHECK: %0 = kgen.param.constant: !Int = <{4}>
-    # CHECK: %1 = lit.struct.create(a=%a, b=%0) : ({{.*}}#SIMD <:!DType dt, :!Int {42}>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
-    return Pair[dt]{a: a, b: 4}
+  # CHECK: lit.func @"__init__{{.*}}@parameters::@Pair<:!DType dt>
+  fn __init__(inout self, a: SIMD[dt, 42]):
+    self.a = a
+    self.b = 4
   # CHECK: }
 
-  fn __copyinit__(self) -> Self: pass
+  fn __copyinit__(inout self, existing: Self): pass
 
 # CHECK: }
 
@@ -524,11 +523,11 @@ fn testUseOfAliases():
 struct MyDType:
   var state : int
 
-  fn __copyinit__(self) -> Self:
-    return Self{state: self.state}
+  fn __copyinit__(inout self, existing: Self):
+    self.state = self.state
 
-  fn __init__(value: int) -> MyDType:
-     return MyDType{state: value}
+  fn __init__(inout self, value: int):
+     self.state = value
 
   fn __eq__(self, rhs: MyDType) -> Bool:
      return __mlir_attr.true
@@ -665,8 +664,8 @@ fn form_reference_to_overloaded():
 
 @register_passable("trivial")
 struct StaticVec[size: Int]:
-  fn __init__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]) -> StaticVec[size]:
-      return Self{}
+  fn __init__[type: __mlir_type.`!kgen.dtype`](inout self, v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
+      pass
 
   @staticmethod
   fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
@@ -754,8 +753,8 @@ struct AnotherAbstraction[a: Int]:
     fn __init__(inout self):
         self.value = Abstraction[a + 1]()
 
-    fn __copyinit__(self) -> Self:
-        return Self{value: self.value}
+    fn __copyinit__(inout self, existing: Self):
+        self.value = self.value
 
 # CHECK-LABEL: lit.func @"testDependentField()"
 fn testDependentField():
