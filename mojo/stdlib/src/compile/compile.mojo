@@ -42,6 +42,25 @@ struct Info:
     var error_msg: StringLiteral
     var is_error: Bool
 
+    # FIXME(MOCO-1005): This explicitly returns Self to workaround an
+    # interpreter problem.
+    fn __init__(
+        asm: StringLiteral,
+        function_name: StringLiteral,
+        num_captures: Int,
+        populate: fn (UnsafePointer[NoneType]) capturing -> None,
+        error_msg: StringLiteral,
+        is_error: Bool,
+    ) -> Self:
+        return Self {
+            asm: asm,
+            function_name: function_name,
+            num_captures: num_captures,
+            populate: populate,
+            error_msg: error_msg,
+            is_error: is_error,
+        }
+
 
 alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
 alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
