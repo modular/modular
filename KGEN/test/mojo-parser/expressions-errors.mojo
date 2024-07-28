@@ -275,7 +275,7 @@ fn bad_func return fn() -> __mlir_type.index
 @register_passable
 struct WeirdBoolish:
   fn __bool__(self) -> Bool: return False
-  fn __copyinit__(self) -> Self: pass;
+  fn __copyinit__(inout self, existing: Self): pass;
 
 fn badParamAnd[a: Bool, b: WeirdBoolish]():
   #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
