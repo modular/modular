@@ -1385,8 +1385,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // Emit the implicit conversion.
       callResult =
           emitConstructorCall(coroType, {{{SBValue(call), callExpr}}}, callExpr,
-                              CallSyntax::kImplicitConvert, ctorDest)
-              .getIfSRValue();
+                              CallSyntax::kImplicitConvert, ctorDest);
+      if (!callResult) {
+        dest.resetForError();
+        return {};
+      }
     } else {
       auto call = builder->create<CallOp>(loc, resultType, target.get(),
                                           implicitLifetimes, callArgs);

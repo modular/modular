@@ -52,7 +52,8 @@ struct AsyncStructReg(AsyncTrait):
     # CHECK-LABEL: lit.func @"foo{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<!Int,
     async fn foo(self) -> Int:
         # CHECK: [[POP_CORO:%.*]] = lit.async.call
-        # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
+        # CHECK: lit.call {{.*}}__init__{{.*}}([[CORO_TMP:%.*]], [[POP_CORO]])
+        # CHECK-NEXT: [[CORO:%.*]] = lit.load.consume [[CORO_TMP]]
         # CHECK-NEXT: lit.call {{.*}}@Coroutine::@"__await__{{.*}}([[CORO]], %__result__)
         # CHECK-NEXT: %none =
         # CHECK-NEXT: return %none
@@ -61,7 +62,8 @@ struct AsyncStructReg(AsyncTrait):
     # CHECK-LABEL: lit.func @"bar{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}> borrow_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int,
     async fn bar(self) raises -> Int:
         # CHECK: [[POP_CORO:%.*]] = lit.async.call
-        # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
+        # CHECK: lit.call {{.*}}__init__{{.*}}([[CORO_TMP:%.*]], [[POP_CORO]])
+        # CHECK-NEXT: [[CORO:%.*]] = lit.load.consume [[CORO_TMP]]
         # CHECK-NEXT: lit.call {{.*}}@RaisingCoroutine::@"__await__{{.*}}([[CORO]], %__error__, %__result__)
         # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
         # CHECK-NEXT: return [[FALSE]]
