@@ -142,20 +142,15 @@ struct GemmShape:
             self.K = value
             return
 
-    fn __init__(index: StaticIntTuple[3]) -> GemmShape:
+    fn __init__(inout self, index: StaticIntTuple[3]):
         """Constructor of a gemm shape record from a index tuple.
 
         Args:
             index: The int tuple containing the index(m,n,k).
-
-        Returns:
-            The constructed shape record.
         """
-        return GemmShape(
-            index[0],
-            index[1],
-            index[2],
-        )
+        self.M = index[0]
+        self.N = index[1]
+        self.K = index[2]
 
     fn as_index(self) -> StaticIntTuple[3]:
         """Utility to convert the underlying data to an index tuple. So that the
