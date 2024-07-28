@@ -42,25 +42,6 @@ struct Info:
     var error_msg: StringLiteral
     var is_error: Bool
 
-    # FIXME(MOCO-1005): This explicitly returns Self to workaround an
-    # interpreter problem.
-    fn __init__(
-        asm: StringLiteral,
-        function_name: StringLiteral,
-        num_captures: Int,
-        populate: fn (UnsafePointer[NoneType]) capturing -> None,
-        error_msg: StringLiteral,
-        is_error: Bool,
-    ) -> Self:
-        return Self {
-            asm: asm,
-            function_name: function_name,
-            num_captures: num_captures,
-            populate: populate,
-            error_msg: error_msg,
-            is_error: is_error,
-        }
-
 
 alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
 alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
@@ -92,16 +73,25 @@ fn _compile_info_asm_failable_impl[
 
     @parameter
     if Int(impl.num_captures) == -1:
-        alias result = Info("", "", 0, _noop_populate, impl.asm, True)
+        alias result = Info {
+            asm: "",
+            function_name: "",
+            num_captures: 0,
+            populate: _noop_populate,
+            error_msg: impl.asm,
+            is_error: True,
+        }
         return result
-    alias result = Info(
-        impl.asm,
-        get_linkage_name[target, func](),
-        impl.num_captures,
-        rebind[fn (UnsafePointer[NoneType]) capturing -> None](impl.populate),
-        "",
-        False,
-    )
+    alias result = Info {
+        asm: impl.asm,
+        function_name: get_linkage_name[target, func](),
+        num_captures: impl.num_captures,
+        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
+            impl.populate
+        ),
+        error_msg: "",
+        is_error: False,
+    }
     return result
 
 
@@ -127,14 +117,16 @@ fn _compile_info_asm_non_failable_impl[
 
     constrained[Int(cls.num_captures) != -1, "failed to compile code"]()
 
-    alias result = Info(
-        cls.asm,
-        get_linkage_name[target, func](),
-        cls.num_captures,
-        rebind[fn (UnsafePointer[NoneType]) capturing -> None](cls.populate),
-        "",
-        False,
-    )
+    alias result = Info {
+        asm: cls.asm,
+        function_name: get_linkage_name[target, func](),
+        num_captures: cls.num_captures,
+        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
+            cls.populate
+        ),
+        error_msg: "",
+        is_error: False,
+    }
     return result
 
 
@@ -160,16 +152,25 @@ fn _compile_info_llvm_failable_impl[
 
     @parameter
     if Int(impl.num_captures) == -1:
-        alias result = Info("", "", 0, _noop_populate, impl.asm, True)
+        alias result = Info {
+            asm: "",
+            function_name: "",
+            num_captures: 0,
+            populate: _noop_populate,
+            error_msg: impl.asm,
+            is_error: True,
+        }
         return result
-    alias result = Info(
-        impl.asm,
-        get_linkage_name[target, func](),
-        impl.num_captures,
-        rebind[fn (UnsafePointer[NoneType]) capturing -> None](impl.populate),
-        "",
-        False,
-    )
+    alias result = Info {
+        asm: impl.asm,
+        function_name: get_linkage_name[target, func](),
+        num_captures: impl.num_captures,
+        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
+            impl.populate
+        ),
+        error_msg: "",
+        is_error: False,
+    }
     return result
 
 
@@ -195,14 +196,16 @@ fn _compile_info_llvm_non_failable_impl[
 
     constrained[Int(cls.num_captures) != -1, "failed to compile code"]()
 
-    alias result = Info(
-        cls.asm,
-        get_linkage_name[target, func](),
-        cls.num_captures,
-        rebind[fn (UnsafePointer[NoneType]) capturing -> None](cls.populate),
-        "",
-        False,
-    )
+    alias result = Info {
+        asm: cls.asm,
+        function_name: get_linkage_name[target, func](),
+        num_captures: cls.num_captures,
+        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
+            cls.populate
+        ),
+        error_msg: "",
+        is_error: False,
+    }
     return result
 
 
