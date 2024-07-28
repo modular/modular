@@ -348,6 +348,7 @@ struct CCompiledModel:
     alias GetModelOutputSpecByNameFnName = "M_getModelOutputSpecByName"
     alias GetNumInputsFnName = "M_getNumModelInputs"
     alias GetNumOutputsFnName = "M_getNumModelOutputs"
+    alias ExportModelFnName = "M_exportCompiledModel"
 
     fn num_model_inputs(self, lib: DLHandle) raises -> Int:
         """Gets the number of inputs of the model."""
@@ -408,6 +409,14 @@ struct CCompiledModel:
         if status:
             raise Error(status.__str__())
         return EngineTensorSpec(output_spec, lib, session)
+
+    fn export_compiled_model(self, lib: DLHandle, path: String) raises:
+        var status = Status(lib)
+        call_dylib_func(
+            lib, Self.ExportModelFnName, self, path.unsafe_ptr(), status.ptr
+        )
+        if status:
+            raise Error(status.__str__())
 
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompiledModelFnName, self)
@@ -492,6 +501,9 @@ struct CompiledModel:
 
     fn borrow_ptr(self) -> CCompiledModel:
         return self.ptr
+
+    fn export_compiled_model(self, lib: DLHandle, path: String) raises:
+        self.ptr.export_compiled_model(lib, path)
 
     fn __del__(owned self):
         self.ptr.free(self.lib)

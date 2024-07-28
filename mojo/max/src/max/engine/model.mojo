@@ -469,6 +469,13 @@ struct Model:
         """
         return self._compiled_model.get_model_output_metadata()
 
+    fn export_compiled_model(self, path: String) raises:
+        """Exports a compiled model as a MEF to a given path.
+        Args:
+          path: The path of the MEF file to export.
+        """
+        self._compiled_model.export_compiled_model(self._lib, path)
+
     fn __del__(owned self):
         """Destructor for Model."""
         self._ptr.free(self._lib)
