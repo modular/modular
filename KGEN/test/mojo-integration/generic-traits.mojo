@@ -111,7 +111,7 @@ struct SomeType:
 
 # CHECK-LABEL: kgen.func {{.*}}drop_copy
 fn drop_copy[T: Copyable](value: T):
-    # CHECK: [[V0:%.*]] = kgen.param.constant: struct<()> = <{  }>
+    # CHECK: [[V0:%.*]] = kgen.undef : !kgen.struct<()>
     # CHECK: call {{.*}}SomeType::__del__{{.*}}([[V0]])
     var unused = value
 
