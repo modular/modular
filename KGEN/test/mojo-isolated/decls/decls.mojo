@@ -925,24 +925,27 @@ struct ValueReg:
 
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%other: !ValueReg, |)
-# CHECK-SAME:  -> !ValueReg
-# CHECK-SAME: attributes {{.*}}specialFnKind = 6 : i8
-# CHECK-NEXT: %0 = lit.struct.extract %other[a]
-# CHECK-NEXT: %1 = lit.struct.extract %other[b]
+# CHECK-SAME: (%self: !lit.ref<!ValueReg, mut *"self`"> init_self, %other: !ValueReg, |)
+# CHECK-SAME: attributes {{.*}}specialFnKind = 3 : i8
+# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
+# CHECK-NEXT: %1 = lit.struct.extract %other[a]
+# CHECK-NEXT: lit.ref.store %1, %0
+# CHECK-NEXT: %2 = lit.ref.struct.ger %self[b]
+# CHECK-NEXT: %3 = lit.struct.extract %other[b]
 # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
-# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %1)
-# CHECK-NEXT: %3 = lit.load.consume %anonymous2A
-# CHECK-NEXT: %4 = lit.struct.create(a=%0, b=%3)
-# CHECK-NEXT: lit.return %4
+# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %3)
+# CHECK-NEXT: %5 = lit.load.consume %anonymous2A
+# CHECK-NEXT: lit.ref.store %5, %2
 
 # CHECK: lit.func @"__init__(
+# CHECK-SAME:  (%0[*""]: !lit.ref<!ValueReg, mut *"self`"> init_self,
 # CHECK-SAME:  %a: !Int,
 # CHECK-SAME:  %b: !StructExample
-# CHECK-SAME: ) -> !ValueReg
-# CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
-# CHECK-NEXT: lit.return %0
-# CHECK-NEXT: lit.end_func
+# CHECK-SAME: )
+# CHECK-NEXT: %1 = lit.ref.struct.ger %0[a]
+# CHECK-NEXT: lit.ref.store %a, %1
+# CHECK-NEXT: %2 = lit.ref.struct.ger %0[b]
+# CHECK-NEXT: lit.ref.store %b, %2
 
 
 # COM: Ensure that "self" is a valid field name.
@@ -1051,8 +1054,8 @@ async fn load(server_ptr: Container[__mlir_type.index]):
 # CHECK-LABEL: lit.func @"awaitSomething()"
 async fn awaitSomething():
     var ptr = Container[__mlir_type.index]()
-    # CHECK: [[CORO:%.*]] = lit.call @{{.*}}@Coroutine::@"__init__{{.*}}"<:!AnyType [{{.*}}], :lifetime.set {}>(%{{.*}}) :
-    # CHECK-SAME: !lit.signature<("{{.*}}": !co.routine) -> !lit.struct<#Coroutine <:!AnyType [{{.*}}], :lifetime.set {}>>>
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :lifetime.set {}>([[CORO:%.*]], %{{.*}}) :
+    # CHECK-SAME: !lit.signature<[1]({{.*}}@Coroutine<:!AnyType [{{.*}}], :lifetime.set {}>{{.*}}: !co.routine)
     await load(ptr)
 
 # CHECK-LABEL: lit.func @"coroutine
@@ -1068,7 +1071,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][mut #lit.lifetime]()
-        # CHECK-NEXT: %[[COROUTINE:.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :lifetime.set {}>(%[[CORO]])
+        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :lifetime.set {}>({{.*}}, %[[CORO]])
         _ = coroutine()
 
 
@@ -1103,8 +1106,9 @@ async fn inline_async() -> Int:
 # CHECK-LABEL: lit.func @"use_inline_async()"
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
-    # CHECK: [[CORO:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}[[ASYNC_RESULT]]
-    # CHECK: [[RESULT:%.*]] = lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
+    # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP:%.*]], [[ASYNC_RESULT]])
+    # CHECK: [[CORO:%.*]] = lit.ref.load [[TMP]]
+    # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
     return await inline_async()
 
 
@@ -1131,7 +1135,8 @@ fn coroutine_lifetimes():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> inout, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], mut #lit.lifetime](%x, [[Y_IMM]])
-    # CHECK: [[CORO_VAL:%.*]] = lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>(%anonymous2A, [[CORO]])
+    # CHECK: [[CORO_VAL:%.*]] = lit.load.consume %anonymous2A
     # CHECK: store [[CORO_VAL]], %coro : <{{.*}}Coroutine<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>
     var coro = capture_byref(x, y)
 
@@ -1143,14 +1148,14 @@ fn coroutine_lifetimes():
 # CHECK-LABEL: lit.func @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
 async fn mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][mut #lit.lifetime]()
-    # CHECK-NEXT: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO]])
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}({{.*}}, [[CORO]])
     var coro = mem_result()
 
 
 # CHECK-LABEL: lit.func @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
 async fn mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][mut #lit.lifetime, mut #lit.lifetime]()
-    # CHECK-NEXT: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO]])
+    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}(%anonymous2A, [[CORO]])
     var coro = mem_raises()
 
 

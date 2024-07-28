@@ -33,10 +33,8 @@ fn test_owned(owned x: RegPassable):
     borrowed_generic(x)
 
     # CHECK: [[XREF:%.*]] = lit.ref.load [[XVAR]]
-    # CHECK: [[XCOPY:%.*]] = lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}"([[XREF]])
-    # CHECK: [[XVAR2:%.*]] = lit.var.decl
-    # CHECK: lit.ref.store [[XCOPY]], [[XVAR2]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XVAR2]])
+    # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XCOPY:%.*]], [[XREF]])
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 
     # CHECK: [[XMOVED:%.*]] = lit.transfer_mem_ownership [[XVAR]]
@@ -53,10 +51,8 @@ fn test_borrowed(x: RegPassable):
     borrowed_generic(x)
     # CHECK-NEXT: lit.ownership.use %x : !RegPassable
 
-    # CHECK: [[XCOPY:%.*]] = lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}(%x)
-    # CHECK: [[XVAR:%.*]] = lit.var.decl
-    # CHECK: lit.ref.store [[XCOPY]], [[XVAR]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XVAR]])
+    # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XCOPY:%.*]], %x)
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 
 
