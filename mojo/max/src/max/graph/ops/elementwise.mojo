@@ -399,10 +399,13 @@ def equal(
     tensor values and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the
+        [dtype promotion rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to
+        [broadcasting rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the equality comparison.
@@ -437,10 +440,13 @@ def greater(
     tensor values and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the
+        [dtype promotion rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to
+        [broadcasting rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the greater than comparison.
@@ -475,10 +481,13 @@ def greater_equal(
     tensor values and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the
+        [dtype promotion rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to
+        [broadcasting rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the equality comparison.
@@ -513,10 +522,13 @@ def not_equal(
     tensor values and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the
+        [dtype promotion rules](/max/api/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to
+        [broadcasting rules](/max/api/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the inequality comparison.
