@@ -47,10 +47,12 @@ kgen.generator @type_printing() {
   kgen.param.declare btype: type = <[struct<()>, {}]>
   // CHECK: type = <[struct<()>, {"method" : () -> () = @method}]>
   kgen.param.declare btype: type = <[struct<()>, {"method" : () -> () = @method}]>
-  // CHECK: type = <[applied_struct<<"Foo"(data: struct<()>)>>, {"method" : () -> () = @method}]>
-  kgen.param.declare btype: type = <[applied_struct<<"Foo"(data: struct<()>)>>, {"method" : () -> () = @method}]>
-  // CHECK: type = <[applied_struct<<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly> <:dtype f32, 16>>, {"method" : () -> () = @method}]>
-  kgen.param.declare btype: type = <[applied_struct<<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly> <:dtype f32, 16>>, {"method" : () -> () = @method}]>
+  // CHECK: type = <[applied_struct<[] #kgen.struct_def<"Foo"(data: struct<()>)>>, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: type = <[applied_struct<[] #kgen.struct_def<"Foo"(data: struct<()>)>>, {"method" : () -> () = @method}]>
+  // CHECK: type = <[applied_struct<[elemT: dtype, size] #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>, <:dtype f32, 16>>, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: type = <[applied_struct<[elemT: dtype, size] #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>, <:dtype f32, 16>>, {"method" : () -> () = @method}]>
+  // CHECK: type = <applied_struct<[T: type, x: !kgen.paramref<*("T")>] #kgen.struct_def<"Bar"[T: type, x: !kgen.paramref<*("T")>](data: typevalue<*("T")>)>, <:type index, 32>>>
+  kgen.param.declare btype: type = <applied_struct<[T: type, x: !kgen.paramref<*("T")>] #kgen.struct_def<"Bar"[T: type, x: !kgen.paramref<*("T")>](data: typevalue<*("T")>)>, <:type index, 32>>>
   kgen.return
 }
 

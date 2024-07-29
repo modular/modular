@@ -55,6 +55,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<TargetType>();
   registerMnemonicType<BuildInfoType>();
   registerMnemonicType<StructType>();
+  registerMnemonicType<StructDefType>();
   registerMnemonicType<AppliedStructType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
@@ -1073,24 +1074,46 @@ TypedAttr KGEN::createUninitializedValueOf(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// ConcreteSourceStructType
+// AppliedStructType
 //===----------------------------------------------------------------------===//
 
-static void printAppliedStructDef(AsmPrinter &p, StructDefAttr sourceStruct,
+static void printAppliedStructDef(AsmPrinter &p, TypedAttr sourceStruct,
                                   ArrayRef<TypedAttr> paramValues) {
-  p.printStrippedAttrOrType(sourceStruct);
+  if (auto structDefType = dyn_cast<StructDefType>(sourceStruct.getType())) {
+    // Simplify StructDefType repr.
+    p << '[';
+    printParamDeclAttrs(p, structDefType.getParamDecls());
+    p << "] ";
+    printParamValue(p, sourceStruct);
+  } else {
+    printColonTypeParamValue(p, sourceStruct);
+  }
+
   if (!paramValues.empty()) {
-    p << ' '; // Necessary for parsing when sourceStruct is an alias.
+    p << ", ";
     printParameterValues(p, paramValues);
   }
 }
 
-static ParseResult parseAppliedStructDef(AsmParser &p,
-                                         StructDefAttr &sourceStruct,
+static ParseResult parseAppliedStructDef(AsmParser &p, TypedAttr &sourceStruct,
                                          SmallVector<TypedAttr> &paramValues) {
-  if (p.parseCustomAttributeWithFallback(sourceStruct) ||
-      parseParameterValues(p, paramValues))
+  if (succeeded(p.parseOptionalLSquare())) {
+    // A simplified StructDefType.
+    SmallVector<ParamDeclAttr> decls;
+    if (failed(p.parseOptionalRSquare()))
+      if (parseParamDeclAttrs(p, decls) || p.parseRSquare())
+        return failure();
+
+    auto expectedType = StructDefType::get(p.getContext(), decls);
+    if (parseParamValue(p, sourceStruct, expectedType))
+      return failure();
+  } else if (parseColonTypeParamValue(p, sourceStruct)) {
     return failure();
+  }
+
+  if (succeeded(p.parseOptionalComma()))
+    if (parseParameterValues(p, paramValues))
+      return failure();
   return success();
 }
 
@@ -1099,40 +1122,78 @@ AppliedStructType AppliedStructType::get(StructDefAttr structDef,
   return get(structDef.getContext(), structDef, paramValues);
 }
 
-StructType AppliedStructType::getStructType() const {
-  // Need to concretize parameters.
-  ParameterEvaluator evaluator(getParamValues());
-  evaluator.setInputDepth(1);
-  SmallVector<Type> types(
-      llvm::map_range(getStructDef().getFields(),
-                      [&evaluator](StructDefFieldAttr field) -> Type {
-                        return evaluator.getReboundType(field.getType());
-                      }));
-  return StructType::get(types);
+AppliedStructType AppliedStructType::get(StructDefSelfRefAttr selfRef,
+                                         ArrayRef<TypedAttr> paramValues) {
+  return get(selfRef.getContext(), selfRef, paramValues);
 }
+
+namespace {
+class StructDefParamReplacer {
+public:
+  StructDefParamReplacer() {
+    replacer.addReplacement(
+        [](StructDefAttr def) -> std::pair<Attribute, mlir::WalkResult> {
+          return {def, mlir::WalkResult::skip()};
+        });
+    replacer.addReplacement([&](StructDefParamRefAttr param)
+                                -> std::pair<Attribute, mlir::WalkResult> {
+      auto it = mappings.find(param.getName());
+      assert(it != mappings.end() && "illegal unknown StructDef ParamRef");
+      return {it->second, mlir::WalkResult::skip()};
+    });
+  }
+
+  StructDefParamReplacer(ArrayRef<ParamDeclAttr> decls,
+                         ArrayRef<TypedAttr> values) {
+    for (auto [decl, value] : llvm::zip(decls, values))
+      addInputParam(decl.getName(), value);
+  }
+
+  void addInputParam(StringAttr name, TypedAttr value) {
+    mappings.try_emplace(name, value);
+  }
+
+  Type replace(Type type) { return replacer.replace(type); }
+  Attribute replace(Attribute attr) { return replacer.replace(attr); }
+
+private:
+  DenseMap<StringAttr, TypedAttr> mappings;
+  mlir::AttrTypeReplacer replacer;
+};
+} // namespace
 
 LogicalResult
 AppliedStructType::verify(function_ref<InFlightDiagnostic()> emitError,
-                          StructDefAttr structDef,
+                          TypedAttr structDef,
                           ArrayRef<TypedAttr> paramValues) {
-  ArrayRef<Type> inputParamTypes = structDef.getInputParamTypes();
-  if (inputParamTypes.size() != paramValues.size()) {
-    return emitError() << "!kgen.applied_struct parameter type and parameter "
-                          "value length mismatch. Expected "
-                       << inputParamTypes.size() << ", got "
-                       << paramValues.size();
-  }
-
-  ParameterEvaluator evaluator;
-  for (auto [idx, type, value] :
-       llvm::enumerate(inputParamTypes, paramValues)) {
-    Type remappedExpectedType = evaluator.getReboundType(type);
-    if (remappedExpectedType != value.getType()) {
-      return emitError()
-             << "!kgen.applied_struct parameter type mismatch at index " << idx
-             << ". Expected " << type << ", got " << value.getType() << "\n";
+  if (auto structDefType = ::dyn_cast<StructDefType>(structDef.getType())) {
+    ArrayRef<ParamDeclAttr> paramDecls = structDefType.getParamDecls();
+    if (paramDecls.size() != paramValues.size()) {
+      return emitError() << "!kgen.applied_struct parameter type and parameter "
+                            "value length mismatch. Expected "
+                         << paramDecls.size() << ", got " << paramValues.size();
     }
-    evaluator.addInputValue(value);
+
+    StructDefParamReplacer replacer;
+    for (auto [idx, decl, value] : llvm::enumerate(paramDecls, paramValues)) {
+      Type remappedExpectedType = replacer.replace(decl.getType());
+      if (remappedExpectedType != value.getType()) {
+        std::string expectedType;
+        llvm::raw_string_ostream os(expectedType);
+        os << '\'' << decl.getType() << '\'';
+        if (remappedExpectedType != decl.getType())
+          os << " (aka '" << remappedExpectedType << "')";
+
+        return emitError()
+               << "!kgen.applied_struct parameter type mismatch at index "
+               << idx << ". Expected " << expectedType << ", got "
+               << value.getType() << "\n";
+      }
+      replacer.addInputParam(decl.getName(), value);
+    }
+  } else {
+    return emitError() << "expected an operand of struct_def type, but got "
+                       << structDef.getType();
   }
   return success();
 }

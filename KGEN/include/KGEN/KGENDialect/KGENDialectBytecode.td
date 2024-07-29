@@ -29,8 +29,7 @@ def StructDefFieldAttr : DialectAttribute<(attr
 
 def StructDefAttr : DialectAttribute<(attr
   StringAttr:$name,
-  ConcreteAttrArray<"StringAttr">:$inputParamNames,
-  TypeArray:$inputParamTypes,
+  ConcreteAttrArray<"ParamDeclAttr">:$inputParams,
   ConcreteAttrArray<"StructDefFieldAttr">:$fields,
   Bool:$isMemoryOnly
 )>;
@@ -86,8 +85,12 @@ def StructType : DialectType<(type
   Bool:$isMemoryOnly
 )>;
 
+def StructDefType : DialectType<(type
+  ConcreteAttrArray<"ParamDeclAttr">:$paramDecls
+)>;
+
 def AppliedStructType : DialectType<(type
-  StructDefAttr:$structDef,
+  TypedAttr:$structDef,
   TypedAttrArray:$paramValues
 )>;
 
@@ -116,6 +119,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     TargetType,
     BuildInfoType,
     StructType,
+    StructDefType,
     AppliedStructType,
     PackType,
     WrappedVariantType,
@@ -221,6 +225,11 @@ def StructDefParamRefAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def StructDefSelfRefAttr : DialectAttribute<(attr
+  VarInt:$depth,
+  ConcreteType<"StructDefType">:$type
+)>;
+
 def StructAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"StructType">:$type
@@ -260,8 +269,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParamDeclAttr,
     ParamDeclArrayAttr,
-    StructDefFieldAttr,
-    StructDefAttr,
     ParameterExprArrayAttr,
     VariadicAttr,
     UnknownAttr,
@@ -281,6 +288,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     MLIROpAttr,
     DecoratorsAttr,
     ExportKindAttr,
+    StructDefFieldAttr,
+    StructDefSelfRefAttr,
+    StructDefAttr,
     StructAttr,
     WrappedStructExtractAttr,
     PackAttr,

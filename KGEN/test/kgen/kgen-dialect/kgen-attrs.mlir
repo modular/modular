@@ -99,11 +99,15 @@ kgen.generator @entry2() -> index {
   e = #kgen.type<array<1, i1>, array<1, i1>> : !kgen.type
 } : () -> ()
 
-// CHECK: a = #kgen.struct_def<"Foo">
-// CHECK: b = #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>
-// CHECK: c = #kgen.struct_def<"Baz"[elemT: dtype, size](data: simd<*("size"), *("elemT")>)>
+// CHECK: a = #kgen.struct_def<"Foo"> : !kgen.struct_def<>
+// CHECK: b = #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly> : !kgen.struct_def<[elemT: dtype, size]>
+// CHECK: c = #kgen.struct_def<"Baz"[elemT: dtype, size](data: simd<*("size"), *("elemT")>)> : !kgen.struct_def<[elemT: dtype, size]>
+// CHECK: d = #kgen.struct_def<"Node"[size](data: pointer<array<*("size"), applied_struct<[size] #kgen.struct_def.self<0>, <*("size")>>>>)> : !kgen.struct_def<[size]>
+// CHECK: e = #kgen.struct_def<"A"[size](data: pointer<applied_struct<[size] #kgen.struct_def<"B"[size](data: pointer<applied_struct<[size] #kgen.struct_def.self<1>, <*("size")>>>)>, <*("size")>>>)> : !kgen.struct_def<[size]>
 "some.op"() {
-  a = #kgen.struct_def<"Foo">,
-  b = #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>,
-  c = #kgen.struct_def<"Baz"[elemT: dtype, size](data: simd<*("size"), *("elemT")>)>
+  a = #kgen.struct_def<"Foo"> : !kgen.struct_def<>,
+  b = #kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly> : !kgen.struct_def<[elemT: dtype, size]>,
+  c = #kgen.struct_def<"Baz"[elemT: dtype, size](data: simd<*("size"), *("elemT")>)> : !kgen.struct_def<[elemT: dtype, size]>,
+  d = #kgen.struct_def<"Node"[size](data: pointer<array<*("size"), applied_struct<[size] #kgen.struct_def.self<0>, <*("size")>>>>)> : !kgen.struct_def<[size]>,
+  e = #kgen.struct_def<"A"[size](data: pointer<applied_struct<[size] #kgen.struct_def<"B"[size](data: pointer<applied_struct<[size] #kgen.struct_def.self<1>, <*("size")>>>)>, <*("size")>>>)> : !kgen.struct_def<[size]>
 } : () -> ()

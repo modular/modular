@@ -607,8 +607,31 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 }
 
 //===----------------------------------------------------------------------===//
+// StructDefType
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructDefType : KGENType<"StructDef", "struct_def"> {
+  let summary = "mojo parameterized struct type signature.";
+  let description = [{
+    This type describes the signature of a mojo struct definition. Specifically,
+    the input parameter types expected by the struct defintion.
+
+    Example:
+
+    ```mlir
+    !kgen.struct_def<[dt: dtype, size: index]>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"ParamDeclAttr">:$paramDecls);
+  let assemblyFormat =
+    "`<` (`[` custom<ParamDeclAttrs>($paramDecls)^ `]`)? `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // AppliedStructType
 //===----------------------------------------------------------------------===//
+
 def KGEN_AppliedStructType : KGENType<"AppliedStruct", "applied_struct"> {
   let summary = "mojo struct type applied with parameters";
   let description = [{
@@ -641,7 +664,7 @@ def KGEN_AppliedStructType : KGENType<"AppliedStruct", "applied_struct"> {
   }];
 
   let parameters = (ins
-    "StructDefAttr":$structDef,
+    "TypedAttr":$structDef,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues
   );
 
@@ -650,13 +673,10 @@ def KGEN_AppliedStructType : KGENType<"AppliedStruct", "applied_struct"> {
 
   let builders = [
     TypeBuilderWithInferredContext<(ins
-        "StructDefAttr":$structDef, "ArrayRef<TypedAttr>":$paramValues)>
+        "StructDefAttr":$structDef, "ArrayRef<TypedAttr>":$paramValues)>,
+    TypeBuilderWithInferredContext<(ins
+        "StructDefSelfRefAttr":$selfRef, "ArrayRef<TypedAttr>":$paramValues)>
   ];
-
-  let extraClassDeclaration = [{
-    /// Get the stripped StructType.
-    StructType getStructType() const;
-  }];
 
   let genVerifyDecl = 1;
 }

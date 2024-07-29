@@ -25,6 +25,7 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class SignatureType;
 class StructFieldAttr;
+class StructDefSelfRefAttr;
 class StructDefAttr;
 class VariadicType;
 class VariadicAttr;

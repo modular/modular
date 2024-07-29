@@ -225,6 +225,11 @@ using ParamDeclPrintHookTy = function_ref<void(ParamDeclAttr decl)>;
 using ParamDeclParseHookTy =
     function_ref<ParseResult(SmallVectorImpl<ParamDeclAttr> &)>;
 
+/// Parse and print a comma separated list of ParamDeclAttrs.
+ParseResult parseParamDeclAttrs(AsmParser &p,
+                                SmallVector<ParamDeclAttr> &decls);
+void printParamDeclAttrs(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls);
+
 /// Print a ParamDeclArrayAttr as a canonical list of comma separated
 /// information. If the element printing hook is provided, it is called by the
 /// given parser for each element in the list, and is responsible for printing
