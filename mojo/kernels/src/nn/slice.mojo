@@ -27,6 +27,45 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 
 
 # ===----------------------------------------------------------------------===#
+# slice_dim_as_view
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn slice_dim_as_view[
+    type: DType, rank: Int, dim: Int
+](tensor: NDBuffer[type, rank], start: Int, end: Int, step: Int) -> NDBuffer[
+    type, rank
+]:
+    var new_shape = tensor.dynamic_shape
+    var new_stride = tensor.dynamic_stride
+
+    var dim_i = tensor.dim(dim)
+    var old_stride = tensor.stride(dim)
+
+    # Normalize the start/stop indices
+    var clamped_start = _normalize_and_clamp_dim(start, step, dim_i)
+    var clamped_stop = _normalize_and_clamp_dim(end, step, dim_i)
+
+    var new_offset = clamped_start * old_stride
+
+    # The data does not change however we will be addressing a different
+    # offset of the data.
+    var new_data = tensor.data.offset(new_offset)
+
+    # Stride == number of elements to the next index in this dimension.
+    # So to step we can just increase the stride.
+    new_stride[dim] = old_stride * step
+
+    # If the steps are positive we traverse from start, if negative from
+    # stop.
+    new_shape[dim] = len(range(clamped_start, clamped_stop, step))
+
+    # Create the new view
+    return NDBuffer[type, rank](new_data, new_shape, new_stride)
+
+
+# ===----------------------------------------------------------------------===#
 # slice_as_view
 # ===----------------------------------------------------------------------===#
 
@@ -57,17 +96,18 @@ fn slice_as_view[
         var stop = int(ends[i])
         var step = int(steps[i])
         var dim_i = tensor.dim(i)
+        var stride_i = tensor.stride(i)
 
         # Normalize the start/stop indices
         start = _normalize_and_clamp_dim(start, step, dim_i)
         stop = _normalize_and_clamp_dim(stop, step, dim_i)
 
-        var new_offset = start * tensor.stride(i)
+        var new_offset = start * stride_i
         new_data = new_data.offset(new_offset)
 
         # Stride == number of elements to the next index in this dimension.
         # So to step we can just increase the stride.
-        new_stride[i] = tensor.stride(i) * step
+        new_stride[i] = stride_i * step
 
         # If the steps are positive we traverse from start, if negative from
         # stop.
