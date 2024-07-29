@@ -481,12 +481,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     if (!declaredResultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
-  case SpecialFunctionKind::kCopyInitReg:
-    // Check that these are defined correctly.
-    if (parsedArgs[0].convention != ParsedArgument::kConventionBorrowed)
-      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
-                   "self argument cannot be passed by reference");
-    break;
   case SpecialFunctionKind::kInit:
   case SpecialFunctionKind::kCopyInit:
   case SpecialFunctionKind::kMoveInit: {

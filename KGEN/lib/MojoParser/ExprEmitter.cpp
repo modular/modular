@@ -1436,43 +1436,21 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitLoad(dest, *this);
 
-  switch (valueType.getRegisterPassability(exprLoc, shared)) {
-  case TypeConvention::RegisterPassableTrivial:
-    if (auto pValue = value.ir.getIfPValue()) {
-      value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
-      if (!value.ir)
-        return {};
-    }
-    break;
+  auto regPassability = valueType.getRegisterPassability(exprLoc, shared);
+  switch (regPassability) {
   case TypeConvention::RegisterPassable:
+  case TypeConvention::RegisterPassableTrivial:
     // Materialize parameters into a register if we have them.
     if (auto pValue = value.ir.getIfPValue()) {
       value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
       if (!value.ir)
         return {};
-      break;
     }
 
-    // As a special extension, the __copyinit__ of register-passable types are
-    // allowed to return their new self directly as a register value instead of
-    // taking a memory value in. Check to see if the copyinit members in the
-    // overload set have a kCopyInitReg form and use it if present
-    // TODO: Eliminate special register form and eliminate this extra check.
-    {
-      auto callee =
-          OverloadSet::lookup(getScopeInfo(), valueType, "__copyinit__",
-                              value.expr, CallSyntax::kTypeCall);
-      bool hasInitSelfResult = true;
-      for (auto fnDecl : callee.fnDecls) {
-        if (cast<LIT::FuncOp>(*fnDecl).getSpecialFunctionKind() ==
-            SpecialFunctionKind::kCopyInitReg)
-          hasInitSelfResult = false;
-      }
-      // Register passable __copyinit__ has signature `(self)->Self`.
-      if (!hasInitSelfResult)
-        return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
-                                   CallSyntax::kImplicitConvert, value.expr);
-    }
+    // If this value is trival, we don't have to invoke copyinit at all.
+    if (regPassability == TypeConvention::RegisterPassableTrivial)
+      break;
+    // Otherwise, handle it like any other type.
     [[fallthrough]];
   case TypeConvention::MemoryOnly:
     // Memory-only copyinit will take the destination as address space zero, so

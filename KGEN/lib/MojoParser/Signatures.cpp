@@ -1323,39 +1323,15 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
 
   // If this is a well-known function like `__init__`, perform early semantic
   // checks and clarify what special function it really is.
-
-  // __*init__ methods are weird for @register_passable values: we allow self to
-  // be constructed inline and then return it as a register value.  We handle
-  // this by mapping them to different enumerators so things downstream have
-  // stronger invariants.
-  //
   // This logic happens before type checking, so we need to be very careful
   // to only process it if defined correctly.  We let downstream checks diagnose
   // the errors.
-  if ((fnInfo.kind == SpecialFunctionKind::kInit ||
-       fnInfo.kind == SpecialFunctionKind::kCopyInit ||
-       fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
-      selfType) {
-    bool selfIsRegPassable =
-        selfType.isRegisterPassable(fnDecl->getLoc(), shared);
-    if (selfIsRegPassable && resultTypeExpr) {
-      // TODO: Error about `-> Self` for all initializers when ready.
-      if (argList.effects.isThrows()) {
-        shared.emitError(fnDecl->getLoc(), "'")
-            << fnInfo.name
-            << "' should take 'inout self' instead of returning 'Self'";
-        fnDecl->setErroneous();
-      }
-      if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
-        fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
-      else if (fnInfo.kind == SpecialFunctionKind::kInit)
-        fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
-    } else if (!argList.parsedArgs.empty() &&
-               argList.parsedArgs[0].convention ==
-                   ParsedArgument::kConventionInOut) {
-      // If this is a memory-only type, then the self argument is actually
-      // passed with a special thing, it is written inout, but it isn't
-      // really.
+  if (fnInfo.isInitializer() && selfType) {
+    if (!argList.parsedArgs.empty() &&
+        argList.parsedArgs[0].convention == ParsedArgument::kConventionInOut) {
+      // The self argument is actually passed with a special convention. It is
+      // written inout, but it isn't really.
+      // TODO: Introduce an 'init' convention, maybe even an 'init' keyword.
       auto &selfArg = argList.parsedArgs[0];
       selfArg.convention = ParsedArgument::kConventionInitSelfResult;
       // We also force the passing kind of self to positional-only.
@@ -1365,7 +1341,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
 
     // @register_passable values are movable by passing the register around, so
     // they can't define a moveinit.
-    if (selfIsRegPassable && fnInfo.kind == SpecialFunctionKind::kMoveInit) {
+    if (fnInfo.kind == SpecialFunctionKind::kMoveInit &&
+        selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
       fnDecl->setErroneous();
       shared.emitError(fnDecl->getLoc(), "'")
           << fnInfo.name
@@ -1375,7 +1352,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
     }
   }
 
-  // __new__ and __init__ in register types are implicitly static.
+  // __new__ is implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
 

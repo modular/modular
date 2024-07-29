@@ -837,11 +837,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // methods argument.  This allows us to infer parameters from it.
   auto initSig = cast<LITSignatureType>(pValue.value().getType());
   // We expected to args: 0=self, 1=value we're converting from.
-  ASTType inferredSelf;
-  if (initSig.getArgConvention(0) == ArgConvention::InitSelf)
-    inferredSelf = ASTType(initSig.getArguments()[0]).getReferenceElementType();
-  else // FIXME(kInitReg): get rid of -> Self initializers.
-    inferredSelf = initSig.getResultType();
+  ASTType inferredSelf =
+      ASTType(initSig.getArguments()[0]).getReferenceElementType();
 
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
@@ -1127,11 +1124,8 @@ ParameterInferenceState::inferCTADParams(LITSignatureType signature,
   // that doesn't have us shadowing parameters like this!
 
   // We can only do this if we have an argument.
-  if (operands.empty() || operands[0].keyword ||
-      // TODO: This happens due to `-> Self` initializers.  Turn this into
-      // an assertion when kInitReg initializers are removed.
-      signature.getArgConventions().empty())
-    return success();
+  assert(!operands.empty() && !operands[0].keyword &&
+         "init should have positional self argument");
 
   auto selfConvention = signature.getArgConventions()[0];
   ASTType declaredSelfType = signature.getArguments()[0];
