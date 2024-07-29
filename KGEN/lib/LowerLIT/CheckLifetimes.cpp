@@ -2673,45 +2673,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   if (!callee)
     return failure();
 
-  // Handle the register_passable case:
-  //   %newVal = kgen.call __copyinit__(%value) calls.
-  //   kgen.call __del__(%value)   <<= Thinking about inserting this.
-  //   kgen.call user(%newVal)     <<= Consuming call.
-  if (callee.getSpecialFunctionKind() == SpecialFunctionKind::kCopyInitReg) {
-    // Make sure the destructor is for the source of the copyinit not the result
-    // of the copyinit or something else weird.
-    Value srcValue = copyInitCall.getOperand(0);
-    RefLoadOp load;
-    if (srcValue != value) {
-      // With var's we can have indirect operands.
-      bool isOk = false;
-      if ((load = srcValue.getDefiningOp<RefLoadOp>())) {
-        if (load.getOperand() == value)
-          isOk = true;
-      }
-      if (!isOk)
-        return failure();
-    }
-
-    // Transform into:
-    //   kgen.call user(%value)
-    copyInitCall.getResult(0).replaceAllUsesWith(srcValue);
-
-    // This semantically turns the op into a `lit.load.consume` of the original
-    // value if it was indirect.
-    if (load)
-      emitLifetimeEndAfter(load.getRef(), copyInitCall);
-
-    // We'll delete the copyInit but don't want to invalidate iterators so do it
-    // later.  Remove the operand uses so we don't see them in later def-use
-    // scans, and to make it more obvious when reading IR dumps that these will
-    // be gone.
-    copyInitCall->dropAllReferences();
-    opsToRemove.push_back(copyInitCall);
-    return success();
-  }
-
-  // Otherwise handle memory passable copies like:
+  // Handle copies like:
   //   %tmp = lit.var.decl "anonymous"
   //   kgen.call __copyinit__(%tmp, %src)
   //   kgen.call __del__(%src)   <<= Thinking about inserting this.

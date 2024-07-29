@@ -52,14 +52,8 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
 /// Given the signature of a trait function, which assumes that the self type is
 /// memory-only, compute the equivalent signature as if the self type is
 /// register-passable.
-///
-/// If isRegInit is true, then we need to transform the expected InitSelf to
-/// a register result form.  This is to support the deprecated register-result
-/// forms of __init__/__copyinit__.
-/// TODO: Remove these special initializer forms.
 static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
-                                                     ASTType selfType,
-                                                     bool isRegInit) {
+                                                     ASTType selfType) {
   // This function does two things: if the self type is in the result slot, it
   // moves it to the return, mindful of error handling, and if it is found in
   // any arguments, it is taken out of memory as appropriate.
@@ -73,10 +67,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
   for (auto [type, conv] :
        llvm::zip(traitSig.getArguments(), traitSig.getArgConventions())) {
     // Check for a `Self`-type result.
-    if (conv == ArgConvention::ByRefResult ||
-        // Rewrite InitSelf if  the type implements init in the deprecated way.
-        // TODO: Remove this support.
-        (conv == ArgConvention::InitSelf && isRegInit)) {
+    if (conv == ArgConvention::ByRefResult) {
       // Don't modify a inout result of an unrelated type. If the function
       // raises, then the result is always returned through memory.
       if (ASTType(type).getReferenceElementType().mlirType != selfType ||
@@ -427,24 +418,11 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
       }
 
       // Signature resolve the found decls first, so they can be checked.
-      bool isRegInit = false;
       for (ASTDecl *decl : decls) {
-        if (failed(shared.declResolver->resolve(
-                *decl, DeclResolvedness::signature, structDecl.getLoc()))) {
+        if (failed(shared.declResolver->resolveSignature(
+                *decl, structDecl.getLoc()))) {
           hadErrors = true;
           continue;
-        }
-
-        // If this type implements with the deprecated kInitReg or
-        // kCopyInitReg convention then we'll have to transform the InitSelf
-        // argument for a match.
-        // TODO: Remove these special initializer forms.
-        if (regPassable) {
-          auto specialKind = cast<LIT::FuncOp>(*decl).getSpecialFunctionKind();
-          if (specialKind == SpecialFunctionKind::kInitReg ||
-              specialKind == SpecialFunctionKind::kCopyInitReg ||
-              specialKind == SpecialFunctionKind::kMoveInitReg)
-            isRegInit = true;
         }
       }
 
@@ -455,8 +433,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
       // register-passable.
       LITSignatureType traitSignature = newSignature;
       if (regPassable) {
-        newSignature =
-            getRegisterPassableSignature(newSignature, selfType, isRegInit);
+        newSignature = getRegisterPassableSignature(newSignature, selfType);
       }
 
       // Omit errors for certain special functions where the parser will

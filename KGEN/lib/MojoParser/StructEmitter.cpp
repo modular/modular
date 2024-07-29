@@ -465,7 +465,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
 
   // We need to make a var box + store for register_passable values since that
   // is what lifetime tracking expects.  It does not track the individual
-  // fields of register passable values since they cannot be transfered and
+  // fields of register passable values since they cannot be transferred and
   // cannot be lit.ownership.mark_destroyed.
   if (convention == ArgConvention::OwnedInReg) {
     builder.setInsertionPointToStart(body);

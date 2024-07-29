@@ -60,16 +60,12 @@ public:
     /// This method must return Self.
     kSelfResult = 1 << 5,
 
-    /// This method is a struct initializer.
-    kInitializer = 1 << 6,
+    /// This method is a struct initializer, it takes 'inout self'
+    /// and returns None.
+    kInitializer = (1 << 6) | kInstMethod | kNoneResult,
 
     /// This method cannot be declared to raise an error.
     kCannotRaise = 1 << 7,
-
-    /// Set of flags used for initializers that set up self by-reference.
-    kMemInit = kInitializer | kNoneResult,
-    /// Set of flags used for initializers that return self in a register.
-    kRegInit = kInitializer | kSelfResult,
   };
 
   /// Return true if this is any kind of instance method.
@@ -87,7 +83,7 @@ public:
   bool hasNoneResult() const { return (flags & kNoneResult) != 0; }
 
   /// Return true if this special function is an initializer.
-  bool isInitializer() const { return (flags & kInitializer) != 0; }
+  bool isInitializer() const { return (flags & kInitializer) == kInitializer; }
 
   /// Return a record that describes special functions like __init__.  The
   /// kind field identifies it.

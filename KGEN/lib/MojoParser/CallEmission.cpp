@@ -1046,47 +1046,16 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
   // Set the parameter bindings for the type we're creating - they can't be
   // inferred since from the result type.
-  // FIXME: Should be able to remove this when kInitReg goes away.
+  // FIXME: Why do we need this?  We should be able to infer this from the
+  // value passed for 'self'.
   callee.paramBindings =
       ParamBindings::getForDeclaredType(getScopeInfo(), type, expr);
 
-  // As a special extension, register-only types are allowed to return their
-  // self directly as a register value instead of taking a memory value in.
-  // Check to see if the init members in the overload set are the kInitReg form.
-  // TODO: Eliminate special register form.
-  bool hasInitSelfArg = true;
-  if (type.isRegisterPassable(expr->getLoc(), shared)) {
-    for (auto fnDecl : callee.fnDecls) {
-      if (cast<LIT::FuncOp>(*fnDecl).getSpecialFunctionKind() ==
-          SpecialFunctionKind::kInitReg) {
-        hasInitSelfArg = false;
-        break;
-      }
-    }
-
-    // In the "-> Self" form of initializer, we may get ambiguity between
-    // non-materializable "() -> IntLiteral" and "() -> Int" overloads which
-    // cannot be resolved.  We're inferring based on result type, so manually
-    // remove these.
-    // TODO: Eliminate this special register form.
-    if (!hasInitSelfArg) {
-      auto *typeDecl = type.getDecl(shared);
-      for (size_t i = 0; i != callee.fnDecls.size();) {
-        if (callee.fnDecls[i]->getParentDecl() == typeDecl)
-          ++i;
-        else
-          callee.fnDecls.erase(callee.fnDecls.begin() + i);
-      }
-    }
-  }
-
   // Provide a self value so parameter inference can infer parameters from
   // typeof(self).
-  if (hasInitSelfArg) {
-    assert(!callee.baseValue && "Shouldn't have a self value yet");
-    auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
-    callee.baseValue = {PValue(attr), expr};
-  }
+  assert(!callee.baseValue && "Shouldn't have a self value yet");
+  auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
+  callee.baseValue = {PValue(attr), expr};
 
   return callee.emitCall(std::move(callOperands), dest, *this);
 }
@@ -1143,27 +1112,14 @@ FailureOr<PValue> OverloadSet::canConstructType(
     return callee.isErroneous() ? FailureOr<PValue>(failure()) : PValue();
 
   // Initializers take 'inout self' as the first argument.
-  // Register passable types have a funny exception that allow them to be
-  // called without this.  Check to see if we're doing that.
-  bool hasInitSelf = true;
-  if (requiredType.isRegisterPassable(expr->getLoc(), scopeInfo.shared)) {
-    if (!callee.fnDecls.empty() &&
-        cast<FuncOp>(callee.fnDecls[0]).getSpecialFunctionKind() ==
-            SpecialFunctionKind::kInitReg)
-      hasInitSelf = false; // Using the register return convention.
-  }
+  // TODO: We should add a new magic InferSelfLValue() IRValue type.  This
+  // would make the inference and overload resolution logic more consistent
+  // because the selfexpr should really be an LValue.
+  auto inferType =
+      requiredType.getWithUnknownParametersReplaced(scopeInfo.shared);
+  auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
+  operands.addSelf({PValue(attr), expr});
 
-  // If this is InitSelf then we'll pass a self argument with the
-  // destination when invoking the method.
-  if (hasInitSelf) {
-    // TODO: We should add a new magic InferSelfLValue() IRValue type.  This
-    // would make the inference and overload resolution logic more consistent
-    // because the selfexpr should really be an LValue.
-    auto inferType =
-        requiredType.getWithUnknownParametersReplaced(scopeInfo.shared);
-    auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
-    operands.addSelf({PValue(attr), expr});
-  }
   // Install the Self type parameters on the callee directly, since they cannot
   // always be inferred. This can happen if a constructor has more specific Self
   // type parameters or for the deprecated `-> Self` form of initializers.
