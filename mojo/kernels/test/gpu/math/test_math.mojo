@@ -148,4 +148,5 @@ def main():
             pow_fn,
             powi_fn,
             powf_fn,
+            recip,
         ](ctx)
