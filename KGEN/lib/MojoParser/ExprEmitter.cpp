@@ -885,7 +885,7 @@ Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
   // other computed LValues.
   if (!value.ir.isMValue()) {
     emitError(value.expr->getLoc())
-        << "cannot bind a non-memory value to a Reference"
+        << "cannot bind a non-memory value to a 'ref' argument"
         << getContextMessage(context);
     return {};
   }
