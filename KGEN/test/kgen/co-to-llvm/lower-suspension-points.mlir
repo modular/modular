@@ -48,7 +48,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  }
   llvm.func @coro(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
@@ -112,7 +112,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  }
   llvm.func @coro_multiple_suspends(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
@@ -180,7 +180,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  ^bb3:  // pred: ^bb1
 // CHECK-NEXT:    llvm.call @print2(%0) : (i1) -> ()
@@ -188,7 +188,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  ^bb4:  // pred: ^bb1
 // CHECK-NEXT:    llvm.call @print3(%0) : (i1) -> ()
@@ -196,7 +196,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  }
   llvm.func @no_suspoints(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
@@ -224,21 +224,21 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:    ^bb5:  // pred: ^bb3
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:    ^bb6:  // pred: ^bb3
 // CHECK-NEXT:    [[FNC_SLOT:%.*]] = llvm.getelementptr %arg0[0, 2]
 // CHECK-NEXT:    [[FUNC:%.*]] = llvm.load [[FNC_SLOT]]
 // CHECK-NEXT:    [[CLSR_SLOT:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:    [[CLOSURE_STATE:%.*]] = llvm.load [[CLSR_SLOT]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.call [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:    llvm.call musttail [[FUNC]]([[CLOSURE_STATE]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:    llvm.return
   llvm.func @multiple_exits(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr)> } {
     %cond = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
@@ -306,7 +306,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:   [[V13:%.*]] = llvm.load [[V12]] : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:   [[V14:%.*]] = llvm.getelementptr %arg0[0, 3]
 // CHECK-NEXT:   [[V15:%.*]] = llvm.load [[V14]] : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:   [[V16:%.*]] = llvm.call [[V13]]([[V15]]) : !llvm.ptr, (!llvm.ptr) -> !llvm.ptr
+// CHECK-NEXT:   llvm.call musttail [[V13]]([[V15]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT:   llvm.return
 // CHECK-NEXT: }
 llvm.func internal @exec_async_closure_0_resume(%arg0: !llvm.ptr) attributes {coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>} {

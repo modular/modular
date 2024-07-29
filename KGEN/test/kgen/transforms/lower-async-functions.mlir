@@ -8,10 +8,10 @@ kgen.func @coroutine1(%arg0: i1) async -> index {
   kgen.return %idx0 : index
 }
 
-// CHECK:      kgen.func @coroutine_ramp(%arg0: i1) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>> {
+// CHECK:      kgen.func @coroutine_ramp(%arg0: i1) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
 // CHECK-NEXT:   %idx64 = index.constant 64
 // CHECK-NEXT:   %idx8 = index.constant 8
-// CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %idx8, %idx64 : <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, struct<(index)>, i1)>>
+// CHECK-NEXT:   [[CONTINUATION:%.*]] = pop.aligned_alloc %idx8, %idx64 : <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, i1)>>
 // CHECK-NEXT:   [[ZERO:%.*]] = kgen.param.constant: i32 = <0>
 // CHECK-NEXT:   [[STATESLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][0]
 // CHECK-NEXT:   pop.store [[ZERO]], [[STATESLOT]] : !kgen.pointer<i32>
@@ -21,12 +21,12 @@ kgen.func @coroutine1(%arg0: i1) async -> index {
 // CHECK-NEXT:   pop.store [[RESUME_FNC_PTR_OPAQUE]], [[RESUME_SLOT]]
 // CHECK-NEXT:   [[ARG0_SLOT:%.*]] = kgen.struct.gep [[CONTINUATION]][[[#FRAME1:]]]
 // CHECK-NEXT:   pop.store %arg0, [[ARG0_SLOT]] : !kgen.pointer<i1>
-// CHECK-NEXT:   [[HEADER:%.*]] = pop.pointer.bitcast [[CONTINUATION]] : !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, struct<(index)>, i1)>> to !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK-NEXT:   [[HEADER:%.*]] = pop.pointer.bitcast [[CONTINUATION]] : !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, i1)>> to !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
 // CHECK-NEXT:   kgen.return [[HEADER]]
 // CHECK-NEXT: }
 
 // CHECK-LABEL: kgen.func @coroutine_resume
-// CHECK-SAME:  coroutineType = !kgen.struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, struct<(index)>, i1)>
+// CHECK-SAME:  coroutineType = !kgen.struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, i1)>
 // CHECK-NEXT:    [[ARG0_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME1]]]
 // CHECK-NEXT:    [[ARG0:%.*]] = pop.load [[ARG0_SLOT]] : !kgen.pointer<i1>
 // CHECK-NEXT:    hlcf.if [[ARG0]] {
@@ -69,7 +69,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 kgen.func @call_coroutine() {
   %true = index.bool.constant true
   // CHECK: kgen.call @coroutine_ramp(%true) :
-  // CHECK-SAME: (i1) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+  // CHECK-SAME: (i1) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
   %result = co.invoke[(i1) async -> index: @coroutine](%true)
   // CHECK-NEXT: kgen.return
   kgen.return
@@ -509,7 +509,7 @@ kgen.func @coroutine_block_args2(%arg0: index) async -> index {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @unused_args_resume
-// CHECK-SAME: coroutineType = !kgen.struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index)>
+// CHECK-SAME: coroutineType = !kgen.struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index)>
 kgen.func @unused_args(%arg0: index, %arg1: index) async -> index {
   co.suspend (%hdl) {
     co.suspend.end
@@ -1209,17 +1209,17 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   }
   %true = index.bool.constant true
   // CHECK:      [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
-  // CHECK-NEXT: [[CALLBACK:%.*]] = kgen.create_closure[(!kgen.pointer<none>) -> !kgen.none: @callback]()
+  // CHECK-NEXT: [[CALLBACK:%.*]] = kgen.create_closure[(!kgen.pointer<none>) -> (): @callback]()
   // CHECK-NEXT: [[SLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME2:]]]
   // CHECK-NEXT: [[CAST:%.*]] = pop.pointer.bitcast [[SLOT]]
-  // CHECK-NEXT: [[SLOT2:%.*]] = kgen.struct.gep [[CAST]][0] : <struct<((!kgen.pointer<none>) -> !kgen.none, pointer<none>)>>
-  // CHECK-NEXT: pop.store [[CALLBACK]], [[SLOT2]] : !kgen.pointer<(!kgen.pointer<none>) -> !kgen.none>
+  // CHECK-NEXT: [[SLOT2:%.*]] = kgen.struct.gep [[CAST]][0] : <struct<((!kgen.pointer<none>) -> (), pointer<none>)>>
+  // CHECK-NEXT: pop.store [[CALLBACK]], [[SLOT2]] : !kgen.pointer<(!kgen.pointer<none>) -> ()>
   // CHECK-NEXT: co.suspend {
   %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
-  %callback = kgen.create_closure[(!kgen.pointer<none>) -> !kgen.none: @callback]()
-  %ptr = co.get_callback_ptr %coro : <struct<(!kgen.signature<(!kgen.pointer<none>) -> !kgen.none>, pointer<none>)>>
-  %callbackSlot = kgen.struct.gep %ptr[0] : <struct<(!kgen.signature<(!kgen.pointer<none>) -> !kgen.none>, pointer<none>)>>
-  pop.store %callback, %callbackSlot : !kgen.pointer<!kgen.signature<(!kgen.pointer<none>) -> !kgen.none>>
+  %callback = kgen.create_closure[(!kgen.pointer<none>) -> (): @callback]()
+  %ptr = co.get_callback_ptr %coro : <struct<(!kgen.signature<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
+  %callbackSlot = kgen.struct.gep %ptr[0] : <struct<(!kgen.signature<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
+  pop.store %callback, %callbackSlot : !kgen.pointer<!kgen.signature<(!kgen.pointer<none>) -> ()>>
   co.suspend (%hdl) {
     co.suspend.end
   }
@@ -1273,7 +1273,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
-// CHECK-LABEL: kgen.func @coroutine_ramp(%arg0: index) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+// CHECK-LABEL: kgen.func @coroutine_ramp(%arg0: index) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
 kgen.func @coroutine(%arg0: index, %__result__: !kgen.pointer<index> byref_result) async -> index {
   %idx1 = index.constant 1
   %result1 = index.add %arg0, %idx1
@@ -1348,7 +1348,7 @@ kgen.func @coroutine(%arg0: index) async -> index {
 kgen.func @call_coroutine(%arg0: index) -> index {
   // CHECK:      [[CORO:%.*]] = kgen.call @coroutine_ramp
   // CHECK-NEXT: [[RESUMESLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME1:]]]
-  // CHECK-NEXT: [[TYPED_RESUMESLOT:%.*]] = pop.pointer.bitcast [[RESUMESLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<(!kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>) -> ()>
+  // CHECK-NEXT: [[TYPED_RESUMESLOT:%.*]] = pop.pointer.bitcast [[RESUMESLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<(!kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>) -> ()>
   // CHECK-NEXT: [[RESUME:%.*]] = pop.load [[TYPED_RESUMESLOT]]
   // CHECK-NEXT: kgen.call_indirect [[RESUME]]([[CORO]])
   %coro = co.invoke[(index) async -> index: @coroutine](%arg0)
@@ -1394,7 +1394,7 @@ kgen.func @no_results() async {
 kgen.func @use_of_suspend() async -> i32 {
   // CHECK: co.suspend {
   co.suspend (%hdl) {
-    // CHECK: [[HDL:%.*]] = pop.pointer.bitcast %arg0 : {{.*}} to !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>
+    // CHECK: [[HDL:%.*]] = pop.pointer.bitcast %arg0 : {{.*}} to !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
     %0 = pop.stack_allocation 1 x !co.routine
     // CHECK: store [[HDL]], %{{.*}}
     pop.store %hdl, %0 : !kgen.pointer<!co.routine>
@@ -1547,7 +1547,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK:      [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME1:]]]
-  // CHECK-NEXT:   [[TYPED_RESUME:%.*]] = pop.pointer.bitcast [[RESUME_SLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<(!kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>)>>) -> ()>
+  // CHECK-NEXT:   [[TYPED_RESUME:%.*]] = pop.pointer.bitcast [[RESUME_SLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<(!kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>) -> ()>
   // CHECK-NEXT:   [[RESUME:%.*]] = pop.load [[TYPED_RESUME]]
   // CHECK-NEXT:   kgen.call_indirect [[RESUME]]([[CORO]])
   // CHECK-NEXT:   co.suspend.end
@@ -1749,7 +1749,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: co.suspend.end
     // CHECK-NEXT: }
     // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep %arg0[7]
-    // CHECK-SAME: <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, struct<()>, struct<(index, index)>)>>
+    // CHECK-SAME: <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<()>, struct<(index, index)>)>>
     // CHECK-NEXT: [[V4:%.*]] = kgen.struct.gep [[V3]][1] : <struct<(index, index)>>
     // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
     // CHECK-NEXT:  kgen.call @doSomething([[V5]]) : (index) -> index

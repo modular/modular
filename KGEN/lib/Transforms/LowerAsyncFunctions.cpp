@@ -452,7 +452,7 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &frameData, StructType promiseType)
   FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
   resumeSignatureType = SignatureType::get(resumeFunctionType);
   FunctionType callbackFunctionType =
-      FunctionType::get(cxt, opaquePointerType, KGEN::NoneType::get(cxt));
+      FunctionType::get(cxt, opaquePointerType, results);
   callbackSignature = SignatureType::get(callbackFunctionType);
 
   // Build Continuation Type.
