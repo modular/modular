@@ -8,7 +8,7 @@
 # RUN: true
 
 from gpu.host import Context, Function
-from gpu.host.memory import create_tma_descriptor, _malloc, _free
+from gpu.host.memory import create_tma_descriptor, _malloc_managed, _free
 from gpu.memory import cp_async_bulk_tensor_shared_cluster_global
 from gpu.sync import mbarrier_init, mbarrier_arrive, mbarrier_test_wait
 from gpu.memory import _GPUAddressSpace
@@ -19,7 +19,7 @@ from utils.index import Index
 # CHECK-LABLE: test_tma_tile_copy
 def test_tma_tile_copy():
     print("== test_tma_tile_copy")
-    var gmem_ptr = _malloc[DType.float32](8 * 8)
+    var gmem_ptr = _malloc_managed[DType.float32](8 * 8)
     for i in range(16):
         gmem_ptr[i] = i
 
@@ -61,7 +61,8 @@ def test_tma_tile_copy():
         # CHECK: 27
         @parameter
         for i in range(16):
-            print(shmem[i])
+            var val = shmem[i]
+            print(val)
 
     var kernel_copy_async = Function[kernel_copy_async_tma](dump_ptx=True)
     kernel_copy_async(grid_dim=(1), block_dim=(1))
