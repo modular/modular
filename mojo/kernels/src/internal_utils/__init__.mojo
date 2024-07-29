@@ -13,5 +13,6 @@ from ._utils import (
     TestTensor,
     zero,
     random,
+    bench_compile_time,
 )
 from ._measure import kl_div, correlation, cosine

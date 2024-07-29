@@ -15,6 +15,15 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from utils.index import product
 from random import random_float64
 from testing import assert_equal, assert_almost_equal
+from benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+    keep,
+)
+from compile import compile_code
 
 
 @value
@@ -159,3 +168,44 @@ fn fill[type: DType](buffer: NDBuffer, val: Scalar[type]):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
             buffer[(i, j)] = val.cast[buffer.type]()
+
+
+fn bench_compile_time[
+    func_type: AnyTrivialRegType, //,
+    func: func_type,
+    emission_kind: StringLiteral = "asm",
+](
+    inout m: Bench,
+    name: String,
+    metrics: List[BenchMetric] = List[BenchMetric](),
+) raises:
+    constrained[emission_kind in ("asm", "llvm", "ptx")]()
+
+    @always_inline
+    @parameter
+    fn bench_call(inout b: Bencher) raises:
+        @always_inline
+        @parameter
+        fn bench_iter() raises:
+            @parameter
+            if emission_kind == "asm" or emission_kind == "llvm":
+                var s: String = compile_code[
+                    func, emission_kind=emission_kind
+                ]()
+                keep(s.unsafe_ptr())
+            elif emission_kind == "ptx":
+                with DeviceContext() as ctx:
+                    var func = ctx.compile_function[func]()
+                    var s: String = func.cuda_function._impl.asm
+                    keep(s.unsafe_ptr())
+
+        b.iter[bench_iter]()
+
+    # To ensure consistency of Bench.dump_report, should set the list of BenchMetrics in metrics to 0.
+    var measures: List[ThroughputMeasure] = List[ThroughputMeasure]()
+    for i in range(len(metrics)):
+        measures.append(ThroughputMeasure(metrics[i], 0))
+
+    m.bench_function[bench_call](
+        BenchId("bench_compile" + "/" + emission_kind, name), measures=measures
+    )
