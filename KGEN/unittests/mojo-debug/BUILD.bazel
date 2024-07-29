@@ -33,7 +33,7 @@ modular_cc_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_PATH": "open-source/mojo/stdlib/stdlib",
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib/stdlib",
         "MODULAR_PATH": ".",
     },
     tags = [

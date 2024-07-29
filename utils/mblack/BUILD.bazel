@@ -24,5 +24,6 @@ py_binary(
 pkg_files(
     name = "mblack_files",
     srcs = glob(["**"]),
+    prefix = "mblack",
     strip_prefix = strip_prefix.from_pkg(""),
 )
