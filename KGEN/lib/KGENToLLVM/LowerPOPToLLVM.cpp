@@ -1524,7 +1524,7 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
     }
     if (func &&
         std::make_tuple(func.getPassthroughAttr(), func.getArgAttrsAttr(),
-                        func.getResAttrsAttr(), func.getMemoryAttr()) !=
+                        func.getResAttrsAttr(), func.getMemoryEffectsAttr()) !=
             std::make_tuple(passthrough, argAttrs, resAttrs, memory)) {
       return mlir::emitError(op.getLoc(),
                              "existing function with conflicting attributes")
@@ -1544,7 +1544,7 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
       if (resAttrs)
         func.setResAttrsAttr(resAttrs);
       if (memory)
-        func.setMemoryAttr(memory);
+        func.setMemoryEffectsAttr(memory);
       symtab.insert(func);
     }
 

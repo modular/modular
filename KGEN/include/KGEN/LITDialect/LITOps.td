@@ -398,10 +398,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
 
-    TypeConvention getConvention() { return getProperties().convention; }
-    void setConvention(TypeConvention value) {
-      getProperties().convention = value;
-    }
     bool isRegisterPassable() {
       return getConvention() != TypeConvention::MemoryOnly;
     }

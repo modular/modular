@@ -13,7 +13,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return %0 : !pop.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>
-  // CHECK-SAME: memory = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read>
+  // CHECK-SAME: memory_effects = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read>
   // CHECK-SAME: passthrough = ["noinline", "noreturn"
   // CHECK: llvm.func @bar(!llvm.ptr {llvm.noalias}) -> (i32 {llvm.signext})
 }

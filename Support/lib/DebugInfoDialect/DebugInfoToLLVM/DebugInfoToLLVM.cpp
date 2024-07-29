@@ -131,7 +131,7 @@ MetadataConverter::convertAttrImpl(DILocalVariableAttr attr) {
   return LLVM::DILocalVariableAttr::get(
       convertAttr(attr.getScope()), attr.getName(), convertAttr(attr.getFile()),
       attr.getLine(), attr.getArg(), attr.getAlignInBits(),
-      convertType(attr.getType()));
+      convertType(attr.getType()), LLVM::DIFlags::Zero);
 }
 
 LLVM::DISubprogramAttr
