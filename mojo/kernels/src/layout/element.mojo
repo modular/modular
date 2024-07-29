@@ -135,6 +135,133 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 return Element(element_data, runtime_layout)
 
+    @staticmethod
+    fn masked_load[
+        address_space: AddressSpace, rank: Int
+    ](
+        ptr: UnsafePointer[Scalar[dtype], address_space],
+        element_bounds: StaticIntTuple[rank],
+        runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
+    ) -> Self:
+        # TODO: Use partial_simd_load after closing KERN-729.
+        constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
+        constrained[
+            rank == layout.rank(), "bounds rank must match layout rank"
+        ]()
+        var element_data = Self.element_data_type()
+
+        @parameter
+        if layout.rank() == 1:
+            alias size = layout.size()
+
+            @parameter
+            if layout.stride[0] == 1:
+                alias alignment = alignof[Self.element_data_type]()
+                if element_bounds[0] < size:
+
+                    @parameter
+                    for i in range(size):
+                        if i >= element_bounds[0]:
+                            break
+                        element_data[i] = ptr[__get_offset[i](runtime_layout)]
+                    return Element(element_data, runtime_layout)
+
+                return Self.element_data_type.load[alignment=alignment](ptr, 0)
+
+            @parameter
+            for i in range(size):
+                if i >= element_bounds[0]:
+                    break
+                element_data[i] = ptr[__get_offset[i](runtime_layout)]
+            return Element(element_data, runtime_layout)
+
+        # rank-2 element.
+        @parameter
+        if layout.stride[0] == 1:
+            alias size = to_int(layout.shape[0])
+            alias elements = to_int(layout.shape[1])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]
+            var element_data = Self.element_data_type()
+            if element_bounds[0] < size:
+                alias dim_0 = to_int(layout.shape[0])
+                alias dim_1 = to_int(layout.shape[1])
+
+                @parameter
+                for i in range(dim_0):
+                    if i >= element_bounds[0]:
+                        break
+
+                    @parameter
+                    for j in range(dim_1):
+                        if j >= element_bounds[1]:
+                            break
+                        element_data[i + j * dim_1] = ptr[
+                            __get_offset[i, j](runtime_layout)
+                        ]
+                return Element(element_data, runtime_layout)
+
+            @parameter
+            for i in range(elements):
+                if i >= element_bounds[1]:
+                    break
+                var vec_i = vec_type.load(
+                    ptr, __get_offset[0, i](runtime_layout)
+                )
+                element_data = element_data.insert[offset = i * size](vec_i)
+            return Element(element_data, runtime_layout)
+
+        elif layout.stride[1] == 1:
+            alias size = to_int(layout.shape[1])
+            alias elements = to_int(layout.shape[0])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]
+            var element_data = Self.element_data_type()
+            if element_bounds[1] < size:
+                alias dim_0 = to_int(layout.shape[0])
+                alias dim_1 = to_int(layout.shape[1])
+
+                @parameter
+                for i in range(dim_0):
+                    if i >= element_bounds[0]:
+                        break
+
+                    @parameter
+                    for j in range(dim_1):
+                        if j >= element_bounds[1]:
+                            break
+                        element_data[i + j * dim_1] = ptr[
+                            __get_offset[i, j](runtime_layout)
+                        ]
+                return Element(element_data, runtime_layout)
+
+            @parameter
+            for i in range(elements):
+                if i >= element_bounds[0]:
+                    break
+                var vec_i = vec_type.load(
+                    ptr, __get_offset[i, 0](runtime_layout)
+                )
+                element_data = element_data.insert[offset = i * size](vec_i)
+            return Element(element_data, runtime_layout)
+
+        alias dim_0 = to_int(layout.shape[0])
+        alias dim_1 = to_int(layout.shape[1])
+
+        @parameter
+        for i in range(dim_0):
+            if i >= element_bounds[0]:
+                break
+
+            @parameter
+            for j in range(dim_1):
+                if j >= element_bounds[1]:
+                    break
+                element_data[i + j * dim_1] = ptr[
+                    __get_offset[i, j](runtime_layout)
+                ]
+        return Element(element_data, runtime_layout)
+
     fn store[
         address_space: AddressSpace
     ](self, ptr: UnsafePointer[Scalar[dtype], address_space]):
@@ -206,5 +333,4 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
     @no_inline
     fn format_to(self, inout writer: Formatter):
-        # TODO: Avoid intermediate string allocation.
-        writer.write(self.element_data.__str__())
+        writer.write(self.element_data)

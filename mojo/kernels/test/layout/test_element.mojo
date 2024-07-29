@@ -187,7 +187,49 @@ fn test_element_dynamic_layout():
     tensor_8x8.print()
 
 
+# CHECK-LABEL: test_element_masked_load
+fn test_element_masked_load():
+    print("== test_element_masked_load")
+    var tensor_4x4 = LayoutTensor[
+        DType.float32, Layout.row_major(4, 4)
+    ].stack_allocation()
+    tensor_4x4.linspace()
+    var tensor_1x3 = LayoutTensor[DType.float32, Layout.row_major(1, 3)](
+        tensor_4x4.ptr
+    )
+
+    var tensor_1x3_v4 = tensor_1x3.vectorize[1, 4]()
+    # CHECK: [0.0, 1.0, 2.0, 0.0]
+    print(
+        Element[tensor_1x3_v4.dtype, tensor_1x3_v4.element_layout].masked_load(
+            tensor_1x3_v4.ptr, StaticIntTuple[1](3)
+        )
+    )
+    # CHECK: [0.0, 4.0, 8.0, 0.0]
+    var tensor_3x4 = LayoutTensor[DType.float32, Layout.row_major(3, 4)](
+        tensor_4x4.ptr
+    )
+
+    var tensor_3x1_v4 = tensor_3x4.vectorize[4, 1]()
+
+    # CHECK: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 0.0, 0.0, 0.0, 0.0]
+    print(
+        Element[tensor_3x1_v4.dtype, tensor_3x1_v4.element_layout].masked_load(
+            tensor_3x1_v4.ptr, StaticIntTuple[1](3)
+        )
+    )
+
+    var tensor_3x4_v4x4 = tensor_3x4.vectorize[4, 4]()
+
+    print(
+        Element[
+            tensor_3x4_v4x4.dtype, tensor_3x4_v4x4.element_layout
+        ].masked_load(tensor_3x4_v4x4.ptr, StaticIntTuple[2](3, 4))
+    )
+
+
 fn main():
     test_element_load()
     test_element_store()
     test_element_dynamic_layout()
+    test_element_masked_load()
