@@ -17,7 +17,6 @@ class Weight:
 
     value: GraphValue
     name: str
-    tensor_type: TensorType
 
     filepath: Union[PathLike, str, None]
     offset: Optional[int]

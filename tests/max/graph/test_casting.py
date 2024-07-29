@@ -10,6 +10,7 @@ import sys
 import pytest
 from max import mlir
 from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
+from max.graph.type import shape
 
 
 def test_reshape() -> None:
@@ -25,9 +26,11 @@ def test_reshape() -> None:
 
         static_reshape = graph.inputs[0].reshape((3, 10))
         static_reshape_neg_one = graph.inputs[0].reshape((2, -1))
+        assert static_reshape_neg_one.shape == shape((2, 15))
 
         symbolic_reshape = graph.inputs[1].reshape(("channels", "batch"))
         symbolic_reshape_neg_one = graph.inputs[1].reshape(("channels", -1))
+        assert symbolic_reshape_neg_one.shape == shape(("channels", "batch"))
 
         graph.output(
             static_reshape,

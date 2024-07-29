@@ -120,7 +120,16 @@ class Dim:
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        raise NotImplementedError
+        if _graph.is_static_dim(dim_attr):
+            return StaticDim.from_mlir(dim_attr)
+        elif _graph.is_symbolic_dim(dim_attr):
+            return SymbolicDim.from_mlir(dim_attr)
+        elif _graph.is_symbolic_expression_dim(dim_attr):
+            raise ValueError(
+                "graph api does not support algebraic expression dimensions"
+            )
+        else:
+            raise ValueError("graph api does not support unknown dimensions")
 
 
 @dataclass
@@ -203,7 +212,7 @@ class SymbolicDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return SymbolicDim(_graph.dim_symbolic_name(dim_attr))
+        return SymbolicDim(_graph.symbolic_dim_name(dim_attr))
 
 
 @dataclass
@@ -275,7 +284,7 @@ class StaticDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return StaticDim(_graph.dim_static_value(dim_attr))
+        return StaticDim(_graph.static_dim_value(dim_attr))
 
 
 Shape = list[Dim]
@@ -294,6 +303,10 @@ def dim(value: DimLike) -> Dim:
     elif isinstance(value, Dim):
         return value
     raise TypeError(f"Unsupported dimension type {value}")
+
+
+def shape(shape_like: ShapeLike) -> Shape:
+    return [dim(d) for d in shape_like]
 
 
 def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
@@ -389,6 +402,9 @@ class TensorType(Type):
         Returns:
             The tensor type represented by the MLIR Type value.
         """
+        if not _graph.type_is_tensor(t):
+            raise ValueError(f"Expected TensorType, got: {t}")
+
         dtype = _graph.tensor_type_get_dtype(t)
         rank = _graph.tensor_type_get_rank(t)
         shape = [

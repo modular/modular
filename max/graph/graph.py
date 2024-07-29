@@ -290,7 +290,6 @@ class Graph:
         weight = Weight(
             weights_tensor,
             name=name,
-            tensor_type=tensor_type,
             filepath=filepath,
             offset=offset,
         )

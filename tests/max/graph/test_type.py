@@ -19,7 +19,8 @@ from max.graph.type import Dim, StaticDim, SymbolicDim, TensorType, _OpaqueType
 @given(dtype=...)
 def test_dtype_type(mlir_context, dtype: DType) -> None:
     """Tests dtype to MLIR type conversion."""
-    # bool dtype prints as i1
+    # bool dtype prints as i1 if printing the raw mlir type.
+    # We would need `DType.from_mlir`, like `tensor_type_get_dtype` to get "bool".
     assume(dtype != DType.bool)
     new_dtype = _graph.dtype_type(mlir_context, dtype._mlir)
     assert dtype._mlir == str(new_dtype)
@@ -69,7 +70,6 @@ def test_dim_to_mlir_no_context(dim: Dim):
         print(dim.to_mlir())
 
 
-@pytest.mark.skip("DType.bool doesn't work yet :P")
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(tensor_type=...)
 def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType):

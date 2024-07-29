@@ -12,7 +12,7 @@ import numpy as np
 from max import mlir
 
 from . import ops
-from .type import ShapeLike
+from .type import Shape, ShapeLike, TensorType
 
 
 class GraphValue:
@@ -46,6 +46,22 @@ class GraphValue:
             self._mlir_value = ops.constant(value)._mlir_value
         else:
             raise ValueError(f"can't construct GraphValue from {value}")
+
+    @property
+    def tensor_type(self) -> TensorType:
+        """Returns the type of the GraphValue as a TensorType.
+
+        Will raise if the type is not TensorType.
+        """
+        return TensorType.from_mlir(self._mlir_value.type)
+
+    @property
+    def shape(self) -> Shape:
+        """Returns the shape of the GraphValue.
+
+        Will raise if the type is not TensorType.
+        """
+        return self.tensor_type.shape
 
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)

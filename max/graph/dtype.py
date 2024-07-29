@@ -19,25 +19,25 @@ import numpy as np
 class DType(Enum):
     """The tensor data type."""
 
-    bool = 0, "bool"
-    int8 = 1, "si8"
-    int16 = 2, "si16"
-    int32 = 3, "si32"
-    int64 = 4, "si64"
-    uint8 = 5, "ui8"
-    uint16 = 6, "ui16"
-    uint32 = 7, "ui32"
-    uint64 = 8, "ui64"
-    float16 = 9, "f16"
-    float32 = 10, "f32"
-    float64 = 11, "f64"
+    bool = "bool"
+    int8 = "si8"
+    int16 = "si16"
+    int32 = "si32"
+    int64 = "si64"
+    uint8 = "ui8"
+    uint16 = "ui16"
+    uint32 = "ui32"
+    uint64 = "ui64"
+    float16 = "f16"
+    float32 = "f32"
+    float64 = "f64"
 
     def __repr__(self) -> str:
         return self.name
 
     @property
     def _mlir(self):
-        return self.value[1]
+        return self.value
 
     @classmethod
     def from_numpy(cls, dtype: np.dtype) -> DType:
