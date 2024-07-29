@@ -1381,11 +1381,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         dest.resetForError();
         return {};
       }
-      ValueDest ctorDest(dest.getContext());
-      // Emit the implicit conversion.
+      // Emit the implicit conversion to Coroutine[T].  We emit into the call's
+      // destination to avoid an extra copy/move of the Coroutine object.
       callResult =
           emitConstructorCall(coroType, {{{SBValue(call), callExpr}}}, callExpr,
-                              CallSyntax::kImplicitConvert, ctorDest);
+                              CallSyntax::kImplicitConvert, dest);
       if (!callResult) {
         dest.resetForError();
         return {};

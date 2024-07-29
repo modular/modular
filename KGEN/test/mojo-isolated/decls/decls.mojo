@@ -1135,9 +1135,7 @@ fn coroutine_lifetimes():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> inout, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], mut #lit.lifetime](%x, [[Y_IMM]])
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>(%anonymous2A, [[CORO]])
-    # CHECK: [[CORO_VAL:%.*]] = lit.load.consume %anonymous2A
-    # CHECK: store [[CORO_VAL]], %coro : <{{.*}}Coroutine<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.struct<#LifetimeAccess <:lifetime<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:lifetime<1> [[Y_LT]]>]
@@ -1155,7 +1153,7 @@ async fn mem_result() -> Awaitable:
 # CHECK-LABEL: lit.func @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
 async fn mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][mut #lit.lifetime, mut #lit.lifetime]()
-    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}(%anonymous2A, [[CORO]])
+    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}(%coro, [[CORO]])
     var coro = mem_raises()
 
 
