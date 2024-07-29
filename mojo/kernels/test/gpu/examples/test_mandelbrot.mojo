@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: nvptx_backend
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug %s
 
 from math import ceildiv, iota
 from sys.info import simdwidthof
@@ -14,10 +14,8 @@ from algorithm import vectorize
 from buffer import DimList, NDBuffer
 from complex import ComplexSIMD
 from gpu import *
-from gpu.host import Context, Function, Stream
-from gpu.host.event import time_function
-from gpu.host.memory import _copy_device_to_host, _free, _malloc
-
+from gpu.host import DeviceContext
+from testing import assert_equal
 from utils.index import Index
 
 alias float_type = DType.float64
@@ -54,11 +52,13 @@ fn mandelbrot_kernel[
     return iters
 
 
-fn mandelbrot(out: NDBuffer[int_type, 2, DimList(height, width)]):
+fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
     # Each task gets a row.
     var row = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
     if row >= height:
         return
+
+    var out = NDBuffer[int_type, 2](out_ptr, Index(height, width))
 
     alias scale_x = (max_x - min_x) / width
     alias scale_y = (max_y - min_y) / height
@@ -78,54 +78,48 @@ fn mandelbrot(out: NDBuffer[int_type, 2, DimList(height, width)]):
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.
-    vectorize[compute_vector, simdwidthof[float_type](), width]()
+    vectorize[compute_vector, simdwidthof[float_type]()](width)
 
 
-fn run_mandelbrot() raises:
-    var stream = Stream()
+fn run_mandelbrot(ctx: DeviceContext) raises:
+    var out_host = UnsafePointer[Scalar[int_type]].alloc(width * height)
 
-    var out_host = NDBuffer[
-        int_type, 2, DimList(width, height)
-    ].stack_allocation()
+    var out_device = ctx.create_buffer[int_type](width * height)
 
-    var out_device = _malloc[int_type](width * height)
-
-    var func = Function[mandelbrot]()
+    var func = ctx.compile_function[mandelbrot]()
 
     @always_inline
     @parameter
-    fn run_mandelbrot(stream: Stream) raises:
-        func(
-            NDBuffer[int_type, 2, DimList(height, width)](out_device),
+    fn run_mandelbrot(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func,
+            out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),
-            stream=stream,
         )
 
-    run_mandelbrot(stream)  # Warmup
+    run_mandelbrot(ctx)  # Warmup
     print(
         "Computation took:",
-        time_function[run_mandelbrot](stream) / 1_000_000_000.0,
+        ctx.execution_time[run_mandelbrot](1) / 1_000_000_000.0,
     )
 
-    _copy_device_to_host(out_host.data, out_device, width * height)
+    ctx.enqueue_copy_from_device(out_host, out_device)
 
     var accum = SIMD[int_type, 1](0)
     for i in range(width):
         for j in range(height):
-            accum += out_host[i, j]
-    # CHECK: 4687759697
-    print(accum)
+            accum += out_host[i * width + j]
+    assert_equal(4687767697, accum)
 
-    _free(out_device)
+    _ = out_device
 
     _ = out_host
 
     _ = func^
-    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    with Context() as ctx:
-        run_mandelbrot()
+    with DeviceContext() as ctx:
+        run_mandelbrot(ctx)

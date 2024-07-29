@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import Context
+from gpu.host import DeviceContext
 from gpu.host.memory import (
     _mem_get_allocation_granularity,
     MemAllocationProp,
@@ -42,10 +42,6 @@ fn test_mem_get_allocation_granularity() raises:
     )
 
 
-fn main():
-    try:
-        with Context():
-            test_mem_get_allocation_granularity()
-
-    except e:
-        print("CUDA error", e)
+def main():
+    with DeviceContext():
+        test_mem_get_allocation_granularity()
