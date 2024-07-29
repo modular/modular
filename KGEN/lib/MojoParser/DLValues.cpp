@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DLValues.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 
@@ -122,6 +123,17 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
 }
 
+MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
+    ExprEmitter &emitter) const {
+  auto baseRef = baseVal.ir->emitMBValueFromDefArgument(emitter);
+  if (!baseRef)
+    return {};
+
+  auto fieldRef = emitter.builder->create<RefStructGEROp>(
+      expr->getLocation(emitter), baseRef, cast<StructFieldOp>(fieldOp));
+  return MBValue(fieldRef);
+}
+
 //===----------------------------------------------------------------------===//
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
@@ -173,6 +185,7 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
                               storeDest, CallSyntax::kMethodCall, expr);
 }
+
 //===----------------------------------------------------------------------===//
 // TupleDLValue
 //===----------------------------------------------------------------------===//
@@ -275,4 +288,73 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
       return;
     }
   }
+}
+
+//===----------------------------------------------------------------------===//
+// DefArgumentWrapperDLValue
+//===----------------------------------------------------------------------===//
+
+DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
+                                                     BValue argRef,
+                                                     ASTType eltType,
+                                                     size_t argIndex)
+    : BaseDLValue(eltType), argDecl(argDecl), argRef(argRef),
+      argIndex(argIndex) {}
+
+/// If this is a def argument shadow, resolve it to the incoming immutable
+/// borrowed value without forming a local copy.  Otherwise return null.
+MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
+    ExprEmitter &emitter) const {
+  return argRef.getIfMBValue();
+}
+
+void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
+  os << "def argument wrapper of type " << elementType;
+}
+
+// This hook is called before an argument is passed inout.
+LValue
+DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
+                                                 ExprEmitter &emitter) const {
+  // Okay, if the def argument is mutated, we need to snap into action and
+  // lazily build a shadow in the function entry.
+  auto func = cast<FuncOp>(argDecl->getParentDecl());
+  ExprEmitter entryEmitter(emitter.shared, *argDecl->getParentDecl(),
+                           OpBuilder::atBlockBegin(func.getBody()));
+  StringAttr argName = func.getSignature().getArgName(argIndex);
+
+  // Create the shadow box and copy the argument into it.  This will emit an
+  // error at the specified location if the underlying type isn't copyable.
+  VarDeclOp declOp = entryEmitter.makeArgLValueVarSlot(argRef, argName, loc);
+
+  // Emission can fail when the type is non-copyable.
+  if (!declOp) {
+    argDecl->setErroneous();
+    return LValue();
+  }
+
+  declOp.setArgShadowIndex(argIndex);
+
+  // Update the representation so we don't do this again.
+  argDecl->setIRValue(MLValue(declOp));
+  return MLValue(declOp);
+}
+
+CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
+                                           ExprEmitter &emitter) const {
+  // Loads of the def argument wrapper are simple enough.
+  SyntheticNode expr(argDecl->getLoc());
+  return emitter.emitCResult(argRef, &expr, dest);
+}
+
+void DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
+                                          ExprEmitter &emitter) const {
+  // Okay, if the def argument is mutated, we need to snap into action and
+  // lazily build a shadow in the function entry.
+  LValue newVal = prepareForInoutAccess(value.expr->getLoc(), emitter);
+  if (!newVal)
+    return;
+
+  // Ok, now emit a normal store.
+  emitter.emitStoreToLValue(value, newVal, ExprContext::EC_Assignment);
 }
