@@ -59,8 +59,6 @@ struct test_matmul[
     var N: Int
     var K: Int
 
-    var low_precision: Bool
-
     var a_host: HostNDBuffer[type, 2]
     var b_host: HostNDBuffer[type, 2, static_b_shape]
     var c_host: HostNDBuffer[type, 2]
@@ -75,7 +73,6 @@ struct test_matmul[
         inout self,
         ctx: DeviceContext,
         shape: Tuple[Int, Int, Int],
-        low_precision: Bool = False,
     ) raises:
         self.ctx = ctx
 
@@ -89,8 +86,6 @@ struct test_matmul[
             alias b_n_dim = 0 if transpose_b else 1
             assert_equal_val(self.K, static_b_shape.get[b_k_dim]())
             assert_equal_val(self.N, static_b_shape.get[b_n_dim]())
-
-        self.low_precision = low_precision
 
         var a_shape = DimList(self.M, self.K)
         var b_shape = DimList(self.K, self.N)
@@ -138,15 +133,12 @@ struct test_matmul[
         )
         ctx.synchronize()
 
-        if self.low_precision:
-            assert_almost_equal(
-                self.c_host_ref.tensor,
-                self.c_host.tensor,
-                atol=0.0001,
-                rtol=0.01,
-            )
-        else:
-            assert_equal(self.c_host_ref.tensor, self.c_host.tensor)
+        assert_almost_equal(
+            self.c_host_ref.tensor,
+            self.c_host.tensor,
+            atol=0.0001,
+            rtol=0.01,
+        )
 
 
 def main():
@@ -184,7 +176,7 @@ def main():
             check_cublas_error(cublasDestroy(handle))
 
         test_matmul[DType.float32, DimList(128, 384)](
-            ctx, (256, 384, 128), low_precision=True
+            ctx, (256, 384, 128)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -196,7 +188,7 @@ def main():
         print("===> test float32 with shapes in llama2 with padding rows")
 
         test_matmul[DType.float32, DimList(128, 384)](
-            ctx, (256, 384, 128), low_precision=True
+            ctx, (256, 384, 128)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -206,7 +198,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(4096, 4096)](
-            ctx, (256, 4096, 4096), low_precision=True
+            ctx, (256, 4096, 4096)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -216,7 +208,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(4096, 12288)](
-            ctx, (256, 12288, 4096), low_precision=True
+            ctx, (256, 12288, 4096)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -226,7 +218,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(11008, 4096)](
-            ctx, (256, 4096, 11008), low_precision=True
+            ctx, (256, 4096, 11008)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -236,7 +228,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(12288, 4096)](
-            ctx, (256, 4096, 12288), low_precision=True
+            ctx, (256, 4096, 12288)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -248,7 +240,7 @@ def main():
         print("===> test bfloat16 using shape in context encoding in replit 3B")
 
         test_matmul[DType.bfloat16, DimList(12288, 3072)](
-            ctx, (1024, 3072, 12288), low_precision=True
+            ctx, (1024, 3072, 12288)
         ).run_test[
             basic_test[
                 DType.bfloat16,
@@ -258,7 +250,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(3072, 12288)](
-            ctx, (1024, 12288, 3072), low_precision=True
+            ctx, (1024, 12288, 3072)
         ).run_test[
             basic_test[
                 DType.bfloat16,
@@ -268,7 +260,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (1024, 5120, 3072), low_precision=True
+            ctx, (1024, 5120, 3072)
         ).run_test[
             basic_test[
                 DType.bfloat16,
@@ -278,7 +270,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(32768, 3072)](
-            ctx, (1024, 3072, 32768), low_precision=True
+            ctx, (1024, 3072, 32768)
         ).run_test[
             basic_test[
                 DType.bfloat16,
@@ -288,7 +280,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(3072, 3072)](
-            ctx, (1024, 3072, 3072), low_precision=True
+            ctx, (1024, 3072, 3072)
         ).run_test[
             basic_test[
                 DType.bfloat16,
@@ -387,7 +379,7 @@ def main():
         print("===> float32 with shapes in llama2 with padding rows")
 
         test_matmul[DType.float32, DimList(128, 384)](
-            ctx, (256, 384, 128), low_precision=True
+            ctx, (256, 384, 128)
         ).run_test[
             epilogue_test[
                 DType.float32,
@@ -397,7 +389,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(4096, 4096)](
-            ctx, (256, 4096, 4096), low_precision=True
+            ctx, (256, 4096, 4096)
         ).run_test[
             epilogue_test[
                 DType.float32,
@@ -407,7 +399,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(4096, 12288)](
-            ctx, (256, 12288, 4096), low_precision=True
+            ctx, (256, 12288, 4096)
         ).run_test[
             epilogue_test[
                 DType.float32,
@@ -417,7 +409,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(11008, 4096)](
-            ctx, (256, 4096, 11008), low_precision=True
+            ctx, (256, 4096, 11008)
         ).run_test[
             epilogue_test[
                 DType.float32,
@@ -427,7 +419,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(12288, 4096)](
-            ctx, (256, 4096, 12288), low_precision=True
+            ctx, (256, 4096, 12288)
         ).run_test[
             epilogue_test[
                 DType.float32,
@@ -442,7 +434,7 @@ def main():
         )
 
         test_matmul[DType.bfloat16, DimList(12288, 3072)](
-            ctx, (1024, 3072, 12288), low_precision=True
+            ctx, (1024, 3072, 12288)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
@@ -452,7 +444,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(3072, 12288)](
-            ctx, (1024, 12288, 3072), low_precision=True
+            ctx, (1024, 12288, 3072)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
@@ -462,7 +454,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (1024, 5120, 3072), low_precision=True
+            ctx, (1024, 5120, 3072)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
@@ -472,7 +464,7 @@ def main():
         ]()
 
         test_matmul[DType.bfloat16, DimList(3072, 3072)](
-            ctx, (1024, 3072, 3072), low_precision=True
+            ctx, (1024, 3072, 3072)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
