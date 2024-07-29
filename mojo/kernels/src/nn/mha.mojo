@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_down, ceildiv, exp, iota
+from math import align_down, ceildiv, exp, iota, recip
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
@@ -1889,8 +1889,8 @@ fn mha_single_batch[
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
-        var rowsum_inv1 = 1.0 / rowsum[2 * m_mma + 1]
+        var rowsum_inv0 = recip(rowsum[2 * m_mma])
+        var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
         for n_mma in range(num_n_mmas):
