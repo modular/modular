@@ -2329,20 +2329,6 @@ static void processRegisterPassableDecorator(
       return;
     }
   }
-
-  // Trivial types may not have __copyinit__ or __del__ members.
-  if (isTrivial) {
-    auto rejectMemberIfPresent = [&](StringRef name) {
-      auto members = structDecl.lookupInCurrentScope(name);
-      if (!members.empty())
-        resolver.emitError(members[0]->getLoc())
-            << "'@register_passable(\"trivial\")' types may not have a '"
-            << name << "' method";
-    };
-
-    rejectMemberIfPresent("__copyinit__");
-    rejectMemberIfPresent("__del__");
-  }
 }
 
 //===----------------------------------------------------------------------===//

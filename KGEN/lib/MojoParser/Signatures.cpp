@@ -1326,12 +1326,19 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
   // This logic happens before type checking, so we need to be very careful
   // to only process it if defined correctly.  We let downstream checks diagnose
   // the errors.
-  if (fnInfo.isInitializer() && selfType) {
+  if (fnInfo.isInitializer()) {
+    if (!selfType) {
+      fnDecl->setErroneous();
+      shared.emitError(fnDecl->getLoc(), "'")
+          << fnInfo.name << "' must be a method";
+      fnInfo = SpecialFunctionInfo();
+    }
+
+    // The self argument is actually passed with a special convention. It is
+    // written inout, but it isn't really.
+    // TODO: Introduce an 'init' convention, maybe even an 'init' keyword.
     if (!argList.parsedArgs.empty() &&
         argList.parsedArgs[0].convention == ParsedArgument::kConventionInOut) {
-      // The self argument is actually passed with a special convention. It is
-      // written inout, but it isn't really.
-      // TODO: Introduce an 'init' convention, maybe even an 'init' keyword.
       auto &selfArg = argList.parsedArgs[0];
       selfArg.convention = ParsedArgument::kConventionInitSelfResult;
       // We also force the passing kind of self to positional-only.
@@ -1339,15 +1346,32 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
         selfArg.kwArgHandling = KWArgHandling::kPositionalOnly;
     }
 
+    // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be
+    // emitted. Just forbid them for now.
+    if (argList.effects.isAsync()) {
+      shared.emitError(fnDecl->getLoc())
+          << "TODO: async constructors are not yet supported";
+      argList.effects.setAsync(false);
+    }
+
     // @register_passable values are movable by passing the register around, so
     // they can't define a moveinit.
     if (fnInfo.kind == SpecialFunctionKind::kMoveInit &&
         selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
       fnDecl->setErroneous();
-      shared.emitError(fnDecl->getLoc(), "'")
+      shared.emitError(fnDecl->getLoc(),
+                       "'@register_passable' types may not have a '")
           << fnInfo.name
-          << "' is not supported for @register_passable types, they "
-             "are always movable by copying a register";
+          << "' method, they are always movable by copying a register";
+      fnInfo = SpecialFunctionInfo();
+    }
+
+    // Trivial types are copyable with memcpy so they can't define copyinit.
+    if (fnInfo.kind == SpecialFunctionKind::kCopyInit &&
+        selfType.isTrivial(fnDecl->getLoc(), shared)) {
+      fnDecl->setErroneous();
+      shared.emitError(fnDecl->getLoc(), "trivial types may not have a '")
+          << fnInfo.name << "' method, they are always trivially copyable";
       fnInfo = SpecialFunctionInfo();
     }
   }
@@ -1356,12 +1380,13 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
 
-  // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be
-  // emitted. Just forbid them for now.
-  if (fnInfo.isInitializer() && argList.effects.isAsync()) {
-    shared.emitError(fnDecl->getLoc())
-        << "TODO: async constructors are not yet supported";
-    argList.effects.setAsync(false);
+  // Trivial types are copyable with memcpy so they can't define copyinit.
+  if (fnInfo.kind == SpecialFunctionKind::kDel &&
+      selfType.isTrivial(fnDecl->getLoc(), shared)) {
+    fnDecl->setErroneous();
+    shared.emitError(fnDecl->getLoc(), "trivial types may not have a '")
+        << fnInfo.name << "' method, they are always trivially destroyable";
+    fnInfo = SpecialFunctionInfo();
   }
 
   // True if this is a static method.
