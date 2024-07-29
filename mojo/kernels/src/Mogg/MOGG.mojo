@@ -95,7 +95,7 @@ from nn.resize import CoordinateTransformationMode, RoundMode
 from nn.resize import resize_linear as resize_linear_kernel
 from nn.resize import resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
-from nn.slice import slice_as_view, slice_shape
+from nn.slice import slice_as_view, slice_shape, slice_dim_as_view
 from nn.softmax import logsoftmax as _logsoftmax
 from nn.softmax import softmax as _softmax
 from nn.split import split as _split
@@ -164,7 +164,6 @@ fn MOGGExport():
     alias _ndbuffer_reshape = ndbuffer_reshape
     alias _scatter_shape = scatter_shape
     alias _scatter_nd_shape = scatter_nd_shape
-    alias _slice = slice
     alias _sub = sub
     alias _random_shape = random_shape
     alias _roi_align_shape = roi_align_shape
@@ -1748,6 +1747,27 @@ fn slice[
     ctx: MojoCallContextPtr,  # remove (#24946)
 ) -> NDBuffer[type, rank]:
     return slice_as_view(tensor, starts, ends, steps)
+
+
+@mogg_register("mo.slice_dim")
+@mogg_view_op
+@always_inline
+fn slice_dim[
+    type: DType,
+    rank: Int,
+    dim: Int,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    tensor: NDBuffer[type, rank],
+    start: Scalar,
+    end: Scalar,
+    step: Scalar,
+    ctx: MojoCallContextPtr,  # remove (#24946)
+) -> NDBuffer[type, rank]:
+    return slice_dim_as_view[type, rank, dim](
+        tensor, int(start), int(end), int(step)
+    )
 
 
 # ===----------------------------------------------------------------------===#
