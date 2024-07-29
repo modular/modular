@@ -5,14 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs memory operations."""
 
-from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
-
-from gpu.host._utils import _check_error
-from gpu.host.result import Result
-from memory import stack_allocation as _generic_stack_allocation
 from memory import UnsafePointer
 from memory.reference import _GPUAddressSpace
-from memory.unsafe import bitcast
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace
@@ -184,7 +178,7 @@ fn __to_i32(val: Int32) -> __mlir_type.i32:
 
 
 @always_inline
-fn cp_async_bulk_tensor_shared_cluser_global[
+fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType, mbr_type: AnyType, rank: Int
 ](
     dst_mem: UnsafePointer[dst_type, GPUAddressSpace.SHARED],
@@ -196,9 +190,9 @@ fn cp_async_bulk_tensor_shared_cluser_global[
     memory to shared memory.
 
     Args:
-        dst_mem: Pointer to destnation shared memory.
-        tma_descriptor: Pointer to tensor map descripotr.
-        mem_bar: A pointer to shared memory memory barrier.
+        dst_mem: Pointer to destination shared memory.
+        tma_descriptor: Pointer to tensor map descriptor.
+        mem_bar: A pointer to shared memory barrier.
         coords: Tile coordinates.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
