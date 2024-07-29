@@ -9,7 +9,7 @@
 
 from gpu.host import Context, Function
 from gpu.host.memory import create_tma_descriptor, _malloc, _free
-from gpu.memory import cp_async_bulk_tensor_shared_cluser_global
+from gpu.memory import cp_async_bulk_tensor_shared_cluster_global
 from gpu.sync import mbarrier_init, mbarrier_arrive, mbarrier_test_wait
 from gpu.memory import _GPUAddressSpace
 
@@ -36,7 +36,7 @@ def test_tma_tile_copy():
             1, Int64, address_space = _GPUAddressSpace.SHARED
         ]()
         mbarrier_init(mbar, 1)
-        cp_async_bulk_tensor_shared_cluser_global(
+        cp_async_bulk_tensor_shared_cluster_global(
             shmem, descriptor, mbar, Index(0, 0)
         )
         var state = mbarrier_arrive(mbar)
