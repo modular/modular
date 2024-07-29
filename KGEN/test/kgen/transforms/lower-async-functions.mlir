@@ -1798,3 +1798,172 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return
   }
 }
+
+// -----
+
+// COM: Simple Hot Ramp Function Generation
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @conditional_suspoint_hot_ramp
+// CHECK-SAME: (%arg0: !kgen.signature<(!kgen.pointer<none>) -> ()>, %arg1: !kgen.pointer<none>, %arg2: i1, %arg3: index, %arg4: index, %arg5: !kgen.pointer<index>)
+// CHECK-SAME:  -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
+
+// FRAME ALLOCATION: Frame space is the same as cold.
+// CHECK-NEXT:  %idx88 = index.constant 88
+// CHECK-NEXT:  %idx8 = index.constant 8
+// CHECK-NEXT:  [[CONT:%.*]] = pop.aligned_alloc %idx8, %idx88 : <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index, index, index, i1)>>
+
+// STATE INIT
+// CHECK-NEXT:  [[V1:%.*]] = kgen.param.constant: i32 = <1>
+// CHECK-NEXT:  [[V2:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME0:]]]
+// CHECK-NEXT:  pop.store [[V1]], [[V2]] : !kgen.pointer<i32>
+
+// RESUME FNC INIT
+// CHECK-NEXT:  [[V3:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME1:]]]
+// CHECK-NEXT:  [[V4:%.*]] = kgen.create_closure{{.*}}@conditional_suspoint_resume]
+// CHECK-NEXT:  [[V5:%.*]] = pop.pointer.bitcast [[V4]]
+// CHECK-NEXT:  pop.store [[V5]], [[V3]] : !kgen.pointer<pointer<none>>
+
+// STORE CALLBACK/CLOSURE STATE
+// CHECK-NEXT:  [[W6:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME1 + 2]]]
+// CHECK-NEXT:  pop.store %arg1, [[W6]] : !kgen.pointer<pointer<none>>
+// CHECK-NEXT:  [[W7:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME1 + 1]]]
+// CHECK-NEXT:  pop.store %arg0, [[W7]] : !kgen.pointer<(!kgen.pointer<none>) -> ()>
+
+// STORE ARG1
+// CHECK-NEXT:  [[V6:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME7:]]]
+// CHECK-NEXT:  pop.store %arg3, [[V6:%.*]] : !kgen.pointer<index>
+
+// STORE BY REF RESULT
+// CHECK-NEXT:  [[V7:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME5:]]]
+// CHECK-NEXT:  [[V8:%.*]] = pop.pointer.bitcast [[V7]]
+// CHECK-NEXT:  pop.store %arg5, [[V8]] : !kgen.pointer<pointer<index>>
+
+// FIRST STATE
+// CHECK-NEXT: hlcf.if %arg2 {
+// CHECK-NEXT:   pop.store %arg3, %arg5 : !kgen.pointer<index>
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: } else {
+
+// T1 is Used Across suspension points; put it on frame
+// CHECK-NEXT:   [[V14:%.*]] = index.add %arg4, %arg4
+// CHECK-NEXT:   [[V15:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME9:]]]
+// CHECK-NEXT:   pop.store [[V14]], [[V15]] : !kgen.pointer<index>
+
+// CHECK-NEXT:   [[V16:%.*]] = pop.pointer.bitcast [[CONT]]
+// CHECK-NEXT:   kgen.return [[V16]]
+// CHECK-NEXT: }
+// CHECK-NEXT: [[V9:%.*]] = pop.load %arg5 : !kgen.pointer<index>
+// CHECK-NEXT: [[V10:%.*]] = index.add [[V9]], %arg3
+
+// Check that callback is invoked.
+// This is needed because in this path a suspension point is not hit.
+// CHECK-NEXT: kgen.call_indirect %arg0(%arg1) : (!kgen.pointer<none>) -> ()
+
+// Direct Result value is stored in frame
+// CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME6:]]]
+// CHECK-NEXT: [[V12:%.*]] = kgen.struct.gep [[V11]][0] : <struct<(index)>>
+// CHECK-NEXT: pop.store [[V10]], [[V12]] : !kgen.pointer<index>
+
+// Return Coroutine
+// CHECK-NEXT: [[V13:%.*]] = pop.pointer.bitcast [[CONT]]
+// CHECK-NEXT: kgen.return [[V13]]
+kgen.func @conditional_suspoint(%arg0: i1,
+                     %arg1: index,
+                     %arg2: index,
+                     %__result__: !kgen.pointer<index> byref_result) async -> index {
+ hlcf.if %arg0 {
+   pop.store %arg1, %__result__ : !kgen.pointer<index>
+   hlcf.yield
+ } else {
+    %t1 = index.add %arg2, %arg2
+    co.suspend (%hdl) {
+      co.suspend.end
+    }
+    %t2 = index.add %t1, %arg1
+    pop.store %t2, %__result__ : !kgen.pointer<index>
+    hlcf.yield
+ }
+ %result = pop.load %__result__ : !kgen.pointer<index>
+ %final = index.add %result, %arg1
+ kgen.return %final : index
+}
+
+// CHECK-LABEL: kgen.func @trigger_creation_resume
+kgen.func @trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: !kgen.pointer<index> byref_result) async {
+   // CHECK: co.suspend {
+   // CHECK-NEXT: [[V9:%.*]] = kgen.struct.gep %arg0[[[#FRAME1:]]]
+   // CHECK-NEXT: [[V10:%.*]] = pop.load [[V9]] : !kgen.pointer<pointer<none>>
+   // CHECK-NEXT: [[V11:%.*]] = pop.pointer.bitcast [[V10]] : !kgen.pointer<none> to !kgen.signature<(!kgen.pointer<none>) -> ()>
+   // CHECK-NEXT: [[V12:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<()>, i1, index, index)>> to !kgen.pointer<none>
+   // CHECK-NEXT: kgen.call @conditional_suspoint_hot_ramp([[V11]], [[V12]], %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) :
+   // CHECK-SAME: (!kgen.signature<(!kgen.pointer<none>) -> ()>, !kgen.pointer<none>, i1, index, index, !kgen.pointer<index>) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
+   // CHECK-NEXT: co.suspend.end
+   // CHECK-NEXT: }
+   %coro = co.hot_invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint](%arg0, %arg1, %arg2, %__result__)
+   kgen.return
+}
+
+}
+
+// -----
+
+// COM: Verify Block Storage and Unreachable inserts in Hot Ramp
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @coroutine_hot_ramp(
+kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async -> index {
+ // CHECK:      hlcf.loop "_loop_0" ([[BLOCK_ARG:%.*]] =
+ // Check that block arguments are stored in frame.
+ // CHECK-NEXT: [[V9:%.*]] = kgen.struct.gep %0[[[#FRAME10:]]]
+ // CHECK-NEXT: pop.store [[BLOCK_ARG]], [[V9]] : !kgen.pointer<index>
+
+ // CHECK-NEXT: hlcf.loop "_loop_1" ([[BLOCK_ARG_INNER:%.*]] =
+ // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep %0[[[#FRAME10 - 2]]]
+ // CHECK-NEXT: pop.store [[BLOCK_ARG_INNER]], [[V10]] : !kgen.pointer<index>
+
+ // Verify suspension point in nested loops is properly replaced and
+ // unreachable is inserted to terminate unreachable blocks.
+ // CHECK-NEXT:   hlcf.if %arg2 {
+ // CHECK-NEXT:     hlcf.break "_loop_1"
+ // CHECK-NEXT:   } else {
+ // CHECK-NEXT:     hlcf.yield
+ // CHECK-NEXT:   }
+ // CHECK-NEXT:   [[V11:%.*]] = pop.pointer.bitcast
+ // CHECK-NEXT:   kgen.return [[V11]]
+ // CHECK-NEXT: }
+ // CHECK-NEXT: kgen.call @print
+ // CHECK-NEXT: hlcf.continue
+ // CHECK-NEXT: }
+ // CHECK-NEXT: kgen.unreachable
+ hlcf.loop "_loop_0" (%arg3 = %arg1 : index) {
+   hlcf.loop "_loop_1" (%arg2 = %arg1 : index) {
+     hlcf.if %arg0 {
+       hlcf.break "_loop_1"
+     } else {
+       hlcf.yield
+     }
+     co.suspend (%hdl) {
+       co.suspend.end
+     }
+     kgen.call @print1(%arg2) : (index) -> ()
+     hlcf.continue %arg2 : index
+   }
+   kgen.call @print(%arg0) : (i1) -> ()
+   hlcf.continue %arg3 : index
+ }
+ co.suspend (%hdl) {
+   co.suspend.end
+ }
+ %final = index.add %arg1, %arg1
+ kgen.return %final : index
+}
+
+kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
+   %coro = co.hot_invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1, %__result__)
+   kgen.return
+}
+
+}

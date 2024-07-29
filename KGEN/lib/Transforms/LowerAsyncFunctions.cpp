@@ -212,6 +212,13 @@ private:
   Value resultValue;
 };
 
+/// The original clone will become the hot ramp if needed.
+/// The resume function is shared between hot and cold.
+struct AsyncFunctionInfo {
+  FuncOp originalClone;
+  FuncOp resume;
+};
+
 /// The LowerAsyncBuildContext is responsible for transforming an async function
 /// into a ramp function and resume function.
 struct LowerAsyncBuildContext {
@@ -219,16 +226,24 @@ struct LowerAsyncBuildContext {
       Shared<SymbolTable &> &sharedTable,
       DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
           &asyncFuncToRampFunctions,
-      ImplicitLocOpBuilder &builder, TargetInfoAttr targetInfoAttr)
+      ImplicitLocOpBuilder &builder, mlir::DominanceInfo &domInfo,
+      TargetInfoAttr targetInfoAttr)
       : sharedTable(sharedTable),
         asyncFuncToRampFunctions(asyncFuncToRampFunctions), builder(builder),
-        targetInfoAttr(targetInfoAttr) {}
+        targetInfoAttr(targetInfoAttr), dominanceInfo(domInfo) {}
 
   /// Given an async function and its frame types, create a ramp function and a
   /// resume function.
   LoweredAsyncFunction lowerAsyncFunction(FuncOp funcOp, COTypes &coTypes,
                                           Value errorValue,
                                           Value memoryResultValue);
+
+  /// Given an async function and its frame types, create a ramp function and a
+  /// resume function.
+  LoweredAsyncFunction lowerAsyncFunctionHot(FuncOp funcOp, FuncOp resume);
+
+  /// Store async functions that may need to transformed into hot ramp/resumes.
+  DenseMap<SymbolConstantAttr, AsyncFunctionInfo> symbolToClone;
 
 private:
   /// Create the continuation and initialize the state and resume function.
@@ -244,12 +259,26 @@ private:
   void populateResumeFunction(FuncOp resumeFunction, FuncOp funcOp,
                               COTypes &coTypes, Value errorValue,
                               Value memoryResultValue);
+  /// Given a resume function and the original async function, create a hot
+  /// ramp function. A hot ramp function creates the continuation and executes
+  /// the first state of the coroutine.
+  FuncOp createHotRamp(FuncOp resumeFunction, FuncOp funcOp, COTypes &coTypes);
+
+  /// Given an async function, populate a function with the paths to
+  /// the first suspension point. If there is a path with no suspension point,
+  /// the callback is invoked.
+  std::pair<Value, Value>
+  addSlicedFirstStateTo(FuncOp hotRamp, FuncOp fromFuncOp, COTypes &types);
   /// Replace all `return x` with `store x, y` where y is the address of the
   /// result slot in the frame.
   ReturnOp lowerReturn(ReturnOp returnOp, Value continuation);
   /// Replace handle argument with local coroutine
   void lowerSuspensionPoint(CO::SuspendOp suspend, Value continuation,
                             COTypes &coTypes);
+  /// Lower a hot invoke into a suspension point + call to hot ramp. This
+  /// triggers the generation of the hot ramp
+  void lowerHotInvoke(Value continuation, HotInvokeOp hotInvoke,
+                      COTypes &coTypes);
   /// Store block arguments in the frame if they are used across a suspension
   /// point.
   void storeBlockArgumentsInFrame(Block &block, Operation *key,
@@ -263,13 +292,176 @@ private:
   Shared<SymbolTable &> &sharedTable;
   DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
       &asyncFuncToRampFunctions;
+  DenseMap<SymbolConstantAttr, SymbolConstantAttr> fromOriginalToHotRamp;
   ImplicitLocOpBuilder &builder;
   TargetInfoAttr targetInfoAttr;
+  mlir::DominanceInfo &dominanceInfo;
 };
 
 //===----------------------------------------------------------------------===//
 // LowerAsyncBuildContext
 //===----------------------------------------------------------------------===//
+
+enum class VisitedState { SUS, NOSUS, SUS_AND_NOSUS };
+
+std::pair<Value, Value>
+LowerAsyncBuildContext::addSlicedFirstStateTo(FuncOp hotRamp, FuncOp fromFuncOp,
+                                              COTypes &cotypes) {
+  /// Augment the hot ramp function signature. We will clone ops from the funcOp
+  /// into the hot ramp function.
+  SmallVector<Type> inputs;
+  Type closureType = cotypes.typeForField(M::KGEN::ClosureState);
+  Type callbackType = cotypes.typeForField(M::KGEN::CallbackFn);
+  inputs.push_back(callbackType);
+  inputs.push_back(closureType);
+
+  for (BlockArgument oldArg : fromFuncOp.getArguments())
+    inputs.push_back(oldArg.getType());
+
+  hotRamp.setSignature(SignatureType::get(
+      hotRamp.getContext(), inputs, PointerType::get(cotypes.getHeaderType())));
+  hotRamp.getBodyRegion().takeBody(fromFuncOp.getBodyRegion());
+  Value callback = hotRamp.getBodyRegion().front().insertArgument(
+      (unsigned)0, callbackType, hotRamp->getLoc());
+  Value closureState = hotRamp.getBodyRegion().front().insertArgument(
+      1, closureType, hotRamp->getLoc());
+
+  /// Clone from funcOp into hot ramp until first suspension point.
+  SmallVector<std::pair<Operation *, bool>> paths;
+  auto addTargets = [&](ArrayRef<HLCF::ControlFlowTarget> targets,
+                        Operation *cfn, bool hitSus) {
+    for (HLCF::ControlFlowTarget target : targets) {
+      if (target.index.has_value()) {
+        unsigned index = target.index.value();
+        Block &sourceBlock = cfn->getRegion(index).front();
+        paths.push_back({&*sourceBlock.begin(), hitSus});
+      } else {
+        paths.push_back({cfn->getNextNode(), hitSus});
+      }
+    }
+  };
+  DenseMap<Operation *, VisitedState> visited;
+  DenseSet<Operation *> reachable;
+  paths.push_back({&hotRamp.getBodyRegion().front().front(), false});
+  while (!paths.empty()) {
+    std::pair<Operation *, bool> c = paths.pop_back_val();
+    Operation *current = c.first;
+    bool hitSus = c.second;
+    bool needsEdit = true;
+    auto ptr = visited.find(current);
+    if (ptr != visited.end()) {
+      needsEdit = false;
+      VisitedState state = ptr->getSecond();
+      if ((state == VisitedState::SUS && !hitSus) ||
+          (state == VisitedState::NOSUS && hitSus))
+        visited[current] = VisitedState::SUS_AND_NOSUS;
+      else
+        continue;
+    } else {
+      visited.insert(
+          {current, hitSus ? VisitedState::SUS : VisitedState::NOSUS});
+    }
+    for (Operation *operation = current; operation != nullptr;
+         operation = operation->getNextNode()) {
+      if (!hitSus)
+        reachable.insert(operation);
+
+      if (auto suspendOp = dyn_cast<SuspendOp>(operation)) {
+        Operation *end = suspendOp;
+        if (needsEdit) {
+          builder.setInsertionPointAfter(suspendOp);
+          // keep suspension points around for now.
+          for (auto &op : suspendOp.getBody().front().getOperations())
+            reachable.insert(&op);
+          end = builder.create<KGEN::ReturnOp>();
+          reachable.insert(end);
+          if (end->getNextNode())
+            paths.push_back({end->getNextNode(), true});
+        }
+        break;
+      }
+      if (auto cfn = dyn_cast<HLCF::ControlFlowNode>(operation)) {
+        SmallVector<HLCF::ControlFlowTarget> targets;
+        SmallVector<Attribute> controlFlowOperands(cfn->getNumOperands(),
+                                                   Attribute());
+        cfn.getEntryTargets(controlFlowOperands, targets);
+        addTargets(targets, cfn, hitSus);
+        break;
+      }
+      if (isa<ReturnOp>(operation) && needsEdit) {
+        // TODO: enable musttail at the kgen level. MOCO-987
+        builder.setInsertionPoint(operation);
+        SignatureType signatureType = cast<SignatureType>(callback.getType());
+        auto callIndirect = builder.create<CallIndirectOp>(
+            signatureType.getResults(), callback, closureState);
+        reachable.insert(callIndirect);
+        break;
+      }
+      if (isa<UnreachableOp, SuspendEndOp>(operation))
+        break;
+      if (auto terminator = dyn_cast<HLCF::ControlFlowTerminator>(operation)) {
+        SmallVector<HLCF::ControlFlowTarget> targets;
+        SmallVector<Attribute> controlFlowTerminatorOperands(
+            terminator->getNumOperands(), Attribute());
+        terminator.getBranchTargets(controlFlowTerminatorOperands, targets);
+        addTargets(targets, HLCF::getParentNode(terminator), hitSus);
+        break;
+      }
+    }
+  }
+  SmallVector<Operation *> deleteMe;
+  SmallVector<Region *> removalRegions;
+  SmallVector<Region *> regions;
+  regions.push_back(&hotRamp.getBodyRegion());
+  while (!regions.empty()) {
+    Region *region = regions.front();
+    regions.erase(regions.begin());
+    removalRegions.push_back(region);
+    for (Operation &op : region->front().getOperations()) {
+      for (Region &r : op.getRegions())
+        regions.push_back(&r);
+    }
+  }
+  for (auto i = removalRegions.rbegin(); i != removalRegions.rend(); i++) {
+    Region *region = *i;
+    for (auto opIter = region->front().getOperations().rbegin();
+         opIter != region->front().rend();) {
+      Operation &op = *opIter;
+      opIter++;
+      if (!reachable.contains(&op))
+        op.erase();
+    }
+  }
+  return {callback, closureState};
+}
+
+LoweredAsyncFunction
+LowerAsyncBuildContext::lowerAsyncFunctionHot(FuncOp funcOp, FuncOp resume) {
+  builder.setInsertionPoint(funcOp->getParentOp());
+  // Calculate Frame.
+  std::function<void(FuncOp, DenseMap<Operation *, int> &)> transform =
+      [&](FuncOp originalFunction, DenseMap<Operation *, int> &opToState) {
+        cloneFrameArgs(funcOp, builder, dominanceInfo, originalFunction,
+                       opToState);
+      };
+
+  int index = funcOp.getNumArguments() - 1;
+  Value memoryResultValue;
+  if (funcOp.getSignature().hasMemoryOnlyResult())
+    memoryResultValue = funcOp.getArgument(index--);
+  Value errorValue;
+  if (funcOp.isThrows())
+    errorValue = funcOp.getArgument(index);
+  FrameData frameData(funcOp, dominanceInfo, errorValue, memoryResultValue,
+                      transform);
+  COTypes coTypes(
+      funcOp.getContext(), frameData,
+      StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
+
+  FuncOp hotRamp = createHotRamp(resume, funcOp, coTypes);
+  funcOp.erase();
+  return {hotRamp, resume};
+}
 
 LoweredAsyncFunction
 LowerAsyncBuildContext::lowerAsyncFunction(FuncOp funcOp, COTypes &coTypes,
@@ -410,6 +602,8 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
       lowerReturn(returnOp, continuation);
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
       lowerSuspensionPoint(suspend, continuation, coTypes);
+    } else if (auto hotInvoke = dyn_cast<HotInvokeOp>(op)) {
+      lowerHotInvoke(continuation, hotInvoke, coTypes);
     }
   });
   for (auto op : opsToDelete)
@@ -534,6 +728,198 @@ void LowerAsyncBuildContext::storeOpInFrameIfNeeded(
         builder.create<StructGEPOp>(continuation, Frame + entry->getSecond());
     builder.create<StoreOp>(op->getResult(0), dataSlot);
   }
+}
+
+void LowerAsyncBuildContext::lowerHotInvoke(Value continuation,
+                                            HotInvokeOp hotInvoke,
+                                            COTypes &coTypes) {
+  builder.setInsertionPoint(hotInvoke);
+  auto suspension = builder.create<SuspendOp>();
+
+  auto symbol = cast<SymbolConstantAttr>(hotInvoke.getCallee());
+  auto cloneMaybe = symbolToClone.find(symbol);
+  SymbolConstantAttr rampSymbol;
+  if (cloneMaybe != symbolToClone.end()) {
+    auto [originalAsyncFunction, resume] = symbolToClone[symbol];
+    symbolToClone.erase(symbol);
+    auto [ramp, _] = lowerAsyncFunctionHot(originalAsyncFunction, resume);
+    rampSymbol = SymbolConstantAttr::get(
+        SymbolRefAttr::get(builder.getContext(), ramp.getSymName()),
+        ramp.getSignature());
+    fromOriginalToHotRamp.insert({symbol, rampSymbol});
+  } else {
+    assert(fromOriginalToHotRamp.contains(symbol) &&
+           "If the symbol was not found in the clones then it must be in the "
+           "hot ramp map");
+    rampSymbol = fromOriginalToHotRamp[symbol];
+  }
+  Block &body = suspension.getBody().emplaceBlock();
+  builder.setInsertionPointToStart(&body);
+  // callback and closure state are arguments 0 and 1. Then add the arguments
+  // from hotInvoke.
+  SmallVector<Value> operands;
+  Value resumeFunction = builder.create<LoadOp>(
+      builder.create<StructGEPOp>(continuation, ResumeFunction));
+  operands.push_back(builder.create<PointerBitcastOp>(
+      coTypes.getResumeSignatureType(), resumeFunction));
+  operands.push_back(builder.create<PointerBitcastOp>(
+      coTypes.typeForField(M::KGEN::ClosureState), continuation));
+  llvm::append_range(operands, hotInvoke->getOperands());
+  auto callOp = builder.create<CallOp>(
+      PointerType::get(coTypes.getHeaderType()), rampSymbol, operands);
+  hotInvoke.replaceAllUsesWith(callOp);
+  hotInvoke->erase();
+  builder.create<SuspendEndOp>();
+}
+
+FuncOp LowerAsyncBuildContext::createHotRamp(FuncOp resumeFunction,
+                                             FuncOp funcOp, COTypes &coTypes) {
+  // Create Hot Ramp. We initialize it with the callback function and closures
+  // state.
+  builder.setInsertionPoint(funcOp);
+  StringAttr rampName =
+      builder.getStringAttr(funcOp.getSymName() + "_hot_ramp");
+
+  // Create empty function.
+  auto hotRamp = builder.create<FuncOp>(
+      rampName, SignatureType::get(builder.getContext(), {}, {}));
+  rampName = sharedTable.modify(
+      [hotRamp, it = funcOp->getIterator()](SymbolTable &symtab) {
+        return symtab.insert(hotRamp, it);
+      });
+  auto [callback, closureState] =
+      addSlicedFirstStateTo(hotRamp, funcOp, coTypes);
+  // Save starting point of sliced state.
+  Operation *start = &hotRamp.getBodyRegion().front().front();
+
+  // Introduce continuation.
+  FrameData &frameData = coTypes.getFrameData();
+  builder.setInsertionPointToStart(&hotRamp.getBodyRegion().front());
+  Value continuation =
+      initializeContinuation(hotRamp, resumeFunction, funcOp, coTypes, 1);
+
+  // Store continuation and closure.
+  Value closureSlot = builder.create<StructGEPOp>(continuation, ClosureState);
+  builder.create<StoreOp>(closureState, closureSlot);
+  Value callbackSlot = builder.create<StructGEPOp>(continuation, CallbackFn);
+  builder.create<StoreOp>(callback, callbackSlot);
+
+  // Store arguments in frame if used across suspension points.
+  for (auto [index, image] :
+       llvm::enumerate(hotRamp.getRegion().front().getArguments().slice(2))) {
+    // Value arg = funcOp.getArgument(index);
+    //  If the argument is not in the frame metadata it is unused. Do not
+    //  store in frame.
+    if (!frameData.valueToIndexInFrame.contains(image))
+      continue;
+    for (Operation *user : image.getUsers()) {
+      int useState = frameData.opToState[user];
+      if (useState > 0) {
+        unsigned argSlot = frameData.valueToIndexInFrame[image];
+        Value slot = builder.create<StructGEPOp>(continuation, Frame + argSlot);
+        builder.create<StoreOp>(image, slot);
+        break;
+      }
+    }
+  }
+
+  // Store results/error
+  auto setByRefArgument = [&](Value argument, unsigned index) {
+    Value slot = builder.create<StructGEPOp>(continuation, index);
+    Value typedSlot = builder.create<PointerBitcastOp>(
+        KGEN::PointerType::get(argument.getType()), slot);
+    builder.create<StoreOp>(argument, typedSlot);
+  };
+  Value errorValue;
+  Value resultValue;
+  if (funcOp.isThrows()) {
+    errorValue = hotRamp.getArgument(hotRamp.getNumArguments() - 2);
+    setByRefArgument(errorValue, AsyncContinuationField::ErrorSlot);
+  }
+  if (funcOp.getSignature().hasMemoryOnlyResult()) {
+    resultValue = hotRamp.getArgument(hotRamp.getNumArguments() - 1);
+    setByRefArgument(resultValue, AsyncContinuationField::ResultSlot);
+  }
+
+  // Insert stores of variables that are used in later states.
+  FrameVariables frameVariables(builder, frameData, errorValue, resultValue);
+  SmallVector<Operation *> regionsToProcess;
+  regionsToProcess.push_back(start);
+  SmallVector<Operation *> opsToDelete;
+  while (!regionsToProcess.empty()) {
+    Operation *current = regionsToProcess.pop_back_val();
+    while (current) {
+      Operation *op = current;
+      current = op->getNextNode();
+      storeOpInFrameIfNeeded(frameData, op, continuation, opsToDelete);
+
+      // Replace operands with frame variables if stack allocation.
+      int useState = frameData.opToState[op];
+      for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+        auto entry = frameData.valueToIndexInFrame.find(operand);
+        if (entry == frameData.valueToIndexInFrame.end())
+          continue;
+        Operation *definingOp = operand.getDefiningOp();
+        if (definingOp && isa<StackAllocationOp>(definingOp)) {
+          Value image = frameVariables.getFrameValueForOperand(
+              continuation, operand, op, useState);
+          op->setOperand(index, image);
+        }
+      }
+
+      // Store arguments of block if needed and terminate unterminated blocks.
+      for (Region &region : op->getRegions()) {
+        if (region.empty()) {
+          Block &block = region.emplaceBlock();
+          builder.setInsertionPointToEnd(&block);
+          builder.create<UnreachableOp>();
+          continue;
+        }
+        Block &block = region.front();
+        if (!block.mightHaveTerminator()) {
+          builder.setInsertionPointToEnd(&block);
+          builder.create<UnreachableOp>();
+        }
+        Operation *firstOp = &*region.front().begin();
+        regionsToProcess.push_back(firstOp);
+        storeBlockArgumentsInFrame(region.front(), firstOp, frameData,
+                                   continuation, frameVariables);
+      }
+    }
+  }
+
+  hotRamp.walk([&](Operation *op) {
+    if (auto returnOp = dyn_cast<ReturnOp>(op)) {
+      ReturnOp newReturnOp = lowerReturn(returnOp, continuation);
+      builder.setInsertionPoint(newReturnOp);
+      Value headerTypedContinuation = builder.create<PointerBitcastOp>(
+          PointerType::get(coTypes.getHeaderType()), continuation);
+      builder.create<ReturnOp>(headerTypedContinuation);
+      newReturnOp->erase();
+    } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
+      lowerSuspensionPoint(suspend, continuation, coTypes);
+      for (Operation *operation = &suspend.getBody().front().front(); operation;
+           operation = operation->getNextNode()) {
+        operation->moveBefore(suspend);
+        if (isa<SuspendEndOp>(operation)) {
+          operation->erase();
+          break;
+        }
+      }
+      suspend->erase();
+    } else if (auto hotInvoke = dyn_cast<HotInvokeOp>(op)) {
+      lowerHotInvoke(continuation, hotInvoke, coTypes);
+    }
+  });
+  for (auto op : opsToDelete)
+    op->erase();
+
+  // Check parent region for termination.
+  if (!hotRamp.getBodyRegion().front().mightHaveTerminator()) {
+    builder.setInsertionPointToEnd(&hotRamp.getBodyRegion().front());
+    builder.create<UnreachableOp>();
+  }
+  return hotRamp;
 }
 
 void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
@@ -1063,10 +1449,13 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       asyncFuncToRampFunctions;
 
   // Convert async functions.
+  // Save a clone of the original async function for the purpose of generating a
+  // hot ramp/resume. Key the clone off the symbol of the original so we can
+  // look it up.
   ImplicitLocOpBuilder b(module->getLoc(), module);
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
   LowerAsyncBuildContext buildContext(sharedTable, asyncFuncToRampFunctions, b,
-                                      targetInfo);
+                                      domInfo, targetInfo);
 
   for (auto funcOp : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
     if (!funcOp.isAsync())
@@ -1074,6 +1463,14 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     // calculate the frame of the original, unmodified resume.
     auto [errorValue, memoryResultValue] =
         preprocessAsyncFunction(funcOp, domInfo);
+
+    // Store a clone of the function so we can generate the hot ramp/resume.
+    SymbolRefAttr symbolRefAttr =
+        SymbolRefAttr::get(funcOp.getContext(), funcOp.getSymName());
+    SymbolConstantAttr key =
+        SymbolConstantAttr::get(symbolRefAttr, funcOp.getSignature());
+    b.setInsertionPoint(funcOp);
+    FuncOp clone = cast<FuncOp>(b.clone(*funcOp));
 
     // The transform function clones ops whose values should not be stored in
     // the frame. This includes constants and pointer offsets.
@@ -1086,8 +1483,9 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     COTypes cotypes(
         module.getContext(), frameData,
         StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
-    buildContext.lowerAsyncFunction(funcOp, cotypes, errorValue,
-                                    memoryResultValue);
+    auto [ramp, resume] = buildContext.lowerAsyncFunction(
+        funcOp, cotypes, errorValue, memoryResultValue);
+    buildContext.symbolToClone.insert({key, {clone, resume}});
   }
 
   // Apply all other CO lowerings.
@@ -1175,4 +1573,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       getResults->erase();
     }
   });
+  // Any remaining clones can be deleted: they were never hot called.
+  for (auto [symbol, clone] : buildContext.symbolToClone) {
+    clone.originalClone->erase();
+  }
 }
