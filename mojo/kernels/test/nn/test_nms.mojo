@@ -21,12 +21,16 @@ struct BoxCoords[type: DType]:
     var x2: Scalar[type]
 
     fn __init__(
+        inout self,
         y1: Scalar[type],
         x1: Scalar[type],
         y2: Scalar[type],
         x2: Scalar[type],
-    ) -> Self:
-        return Self {y1: y1, x1: x1, y2: y2, x2: x2}
+    ):
+        self.y1 = y1
+        self.x1 = x1
+        self.y2 = y2
+        self.x2 = x2
 
 
 fn fill_boxes[

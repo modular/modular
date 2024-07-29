@@ -63,9 +63,10 @@ struct OptionalParamInts[rank: Int, dim_list_parametric: DimList](
 
     @always_inline("nodebug")
     fn __init__(
+        inout self,
         dim_list_dynamic: StaticIntTuple[rank],
-    ) -> Self:
-        return Self {dim_list_dynamic: dim_list_dynamic}
+    ):
+        self.dim_list_dynamic = dim_list_dynamic
 
     @always_inline("nodebug")
     fn at[i: Int](self) -> Int:

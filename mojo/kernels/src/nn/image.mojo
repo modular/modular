@@ -135,7 +135,7 @@ struct ImageData[
             data layout.
         """
 
-        var image_shape = ImageShape.__init__[shape, type, static_layout](self)
+        var image_shape = ImageShape(self)
 
         @always_inline
         @__copy_capture(image_shape)
@@ -179,7 +179,7 @@ struct ImageData[
             A StaticIntTuple containing the index in NCHW order.
         """
 
-        var image_shape = ImageShape.__init__[shape, type, static_layout](self)
+        var image_shape = ImageShape(self)
 
         @always_inline
         @__copy_capture(image_shape)
@@ -266,40 +266,31 @@ struct ImageShape:
         shape: DimList,
         type: DType,
         layout: Image2DLayout,
-    ](image_data: ImageData[shape, type, layout]) -> ImageShape:
+    ](inout self, image_data: ImageData[shape, type, layout]):
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:
             image_data: The image data instance to extract shape
               info from.
-
-        Returns:
-            An ImageShape instance containing the shape info.
         """
 
         if image_data.get_layout() == Image2DLayout.NCHW:
-            return ImageShape {
-                N: image_data.data.dim[0](),
-                C: image_data.data.dim[1](),
-                H: image_data.data.dim[2](),
-                W: image_data.data.dim[3](),
-            }
+            self.N = image_data.data.dim[0]()
+            self.C = image_data.data.dim[1]()
+            self.H = image_data.data.dim[2]()
+            self.W = image_data.data.dim[3]()
 
         elif image_data.get_layout() == Image2DLayout.NHWC:
-            return ImageShape {
-                N: image_data.data.dim[0](),
-                C: image_data.data.dim[3](),
-                H: image_data.data.dim[1](),
-                W: image_data.data.dim[2](),
-            }
+            self.N = image_data.data.dim[0]()
+            self.C = image_data.data.dim[3]()
+            self.H = image_data.data.dim[1]()
+            self.W = image_data.data.dim[2]()
 
         else:
             debug_assert(
                 image_data.get_layout() == Image2DLayout.RSCF, "Invalid layout"
             )
-            return ImageShape {
-                N: image_data.data.dim[3](),
-                C: image_data.data.dim[2](),
-                H: image_data.data.dim[0](),
-                W: image_data.data.dim[1](),
-            }
+            self.N = image_data.data.dim[3]()
+            self.C = image_data.data.dim[2]()
+            self.H = image_data.data.dim[0]()
+            self.W = image_data.data.dim[1]()
