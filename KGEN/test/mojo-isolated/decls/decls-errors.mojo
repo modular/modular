@@ -578,7 +578,7 @@ struct WrongType:
   # TODO: Should err.
   fn __copyinit__(inout self, existing: Int): pass
 
-  # expected-error @+1 {{'__moveinit__' is not supported for @register_passable types, they are always movable by copying a register}}
+  # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
   fn __moveinit__(inout self, owned existing: Self): pass
 
 
@@ -668,9 +668,9 @@ struct OtherInMemStruct:
 @register_passable("trivial")
 struct InvalidMember:
   var x: __mlir_type.index
-  # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__copyinit__' method}}
+  # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
   fn __copyinit__(inout self, existing: Self): pass
-  # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__del__' method}}
+  # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   fn __del__(owned self): pass
 
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
