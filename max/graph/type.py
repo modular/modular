@@ -71,7 +71,7 @@ class Dim:
         """
         raise NotImplementedError
 
-    def __eq__(self, other: Dim) -> bool:
+    def __eq__(self, other: any) -> bool:
         """Checks whether two dimensions are equal.
 
         Dimensions are equal if they are the same dimension type
@@ -87,7 +87,7 @@ class Dim:
         """
         raise NotImplementedError
 
-    def __ne__(self, other: Dim) -> bool:
+    def __ne__(self, other: any) -> bool:
         """Checks whether two dimensions are not equal.
 
         The inverse of __eq__.
@@ -174,7 +174,7 @@ class SymbolicDim(Dim):
         """
         return True
 
-    def __eq__(self, other: SymbolicDim) -> bool:
+    def __eq__(self, other: any) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
 
         Symbolic dimensions with the same name are interpreted as the same
@@ -188,7 +188,7 @@ class SymbolicDim(Dim):
         Returns:
             True if the dimensions have the same name, False otherwise.
         """
-        return self.name == other.name
+        return isinstance(other, SymbolicDim) and self.name == other.name
 
     def to_mlir(self) -> mlir.Attribute:
         """Creates an mlir.Attribute representing this dimension.
@@ -260,7 +260,7 @@ class StaticDim(Dim):
         Returns:
             True if both dimensions have the same static size, False otherwise.
         """
-        return self.dim == other.dim
+        return isinstance(other, StaticDim) and self.dim == other.dim
 
     def to_mlir(self) -> mlir.Attribute:
         """Creates an mlir.Attribute representing this dimension.
@@ -453,7 +453,7 @@ class TensorType(Type):
         """
         return self.shape[pos + (self.rank() if pos < 0 else 0)]
 
-    def __eq__(self, other: TensorType) -> bool:
+    def __eq__(self, other: any) -> bool:
         """Checks whether the two tensors have the same rank, type, and shape.
 
         Args:
@@ -464,7 +464,8 @@ class TensorType(Type):
             False otherwise.
         """
         return (
-            (self.dtype == other.dtype)
+            isinstance(other, TensorType)
+            and (self.dtype == other.dtype)
             and (self.rank() == other.rank())
             and all(d == d_other for d, d_other in zip(self.shape, other.shape))
         )
