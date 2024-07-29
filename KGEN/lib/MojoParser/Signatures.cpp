@@ -546,7 +546,7 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
     SharedState &shared)
-    : TypeCheckScopeInfo{declScope, /*isParamContext=*/true, shared} {
+    : TypeCheckScopeInfo{declScope, shared} {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
   for (auto [idx, arg] : llvm::enumerate(parsedParams)) {

@@ -133,3 +133,20 @@ fn testMyOptional(a: MyOptional[Int]):
     _ = MyOptional.__eq__(a, a)
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a == a
+
+
+
+# CHECK-LABEL: lit.func @"findall
+# CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<{{.*}}@Reference<{{.*}} :lifetime<0> *"self`2x", 
+# CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous2A, %self)
+struct DefBoxInference:
+    def findall(self) -> DefBoxInferenceIter[__lifetime_of(self)]:
+        return DefBoxInferenceIter(self)
+
+
+@value
+struct DefBoxInferenceIter[
+    lifetime: ImmutableLifetime,
+]:
+    fn __init__(inout self, regex: Reference[DefBoxInference, lifetime]):
+        pass

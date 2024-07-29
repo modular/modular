@@ -664,14 +664,17 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     RefType valueRefType;
     if (value.isMValue()) {
       valueRefType = cast<RefType>(value.getMValueReference().getType());
-    } else if (value.getIfPValue() && isParamContext) {
-      // TODO: Remove isParamContext and this handling.
-      valueRefType =
-          RefType::getImmortal(argVal.getRValueType(), /*isMut=*/false);
     } else if (auto cv = value.getIfCValue()) {
+      // If this is a def argument box, infer the reference from the underlying
+      // def argument.
+      if (auto dlv = value.getIfDLValue())
+        valueRefType = dlv->getMBValueTypeFromDefArgument();
+
       // This argument will need to be emitted to a temporary in a later pass,
       // but for now we can just infer immortal.
-      valueRefType = RefType::getImmortal(cv.getRValueType(), /*isMut=*/false);
+      if (!valueRefType)
+        valueRefType =
+            RefType::getImmortal(cv.getRValueType(), /*isMut=*/false);
     } else {
       // TODO: Could infer from expected type to resolve OValues?
       return failure();
