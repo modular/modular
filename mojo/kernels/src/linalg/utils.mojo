@@ -74,8 +74,9 @@ struct MicroKernelShape:
 
     var simd_cols: Int
 
-    fn __init__(rows: Int, cols: Int) -> MicroKernelShape:
-        return MicroKernelShape {simd_rows: rows, simd_cols: cols}
+    fn __init__(inout self, rows: Int, cols: Int):
+        self.simd_rows = rows
+        self.simd_cols = cols
 
 
 @value
