@@ -574,43 +574,20 @@ std::optional<bool> StructDefParamRefAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// StructDefAttr
+// StructDefSelfRefAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamNamesAndTypes(AsmParser &p,
-                                           SmallVector<StringAttr> &names,
-                                           SmallVector<Type> &types) {
-  // Empty list.
-  if (failed(p.parseOptionalLSquare()))
-    return success();
+bool StructDefSelfRefAttr::isConstant() const { return false; }
 
-  if (p.parseCommaSeparatedList([&]() {
-        StringAttr name;
-        Type type;
-        if (parseParamName(p, name) || parseColonTypeOrIndex(p, type))
-          return failure();
-        names.push_back(name);
-        types.push_back(type);
-        return mlir::success();
-      }) ||
-      p.parseRSquare())
-    return failure();
-  return success();
+std::optional<bool> StructDefSelfRefAttr::isLessThan(Attribute rhs) const {
+  if (auto ref = llvm::dyn_cast<StructDefSelfRefAttr>(rhs))
+    return getDepth() < ref.getDepth();
+  return false;
 }
 
-static void printParamNamesAndTypes(AsmPrinter &p, ArrayRef<StringAttr> names,
-                                    ArrayRef<Type> types) {
-  if (names.empty())
-    return;
-
-  p << '[';
-  llvm::interleaveComma(llvm::zip(names, types), p,
-                        [&p](const std::tuple<StringAttr, Type> &decl) {
-                          printParamName(p, std::get<0>(decl));
-                          printColonTypeOrIndex(p, std::get<1>(decl));
-                        });
-  p << ']';
-}
+//===----------------------------------------------------------------------===//
+// StructDefAttr
+//===----------------------------------------------------------------------===//
 
 static ParseResult
 parseStructDefFields(AsmParser &p, SmallVector<StructDefFieldAttr> &fields) {
@@ -635,25 +612,35 @@ static void printStructDefFields(AsmPrinter &p,
 }
 
 StructDefAttr StructDefAttr::get(StringAttr name,
-                                 ArrayRef<StringAttr> inputParamNames,
-                                 ArrayRef<Type> inputParamTypes,
+                                 ArrayRef<ParamDeclAttr> inputParams,
                                  ArrayRef<StructDefFieldAttr> fields,
                                  bool isMemoryOnly) {
-  return get(name.getContext(), name, inputParamNames, inputParamTypes, fields,
-             isMemoryOnly);
+  MLIRContext *ctx = name.getContext();
+  return get(
+      ctx, name, inputParams, fields, isMemoryOnly,
+      StructDefType::get(ctx, ParamDeclArrayAttr::get(ctx, inputParams)));
 }
 
-LogicalResult StructDefAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, StringAttr name,
-    ArrayRef<StringAttr> inputParamNames, ArrayRef<Type> inputParamTypes,
-    ::llvm::ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
-  if (inputParamNames.size() != inputParamTypes.size()) {
-    return emitError() << "#kgen.struct_def parameter name and parameter "
-                          "type length mismatch. Expected "
-                       << inputParamNames.size() << ", got "
-                       << inputParamTypes.size();
+LogicalResult
+StructDefAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                      StringAttr name, ArrayRef<ParamDeclAttr> inputParams,
+                      ::llvm::ArrayRef<StructDefFieldAttr> fields,
+                      bool isMemoryOnly, StructDefType type) {
+  MLIRContext *ctx = name.getContext();
+  if (inputParams != type.getParamDecls()) {
+    return emitError() << "inconsistent struct_def type. Expected: "
+                       << StructDefType::get(ctx, inputParams)
+                       << ", got: " << type;
   }
   return success();
+}
+
+bool StructDefAttr::isConstant() const { return false; }
+
+std::optional<bool> StructDefAttr::isLessThan(Attribute rhs) const {
+  if (auto def = llvm::dyn_cast<StructDefAttr>(rhs))
+    return getName().getValue() < def.getName().getValue();
+  return false;
 }
 
 //===----------------------------------------------------------------------===//

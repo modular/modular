@@ -510,6 +510,19 @@ void KGEN::printParamDecl(AsmPrinter &p, ParamDeclAttr decl) {
   printColonTypeOrIndex(p, decl.getType());
 }
 
+ParseResult KGEN::parseParamDeclAttrs(AsmParser &p,
+                                      SmallVector<ParamDeclAttr> &decls) {
+  return p.parseCommaSeparatedList([&]() {
+    decls.emplace_back();
+    return parseParamDecl(p, decls.back());
+  });
+}
+
+void KGEN::printParamDeclAttrs(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls) {
+  llvm::interleaveComma(decls, p,
+                        [&](ParamDeclAttr decl) { printParamDecl(p, decl); });
+}
+
 /// Parse a parameter declaration list if present.
 ///
 ///   parameter-decl   ::= identifier (`:` type)?

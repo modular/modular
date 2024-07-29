@@ -629,10 +629,41 @@ def KGEN_StructDefParamRefAttr : KGEN_ExprAttr<"StructDefParamRef",
 }
 
 //===----------------------------------------------------------------------===//
+// StructDefSelfRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructDefSelfRefAttr : KGEN_ExprAttr<"StructDefSelfRef",
+    "struct_def.self",
+    [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
+  let summary = "A self-reference to an enclosing StructDefAttr.";
+  let description = [{
+    The `#kgen.struct_def.self` attribute represents a self-reference to an
+    enclosing StructDefAttr, and thus can only be used inside StructDefAttrs.
+
+    This attribute contains only one field: the depth of the referenced
+    StructDefAttr relative to the nearest StructDefAttr (non-negative
+    integer).
+
+    Example:
+
+    ```mlir
+    #kgen.struct_def.self<1>
+    ```
+  }];
+
+  let parameters = (ins
+    "size_t":$depth,
+    AttributeSelfTypeParameter<"", "StructDefType">:$type
+  );
+  let assemblyFormat = " `<` $depth `>` ";
+}
+
+//===----------------------------------------------------------------------===//
 // StructDefAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructDefAttr : KGENAttr<"StructDef", "struct_def"> {
+def KGEN_StructDefAttr : KGEN_ExprAttr<"StructDef", "struct_def",
+    [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "A mojo source struct definition";
   let description = [{
     This type represents a mojo source struct. It contains everything mojo
@@ -651,28 +682,28 @@ def KGEN_StructDefAttr : KGENAttr<"StructDef", "struct_def"> {
 
     ```mlir
     // A struct with no parameters and no fields.
-    #kgen.struct_def<"Foo">
+    #kgen.struct_def<"Foo"> : !kgen.struct_def<>
 
     // A parameterized memory-only struct with primitive element types.
     #kgen.struct_def<
       "Bar"[elemT: dtype]
       (first: !kgen.scalar<*("elemT")>, second: !kgen.scalar<*("elemT")>)
       memoryOnly
-    >
+    > : !kgen.struct_def<[dtype]>
     ```
   }];
 
   let parameters = (ins
     "StringAttr":$name,
-    ArrayRefParameter<"StringAttr">:$inputParamNames,
-    ArrayRefParameter<"Type">:$inputParamTypes,
+    OptionalArrayRefParameter<"ParamDeclAttr">:$inputParams,
     OptionalArrayRefParameter<"StructDefFieldAttr">:$fields,
-    "bool":$isMemoryOnly
+    "bool":$isMemoryOnly,
+    AttributeSelfTypeParameter<"", "StructDefType">:$type
   );
 
   let assemblyFormat = [{
     `<` $name
-        `` custom<ParamNamesAndTypes>($inputParamNames, $inputParamTypes)
+        (`[` custom<ParamDeclAttrs>($inputParams)^ `]`)?
         (`(` custom<StructDefFields>($fields)^ `)`)?
         `` custom<IsMemoryOnly>($isMemoryOnly)
     `>`
@@ -681,8 +712,7 @@ def KGEN_StructDefAttr : KGENAttr<"StructDef", "struct_def"> {
   let builders = [
     AttrBuilderWithInferredContext<(ins
         "StringAttr":$name,
-        "ArrayRef<StringAttr>":$inputParamNames,
-        "ArrayRef<Type>":$inputParamTypes,
+        "ArrayRef<ParamDeclAttr>":$inputParams,
         "ArrayRef<StructDefFieldAttr>":$fields,
         "bool":$isMemoryOnly)>
   ];
