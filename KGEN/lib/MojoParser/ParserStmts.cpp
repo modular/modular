@@ -154,10 +154,9 @@ ParserBase::parseDecorators(ssize_t indentation) {
 /// grammar.
 namespace {
 struct StmtParser : public ParserBase {
-  StmtParser(SharedState &shared, Lexer &lexer, ASTDecl &containingDecl)
-      : ParserBase(shared, lexer), parentDecl(containingDecl),
-        curDeclScope(&containingDecl),
-        builder(containingDecl.getDeclEndBuilder()) {
+  StmtParser(SharedState &shared, Lexer &lexer, ASTDecl &curDeclScope)
+      : ParserBase(shared, lexer), parentDecl(curDeclScope),
+        curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
 
     // If we are parsing into a 'def', then we need a position to synthesize
     // variable definitions at the top of the function.
@@ -171,10 +170,7 @@ struct StmtParser : public ParserBase {
     }
   }
 
-  TypeCheckScopeInfo getScopeInfo() {
-    // Statements are never in a parameter expression context.
-    return {*curDeclScope, false, shared};
-  }
+  TypeCheckScopeInfo getScopeInfo() const { return {*curDeclScope, shared}; }
 
   ASTDecl &getParentDecl() { return parentDecl; }
   OpBuilder &getBuilder() { return builder; }
@@ -876,8 +872,7 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
   if (raiseHookFns.empty())
     return failure();
 
-  ParamBindings bindings(
-      TypeCheckScopeInfo{declContext, /*isParamContext=*/false, shared});
+  ParamBindings bindings(TypeCheckScopeInfo{declContext, shared});
   OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
                    std::move(bindings), node, CallSyntax::kDirectCall);
   ValueDest raseHookDest(EC_RaiseValue);
@@ -1108,8 +1103,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
 
   // Resolve the overload with the sequence's type. This succeeds if the
   // iterator type is currently supported.
-  ParamBindings bindings(
-      TypeCheckScopeInfo{scope, /*isParamContext=*/false, shared});
+  ParamBindings bindings(TypeCheckScopeInfo{scope, shared});
   bindings.add(seqExpr, PValue(seqPValue.getType()));
   OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
                    seqExpr, CallSyntax::kDirectCall);

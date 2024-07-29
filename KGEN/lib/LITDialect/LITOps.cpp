@@ -1404,6 +1404,11 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 
+RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
+  auto structTy = cast<StructType>(structRefTy.getElementType());
+  return structRefTy.getWithElement(field.getReboundType(structTy));
+}
+
 LogicalResult
 RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   Type structType = getContainer().getType().getElementType();
@@ -1413,11 +1418,9 @@ RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
-                           Value structBasePtr, StructFieldOp field) {
-  auto refType = cast<RefType>(structBasePtr.getType());
-  auto eltType = cast<StructType>(refType.getElementType());
-  build(builder, result, refType.getWithElement(field.getReboundType(eltType)),
-        field.getNameAttr(), structBasePtr);
+                           Value structBaseRef, StructFieldOp field) {
+  auto resultType = getFieldType(cast<RefType>(structBaseRef.getType()), field);
+  build(builder, result, resultType, field.getNameAttr(), structBaseRef);
 }
 
 static ParseResult parseStructGERTypes(AsmParser &p, Type &fieldType,

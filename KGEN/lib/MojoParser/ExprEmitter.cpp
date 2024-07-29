@@ -456,6 +456,19 @@ PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
   return {};
 }
 
+/// Emit an error about use of a dynamic value (the expression) in a context
+/// that only allows parameter expressions.  This always returns a null
+/// PValue.
+PValue ExprEmitter::emitErrorForDynamicValueInParameter(Location loc,
+                                                        const char *message) {
+  assert(paramContext != EC_InvalidContext &&
+         "parameter context not set correctly");
+  if (!message)
+    message = "cannot use a dynamic value";
+  emitError(loc, message) << getContextMessage(paramContext);
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
@@ -734,6 +747,8 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
   VarDeclOp var = emitVarDecl("anonymous*", pvalue.getType(),
                               translateLocation(value.expr->getLoc()),
                               VarDeclKind::Synthesized);
+  if (!var)
+    return {};
   if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return MRValue(var);
@@ -811,8 +826,12 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
     return mb;
 
   // Emit PValues to memory and promote to borrow.
-  if (auto pValue = bValue.getIfPValue())
-    return emitPValueToMRValue({pValue, value.expr}, context);
+  if (auto pValue = bValue.getIfPValue()) {
+    auto mrVal = emitPValueToMRValue({pValue, value.expr}, context);
+    if (!mrVal)
+      return {};
+    return MBValue(mrVal);
+  }
 
   // Reject SBValue.
   emitError(value.expr->getLoc(),
@@ -1876,6 +1895,10 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 
 VarDeclOp ExprEmitter::emitVarDecl(const Twine &name, Type type, Location loc,
                                    VarDeclKind kind) {
+  if (!builder) {
+    emitErrorForDynamicValueInParameter(loc);
+    return {};
+  }
   StringAttr lifetimeAttr = declScope.mangleParamName(name);
   return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
 }

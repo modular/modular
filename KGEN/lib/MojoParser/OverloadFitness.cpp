@@ -443,10 +443,6 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     RefType valueRefType;
     if (operand.ir.isMValue()) {
       valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
-    } else if (auto pv = operand.ir.getIfPValue();
-               pv && scopeInfo.isParamContext) {
-      // TODO: Remove isParamContext and this handling.
-      valueRefType = RefType::getImmortal(pv.getType(), /*isMut=*/false);
     } else if (auto cv = operand.ir.getIfCValue()) {
       // Otherwise, we are binding something like a PValue or SRValue to a
       // reference argument, which doesn't have a lifetime.  This is a problem

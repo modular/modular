@@ -1688,6 +1688,13 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   ];
 
   let hasFolder = 1;
+
+  let extraClassDeclaration = [{
+    /// Given a reference to a struct, return the reference type to the
+    /// specified field, maintaining lifetime and mutability.
+    static RefType getFieldType(RefType structRefTy, StructFieldOp field);
+  }];
+
 }
 
 //===----------------------------------------------------------------------===//

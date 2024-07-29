@@ -252,7 +252,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ArgConvention::Ref: {
     // If we're in a parameter context, just leave it alone - param call
     // emission will handle it.
-    if (emitter.getScopeInfo().isParamContext) {
+    if (!emitter.builder) {
       if (auto pv = operand.ir.getIfPValue())
         return pv;
     }
@@ -1035,7 +1035,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
                                      const ExprNode *expr, SignatureType sig,
                                      TypedAttr lifetime) {
-  auto [declScope, _, shared] = scopeInfo;
+  auto [declScope, shared] = scopeInfo;
   SMLoc loc = expr->getLoc();
   ASTDecl *decl = sig.isThrows()
                       ? shared.getBuiltinRaisingCoroutineType(declScope, loc)

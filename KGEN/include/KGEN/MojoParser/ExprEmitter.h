@@ -290,13 +290,15 @@ public:
 
   /// Return information about the scope we're looking into.
   TypeCheckScopeInfo getScopeInfo() const {
-    return TypeCheckScopeInfo{declScope, !varDeclCursor.has_value(), shared};
+    return TypeCheckScopeInfo{declScope, shared};
   }
 
   /// Emit an error about use of a dynamic value (the expression) in a context
   /// that only allows parameter expressions.  This always returns a null
   /// PValue.
   PValue emitErrorForDynamicValueInParameter(const ExprNode *expr,
+                                             const char *customMessage = {});
+  PValue emitErrorForDynamicValueInParameter(Location loc,
                                              const char *customMessage = {});
 
   /// If needed, convert the specified value to the target destination type,

@@ -2134,7 +2134,7 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
     StringRef methodName, ExprNode *decorator,
     function_ref<void()> callbackOnMissing) {
   // Get the possibly overloaded method.
-  TypeCheckScopeInfo scopeInfo{structDecl, false, shared};
+  TypeCheckScopeInfo scopeInfo{structDecl, shared};
   auto methods = OverloadSet::lookup(
       scopeInfo, structDecl.getTypeDeclSelf(), methodName, decorator,
       CallSyntax::kMethodCallSynthetic, callbackOnMissing);

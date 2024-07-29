@@ -419,7 +419,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // happens, emit them now and then re-infer the correct lifetimes.
     const auto &argsNeedingLifetimes = bestFitness->getArgsNeedingLifetimes();
     std::optional<OverloadFitness> replaced;
-    if (argsNeedingLifetimes.any()) {
+    if (argsNeedingLifetimes.any() &&
+        // Parameter emission can always use immortal lifetimes.
+        emitter.builder) {
       // Emit each of the arguments that needs a lifetime to an MValue.
       for (size_t i = 0, e = argsNeedingLifetimes.size(); i != e; ++i) {
         if (!argsNeedingLifetimes[i])
@@ -431,11 +433,11 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
         // We emit this as an MBValue instead of an MRValue specifically so we
         // do not infer mutability from the temporary.  We don't want ref's with
         // parametric lifetime to bind to these values.
-        auto newVal =
-            emitter.emitMBValue({operands[i]}, ExprContext::EC_CallRefArgValue);
+        auto newVal = emitter.emitRefValue({operands[i]},
+                                           ExprContext::EC_CallRefArgValue);
         if (!newVal)
           return {}; // Could not emit the PValue/SValue to an MRValue.
-        operands.values[i].ir = newVal;
+        operands.values[i].ir = MBValue(newVal);
       }
 
       // Now that we have the operands set, we re-evaluate the bindings, which
@@ -829,12 +831,6 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
                              ExprEmitter &emitter) {
-  // The OverloadSet may have been formed in a parameter context (e.g. in an
-  // alias) and used a a non-parameter context.
-  // FIXME: isParamContext isn't like scope info.  We should eliminate this from
-  // `TypeCheckScopeInfo`.
-  llvm::SaveAndRestore x(paramBindings.isParamContext,
-                         emitter.paramContext != EC_InvalidContext);
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
