@@ -66,6 +66,73 @@ struct FrameData {
   DenseMap<Operation *, int> opToState;
 };
 
+static bool needsStateClone(Operation *operation) {
+  return operation->hasTrait<OpTrait::ConstantLike>() ||
+         isa<KGEN::StructGEPOp, POP::OffsetOp>(operation);
+}
+
+struct CloneFrameArgs {
+  CloneFrameArgs(ImplicitLocOpBuilder &b, DenseMap<Operation *, int> &opToState,
+                 mlir::DominanceInfo &dominanceInfo)
+      : builder(b), opToState(opToState), dominanceInfo(dominanceInfo) {}
+  void cloneFrameArgsOf(Operation *user) {
+    int useState = opToState[user];
+    for (auto [index, operand] : llvm::enumerate(user->getOperands())) {
+      Operation *definingOp = operand.getDefiningOp();
+      if (!definingOp)
+        continue;
+      if (!needsStateClone(definingOp))
+        continue;
+      int defState = opToState[definingOp];
+      if (defState == useState)
+        continue;
+
+      auto existing = constantToStateSpecific.find(definingOp);
+      if (existing == constantToStateSpecific.end())
+        existing = constantToStateSpecific.try_emplace(definingOp).first;
+      auto existingClone = existing->second.find(useState);
+      Operation *clonedDefOp;
+      if (existingClone == existing->second.end()) {
+        builder.setInsertionPoint(user);
+        clonedDefOp = builder.clone(*definingOp);
+        opToState[clonedDefOp] = useState;
+        existing->second.insert({useState, clonedDefOp});
+        if (clonedDefOp->getNumOperands() > 0)
+          cloneFrameArgsOf(clonedDefOp);
+      } else {
+        clonedDefOp = existingClone->second;
+        if (!dominanceInfo.dominates(clonedDefOp, user)) {
+          // We have two uses in the same state where one does not dominate the
+          // other. This implies that the first instance of the usage is in a
+          // nested region.
+          Operation *parent = clonedDefOp->getParentOp();
+          while (!dominanceInfo.dominates(parent, user))
+            parent = parent->getParentOp();
+          clonedDefOp->moveBefore(parent);
+        }
+      }
+      user->setOperand(index, clonedDefOp->getResult(0));
+    }
+  }
+  ImplicitLocOpBuilder &builder;
+  DenseMap<Operation *, int> &opToState;
+  DenseMap<Operation *, DenseMap<int, Operation *>> constantToStateSpecific;
+  mlir::DominanceInfo &dominanceInfo;
+};
+
+static void cloneFrameArgs(FuncOp funcOp, ImplicitLocOpBuilder &b,
+                           mlir::DominanceInfo &domInfo,
+                           FuncOp originalFunction,
+                           DenseMap<Operation *, int> &opToState) {
+  auto insertPoint = b.saveInsertionPoint();
+  CloneFrameArgs cloner(b, opToState, domInfo);
+  funcOp.walk([&](Operation *user) {
+    if (user->getNumOperands() > 0)
+      cloner.cloneFrameArgsOf(user);
+  });
+  b.restoreInsertionPoint(insertPoint);
+}
+
 struct COTypes {
   Type typeForField(AsyncContinuationField field) {
     switch (field) {
@@ -93,6 +160,7 @@ public:
   Type getContinuationType() const { return continuationType; }
   FrameData &getFrameData() const { return frameData; }
   StructType getHeaderType() const { return headerType; }
+  Type getResumeSignatureType() const { return resumeSignatureType; }
 
 private:
   Type continuationType;
@@ -158,12 +226,15 @@ struct LowerAsyncBuildContext {
 
   /// Given an async function and its frame types, create a ramp function and a
   /// resume function.
-  LoweredAsyncFunction lowerAsyncFunction(FuncOp funcOp,
-                                          mlir::DominanceInfo &domInfo,
-                                          COTypes &coTypes, Value errorValue,
+  LoweredAsyncFunction lowerAsyncFunction(FuncOp funcOp, COTypes &coTypes,
+                                          Value errorValue,
                                           Value memoryResultValue);
 
 private:
+  /// Create the continuation and initialize the state and resume function.
+  Value initializeContinuation(FuncOp rampFunction, FuncOp resumeFunction,
+                               FuncOp funcOp, COTypes &coTypes,
+                               unsigned initialState);
   /// Given the resume function, the empty ramp function, the original async
   /// function, and coroutine types, populate the ramp function.
   void populateRampFunction(FuncOp rampFunction, FuncOp resumeFunction,
@@ -173,6 +244,22 @@ private:
   void populateResumeFunction(FuncOp resumeFunction, FuncOp funcOp,
                               COTypes &coTypes, Value errorValue,
                               Value memoryResultValue);
+  /// Replace all `return x` with `store x, y` where y is the address of the
+  /// result slot in the frame.
+  ReturnOp lowerReturn(ReturnOp returnOp, Value continuation);
+  /// Replace handle argument with local coroutine
+  void lowerSuspensionPoint(CO::SuspendOp suspend, Value continuation,
+                            COTypes &coTypes);
+  /// Store block arguments in the frame if they are used across a suspension
+  /// point.
+  void storeBlockArgumentsInFrame(Block &block, Operation *key,
+                                  FrameData &frameData, Value continuation,
+                                  FrameVariables &frameVariables);
+  /// Store the given op in the frame if it is used across suspension points.
+  void storeOpInFrameIfNeeded(FrameData &frameData, Operation *op,
+                              Value continuation,
+                              SmallVector<Operation *> &opsToDelete);
+
   Shared<SymbolTable &> &sharedTable;
   DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
       &asyncFuncToRampFunctions;
@@ -184,9 +271,10 @@ private:
 // LowerAsyncBuildContext
 //===----------------------------------------------------------------------===//
 
-LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunction(
-    FuncOp funcOp, mlir::DominanceInfo &domInfo, COTypes &coTypes,
-    Value errorValue, Value memoryResultValue) {
+LoweredAsyncFunction
+LowerAsyncBuildContext::lowerAsyncFunction(FuncOp funcOp, COTypes &coTypes,
+                                           Value errorValue,
+                                           Value memoryResultValue) {
   MLIRContext *cxt = funcOp.getContext();
   StructType headerType(coTypes.getHeaderType());
 
@@ -245,16 +333,14 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
                                                     COTypes &coTypes,
                                                     Value errorValue,
                                                     Value memoryResultValue) {
-  FrameData &frameData = coTypes.getFrameData();
   // Take the body of the original function.
   resumeFunction.getBodyRegion().takeBody(funcOp.getBodyRegion());
+  FrameData &frameData = coTypes.getFrameData();
   resumeFunction.getBodyRegion().insertArgument(
-      (unsigned)0, resumeFunction.getSignature().getArguments()[0],
+      (unsigned)0, PointerType::get(coTypes.getContinuationType()),
       resumeFunction->getLoc());
   builder.setInsertionPointToStart(&resumeFunction.getBodyRegion().front());
-  // Extract arguments from continuation's frame.
   Value continuation = resumeFunction.getArgument(0);
-
   // For each new operand, extract operand from frame if it was defined in
   // previous state. For each op, store in frame if it is used downstream
   // across a suspension point. For each block, store arguments if they are
@@ -273,39 +359,11 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
     while (current) {
       Operation *op = current;
       current = op->getNextNode();
-      if (isa<StackAllocLifetimeEndOp, StackAllocLifetimeStartOp>(op)) {
-        int index = 0;
-        for (Value value : op->getOperands()) {
-          auto entry =
-              frameData.operationToIndexInFrame.find(value.getDefiningOp());
-          if (entry != frameData.operationToIndexInFrame.end())
-            op->eraseOperand(index);
-          else
-            index++;
-        }
-        if (op->getNumOperands() == 0)
-          op->erase();
-        continue;
-      }
 
-      // Store op in frame if needed.
-      auto entry = frameData.operationToIndexInFrame.find(op);
-      if (entry != frameData.operationToIndexInFrame.end()) {
-        if (isa<StackAllocationOp>(op)) {
-          opsToDelete.push_back(op);
-          continue;
-        }
-        builder.setInsertionPointAfter(op);
-        Type frameEntryType = frameData.frameTypes[entry->getSecond()];
-        assert(frameEntryType == op->getResultTypes().front() &&
-               "The frame type slot does not match the value");
-        assert(op->getNumResults() == 1 && "TODO: support multiple results");
-        Value dataSlot = builder.create<StructGEPOp>(
-            continuation, Frame + entry->getSecond());
-        builder.create<StoreOp>(op->getResult(0), dataSlot);
-      }
+      storeOpInFrameIfNeeded(frameData, op, continuation, opsToDelete);
 
-      // Extract arguments from operands in needed.
+      // Extract arguments from operands if needed. Hot start ramp should never
+      // load from frame.
       int useState = frameData.opToState[op];
       for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
         auto entry = frameData.valueToIndexInFrame.find(operand);
@@ -318,6 +376,7 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
           Operation *definingOp = operand.getDefiningOp();
           if (definingOp)
             defState = frameData.opToState[definingOp];
+
           // Stack allocated variables are an exception. They are pulled from
           // the frame regardless of state status because the stack allocation
           // is replaced with a frame allocation.
@@ -336,19 +395,8 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
         // they must be terminated.
         Operation *firstOp = &*region.front().begin();
         regionsToProcess.push_back({&region, firstOp->getIterator()});
-        if (region.front().getNumArguments() == 0)
-          continue;
-        builder.setInsertionPointToStart(&region.front());
-        int frameValueState = frameData.opToState[firstOp];
-        for (BlockArgument argument : region.front().getArguments()) {
-          auto entry = frameData.valueToIndexInFrame.find(argument);
-          if (entry == frameData.valueToIndexInFrame.end())
-            continue;
-          Value dataSlot = builder.create<StructGEPOp>(
-              continuation, Frame + entry->getSecond());
-          builder.create<StoreOp>(argument, dataSlot);
-          frameVariables.overwriteValue(frameValueState, argument);
-        }
+        storeBlockArgumentsInFrame(region.front(), firstOp, frameData,
+                                   continuation, frameVariables);
       }
     }
   }
@@ -357,45 +405,23 @@ void LowerAsyncBuildContext::populateResumeFunction(FuncOp resumeFunction,
                        true);
   args.reset(0);
   resumeFunction.getBodyRegion().front().eraseArguments(args);
-
   resumeFunction.walk([&](Operation *op) {
-    if (auto returnOp = dyn_cast<ReturnOp>(op);
-        returnOp && returnOp.getNumOperands()) {
-      // Replace ReturnOps with set result.
-      builder.setInsertionPoint(returnOp);
-      Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
-      for (auto [idx, value] : llvm::enumerate(returnOp.getOperands())) {
-        builder.create<StoreOp>(value,
-                                builder.create<StructGEPOp>(promiseSlot, idx));
-      }
-      builder.create<ReturnOp>();
-      returnOp->erase();
+    if (auto returnOp = dyn_cast<ReturnOp>(op)) {
+      lowerReturn(returnOp, continuation);
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
-      // Replace uses of the suspend argument with the continuation.
-      Region &body = suspend.getBody();
-      if (!body.getArgument(0).use_empty()) {
-        builder.setInsertionPointToStart(&suspend.getBody().front());
-        Value header = builder.create<PointerBitcastOp>(
-            PointerType::get(coTypes.getHeaderType()),
-            resumeFunction.getArgument(0));
-        body.getArgument(0).replaceAllUsesWith(header);
-      }
-      body.eraseArgument(0);
+      lowerSuspensionPoint(suspend, continuation, coTypes);
     }
   });
   for (auto op : opsToDelete)
     op->erase();
 }
-void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
-                                                  FuncOp resumeFunction,
-                                                  FuncOp funcOp,
-                                                  COTypes &coTypes) {
+
+Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
+                                                     FuncOp resumeFunction,
+                                                     FuncOp funcOp,
+                                                     COTypes &coTypes,
+                                                     unsigned initialState) {
   Type continuationType = coTypes.getContinuationType();
-  FrameData &frameData = coTypes.getFrameData();
-  builder.setInsertionPointToStart(
-      &rampFunction.getBodyRegion().emplaceBlock());
-  for (Type argument : rampFunction.getSignature().getArguments())
-    rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
   // Allocate memory for continuation.
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeStoreSize(targetInfoAttr, continuationType);
@@ -408,7 +434,8 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
       PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
 
   // Initialize state to 0.
-  Value zero = builder.create<ParamConstantOp>(builder.getI32IntegerAttr(0));
+  Value zero =
+      builder.create<ParamConstantOp>(builder.getI32IntegerAttr(initialState));
   Value stateSlot = builder.create<StructGEPOp>(continuation, State);
   builder.create<StoreOp>(zero, stateSlot);
 
@@ -422,8 +449,105 @@ void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
   functionPointer = builder.create<PointerBitcastOp>(
       coTypes.typeForField(ResumeFunction), functionPointer);
   builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
+  return continuation;
+}
 
+ReturnOp LowerAsyncBuildContext::lowerReturn(ReturnOp returnOp,
+                                             Value continuation) {
+  builder.setInsertionPoint(returnOp);
+  if (returnOp->getNumOperands()) {
+    // Replace ReturnOps with set result.
+    Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
+    for (auto [idx, value] : llvm::enumerate(returnOp.getOperands())) {
+      builder.create<StoreOp>(value,
+                              builder.create<StructGEPOp>(promiseSlot, idx));
+    }
+    auto result = builder.create<ReturnOp>();
+    returnOp->erase();
+    return result;
+  }
+  return returnOp;
+}
+
+void LowerAsyncBuildContext::lowerSuspensionPoint(CO::SuspendOp suspend,
+                                                  Value continuation,
+                                                  COTypes &coTypes) {
+  // Replace uses of the suspend argument with the continuation.
+  Region &body = suspend.getBody();
+  if (!body.getArgument(0).use_empty()) {
+    builder.setInsertionPointToStart(&suspend.getBody().front());
+    Value header = builder.create<PointerBitcastOp>(
+        PointerType::get(coTypes.getHeaderType()), continuation);
+    body.getArgument(0).replaceAllUsesWith(header);
+  }
+  body.eraseArgument(0);
+}
+
+void LowerAsyncBuildContext::storeBlockArgumentsInFrame(
+    Block &block, Operation *key, FrameData &frameData, Value continuation,
+    FrameVariables &frameVariables) {
+  if (block.getNumArguments() == 0)
+    return;
+  builder.setInsertionPointToStart(&block);
+  int frameValueState = frameData.opToState[key];
+  for (BlockArgument argument : block.getArguments()) {
+    auto entry = frameData.valueToIndexInFrame.find(
+        key->getParentRegion()->getArgument(argument.getArgNumber()));
+    if (entry == frameData.valueToIndexInFrame.end())
+      continue;
+    Value dataSlot =
+        builder.create<StructGEPOp>(continuation, Frame + entry->getSecond());
+    builder.create<StoreOp>(argument, dataSlot);
+    frameVariables.overwriteValue(frameValueState, argument);
+  }
+}
+
+void LowerAsyncBuildContext::storeOpInFrameIfNeeded(
+    FrameData &frameData, Operation *op, Value continuation,
+    SmallVector<Operation *> &opsToDelete) {
+  if (isa<StackAllocLifetimeEndOp, StackAllocLifetimeStartOp>(op)) {
+    int index = 0;
+    for (Value value : op->getOperands()) {
+      auto entry =
+          frameData.operationToIndexInFrame.find(value.getDefiningOp());
+      if (entry != frameData.operationToIndexInFrame.end())
+        op->eraseOperand(index);
+      else
+        index++;
+    }
+    if (op->getNumOperands() == 0)
+      opsToDelete.push_back(op);
+    return;
+  }
+  auto entry = frameData.operationToIndexInFrame.find(op);
+  if (entry != frameData.operationToIndexInFrame.end()) {
+    if (isa<StackAllocationOp>(op)) {
+      opsToDelete.push_back(op);
+      return;
+    }
+    builder.setInsertionPointAfter(op);
+    Type frameEntryType = frameData.frameTypes[entry->getSecond()];
+    assert(frameEntryType == op->getResultTypes().front() &&
+           "The frame type slot does not match the value");
+    assert(op->getNumResults() == 1 && "TODO: support multiple results");
+    Value dataSlot =
+        builder.create<StructGEPOp>(continuation, Frame + entry->getSecond());
+    builder.create<StoreOp>(op->getResult(0), dataSlot);
+  }
+}
+
+void LowerAsyncBuildContext::populateRampFunction(FuncOp rampFunction,
+                                                  FuncOp resumeFunction,
+                                                  FuncOp funcOp,
+                                                  COTypes &coTypes) {
+  builder.setInsertionPointToStart(
+      &rampFunction.getBodyRegion().emplaceBlock());
+  for (Type argument : rampFunction.getSignature().getArguments())
+    rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
+  Value continuation =
+      initializeContinuation(rampFunction, resumeFunction, funcOp, coTypes, 0);
   // Store arguments in frame.
+  FrameData &frameData = coTypes.getFrameData();
   for (auto [index, image] : llvm::enumerate(rampFunction.getArguments())) {
     Value arg = funcOp.getArgument(index);
     // If the argument is not in the frame metadata it is unused. Do not
@@ -880,59 +1004,48 @@ static Operation *findNearestCommonAncestor(mlir::DominanceInfo &domInfo,
   return domInfo.dominates(lhsCommon, rhsCommon) ? lhsCommon : rhsCommon;
 }
 
-static bool needsStateClone(Operation *operation) {
-  return operation->hasTrait<OpTrait::ConstantLike>() ||
-         isa<KGEN::StructGEPOp, POP::OffsetOp>(operation);
-}
-
-struct CloneFrameArgs {
-  CloneFrameArgs(ImplicitLocOpBuilder &b, DenseMap<Operation *, int> &opToState,
-                 mlir::DominanceInfo &dominanceInfo)
-      : builder(b), opToState(opToState), dominanceInfo(dominanceInfo) {}
-  void cloneFrameArgsOf(Operation *user) {
-    int useState = opToState[user];
-    for (auto [index, operand] : llvm::enumerate(user->getOperands())) {
-      Operation *definingOp = operand.getDefiningOp();
-      if (!definingOp)
-        continue;
-      if (!needsStateClone(definingOp))
-        continue;
-      int defState = opToState[definingOp];
-      if (defState == useState)
-        continue;
-
-      auto existing = constantToStateSpecific.find(definingOp);
-      if (existing == constantToStateSpecific.end())
-        existing = constantToStateSpecific.try_emplace(definingOp).first;
-      auto existingClone = existing->second.find(useState);
-      Operation *clonedDefOp;
-      if (existingClone == existing->second.end()) {
-        builder.setInsertionPoint(user);
-        clonedDefOp = builder.clone(*definingOp);
-        opToState[clonedDefOp] = useState;
-        existing->second.insert({useState, clonedDefOp});
-        if (clonedDefOp->getNumOperands() > 0)
-          cloneFrameArgsOf(clonedDefOp);
-      } else {
-        clonedDefOp = existingClone->second;
-        if (!dominanceInfo.dominates(clonedDefOp, user)) {
-          // We have two uses in the same state where one does not dominate the
-          // other. This implies that the first instance of the usage is in a
-          // nested region.
-          Operation *parent = clonedDefOp->getParentOp();
-          while (!dominanceInfo.dominates(parent, user))
-            parent = parent->getParentOp();
-          clonedDefOp->moveBefore(parent);
-        }
-      }
-      user->setOperand(index, clonedDefOp->getResult(0));
+static std::pair<Value, Value>
+preprocessAsyncFunction(FuncOp funcOp, mlir::DominanceInfo &domInfo) {
+  Value errorValue;
+  Value memoryResultValue;
+  if (funcOp.isThrows() || funcOp.getSignature().hasMemoryOnlyResult()) {
+    int errorIndex = -1, resultIndex = -1;
+    for (auto [i, convention] :
+         llvm::enumerate(funcOp.getSignature().getArgConventions())) {
+      if (convention == M::KGEN::ArgConvention::ByRefError)
+        errorIndex = i;
+      else if (convention == M::KGEN::ArgConvention::ByRefResult)
+        resultIndex = i;
     }
+    if (errorIndex > -1)
+      errorValue = funcOp.getArgument(errorIndex);
+    if (resultIndex > -1)
+      memoryResultValue = funcOp.getArgument(resultIndex);
   }
-  ImplicitLocOpBuilder &builder;
-  DenseMap<Operation *, int> &opToState;
-  DenseMap<Operation *, DenseMap<int, Operation *>> constantToStateSpecific;
-  mlir::DominanceInfo &dominanceInfo;
-};
+
+  // Preprocess the function to move stack allocation ops as close to their
+  // first use as possible.
+  SmallVector<StackAllocationOp> allocs;
+  funcOp.walk([&](StackAllocationOp alloc) { allocs.push_back(alloc); });
+  for (StackAllocationOp alloc : allocs) {
+    if (alloc->use_empty())
+      continue;
+    Operation *ancestor = *alloc->user_begin();
+    for (Operation *user : llvm::drop_begin(alloc->getUsers())) {
+      if (domInfo.dominates(ancestor, user))
+        continue;
+      if (domInfo.dominates(user, ancestor)) {
+        ancestor = user;
+        continue;
+      }
+      // `ancestor` and `user` live in sibling regions. We need to find a
+      // common ancestor.
+      ancestor = findNearestCommonAncestor(domInfo, ancestor, user);
+    }
+    alloc->moveBefore(ancestor);
+  }
+  return {errorValue, memoryResultValue};
+}
 
 void LowerAsyncFunctionsPass::runOnOperation() {
   ModuleOp module = getOperation();
@@ -951,70 +1064,29 @@ void LowerAsyncFunctionsPass::runOnOperation() {
 
   // Convert async functions.
   ImplicitLocOpBuilder b(module->getLoc(), module);
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
   LowerAsyncBuildContext buildContext(sharedTable, asyncFuncToRampFunctions, b,
                                       targetInfo);
-  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+
   for (auto funcOp : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
     if (!funcOp.isAsync())
       continue;
-    Value errorValue;
-    Value memoryResultValue;
-    if (funcOp.isThrows() || funcOp.getSignature().hasMemoryOnlyResult()) {
-      int errorIndex = -1, resultIndex = -1;
-      for (auto [i, convention] :
-           llvm::enumerate(funcOp.getSignature().getArgConventions())) {
-        if (convention == M::KGEN::ArgConvention::ByRefError)
-          errorIndex = i;
-        else if (convention == M::KGEN::ArgConvention::ByRefResult)
-          resultIndex = i;
-      }
-      if (errorIndex > -1)
-        errorValue = funcOp.getArgument(errorIndex);
-      if (resultIndex > -1)
-        memoryResultValue = funcOp.getArgument(resultIndex);
-    }
-
-    // Preprocess the function to move stack allocation ops as close to their
-    // first use as possible.
-    SmallVector<StackAllocationOp> allocs;
-    funcOp.walk([&](StackAllocationOp alloc) { allocs.push_back(alloc); });
-    for (StackAllocationOp alloc : allocs) {
-      if (alloc->use_empty())
-        continue;
-      Operation *ancestor = *alloc->user_begin();
-      for (Operation *user : llvm::drop_begin(alloc->getUsers())) {
-        if (domInfo.dominates(ancestor, user))
-          continue;
-        if (domInfo.dominates(user, ancestor)) {
-          ancestor = user;
-          continue;
-        }
-        // `ancestor` and `user` live in sibling regions. We need to find a
-        // common ancestor.
-        ancestor = findNearestCommonAncestor(domInfo, ancestor, user);
-      }
-      alloc->moveBefore(ancestor);
-    }
+    // calculate the frame of the original, unmodified resume.
+    auto [errorValue, memoryResultValue] =
+        preprocessAsyncFunction(funcOp, domInfo);
 
     // The transform function clones ops whose values should not be stored in
     // the frame. This includes constants and pointer offsets.
     std::function<void(FuncOp, DenseMap<Operation *, int> &)> transform =
         [&](FuncOp originalFunction, DenseMap<Operation *, int> &opToState) {
-          auto insertPoint = b.saveInsertionPoint();
-          CloneFrameArgs cloner(b, opToState, domInfo);
-          funcOp.walk([&](Operation *user) {
-            if (user->getNumOperands() > 0)
-              cloner.cloneFrameArgsOf(user);
-          });
-          b.restoreInsertionPoint(insertPoint);
+          cloneFrameArgs(funcOp, b, domInfo, originalFunction, opToState);
         };
-
     FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
                         transform);
     COTypes cotypes(
         module.getContext(), frameData,
         StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
-    buildContext.lowerAsyncFunction(funcOp, domInfo, cotypes, errorValue,
+    buildContext.lowerAsyncFunction(funcOp, cotypes, errorValue,
                                     memoryResultValue);
   }
 
