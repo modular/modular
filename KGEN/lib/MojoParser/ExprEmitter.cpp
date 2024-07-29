@@ -1426,6 +1426,9 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
   return emitCopyOfValue({MBValue(ref), value.expr}, dest);
 }
 
+/// Emit a copy of the specified value, producing a new owned instance of the
+/// value in the specified destination.  This returns an RValue if
+/// there is no consuming dest, otherwise a BValue.
 CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
@@ -1436,82 +1439,80 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitLoad(dest, *this);
 
-  auto regPassability = valueType.getRegisterPassability(exprLoc, shared);
-  switch (regPassability) {
-  case TypeConvention::RegisterPassable:
-  case TypeConvention::RegisterPassableTrivial:
-    // Materialize parameters into a register if we have them.
-    if (auto pValue = value.ir.getIfPValue()) {
+  // If the value is PValue and register passable, then we can materialize a
+  // unique value directly into a register.
+  if (auto pValue = value.ir.getIfPValue()) {
+    if (valueType.isRegisterPassable(exprLoc, shared)) {
       value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
-      if (!value.ir)
-        return {};
+      return emitCResult(value.ir, value.expr, dest);
     }
-
-    // If this value is trival, we don't have to invoke copyinit at all.
-    if (regPassability == TypeConvention::RegisterPassableTrivial)
-      break;
-    // Otherwise, handle it like any other type.
-    [[fallthrough]];
-  case TypeConvention::MemoryOnly:
-    // Memory-only copyinit will take the destination as address space zero, so
-    // we need to reject ValueDest's expecting it in GPU memory.
-    if (dest.isNonDefaultAddressSpace()) {
-      emitError(exprLoc, "value of type ")
-          << valueType << " cannot be copied into a non-default address space"
-          << value.expr->getRange();
-      return {};
-    }
-
-    // __copyinit__ has signature: `(inout self, existing: Self)`.
-    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
-    if (!destBuffer)
-      return {};
-
-    if (auto pValue = value.ir.getIfPValue())
-      return emitPValueToMLValue({pValue, value.expr}, destBuffer,
-                                 dest.context);
-
-    if (!valueType.isCopyable(exprLoc, shared)) {
-      if (valueType.isMovableFrom(value, shared) &&
-          !valueType.isRegisterPassable(exprLoc, shared)) {
-        emitError(exprLoc, "value of type ")
-            << valueType
-            << " can only be moved, but source value can only be copied"
-            << value.expr->getRange();
-      } else {
-        emitError(exprLoc)
-            << valueType << " is not copyable because it has no '__copyinit__'"
-            << value.expr->getRange();
-      }
-      return {};
-    }
-
-    CallOperands operands(
-        {ASTExprAnd<AnyValue>{destBuffer, value.expr}, value});
-    ValueDest copyDest(dest.getContext());
-    if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
-                             CallSyntax::kImplicitConvert, value.expr))
-      return {};
-    // If we required an implicit conversion, make sure it happens.
-    return emitCResult(MRValue(destBuffer), value.expr, dest);
   }
 
-  // Otherwise we can emit a direct use/load for trivial types.
-  // It is ok to upgrade SBValue to SRValue for trivial types.
-  if (auto sbVal = value.ir.getIfSBValue())
-    value.ir = SRValue(sbVal);
-  if (auto srVal = value.ir.getIfSRValue())
-    return emitCResult(srVal, value.expr, dest);
+  // If the value's type is trivial then we don't need to do anything except
+  // convert to an RValue and emit to the destination.
+  if (valueType.isTrivial(exprLoc, shared)) {
+    // It is ok to upgrade SBValue to SRValue for trivial types.
+    if (auto sbVal = value.ir.getIfSBValue())
+      value.ir = SRValue(sbVal);
 
-  if (!builder) {
-    emitErrorForDynamicValueInParameter(value.expr);
+    // All trivial types are register passable right now, so we can load memory
+    // values and produce an SRValue.
+    if (value.ir.isMValue()) {
+      if (!builder) {
+        emitErrorForDynamicValueInParameter(value.expr);
+        return {};
+      }
+      Value address = value.ir.getMValueReference();
+      Value result =
+          builder->create<RefLoadOp>(value.expr->getLocation(*this), address);
+      value.ir = SRValue(result);
+    }
+
+    return emitCResult(value.ir, value.expr, dest);
+  }
+
+  // Otherwise, we'll need to invoke the copyinit method which will take the
+  // destination as inout, so we're dealing with a memory case.
+
+  // Memory-only copyinit will take the destination as address space zero, so
+  // we need to reject ValueDest's expecting it in GPU memory.
+  if (dest.isNonDefaultAddressSpace()) {
+    emitError(exprLoc, "value of type ")
+        << valueType << " cannot be copied into a non-default address space"
+        << value.expr->getRange();
     return {};
   }
-  Value address = value.ir.getMValueReference();
-  assert(address && "Unknown value");
-  Value result =
-      builder->create<RefLoadOp>(value.expr->getLocation(*this), address);
-  return emitCResult(SRValue(result), value.expr, dest);
+
+  // __copyinit__ has signature: `(inout self, existing: Self)`.
+  MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+  if (!destBuffer)
+    return {};
+
+  if (auto pValue = value.ir.getIfPValue())
+    return emitPValueToMLValue({pValue, value.expr}, destBuffer, dest.context);
+
+  if (!valueType.isCopyable(exprLoc, shared)) {
+    if (valueType.isMovableFrom(value, shared) &&
+        !valueType.isRegisterPassable(exprLoc, shared)) {
+      emitError(exprLoc, "value of type ")
+          << valueType
+          << " can only be moved, but source value can only be copied"
+          << value.expr->getRange();
+    } else {
+      emitError(exprLoc) << valueType
+                         << " is not copyable because it has no '__copyinit__'"
+                         << value.expr->getRange();
+    }
+    return {};
+  }
+
+  CallOperands operands({ASTExprAnd<AnyValue>{destBuffer, value.expr}, value});
+  ValueDest copyDest(dest.getContext());
+  if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
+                           CallSyntax::kImplicitConvert, value.expr))
+    return {};
+  // If we required an implicit conversion, make sure it happens.
+  return emitCResult(MRValue(destBuffer), value.expr, dest);
 }
 
 BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
