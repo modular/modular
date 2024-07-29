@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
+from collections.optional import Optional
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -48,10 +49,15 @@ from linalg.cublas import cublas_matmul
 from testing import assert_equal as assert_equal_val
 
 
+alias init_fn_type = fn (buff: NDBuffer) -> None
+
+
 struct test_matmul[
     type: DType,
     static_b_shape: DimList = DimList.create_unknown[2](),
     transpose_b: Bool = False,
+    init_a: Optional[init_fn_type] = None,
+    init_b: Optional[init_fn_type] = None,
 ]:
     var ctx: DeviceContext
 
@@ -103,8 +109,19 @@ struct test_matmul[
         self.c_device = DeviceNDBuffer[type, 2](c_shape, ctx=ctx)
         self.c_device_ref = DeviceNDBuffer[type, 2](c_shape, ctx=ctx)
 
-        random(self.a_host.tensor)
-        random(self.b_host.tensor)
+        @parameter
+        if init_a:
+            alias init_a_fn = init_a.value()
+            init_a_fn(self.a_host.tensor)
+        else:
+            random(self.a_host.tensor)
+
+        @parameter
+        if init_b:
+            alias init_b_fn = init_b.value()
+            init_b_fn(self.b_host.tensor)
+        else:
+            random(self.b_host.tensor)
 
         zero(self.c_host.tensor)
         zero(self.c_host_ref.tensor)
@@ -152,7 +169,17 @@ def main():
             shape: DimList = DimList.create_unknown[2](),
             transpose_b: Bool = False,
             use_tensor_core: Bool = True,
-        ](test_ctx: test_matmul[type, shape, transpose_b]) raises:
+            init_a: Optional[init_fn_type] = None,
+            init_b: Optional[init_fn_type] = None,
+        ](
+            test_ctx: test_matmul[
+                type,
+                shape,
+                transpose_b,
+                init_a,
+                init_b,
+            ]
+        ) raises:
             _matmul_gpu[use_tensor_core=use_tensor_core](
                 test_ctx.c_device.tensor,
                 test_ctx.a_device.tensor,
