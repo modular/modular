@@ -11,13 +11,13 @@
 from math import ceildiv
 from random import randn
 
-from benchmark import *
+from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import gemv_kernel, gemv_tc_kernel, matmul_kernel_naive
 from memory import memset
 from gpu.host._compile import _get_nvptx_target
-from internal_utils import DeviceNDBuffer
+from internal_utils import DeviceNDBuffer, bench_compile_time
 from buffer import DimList, NDBuffer
 from utils.index import Index
 
@@ -276,5 +276,9 @@ def main():
             )
             bench_gemv_ws[DType.bfloat16](m, "gemv_ws", shape_list[s], ctx)
             bench_gemv_tc[DType.bfloat16](m, "gemv_tc", shape_list[s], ctx)
+
+        bench_compile_time[bench_gemv_naive[DType.bfloat16]](m, "gemv_naive")
+        bench_compile_time[bench_gemv_ws[DType.bfloat16]](m, "gemv_ws")
+        bench_compile_time[bench_gemv_tc[DType.bfloat16]](m, "gemv_tc")
 
         m.dump_report()

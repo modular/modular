@@ -13,27 +13,7 @@ from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
-
-
-fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
-    var size = 1
-
-    @parameter
-    for i in range(rank):
-        size *= dims[i]
-    return size
-
-
-fn _create_device_buffer[
-    dtype: DType, rank: Int, shape: DimList
-](ctx: DeviceContext, dynamic_shape: StaticIntTuple[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
-]:
-    var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
-    return (
-        storage,
-        NDBuffer[dtype, rank, shape](storage.ptr, dynamic_shape=dynamic_shape),
-    )
+from internal_utils import DeviceNDBuffer, bench_compile_time
 
 
 fn _get_run_name[
@@ -76,9 +56,9 @@ fn bench_matmul[
     shape_a_dim: StaticIntTuple[2],
     shape_b_dim: StaticIntTuple[2],
 ) raises:
-    var mat_c = _create_device_buffer[dtype, 2, shape_c](ctx, shape_c_dim)
-    var mat_a = _create_device_buffer[dtype, 2, shape_a](ctx, shape_a_dim)
-    var mat_b = _create_device_buffer[dtype, 2, shape_b](ctx, shape_b_dim)
+    var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
+    var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
+    var mat_b = DeviceNDBuffer[dtype, 2, shape_b](shape_b_dim, ctx=ctx)
 
     @parameter
     @always_inline
@@ -86,7 +66,7 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _matmul_gpu(mat_c[1], mat_a[1], mat_b[1], ctx)
+            _matmul_gpu(mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -142,6 +122,25 @@ fn create_matmul_bench[
         DimList(m.dim, k.dim),
         DimList(k.dim, n.dim),
     ](ctx, b, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+
+
+fn compile_matmul_bench[
+    dtype: DType
+](
+    ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+) raises:
+    var s: String = "type=" + str(dtype) + "/m=" + str(m.value) + ", n=" + str(
+        n.value
+    ) + ", k=" + str(k.value)
+    # Note: important to pass list of BenchMetric's used by the computational benchmark (in this case, BenchMetric.elements)
+    bench_compile_time[
+        bench_matmul[
+            dtype,
+            DimList(m.dim, n.dim),
+            DimList(m.dim, k.dim),
+            DimList(k.dim, n.dim),
+        ]
+    ](b, "matmul/" + s, List[BenchMetric](BenchMetric.elements))
 
 
 fn main() raises:
@@ -202,10 +201,10 @@ fn main() raises:
         DimList(857, 3072, 3072),
     )
 
-    var b = Bench()
+    var m = Bench()
     try:
         with DeviceContext() as ctx:
-
+            # benchmarking matmul
             @parameter
             for i in range(len(types)):
 
@@ -217,7 +216,7 @@ fn main() raises:
                     if dims[0] % 128 == 0:
                         create_matmul_bench[types[i]](
                             ctx,
-                            b,
+                            m,
                             dynamic(dims[0]),
                             static[dims[1]](),
                             static[dims[2]](),
@@ -225,11 +224,39 @@ fn main() raises:
                     else:
                         create_matmul_bench[types[i]](
                             ctx,
-                            b,
+                            m,
                             dynamic(dims[0]),
                             dynamic(dims[1]),
                             dynamic(dims[2]),
                         )
+
+            # benchmarking compilation time of matmul
+            @parameter
+            for i in range(len(types)):
+
+                @parameter
+                for j in range(len(shape_list)):
+                    alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
+
+                    @parameter
+                    if dims[0] % 128 == 0:
+                        compile_matmul_bench[types[i]](
+                            ctx,
+                            m,
+                            dynamic(dims[0]),
+                            static[dims[1]](),
+                            static[dims[2]](),
+                        )
+                    else:
+                        compile_matmul_bench[types[i]](
+                            ctx,
+                            m,
+                            dynamic(dims[0]),
+                            dynamic(dims[1]),
+                            dynamic(dims[2]),
+                        )
+
     except e:
         print("CUDA_ERROR:", e)
-    b.dump_report()
+
+    m.dump_report()

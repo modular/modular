@@ -19,12 +19,20 @@ from nn.mha import (
     flash_attention_impl,
     mha_gpu_naive,
 )
-
+from benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+    keep,
+    BenchConfig,
+)
 from utils.index import Index
 from testing import assert_almost_equal
 
 from gpu.host.device_context import DeviceContext
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from internal_utils import bench_compile_time
 
 
 fn run_mha[
@@ -257,10 +265,30 @@ struct MHA_cfg:
     var seq_len: Int
     var num_keys: Int
 
+    @no_inline
+    fn __str__(self) -> String:
+        return (
+            "mask_rank="
+            + str(self.mask_rank)
+            + "/"
+            + "qkv_type="
+            + str(self.qkv_type)
+            + "/"
+            + "mask_type="
+            + str(self.mask_type)
+            + "/"
+            + "depth="
+            + str(self.depth)
+            + "/"
+            + "num_heads="
+            + str(self.num_heads)
+            + "/"
+            + "group="
+            + str(self.group)
+        )
+
 
 fn main() raises:
-    var m = Bench()
-
     alias cfg_list = List[MHA_cfg](
         # Context encoding
         MHA_cfg(
@@ -455,6 +483,8 @@ fn main() raises:
             num_keys=1024,
         ),
     )
+
+    var m = Bench()
     try:
         with DeviceContext() as ctx:
 
@@ -470,6 +500,21 @@ fn main() raises:
                     x.group,
                     x.use_tensor_core,
                 ](m, x.seq_len, x.num_keys, ctx)
+
+            @parameter
+            for i in range(len(cfg_list)):
+                alias x = cfg_list[i]
+                bench_compile_time[
+                    run_mha[
+                        x.mask_rank,
+                        x.qkv_type,
+                        x.mask_type,
+                        x.depth,
+                        x.num_heads,
+                        x.group,
+                        x.use_tensor_core,
+                    ]
+                ](m, "mha" + str(x))
 
     except e:
         print("CUDA_ERROR:", e)
