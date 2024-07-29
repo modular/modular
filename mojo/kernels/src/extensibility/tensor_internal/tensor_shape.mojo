@@ -66,8 +66,8 @@ struct _RepKind(EqualityComparable):
     var kind: UInt8
 
     @always_inline("nodebug")
-    fn __init__(value: Int) -> _RepKind:
-        return Self {kind: value}
+    fn __init__(inout self, value: Int):
+        self.kind = value
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: _RepKind) -> Bool:
