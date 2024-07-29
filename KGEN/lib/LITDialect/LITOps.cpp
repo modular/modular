@@ -1143,7 +1143,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*closureSignature=*/{}, /*docString=*/{},
-        /*deprecationWarning=*/{}, /*sourceName=*/{});
+        /*deprecationWarning=*/{}, /*sourceName=*/{}, /*convention*/ {});
   result.regions[0]->push_back(new Block());
 }
 
