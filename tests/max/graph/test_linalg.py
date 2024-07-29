@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.graph linear algebra operations."""
 import sys
+import re
 from typing import Iterable, Optional, Union
 
 import numpy as np
@@ -204,7 +205,6 @@ def test_matmul_higher_rank_symbolic() -> None:
         )
 
 
-@pytest.mark.skip(reason="Propagate builder error messages (MSDK-701)")
 def test_builder_failure_message() -> None:
     """Test that we get a reasonable error message for a matmul op builder
     failure.
@@ -215,8 +215,10 @@ def test_builder_failure_message() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "dimension at axis -1 (value D) must match input rhs (shape [E, F,"
-            " G]) dimension at axis -2 (value F)"
+            re.escape(
+                "dimension at axis -1 (value D) must match input rhs (shape [E,"
+                " F, G]) dimension at axis -2 (value F)"
+            )
         ),
     ):
         matmul_graph(

@@ -203,8 +203,25 @@ class Graph:
         args = [unwrap(arg) for arg in args]
         kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
+        diagnostics = []
+
+        def handler(d):
+            diagnostics.append(str(d))
+            return True
+
         with mlir.InsertionPoint(self._body), location():
-            results = op(*args, **kwargs)
+            # Temporarily hookup a handler to record diagnostics from the mlir op builder.
+            # These are used to generate a better error message on failure.
+            handle = self._context.attach_diagnostic_handler(handler)
+            try:
+                results = op(*args, **kwargs)
+            except Exception as e:
+                diags = "\n\t".join(diagnostics)
+                raise ValueError(
+                    f"Mlir Diagnostics:\n\t{diags}\nError:\n\t{e}\n"
+                )
+            finally:
+                handle.detach()
 
         if isinstance(results, mlir.Value):
             return [GraphValue(results)]
