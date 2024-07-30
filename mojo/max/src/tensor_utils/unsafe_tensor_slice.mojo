@@ -159,17 +159,17 @@ struct UnsafeTensorSlice[
         var stride = self._strides[rank - 1]
 
         if stride == 0:
-            return Scalar.load(self._ptr, flat_index)
+            return self._ptr.load(flat_index)
         elif stride == 1:
 
             @parameter
             if type is DType.bool:
-                var v = SIMD[size=width].load(
-                    self._ptr.bitcast[DType.uint8](), flat_index
+                var v = self._ptr.bitcast[DType.uint8]().load[width=width](
+                    flat_index
                 )
                 return v.cast[type]()
             else:
-                return SIMD[size=width].load(self._ptr, flat_index)
+                return self._ptr.load[width=width](flat_index)
         else:
 
             @parameter
@@ -197,17 +197,17 @@ struct UnsafeTensorSlice[
 
         var stride = self._strides[rank - 1]
         if stride == 0:
-            Scalar.store(self._ptr, flat_index)
+            self._ptr.store[width=1](flat_index)
         elif stride == 1:
 
             @parameter
             if type is DType.bool:
                 var v = val.cast[DType.uint8]()
-                SIMD[size = val.size].store(
-                    self._ptr.bitcast[DType.uint8](), flat_index, v
+                self._ptr.bitcast[DType.uint8]().store[width = val.size](
+                    flat_index, v
                 )
             else:
-                SIMD[size = val.size].store(self._ptr, flat_index, val)
+                self._ptr.store(flat_index, val)
         else:
 
             @parameter

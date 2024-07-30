@@ -342,7 +342,7 @@ def test_raw_data():
     t = Tensor[DType.float32, len(shape)](shape)
     ptr = t.unsafe_ptr()
     t[0] = 22
-    assert_equal(Scalar.load(ptr), t[0])
+    assert_equal(ptr.load(), t[0])
 
 
 def test_take():

@@ -182,9 +182,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
-        return SIMD[size=width].load(
-            self._ptr, _dot_prod(indices, self._strides)
-        )
+        return self._ptr.load[width=width](_dot_prod(indices, self._strides))
 
     @always_inline
     fn load[
@@ -210,9 +208,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
-        return SIMD[size=width].load(
-            self._ptr, _dot_prod(indices, self._strides)
-        )
+        return self._ptr.load[width=width](_dot_prod(indices, self._strides))
 
     @always_inline
     fn store[
@@ -236,9 +232,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
         )
-        SIMD[size=width].store(
-            self._ptr, _dot_prod(indices, self._strides), val
-        )
+        self._ptr.store[width=width](_dot_prod(indices, self._strides), val)
 
     fn _steal_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         var tmp = self._ptr

@@ -429,7 +429,7 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
         Returns:
           The value at the specified dimension.
         """
-        return int(Scalar.load(self.dims, index))
+        return int(self.dims.load(index))
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
