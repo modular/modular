@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs memory operations."""
 
+from collections import Optional
 from memory import UnsafePointer
 from sys._assembly import inlined_assembly
 from memory.reference import _GPUAddressSpace
