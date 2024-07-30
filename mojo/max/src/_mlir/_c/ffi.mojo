@@ -7,7 +7,7 @@
 from os import abort, getenv
 from pathlib import Path
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
-from sys.param_env import env_get_string
+from sys.param_env import env_get_string, is_defined
 
 from builtin.builtin_list import _LITRefPackHelper
 from memory import UnsafePointer
