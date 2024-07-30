@@ -52,7 +52,7 @@ fn test_elementwise[
     _ = buffer2
 
     for i2 in range(min(numelems, 64)):
-        if Scalar.load(out_buffer.data.offset(i2)) != 2 * (i2 + 1):
+        if out_buffer.data.offset(i2).load() != 2 * (i2 + 1):
             print("ERROR")
 
 

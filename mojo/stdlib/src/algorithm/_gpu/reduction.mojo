@@ -114,9 +114,8 @@ fn block_reduce[
         @parameter
         for i in range(num_reductions):
             # bank conflict for sub 4 byte data elems
-            SIMD[size=simd_width].store(
-                # FIXME: change back to ptr, offset when overload is fixed.
-                shared + (Int(warp.value) * num_reductions + i) * simd_width,
+            shared.store[width=simd_width](
+                (Int(warp.value) * num_reductions + i) * simd_width,
                 warp_accum[i],
             )
 
@@ -128,8 +127,8 @@ fn block_reduce[
 
         @parameter
         for i in range(num_reductions):
-            last_accum[i] = SIMD[size=simd_width].load(
-                shared, (num_reductions * lane_id() + i) * simd_width
+            last_accum[i] = shared.load[width=simd_width](
+                (num_reductions * lane_id() + i) * simd_width
             )
     else:
 
