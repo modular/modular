@@ -87,7 +87,6 @@ static StructAttr lowerPackAttrToStruct(PackAttr pack) {
 static void lowerCreateRegStubOp(mlir::IRRewriter &b, CreateRegStubOp op) {
   SignatureType resSig = op.getResult().getType();
   SignatureType calleeSig = cast<SignatureType>(op.getCallee().getType());
-  Location loc = op->getLoc();
   SymbolConstantAttr callee = cast<SymbolConstantAttr>(op.getCallee());
 
   if (calleeSig == resSig) {
@@ -97,7 +96,11 @@ static void lowerCreateRegStubOp(mlir::IRRewriter &b, CreateRegStubOp op) {
     return;
   }
 
+  // The created closure is a synthesized operation. No debug scopes should be
+  // carried into it from the originating op.
+  LocationAttr loc = DebugInfo::stripDebugScopesRecursively(op->getLoc());
   auto closureWrapper = b.create<StageClosureOp>(loc, resSig);
+  closureWrapper.setCallLocAttr(op->getLoc());
   Block *body = b.createBlock(&closureWrapper.getBodyRegion());
 
   // Bitcast the function arguments and load the inputs.

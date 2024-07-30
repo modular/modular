@@ -495,6 +495,18 @@ FileLineColLoc DebugInfo::extractSourceLoc(Location callLoc) {
   return resolvedLoc;
 }
 
+Location DebugInfo::stripDebugScopesRecursively(Location loc) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](mlir::FusedLocWith<DIAttr> diLoc) -> LocationAttr {
+        ArrayRef<Location> locs = diLoc.getLocations();
+        if (locs.size() == 1)
+          return locs[0];
+        return FusedLoc::get(diLoc.getContext(), locs);
+      });
+  return cast<LocationAttr>(replacer.replace(loc));
+}
+
 DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
   if (auto fusedLoc =
           dyn_cast<mlir::FusedLocWith<DISubprogramAttr>>(funcOp->getLoc()))
