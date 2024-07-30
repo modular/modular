@@ -228,8 +228,71 @@ fn test_element_masked_load():
     )
 
 
+# CHECK-LABEL: test_element_masked_store
+fn test_element_masked_store():
+    print("== test_element_masked_store")
+    var tensor_4x4 = LayoutTensor[
+        DType.float32, Layout.row_major(4, 4)
+    ].stack_allocation()
+    tensor_4x4.fill(-1)
+
+    var tensor_4x4_vec_1_4 = tensor_4x4.vectorize[1, 4]()
+    var element_v_1_4 = Element[
+        tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout
+    ](
+        SIMD[
+            tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
+        ](1)
+    )
+    element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr, StaticIntTuple[1](3))
+    # CHECK: vec_1x4:mask_1x3
+    # CHECK: 1.0 1.0 1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0
+    print("vec_1x4:mask_1x3")
+    tensor_4x4.print()
+    tensor_4x4.fill(-1)
+
+    var tensor_4x4_vec_4_1 = tensor_4x4.vectorize[4, 1]()
+    var element_v_4_1 = Element[
+        tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout
+    ](
+        SIMD[
+            tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
+        ](1)
+    )
+    element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr, StaticIntTuple[1](2))
+    print("vec_4x1:mask_1x2")
+    # CHECK: vec_4x1:mask_1x2
+    # CHECK: 1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0
+    tensor_4x4.print()
+    tensor_4x4.fill(-1)
+
+    var tensor_4x4_vec_4_4 = tensor_4x4.vectorize[4, 4]()
+    var element_v_4_4 = Element[
+        tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout
+    ](
+        SIMD[
+            tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
+        ](1)
+    )
+    element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr, StaticIntTuple[2](3, 2))
+    print("vec_4x4:mask_3x2")
+    # CHECK: vec_4x4:mask_3x2
+    # CHECK: 1.0 1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0
+    tensor_4x4.print()
+
+
 fn main():
     test_element_load()
     test_element_store()
     test_element_dynamic_layout()
     test_element_masked_load()
+    test_element_masked_store()
