@@ -1268,6 +1268,44 @@ struct ConvertPOPPointerBitcast
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPVariantBitcast
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPVariantBitcast
+    : public ConvertPOPToLLVMPattern<VariantBitcastOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(VariantBitcastOp op,
+                                VariantBitcastOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    b.replaceOp(op, adaptor.getVariant());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPVariantDiscrGEP
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPVariantDiscrGEP
+    : public ConvertPOPToLLVMPattern<VariantDiscrGEPOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(VariantDiscrGEPOp op,
+                                VariantDiscrGEPOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    Type elementType = convertType(op.getVariant().getType().getElementType());
+    if (!elementType)
+      return op.emitError("failed to convert discriminant type");
+
+    b.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, LLVM::LLVMPointerType::get(getContext()), elementType,
+        adaptor.getVariant(), ArrayRef<LLVM::GEPArg>{0, 1}, /*inbounds=*/true);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1349,6 +1387,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSub,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
+      ConvertPOPVariantBitcast,
+      ConvertPOPVariantDiscrGEP,
       ConvertPOPXOr
       // clang-format on
       >(typeConverter);

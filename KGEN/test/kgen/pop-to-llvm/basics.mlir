@@ -856,4 +856,18 @@ kgen.func @fence() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @variant
+kgen.func @variant(%arg0: !kgen.pointer<variant<i8, i16, i32>>) -> (!kgen.pointer<i16>, !kgen.pointer<scalar<ui8>>){
+  // CHECK: [[VAR:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: [[R0:%.*]] = builtin.unrealized_conversion_cast [[VAR]]
+  %0 = pop.variant.bitcast %arg0, <1> : <variant<i8, i16, i32>> as <i16>
+
+  // CHECK: [[DISCR:%.*]] = llvm.getelementptr inbounds [[VAR]][0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: [[R1:%.*]] = builtin.unrealized_conversion_cast [[DISCR]]
+  %1 = pop.variant.discr_gep %arg0 : <variant<i8, i16, i32>> as <scalar<ui8>>
+
+  // CHECK: return [[R0]], [[R1]]
+  kgen.return %0, %1 : !kgen.pointer<i16>, !kgen.pointer<scalar<ui8>>
+}
+
 }
