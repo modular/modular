@@ -12,7 +12,6 @@ from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
-from gpu.intrinsics import convert
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -780,9 +779,9 @@ fn multistage_gemm[
 
                 @parameter
                 for j in range(0, simd_size, 2):
-                    var vec_converted = convert[accum_type, c_type, 2](
-                        SIMD[accum_type, 2](src_vec[j], src_vec[j + 1])
-                    )
+                    var vec_converted = SIMD[accum_type, 2](
+                        src_vec[j], src_vec[j + 1]
+                    ).cast[c_type]()
                     vec[j] = vec_converted[0]
                     vec[j + 1] = vec_converted[1]
                 var m = int((thread_offset + dst_idx) // N)
