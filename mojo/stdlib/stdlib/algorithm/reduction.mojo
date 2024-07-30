@@ -819,18 +819,8 @@ fn _reduce_along_inner_dimension[
 
         @parameter
         for i in range(num_reductions):
-
-            @always_inline
-            @parameter
-            fn simd_reduce_wrapper[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return reduce_function[type, width, i](lhs, rhs)
-
             out_acc_tup[i] = in_acc_tup[i].reduce[
-                simd_reduce_wrapper, out_width
+                reduce_function[init_type, reduction_idx=i], out_width
             ]()
 
         return out_acc_tup
