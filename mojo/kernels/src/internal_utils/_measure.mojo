@@ -8,6 +8,8 @@ from math import log, isnan, nan, inf, sqrt
 from algorithm import elementwise, sum, mean
 from memory import UnsafePointer
 from buffer import Buffer
+from collections import Optional
+from utils import StaticIntTuple
 
 
 # ===----------------------------------------------------------------------=== #
