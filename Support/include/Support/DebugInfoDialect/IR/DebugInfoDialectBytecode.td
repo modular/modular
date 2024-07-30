@@ -117,7 +117,8 @@ def DILocalVariableAttr : DialectAttribute<(attr
   VarInt:$line,
   VarInt:$arg,
   VarInt:$alignInBits,
-  ConcreteType<"DIType">:$type
+  ConcreteType<"DIType">:$type,
+  EnumAttr<"DIFlags">:$flags
 )>;
 
 def DISubprogramAttr : DialectAttribute<(attr

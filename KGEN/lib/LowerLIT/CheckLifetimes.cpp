@@ -83,7 +83,7 @@ createDebugVariableForVarDecl(VarDeclOp op,
   auto varAttr = DebugInfo::DILocalVariableAttr::get(
       localScope, op.getNameAttr(), funcSpAttr.getFile(), fileLoc.getLine(),
       /*arg=*/op.getArgShadowIndex().value_or(-1) + 1,
-      /*alignInBits=*/0, sourceType);
+      /*alignInBits=*/0, sourceType, DebugInfo::DIFlags::Zero);
 
   return varAttr;
 }
@@ -130,10 +130,15 @@ insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
     diExpr = DebugInfo::DIIRValueExprAttr::get(sourceType);
   }
 
+  DebugInfo::DIFlags flags = DebugInfo::DIFlags::Zero;
+  if (convention == ArgConvention::ByRefError ||
+      convention == ArgConvention::ByRefResult)
+    flags = DebugInfo::DIFlags::Artificial;
+
   DebugInfo::DILocalVariableAttr varAttr = DebugInfo::DILocalVariableAttr::get(
       funcSpAttr, name, funcSpAttr.getFile(), fileLoc.getLine(),
       arg.getArgNumber() + 1,
-      /*alignInBits=*/0, sourceType);
+      /*alignInBits=*/0, sourceType, flags);
   auto scopedLoc =
       FusedLoc::get(varAttr.getContext(), {loc}, varAttr.getScope());
 

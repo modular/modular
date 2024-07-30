@@ -78,8 +78,8 @@ DILocalVariableAttr DIBuilder::createLocalVariable(StringRef name,
                                                    DIFileAttr file,
                                                    unsigned line, unsigned arg,
                                                    unsigned alignInBits,
-                                                   DIType type) {
+                                                   DIType type, DIFlags flags) {
   auto scope = cast<DILocalScopeAttr>(scopes.back());
   return DILocalVariableAttr::get(scope, name, file, line, arg, alignInBits,
-                                  type);
+                                  type, flags);
 }

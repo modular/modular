@@ -117,6 +117,22 @@ def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
 }
 
 //===----------------------------------------------------------------------===//
+// DIFlags
+//===----------------------------------------------------------------------===//
+
+def DIFlagsZero : I32BitEnumAttrCaseBit<"Zero", 0>;
+def DIFlagsArtificial: I32BitEnumAttrCaseBit<"Artificial", 6>;
+
+def DIFlags: I32BitEnumAttr<
+    "DIFlags",
+    "DI flags", [
+      DIFlagsZero,
+      DIFlagsArtificial,
+    ]> {
+  let cppNamespace = "::M::DebugInfo";
+}
+
+//===----------------------------------------------------------------------===//
 // DIAttr
 //===----------------------------------------------------------------------===//
 
@@ -281,25 +297,26 @@ def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", 
     OptionalParameter<"unsigned">:$line,
     OptionalParameter<"unsigned">:$arg,
     OptionalParameter<"unsigned", "0">:$alignInBits,
-    AttributeSelfTypeParameter<"", "DIType">:$type
+    AttributeSelfTypeParameter<"", "DIType">:$type,
+    OptionalParameter<"DIFlags", "DIFlags::Zero">:$flags
   );
   let builders = [
     AttrBuilderWithInferredContext<(ins
       "DILocalScopeAttr":$scope, "StringAttr":$name, "DIFileAttr":$file,
       "unsigned":$line, "unsigned":$arg, "unsigned":$alignInBits,
-      "DIType":$type
+      "DIType":$type, "DIFlags":$flags
     ), [{
       return $_get(type.getContext(), scope, name, file, line, arg, alignInBits,
-                   type);
+                   type, flags);
     }]>,
     AttrBuilderWithInferredContext<(ins
       "DILocalScopeAttr":$scope, "StringRef":$name, "DIFileAttr":$file,
       "unsigned":$line, "unsigned":$arg, "unsigned":$alignInBits,
-      "DIType":$type
+      "DIType":$type, "DIFlags":$flags
     ), [{
       MLIRContext *ctx = type.getContext();
       return $_get(ctx, scope, StringAttr::get(ctx, name), file, line,
-                   arg, alignInBits, type);
+                   arg, alignInBits, type, flags);
     }]>
   ];
   let assemblyFormat = "`<` struct(params) `>`";

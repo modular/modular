@@ -82,6 +82,7 @@
 // CHECK-SAME:   line = 10,
 // CHECK-SAME:   arg = 1,
 // CHECK-SAME:   alignInBits = 32
+// CHECK-SAME:   flags = Artificial
 // CHECK-SAME: > : ![[UNRESOLVED_INDEX]]
 #local_variable = #debuginfo.local_variable<
   scope = #lex_block,
@@ -89,7 +90,8 @@
   file = #file,
   line = 10,
   arg = 1,
-  alignInBits = 32
+  alignInBits = 32,
+  flags = Artificial
 > : !unresolved_index
 
 // CHECK: module attributes {test.expr1 = #[[REF]], test.expr2 = #[[DEREF]], test.expr3 = #[[AGG]], test.loc = #[[VAR]]}
