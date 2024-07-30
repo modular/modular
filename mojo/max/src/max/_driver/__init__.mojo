@@ -13,4 +13,4 @@ from .tensor import Tensor
 from .tensor_slice import TensorSlice
 from .utils import _steal_device_memory_impl_ptr
 from max.tensor import StaticTensorSpec
-from max.tensor_utils import UnsafeTensorSlice
+from max._tensor_utils import UnsafeTensorSlice
