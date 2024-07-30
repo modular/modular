@@ -73,7 +73,7 @@ fn welford_combine[
 
 
 fn welford_warp_reduce[
-    type: DType
+    type: DType, //
 ](
     thread_mean: Scalar[type],
     thread_m2: Scalar[type],
@@ -93,11 +93,11 @@ fn welford_warp_reduce[
         var mean = shuffle_down(res_mean, 1 << mask)
         var m2 = shuffle_down(res_m2, 1 << mask)
         var count = shuffle_down(res_count, 1 << mask)
-        welford_combine[type](mean, m2, count, res_mean, res_m2, res_count)
+        welford_combine(mean, m2, count, res_mean, res_m2, res_count)
 
 
 fn welford_warp_all_reduce[
-    type: DType
+    type: DType, //
 ](
     thread_mean: Scalar[type],
     thread_m2: Scalar[type],
@@ -116,7 +116,7 @@ fn welford_warp_all_reduce[
 
 
 fn welford_block_all_reduce[
-    type: DType
+    type: DType, //
 ](
     thread_mean: Scalar[type],
     thread_m2: Scalar[type],
@@ -162,17 +162,17 @@ fn welford_block_all_reduce[
 
     if warp_idx == 0:
         if ThreadIdx.x() < (BlockDim.x() // WARP_SIZE):
-            warp_mean = Scalar.load(mean_shared, lane_idx)
-            warp_m2 = Scalar.load(m2_shared, lane_idx)
-            warp_count = Scalar.load(count_shared, lane_idx)
+            warp_mean = mean_shared[lane_idx]
+            warp_m2 = m2_shared[lane_idx]
+            warp_count = count_shared[lane_idx]
         else:
-            warp_mean = Scalar[type]()
-            warp_m2 = Scalar[type]()
-            warp_count = Scalar[type]()
+            warp_mean = Scalar[type](0)
+            warp_m2 = Scalar[type](0)
+            warp_count = Scalar[type](0)
         syncwarp()
-        var block_mean = Scalar[type]()
-        var block_m2 = Scalar[type]()
-        var block_count = Scalar[type]()
+        var block_mean = Scalar[type](0)
+        var block_m2 = Scalar[type](0)
+        var block_count = Scalar[type](0)
         welford_warp_reduce(
             warp_mean, warp_m2, warp_count, block_mean, block_m2, block_count
         )
@@ -216,16 +216,14 @@ fn layer_norm_gpu_warp_tiling_vector[
     var row_m2 = Scalar[type]()
     var row_count = Scalar[type]()
 
-    var idx: UInt = tid * UInt(simd_width.value)
+    var idx: UInt = tid * UInt(simd_width)
     var thread_mean = Scalar[type]()
     var thread_m2 = Scalar[type]()
     var thread_count = Scalar[type]()
 
     # To utilize simd vector load
-    if idx < UInt(num_cols.value):
-        vec_data = input_func[simd_width, rank](
-            StaticIntTuple[rank](row.value, idx.value)
-        )
+    if idx < UInt(num_cols):
+        vec_data = input_func[simd_width, rank](StaticIntTuple[rank](row, idx))
         # every thread computes its own simd width of mean and variance
         for i in range(simd_width):
             welford_update(vec_data[i], thread_mean, thread_m2, thread_count)
@@ -239,7 +237,7 @@ fn layer_norm_gpu_warp_tiling_vector[
     var row_var = max((row_m2 / (row_count - 1)), 0.0)
 
     var norm_factor = rsqrt(row_var + epsilon)
-    if idx < UInt(num_cols.value):
+    if idx < UInt(num_cols):
         var gamma_val = gamma_fn[simd_width, 1](StaticIntTuple[1](idx))
         var norm_val = (
             vec_data - row_mean
@@ -345,18 +343,16 @@ fn layer_norm_gpu_block_vector[
             thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
         )
 
-    var row_var = max((row_m2 / (row_count - 1)), 0.0)
+    var row_var = max((row_m2 / (row_count - 1)), 0)
+    var norm_factor = rsqrt(row_var + epsilon)
 
     # need a pass again to perform in place normalization
     for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
         var offset = x * BlockDim.x() * simd_width + tid * simd_width
-        var norm_factor = rsqrt(row_var + epsilon)
 
         if offset < num_cols:
             var gamma_val = gamma_fn[simd_width, 1](StaticIntTuple[1](offset))
-            var beta_val = beta.load[width=simd_width, alignment=align](
-                Index(offset)
-            )
+            var beta_val = beta.load[width=simd_width, alignment=align](offset)
 
             var vec_data = input_func[simd_width, rank](
                 StaticIntTuple[rank](row.value, offset.value)
@@ -364,9 +360,7 @@ fn layer_norm_gpu_block_vector[
             var norm_val = (
                 (vec_data - row_mean) * norm_factor * gamma_val
             ) + beta_val
-            data.store[width=simd_width, alignment=align](
-                Index(row, offset), norm_val
-            )
+            data.store[alignment=align](Index(row, offset), norm_val)
 
 
 fn layer_norm_gpu_block_scalar[
