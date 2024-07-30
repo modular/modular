@@ -707,6 +707,40 @@ void VariadicSplatOp::build(OpBuilder &b, OperationState &state,
 }
 
 //===----------------------------------------------------------------------===//
+// VariantBitcastOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantBitcastOp::verify() {
+  auto ptrType = getVariant().getType();
+  if (ptrType.getAddressSpace() != getType().getAddressSpace() ||
+      ptrType.getExclusive() != getType().getExclusive()) {
+    return emitOpError("result pointer should have the same address space as "
+                       "the input pointer");
+  }
+
+  // Only verify the result type if the variant type is concrete.
+  auto variant = cast<VariantType>(ptrType.getElementType());
+  if (!isa<VariadicAttr>(variant.getVariadic()))
+    return success();
+  auto indexAttr = dyn_cast<IntegerAttr>(getIndex());
+  if (!indexAttr)
+    return success();
+  unsigned index = indexAttr.getInt();
+
+  if (index >= variant.getNumTypes()) {
+    return emitOpError("variant index ")
+           << index << " is out of bounds in range [0, "
+           << variant.getNumTypes() << ")";
+  }
+  Type elementType = variant.getType(index);
+  if (elementType == getType().getElementType())
+    return success();
+  return emitOpError("variant element at index ")
+         << index << " expected type " << elementType << " but result has type "
+         << getType().getElementType();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

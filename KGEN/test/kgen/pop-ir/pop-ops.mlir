@@ -1065,3 +1065,12 @@ kgen.func @stack_lifetime() {
   pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
   kgen.return
 }
+
+// CHECK-LABEL: @variant_bitcast
+kgen.generator @variant_bitcast<idx, Ts: variadic<type>>(%arg0: !kgen.pointer<variant<i32, i64>>, %arg1: !kgen.pointer<variant<[Ts]>>) -> (!kgen.pointer<i64>, !kgen.pointer<i32>) {
+  // CHECK-NEXT: pop.variant.bitcast %arg0, <1> : <variant<i32, i64>> as <i64>
+  %0 = pop.variant.bitcast %arg0, <1> : <variant<i32, i64>> as <i64>
+  // CHECK-NEXT: pop.variant.bitcast %arg1, <idx> : <variant<[Ts]>> as <i32>
+  %1 = pop.variant.bitcast %arg1, <idx> : <variant<[Ts]>> as <i32>
+  kgen.return %0, %1 : !kgen.pointer<i64>, !kgen.pointer<i32>
+}

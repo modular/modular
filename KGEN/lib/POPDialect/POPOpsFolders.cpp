@@ -1722,6 +1722,16 @@ OpFoldResult DTypeFromUI8::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// VariantBitcastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult VariantBitcastOp::fold(FoldAdaptor adaptor) {
+  if (auto ptr = dyn_cast_or_null<PointerAttr>(adaptor.getVariant()))
+    return PointerAttr::get(ptr.getAddr(), getType());
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 

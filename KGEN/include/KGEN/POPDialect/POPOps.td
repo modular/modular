@@ -2037,4 +2037,40 @@ def POP_DTypeFromUI8 : POPOp<"dtype.from_ui8", [Pure]> {
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// VariantBitcastOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariantBitcastOp : POPOp<"variant.bitcast", [Pure]> {
+  let summary = "Bitcast a pointer to a variant to one of its element types.";
+  let description = [{
+    The `pop.variant.bitcast` operation takes a pointer to a variant type and
+    bitcasts it to a pointer of one of its element types. This operation should
+    be used to access element types of a variant over other pointer bitcasts
+    because it provides stronger invariants over the target element type.
+
+    The result type is still required because the variant type might have a
+    parametric type list and the index may be a parameter expression. If both
+    are concrete, then the result element type must match the variant type at
+    the specified index.
+
+    Example:
+
+    ```mlir
+    %i32ptr = pop.variant.bitcast %variant, <0> : <variant<i32, i64>> as <i32>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<KGEN_VariantType>:$variant,
+                       AttrOfType<Index>:$index);
+  let results = (outs PointerType:$result);
+  let assemblyFormat = [{
+    $variant `,` `<` custom<IndexParamValue>($index) `>` attr-dict `:`
+    type($variant) `as` type($result)
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
 #endif // KGEN_POPDIALECT_POPOPS_TD

@@ -1036,3 +1036,11 @@ kgen.func @bitcast_free(%arg0: !kgen.pointer<none>) {
   pop.aligned_free %0 : <index>
   kgen.return
 }
+
+// CHECK-LABEL: @variant_bitcast
+kgen.func @variant_bitcast() -> !kgen.pointer<i32> {
+  // CHECK: constant: pointer<i32> = <0>
+  %0 = kgen.param.constant: pointer<variant<i32, i64>> = <0>
+  %1 = pop.variant.bitcast %0, <0> : <variant<i32, i64>> as <i32>
+  kgen.return %1 : !kgen.pointer<i32>
+}

@@ -245,3 +245,19 @@ kgen.func @fence() {
   pop.fence unordered
   kgen.return
 }
+
+// -----
+
+kgen.func @variant_bitcast_oob(%arg0: !kgen.pointer<variant<i32>>) {
+  // expected-error @below {{variant index 1 is out of bounds in range [0, 1)}}
+  %0 = "pop.variant.bitcast"(%arg0) {index = 1 : index} : (!kgen.pointer<variant<i32>>) -> !kgen.pointer<i32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_bitcast_oob(%arg0: !kgen.pointer<variant<i32>>) {
+  // expected-error @below {{variant element at index 0 expected type 'i32' but result has type 'i64'}}
+  %0 = "pop.variant.bitcast"(%arg0) {index = 0 : index} : (!kgen.pointer<variant<i32>>) -> !kgen.pointer<i64>
+  kgen.return
+}
