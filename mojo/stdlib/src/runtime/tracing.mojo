@@ -7,6 +7,7 @@
 
 from collections.optional import Optional
 from sys.param_env import env_get_int, is_defined
+from utils import StaticIntTuple
 
 
 fn build_info_asyncrt_max_profiling_level() -> Optional[Int]:
