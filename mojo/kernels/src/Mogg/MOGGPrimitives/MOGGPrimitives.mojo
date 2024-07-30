@@ -24,6 +24,8 @@ from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
+from utils import StaticIntTuple
+from sys import alignof
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures

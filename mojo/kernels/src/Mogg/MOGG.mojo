@@ -6,7 +6,20 @@
 
 from collections import OptionalReg
 from collections.vector import InlinedFixedVector
-from math import cos, erf, exp, fma, log, log1p, rsqrt, sin, sqrt
+from math import (
+    cos,
+    erf,
+    exp,
+    fma,
+    log,
+    log1p,
+    rsqrt,
+    sin,
+    sqrt,
+    ceil as _ceil,
+    floor as _floor,
+    tanh as _tanh,
+)
 from random import randn, seed
 from sys import external_call
 from sys.info import simdwidthof, sizeof
@@ -120,6 +133,8 @@ from quantization.qmatmul_k import (
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
+
+from sys import llvm_intrinsic
 
 from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
@@ -4673,7 +4688,7 @@ fn ceil[
     Returns:
         The result of the Ceil operation.
     """
-    return math.ceil(x)
+    return _ceil(x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -4698,7 +4713,7 @@ fn floor[
     Returns:
         The result of the Floor operation.
     """
-    return math.floor(x)
+    return _floor(x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -4723,4 +4738,4 @@ fn tanh[
     Returns:
         The result of the Tanh operation.
     """
-    return math.tanh(x)
+    return _tanh(x)
