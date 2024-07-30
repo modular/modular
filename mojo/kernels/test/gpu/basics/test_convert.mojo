@@ -7,7 +7,6 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host import DeviceContext
-from gpu.intrinsics import convert
 from testing import *
 from gpu.host._compile import _compile_code, _get_nvptx_target
 
@@ -42,7 +41,7 @@ fn convert_kernel[
     @parameter
     for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](i, i + 1)
-        var dst_vec = convert[src_type, dst_type, 2](src_vec)
+        var dst_vec = src_vec.cast[dst_type]()
         SIMD.store(dst_ptr, i, dst_vec)
 
 
