@@ -2016,18 +2016,8 @@ fn copy_sram_to_dram[
             var src_vec = SIMD[size=simd_size].load[alignment=src_align](
                 src_fragments.ptr + src_idx
             )
-            var dst_vec: SIMD[dst_type, simd_size] = 0
-
-            @parameter
-            for j in range(0, simd_size, 2):
-                var vec_converted = SIMD[src_type, 2](
-                    src_vec[j], src_vec[j + 1]
-                ).cast[dst_type]()
-                dst_vec[j] = vec_converted[0]
-                dst_vec[j + 1] = vec_converted[1]
-
-            SIMD[size=simd_size].store[alignment=dst_align](
-                dst_fragments.ptr + dst_idx, dst_vec
+            SIMD.store[alignment=dst_align](
+                dst_fragments.ptr + dst_idx, src_vec.cast[dst_type]()
             )
 
 
@@ -2089,18 +2079,13 @@ fn copy_sram_to_dram[
             var n: Int
             m, n = divmod(offset + src_idx, cols)
             if m < rows:
-                var src_vec = src_fragments.aligned_load[simd_size](i, 0)
-                var dst_vec: SIMD[dst_type, simd_size] = 0
-
-                @parameter
-                for j in range(0, simd_size, 2):
-                    var vec_converted = SIMD[src_type, 2](
-                        src_vec[j], src_vec[j + 1]
-                    ).cast[dst_type]()
-                    dst_vec[j] = vec_converted[0]
-                    dst_vec[j + 1] = vec_converted[1]
-
-                dst_fragments.aligned_store[simd_size](i, 0, dst_vec)
+                dst_fragments.aligned_store[simd_size](
+                    i,
+                    0,
+                    src_fragments.aligned_load[simd_size](i, 0).cast[
+                        dst_type
+                    ](),
+                )
 
 
 # Copy from SRAM to local memory.
