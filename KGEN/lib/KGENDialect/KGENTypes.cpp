@@ -1433,7 +1433,7 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
 /// discriminator field is the smallest integer type whose maximum value is
 /// greater than the number of possible subtypes, but which is at least `i1`.
 /// The size is rounded to the nearest integer type with a power of 2 bytewidth.
-int64_t VariantType::getDiscrSizeInBits() const {
+size_t VariantType::getDiscrSizeInBits() const {
   // Compute the smallest iN where N > 0 that fits the count.
   uint64_t bits = std::max(1u, llvm::Log2_32_Ceil(getNumTypes()));
   // Now ceildiv this to the nearest byte multiple.

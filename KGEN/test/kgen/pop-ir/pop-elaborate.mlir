@@ -177,6 +177,11 @@ kgen.generator @malloc_and_free(%arg0: i16) -> i16 {
   kgen.return %2 : i16
 }
 
+kgen.generator @variant_discr_gep<Ts: variadic<type>>(%arg0: !kgen.pointer<variant<[Ts]>>) -> !kgen.pointer<scalar<ui8>> {
+  %0 = pop.variant.discr_gep %arg0 : <variant<[Ts]>> as <scalar<ui8>>
+  kgen.return %0 : !kgen.pointer<scalar<ui8>>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -330,6 +335,13 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <7>
   kgen.param.constant: i16 = <apply(:(i16) -> i16 @malloc_and_free, 7)>
+
+  // CHECK-NEXT: <8>
+  kgen.param.constant: pointer<scalar<ui8>> = <apply(:(!kgen.pointer<variant<i24, i48>>) -> !kgen.pointer<scalar<ui8>>
+    @variant_discr_gep<:variadic<type> [i24, i48]>, 0)>
+  // CHECK-NEXT: <16>
+  kgen.param.constant: pointer<scalar<ui8>> = <apply(:(!kgen.pointer<variant<i24, i48>>) -> !kgen.pointer<scalar<ui8>>
+    @variant_discr_gep<:variadic<type> [simd<4, f32>, i8]>, 0)>
 
   kgen.return
 }

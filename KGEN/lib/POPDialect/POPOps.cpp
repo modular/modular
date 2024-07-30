@@ -741,6 +741,38 @@ LogicalResult VariantBitcastOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// VariantDiscrGEPOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantDiscrGEPOp::verify() {
+  auto ptrType = getVariant().getType();
+  if (ptrType.getAddressSpace() != getType().getAddressSpace() ||
+      ptrType.getExclusive() != getType().getExclusive()) {
+    return emitOpError("result pointer should have the same address space as "
+                       "the input pointer");
+  }
+
+  // Only verify the result type if the variant type is concrete.
+  auto variant = cast<VariantType>(ptrType.getElementType());
+  if (!isa<VariadicAttr>(variant.getVariadic()))
+    return success();
+
+  auto discrType = cast<SIMDType>(getDiscr().getType().getElementType());
+  std::optional<DType> dtype = discrType.getResolvedDType();
+  if (!dtype)
+    return success();
+
+  // Both the element types list and discriminant type are concrete. Let's
+  // verify them.
+  size_t variantSize = variant.getDiscrSizeInBits();
+  size_t discrSize = dtype->getIntegerWidthInBits();
+  if (variantSize == discrSize)
+    return success();
+  return emitOpError("variant expected discriminant bitwidth to be ")
+         << variantSize << " but result returns uint with width " << discrSize;
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

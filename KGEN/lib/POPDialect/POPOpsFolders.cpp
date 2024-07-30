@@ -1732,6 +1732,30 @@ OpFoldResult VariantBitcastOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// VariantDiscrGEPOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess VariantDiscrGEPOp::interpret(ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
+  if (!ptr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  auto variantType = getVariant().getType().getElementAs<VariantType>();
+  uint64_t maxElementSize = 0;
+  TargetInfoAttr target = state.getTarget();
+  for (unsigned i = 0, e = variantType.getNumTypes(); i != e; ++i) {
+    auto dl = cast<DataLayoutInterface>(variantType.getType(i));
+    maxElementSize =
+        std::max(maxElementSize, llvm::alignTo(*dl.getTypeSize(target),
+                                               *dl.getTypeAlign(target)));
+  }
+
+  state.mapResults(PointerAttr::get(ptr.getAddr() + maxElementSize, getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 

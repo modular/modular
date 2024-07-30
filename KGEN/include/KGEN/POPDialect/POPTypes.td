@@ -129,6 +129,7 @@ def BoolDType : DTypeConstraint<"$_self->isBool()">;
 def IndexDType : DTypeConstraint<"$_self->isIndex()">;
 def IntDType : DTypeConstraint<"$_self->isInt()">;
 def SIntDType : DTypeConstraint<"$_self->isSInt()">;
+def UIntDType : DTypeConstraint<"$_self->isUInt()">;
 def FloatDType : DTypeConstraint<"$_self->isFloat()">;
 def UI8DType : DTypeConstraint<"*$_self == KGENDType::ui8">;
 def SI8DType : DTypeConstraint<"*$_self == KGENDType::si8">;

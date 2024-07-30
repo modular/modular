@@ -1074,3 +1074,12 @@ kgen.generator @variant_bitcast<idx, Ts: variadic<type>>(%arg0: !kgen.pointer<va
   %1 = pop.variant.bitcast %arg1, <idx> : <variant<[Ts]>> as <i32>
   kgen.return %0, %1 : !kgen.pointer<i64>, !kgen.pointer<i32>
 }
+
+// CHECK-LABEL: @variant_discr_gep
+kgen.generator @variant_discr_gep<Ts: variadic<type>, dt: dtype>(%arg0: !kgen.pointer<variant<i8, i16, i32>>, %arg1: !kgen.pointer<variant<[Ts]>>) {
+  // CHECK-NEXT: pop.variant.discr_gep %arg0 : <variant<i8, i16, i32>> as <scalar<ui8>>
+  %0 = pop.variant.discr_gep %arg0 : <variant<i8, i16, i32>> as <scalar<ui8>>
+  // CHECK-NEXT: pop.variant.discr_gep %arg1 : <variant<[Ts]>> as <scalar<dt>>
+  %1 = pop.variant.discr_gep %arg1 : <variant<[Ts]>> as <scalar<dt>>
+  kgen.return
+}
