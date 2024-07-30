@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from gpu.host.device_context import DeviceContext, DeviceBuffer
 from nn.concat import _concat_gpu_elementwise
 
-from utils import StaticTuple
+from utils import StaticTuple, StaticIntTuple
 
 
 fn bench_concat[

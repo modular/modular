@@ -19,6 +19,7 @@ from memory import memset
 from gpu.host._compile import _get_nvptx_target
 from internal_utils import DeviceNDBuffer, bench_compile_time
 from buffer import DimList, NDBuffer
+from utils import StaticIntTuple
 from utils.index import Index
 
 

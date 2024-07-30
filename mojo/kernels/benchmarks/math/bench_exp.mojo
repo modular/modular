@@ -26,6 +26,7 @@ from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
 from compile import *
 from layout import *
+from sys import llvm_intrinsic
 
 
 fn apply[

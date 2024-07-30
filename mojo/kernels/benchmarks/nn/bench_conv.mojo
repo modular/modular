@@ -22,6 +22,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 
