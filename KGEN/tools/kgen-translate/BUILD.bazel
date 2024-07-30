@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_binary")
+load("//bazel:api.bzl", "modular_cc_binary", "run_tool")
 
 modular_cc_binary(
     name = "kgen-translate",
@@ -20,4 +20,14 @@ modular_cc_binary(
         "//Support:MDialect",
         "@llvm-project//mlir:TranslateLib",
     ],
+)
+
+run_tool(
+    name = "kgen-translate-standalone",
+    data = [
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+    tags = ["manual"],
+    tool = ":kgen-translate",
+    visibility = ["//visibility:private"],
 )
