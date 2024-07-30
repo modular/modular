@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Library for graph Symbol Types."""
 
+from collections import Optional
 from utils.variant import Variant
 
 import _mlir

@@ -6,7 +6,8 @@
 """Core graph primitives."""
 
 from builtin._location import __call_location, _SourceLocation
-from collections import Set
+from collections import Set, Optional
+from memory import Arc
 from sys.info import has_neon
 
 import _mlir

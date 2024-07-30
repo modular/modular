@@ -68,6 +68,7 @@ Given two input tensor shapes, broadcasting works as following:
 """
 
 from builtin._location import __call_location, _SourceLocation
+from collections import Optional
 
 from ..error import error
 

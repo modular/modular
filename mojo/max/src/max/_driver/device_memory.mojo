@@ -9,6 +9,7 @@ from ._driver_library import DriverLibrary
 from .device import Device, _CDevice
 from .tensor import Tensor
 from .anytensor import AnyTensor
+from collections import Optional
 
 
 trait DeviceBuffer:

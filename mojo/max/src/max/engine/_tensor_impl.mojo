@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Buffer
-from memory import UnsafePointer
+from memory import UnsafePointer, memcpy
 from memory.unsafe import bitcast
 from python import Python, PythonObject
 from sys.ffi import DLHandle

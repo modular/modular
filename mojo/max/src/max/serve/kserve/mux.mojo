@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides a basic multi-model server."""
 
+from collections import Dict, Optional
 from utils.variant import Variant
 from max.engine import InferenceSession, InputSpec, Model, TensorMap
 

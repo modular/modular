@@ -17,7 +17,7 @@ from tensor import TensorShape
 from collections import List
 from sys.info import is_little_endian, sizeof
 
-from memory import memcpy, UnsafePointer
+from memory import memcpy, memcmp, UnsafePointer
 
 from utils.index import StaticIntTuple
 from utils.loop import unroll

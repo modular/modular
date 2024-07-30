@@ -17,7 +17,9 @@ from gpu.host import (
     CacheConfig,
 )
 from pathlib import Path
+from collections import Optional
 from collections.dict import OwnedKwargsDict
+from utils import Variant
 
 
 fn alloc_device_context() -> UnsafePointer[DeviceContext]:

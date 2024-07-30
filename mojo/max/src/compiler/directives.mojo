@@ -6,6 +6,8 @@
 
 from tensor_utils import UnsafeTensorSlice
 from buffer.dimlist import DimList
+from utils import StaticIntTuple
+from collections import Optional
 import algorithm.functional
 
 

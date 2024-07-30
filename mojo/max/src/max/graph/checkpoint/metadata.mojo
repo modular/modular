@@ -8,7 +8,9 @@ all tensors.
 """
 
 from pathlib import Path
+from os import PathLike
 from max.tensor import Tensor
+from utils import InlineArray
 
 import os
 

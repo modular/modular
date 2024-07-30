@@ -8,6 +8,7 @@
 from builtin._location import __call_location, _SourceLocation
 from collections.optional import Optional
 from utils.numerics import max_finite
+from utils import StaticIntTuple
 
 from _mlir.ir import Attribute, Identifier, NamedAttribute
 from ..error import error

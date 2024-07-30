@@ -9,6 +9,7 @@ from .tensor_like import TensorLike
 
 from tensor import TensorSpec, StaticTensorSpec
 
+from utils import StaticIntTuple, InlineArray
 from math import ceil
 from sys.intrinsics import strided_load, strided_store
 

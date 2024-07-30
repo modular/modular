@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.tensor import Tensor, TensorShape
+from collections import Optional
 from ..type import StaticDim
 
 

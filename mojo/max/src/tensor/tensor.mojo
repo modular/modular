@@ -44,9 +44,10 @@ from algorithm.functional import elementwise, vectorize
 from algorithm.reduction import argmax, argmin
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim
-from memory import memset_zero
+from memory import memset_zero, memcpy, memcmp
 from memory.unsafe import bitcast
 
+from utils import StaticIntTuple
 from utils._serialize import _serialize
 from utils.index import Index
 from utils.loop import unroll

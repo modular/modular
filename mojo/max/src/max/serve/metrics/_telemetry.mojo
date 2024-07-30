@@ -6,7 +6,7 @@
 
 from memory import UnsafePointer
 from sys.ffi import DLHandle
-from collections.optional import Optional
+from collections import Optional, Dict
 from max.engine import InferenceSession
 from max.engine._status import Status
 from max.engine._context import RuntimeContext, CRuntimeContext

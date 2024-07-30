@@ -7,6 +7,7 @@
 from _mlir.ir import NamedAttribute, Identifier
 from _mlir.builtin_attributes import StringAttr
 from builtin._location import __call_location, _SourceLocation
+from collections import Optional, Dict
 
 from .._attributes import _shape_attr
 from ..error import error

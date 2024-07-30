@@ -14,6 +14,7 @@ from tensor_utils.indexing import (
 from utils import InlineArray
 from math import ceil
 from max.tensor import TensorSpec
+from sys import triple_is_nvidia_cuda
 from sys.intrinsics import strided_load, strided_store
 
 

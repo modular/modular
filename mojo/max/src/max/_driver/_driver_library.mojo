@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.ffi import DLHandle, _get_dylib
+from memory import Arc
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from max.tensor import TensorSpec
 from .cuda import ContextAPIFuncPtrs

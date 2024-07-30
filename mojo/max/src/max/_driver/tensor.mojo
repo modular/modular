@@ -11,7 +11,8 @@ from tensor_utils.indexing import (
     _dot_prod,
     _row_major_strides,
 )
-from utils import InlineArray
+from collections import Optional
+from utils import InlineArray, StaticIntTuple
 from utils._serialize import _serialize
 
 

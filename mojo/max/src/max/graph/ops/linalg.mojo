@@ -6,6 +6,7 @@
 """Ops that perform linear algebra."""
 
 from builtin._location import __call_location, _SourceLocation
+from collections import Optional
 
 from .casting import reshape
 from ..error import error
