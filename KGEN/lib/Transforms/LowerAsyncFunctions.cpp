@@ -54,11 +54,12 @@ struct FrameData {
   /// Error value and result value are excluded from the frame
   FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
             Value errorValue, Value resultValue,
-            function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform);
+            function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform,
+            bool isHot);
   FrameData() {}
 
   /// Given a value, determine the state of its defining op or block argument.
-  int getDefinitionStateForValue(Value operand) const;
+  int getDefinitionStateForValue(Value operand, bool isHot) const;
 
   /// Update the ops in this virtual block.
   void updateVirtualBlock(Operation *virtualBlock, int newState);
@@ -67,6 +68,7 @@ struct FrameData {
   DenseMap<Value, unsigned> valueToIndexInFrame;
   DenseMap<Operation *, unsigned> operationToIndexInFrame;
   DenseMap<Operation *, int> opToState;
+  SmallVector<Operation *> virtualBlocksFirstState;
 };
 
 static bool needsStateClone(Operation *operation) {
@@ -218,8 +220,14 @@ private:
 /// The original clone will become the hot ramp if needed.
 /// The resume function is shared between hot and cold.
 struct AsyncFunctionInfo {
+  AsyncFunctionInfo(FuncOp originalFunction, FuncOp resume,
+                    SmallVector<Operation *> &&firstStateVirtualBlocks)
+      : originalClone(originalFunction), resume(resume),
+        firstStateVirtualBlocks(std::move(firstStateVirtualBlocks)) {}
+  AsyncFunctionInfo() {}
   FuncOp originalClone;
   FuncOp resume;
+  SmallVector<Operation *> firstStateVirtualBlocks;
 };
 
 /// The LowerAsyncBuildContext is responsible for transforming an async function
@@ -243,7 +251,8 @@ struct LowerAsyncBuildContext {
 
   /// Given an async function and its frame types, create a ramp function and a
   /// resume function.
-  LoweredAsyncFunction lowerAsyncFunctionHot(FuncOp funcOp, FuncOp resume);
+  LoweredAsyncFunction
+  lowerAsyncFunctionHot(AsyncFunctionInfo &asyncFunctionInfo);
 
   /// Store async functions that may need to transformed into hot ramp/resumes.
   DenseMap<SymbolConstantAttr, AsyncFunctionInfo> symbolToClone;
@@ -438,10 +447,11 @@ LowerAsyncBuildContext::addSlicedFirstStateTo(FuncOp hotRamp, FuncOp fromFuncOp,
   return {callback, closureState};
 }
 
-LoweredAsyncFunction
-LowerAsyncBuildContext::lowerAsyncFunctionHot(FuncOp funcOp, FuncOp resume) {
+LoweredAsyncFunction LowerAsyncBuildContext::lowerAsyncFunctionHot(
+    AsyncFunctionInfo &asyncFunctionInfo) {
+  FuncOp funcOp = asyncFunctionInfo.originalClone;
+  FuncOp resume = asyncFunctionInfo.resume;
   builder.setInsertionPoint(funcOp->getParentOp());
-  // Calculate Frame.
   std::function<void(FuncOp, DenseMap<Operation *, int> &)> transform =
       [&](FuncOp originalFunction, DenseMap<Operation *, int> &opToState) {
         cloneFrameArgs(funcOp, builder, dominanceInfo, originalFunction,
@@ -456,12 +466,51 @@ LowerAsyncBuildContext::lowerAsyncFunctionHot(FuncOp funcOp, FuncOp resume) {
   if (funcOp.isThrows())
     errorValue = funcOp.getArgument(index);
   FrameData frameData(funcOp, dominanceInfo, errorValue, memoryResultValue,
-                      transform);
+                      transform, /*isHot=*/true);
   COTypes coTypes(
       funcOp.getContext(), frameData,
       StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
 
   FuncOp hotRamp = createHotRamp(resume, funcOp, coTypes);
+
+  // Resume function is shared. Replace coroutine type of resume with hot frame
+  // type.
+  Type coldContType = resume.getCoroutineType().value();
+  Type hotContType = coTypes.getContinuationType();
+  unsigned hotContSize = cast<StructType>(hotContType).getElementTypes().size();
+  mlir::AttrTypeReplacer walker;
+  walker.addReplacement([coldContType, hotContType](Type type) {
+    if (type == coldContType)
+      return hotContType;
+    return type;
+  });
+  walker.recursivelyReplaceElementsIn(resume, true, true, true);
+
+  // Replace arg0 with local variable for first state
+  builder.setInsertionPointToStart(&resume.getBodyRegion().front());
+  Value hotStartContinuation = resume.getArgument(0);
+  auto pointerBitcast = builder.create<PointerBitcastOp>(
+      PointerType::get(coldContType), hotStartContinuation);
+  Value coldStartContinuation = pointerBitcast.getResult();
+  for (VirtualBlock virtualBlock : asyncFunctionInfo.firstStateVirtualBlocks) {
+    // The virtualBlock should point to the first operation of the block. We may
+    // have made insertions since the recording so find the head.
+    Operation *current = virtualBlock;
+    while (current->getPrevNode())
+      current = current->getPrevNode();
+    while (current) {
+      auto gep = dyn_cast<StructGEPOp>(current);
+      if (gep && gep.getContainer() == hotStartContinuation) {
+        if (gep.getIndex() >= hotContSize)
+          current->setOperand(0, coldStartContinuation);
+      }
+      Operation *next = current->getNextNode();
+      if (next && isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator,
+                      CO::SuspendEndOp>(next))
+        break;
+      current = next;
+    }
+  }
   funcOp.erase();
   return {hotRamp, resume};
 }
@@ -743,9 +792,9 @@ void LowerAsyncBuildContext::lowerHotInvoke(Value continuation,
   auto cloneMaybe = symbolToClone.find(symbol);
   SymbolConstantAttr rampSymbol;
   if (cloneMaybe != symbolToClone.end()) {
-    auto [originalAsyncFunction, resume] = symbolToClone[symbol];
+    AsyncFunctionInfo &asyncFunctionInfo = symbolToClone[symbol];
+    auto [ramp, _] = lowerAsyncFunctionHot(asyncFunctionInfo);
     symbolToClone.erase(symbol);
-    auto [ramp, _] = lowerAsyncFunctionHot(originalAsyncFunction, resume);
     rampSymbol = SymbolConstantAttr::get(
         SymbolRefAttr::get(builder.getContext(), ramp.getSymName()),
         ramp.getSignature());
@@ -1057,10 +1106,10 @@ void FrameVariables::overwriteValue(int state, Value value) {
 // FrameData
 //===----------------------------------------------------------------------===//
 
-int FrameData::getDefinitionStateForValue(Value operand) const {
+int FrameData::getDefinitionStateForValue(Value operand, bool isHot) const {
   Operation *definingOp = operand.getDefiningOp();
   // Initialize state to the entry state.
-  int defState = -1;
+  int defState = isHot ? 0 : -1;
   if (!definingOp) {
     BlockArgument blockArgument = cast<BlockArgument>(operand);
     // We always store the function arguments in the frame because they
@@ -1122,7 +1171,8 @@ int PathInfo::existsAt(VirtualBlock virtualBlock) const {
 FrameData::FrameData(
     FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
     Value resultValue,
-    function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform) {
+    function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform,
+    bool isHot) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -1360,7 +1410,13 @@ FrameData::FrameData(
   bool stateChanged = true;
   while (stateChanged)
     stateChanged = propagateChildSuspoints();
-
+  // Remember the virtual ops in the first state for hot start resume
+  // generation.
+  for (auto &virtualBlockAndList : predecessors) {
+    VirtualBlock virtualBlock = virtualBlockAndList.first;
+    if (opToState[virtualBlock] == 0)
+      virtualBlocksFirstState.push_back(virtualBlock);
+  }
   transform(originalFunction, opToState);
 
   // Calculate the frame. Whenever there is a use whose def lives in another
@@ -1382,6 +1438,7 @@ FrameData::FrameData(
                                  stackAllocation.getType().getElementType());
     }
   };
+  SmallVector<Value> coldCoroTypes;
   originalFunction.walk([&](Operation *operation) {
     int useState = opToState[operation];
     if (StackAllocationOp stackAllocationOp =
@@ -1406,9 +1463,14 @@ FrameData::FrameData(
         continue;
 
       // Add to frame if the value was defined in a previous state.
-      int defState = getDefinitionStateForValue(operand);
-      if (defState < useState) {
-        unsigned index = frameTypes.size();
+      int defState = getDefinitionStateForValue(operand, isHot);
+      if (defState != useState) {
+        bool isArgument = false;
+        if (auto blockArg = dyn_cast<BlockArgument>(operand))
+          isArgument =
+              blockArg.getParentBlock()->getParentOp() == originalFunction;
+
+        unsigned index = isArgument ? coldCoroTypes.size() : frameTypes.size();
         if (Operation *definitingOp = operand.getDefiningOp()) {
           if (auto stackAllocation =
                   dyn_cast<StackAllocationOp>(definitingOp)) {
@@ -1426,12 +1488,23 @@ FrameData::FrameData(
             addToFrame(operand.getType(), definitingOp);
           }
         } else {
-          frameTypes.push_back(operand.getType());
+          if (isArgument)
+            coldCoroTypes.push_back(operand);
+          else
+            frameTypes.push_back(operand.getType());
         }
         valueToIndexInFrame.insert({operand, index});
       }
     }
   });
+
+  // Insert used arguments at end of frame.
+  unsigned offset = frameTypes.size();
+  for (auto [index, functionArg] : llvm::enumerate(coldCoroTypes)) {
+    frameTypes.push_back(functionArg.getType());
+    unsigned newIndex = offset + index;
+    valueToIndexInFrame[functionArg] = newIndex;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1540,13 +1613,14 @@ void LowerAsyncFunctionsPass::runOnOperation() {
           cloneFrameArgs(funcOp, b, domInfo, originalFunction, opToState);
         };
     FrameData frameData(funcOp, domInfo, errorValue, memoryResultValue,
-                        transform);
+                        transform, /*isHot=*/false);
     COTypes cotypes(
         module.getContext(), frameData,
         StructType::get(funcOp.getContext(), funcOp.getResultTypes()));
     auto [ramp, resume] = buildContext.lowerAsyncFunction(
         funcOp, cotypes, errorValue, memoryResultValue);
-    buildContext.symbolToClone.insert({key, {clone, resume}});
+    buildContext.symbolToClone.insert(
+        {key, {clone, resume, std::move(frameData.virtualBlocksFirstState)}});
   }
 
   // Apply all other CO lowerings.
@@ -1556,7 +1630,9 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
   Type headerType = PointerType::get(opaqueCoroutineTypes.getHeaderType());
   replacer.addReplacement([&](CoroutineType type) { return headerType; });
-  replacer.recursivelyReplaceElementsIn(module, true, true, true);
+  replacer.recursivelyReplaceElementsIn(module, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
   module.walk([&](Operation *op) {
     if (auto invokeOp = dyn_cast<InvokeOp>(op)) {
       auto symbol = cast<SymbolConstantAttr>(invokeOp.getCallee());
