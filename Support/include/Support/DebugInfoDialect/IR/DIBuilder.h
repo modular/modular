@@ -127,7 +127,8 @@ public:
   /// stack within the builder.
   DILocalVariableAttr createLocalVariable(StringRef name, DIFileAttr file,
                                           unsigned line, unsigned arg,
-                                          unsigned alignInBits, DIType type);
+                                          unsigned alignInBits, DIType type,
+                                          DIFlags flags = DIFlags::Zero);
 
 private:
   MLIRContext *context;

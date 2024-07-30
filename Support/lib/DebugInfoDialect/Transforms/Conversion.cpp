@@ -123,7 +123,7 @@ public:
       DILocalVariableAttr info = op.getValueInfo();
       op.setValueInfoAttr(DILocalVariableAttr::get(
           info.getScope(), info.getName(), info.getFile(), info.getLine(),
-          info.getArg(), info.getAlignInBits(), diType));
+          info.getArg(), info.getAlignInBits(), diType, info.getFlags()));
     });
     return success();
   }
@@ -152,7 +152,7 @@ public:
       DILocalVariableAttr info = op.getValueInfo();
       op.setValueInfoAttr(DILocalVariableAttr::get(
           info.getScope(), info.getName(), info.getFile(), info.getLine(),
-          info.getArg(), info.getAlignInBits(), diType));
+          info.getArg(), info.getAlignInBits(), diType, info.getFlags()));
     });
     return success();
   }

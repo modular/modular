@@ -16,6 +16,7 @@ add_modular_unittest(
   TEST_NAME
   MojoDebugTests
 
+  ArtificialsTest.cpp
   BreakpointTest.cpp
   ControlFlowTest.cpp
   InliningTest.cpp

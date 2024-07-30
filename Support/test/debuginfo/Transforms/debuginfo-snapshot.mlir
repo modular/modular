@@ -9,8 +9,8 @@
 
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #[[CU]], scope = #[[FILE]], name = <"foo">, linkageName = "foo", file = #[[FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SUBROUTINE]]
 
-// CHECK-DAG: #[[ARG1_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg0", file = #[[FILE]], line = {{.*}}, arg = 1> : ![[BASIC]]
-// CHECK-DAG: #[[ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg1", file = #[[FILE]], line = {{.*}}, arg = 2> : ![[BASIC1]]
+// CHECK-DAG: #[[ARG1_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg0", file = #[[FILE]], line = {{.*}}, arg = 1, flags = Zero> : ![[BASIC]]
+// CHECK-DAG: #[[ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg1", file = #[[FILE]], line = {{.*}}, arg = 2, flags = Zero> : ![[BASIC1]]
 
 // CHECK-DAG: #[[BB_ARG_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0", file = #[[FILE]], line = {{.*}}> : ![[BASIC]]
 
