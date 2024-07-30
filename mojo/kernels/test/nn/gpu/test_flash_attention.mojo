@@ -40,7 +40,6 @@ fn test[
     num_heads: Int,
     group: Int = 1,
     against_gpu_naive: Bool = False,
-    use_tensor_core: Bool = False,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -174,7 +173,7 @@ fn test[
             group=group,
             add_attn_mask=True,
             target="gpu",
-            use_tensor_core=use_tensor_core,
+            use_tensor_core=True,
         ](
             output_device_ptr.ptr,
             q_device_ptr.ptr,
@@ -226,12 +225,13 @@ fn test[
             ctx,
         )
 
+        ctx.synchronize()
         ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var rtol = Scalar[qkv_type](0.02) if (
-        use_tensor_core and not use_index_input
-    ) else Scalar[qkv_type](1e-4)
+    var rtol = Scalar[qkv_type](1e-4) if use_index_input else Scalar[qkv_type](
+        8e-3
+    )
 
     for h in range(num_heads):
         for s in range(seq_len):
@@ -243,7 +243,8 @@ fn test[
                     flash_output_ptr, d + depth * (h + s * num_heads)
                 )
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
-                    print(h, s, d, actual, expect)
+                    var rerr = abs((actual - expect) / expect)
+                    print(h, s, d, actual, expect, rerr)
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
@@ -277,7 +278,6 @@ def main():
             128,
             32,
             against_gpu_naive=True,
-            use_tensor_core=True,
         ](1024, 1024, ctx, is_benchmark())
 
         # bf16 depth == 128, bf16-fp32 mma
@@ -288,7 +288,6 @@ def main():
             depth=128,
             num_heads=1,
             against_gpu_naive=True,
-            use_tensor_core=True,
         ](128, 128, ctx, use_index_input=True)
 
         test[
@@ -298,7 +297,6 @@ def main():
             depth=128,
             num_heads=1,
             against_gpu_naive=True,
-            use_tensor_core=True,
         ](128, 128, ctx)
 
         test[
@@ -308,7 +306,6 @@ def main():
             128,
             3,
             against_gpu_naive=True,
-            use_tensor_core=True,
         ](256, 256, ctx)
 
         test[
@@ -318,7 +315,6 @@ def main():
             128,
             32,
             against_gpu_naive=True,
-            use_tensor_core=True,
         ](1024, 1024, ctx, is_benchmark())
 
         test[
@@ -329,5 +325,24 @@ def main():
             24,
             group=3,
             against_gpu_naive=True,
-            use_tensor_core=True,
         ](1024, 1024, ctx)
+
+        # BF16 token gen
+        test[
+            3,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            against_gpu_naive=True,
+        ](1, 256, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            24,
+            group=3,
+            against_gpu_naive=True,
+        ](1, 1024, ctx)

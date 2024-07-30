@@ -395,7 +395,7 @@ fn flash_attention_impl[
                         group=group,
                     ]
                 ](
-                    # TODO: Avoid hard coding shared memory needed.
+                    # TODO: Avoid hard coding shared memory needed. KERN-747
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         80 * 1024
                     ),
@@ -416,6 +416,61 @@ fn flash_attention_impl[
                         num_heads,
                         batch_size,
                     ),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=80 * 1024,
+                )
+
+                return
+
+        @parameter
+        if q_type in (DType.float16, DType.bfloat16) and depth == 128:
+            # Choose matmul parameters based on dtype.
+            alias BM = 16
+            alias BN = depth
+            alias BK = 16 if q_type is DType.float32 else 32
+            alias WM = BM
+            alias WN = 32
+            # num warps in M and N, multipled by warp size.
+            alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+
+            if seq_len == 1 and num_keys % BN == 0:
+                var func = ctx.compile_function[
+                    mha_decoding[
+                        mask_rank,
+                        q_type,
+                        k_type,
+                        v_type,
+                        mask_type,
+                        output_type,
+                        BM=BM,
+                        BN=BN,
+                        BK=BK,
+                        WM=WM,
+                        WN=WN,
+                        depth=depth,
+                        num_heads=num_heads,
+                        num_threads=num_threads,
+                        num_pipeline_stages=4,
+                        group=group,
+                    ]
+                ](
+                    # TODO: Avoid hard coding shared memory needed.
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        80 * 1024
+                    ),
+                )
+
+                ctx.enqueue_function(
+                    func,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    output,
+                    scale,
+                    batch_size,
+                    num_keys,
+                    grid_dim=(1, num_heads, batch_size),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=80 * 1024,
                 )
@@ -443,7 +498,7 @@ fn flash_attention_impl[
 
 
 # ===----------------------------------------------------------------------===#
-# Flash attention for tensor core
+# Flash attention for context encoding
 # ===----------------------------------------------------------------------===#
 
 
@@ -531,7 +586,17 @@ fn mha_single_batch[
     scale: Float32,
     seq_len: Int,
 ):
-    """Flash attention v2 algorithm."""
+    """MHA for token gen where seqlen = 1 and num_keys >= 1.
+
+    The general data layout and steps conform to flash attention. Two exceptions:
+
+    1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
+      will need a separate reduction kernel at the end.
+
+    2 Frist bmm becomes gemv and second bmm becomes gevm.
+      TODO: use more optimized kernels for them
+
+    """
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -866,6 +931,382 @@ fn mha_single_batch[
             output_reg_tile.bitcast[output_type]()
             .vectorize[1, 2]()
             .transpose(),
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Flash decoding for token generation
+# ===----------------------------------------------------------------------===#
+
+
+fn mha_decoding[
+    mask_rank: Int,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    BM: UInt,  # number of queries per block
+    BN: UInt,  # number of keys per block
+    BK: UInt,  # tile size in depth dimension
+    WM: UInt,
+    WN: UInt,
+    depth: UInt,
+    num_heads: UInt,
+    num_threads: UInt,
+    num_pipeline_stages: UInt,
+    group: UInt = 1,
+](
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    v_ptr: UnsafePointer[Scalar[v_type]],
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+):
+    var batch_idx = BlockIdx.z()
+    var q_batch_offset = depth * num_heads * seq_len * batch_idx
+    var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
+    var mask_batch_offset = batch_idx * seq_len * seq_len * (
+        num_heads if mask_rank == 4 else 1
+    )
+
+    mha_decoding_single_batch[
+        mask_rank,
+        BM=BM,
+        BN=BN,
+        BK=BK,
+        WM=WM,
+        WN=WN,
+        depth=depth,
+        num_heads=num_heads,
+        num_threads=num_threads,
+        num_pipeline_stages=num_pipeline_stages,
+        group=group,
+    ](
+        q_ptr.offset(q_batch_offset),
+        k_ptr.offset(kv_batch_offset),
+        v_ptr.offset(kv_batch_offset),
+        mask_ptr.offset(mask_batch_offset),
+        output_ptr.offset(q_batch_offset),
+        scale,
+        seq_len,
+    )
+
+
+fn mha_decoding_single_batch[
+    mask_rank: Int,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    *,
+    BM: UInt,  # number of queries per block
+    BN: UInt,  # number of keys per block
+    BK: UInt,  # tile size in depth dimension
+    WM: UInt,
+    WN: UInt,
+    depth: UInt,
+    num_heads: UInt,
+    num_threads: UInt,
+    num_pipeline_stages: UInt,
+    group: UInt = 1,
+](
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    v_ptr: UnsafePointer[Scalar[v_type]],
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
+    scale: Float32,
+    num_keys: UInt,
+):
+    """Flash attention v2 algorithm."""
+    constrained[q_type == k_type and k_type == v_type]()
+
+    alias simd_size = simdwidthof[q_type]()
+
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+
+    constrained[
+        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        "Number of warps doesn't match warp tile sizes.",
+    ]()
+
+    var tid = ThreadIdx.x()
+    var warp_id = (tid // WARP_SIZE)
+    var lane = lane_id()
+
+    # Coordinates of the current warp.
+    var warp_x: UInt
+    var warp_y: UInt
+    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+
+    # The entire query block (BM x depth) is tiled in shared memory.
+    alias q_smem_size = BM * depth
+    var q_smem = dynamic_shared_memory[
+        Scalar[q_type], alignment = alignof[SIMD[q_type, simd_size]]()
+    ]()
+    var q_smem_iter = LayoutTensorIter[
+        q_type, Layout.row_major(BM, BK), AddressSpace.SHARED
+    ](q_smem, q_smem_size)
+
+    # There is one pre-allocated dynamic shared buffer.
+    # Need to explicitly offset key after at query's end.
+    alias k_smem_size = num_pipeline_stages * BN * BK
+    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    var k_smem_iter = LayoutTensorIter[
+        k_type, Layout.row_major(BN, BK), AddressSpace.SHARED, circular=True
+    ](k_smem, k_smem_size)
+
+    var head_idx = BlockIdx.y()
+
+    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+
+    alias accum_type = get_accum_type[q_type]()
+    alias frag_size = get_fragment_size[mma_shape]()
+    alias p_frag_size = frag_size[2]
+    alias p_frag_simdwidth = p_frag_size // 2
+
+    var p_reg_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+
+    var output_reg_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    output_reg_tile.fill(0.0)
+
+    # Rowwise max and sum for online softmax
+    var rowmax = stack_allocation[WM, accum_type]()
+    var rowsum = stack_allocation[WM, accum_type]()
+
+    @parameter
+    for i in range(Int(WM)):
+        rowmax[i] = min_or_neg_inf[accum_type]()
+        rowsum[i] = 0.0
+
+    # Scratch shared memory for reduction across warps.
+    var warp_scratch = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_warps_n, BM),
+        address_space = AddressSpace.SHARED,
+    ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
+
+    # Share memory tile for Value, reuse K's shared memory tile.
+    alias v_smem_size = num_pipeline_stages * BN * BK
+    var v_smem = k_smem.bitcast[Scalar[v_type]]()
+    var v_smem_iter = LayoutTensorIter[
+        v_type, Layout.row_major(BK, BN), AddressSpace.SHARED, circular=True
+    ](v_smem, v_smem_size)
+
+    # Shared memory for P = Q * K^t
+    # This overlaps key tile but are used at the same time i.e. no race condition.
+    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
+    alias p_smem_size = BM * BN
+    var p_smem_tile = LayoutTensor[
+        v_type,
+        Layout.row_major(BM, BN),
+        address_space = AddressSpace.SHARED,
+    ](p_smem)
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
+    var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
+
+    # Mask global memory iterator, seq_len = 1
+    var mask_offset = Int(head_idx * num_keys) if mask_rank == 4 else 0
+    var warp_offset = warp_y * WM * num_keys + warp_x * WN
+    var mask_warp_ptr = mask_ptr + Int(mask_offset) + Int(warp_offset)
+
+    # Account for group query.
+    alias kv_num_heads = num_heads // group
+    var kv_offset = depth * (head_idx // group)
+
+    # Load q from global to shared memory. q is a 1D vector of size `depth`.
+    # This is hard coded for depth < warp_size * simd_width
+    # TODO: generalize with layout tensor's masked copy
+    var q_offset = depth * head_idx
+
+    @parameter
+    for i in range(Int(depth // BK)):
+        if tid < BK // simd_size:
+            var vec = SIMD[size=simd_size].load[
+                alignment = alignof[SIMD[q_type, simd_size]]()
+            ](q_ptr + q_offset + i * BK + tid * simd_size)
+            SIMD.store[alignment = alignof[SIMD[q_type, simd_size]]()](
+                q_smem + i * BM * BK + tid * simd_size, vec
+            )
+        elif tid < BM * BK // simd_size:
+            SIMD.store[alignment = alignof[SIMD[q_type, simd_size]]()](
+                q_smem + i * BM * BK + tid * simd_size,
+                SIMD[q_type, simd_size](0.0),
+            )
+
+    # Loop over Key and Value tiles
+    for kv_tile_start_row in range(0, num_keys, BN):
+        var k_gmem_block = LayoutTensor[
+            k_type,
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
+        ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+
+        p_reg_tile.fill(0)
+
+        multistage_mma[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            num_threads,
+            num_pipeline_stages,
+            True,  # transpose_b
+        ](
+            p_reg_tile,
+            # Pass shared memory iterator to hint not loading from global memory.
+            q_smem_iter,
+            k_gmem_iter,
+            q_smem_iter,
+            k_smem_iter,
+            depth // BK,
+        )
+
+        # Vectorize by 2.
+        var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
+
+        # Apply mask and scale to mma result. Only the first row (lane 0-3) has
+        # meaningful data, other fragments are zero. The mask is an 1D vector.
+        # The dimension of mask are assumed dynamic here so still using index calculation.
+        # TODO: check if the explicit index calculation can be avoided.
+        if lane < 4:
+
+            @parameter
+            for m_mma in range(Int(num_m_mmas)):
+
+                @parameter
+                for n_mma in range(Int(num_n_mmas)):
+                    var frag_offset = m_mma * MMA_M * num_keys + n_mma * MMA_N
+                    var mask_frag_ptr = mask_warp_ptr + frag_offset
+
+                    var frag_lane_row = 0  # int(lane // (MMA_N // p_frag_simdwidth))
+                    var frag_lane_col = int(lane * p_frag_simdwidth % MMA_N)
+
+                    alias mask_align = alignof[
+                        SIMD[mask_type, p_frag_simdwidth]
+                    ]()
+
+                    var mask_vec = SIMD[size=p_frag_simdwidth].load[
+                        alignment=mask_align
+                    ](mask_frag_ptr + frag_lane_row * num_keys + frag_lane_col)
+
+                    p_reg_vec2[n_mma * num_m_mmas + m_mma, 0] = p_reg_vec2[
+                        n_mma * num_m_mmas + m_mma, 0
+                    ] * scale.cast[accum_type]() + rebind[
+                        p_reg_vec2.element_type
+                    ](
+                        mask_vec.cast[accum_type]()
+                    )
+
+        # Increment mask to next BM x BN block.
+        mask_warp_ptr += BN
+
+        _online_softmax_iter_for_mma_output[
+            num_m_mmas, num_n_mmas, num_warps_n, mma_shape
+        ](
+            output_reg_tile,
+            p_reg_tile,
+            warp_scratch.tile[num_warps_n, WM](0, warp_y),
+            rowmax,
+            rowsum,
+        )
+
+        var v_gmem_block = LayoutTensor[
+            v_type,
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
+        ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+
+        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+            p_smem_warp_tile.vectorize[1, 2](),
+            p_reg_tile.vectorize[1, 2]().transpose(),
+        )
+        barrier()
+
+        multistage_mma[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            num_threads,
+            num_pipeline_stages,
+            False,  # transpose_b
+            swizzle_a=False,
+        ](
+            output_reg_tile,
+            p_smem_iter,
+            v_gmem_iter,
+            p_smem_iter,
+            v_smem_iter,
+            BN // BK,
+        )
+
+    # Apply softmax denumerator.
+    @parameter
+    for m_mma in range(Int(num_m_mmas)):
+        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+
+        @parameter
+        for n_mma in range(Int(num_n_mmas)):
+            output_reg_tile[n_mma, 0] *= rowsum_inv0
+            output_reg_tile[n_mma, 1] *= rowsum_inv0
+
+    # Write to global memory.
+    var accum_smem_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(BM, depth),
+        address_space = AddressSpace.SHARED,
+    ](q_smem.bitcast[Scalar[accum_type]]())
+    var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](warp_y, warp_x)
+    copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+        accum_smem_warp_tile.vectorize[1, 2](),
+        output_reg_tile.vectorize[1, 2]().transpose(),
+    )
+
+    # Guard writing to shared memory.
+    barrier()
+
+    # Vectorized copy from shared to global memory, during which every 2 FP32
+    # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
+    # vector and stored using 16B store instruction.
+    var output_gmem_tile = LayoutTensor[output_type, Layout.row_major(depth)](
+        output_ptr + q_offset
+    )
+    var output_smem_tile = LayoutTensor[
+        accum_type, Layout.row_major(depth), address_space = AddressSpace.SHARED
+    ](q_smem.bitcast[accum_type]())
+
+    if tid < depth // simd_size:
+        copy_sram_to_dram[thread_layout = Layout.row_major(depth // simd_size)](
+            output_gmem_tile.vectorize[simd_size](),
+            output_smem_tile.vectorize[simd_size](),
         )
 
 
