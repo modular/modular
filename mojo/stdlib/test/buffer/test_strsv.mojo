@@ -49,13 +49,13 @@ fn strsv[
         var L_col_vec: SIMD[DType.float32, simd_width] = 0
 
         for i in range(0, n, simd_width):
-            x_vec = SIMD[size=simd_width].load(x_ptr, i)
+            x_vec = x_ptr.load[width=simd_width](i)
             # Move to right column by column within in a tile.
             for j in range(simd_width):
                 x_solved_vec = x_solved.load[width=simd_width](j * simd_width)
-                L_col_vec = SIMD[size=simd_width].load(L_ptr, i + j * size)
+                L_col_vec = L_ptr.load[width=simd_width](i + j * size)
                 x_vec = x_solved_vec.fma(-L_col_vec, x_vec)
-            SIMD[size=simd_width].store(x_ptr, i, x_vec)
+            x_ptr.store[width=simd_width](i, x_vec)
 
         L_ptr += size * simd_width
 
