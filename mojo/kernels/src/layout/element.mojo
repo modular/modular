@@ -76,7 +76,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             @parameter
             if layout.stride[0] == 1:
                 alias alignment = alignof[Self.element_data_type]()
-                return Self.element_data_type.load[alignment=alignment](ptr, 0)
+                return ptr.load[
+                    width = Self.element_data_type.size, alignment=alignment
+                ]()
             else:
                 var element_data = Self.element_data_type()
 
@@ -98,8 +100,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    var vec_i = vec_type.load(
-                        ptr, __get_offset[0, i](runtime_layout)
+                    var vec_i = ptr.load[width=size](
+                        __get_offset[0, i](runtime_layout)
                     )
                     element_data = element_data.insert[offset = i * size](vec_i)
 
@@ -115,8 +117,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    var vec_i = vec_type.load(
-                        ptr, __get_offset[i, 0](runtime_layout)
+                    var vec_i = ptr.load[width=size](
+                        __get_offset[i, 0](runtime_layout)
                     )
                     element_data = element_data.insert[offset = i * size](vec_i)
 
@@ -169,7 +171,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                         element_data[i] = ptr[__get_offset[i](runtime_layout)]
                     return Element(element_data, runtime_layout)
 
-                return Self.element_data_type.load[alignment=alignment](ptr, 0)
+                return ptr.load[
+                    width = Self.element_data_type.size, alignment=alignment
+                ](0)
 
             @parameter
             for i in range(size):
@@ -208,8 +212,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             for i in range(elements):
                 if i >= element_bounds[1]:
                     break
-                var vec_i = vec_type.load(
-                    ptr, __get_offset[0, i](runtime_layout)
+                var vec_i = ptr.load[width=size](
+                    __get_offset[0, i](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
@@ -242,8 +246,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             for i in range(elements):
                 if i >= element_bounds[0]:
                     break
-                var vec_i = vec_type.load(
-                    ptr, __get_offset[i, 0](runtime_layout)
+                var vec_i = ptr.load[width=size](
+                    __get_offset[i, 0](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
@@ -277,9 +281,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             @parameter
             if layout.stride[0] == 1:
                 alias alignment = alignof[Self.element_data_type]()
-                Self.element_data_type.store[alignment=alignment](
-                    ptr, self.element_data
-                )
+                ptr.store[alignment=alignment](self.element_data)
             else:
 
                 @parameter
@@ -299,8 +301,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    vec_type.store[alignment=alignment](
-                        ptr + __get_offset[i, 0](self.runtime_layout),
+                    (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                        width=size, alignment=alignment
+                    ](
                         self.element_data.slice[size, offset = i * size](),
                     )
 
@@ -313,8 +316,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                 @parameter
                 for i in range(elements):
-                    vec_type.store[alignment=alignment](
-                        ptr + __get_offset[i, 0](self.runtime_layout),
+                    (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                        width=size, alignment=alignment
+                    ](
                         self.element_data.slice[size, offset = i * size](),
                     )
             else:
@@ -326,9 +330,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                     @parameter
                     for j in range(dim_1):
-                        self.element_data[i + j * dim_1].store(
-                            ptr, __get_offset[i, j](self.runtime_layout)
-                        )
+                        ptr.store(__get_offset[i, j](self.runtime_layout))
 
     fn masked_store[
         address_space: AddressSpace, rank: Int

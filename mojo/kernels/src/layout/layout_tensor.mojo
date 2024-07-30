@@ -232,13 +232,13 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(idx)
-                vec_res[idx] = Scalar.load(
-                    self.ptr, Self._getOffset(strides, dims) + element_offset
+                vec_res[idx] = self.ptr.load(
+                    Self._getOffset(strides, dims) + element_offset
                 )
             else:
                 var element_offset = self.runtime_element_layout(idx)
-                vec_res[idx] = Scalar.load(
-                    self.ptr, Self._getOffset(strides, dims) + element_offset
+                vec_res[idx] = self.ptr.load(
+                    Self._getOffset(strides, dims) + element_offset
                 )
 
         return vec_res
@@ -254,16 +254,14 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0))
                     + element_offset,
                     val[i],
                 )
             else:
                 alias element_offset = self.element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0))
                     + element_offset,
                     val[i],
@@ -279,16 +277,14 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0, d1))
                     + element_offset,
                     val[i],
                 )
             else:
                 var element_offset = self.runtime_element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0, d1))
                     + element_offset,
                     val[i],
@@ -304,16 +300,14 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
                     + element_offset,
                     val[i],
                 )
             else:
                 var element_offset = self.runtime_element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
                     + element_offset,
                     val[i],
@@ -331,16 +325,14 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
                     + element_offset,
                     val[i],
                 )
             else:
                 var element_offset = self.runtime_element_layout(i)
-                SIMD.store(
-                    self.ptr,
+                self.ptr.store(
                     Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
                     + element_offset,
                     val[i],
@@ -348,7 +340,7 @@ struct LayoutTensor[
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
-        return SIMD[size=width].load(self.ptr, self._offset(m, n))
+        return self.ptr.load[width=width](self._offset(m, n))
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
@@ -359,19 +351,19 @@ struct LayoutTensor[
     @always_inline
     fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         alias alignment = alignof[SIMD[dtype, width]]()
-        return SIMD[size=width].load[alignment=alignment](
-            self.ptr, self._offset(m, n)
+        return self.ptr.load[width=width, alignment=alignment](
+            self._offset(m, n)
         )
 
     @always_inline
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
-        return SIMD[size=width].store(self.ptr, self._offset(m, n), val)
+        return self.ptr.store[width=width](self._offset(m, n), val)
 
     @always_inline
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         alias alignment = alignof[SIMD[dtype, width]]()
-        return SIMD[size=width].store[alignment=alignment](
-            self.ptr, self._offset(m, n), val
+        return self.ptr.store[width=width, alignment=alignment](
+            self._offset(m, n), val
         )
 
     @staticmethod
@@ -1682,9 +1674,7 @@ struct LayoutTensor[
                 @parameter
                 for idx in range(Self.element_size):
                     alias element_offset = self.element_layout(idx)
-                    vec[idx] = Scalar.load(
-                        self.ptr, vec_offset + element_offset
-                    )
+                    vec[idx] = self.ptr.load(vec_offset + element_offset)
 
                 print(vec)
 
@@ -2014,11 +2004,11 @@ fn copy_sram_to_dram[
             alias src_idx = src_fragments.layout(i)
             alias dst_idx = dst_fragments.layout(i)
 
-            var src_vec = SIMD[size=simd_size].load[alignment=src_align](
-                src_fragments.ptr + src_idx
-            )
-            SIMD.store[alignment=dst_align](
-                dst_fragments.ptr + dst_idx, src_vec.cast[dst_type]()
+            var src_vec = (src_fragments.ptr + src_idx).load[
+                width=simd_size, alignment=src_align
+            ]()
+            (dst_fragments.ptr + dst_idx).store[alignment=dst_align](
+                src_vec.cast[dst_type]()
             )
 
 
@@ -2245,9 +2235,10 @@ fn copy_local_to_sram[
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
-            SIMD[size=elem_size].store[
-                alignment = alignof[SIMD[dst_type, src.element_size]]()
-            ](dst_frag.ptr + dst_idx, dst_vec)
+            (dst_frag.ptr + dst_idx).store[
+                width=elem_size,
+                alignment = alignof[SIMD[dst_type, src.element_size]](),
+            ](dst_vec)
 
 
 @always_inline
@@ -2306,9 +2297,9 @@ fn copy_local_to_local[
             alias dst_idx = dst_vectorized.layout(i)
             alias src_idx = src_vectorized.layout(i)
 
-            var src_vec = SIMD[size=src_frag_size].load(
-                src_vectorized.ptr + src_idx
-            )
+            var src_vec = (src_vectorized.ptr + src_idx).load[
+                width=src_frag_size
+            ]()
             var dst_vec = SIMD[dst_type, src_frag_size](0.0)
 
             @parameter
@@ -2319,9 +2310,7 @@ fn copy_local_to_local[
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
-            SIMD[size=src_frag_size].store(
-                dst_vectorized.ptr + dst_idx, dst_vec
-            )
+            (dst_vectorized.ptr + dst_idx).store[width=src_frag_size](dst_vec)
 
     # Default elementwise copy
     else:
@@ -2331,7 +2320,7 @@ fn copy_local_to_local[
             alias dst_idx = dst.layout(i)
             alias src_idx = src.layout(i)
             var src_val = src.ptr[src_idx]
-            SIMD.store(dst.ptr + dst_idx, src_val.cast[dst.dtype]())
+            (dst.ptr + dst_idx).store(src_val.cast[dst.dtype]())
 
 
 # ===-----------------------------------------------------------------------===#
