@@ -261,3 +261,11 @@ kgen.func @variant_bitcast_oob(%arg0: !kgen.pointer<variant<i32>>) {
   %0 = "pop.variant.bitcast"(%arg0) {index = 0 : index} : (!kgen.pointer<variant<i32>>) -> !kgen.pointer<i64>
   kgen.return
 }
+
+// -----
+
+kgen.func @variant_discr_gep_type(%arg0: !kgen.pointer<variant<i32, i64>>) {
+  // expected-error @below {{variant expected discriminant bitwidth to be 8 but result returns uint with width 16}}
+  %0 = pop.variant.discr_gep %arg0 : <variant<i32, i64>> as <scalar<ui16>>
+  kgen.return
+}

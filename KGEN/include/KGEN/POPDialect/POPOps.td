@@ -2073,4 +2073,43 @@ def POP_VariantBitcastOp : POPOp<"variant.bitcast", [Pure]> {
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// VariantDiscrGEPOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
+  DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "Return a pointer to the discriminant field of a variant.";
+  let description = [{
+    The `pop.variant.discr_gep` operation takes a pointer to a variant type and
+    returns a pointer to the discriminant field inside the variant. This
+    operation should be used to modify the discriminant of a variant. The
+    operation returns a pointer to an unsigned integer `!pop.scalar` whose dtype
+    is just large enough to represent the number of variant types.
+
+    The reason `!kgen.variant` combines both a union and a discriminant is
+    because `!pop.union` is ultimately an opaque array of bytes. Before
+    elaboration, the compiler doesn't have a target model with which to
+    understand the layout of `!pop.union`, and thus it can neither constant
+    fold nor interpreter union operations. `!kgen.variant` includes the
+    discriminant in its representation, which is sufficient for the compiler to
+    abstractly interpret it without a target model.
+
+    Example:
+
+    ```mlir
+    %0 = pop.variant.discr_gep %arg0 : <variant<i32, i64>> as <scalar<ui8>>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<KGEN_VariantType>:$variant);
+  let results = (outs PointerOf<ScalarOfDType<UnboundOr<UIntDType>,
+                                              "uint scalar">>:$discr);
+  let assemblyFormat = [{
+    $variant attr-dict `:` type($variant) `as` type($discr)
+  }];
+
+  let hasVerifier = 1;
+}
+
 #endif // KGEN_POPDIALECT_POPOPS_TD
