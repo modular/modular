@@ -14,6 +14,7 @@ from buffer.dimlist import DimList
 from memory.unsafe import bitcast
 from register import *
 
+from utils import StaticIntTuple
 from utils._serialize import _serialize
 
 from .tensor_helpers import InnerStride
