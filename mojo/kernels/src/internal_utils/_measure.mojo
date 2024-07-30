@@ -52,8 +52,8 @@ fn kl_div[
     ](idx: StaticIntTuple[rank]):
         out[idx[0]] = rebind[Scalar[type]](
             kl_div(
-                SIMD[size=simd_width].load(x + idx[0]),
-                SIMD[size=simd_width].load(y + idx[0]),
+                (x + idx[0]).load[width=simd_width](),
+                (y + idx[0]).load[width=simd_width](),
             )
         )
 
@@ -162,7 +162,7 @@ fn _sqrt[
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         out[idx[0]] = rebind[Scalar[type]](
-            sqrt(SIMD[size=simd_width].load(x + idx[0]))
+            sqrt((x + idx[0]).load[width=simd_width]())
         )
 
     elementwise[apply_fn, simdwidthof[type]()](len)
@@ -179,8 +179,8 @@ fn _mul[
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         out[idx[0]] = rebind[Scalar[type]](
-            SIMD[size=simd_width].load(x + idx[0])
-            * SIMD[size=simd_width].load(y + idx[0])
+            (x + idx[0]).load[width=simd_width]()
+            * (y + idx[0]).load[width=simd_width]()
         )
 
     elementwise[apply_fn, simdwidthof[type]()](len)
@@ -197,7 +197,7 @@ fn _div[
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         out[idx[0]] = (
-            rebind[Scalar[type]](SIMD[size=simd_width].load(x + idx[0])) / c
+            rebind[Scalar[type]]((x + idx[0]).load[width=simd_width]()) / c
         )
 
     elementwise[apply_fn, simdwidthof[type]()](len)
@@ -232,8 +232,8 @@ fn _dot[
 
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        var xi = SIMD[size=simd_width].load(x + idx[0])
-        var yi = SIMD[size=simd_width].load(y + idx[0])
+        var xi = (x + idx[0]).load[width=simd_width]()
+        var yi = (y + idx[0]).load[width=simd_width]()
 
         @parameter
         if simd_width == 1:
