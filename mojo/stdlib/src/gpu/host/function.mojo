@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the function type."""
 
-from collections.optional import Optional
+from collections import Dict, Optional
 from math.math import align_up
 from pathlib import Path
 from sys.ffi import _get_global

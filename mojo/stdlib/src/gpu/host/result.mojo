@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the result type."""
 
-from collections.dict import KeyElement
+from collections import KeyElement
 
 # ===----------------------------------------------------------------------===#
 # Result

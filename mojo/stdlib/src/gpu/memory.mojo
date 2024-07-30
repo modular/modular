@@ -8,6 +8,8 @@
 from memory import UnsafePointer
 from sys._assembly import inlined_assembly
 from memory.reference import _GPUAddressSpace
+from memory.unsafe import bitcast
+from utils import StaticIntTuple
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace
