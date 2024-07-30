@@ -40,7 +40,6 @@ fn test_mbarrier(
     mbarrier(addr5)
 
 
-@always_inline
 fn _verify_mbarrier(asm: String) raises -> None:
     assert_true("cp.async.mbarrier.arrive.b64" in asm)
     assert_true("cp.async.mbarrier.arrive.shared.b64" in asm)
@@ -66,7 +65,6 @@ fn test_mbarrier_init(
     mbarrier_init(shared_mem, 4)
 
 
-@always_inline
 fn _verify_mbarrier_init(asm: String) raises -> None:
     assert_true("ld.param.u64" in asm)
     assert_true("mov.b32" in asm)
@@ -97,7 +95,6 @@ fn test_mbarrier_test_wait(
         done = mbarrier_test_wait(shared_mem, state)
 
 
-@always_inline
 fn _verify_mbarrier_test_wait(asm: String) raises -> None:
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
@@ -121,9 +118,6 @@ def test_mbarrier_test_wait_sm90():
 
 
 fn test_async_copy(src: UnsafePointer[Float32, AddressSpace.GLOBAL]):
-    var barrier = stack_allocation[
-        sizeof[DType.int32](), DType.int32, address_space = AddressSpace.SHARED
-    ]()
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
@@ -131,7 +125,6 @@ fn test_async_copy(src: UnsafePointer[Float32, AddressSpace.GLOBAL]):
     async_copy[16](src, shared_mem)
 
 
-@always_inline
 fn _verify_async_copy(asm: String) raises -> None:
     assert_true("cp.async.ca.shared.global" in asm)
     assert_true("cp.async.cg.shared.global" in asm)
@@ -151,6 +144,39 @@ def test_async_copy_sm90():
     _verify_async_copy(asm)
 
 
+fn test_async_copy_l2_prefetch(
+    src: UnsafePointer[Float32, AddressSpace.GLOBAL]
+):
+    var shared_mem = stack_allocation[
+        4, DType.float32, address_space = AddressSpace.SHARED
+    ]()
+    async_copy[4, bypass_L1_16B=False, l2_prefetch=128](src, shared_mem)
+    async_copy[16, bypass_L1_16B=False, l2_prefetch=64](src, shared_mem)
+
+
+fn _verify_async_copy_l2_prefetch(asm: String) raises -> None:
+    assert_true("cp.async.ca.shared.global.L2::128B" in asm)
+    assert_true("cp.async.ca.shared.global.L2::64B" in asm)
+
+
+def test_async_copy_l2_prefetch_sm80():
+    alias asm = str(
+        _compile_code[
+            test_async_copy_l2_prefetch, target = _get_nvptx_target()
+        ]().asm
+    )
+    _verify_async_copy_l2_prefetch(asm)
+
+
+def test_async_copy_l2_prefetch__sm90():
+    alias asm = str(
+        _compile_code[
+            test_async_copy_l2_prefetch, target = _get_nvptx_target_sm90()
+        ]().asm
+    )
+    _verify_async_copy_l2_prefetch(asm)
+
+
 def main():
     test_mbarrier_sm80()
     test_mbarrier_sm90()
@@ -160,3 +186,5 @@ def main():
     test_mbarrier_test_wait_sm90()
     test_async_copy_sm80()
     test_async_copy_sm90()
+    test_async_copy_l2_prefetch_sm80()
+    test_async_copy_l2_prefetch__sm90()
