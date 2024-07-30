@@ -166,6 +166,12 @@ WalkResult walkScope(Location loc, LocWalkPolicy policy,
 /// FileLineColLoc cannot be found.
 FileLineColLoc extractSourceLoc(Location callLoc);
 
+/// Strip all debug scopes from this location recursively.
+/// If a debug scope is fused with only one location, the fused location will be
+/// collapsed. Otherwise (including the empty case), the fused location will
+/// remain (just without any metadata).
+Location stripDebugScopesRecursively(Location loc);
+
 /// Extract the first scope found in a location based on a LocWalkPolicy.
 template <typename ScopeT>
 ScopeT extractScopeFrom(Location loc, LocWalkPolicy policy) {
