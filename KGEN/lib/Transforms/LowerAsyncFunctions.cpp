@@ -60,6 +60,9 @@ struct FrameData {
   /// Given a value, determine the state of its defining op or block argument.
   int getDefinitionStateForValue(Value operand) const;
 
+  /// Update the ops in this virtual block.
+  void updateVirtualBlock(Operation *virtualBlock, int newState);
+
   SmallVector<Type> frameTypes;
   DenseMap<Value, unsigned> valueToIndexInFrame;
   DenseMap<Operation *, unsigned> operationToIndexInFrame;
@@ -1077,6 +1080,45 @@ int FrameData::getDefinitionStateForValue(Value operand) const {
   return opToState.at(definingOp);
 }
 
+void FrameData::updateVirtualBlock(VirtualBlock virtualBlock, int newState) {
+  Operation *op = virtualBlock;
+  int state = newState;
+  while (op) {
+    if (isa<SuspendEndOp>(op))
+      ++state;
+    int &oldState = opToState[op];
+    if (oldState < state)
+      oldState = state;
+    op = op->getNextNode();
+    int &nextOldState = opToState[op];
+    // respect control flow boundary
+    if (op && isa<HLCF::ControlFlowNode>(op)) {
+      if (nextOldState < state)
+        nextOldState = state;
+      break;
+    }
+  }
+}
+
+using PathContainer = SmallVector<Operation *>;
+struct PathInfo {
+  PathInfo(VirtualBlock v) : virtualBlock(v), state(0) {}
+  PathInfo(VirtualBlock v, int state, PathContainer const &parent)
+      : virtualBlock(v), path(parent), state(state) {}
+  int existsAt(VirtualBlock virtualBlock) const;
+  VirtualBlock virtualBlock;
+  PathContainer path;
+  int state;
+};
+
+int PathInfo::existsAt(VirtualBlock virtualBlock) const {
+  for (auto [i, node] : llvm::enumerate(path)) {
+    if (node == virtualBlock)
+      return i;
+  }
+  return -1;
+}
+
 FrameData::FrameData(
     FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
     Value resultValue,
@@ -1169,91 +1211,58 @@ FrameData::FrameData(
       }
     }
   }
-
   // Calculate the state of each op.
   {
-    SmallVector<VirtualBlock> paths;
+    SmallVector<PathInfo> paths;
     VirtualBlock initial = &*originalFunction.getBodyRegion().front().begin();
-    paths.push_back(initial);
+    paths.push_back({initial});
     auto pushSuccessors =
         [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
-            Operation *controlFlowVirtualBlock, int currentState,
-            Operation *controlFlowParent) {
+            Operation *controlFlowVirtualBlock, Operation *controlFlowParent,
+            PathContainer &path, int state) {
           for (HLCF::ControlFlowTarget target : targets) {
             if (target.index.has_value()) {
               auto o = &*controlFlowParent->getRegion(target.index.value())
                              .front()
                              .begin();
-              paths.push_back(o);
-            } else
-              paths.push_back(controlFlowParent->getNextNode());
+              paths.push_back({o, state, path});
+            } else {
+              paths.push_back({controlFlowParent->getNextNode(), state, path});
+            }
           }
         };
 
     int j = 0;
-    DenseSet<Operation *> unterminatedLoops;
-    DenseSet<Operation *> terminatedLoops;
     while (!paths.empty()) {
-      if (j > 10000) {
-        assert(false && "infinite loop");
-      }
-      j++;
-      VirtualBlock virtualBlock = paths.front();
-      paths.erase(paths.begin());
+      if (j > 10000)
+        llvm_unreachable("infinite loop");
 
-      bool allPredsHaveProcessed = true;
-      auto myInitState = opToState.find(virtualBlock);
-      bool notExists = myInitState == opToState.end();
-      int maxState = notExists ? 0 : myInitState->second;
-      int currState = notExists ? -1 : maxState;
-      bool inLoop = false;
-      for (VirtualBlock predecessor : predecessors[virtualBlock]) {
-        auto predMaybe = opToState.find(predecessor);
-        // A dry run is needed if the predecessor does not dominate the
-        // successor, which is the case in a loop.
-        inLoop = inLoop || domInfo.dominates(virtualBlock, predecessor);
-        allPredsHaveProcessed = predMaybe != opToState.end();
-        if (!allPredsHaveProcessed)
-          break;
-        int stateFromPred = predMaybe->getSecond();
-        if (stateFromPred > maxState)
-          maxState = stateFromPred;
-      }
-      if (inLoop) {
-        if (unterminatedLoops.contains(virtualBlock)) {
-          if (!allPredsHaveProcessed) {
-            continue;
-          } else {
-            if (terminatedLoops.contains(virtualBlock))
-              continue;
-            // This is first time within this iteration that this loop is
-            // ready to process.
-            unterminatedLoops.erase(virtualBlock);
-            for (auto terminatedLoop : terminatedLoops) {
-              if (virtualBlock->getParentOfType<HLCF::LoopOp>()->isAncestor(
-                      terminatedLoop->getParentOfType<HLCF::LoopOp>())) {
-                terminatedLoops.erase(terminatedLoop);
-              }
-            }
-            terminatedLoops.insert(virtualBlock);
-          }
-        } else {
-          if (terminatedLoops.contains(virtualBlock))
-            continue;
-          unterminatedLoops.insert(virtualBlock);
+      j++;
+      VirtualBlock virtualBlock = paths.back().virtualBlock;
+      int indexOfMe = paths.back().existsAt(virtualBlock);
+      PathContainer path = std::move(paths.back().path);
+      int state = paths.back().state;
+      paths.pop_back();
+
+      auto recordedStatePtr = opToState.find(virtualBlock);
+      if (recordedStatePtr != opToState.end() &&
+          state <= recordedStatePtr->getSecond())
+        continue;
+
+      for (auto pred : predecessors[virtualBlock]) {
+        if (domInfo.dominates(virtualBlock, pred))
+          continue;
+        auto predPtr = opToState.find(pred);
+        if (predPtr != opToState.end()) {
+          if (predPtr->getSecond() > state)
+            state = predPtr->getSecond();
         }
       }
 
-      // We have already processed this node and it remains unchanged.
-      if (currState == maxState) {
-        if (!isa<SuspendEndOp>(virtualBlock))
-          continue;
-      }
-
-      // Another predecessor of this region needs to process before we can
-      // process this region.
-      if (!allPredsHaveProcessed && !inLoop)
+      // We have reached a cycle. Terminate.
+      if (indexOfMe > -1)
         continue;
+      path.push_back(virtualBlock);
 
       // Iterate through each op in this virtual block to register its state.
       // The boundaries of a node are defined by awaits, control
@@ -1264,14 +1273,16 @@ FrameData::FrameData(
         current = op->getNextNode();
         if (auto susEnd = dyn_cast<SuspendEndOp>(op)) {
           Operation *next = susEnd->getParentOp()->getNextNode();
-          opToState[op] = ++maxState;
+          ++state;
           if (next)
-            paths.push_back(next);
+            paths.push_back({next, state, path});
+          opToState[op] = state;
           break;
         }
-        opToState[op] = maxState;
+        opToState[op] = state;
+
         if (auto suspend = dyn_cast<CO::SuspendOp>(op)) {
-          paths.push_back(&*suspend.getBody().front().begin());
+          paths.push_back({&*suspend.getBody().front().begin(), state, path});
           break;
         }
         if (isa<ReturnOp, UnreachableOp>(op))
@@ -1281,7 +1292,8 @@ FrameData::FrameData(
           SmallVector<Attribute> controlFlowNodeOperands(
               controlFlowNode->getNumOperands(), Attribute());
           controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
-          pushSuccessors(targets, controlFlowNode, maxState, controlFlowNode);
+          pushSuccessors(targets, controlFlowNode, controlFlowNode, path,
+                         state);
           break;
         }
         if (auto controlFlowTerminator =
@@ -1291,14 +1303,63 @@ FrameData::FrameData(
               controlFlowTerminator->getNumOperands(), Attribute());
           controlFlowTerminator.getBranchTargets(controlFlowTerminatorOperands,
                                                  targets);
-          pushSuccessors(targets, controlFlowTerminator, maxState,
-                         getParentNode(controlFlowTerminator));
+          pushSuccessors(targets, controlFlowTerminator,
+                         getParentNode(controlFlowTerminator), path, state);
           break;
         }
       }
     }
-    assert(unterminatedLoops.empty() && "all loops have been terminated");
   }
+
+  auto propagateChildSuspoints = [&]() -> bool {
+    bool wasChange = false;
+    for (auto [virtualBlock, preds] : predecessors) {
+      int initialState = opToState[virtualBlock];
+      int postState = initialState;
+      int stateAtContinue = 0;
+      int smallestPredState = initialState;
+      for (Operation *pred : preds) {
+        int predState = opToState[pred];
+        if (domInfo.dominates(virtualBlock, pred)) {
+          if (predState > stateAtContinue && predState > postState)
+            stateAtContinue = predState;
+          continue;
+        }
+        if (predState > postState)
+          postState = predState;
+        if (predState < smallestPredState)
+          smallestPredState = predState;
+      }
+      wasChange = wasChange || (initialState != postState);
+      if (initialState != postState)
+        updateVirtualBlock(virtualBlock, postState);
+
+      // Insert a new state at the parent because a child with a suspension
+      // point branches to it.
+      if (stateAtContinue > 0 && smallestPredState == initialState) {
+        int newState = initialState + 1;
+        for (auto &[_, state] : opToState) {
+          if (state >= newState)
+            ++state;
+        }
+        wasChange = true;
+        updateVirtualBlock(virtualBlock, newState);
+      }
+    }
+    return wasChange;
+  };
+
+  // FIXED POINT:
+  // Update until for every path:
+  // (1) if A -> B and A dominates B then state(A) >= state(B)
+  // (2) if B -> A and A dominates B and state(A) < state(B), then if there is
+  // a predecessor C of A unreachable from B then state(C) < state(A)
+  // Condition (2) is achieved by
+  // inserting a parent state. Note that intuitively this corresponds to a case
+  // of a child cycle with a suspension point branching to a parent cycle.
+  bool stateChanged = true;
+  while (stateChanged)
+    stateChanged = propagateChildSuspoints();
 
   transform(originalFunction, opToState);
 
