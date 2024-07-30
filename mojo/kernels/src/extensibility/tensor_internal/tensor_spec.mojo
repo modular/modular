@@ -14,7 +14,7 @@ from tensor import TensorSpec
 """
 
 from collections import List
-
+from utils import StaticIntTuple
 from .tensor_shape import TensorShape, _as_rep16
 
 # ===----------------------------------------------------------------------===#
