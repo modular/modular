@@ -7,6 +7,8 @@
 from . import Layout, RuntimeLayout
 from .layout import to_int
 from .int_tuple import UNKNOWN_VALUE
+from memory import AddressSpace
+from sys import alignof
 
 
 @always_inline

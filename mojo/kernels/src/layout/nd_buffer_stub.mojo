@@ -6,11 +6,13 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from collections import Optional
 from gpu.id import ThreadIdx
 from gpu.memory import async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth, to_int
 from layout.layout import make_layout
+from sys import alignof
 from memory.reference import AddressSpace, _GPUAddressSpace
 
 from utils import StaticIntTuple, StaticTuple

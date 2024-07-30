@@ -13,9 +13,10 @@ from builtin.int import int as _int
 from gpu.id import ThreadIdx
 from gpu.memory import async_copy
 from layout.element import Element
-from memory import memcpy, UnsafePointer
+from memory import memcpy, UnsafePointer, stack_allocation
 from memory.reference import AddressSpace, _GPUAddressSpace
 
+from sys import alignof, prefetch
 from utils import InlineArray, StaticIntTuple
 from utils.numerics import max_finite
 

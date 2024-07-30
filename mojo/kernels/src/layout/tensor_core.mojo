@@ -13,6 +13,7 @@ from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, _swizzle_signature
 from layout.swizzle import *
+from utils import StaticIntTuple
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:

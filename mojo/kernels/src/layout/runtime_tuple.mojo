@@ -12,8 +12,7 @@ from layout.int_tuple import (
     shape_div as shape_div_int_tuple,
     UNKNOWN_VALUE,
 )
-
-from utils.static_tuple import InlineArray
+from utils import StaticIntTuple, InlineArray
 
 
 fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
