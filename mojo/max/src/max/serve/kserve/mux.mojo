@@ -30,11 +30,9 @@ struct FileModel:
 struct MuxInferenceService(InferenceService):
     """Inference service that multiplexes across a list of models."""
 
-    alias versions_dict_type = Dict[String, UnsafePointer[Model]]
-    alias model_dict_type = Dict[String, UnsafePointer[Self.versions_dict_type]]
+    alias model_dict_type = Dict[String, UnsafePointer[Model]]
 
     var _models: List[Model]
-    var _version_dicts: List[Self.versions_dict_type]
     var _model_dict: Self.model_dict_type
     var _session: InferenceSession
 
@@ -45,31 +43,20 @@ struct MuxInferenceService(InferenceService):
     ) raises:
         self._session = session^
         self._model_dict = Self.model_dict_type()
-        self._version_dicts = List[Self.versions_dict_type](
-            capacity=len(models)
-        )
         self._models = List[Model](capacity=len(models))
         for model in models:
             var name = model[].name
             if name not in self._model_dict:
-                self._version_dicts.append(Self.versions_dict_type())
-                var back = self._version_dicts[-1]
-                self._model_dict[name] = UnsafePointer.address_of(back)
-
-            var version = model[].version
-            var versioned = self._model_dict[name]
-            if version not in versioned[]:
-                self._models.append(
-                    self._session.load(
-                        model[].path, input_specs=model[].input_specs
-                    )
+                var m = self._session.load(
+                    model[].path, input_specs=model[].input_specs
                 )
-                var back = self._models[-1]
-                versioned[][version] = UnsafePointer.address_of(back)
+                var p = UnsafePointer[Model].alloc(1)
+                p.init_pointee_move(m^)
+                self._model_dict[name] = p
             else:
                 raise Error(
                     "Cannot add duplicate version: "
-                    + version
+                    + ""
                     + " for model: "
                     + name
                 )
@@ -87,10 +74,15 @@ struct MuxInferenceService(InferenceService):
 
     fn infer(inout self, request: InferenceRequest) raises -> TensorMap:
         var name = request.get_model_name()
-        var version = request.get_model_version()
-        var model = self._model_dict[name][][version]
-
+        if name not in self._model_dict:
+            raise "model not found!"
+        var model = self._model_dict[name]
         var inputs = request.get_input_tensors()
         var outputs = model[].execute(inputs)
 
         return outputs^
+
+    fn __del__(owned self: Self):
+        _ = self._models^
+        _ = self._model_dict^
+        _ = self._session^
