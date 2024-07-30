@@ -14,7 +14,7 @@ from collections.dict import KeyElement
 
 @value
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable, KeyElement):
+struct Result(Stringable, EqualityComparable, KeyElement, ExplicitlyCopyable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -544,6 +544,14 @@ struct Result(Stringable, EqualityComparable, KeyElement):
     @always_inline("nodebug")
     fn __init__(inout self, code: Int32):
         self.code = code
+
+    @always_inline("nodebug")
+    fn __init__(inout self: Self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+        Args:
+            other: The value to copy.
+        """
+        self.__copyinit__(other)
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
