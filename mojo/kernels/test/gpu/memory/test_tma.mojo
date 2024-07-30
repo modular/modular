@@ -7,7 +7,7 @@
 # DISABLED: %mojo-no-debug %s | FileCheck %s
 # RUN: true
 
-from gpu.host import Context, Function
+from gpu.host import DeviceContext
 from gpu.host.memory import create_tma_descriptor, _malloc_managed, _free
 from gpu.memory import cp_async_bulk_tensor_shared_cluster_global
 from gpu.sync import mbarrier_init, mbarrier_arrive, mbarrier_test_wait
@@ -17,14 +17,18 @@ from utils.index import Index
 
 
 # CHECK-LABLE: test_tma_tile_copy
-def test_tma_tile_copy():
+def test_tma_tile_copy(ctx: DeviceContext):
     print("== test_tma_tile_copy")
-    var gmem_ptr = _malloc_managed[DType.float32](8 * 8)
+    var gmem_host = UnsafePointer[Float32].alloc(8 * 8)
     for i in range(16):
-        gmem_ptr[i] = i
+        gmem_host[i] = i
+
+    var gmem_dev = ctx.create_buffer[DType.float32](8 * 8)
+
+    ctx.enqueue_copy_to_device(gmem_dev, gmem_host)
 
     var descriptor = create_tma_descriptor[DType.float32, 2](
-        gmem_ptr, (8, 8), (8, 1), (4, 4), (1, 1)
+        gmem_dev.ptr, (8, 8), (8, 1), (4, 4), (1, 1)
     )
 
     @parameter
@@ -64,12 +68,16 @@ def test_tma_tile_copy():
             var val = shmem[i]
             print(val)
 
-    var kernel_copy_async = Function[kernel_copy_async_tma](dump_ptx=True)
-    kernel_copy_async(grid_dim=(1), block_dim=(1))
-    _free(gmem_ptr)
+    var kernel_copy_async = ctx.compile_function[kernel_copy_async_tma](
+        dump_ptx=True
+    )
+    ctx.enqueue_function(kernel_copy_async, grid_dim=(1), block_dim=(1))
+    _ = gmem_dev
+    gmem_host.free()
     descriptor.free()
+    _ = kernel_copy_async^
 
 
 def main():
-    with Context():
-        test_tma_tile_copy()
+    with DeviceContext() as ctx:
+        test_tma_tile_copy(ctx)
