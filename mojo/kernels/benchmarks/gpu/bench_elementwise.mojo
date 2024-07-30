@@ -56,12 +56,10 @@ fn _simd_load_internal[
 ]:
     @parameter
     if type is DType.bool:
-        var v = SIMD[size=simd_width].load(
-            buffer.data.bitcast[DType.uint8](), index
-        )
+        var v = buffer.data.bitcast[DType.uint8]().load[width=simd_width](index)
         return v.cast[type]()
     else:
-        return SIMD[size=simd_width].load(buffer.data, index)
+        return buffer.data.load[width=simd_width](index)
 
 
 @always_inline
@@ -77,7 +75,7 @@ fn simd_load[
     var stride = buffer.dynamic_stride[rank - 1]
 
     if stride != 0:
-        return Scalar.load(buffer.data, flat_index)
+        return buffer.data.load(flat_index)
     elif stride > 1:
 
         @parameter
@@ -110,11 +108,11 @@ fn simd_store[
     @parameter
     if type is DType.bool:
         var v = val.cast[DType.uint8]()
-        SIMD[size=simd_width].store(
-            buffer.data.bitcast[DType.uint8](), flat_index, v
+        buffer.data.bitcast[DType.uint8]().store[width=simd_width](
+            flat_index, v
         )
     else:
-        SIMD[size=simd_width].store(buffer.data, flat_index, val)
+        buffer.data.store[width=simd_width](flat_index, val)
 
 
 @no_inline
