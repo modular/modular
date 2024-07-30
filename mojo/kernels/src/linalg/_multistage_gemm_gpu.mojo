@@ -773,21 +773,16 @@ fn multistage_gemm[
 
             @parameter
             for i in range(c_gmem_frag.layout.size()):
-                var src_vec = c_smem_frag.aligned_load[simd_size](i, 0)
                 alias dst_idx: UInt = c_gmem_frag.layout(i)
-                var vec: SIMD[c_type, simd_size] = 0
-
-                @parameter
-                for j in range(0, simd_size, 2):
-                    var vec_converted = SIMD[accum_type, 2](
-                        src_vec[j], src_vec[j + 1]
-                    ).cast[c_type]()
-                    vec[j] = vec_converted[0]
-                    vec[j + 1] = vec_converted[1]
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
-                    epilogue((m, n), vec)
+                    epilogue(
+                        (m, n),
+                        c_smem_frag.aligned_load[simd_size](i, 0).cast[
+                            c_type
+                        ](),
+                    )
                 # if M % BM == 0:
                 #     epilogue((m, n), vec)
                 # else:
