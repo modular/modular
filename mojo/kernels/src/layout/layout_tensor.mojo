@@ -2005,10 +2005,17 @@ fn copy_sram_to_dram[
         ]()
 
         alias num_stores_per_thread = dst_fragments.layout.size()
+        alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
+        alias dst_align = alignof[SIMD[dst_type, simd_size]]()
 
         @parameter
         for i in range(num_stores_per_thread):
-            var src_vec = src_fragments.aligned_load[simd_size](i, 0)
+            alias src_idx = src_fragments.layout(i)
+            alias dst_idx = dst_fragments.layout(i)
+
+            var src_vec = SIMD[size=simd_size].load[alignment=src_align](
+                src_fragments.ptr + src_idx
+            )
             var dst_vec: SIMD[dst_type, simd_size] = 0
 
             @parameter
@@ -2019,7 +2026,9 @@ fn copy_sram_to_dram[
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
-            dst_fragments.aligned_store[simd_size](i, 0, dst_vec)
+            SIMD[size=simd_size].store[alignment=dst_align](
+                dst_fragments.ptr + dst_idx, dst_vec
+            )
 
 
 @always_inline
