@@ -11,7 +11,6 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
-from gpu.intrinsics import convert
 from gpu.memory import async_copy
 from layout.element import Element
 from memory import memcpy, UnsafePointer
@@ -2014,9 +2013,9 @@ fn copy_sram_to_dram[
 
             @parameter
             for j in range(0, simd_size, 2):
-                var vec_converted = convert[src_type, dst_type, 2](
-                    SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
-                )
+                var vec_converted = SIMD[src_type, 2](
+                    src_vec[j], src_vec[j + 1]
+                ).cast[dst_type]()
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
@@ -2086,9 +2085,9 @@ fn copy_sram_to_dram[
 
                 @parameter
                 for j in range(0, simd_size, 2):
-                    var vec_converted = convert[src_type, dst_type, 2](
-                        SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
-                    )
+                    var vec_converted = SIMD[src_type, 2](
+                        src_vec[j], src_vec[j + 1]
+                    ).cast[dst_type]()
                     dst_vec[j] = vec_converted[0]
                     dst_vec[j + 1] = vec_converted[1]
 
@@ -2245,9 +2244,9 @@ fn copy_local_to_sram[
 
             @parameter
             for j in range(0, elem_size, 2):
-                var vec_converted = convert[src_type, dst_type, 2](
-                    SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
-                )
+                var vec_converted = SIMD[src_type, 2](
+                    src_vec[j], src_vec[j + 1]
+                ).cast[dst_type]()
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
@@ -2319,9 +2318,9 @@ fn copy_local_to_local[
 
             @parameter
             for j in range(0, src_frag_size, 2):
-                var vec_converted = convert[src.dtype, dst.dtype, 2](
-                    SIMD[src_type, 2](src_vec[j], src_vec[j + 1])
-                )
+                var vec_converted = SIMD[src_type, 2](
+                    src_vec[j], src_vec[j + 1]
+                ).cast[dst_type]()
                 dst_vec[j] = vec_converted[0]
                 dst_vec[j + 1] = vec_converted[1]
 
