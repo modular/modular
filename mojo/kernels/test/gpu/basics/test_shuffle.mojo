@@ -25,11 +25,11 @@ fn kernel_wrapper[
     simd_width: Int,
     kernel_fn: fn (SIMD[type, simd_width]) capturing -> SIMD[type, simd_width],
 ](device_ptr: UnsafePointer[Scalar[type]]):
-    var val = SIMD[size=simd_width].load(device_ptr, ThreadIdx.x() * simd_width)
+    var val = device_ptr.load[width=simd_width](ThreadIdx.x() * simd_width)
     var result = kernel_fn(val)
     barrier()
 
-    SIMD.store(device_ptr, ThreadIdx.x() * simd_width, result)
+    device_ptr.store(ThreadIdx.x() * simd_width, result)
 
 
 fn _kernel_launch_helper[

@@ -42,7 +42,7 @@ fn convert_kernel[
     for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](i, i + 1)
         var dst_vec = src_vec.cast[dst_type]()
-        SIMD.store(dst_ptr, i, dst_vec)
+        dst_ptr.store(i, dst_vec)
 
 
 fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:

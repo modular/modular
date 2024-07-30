@@ -107,9 +107,9 @@ fn matmul_sram(
         barrier()
 
         for k in range(tile_size):
-            result += Scalar.load(
-                a_shared, localRow * tile_size + k
-            ) * Scalar.load(b_shared, k * tile_size + localCol)
+            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
+                k * tile_size + localCol
+            )
 
         barrier()
 

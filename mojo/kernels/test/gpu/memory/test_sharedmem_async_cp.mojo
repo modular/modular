@@ -89,7 +89,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     # CHECK: 15.0
     # CHECK: 16.0
     for i in range(16):
-        print(Scalar.load(out_data, i))
+        print(out_data.load(i))
 
     in_data.free()
     out_data.free()

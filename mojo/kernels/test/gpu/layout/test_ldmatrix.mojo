@@ -196,8 +196,8 @@ fn check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
     for i in range(M * N):
-        var out_val = Scalar.load(c_host, i)
-        var out_ref = Scalar.load(c_host_ref, i)
+        var out_val = c_host.load(i)
+        var out_ref = c_host_ref.load(i)
         assert_almost_equal(out_val, out_ref)
 
     _ = a_device

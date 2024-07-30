@@ -286,11 +286,11 @@ fn gemm(
     # Utilities for accessing flattened matrices.
     @always_inline
     fn get_a(row: Int, col: Int) -> Float32:
-        return Scalar.load(a, row + m * col)
+        return a.load(row + m * col)
 
     @always_inline
     fn get_b(row: Int, col: Int) -> Float32:
-        return Scalar.load(b, row * n + col)
+        return b.load(row * n + col)
 
     @always_inline
     fn set_c(row: Int, col: Int, val: Float32):
@@ -350,7 +350,7 @@ fn gemm(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
-            set_c(row, col + out_idx, Scalar.load(c_reg, out_idx))
+            set_c(row, col + out_idx, c_reg.load(out_idx))
 
 
 def _verify_gemm(asm: String):
@@ -503,7 +503,7 @@ fn block_reduce(val: Float32) -> Float32:
     barrier()
 
     return warp_sum_reduce(
-        Scalar.load(shared, lane) if ThreadIdx.x() < BlockDim.x() // 32 else 0
+        shared.load(lane) if ThreadIdx.x() < BlockDim.x() // 32 else 0
     )
 
 
