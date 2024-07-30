@@ -1235,16 +1235,20 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle module or package references.
   if (isa<PackageOp, FileModuleOp>(*typeDecl)) {
     // Look up the unqualified identifier in the right scope.
-    DeclRefNode declRef(spelling);
+    //
+    // declRef is allocated persistently because when it refers to a function
+    // it gets captured in the overloadSet returned by declRef->emitIR(), and,
+    // thus, cannot be on the stack.
+    DeclRefNode *declRef = shared.allocPersistent<DeclRefNode>(spelling);
     if (emitter.builder) {
       ExprEmitter moduleEmitter(shared, *typeDecl, *emitter.builder,
                                 emitter.varDeclCursor);
 
-      return declRef.emitIR(dest, moduleEmitter);
+      return declRef->emitIR(dest, moduleEmitter);
     }
 
     ExprEmitter moduleEmitter(shared, *typeDecl, emitter.paramContext);
-    return declRef.emitIR(dest, moduleEmitter);
+    return declRef->emitIR(dest, moduleEmitter);
   }
 
   if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl)) {
