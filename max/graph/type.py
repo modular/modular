@@ -403,7 +403,7 @@ class TensorType(Type):
             The tensor type represented by the MLIR Type value.
         """
         if not _graph.type_is_tensor(t):
-            raise ValueError(f"Expected TensorType, got: {t}")
+            raise TypeError(f"Expected TensorType, got: {t}")
 
         dtype = _graph.tensor_type_get_dtype(t)
         rank = _graph.tensor_type_get_rank(t)
