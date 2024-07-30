@@ -16,6 +16,7 @@ from buffer.buffer import (
 )
 from buffer.dimlist import DimList
 from memory import stack_allocation, UnsafePointer
+from sys import prefetch
 from memory.unsafe import bitcast
 
 from utils.index import Index, StaticIntTuple

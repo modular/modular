@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.optional import OptionalReg
+from collections import Optional
 from math import ceildiv
 
 from buffer import NDBuffer
@@ -48,6 +49,7 @@ from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
 
 from utils.index import Index
+from sys import alignof
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type

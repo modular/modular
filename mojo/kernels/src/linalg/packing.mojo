@@ -30,6 +30,8 @@ from .utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
+from sys import alignof
+from memory import stack_allocation, memcpy
 
 
 @value

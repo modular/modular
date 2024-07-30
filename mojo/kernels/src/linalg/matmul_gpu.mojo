@@ -46,6 +46,8 @@ from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import InlineArray, StaticTuple
 
+from sys import llvm_intrinsic
+
 from ._multistage_gemm_gpu import multistage_gemm
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from gpu.host._compile import _get_nvptx_target

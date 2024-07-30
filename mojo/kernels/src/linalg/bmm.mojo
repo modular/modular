@@ -21,6 +21,7 @@ from gpu.host import DeviceContext
 from memory import memset_zero
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from sys import alignof
 
 from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type

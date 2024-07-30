@@ -15,7 +15,13 @@ from sys.info import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import memcpy, memset_zero, stack_allocation, UnsafePointer
+from memory import (
+    memcpy,
+    memset_zero,
+    stack_allocation,
+    UnsafePointer,
+    AddressSpace,
+)
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`

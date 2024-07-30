@@ -20,6 +20,7 @@ from algorithm.functional import (
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 from .bmm import _reshape_nd_buffer_with_batch_to_3d

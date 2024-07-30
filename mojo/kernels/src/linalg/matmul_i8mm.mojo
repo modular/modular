@@ -19,6 +19,7 @@ from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel
 from .neon_intrinsics import _neon_matmul
 from .utils import GemmShape, get_matmul_prefetch_b_distance_k
+from sys import prefetch
 
 
 struct LoadStore_i8mm[

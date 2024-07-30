@@ -10,6 +10,7 @@ from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 from .utils import elementwise_epilogue_type

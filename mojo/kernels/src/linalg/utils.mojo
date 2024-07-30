@@ -30,6 +30,7 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
 from utils.index import Index, StaticIntTuple
+from sys import alignof
 
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]

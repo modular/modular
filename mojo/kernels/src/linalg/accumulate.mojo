@@ -12,6 +12,8 @@ from sys.intrinsics import PrefetchOptions
 from algorithm.functional import tile
 from buffer.buffer import Buffer, partial_simd_load, partial_simd_store
 from memory import stack_allocation, UnsafePointer
+from utils import StaticIntTuple
+from sys import alignof, prefetch
 
 
 # ===----------------------------------------------------------------------===#
