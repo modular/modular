@@ -80,9 +80,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.size == 4
     ):
         var sa = a.split()
-        var c0 = c
-
-        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
+        var c0 = bitcast[DType.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.f32.f32",
@@ -91,12 +89,11 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             sa[0],
             sa[1],
             b,
-            c_ptr[0],
-            c_ptr[1],
-            c_ptr[2],
-            c_ptr[3],
+            c0[0],
+            c0[1],
+            c0[2],
+            c0[3],
         )
-        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -134,9 +131,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.size == 4
     ):
         var sa = a.split()
-        var c0 = c
-
-        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
+        var c0 = bitcast[DType.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.bf16",
@@ -145,12 +140,11 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             bitcast[DType.int32, 1](sa[0]),
             bitcast[DType.int32, 1](sa[1]),
             bitcast[DType.int32, 1](b),
-            c_ptr[0],
-            c_ptr[1],
-            c_ptr[2],
-            c_ptr[3],
+            c0[0],
+            c0[1],
+            c0[2],
+            c0[3],
         )
-        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -171,9 +165,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var sa1 = sa[0].split()
         var sa2 = sa[1].split()
         var sb = b.split()
-        var c0 = c
-
-        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
+        var c0 = bitcast[DType.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k16.row.col.bf16",
@@ -185,12 +177,11 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             bitcast[DType.int32, 1](sa2[1]),
             bitcast[DType.int32, 1](sb[0]),
             bitcast[DType.int32, 1](sb[1]),
-            c_ptr[0],
-            c_ptr[1],
-            c_ptr[2],
-            c_ptr[3],
+            c0[0],
+            c0[1],
+            c0[2],
+            c0[3],
         )
-        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -210,29 +201,22 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.type is DType.float32
         and c.size == 4
     ):
-        var a0 = a
-        var b0 = b
-        var c0 = c
-
-        var a_ptr = UnsafePointer.address_of(a0).bitcast[UInt32]()
-        var b_ptr = UnsafePointer.address_of(b0).bitcast[UInt32]()
-        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
+        var a0 = bitcast[DType.uint32, 2](a)
+        var b0 = bitcast[DType.uint32, 1](b)
+        var c0 = bitcast[DType.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k4.row.col.tf32",
             _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
-            a_ptr[0],
-            a_ptr[1],
-            b_ptr[0],
-            c_ptr[0],
-            c_ptr[1],
-            c_ptr[2],
-            c_ptr[3],
+            a0[0],
+            a0[1],
+            b0,
+            c0[0],
+            c0[1],
+            c0[2],
+            c0[3],
         )
-        _ = a0
-        _ = b0
-        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
@@ -249,32 +233,25 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.type is DType.float32
         and c.size == 4
     ):
-        var a0 = a
-        var b0 = b
-        var c0 = c
-
-        var a_ptr = UnsafePointer.address_of(a0).bitcast[UInt32]()
-        var b_ptr = UnsafePointer.address_of(b0).bitcast[UInt32]()
-        var c_ptr = UnsafePointer.address_of(c0).bitcast[Float32]()
+        var a0 = bitcast[DType.uint32, 4](a)
+        var b0 = bitcast[DType.uint32, 2](b)
+        var c0 = bitcast[DType.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.tf32",
             _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
-            a_ptr[0],
-            a_ptr[1],
-            a_ptr[2],
-            a_ptr[3],
-            b_ptr[0],
-            b_ptr[1],
-            c_ptr[0],
-            c_ptr[1],
-            c_ptr[2],
-            c_ptr[3],
+            a0[0],
+            a0[1],
+            a0[2],
+            a0[3],
+            b0[0],
+            b0[1],
+            c0[0],
+            c0[1],
+            c0[2],
+            c0[3],
         )
-        _ = a0
-        _ = b0
-        _ = c0
 
         d[0] = rebind[Scalar[d.type]](r[0])
         d[1] = rebind[Scalar[d.type]](r[1])
