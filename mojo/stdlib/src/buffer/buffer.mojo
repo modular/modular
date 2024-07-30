@@ -15,7 +15,7 @@ from buffer import Buffer
 from math import align_down, fma, iota
 from pathlib import Path
 from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
-from sys.intrinsics import PrefetchOptions, masked_load, masked_store
+from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
 from memory import memset_zero, stack_allocation, UnsafePointer
