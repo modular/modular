@@ -41,35 +41,33 @@ def test_i8_to_i32():
         c[i] = i
         csat[i] = c[i]
 
-    var av16u = SIMD[size=16].load(
-        a.data.offset(128 + 64).bitcast[DType.int32]()
-    )
-    var av16s = SIMD[size=16].load(
-        asat.data.offset(128 + 64).bitcast[DType.int32]()
-    )
-    var bv16 = SIMD[size=16].load(b.data.offset(0).bitcast[DType.int32]())
+    var av16u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=16]()
+    var av16s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[
+        width=16
+    ]()
+    var bv16 = b.data.offset(0).bitcast[DType.int32]().load[width=16]()
     var cv16u: SIMD[DType.int32, 16] = 0
     var cv16s: SIMD[DType.int32, 16] = 0
     if has_avx512f():
-        cv16u = dot_i8_to_i32_AVX2[16](SIMD[size=16].load(c.data), av16u, bv16)
+        cv16u = dot_i8_to_i32_AVX2[16](c.data.load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](
-            SIMD[size=16].load(c.data), av16s, bv16
+            c.data.load[width=16](), av16s, bv16
         )
     else:
         # split the vectors into high and low
         var cv8ul = dot_i8_to_i32_AVX2[8](
-            SIMD[size=8].load(c.data), av16u.slice[8](), bv16.slice[8]()
+            c.data.load[width=8](), av16u.slice[8](), bv16.slice[8]()
         )
         var cv8sl = dot_i8_to_i32_saturated_AVX2[8](
-            SIMD[size=8].load(c.data), av16s.slice[8](), bv16.slice[8]()
+            c.data.load[width=8](), av16s.slice[8](), bv16.slice[8]()
         )
         var cv8uh = dot_i8_to_i32_AVX2[8](
-            SIMD[size=8].load(c.data.offset(8)),
+            c.data.offset(8).load[width=8](),
             av16u.slice[8, offset=8](),
             bv16.slice[8, offset=8](),
         )
         var cv8sh = dot_i8_to_i32_saturated_AVX2[8](
-            SIMD[size=8].load(c.data.offset(8)),
+            c.data.offset(8).load[width=8](),
             av16s.slice[8, offset=8](),
             bv16.slice[8, offset=8](),
         )
@@ -119,14 +117,12 @@ def test_i8_to_i32():
         ),
     )
 
-    var av8u = SIMD[size=8].load(a.data.offset(128 + 64).bitcast[DType.int32]())
-    var av8s = SIMD[size=8].load(
-        asat.data.offset(128 + 64).bitcast[DType.int32]()
-    )
-    var bv8 = SIMD[size=8].load(b.data.offset(0).bitcast[DType.int32]())
-    var cv8u = dot_i8_to_i32_AVX2[8](SIMD[size=8].load(c.data), av8u, bv8)
+    var av8u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=8]()
+    var av8s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[width=8]()
+    var bv8 = b.data.offset(0).bitcast[DType.int32]().load[width=8]()
+    var cv8u = dot_i8_to_i32_AVX2[8](c.data.load[width=8](), av8u, bv8)
     var cv8s = dot_i8_to_i32_saturated_AVX2[8](
-        SIMD[size=8].load(c.data), av8s, bv8
+        c.data.load[width=8](), av8s, bv8
     )
 
     assert_equal(
@@ -142,14 +138,12 @@ def test_i8_to_i32():
         ),
     )
 
-    var av4u = SIMD[size=4].load(a.data.offset(128 + 64).bitcast[DType.int32]())
-    var av4s = SIMD[size=4].load(
-        asat.data.offset(128 + 64).bitcast[DType.int32]()
-    )
-    var bv4 = SIMD[size=4].load(b.data.offset(0).bitcast[DType.int32]())
-    var cv4u = dot_i8_to_i32_AVX2[4](SIMD[size=4].load(c.data), av4u, bv4)
+    var av4u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=4]()
+    var av4s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[width=4]()
+    var bv4 = b.data.offset(0).bitcast[DType.int32]().load[width=4]()
+    var cv4u = dot_i8_to_i32_AVX2[4](c.data.load[width=4](), av4u, bv4)
     var cv4s = dot_i8_to_i32_saturated_AVX2[4](
-        SIMD[size=4].load(c.data), av4s, bv4
+        c.data.load[width=4](), av4s, bv4
     )
 
     assert_equal(cv4u, SIMD[DType.int32, 4](-97906, -96769, -95504, -94111))

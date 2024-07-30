@@ -125,16 +125,18 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                     partial_simd_load[4](
                         a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
                     )
-                ) if (is_tail and has_avx512f()) else Scalar.load(
-                    a_ptr.offset(idx0 * a_ptr_stride).bitcast[c_type]()
-                )
+                ) if (is_tail and has_avx512f()) else a_ptr.offset(
+                    idx0 * a_ptr_stride
+                ).bitcast[
+                    c_type
+                ]().load()
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 # var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local[idx0, idx1]
-                var b_val = SIMD[size=simd_size].load[alignment=alignment](
-                    b_ptr.offset(idx1 * simd_size)
-                )
+                var b_val = b_ptr.offset(idx1 * simd_size).load[
+                    width=simd_size, alignment=alignment
+                ]()
 
                 @parameter
                 if has_neon_int8_dotprod():

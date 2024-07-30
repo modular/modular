@@ -833,9 +833,9 @@ fn multistage_gemm[
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
-                    var vec = SIMD[size=2].load[
-                        alignment = alignof[SIMD[c_type, 2]]()
-                    ](c_reg_frag.ptr.offset(src_idx))
+                    var vec = c_reg_frag.ptr.offset(src_idx).load[
+                        width=2, alignment = alignof[SIMD[c_type, 2]]()
+                    ]()
                     epilogue((m, n), vec)
 
         else:

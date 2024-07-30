@@ -86,8 +86,8 @@ struct Inner_matmul_default(InnerMatmulKernel):
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
-                var b_val = SIMD[size=simd_size].load[alignment=alignment](
-                    b_ptr, idx1 * simd_size
+                var b_val = b_ptr.load[width=simd_size, alignment=alignment](
+                    idx1 * simd_size
                 )
                 c_local.fma(idx0, idx1, a_val, b_val)
 

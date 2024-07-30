@@ -314,9 +314,9 @@ fn sgemm_warp_tiling_kernel[
                         )
                     )
 
-                    var vec = alpha * result_vec + beta * SIMD[size=4].load[
-                        alignment=16
-                    ](C_interim, int(c_idx))
+                    var vec = alpha * result_vec + beta * C_interim.load[
+                        width=4, alignment=16
+                    ](int(c_idx))
 
                     @parameter
                     if elementwise_lambda_fn:
@@ -329,9 +329,7 @@ fn sgemm_warp_tiling_kernel[
                             vec,
                         )
                     else:
-                        SIMD[size=4].store[alignment=16](
-                            C_interim, int(c_idx), vec
-                        )
+                        C_interim.store[width=4][alignment=16](int(c_idx), vec)
 
 
 # Matrix-Column Vector Multiplication
@@ -360,8 +358,8 @@ fn gemv_kernel[
             var val = SIMD[s_type, 1]()
             if idx < k:
                 val = (
-                    Scalar.load(a, Int(warpId) * k + Int(idx)).cast[s_type]()
-                    * Scalar.load(b, Int(idx)).cast[s_type]()
+                    a.load(Int(warpId) * k + Int(idx)).cast[s_type]()
+                    * b.load(Int(idx)).cast[s_type]()
                 )
 
             @parameter
@@ -414,8 +412,8 @@ fn gemv_tc_kernel[
             var val = Scalar[s_type]()
             if idx < k:
                 val = (
-                    Scalar.load(a, warpId * k + idx).cast[s_type]()
-                    * Scalar.load(b, idx).cast[s_type]()
+                    a.load(warpId * k + idx).cast[s_type]()
+                    * b.load(idx).cast[s_type]()
                 )
 
             var out_val = Scalar[s_type]()
@@ -524,8 +522,8 @@ fn gevm_kernel[
     # Every block computes warp size length of output values
     for i in range(ceildiv(UInt(k), warpsPerBlock)):
         var row = i * warpsPerBlock + warpId
-        var lhs = Scalar.load(a, row)
-        var rhs = Scalar.load(b, row * n + col)
+        var lhs = a.load(row)
+        var rhs = b.load(row * n + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
     x_shared[lane_id() * WARP_SIZE + warpId] = accum
@@ -539,7 +537,7 @@ fn gevm_kernel[
         return x + y
 
     var total = SIMD[s_type, 1]()
-    total = Scalar.load(x_shared, ThreadIdx.x()).cast[s_type]()
+    total = x_shared.load(ThreadIdx.x()).cast[s_type]()
     total = warp_reduce[shuffle_down, reduce_add](total)
 
     if lane_id() == 0:

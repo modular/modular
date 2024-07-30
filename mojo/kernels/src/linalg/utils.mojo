@@ -659,8 +659,8 @@ fn packA_i8mm[
 
             @parameter
             for idx in range(nrow):
-                var t0 = SIMD[size=8].load(a_ptr, (j + idx) * k + l)
-                SIMD.store(a_packed_ptr, kh * j + 2 * l + 8 * idx, t0)
+                var t0 = a_ptr.load[width=8]((j + idx) * k + l)
+                a_packed_ptr.store(kh * j + 2 * l + 8 * idx, t0)
 
         @parameter
         for idx in range(nrow):
@@ -743,9 +743,10 @@ fn apply_epilogue[
                 # the matrix dimension, layout doesn't.
                 alias N = dst_element_layout.stride[0].value()
 
-                var vec = SIMD[size=vec_width].load[
-                    alignment = alignof[SIMD[src.dtype, vec_width]]()
-                ](src.ptr, src_idx)
+                var vec = src.ptr.load[
+                    width=vec_width,
+                    alignment = alignof[SIMD[src.dtype, vec_width]](),
+                ](src_idx)
 
                 var m = (dst_idx + offset) // N
                 var n = (dst_idx + offset) % N
