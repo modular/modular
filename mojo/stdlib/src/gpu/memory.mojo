@@ -6,6 +6,7 @@
 """This module includes NVIDIA GPUs memory operations."""
 
 from memory import UnsafePointer
+from sys._assembly import inlined_assembly
 from memory.reference import _GPUAddressSpace
 
 # ===----------------------------------------------------------------------===#
@@ -19,9 +20,33 @@ alias AddressSpace = _GPUAddressSpace
 # ===----------------------------------------------------------------------===#
 
 
+fn _int_to_str[val: Int]() -> StringLiteral:
+    constrained[val in (4, 8, 16, 32, 64, 128)]()
+
+    @parameter
+    if val == 4:
+        return "4"
+    elif val == 8:
+        return "8"
+    elif val == 16:
+        return "16"
+    elif val == 32:
+        return "32"
+    elif val == 64:
+        return "64"
+    elif val == 128:
+        return "128"
+
+    return "Unknown"
+
+
 @always_inline
 fn async_copy[
-    size: Int, type: AnyType, bypass_L1_16B: Bool = True
+    type: AnyType, //,
+    size: Int,
+    *,
+    bypass_L1_16B: Bool = True,
+    l2_prefetch: Optional[Int] = None,
 ](
     src: UnsafePointer[type, AddressSpace.GLOBAL],
     dst: UnsafePointer[type, AddressSpace.SHARED],
@@ -30,37 +55,56 @@ fn async_copy[
     to shared memory `dst` address.
 
     Parameters:
-        size: Number of bytes to copy.
         type: The pointer type.
+        size: Number of bytes to copy.
         bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
+        l2_prefetch: Enable L2 prefetching and specify the size.
 
     Args:
         src: Global memory pointer.
         dst: Shared memory pointer.
     """
     # TODO: Constrained on device capability.
-    constrained[size == 4 or size == 8 or size == 16]()
+    constrained[size in (4, 8, 16)]()
+    constrained[
+        not (l2_prefetch.__bool__() == bypass_L1_16B == True),
+        "both enable l2 prefetching and l1 bypass cannot be True",
+    ]()
+    constrained[
+        not l2_prefetch or l2_prefetch.value() in (64, 128, 256),
+        "the l2 prefetch size must be in bounds",
+    ]()
 
     alias cache_op = "cg" if (bypass_L1_16B and size == 16) else "ca"
-    alias access_size = "4" if size == 4 else ("8" if size == 8 else "16")
-    alias command = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size
-    llvm_intrinsic[command, NoneType](dst, src)
+    alias access_size = _int_to_str[size]()
+
+    @parameter
+    if l2_prefetch:
+        alias asm = "cp.async." + cache_op + ".shared.global.L2::" + _int_to_str[
+            l2_prefetch.value()
+        ]() + "B [$0], [$1], $2;"
+        inlined_assembly[asm, NoneType, constraints="r,l,n"](
+            Int32(int(dst)), src, Int32(size)
+        )
+    else:
+        alias intrin = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size
+        llvm_intrinsic[intrin, NoneType](dst, src)
 
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyType, bypass_L1_16B: Bool = True
+    type: AnyType, //, size: Int, *, bypass_L1_16B: Bool = True
 ](
-    src: UnsafePointer[type, AddressSpace.GLOBAL],
-    dst: UnsafePointer[type, AddressSpace.SHARED],
+    src: UnsafePointer[type, AddressSpace.GLOBAL, *_],
+    dst: UnsafePointer[type, AddressSpace.SHARED, *_],
     src_size: Int32,
 ):
     """Asynchronously copy `size` amount of bytes from src global memory address
     to shared memory `dst` address.
 
     Parameters:
-        size: Number of bytes to copy.
         type: The pointer type.
+        size: Number of bytes to copy.
         bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
 
     Args:
@@ -74,9 +118,9 @@ fn async_copy[
     constrained[size == 4 or size == 8 or size == 16]()
 
     alias cache_op = "cg" if (bypass_L1_16B and size == 16) else "ca"
-    alias access_size = "4" if size == 4 else ("8" if size == 8 else "16")
-    alias command = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size + ".s"
-    llvm_intrinsic[command, NoneType](dst, src, src_size)
+    alias access_size = _int_to_str[size]()
+    alias intrin = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size + ".s"
+    llvm_intrinsic[intrin, NoneType](dst, src, src_size)
 
 
 @always_inline
