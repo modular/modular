@@ -773,16 +773,8 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
     Type elementType = typeConverter->convertType(ptrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-    Value loadOperand = adaptor.getPtr();
-    if (auto addressSpace =
-            dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
-        addressSpace && addressSpace.getInt() != 0) {
-      loadOperand = rewriter.create<LLVM::AddrSpaceCastOp>(
-          op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
-          loadOperand);
-    }
     auto loadOp = rewriter.create<LLVM::LoadOp>(op.getLoc(), elementType,
-                                                loadOperand, alignment);
+                                                adaptor.getPtr(), alignment);
     rewriter.replaceOp(op, loadOp);
     return success();
   }
@@ -802,16 +794,8 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
     auto ptrType = cast<PointerType>(op.getPtr().getType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-    Value storeOperand = adaptor.getPtr();
-    if (auto addressSpace =
-            dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
-        addressSpace && addressSpace.getInt() != 0) {
-      storeOperand = rewriter.create<LLVM::AddrSpaceCastOp>(
-          op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
-          storeOperand);
-    }
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getArg(),
-                                               storeOperand, alignment,
+                                               adaptor.getPtr(), alignment,
                                                /*isVolatile=*/false);
     return success();
   }
