@@ -539,7 +539,7 @@ fn fillBuffer[
     var ptr = buf.data.bitcast[type]()
     var offset: Int = 0
     for val in vals:
-        Scalar.store(ptr, offset, val)
+        ptr.store[width=1](offset, val)
         offset += 1
 
 
