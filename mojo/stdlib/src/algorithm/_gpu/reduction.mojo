@@ -22,6 +22,7 @@ from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 
+from utils import StaticIntTuple
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
