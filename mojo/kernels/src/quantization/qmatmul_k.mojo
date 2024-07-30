@@ -105,14 +105,14 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
                 @parameter
                 for i in range(2):
-                    var bytes = SIMD[size = Self._simd_width].load(
-                        src_ptr + i * Self._packed_stride
-                    )
+                    var bytes = (src_ptr + i * Self._packed_stride).load[
+                        width = Self._simd_width
+                    ]()
                     packed_bits |= bytes << (i * 4)
 
                 src_ptr += Self._simd_width
 
-                SIMD.store(bits_ptr, packed_bits)
+                bits_ptr.store(packed_bits)
                 bits_ptr += Self._simd_width
 
             src_ptr += Self._packed_stride
@@ -128,7 +128,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             @parameter
             for col in range(Self._tile_n):
-                var packed_bits = SIMD[size = Self._simd_width].load(bits_ptr)
+                var packed_bits = bits_ptr.load[width = Self._simd_width]()
                 bits_ptr += Self._simd_width
 
                 var dst_row_ptr = dst_ptr
@@ -136,7 +136,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                 @parameter
                 for i in range(2):
                     var bytes = (packed_bits >> (i * 4)) & 15
-                    SIMD.store(dst_ptr + i * Self._packed_stride, bytes)
+                    (dst_ptr + i * Self._packed_stride).store(bytes)
 
                 dst_ptr += Self._simd_width
 
@@ -162,18 +162,18 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             @parameter
             for col in range(Self._tile_n):
-                var hi_bytes = SIMD[size = Self._simd_width].load(
-                    src_col_ptr + 3 * Self._packed_stride
-                )
+                var hi_bytes = (src_col_ptr + 3 * Self._packed_stride).load[
+                    width = Self._simd_width
+                ]()
 
                 @parameter
                 for i in range(3):
-                    var bytes = SIMD[size = Self._simd_width].load(
-                        src_col_ptr + i * Self._packed_stride
-                    )
+                    var bytes = (src_col_ptr + i * Self._packed_stride).load[
+                        width = Self._simd_width
+                    ]()
                     var packed_bits = bytes | (((hi_bytes >> (i * 2)) & 3) << 6)
 
-                    SIMD.store(bits_ptr, packed_bits)
+                    bits_ptr.store(packed_bits)
                     bits_ptr += Self._simd_width
 
                 src_col_ptr += Self._simd_width
@@ -198,20 +198,16 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
                 @parameter
                 for i in range(3):
-                    var packed_bits = SIMD[size = Self._simd_width].load(
-                        bits_ptr
-                    )
+                    var packed_bits = bits_ptr.load[width = Self._simd_width]()
                     bits_ptr += Self._simd_width
 
-                    SIMD.store(
-                        dst_col_ptr + i * Self._packed_stride,
+                    (dst_col_ptr + i * Self._packed_stride).store(
                         (packed_bits & 63) - zero_point,
                     )
 
                     hi_bytes |= (packed_bits >> 6) << (i * 2)
 
-                SIMD.store(
-                    dst_col_ptr + 3 * Self._packed_stride,
+                (dst_col_ptr + 3 * Self._packed_stride).store(
                     hi_bytes - zero_point,
                 )
 
@@ -308,9 +304,7 @@ fn _quantize_a_Q8_K[
                 var max_value_simd = SIMD[type, group_size](Scalar[type].MIN)
 
                 for g in range(group_count):
-                    var fp_data = SIMD[size=group_size].load(
-                        am_ptr, g * group_size
-                    )
+                    var fp_data = am_ptr.load[width=group_size](g * group_size)
                     max_value_simd = max(abs(fp_data), max_value_simd)
 
                 var max_value = max_value_simd.reduce_max()
@@ -318,15 +312,12 @@ fn _quantize_a_Q8_K[
                 var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
                 for g in range(group_count):
-                    var fp_data = SIMD[size=group_size].load(
-                        am_ptr, g * group_size
-                    )
+                    var fp_data = am_ptr.load[width=group_size](g * group_size)
                     var q_data_i32 = roundeven_to_int32(fp_data * multiplier)
                     var q_data_i8 = q_data_i32.cast[DType.int8]()
                     var group_sum = q_data_i32.reduce_add()
 
-                    SIMD.store(
-                        q_bits_ptr,
+                    q_bits_ptr.store(
                         g * tile_m * group_size + row * group_size,
                         q_data_i8,
                     )
@@ -358,12 +349,12 @@ fn _expand_q_bits_lo[
     *, width: Int
 ](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
     for k in range(0, _block_QK_K.quantized_k // 2, width):
-        var src_q_bits = SIMD[size=width].load(src_ptr)
+        var src_q_bits = src_ptr.load[width=width]()
         src_ptr += width
 
         @parameter
         for i in range(2):
-            SIMD.store(dst_ptr, (src_q_bits >> (i * 4)) & 15)
+            dst_ptr.store((src_q_bits >> (i * 4)) & 15)
             dst_ptr += width
 
 
@@ -374,15 +365,15 @@ fn _expand_and_merge_q_bits_hi[
     alias bit_mask = (1 << bit_count) - 1
 
     for k in range(0, _block_QK_K.quantized_k // values_per_byte, width):
-        var src_q_bits = SIMD[size=width].load(src_ptr)
+        var src_q_bits = src_ptr.load[width=width]()
         src_ptr += width
 
         for i in range(values_per_byte):
-            var dst_q_bits_lo = SIMD[size=width].load(dst_ptr)
+            var dst_q_bits_lo = dst_ptr.load[width=width]()
             var dst_q_bits_hi = (src_q_bits & bit_mask) << 4
             src_q_bits >>= bit_count
 
-            SIMD.store(dst_ptr, dst_q_bits_hi | dst_q_bits_lo)
+            dst_ptr.store(dst_q_bits_hi | dst_q_bits_lo)
             dst_ptr += width
 
 
@@ -393,7 +384,7 @@ fn _copy_column_q_bits_to_block[
     buffer.
     """
     for k in range(0, _block_QK_K.quantized_k, 4):
-        SIMD.store(dst_ptr, SIMD[size=4].load(src_ptr))
+        dst_ptr.store(src_ptr.load[width=4]())
         src_ptr += 4
         dst_ptr += block_n * 4
 
@@ -632,9 +623,9 @@ fn _matmul_group_stream_x86[
                 for row in range(tile_m):
                     var a_val = SIMD[DType.int32, simd_width](
                         bitcast[DType.int32, 1](
-                            SIMD[size=4].load(
-                                a_q_bits_ptr + row * group_size + k + tk * 4
-                            )
+                            (a_q_bits_ptr + row * group_size + k + tk * 4).load[
+                                width=4
+                            ]()
                         )
                     )
                     c_int32_group[row, col] = dot_i8_to_i32_saturated_x86(
@@ -672,9 +663,7 @@ fn _matmul_group_stream_neon_dotprod[
 
         @parameter
         for row in range(tile_m):
-            a_tile[row] = SIMD[size=16].load(
-                a_q_bits_ptr + row * group_size + k
-            )
+            a_tile[row] = (a_q_bits_ptr + row * group_size + k).load[width=16]()
 
         @parameter
         for lane in range(0, 4, tile_k):
@@ -747,7 +736,7 @@ fn _matmul_group_unpacked[
     ):
         @parameter
         for col in range(tile_n):
-            b_vals[col] = SIMD[size = simd_width * 4].load(b_q_bits_ptr)
+            b_vals[col] = b_q_bits_ptr.load[width = simd_width * 4]()
             b_q_bits_ptr += simd_width * 4
 
     _matmul_group_stream[group_size, stream_b_vals](a_q_bits_ptr, c_int32_group)
@@ -764,9 +753,9 @@ fn _apply_base_scales[
     # Convert to floating point and apply the block scale of matrix B.
     @parameter
     for col in range(tile_n):
-        var b_scale = SIMD[size=simd_width].load(
-            b_base_scales_ptr + col * simd_width
-        ).cast[DType.float32]()
+        var b_scale = (b_base_scales_ptr + col * simd_width).load[
+            width=simd_width
+        ]().cast[DType.float32]()
 
         @parameter
         for row in range(tile_m):
@@ -802,14 +791,14 @@ fn _apply_zero_point_correction[
                 # The minimum values vector is encoded as pairs of int16 values
                 # from group_0 and group_1:
                 #       [n0_g0 n0_g1 : n1_g0 n1_g1 : n2_g0 n2_g1 : n3_g0 n3_g1]
-                var q_mins = SIMD[size = simd_width * 2].load(
-                    b_q_mins_ptr, g * block_n + col * simd_width * 2
+                var q_mins = b_q_mins_ptr.load[width = simd_width * 2](
+                    g * block_n + col * simd_width * 2
                 ).cast[DType.int16]()
 
                 @parameter
                 for row in range(tile_m):
-                    var a_group_sums = SIMD[size=2].load(
-                        a_group_sums_ptr, g * tile_m + row * 2
+                    var a_group_sums = a_group_sums_ptr.load[width=2](
+                        g * tile_m + row * 2
                     )
                     corrections[row, col] = dot_i16_to_i32_x86(
                         corrections[row, col],
@@ -820,17 +809,17 @@ fn _apply_zero_point_correction[
         elif has_neon():
             # Use `smull(2)` and `smlal(2)` instructions to do an `int16*int16`
             # widening multiply/add to an int32 accumulator.
-            var group_sums = SIMD[size = tile_m * 2].load(
-                a_group_sums_ptr + g * tile_m
-            )
+            var group_sums = (a_group_sums_ptr + g * tile_m).load[
+                width = tile_m * 2
+            ]()
 
             @parameter
             for col in range(tile_n):
                 # The minimum values vector is encoded as pairs of int16 values
                 # from group_0 and group_1:
                 #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
-                var q_mins = SIMD[size = simd_width * 2].load(
-                    b_q_mins_ptr, g * block_n + col * simd_width * 2
+                var q_mins = b_q_mins_ptr.load[width = simd_width * 2](
+                    g * block_n + col * simd_width * 2
                 ).cast[DType.int16]()
 
                 # Logically slice the minimum values vector. This selects
@@ -866,9 +855,9 @@ fn _apply_zero_point_correction[
     # float accumulator.
     @parameter
     for col in range(tile_n):
-        var base_mins = SIMD[size=simd_width].load(
-            b_base_mins_ptr + col * simd_width
-        ).cast[DType.float32]()
+        var base_mins = (b_base_mins_ptr + col * simd_width).load[
+            width=simd_width
+        ]().cast[DType.float32]()
 
         @parameter
         for row in range(tile_m):
@@ -889,7 +878,7 @@ fn _apply_a_scales[
         # NEON supports a multiply instruction that can broadcast from a
         # vector element, so help the compiler produce that by doing a
         # vector load.
-        var a_scale = SIMD[size=tile_m].load(a_scales_ptr)
+        var a_scale = a_scales_ptr.load[width=tile_m]()
 
         @parameter
         for row in range(tile_m):
@@ -956,7 +945,7 @@ fn _matmul_group_packed_Q4_K[
     ):
         @parameter
         for col in range(tile_n):
-            var packed_bits = SIMD[size = simd_width * 4].load(b_q_bits_ptr)
+            var packed_bits = b_q_bits_ptr.load[width = simd_width * 4]()
             b_q_bits_ptr += simd_width * 4
 
             @parameter
@@ -1017,8 +1006,8 @@ fn _matmul_Q4_K_tile[
         # accumulators.
         @parameter
         for col in range(tile_n):
-            var b_q_scale_val = SIMD[size=simd_width].load(
-                b_q_scales_ptr, col * simd_width + g * block_n
+            var b_q_scale_val = b_q_scales_ptr.load[width=simd_width](
+                col * simd_width + g * block_n
             ).cast[DType.int32]()
 
             @parameter
@@ -1150,7 +1139,7 @@ fn _matmul_group_packed_Q6_K[
 
             @parameter
             for i in range(3):
-                var packed_bits = SIMD[size = simd_width * 4].load(b_q_bits_ptr)
+                var packed_bits = b_q_bits_ptr.load[width = simd_width * 4]()
                 b_q_bits_ptr += simd_width * 4
 
                 var bytes = packed_bits & 63
@@ -1231,8 +1220,8 @@ fn _matmul_Q6_K_tile[
         # accumulators.
         @parameter
         for col in range(tile_n):
-            var b_q_scale_val = SIMD[size=simd_width].load(
-                b_q_scales_ptr, col * simd_width + g * block_n
+            var b_q_scale_val = b_q_scales_ptr.load[width=simd_width](
+                col * simd_width + g * block_n
             ).cast[DType.int32]()
 
             @parameter

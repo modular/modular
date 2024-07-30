@@ -307,8 +307,8 @@ struct Q4sym[
         for i in range(outer_stride):
             for j in range(output_inner_stride):
                 var flat_index_input = input_inner_stride * i + j * group_size
-                var loaded_group = SIMD[size=group_size].load(
-                    input_tensor.data, flat_index_input
+                var loaded_group = input_tensor.data.load[width=group_size](
+                    flat_index_input
                 )
 
                 var flat_index_output = output_inner_stride * i + j
@@ -375,8 +375,7 @@ struct Q4sym[
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size
-                SIMD[size=group_size].store(
-                    output_tensor.data,
+                output_tensor.data.store[width=group_size](
                     flat_index_output,
                     encoded.decode_fully(),
                 )
