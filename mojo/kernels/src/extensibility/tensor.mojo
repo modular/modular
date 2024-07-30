@@ -223,7 +223,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
         width: Int
     ](inout self, index: StaticIntTuple[static_rank], val: SIMD[type, width]):
         var flat_index = self._compute_flat_index(index)
-        SIMD.store(self.data, flat_index, val)
+        self.data.store(flat_index, val)
 
     @always_inline
     fn get_nd_indices(self) -> StaticIntTuple[static_rank]:
@@ -288,17 +288,17 @@ struct Tensor[type: DType, static_rank: Int](Stringable, Formattable):
         ](stride: Int) -> SIMD[type, simd_width]:
             @parameter
             if stride_type == InnerStride.Broadcast:
-                return SIMD[size=simd_width].load(self.data, flat_index)
+                return self.data.load[width=simd_width](flat_index)
             elif stride_type == InnerStride.Contiguous:
 
                 @parameter
                 if type is DType.bool:
-                    var v = SIMD[size=simd_width].load(
-                        self.data.bitcast[DType.uint8](), flat_index
-                    )
+                    var v = (self.data.bitcast[DType.uint8]()).load[
+                        width=simd_width
+                    ](flat_index)
                     return v.cast[type]()
                 else:
-                    return SIMD[size=simd_width].load(self.data, flat_index)
+                    return self.data.load[width=simd_width](flat_index)
             else:
 
                 @parameter
