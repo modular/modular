@@ -4,9 +4,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: @variant_create_0
 kgen.func @variant_create_0(%arg0: i32) -> !kgen.variant<i32> {
-  // CHECK-DAG: %[[DISCR:.*]] = llvm.mlir.constant(false) : i1
+  // CHECK-DAG: %[[DISCR:.*]] = llvm.mlir.constant(0 : i8) : i8
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef : !llvm.array<1 x i64>
-  // CHECK-DAG: %[[S2:.*]] = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i1)>
+  // CHECK-DAG: %[[S2:.*]] = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i8)>
   // CHECK-DAG: %[[I32_0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK-DAG: %[[I64_0:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK: %[[P0:.*]] = llvm.lshr %arg0, %[[I32_0]]
@@ -202,7 +202,7 @@ kgen.func @variant_get_3(%arg0: !kgen.variant<struct<(i32, i64, i32)>, array<4, 
   // CHECK: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[P7:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %[[P4:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<4 x i64>, i1)>
+  // CHECK: %[[P4:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<4 x i64>, i8)>
   // CHECK: %[[P5:.*]] = llvm.extractvalue %[[P4]][0] : !llvm.array<4 x i64>
   // CHECK: %[[P6:.*]] = llvm.extractvalue %[[P4]][1] : !llvm.array<4 x i64>
   // CHECK: %[[P8:.*]] = llvm.lshr %[[P5]], %[[C0_i64]] : i64
@@ -242,7 +242,7 @@ kgen.func @variant_get_4(%arg0: !kgen.variant<struct<(array<2, i16>, struct<(str
   // CHECK-DAG: %[[P28:.*]] = llvm.mlir.undef : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
   // CHECK-DAG: %[[P29:.*]] = llvm.mlir.undef : !llvm.struct<(i8, i32)>
   // CHECK-DAG: %[[P45:.*]] = llvm.mlir.undef : vector<2xf32>
-  // CHECK: %[[P11:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<3 x i64>, i1)>
+  // CHECK: %[[P11:.*]] = llvm.extractvalue %arg0[0] : !llvm.struct<(array<3 x i64>, i8)>
   // CHECK: %[[P12:.*]] = llvm.extractvalue %[[P11]][0] : !llvm.array<3 x i64>
   // CHECK: %[[P13:.*]] = llvm.extractvalue %[[P11]][1] : !llvm.array<3 x i64>
   // CHECK: %[[P14:.*]] = llvm.extractvalue %[[P11]][2] : !llvm.array<3 x i64>

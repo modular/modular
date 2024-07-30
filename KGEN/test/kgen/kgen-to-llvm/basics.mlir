@@ -123,11 +123,11 @@ kgen.func @variant_constant_0() -> !kgen.variant<i32> {
   // CHECK: %7 = llvm.or %1, %6  : i64
   // CHECK: %8 = llvm.mlir.undef : !llvm.array<1 x i64>
   // CHECK: %9 = llvm.insertvalue %7, %8[0] : !llvm.array<1 x i64>
-  // CHECK: %10 = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i1)>
-  // CHECK: %11 = llvm.insertvalue %9, %10[0] : !llvm.struct<(array<1 x i64>, i1)>
-  // CHECK: %12 = llvm.mlir.constant(false) : i1
-  // CHECK: %13 = llvm.insertvalue %12, %11[1] : !llvm.struct<(array<1 x i64>, i1)>
-  // CHECK: llvm.return %13 : !llvm.struct<(array<1 x i64>, i1)>
+  // CHECK: %10 = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: %11 = llvm.insertvalue %9, %10[0] : !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: %12 = llvm.mlir.constant(0 : i8) : i8
+  // CHECK: %13 = llvm.insertvalue %12, %11[1] : !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: llvm.return %13 : !llvm.struct<(array<1 x i64>, i8)>
   %0 = kgen.param.constant: variant<i32> = <#kgen.variant<:i32 1, 0>>
   kgen.return %0 : !kgen.variant<i32>
 }
@@ -173,11 +173,11 @@ kgen.func @variant_constant_1() -> !kgen.variant<struct<(i32, i64, i32)>, struct
   // CHECK: %36 = llvm.mlir.undef : !llvm.array<2 x i64>
   // CHECK: %37 = llvm.insertvalue %22, %36[0] : !llvm.array<2 x i64>
   // CHECK: %38 = llvm.insertvalue %35, %37[1] : !llvm.array<2 x i64>
-  // CHECK: %39 = llvm.mlir.undef : !llvm.struct<(array<2 x i64>, i1)>
-  // CHECK: %40 = llvm.insertvalue %38, %39[0] : !llvm.struct<(array<2 x i64>, i1)>
-  // CHECK: %41 = llvm.mlir.constant(false) : i1
-  // CHECK: %42 = llvm.insertvalue %41, %40[1] : !llvm.struct<(array<2 x i64>, i1)>
-  // CHECK: lvm.return %42 : !llvm.struct<(array<2 x i64>, i1)>
+  // CHECK: %39 = llvm.mlir.undef : !llvm.struct<(array<2 x i64>, i8)>
+  // CHECK: %40 = llvm.insertvalue %38, %39[0] : !llvm.struct<(array<2 x i64>, i8)>
+  // CHECK: %41 = llvm.mlir.constant(0 : i8) : i8
+  // CHECK: %42 = llvm.insertvalue %41, %40[1] : !llvm.struct<(array<2 x i64>, i8)>
+  // CHECK: lvm.return %42 : !llvm.struct<(array<2 x i64>, i8)>
   %0 = kgen.param.constant: variant<struct<(i32, i64, i32)>, struct<(f64, f32)>> = <#kgen.variant<:!kgen.struct<(i32, i64, i32)> { 1, 2, 3 }, 0>>
   kgen.return %0 : !kgen.variant<struct<(i32, i64, i32)>, struct<(f64, f32)>>
 }
@@ -194,11 +194,11 @@ kgen.func @variant_constant_2() -> !kgen.variant<i1, i2, i3, i4, i5, i6> {
   // CHECK: %7 = llvm.or %1, %6  : i64
   // CHECK: %8 = llvm.mlir.undef : !llvm.array<1 x i64>
   // CHECK: %9 = llvm.insertvalue %7, %8[0] : !llvm.array<1 x i64>
-  // CHECK: %10 = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i3)>
-  // CHECK: %11 = llvm.insertvalue %9, %10[0] : !llvm.struct<(array<1 x i64>, i3)>
-  // CHECK: %12 = llvm.mlir.constant(3 : i3) : i3
-  // CHECK: %13 = llvm.insertvalue %12, %11[1] : !llvm.struct<(array<1 x i64>, i3)>
-  // CHECK: llvm.return %13 : !llvm.struct<(array<1 x i64>, i3)>
+  // CHECK: %10 = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: %11 = llvm.insertvalue %9, %10[0] : !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: %12 = llvm.mlir.constant(3 : i8) : i8
+  // CHECK: %13 = llvm.insertvalue %12, %11[1] : !llvm.struct<(array<1 x i64>, i8)>
+  // CHECK: llvm.return %13 : !llvm.struct<(array<1 x i64>, i8)>
   %0 = kgen.param.constant: variant<i1, i2, i3, i4, i5, i6> = <#kgen.variant<:i4 1, 3>>
   kgen.return %0 : !kgen.variant<i1, i2, i3, i4, i5, i6>
 }
@@ -321,8 +321,8 @@ kgen.func @pointer_constant() -> !kgen.pointer<*?> {
 
 // CHECK-LABEL: @test_variant
 kgen.func @test_variant(%a: !kgen.variant<f32, i64, struct<(i8, i8, f64)>>) -> i1 {
-  // CHECK: %[[DISCR:.*]] = llvm.extractvalue %arg0[1] : !llvm.struct<(array<2 x i64>, i2)>
-  // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i2)
+  // CHECK: %[[DISCR:.*]] = llvm.extractvalue %arg0[1] : !llvm.struct<(array<2 x i64>, i8)>
+  // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i8)
   // CHECK: %[[VAL:.*]] = llvm.icmp "eq" %[[DISCR]], %[[DISCR_VAL]]
   %0 = kgen.variant.is %a, 0 : <f32, i64, struct<(i8, i8, f64)>>
   // CHECK: return %[[VAL]]

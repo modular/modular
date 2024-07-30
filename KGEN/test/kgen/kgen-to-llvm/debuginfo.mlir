@@ -20,7 +20,7 @@
 // CHECK-DAG: ![[STRUCT_MEMBER:.*]] = !debuginfo.member<m1: ![[INNER_STRUCT]]>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<"!kgen.struct<(index, struct<(index)>)>"(![[MEMBER0]], ![[STRUCT_MEMBER]])>
 
-// CHECK-DAG: ![[I1:.*]] = !debuginfo.basic<i1 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: ![[I1:.*]] = !debuginfo.basic<i8 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>
 // CHECK-DAG: ![[DISCR:.*]] = !debuginfo.member<discr: ![[I1]]>
 // CHECK-DAG: ![[VARIANT0:.*]] = !debuginfo.member<v0: ![[INDEX]]>
 // CHECK-DAG: ![[VARIANT1:.*]] = !debuginfo.member<v1: ![[INDEX]]>
