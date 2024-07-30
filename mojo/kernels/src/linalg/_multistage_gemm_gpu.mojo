@@ -429,13 +429,13 @@ fn multistage_gemm[
     b_type: DType,
     b_shape: DimList,
     transpose_b: Bool,
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    num_threads: Int,
-    num_pipeline_stages: Int,
+    BM: UInt,
+    BN: UInt,
+    BK: UInt,
+    WM: UInt,
+    WN: UInt,
+    num_threads: UInt,
+    num_pipeline_stages: UInt,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, c_shape],
@@ -461,8 +461,8 @@ fn multistage_gemm[
     alias N: UInt = b_shape.get[0]() if transpose_b else b_shape.get[1]()
     alias K: UInt = b_shape.get[1]() if transpose_b else b_shape.get[0]()
 
-    alias num_warps_m = UInt(BM // WM)
-    alias num_warps_n = UInt(BN // WN)
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
 
     constrained[
         num_warps_m * num_warps_n == num_threads // WARP_SIZE,
@@ -544,7 +544,7 @@ fn multistage_gemm[
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
-    for stage in range(num_pipeline_stages - 1):
+    for stage in range(int(num_pipeline_stages - 1)):
         var a_smem_tile = a_smem_iter.next(stage).get()
         var b_smem_tile = b_smem_iter.next(stage).get()
 
@@ -649,7 +649,7 @@ fn multistage_gemm[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma in range(num_k_mmas):
+        for k_mma in range(int(num_k_mmas)):
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
 
