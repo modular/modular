@@ -10,6 +10,7 @@ from math import iota
 from buffer import NDBuffer
 from builtin.sort import _quicksort
 
+from utils import Span, StaticIntTuple
 from utils.index import Index
 
 

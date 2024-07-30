@@ -10,6 +10,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 
 from utils.numerics import min_or_neg_inf
+from utils import StaticIntTuple
 
 
 @register_passable("trivial")

@@ -15,6 +15,7 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
+from memory import stack_allocation
 from register import mogg_register
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

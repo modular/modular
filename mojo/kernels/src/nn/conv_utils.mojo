@@ -936,4 +936,4 @@ fn align_down_residual(value: Int, alignment: Int) -> Int:
         The remainder after aligning down value to the closest multiple of
         alignment. In other words, value - align_down(value, alignment).
     """
-    return value - math.align_down(value, alignment)
+    return value - align_down(value, alignment)

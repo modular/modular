@@ -20,6 +20,7 @@ from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils import StaticIntTuple, StaticTuple, unroll
+from memory import memcpy, memset_zero
 
 from .reshape import reshape
 

@@ -13,6 +13,7 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
 from register import mogg_register
+from utils import StaticIntTuple, Span
 
 
 @mogg_register("top_k_shape")

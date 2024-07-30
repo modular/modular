@@ -24,7 +24,8 @@ from linalg.utils import partition_work
 from memory import memset_zero, stack_allocation, UnsafePointer
 from runtime.asyncrt import parallelism_level
 
-from utils import Index, InlineArray
+from utils import Index, InlineArray, StaticIntTuple
+from sys import alignof
 
 
 struct _MatmulConfig:
