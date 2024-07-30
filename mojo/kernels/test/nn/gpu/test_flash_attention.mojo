@@ -262,18 +262,6 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
-        # fp32 depth = 128, legacy impl. llama2 shape.
-        test[3, DType.float32, DType.float32, 128, 32](
-            1024, 1024, ctx, is_benchmark()
-        )
-
-        # fp32 depth = 128, seqlen % 128 != 0, legacy impl
-        test[3, DType.float32, DType.float32, 128, 1](100, 100, ctx)
-        test[3, DType.float32, DType.float32, 128, 1](1, 1, ctx)
-        test[3, DType.float32, DType.float32, 128, 1](1, 7, ctx)
-        test[3, DType.float32, DType.float32, 128, 1](1, 13, ctx)
-        test[3, DType.float32, DType.float32, 128, 1](1, 200, ctx)
-
         # fp32 arbitrary depth and num_heads, baseline impl.
         test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
         test[3, DType.float32, DType.float32, 25, 3](1, 1, ctx)
