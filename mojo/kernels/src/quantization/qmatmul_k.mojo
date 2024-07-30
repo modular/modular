@@ -10,6 +10,7 @@ from sys.info import (
     has_neon_int8_matmul,
     is_apple_silicon,
     is_x86,
+    has_neon,
 )
 from sys.intrinsics import llvm_intrinsic
 
@@ -24,7 +25,8 @@ from linalg.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
+from sys import alignof
 from runtime.asyncrt import parallelism_level
 
 from utils import InlineArray

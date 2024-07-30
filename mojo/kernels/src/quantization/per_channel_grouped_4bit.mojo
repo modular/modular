@@ -9,9 +9,9 @@ from sys.info import sizeof
 from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
-from memory.unsafe import bitcast
+from memory import bitcast, memcpy
 
-from utils import Index, StaticIntTuple, StaticTuple
+from utils import Index, StaticIntTuple, StaticTuple, InlineArray
 
 
 @always_inline
