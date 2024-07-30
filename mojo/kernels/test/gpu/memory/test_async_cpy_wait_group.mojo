@@ -102,27 +102,40 @@ fn copy_with_src_size(
     src_size: Int,
 ):
     var smem = stack_allocation[
-        4, DType.float32, address_space = AddressSpace.SHARED
+        8, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
+    for i in range(8):
+        smem[i] = -1.0
+
+    # src[0: 4] are valid addresses, this copies `src_size` elements.
     async_copy[16](src, smem, src_size)
+    # src[4: 8] are OOB, this should ignore src and set dst to zero.
+    # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
+    # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
+    # is no OOB access.
+    async_copy[16](src + 4, smem + 4, 0)
     async_copy_wait_all()
-    dst[0] = smem[0]
-    dst[1] = smem[1]
-    dst[2] = smem[2]
-    dst[3] = smem[3]
+
+    for i in range(8):
+        dst[i] = smem[i]
 
 
 fn test_copy_with_src_size(ctx: DeviceContext) raises:
     alias size = 4
+
+    # Allocate arrays of different sizes to trigger an OOB address in test.
     var a_host = UnsafePointer[Float32].alloc(size)
-    var b_host = UnsafePointer[Float32].alloc(size)
+    var b_host = UnsafePointer[Float32].alloc(2 * size)
 
     for i in range(size):
         a_host[i] = i + 1
 
+    for i in range(2 * size):
+        b_host[i] = i + 1
+
     var a_device = ctx.create_buffer[DType.float32](size)
-    var b_device = ctx.create_buffer[DType.float32](size)
+    var b_device = ctx.create_buffer[DType.float32](2 * size)
 
     ctx.enqueue_copy_to_device(a_device, a_host)
 
@@ -148,6 +161,10 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     assert_equal(b_host[1], 2)
     assert_equal(b_host[2], 3)
     assert_equal(b_host[3], 0)
+    assert_equal(b_host[4], 0)
+    assert_equal(b_host[5], 0)
+    assert_equal(b_host[6], 0)
+    assert_equal(b_host[7], 0)
 
     _ = a_device
     _ = b_device
