@@ -105,7 +105,7 @@ struct _Matmul[
 
             @parameter
             for m in range(tile_m):
-                a_tile[m] = SIMD[size=lane_count].load(ak_ptr, m * a_stride)
+                a_tile[m] = ak_ptr.load[width=lane_count](m * a_stride)
 
             ak_ptr += lane_count
 
@@ -114,9 +114,7 @@ struct _Matmul[
 
                 @parameter
                 for n in range(tile_n):
-                    var b_data = SIMD[size=simd_width].load(
-                        bk_ptr, n * simd_width
-                    )
+                    var b_data = bk_ptr.load[width=simd_width](n * simd_width)
 
                     @parameter
                     for m in range(tile_m):
@@ -153,13 +151,11 @@ struct _Matmul[
 
                 @parameter
                 for n in range(tile_n):
-                    b_tile[n] = SIMD[size=simd_width].load(
-                        bk_ptr, n * simd_width
-                    )
+                    b_tile[n] = bk_ptr.load[width=simd_width](n * simd_width)
 
                 @parameter
                 for m in range(tile_m):
-                    var a_data = Scalar.load(ak_ptr, m * a_stride)
+                    var a_data = ak_ptr.load(m * a_stride)
 
                     @parameter
                     for n in range(tile_n):
@@ -268,7 +264,7 @@ struct _Matmul[
                     var val = transpose_buffer.load[width=transpose_width](
                         Index(i, 0)
                     )
-                    SIMD.store(packed_ptr, (k + i) * aligned_n + n, val)
+                    packed_ptr.store((k + i) * aligned_n + n, val)
 
             else:
                 # Fallback to strided loads and stores of the tensors.
@@ -282,8 +278,8 @@ struct _Matmul[
 
                     @parameter
                     for kk in range(tile_k):
-                        SIMD.store(
-                            packed_ptr, (k + kk) * aligned_n + (n + nn), val[kk]
+                        packed_ptr.store(
+                            (k + kk) * aligned_n + (n + nn), val[kk]
                         )
 
         tile[process_tile, tile_sizes, tile_sizes](0, 0, N, K)
@@ -307,7 +303,7 @@ struct _Matmul[
             @always_inline
             fn packed_copy[_simd_width: Int](idx: Int):
                 var val = input_b_fn[_simd_width](idx, k)
-                SIMD.store(output_ptr, idx, val)
+                output_ptr.store(idx, val)
 
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
             _ = k
@@ -344,7 +340,7 @@ struct _Matmul[
                 inout accum: InlineArray[SIMD[type, _simd_width], tile_n],
             ):
                 for k in range(start, end, _simd_width):
-                    var a_data = SIMD[size=_simd_width].load(a_ptr, k)
+                    var a_data = a_ptr.load[width=_simd_width](k)
 
                     @parameter
                     for nn in range(tile_n):
@@ -385,7 +381,7 @@ struct _Matmul[
 
             @parameter
             for nn in range(tile_n):
-                Scalar.store(cn_ptr, nn, scalar_accum[nn])
+                cn_ptr.store[width=1](nn, scalar_accum[nn])
 
             cn_ptr += tile_n
 
@@ -416,9 +412,9 @@ struct _Matmul[
                 accum = b_data.fma(a_ptr[k], accum)
 
             if accumulate:
-                accum += SIMD[size=_simd_width].load(cn_ptr)
+                accum += cn_ptr.load[width=_simd_width]()
 
-            SIMD.store(cn_ptr, accum)
+            cn_ptr.store(accum)
             cn_ptr += _simd_width
 
         tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
@@ -578,7 +574,7 @@ struct _FlashAttention[
             fn pass1_input_gen_fn[
                 _type: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_type, _simd_width]:
-                var val = SIMD[size=_simd_width].load(qk_row_ptr, idx)
+                var val = qk_row_ptr.load[width=_simd_width](idx)
                 var mask = input_mask_fn[_simd_width](m, idx)
                 return rebind[SIMD[_type, _simd_width]](
                     val * scale.cast[type]() + mask
@@ -602,7 +598,7 @@ struct _FlashAttention[
             fn pass2_input_gen_fn[
                 _type: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_type, _simd_width]:
-                var val = SIMD[size=_simd_width].load(qk_row_ptr, idx)
+                var val = qk_row_ptr.load[width=_simd_width](idx)
                 return rebind[SIMD[_type, _simd_width]](exp(val - max_val))
 
             # Update the row with the exponential of each value and accumulate
@@ -626,8 +622,8 @@ struct _FlashAttention[
             @parameter
             @always_inline
             fn do_correction[_simd_width: Int](idx: Int):
-                var val = SIMD[size=_simd_width].load(o_row_ptr, idx)
-                SIMD.store(o_row_ptr, idx, val * fixup_val)
+                var val = o_row_ptr.load[width=_simd_width](idx)
+                o_row_ptr.store(idx, val * fixup_val)
 
             vectorize[do_correction, simd_width, unroll_factor=2](count_n)
             _ = fixup_val
@@ -825,8 +821,8 @@ struct _FlashAttention[
                     @parameter
                     @always_inline
                     fn do_final[_simd_width: Int](idx: Int):
-                        var v = SIMD[size=_simd_width].load(oz_ptr, idx)
-                        SIMD.store(o_ptr, idx, v * reciprocal)
+                        var v = oz_ptr.load[width=_simd_width](idx)
+                        o_ptr.store(idx, v * reciprocal)
 
                     vectorize[do_final, simd_width, unroll_factor=4](count_n)
 

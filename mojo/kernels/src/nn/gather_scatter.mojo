@@ -295,7 +295,7 @@ fn gather[
             )
             input_coords[axis] = int(
                 normalize_neg_index(
-                    Scalar.load(next_idx_ptr),
+                    next_idx_ptr.load(),
                     input.get_shape()[axis],
                 )
             )
@@ -399,7 +399,7 @@ fn gather[
             )
             input_coords[axis] = int(
                 normalize_neg_index(
-                    Scalar.load(next_idx_ptr),
+                    next_idx_ptr.load(),
                     input.get_shape()[axis],
                 )
             )

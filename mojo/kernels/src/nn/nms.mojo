@@ -186,7 +186,7 @@ fn non_max_suppression[
             # reduces the number of box_idxs to sort
             var num_boxes_remaining = 0
             for i in range(num_boxes):
-                var score = Scalar.load(per_class_scores_ptr, i)
+                var score = per_class_scores_ptr.load(i)
                 if score > score_threshold.cast[type]():
                     per_class_scores[i] = score
                     num_boxes_remaining += 1

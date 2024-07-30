@@ -236,11 +236,9 @@ fn test[
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = Scalar.load(
-                    output_ptr, d + depth * (h + s * num_heads)
-                )
-                var actual = Scalar.load(
-                    flash_output_ptr, d + depth * (h + s * num_heads)
+                var expect = output_ptr.load(d + depth * (h + s * num_heads))
+                var actual = flash_output_ptr.load(
+                    d + depth * (h + s * num_heads)
                 )
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)

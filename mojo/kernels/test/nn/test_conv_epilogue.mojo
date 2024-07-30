@@ -201,13 +201,12 @@ fn test[
             @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
             fn body0[width: Int](offset: Int):
-                SIMD.store(
-                    output_ref_ptr,
+                output_ref_ptr.store(
                     offset,
                     10.0
                     * (
-                        SIMD[size=width].load(output_ref_ptr, offset)
-                        + SIMD[size=width].load(bias_ptr, offset)
+                        output_ref_ptr.load[width=width](offset)
+                        + bias_ptr.load[width=width](offset)
                     ),
                 )
 
@@ -228,9 +227,7 @@ fn test[
             output.store(
                 curr_coords,
                 10.0
-                * (
-                    vec + SIMD[size=width].load(bias_ptr, curr_coords[rank + 1])
-                ),
+                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
         vectorize[body1, simd_size](f_size)

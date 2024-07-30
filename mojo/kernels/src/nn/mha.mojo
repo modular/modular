@@ -787,13 +787,11 @@ fn mha_single_batch[
 
                 @parameter
                 for i in range(2):
-                    var mask_vec = SIMD[size=p_frag_simdwidth].load[
-                        alignment=mask_align
-                    ](
+                    var mask_vec = (
                         mask_frag_ptr
                         + (frag_lane_row + i * MMA_M // 2) * seq_len
                         + frag_lane_col
-                    )
+                    ).load[width=p_frag_simdwidth, alignment=mask_align]()
 
                     p_reg_vec2[n_mma * num_m_mmas + m_mma, i] = p_reg_vec2[
                         n_mma * num_m_mmas + m_mma, i
@@ -1141,15 +1139,16 @@ fn mha_decoding_single_batch[
     @parameter
     for i in range(Int(depth // BK)):
         if tid < BK // simd_size:
-            var vec = SIMD[size=simd_size].load[
+            var vec = (q_ptr + q_offset + i * BK + tid * simd_size).load[
+                width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
+            ]()
+            (q_smem + i * BM * BK + tid * simd_size).store[
                 alignment = alignof[SIMD[q_type, simd_size]]()
-            ](q_ptr + q_offset + i * BK + tid * simd_size)
-            SIMD.store[alignment = alignof[SIMD[q_type, simd_size]]()](
-                q_smem + i * BM * BK + tid * simd_size, vec
-            )
+            ](vec)
         elif tid < BM * BK // simd_size:
-            SIMD.store[alignment = alignof[SIMD[q_type, simd_size]]()](
-                q_smem + i * BM * BK + tid * simd_size,
+            (q_smem + i * BM * BK + tid * simd_size).store[
+                alignment = alignof[SIMD[q_type, simd_size]]()
+            ](
                 SIMD[q_type, simd_size](0.0),
             )
 
@@ -1209,9 +1208,9 @@ fn mha_decoding_single_batch[
                         SIMD[mask_type, p_frag_simdwidth]
                     ]()
 
-                    var mask_vec = SIMD[size=p_frag_simdwidth].load[
-                        alignment=mask_align
-                    ](mask_frag_ptr + frag_lane_row * num_keys + frag_lane_col)
+                    var mask_vec = (
+                        mask_frag_ptr + frag_lane_row * num_keys + frag_lane_col
+                    ).load[width=p_frag_simdwidth, alignment=mask_align]()
 
                     p_reg_vec2[n_mma * num_m_mmas + m_mma, 0] = p_reg_vec2[
                         n_mma * num_m_mmas + m_mma, 0
