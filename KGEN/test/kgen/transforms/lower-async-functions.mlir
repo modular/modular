@@ -1967,3 +1967,32 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async -> index {
+  // CHECK: [[V2:%.*]] = kgen.call @doSomething({{.*}}) : (index) -> index
+  // CHECK-NOT: hlcf.loop "_loop_1" (%arg2 = [[V2]] : index) {
+  %x = kgen.call @doSomething(%arg1) : (index) -> index
+  hlcf.loop "_loop_0" (%arg3 = %arg1 : index) {
+    hlcf.loop "_loop_1" (%arg2 = %x : index) {
+      hlcf.if %arg0 {
+        hlcf.break "_loop_1"
+      } else {
+        hlcf.yield
+      }
+      co.suspend (%hdl) {
+        co.suspend.end
+      }
+      hlcf.continue %arg2 : index
+    }
+    hlcf.continue %arg3 : index
+  }
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %final = index.add %arg1, %arg1
+  kgen.return %final : index
+}
+}
