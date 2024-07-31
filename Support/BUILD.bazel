@@ -79,7 +79,6 @@ modular_cc_library(
     }),
     deps = [
         "//Config",
-        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
     ],
@@ -99,10 +98,6 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Filesystem",
-
-        # Needed for the type definitions, and the reason that this is split
-        # into a separate library when required.
-        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -178,7 +173,6 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Globals.headers",
-        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -339,7 +333,6 @@ modular_cc_library(
     hdrs = glob(["include/Support/ML/*.h"]),
     deps = [
         ":Base",
-        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -438,7 +431,6 @@ modular_cc_library(
         ":Buffer",
         ":MDialect",
         ":Profiling",
-        "@llvm-project//mlir:AllPassesAndDialects",
         "@llvm-project//mlir:BytecodeReader",
         "@llvm-project//mlir:BytecodeWriter",
     ],
@@ -701,7 +693,7 @@ modular_cc_library(
         ":DebugInfoIncGen",
         ":DebugInfoTypeInterfaces",
         "@llvm-project//llvm:BinaryFormat",
-        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:FunctionInterfaces",
     ],
 )
 

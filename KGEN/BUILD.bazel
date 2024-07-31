@@ -533,6 +533,7 @@ modular_cc_library(
         "//Support:Compiler",
         "//Support:MDialect",
         "//Support:Threading",
+        "@llvm-project//mlir:ControlFlowInterfaces",
         "@llvm-project//mlir:IR",
     ],
 )
@@ -555,6 +556,7 @@ modular_cc_library(
         "//Support:IPInt",
         "//Support:IPRational",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:InferTypeOpInterface",
     ],
 )
 
@@ -878,6 +880,7 @@ modular_cc_library(
         "//Support:DebugInfoDialect",
         "//Support:IPInt",
         "//Support:MDialect",
+        "@llvm-project//mlir:Transforms",
     ],
 )
 
@@ -1123,6 +1126,7 @@ modular_cc_library(
         ":ToolCommon",
         "//Support:DebugInfoTransforms",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:IndexDialect",
     ],
 )
 
@@ -1143,6 +1147,7 @@ modular_cc_library(
         "//Support:DebugInfoTransforms",
         "@llvm-project//mlir:CAPIIR",
         "@llvm-project//mlir:CAPITransforms",
+        "@llvm-project//mlir:IndexDialect",
         "@llvm-project//mlir:TransformUtils",
     ],
 )
@@ -1161,6 +1166,7 @@ modular_cc_library(
         ":VersionHeader",
         "//AsyncRT:CompilerSupport",
         "//Cache",
+        "@llvm-project//mlir:IndexDialect",
     ],
 )
 
@@ -1315,6 +1321,10 @@ modular_cc_library(
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:ConversionPasses",
+        "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:LLVMToLLVMIRTranslation",
+        "@llvm-project//mlir:NVVMToLLVMIRTranslation",
     ],
 )
 

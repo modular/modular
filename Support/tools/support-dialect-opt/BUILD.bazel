@@ -12,6 +12,7 @@ modular_cc_binary(
         "//Support:DebugInfoToLLVM",
         "//Support:Globals",
         "//Support:MDialect",
+        "@llvm-project//mlir:IndexDialect",
         "@llvm-project//mlir:MlirOptLib",
     ],
 )
