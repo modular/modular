@@ -33,7 +33,7 @@ fn foo(a: UnsafePointer[Float32]) -> Float32:
   fn inner_fn():
     return
   fn inner_closure(arg: Int, arg2: __type_of(arg)) -> Float32:
-    return Scalar.load(a, arg)
+    return a.load[width=1](arg)
   return inner_fn(variable)
 
 struct struct_name:
