@@ -9,6 +9,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Dialect.h"
+#include "llvm/Support/RWMutex.h"
 
 namespace mlir {
 class PatternRewriter;

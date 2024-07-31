@@ -131,18 +131,19 @@ createElaborateGenerators(TargetInfoAttr target,
                           ElaboratorCompileAsmFn compileAsmFn = {});
 
 //===----------------------------------------------------------------------===//
-// Custom op registration
+// Custom op canonicalization
 //===----------------------------------------------------------------------===//
 
 using CAPICanonicalizationFn =
     std::function<bool(MlirOperation *, MlirRewriterBase *)>;
-using CompileCanonicalizationFnFn =
+using CompileCanonicalizationFnsFn =
     std::function<ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>(
-        ModuleOp, SymbolTable &,
-        llvm::MapVector<StringAttr, ExportedSymbol> const &, TargetInfoAttr)>;
+        ModuleOp,
+        const DenseMap<StringAttr, SymbolConstantAttr> &canonicalizationSymbols,
+        TargetInfoAttr)>;
 
 std::unique_ptr<mlir::Pass>
-createRegisterCustomOps(CompileCanonicalizationFnFn compileModuleFn = {});
+createCanonicalizer(CompileCanonicalizationFnsFn compileModuleFn = {});
 
 //===----------------------------------------------------------------------===//
 // Lower custom ops

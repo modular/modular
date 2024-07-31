@@ -36,21 +36,7 @@ namespace {
 struct RegisterCustomOpsPass
     : KGEN::impl::RegisterCustomOpsBase<RegisterCustomOpsPass> {
 
-  RegisterCustomOpsPass(
-      CompileCanonicalizationFnFn compileCanonicalizationFnFn = {})
-      : target{},
-        compileCanonicalizationFnFn(std::move(compileCanonicalizationFnFn)) {};
   LogicalResult initialize(MLIRContext *ctx) override;
-
-  /// Collect all kgen.generators that are used as canonicalization functions,
-  /// with their associated op name.
-  /// In case of a failure, returns an empty DenseMap.
-  LogicalResult collectCanonicalizationGenerators(
-      DenseMap<StringAttr, GeneratorOp> &canonGens);
-
-  /// JIT and register canonicalization patterns for custom ops.
-  void registerCanonicalizationPatterns(ModuleOp theModule,
-                                        SymbolTableCollection &tables);
 
   /// Slice custom operation definitions from the module to a new module, that
   /// is then translated into bytecode and stored in a dense resource attribute.
@@ -67,10 +53,6 @@ struct RegisterCustomOpsPass
 private:
   /// The compilation target.
   TargetInfoAttr target;
-
-  /// The function to compile the canonicalization patterns out of a
-  /// pre-elaboration module.
-  CompileCanonicalizationFnFn compileCanonicalizationFnFn;
 };
 
 } // namespace
@@ -85,34 +67,6 @@ LogicalResult RegisterCustomOpsPass::initialize(MLIRContext *ctx) {
       return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
     target = targetOr.takeValue();
   }
-  return success();
-}
-
-LogicalResult RegisterCustomOpsPass::collectCanonicalizationGenerators(
-    DenseMap<StringAttr, GeneratorOp> &canonGens) {
-  ModuleOp theModule = getOperation();
-  auto implsOp = CustomOpImplsOp::lookupOp(theModule);
-
-  // Exit early if no custom operations were defined.
-  if (!implsOp)
-    return success();
-
-  auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
-  SymbolTableCollection &tables = symtabAnalysis.getSymbolTables();
-
-  for (CustomOpImplAttr impl : implsOp.getImpls()) {
-    SymbolConstantAttr canonSym = impl.getOpCanonicalization();
-    if (!canonSym)
-      continue;
-    auto canonicalizeOp = tables.lookupSymbolIn<GeneratorOp>(
-        theModule.getOperation(), canonSym.getSymbol());
-    if (!canonicalizeOp) {
-      return implsOp->emitOpError()
-             << "symbol does not refer to an existing operation: " << canonSym;
-    }
-    canonGens.try_emplace(impl.getOpName(), canonicalizeOp);
-  }
-
   return success();
 }
 
@@ -169,48 +123,6 @@ void RegisterCustomOpsPass::preserveCustomOpParams(ModuleOp theModule) {
   });
 }
 
-void RegisterCustomOpsPass::registerCanonicalizationPatterns(
-    ModuleOp theModule, SymbolTableCollection &tables) {
-  MLIRContext *ctx = theModule->getContext();
-  // Collect all the canonicalization patterns.
-  DenseMap<StringAttr, GeneratorOp> canonGens;
-  if (failed(collectCanonicalizationGenerators(canonGens))) {
-    signalPassFailure();
-    return;
-  }
-
-  // Create the list of symbols we want to JIT.
-  ExportMap exportMap;
-  for (auto [opName, generatorOp] : canonGens)
-    exportMap.try_emplace(generatorOp.getSymNameAttr(), ExportKind::Exported);
-  ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>> funcsOrErr =
-      compileCanonicalizationFnFn(
-          theModule, tables.getSymbolTable(theModule.getOperation()), exportMap,
-          target);
-  if (failed(funcsOrErr)) {
-    mlir::emitError(theModule.getLoc())
-        << "Error while compiling the custom canonicalization patterns: "
-        << funcsOrErr.takeError() << "\n";
-    return;
-  }
-  DenseMap<StringAttr, CAPICanonicalizationFn> funcs = funcsOrErr.takeValue();
-  // Register the canonicalization patterns in the custom dialect.
-  CustomDialect *customDialect = ctx->getLoadedDialect<CustomDialect>();
-  for (auto [opName, generatorOp] : canonGens) {
-    auto func = funcs.at(generatorOp.getSymNameAttr());
-    auto canonFunc = [func = func](Operation *op,
-                                   PatternRewriter &rewriter) mutable {
-      // Both the operation and the rewriter are passed as pointers, as the
-      // mojo canonicalization pattern is marked as inout.
-      MlirOperation c_op = wrap(op);
-      MlirRewriterBase c_rewriter = wrap(&rewriter);
-      return mlir::success(func(&c_op, &c_rewriter));
-    };
-    customDialect->canonicalizationFns.try_emplace(opName,
-                                                   std::move(canonFunc));
-  }
-}
-
 void RegisterCustomOpsPass::runOnOperation() {
   ModuleOp theModule = getOperation();
   auto implsOp = CustomOpImplsOp::lookupOp(theModule);
@@ -234,15 +146,5 @@ void RegisterCustomOpsPass::runOnOperation() {
   // Erase the custom op definitions mapping.
   // This allows custom op definitions to be DCE'd, as now all information is
   // stored in the dense resource attribute attached to the main module.
-  // TODO(math-fehr): Enable this once the `canonicalizer` starts fetching and
-  // JIT'ing operations in the dense resource module.
-  // implsOp.erase();
-
-  registerCanonicalizationPatterns(theModule, tables);
-}
-
-std::unique_ptr<mlir::Pass> KGEN::createRegisterCustomOps(
-    CompileCanonicalizationFnFn compileCanonicalizationFnFn) {
-  return std::make_unique<RegisterCustomOpsPass>(
-      std::move(compileCanonicalizationFnFn));
+  implsOp.erase();
 }
