@@ -23,3 +23,4 @@ from .constant import constant
 from .elementwise import add
 from .casting import reshape
 from .linalg import layer_norm, matmul
+from .slicing import select

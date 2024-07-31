@@ -121,6 +121,9 @@ limited_static_shape = st_limit_shape_size(
 )
 
 
+# TODO(MSDK-662): The first assume that limits shape size filters too much.
+# Overall, there is probably a better way to handle limiting shape size.
+@settings(suppress_health_check=[HealthCheck.filter_too_much])
 @given(
     dtype=...,
     merge_dims=limited_static_shape,

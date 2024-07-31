@@ -190,6 +190,9 @@ class SymbolicDim(Dim):
         """
         return isinstance(other, SymbolicDim) and self.name == other.name
 
+    def __hash__(self):
+        return hash(self.name)
+
     def to_mlir(self) -> mlir.Attribute:
         """Creates an mlir.Attribute representing this dimension.
 
@@ -261,6 +264,9 @@ class StaticDim(Dim):
             True if both dimensions have the same static size, False otherwise.
         """
         return isinstance(other, StaticDim) and self.dim == other.dim
+
+    def __hash__(self):
+        return hash(self.dim)
 
     def to_mlir(self) -> mlir.Attribute:
         """Creates an mlir.Attribute representing this dimension.
