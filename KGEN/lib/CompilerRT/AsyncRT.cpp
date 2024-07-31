@@ -365,6 +365,29 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
+    void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom,
+    AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &outVal = unwrap(async);
+
+  // Use the lifetime of the other tensor by sharing the same storage handle.
+  AnyAsyncValueRef &value = unwrap(toBorrowFrom);
+  auto &bufToBorrowFrom = value.get<TensorBufferRef>();
+  TensorBufferRef buf = ::M::TensorBufferRef::create(
+      data, size, bufToBorrowFrom.getMemStorageHandle(),
+      std::optional<size_t>{});
+
+  // Emplace into the async value.
+  if (outVal.getPointer() && outVal.getPointer()->isIndirect()) {
+    outVal.copy().emplaceIndirect<TensorBufferRef>(std::move(buf));
+  } else {
+    outVal = outVal.createReady<TensorBufferRef>(runtime, std::move(buf));
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncCUDABufferRef(void *data, size_t size,
                                          AsyncRTWrapper<AnyAsyncValueRef> async,
                                          AsyncRTWrapper<Runtime> runtimePtr,
@@ -456,7 +479,6 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetDataFromBuffer(AsyncRTWrapper<AnyAsyncValueRef> async,
                                   size_t *sizeOut) {
   AnyAsyncValueRef &value = unwrap(async);
-  assert(value.isReady());
   auto &buffer = value.get<TensorBufferRef>();
   *sizeOut = buffer.getSize();
   return buffer.getBuffer();
@@ -561,6 +583,8 @@ void M::KGEN::registerAsyncRT(
                    (void *)&KGEN_CompilerRT_CreateAsync_bool});
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncBufferRef",
                    (void *)&KGEN_CompilerRT_CreateAsyncBufferRef});
+  funcs.push_back({"KGEN_CompilerRT_CreateAsyncBufferWithBorrow",
+                   (void *)&KGEN_CompilerRT_CreateAsyncBufferWithBorrow});
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncTensorSpec",
                    (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
   funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncMojoValue",
