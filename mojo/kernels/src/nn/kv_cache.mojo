@@ -21,6 +21,7 @@ from register import mogg_register
 from runtime.asyncrt import (
     MojoCallContextPtr,
 )
+from utils import StaticIntTuple
 
 from .types import (
     ContiguousKVCache,
