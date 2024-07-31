@@ -380,12 +380,19 @@ modular_cc_library(
 
 modular_cc_library(
     name = "MArchTarget",
-    srcs = glob(["lib/MArchTarget/*.cpp"]),
+    srcs = glob(
+        ["lib/MArchTarget/*.cpp"],
+        exclude = [
+            "lib/MArchTarget/Host.cpp",
+            "lib/MArchTarget/MArchTargetMinimal.cpp",
+        ],
+    ),
     hdrs = glob(["include/Support/MArchTarget/*.h"]),
     deps = [
         ":Base",
         ":CPUCache",
         ":DeviceSpecs",
+        ":MArchTargetMinimal",
         ":MDialect",
         ":Threading",
         "@llvm-project//clang:basic",
