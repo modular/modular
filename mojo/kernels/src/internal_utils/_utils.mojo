@@ -129,6 +129,11 @@ struct TestTensor[type: DType, rank: Int]:
         self.ndbuffer = NDBuffer[type, rank](
             UnsafePointer[Scalar[type]].alloc(self.num_elements), shape
         )
+        if len(values) == 1:
+            for i in range(self.num_elements):
+                self.ndbuffer.data[i] = values[0]
+            return
+
         if len(values) == self.num_elements:
             for i in range(self.num_elements):
                 self.ndbuffer.data[i] = values[i]
