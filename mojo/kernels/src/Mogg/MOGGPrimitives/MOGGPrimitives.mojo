@@ -206,6 +206,23 @@ fn create_buffer_ref_async[
         )
 
 
+@mogg_register("builtin.create_buffer_ref_with_borrow_async")
+@always_inline
+@export
+fn create_buffer_ref_with_borrow_async[
+    target: StringLiteral
+](
+    buffer: NDBuffer[DType.int8, 1],
+    async_to_borrow: UnsafePointer[NoneType],
+    output_async: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
+    callCtx: MojoCallContextPtr,
+):
+    external_call["KGEN_CompilerRT_CreateAsyncBufferWithBorrow", NoneType](
+        buffer.data, len(buffer), async_to_borrow, output_async, runtime
+    )
+
+
 @mogg_register("builtin.create_tensor_spec_async")
 @always_inline
 @export
