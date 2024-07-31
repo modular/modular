@@ -844,7 +844,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
 }
 
 void ParameterUseDefGraph::calculate(ParameterCollector::Analysis &cache) {
-  LogicalResult result = calculateOrVerify({}, nullptr, cache);
+  [[maybe_unused]] LogicalResult result = calculateOrVerify({}, nullptr, cache);
   assert(succeeded(result) && "IR should be legal here!");
 }
 

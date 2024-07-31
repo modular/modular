@@ -407,9 +407,10 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
          llvm::zip(containedScope->getRegions(), clonedScope->getRegions())) {
       const ParameterUseDefGraph &nestedGraph =
           calleeParams.nestedScopes.find(&region)->second;
-      bool inserted = topLevelGraph.nestedScopes
-                          .try_emplace(&clonedRegion, nestedGraph.copy(map))
-                          .second;
+      [[maybe_unused]] bool inserted =
+          topLevelGraph.nestedScopes
+              .try_emplace(&clonedRegion, nestedGraph.copy(map))
+              .second;
       assert(inserted);
     }
   });

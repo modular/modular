@@ -314,7 +314,7 @@ bool State::drop(RegionState &rs) {
   return false;
 }
 
-void State::dump() {
+[[maybe_unused]] void State::dump() {
   if (isa<BottomState>(*this)) {
     llvm::dbgs() << "bottom\n";
   } else if (isa<TopState>(*this)) {
