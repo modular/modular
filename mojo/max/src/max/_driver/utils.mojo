@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 from .anytensor import AnyTensor
+from max.tensor import Tensor as OldTensor
+from .tensor import Tensor
+from .device import Device, cpu_device
 
 
 fn _steal_device_memory_impl_ptr(
@@ -17,3 +20,33 @@ fn _steal_device_memory_impl_ptr(
 
     var ptr = taken_device_memory^._steal_impl_ptr()
     return ptr
+
+
+fn _convert_from[
+    dtype: DType, rank: Int
+](old_tensor: OldTensor[dtype]) raises -> Tensor[dtype, rank]:
+    """Converts max.tensor to max.driver.Tensor. This creates tensor on the CPU
+       similar to max.Tensor.
+
+    Parameters:
+        dtype: DataType of tensor contents.
+        rank: Rank of the tensor.
+    Args:
+        old_tensor: Tensor to copy from.
+    Returns:
+        Instance of driver tensor with contents copied from old_tensor.
+    """
+    if old_tensor.rank() != rank:
+        raise String("mismatch in rank, expected {} given {}").format(
+            old_tensor.rank(), rank
+        )
+
+    var dev = cpu_device()
+
+    var new_tensor = Tensor[dtype, rank](old_tensor.spec().shape, dev)
+    memcpy(
+        dest=new_tensor.unsafe_ptr(),
+        src=old_tensor.unsafe_ptr(),
+        count=old_tensor.num_elements(),
+    )
+    return new_tensor

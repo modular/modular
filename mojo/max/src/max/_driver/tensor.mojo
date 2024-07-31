@@ -6,6 +6,7 @@
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice
 from max.tensor import TensorSpec, TensorShape
+from max.tensor import Tensor as OldTensor
 from max._tensor_utils import UnsafeTensorSlice, TensorLike
 from tensor_utils.indexing import (
     _dot_prod,
@@ -14,6 +15,7 @@ from tensor_utils.indexing import (
 from collections import Optional
 from utils import InlineArray, StaticIntTuple
 from utils._serialize import _serialize
+from .utils import _convert_from
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
@@ -68,6 +70,15 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         var spec = TensorSpec(type, shape)
         var dt = device.allocate(spec)
         self = Self(dt)
+
+    fn __init__(inout self, tensor: OldTensor[type]) raises:
+        """Converts max.tensor to max.driver.Tensor. This creates tensor on
+        the CPU.
+
+        Args:
+            tensor: Tensor to copy from.
+        """
+        self = _convert_from[rank=rank](tensor)
 
     fn __moveinit__(inout self, owned existing: Self):
         self._ptr = existing._ptr

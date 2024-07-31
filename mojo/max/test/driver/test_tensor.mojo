@@ -13,7 +13,8 @@ from max._driver import (
     TensorSlice,
     UnsafeTensorSlice,
 )
-from max.tensor import TensorSpec
+from max.tensor import TensorSpec, TensorShape
+from max.tensor import Tensor as OldTensor
 from testing import assert_equal, assert_raises
 from utils import Index
 
@@ -406,6 +407,20 @@ def test_move():
     assert_equal(t1[0], 1.0)
 
 
+def test_from_max_tensor():
+    old = OldTensor[DType.float32](
+        TensorShape(
+            1,
+        ),
+        1.0,
+    )
+    new = Tensor[rank=1](old)
+    assert_equal(new[0], 1.0)
+
+    with assert_raises(contains="mismatch in rank, expected 1 given 2"):
+        _ = Tensor[rank=2](old)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -425,3 +440,4 @@ def main():
     test_slice_mutability()
     test_print()
     test_move()
+    test_from_max_tensor()
