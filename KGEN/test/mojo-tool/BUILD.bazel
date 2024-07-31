@@ -20,7 +20,6 @@ lit_tests(
     data = [
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
-        "//KGEN/tools/mojo-build-server",
         "@llvm-project//compiler-rt:orc_rt",
     ] + glob([
         "**/inputs/**",

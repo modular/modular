@@ -17,7 +17,6 @@ add_modular_testsuite(check-mojo-tool
   TOOLS
   llvm-objdump
   mojo
-  mojo-build-server
   mojo-sdk
   kgen-opt
 

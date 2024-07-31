@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Build/mojo-build.h"
-#include "BuildProject/mojo-build-project.h"
 #include "Debug/mojo-debug.h"
 #include "Demangle/mojo-demangle.h"
 #include "Doc/mojo-doc.h"
@@ -61,12 +60,6 @@ int main(int argc, char **argv) {
   // Register subcommands and their options.
   SubcommandRegistry registry;
   registerBuildSubcommand(registry);
-#ifdef MODULAR_MOJO_BUILD_SERVER_PREVIEW
-  // Note that while this macro gate prevents users from invoking `mojo
-  // build-project`, the source code for that command is compiled as part of
-  // `mojo` regardless, by design.
-  registerBuildProjectSubcommand(registry);
-#endif
   registerDemangleSubcommand(registry);
   registerDocSubcommand(registry);
   registerFormatSubcommand(registry);

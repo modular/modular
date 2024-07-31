@@ -36,7 +36,6 @@ add_subdirectory(mojo-isolated)
 add_subdirectory(mojo-tool)
 add_subdirectory(mojo-integration)
 
-add_subdirectory(mojo-build-server)
 add_subdirectory(mojo-debug)
 add_subdirectory(mojo-jupyter)
 add_subdirectory(mojo-lsp-server)

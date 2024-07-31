@@ -16,8 +16,6 @@
 # includes its subcommands.
 # RUN: mojo --help | FileCheck %s --check-prefix CHECK-HELP
 # CHECK-HELP: mojo
-# TODO: Enable this when we ship this feature
-# COM: CHECK-HELP: build-project
 
 # Invoking the driver with `--version` prints the version, for example
 # '0.4.0-release (eb70c661)':

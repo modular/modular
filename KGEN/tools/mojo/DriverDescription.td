@@ -15,10 +15,6 @@ include "REPL/REPLDescription.td"
 include "Run/RunDescription.td"
 include "Test/TestDescription.td"
 
-#ifdef MODULAR_MOJO_BUILD_SERVER_PREVIEW
-include "BuildProject/BuildProjectDescription.td"
-#endif
-
 def : MojoDriverDescription<
   "The Mojo🔥 command line interface.",
   "The `mojo` CLI provides all the tools you need for Mojo development, such "

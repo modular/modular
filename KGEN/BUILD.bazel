@@ -1318,22 +1318,6 @@ modular_cc_library(
     ],
 )
 
-modular_cc_library(
-    name = "MojoBuild",
-    srcs = glob([
-        "lib/MojoBuild/*.cpp",
-        "lib/MojoBuild/*.h",
-    ]),
-    hdrs = glob(["include/KGEN/MojoBuild/*.h"]),
-    deps = [
-        ":Support",
-        "//Support:Base",
-        "//Support:Filesystem",
-        "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:MlirLspServerSupportLib",
-    ],
-)
-
 genrule(
     name = "gen_exports_file_linux",
     srcs = ["@llvm-project//lldb:source/API/liblldb-private.exports"],
