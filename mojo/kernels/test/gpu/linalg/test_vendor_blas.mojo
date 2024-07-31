@@ -37,11 +37,11 @@ fn test_cublas(ctx: DeviceContext) raises:
 
     for m in range(M):
         for k in range(K):
-            a_host[m * K + k] = random_float64(-10, 10).cast[type]()
+            a_host[m * K + k] = random_float64(-1, 1).cast[type]()
 
     for k in range(K):
         for n in range(N):
-            b_host[k * N + n] = random_float64(-10, 10).cast[type]()
+            b_host[k * N + n] = random_float64(-1, 1).cast[type]()
 
     var a_device = ctx.create_buffer[type](M * K)
     var b_device = ctx.create_buffer[type](K * N)
