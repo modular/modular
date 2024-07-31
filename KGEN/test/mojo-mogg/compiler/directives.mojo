@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.driver.tensor_spec import StaticTensorSpec
+from tensor_utils.tensor_spec import StaticTensorSpec
 
 
 fn register(name: StringLiteral):
@@ -17,6 +17,10 @@ fn mogg_intrinsic_attr(intrin: StringLiteral):
 
 fn create_none_spec() -> StaticTensorSpec:
     return StaticTensorSpec()
+
+
+struct KernelSpec:
+    pass
 
 
 @mogg_intrinsic_attr("mogg.tensor_spec_hook")

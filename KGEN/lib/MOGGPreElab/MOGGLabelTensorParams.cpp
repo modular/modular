@@ -24,8 +24,8 @@ namespace M::KGEN::MOGGPreElab {
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
-static constexpr std::array<StringLiteral, 4> kMaxUnsafeTensorSlice = {
-    "max", "driver", "tensor_slice", "UnsafeTensorSlice"};
+static constexpr std::array<StringLiteral, 3> kMaxUnsafeTensorSlice = {
+    "tensor_utils", "unsafe_tensor_slice", "UnsafeTensorSlice"};
 
 namespace {
 class MOGGLabelTensorParamsPass

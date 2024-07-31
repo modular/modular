@@ -25,7 +25,7 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-mogg"
 )
-config.excludes = ["max"]
+config.excludes = ["compiler", "tensor_utils"]
 
 tool_dirs = [
     config.modular_tools_dir,

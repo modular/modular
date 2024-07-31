@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGUtils.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -25,6 +26,13 @@ namespace M::KGEN::MOGGPreElab {
 #define GEN_PASS_DEF_MOGGANNOTATE
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
+
+static constexpr std::array<llvm::StringLiteral, 3> kMaxRegistrationDecorator =
+    {"compiler", "directives", "register"};
+static constexpr std::array<llvm::StringLiteral, 3> kMaxKernelSpecType = {
+    "compiler", "directives", "KernelSpec"};
+static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
+static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 
 static void annotateTypes(LIT::FuncOp func) {
   // Look through ref types to get underlaying decl ref type if needed.
@@ -123,10 +131,119 @@ class MOGGAnnotatePass
 public:
   void runOnOperation() override {
     ModuleOp op = getOperation();
-    op.walk([](LIT::FuncOp func) {
-      stripDecorators(func);
-      annotateTypes(func);
-    });
+    OpBuilder builder{op.getContext()};
+    const auto walker = [&](Operation *operation) {
+      if (auto func = dyn_cast<LIT::FuncOp>(operation)) {
+        stripDecorators(func);
+        annotateTypes(func);
+      } else if (auto structDeclOp = dyn_cast<LIT::StructDeclOp>(operation)) {
+        auto loc = structDeclOp->getLoc();
+        std::optional<StringAttr> registrationName;
+        auto decorators = structDeclOp.getDecorators();
+        if (decorators.empty())
+          return WalkResult::advance();
+
+        // Iterate over the decorators and to find max.compiler.register.
+        for (auto decorator : decorators) {
+          auto apply = dyn_cast<ParamOperatorAttr>(decorator);
+          if (!apply || apply.getNumOperands() != 2)
+            continue;
+
+          auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+          if (!sym)
+            continue;
+
+          if (!symbolMatches(sym.getSymbol(), kMaxRegistrationDecorator))
+            continue;
+
+          auto [_, nameAttr] =
+              cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues().front();
+          auto name = dyn_cast<StringAttr>(nameAttr);
+          if (!name)
+            continue;
+
+          if (registrationName) {
+            emitError(loc, "Only one op can be registered per kernel struct");
+            return WalkResult::interrupt();
+          }
+          registrationName = name;
+        }
+
+        if (!registrationName)
+          return WalkResult::advance();
+
+        // Search for the `execute` and the optional `shape` functions. Until
+        // traits can enforce @staticmethod, this has to be done in this pass.
+        LIT::FuncOp executeFunc, shapeFunc;
+        for (auto &op : structDeclOp.getFields().front()) {
+          auto func = dyn_cast<LIT::FuncOp>(op);
+          if (!func)
+            continue;
+
+          if (func.getSourceName() == kExecuteFuncName)
+            executeFunc = func;
+          else if (func.getSourceName() == kShapeFuncName)
+            shapeFunc = func;
+        }
+
+        if (!executeFunc) {
+          emitError(loc, "Kernels must have an execution entry point named " +
+                             kExecuteFuncName);
+          return WalkResult::interrupt();
+        }
+
+        auto executeFuncParameters = executeFunc.getInputParams();
+        ParamDeclAttr kernelSpecParam;
+        for (auto param : executeFuncParameters) {
+          auto asStructType = dyn_cast<LIT::StructType>(param.getType());
+          if (!asStructType)
+            continue;
+
+          bool isAKernelSpec =
+              symbolMatches(asStructType.getSymbol(), kMaxKernelSpecType);
+          if (kernelSpecParam && isAKernelSpec) {
+            emitError(
+                loc,
+                "Only one kernel spec is allowed in a kernel execute function");
+            return WalkResult::interrupt();
+          }
+
+          if (isAKernelSpec)
+            kernelSpecParam = param;
+        }
+
+        if (!kernelSpecParam) {
+          emitError(
+              loc,
+              "Kernel execute function must be parametrized with a spec param");
+          return WalkResult::interrupt();
+        }
+
+        executeFunc->setAttr(builder.getStringAttr(kMOGGKernelSpecLabel),
+                             kernelSpecParam.getName());
+
+        if (!executeFunc.getIsStatic()) {
+          emitError(loc, "Kernel entry point must be a static function");
+          return WalkResult::interrupt();
+        }
+
+        if (shapeFunc && !shapeFunc.getIsStatic()) {
+          emitError(loc, "Kernel shape function must be a static function");
+          return WalkResult::interrupt();
+        }
+
+        executeFunc->setAttr(builder.getStringAttr(kMOGGExecuteFunctionLabel),
+                             *registrationName);
+        if (shapeFunc) {
+          shapeFunc->setAttr(builder.getStringAttr(kMOGGShapeFunctionLabel),
+                             *registrationName);
+        }
+      }
+      return WalkResult::advance();
+    };
+
+    if (op.walk(walker).wasInterrupted())
+      signalPassFailure();
   }
 };
 } // namespace

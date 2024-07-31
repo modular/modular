@@ -14,6 +14,7 @@ namespace M::KGEN::MOGGPreElab {
 
 // The prefix that internal and max scoped decorators will start with.
 constexpr StringLiteral MAX_PREFIX = "max";
+constexpr StringLiteral COMPILER_PREFIX = "compiler";
 constexpr StringLiteral INTERNAL_PREFIX = "register";
 
 // Returns true if all inputs are extensibility tensors.
@@ -101,7 +102,9 @@ bool stripDecorators(LIT::FuncOp func) {
       // Only accept decorators in max / register domain.
       if (!(directSym.getSymbol().getRootReference().strref() == MAX_PREFIX ||
             directSym.getSymbol().getRootReference().strref() ==
-                INTERNAL_PREFIX))
+                INTERNAL_PREFIX ||
+            directSym.getSymbol().getRootReference().strref() ==
+                COMPILER_PREFIX))
         continue;
       decoratorName = directSym.getSymbol().getLeafReference().strref();
     }
@@ -120,7 +123,8 @@ bool stripDecorators(LIT::FuncOp func) {
           SymbolRefAttr symRef = sym.getSymbol();
           // Only accept decorators in max / register domain.
           if (!(symRef.getRootReference().strref() == "max" ||
-                symRef.getRootReference().strref() == "register"))
+                symRef.getRootReference().strref() == "register" ||
+                symRef.getRootReference().strref() == COMPILER_PREFIX))
             continue;
           decoratorName = symRef.getLeafReference().strref();
         }

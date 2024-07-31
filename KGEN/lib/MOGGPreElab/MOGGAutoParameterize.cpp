@@ -35,7 +35,8 @@ namespace M::KGEN::MOGGPreElab {
 } // namespace M::KGEN::MOGGPreElab
 
 static constexpr llvm::StringLiteral SPEC_PREFIX_STR = "__MOGG_SPEC";
-static constexpr llvm::StringLiteral DPS_TENSOR_STR = "max::UnsafeTensorSlice";
+static constexpr llvm::StringLiteral DPS_TENSOR_STR =
+    "tensor_utils::UnsafeTensorSlice";
 static constexpr llvm::StringLiteral TENSOR_SPEC_NONE = "TENSOR_SPEC_NONE";
 
 static bool isTensorType(Attribute typeName) {
@@ -265,7 +266,6 @@ public:
       assert(!specTemplate.getterFunc &&
              "Sample none spec parameter could not be "
              "found in spec get function.");
-
       return;
     }
 
@@ -359,6 +359,7 @@ public:
       for (auto [idx, type] : llvm::enumerate(argTypeNames)) {
         if (!isTensorType(type))
           continue;
+
         Value arg = gen.getArgument(idx);
 
         // If this tensor needs a spec track the argument index so the
