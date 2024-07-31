@@ -227,6 +227,87 @@ static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
 }
 
 //===----------------------------------------------------------------------===//
+// createCanonicalizerWithDefaultJIT
+//===----------------------------------------------------------------------===//
+
+/// Compile the pre-elaboration canonicalizations patterns present in the
+/// module. Requires the module symbol table, and the exportMap of all the
+/// canonicalization functions.
+static ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>
+compileCustomCanonicalizationFns(
+    ModuleOp theModule,
+    const DenseMap<StringAttr, SymbolConstantAttr> &canonicalizationSymbols,
+    TargetInfoAttr target) {
+  MLIRContext *ctx = theModule.getContext();
+  CompilationOptions options;
+  ExecutionEngineOptions eeOptions;
+
+  // Start the execution engine.
+  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
+      initializeExecutionEngine(*ctx, options, std::move(eeOptions),
+                                /*isJIT=*/true, PassManagerConfigOptions());
+  if (execEngineOr.isError())
+    return execEngineOr.takeError();
+
+  // We place the engine in a shared pointer that is going to be owned by all
+  // canonicalization patterns. This is so it stays alive for as long the
+  // operations are loaded.
+  std::shared_ptr<ExecutionEngine> engine(execEngineOr->release());
+
+  // Create the object compiler and slice a new module with the operations we
+  // want to JIT.
+  auto objCompilerOr =
+      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, *ctx);
+  if (failed(objCompilerOr))
+    return objCompilerOr.takeError();
+  ObjectCompiler &objCompiler = **objCompilerOr;
+
+  // Add an environment variable to specify that the CAPI is linked in the
+  // JIT'ed code.
+  auto dict = DictionaryAttr::get(
+      ctx,
+      {NamedAttribute(StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
+                      mlir::UnitAttr::get(ctx))});
+  theModule->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
+
+  // Run the KGEN pipeline, and compile it to an archive.
+  KGENCompiler compiler(*ctx, options);
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(
+          theModule, target, KGENCompiler::StartPipelineAt::AfterLowerLIT))
+    return err.takeError();
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(theModule);
+  if (archiveOr.isError())
+    return archiveOr.takeError();
+
+  // Add the canonicalization pattern layer.
+  if (ErrorOrSuccess err = engine->addIfAbsent<StaticArchiveLayer>(
+          "canonicalization_patterns", archiveOr.takeValue()))
+    return err.takeError();
+
+  // The map of compiled functions.
+  DenseMap<StringAttr, CAPICanonicalizationFn> compiledFns;
+  for (auto [opName, canonSym] : canonicalizationSymbols) {
+    ErrorOr<CompiledFunc> funcOrRes =
+        engine->lookup(canonSym.getSymbol().getLeafReference());
+    if (funcOrRes.isError())
+      return funcOrRes.takeError();
+    // Both the operation and the rewriter are passed as pointers, as the
+    // mojo canonicalization pattern is marked as inout.
+    compiledFns.try_emplace(
+        opName, [engine = engine, func = *funcOrRes](
+                    MlirOperation *op, MlirRewriterBase *rewriter) mutable {
+          return func.invoke<bool>(op, rewriter);
+        });
+  }
+
+  return compiledFns;
+}
+
+std::unique_ptr<Pass> KGEN::createCanonicalizerWithDefaultJIT() {
+  return createCanonicalizer(compileCustomCanonicalizationFns);
+}
+
+//===----------------------------------------------------------------------===//
 // compileElaboratorAsm
 //===----------------------------------------------------------------------===//
 
@@ -305,7 +386,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
         return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options);
       }));
-  buildPostElaborationPipeline(pm, options);
+  buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
 
   // This functor runs the desired transformation to cache.
   auto compileToAsm =
@@ -428,86 +509,6 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
 }
 
 //===----------------------------------------------------------------------===//
-// createRegisterCustomOpsWithDefaultJIT
-//===----------------------------------------------------------------------===//
-
-/// Compile the pre-elaboration canonicalizations patterns present in the
-/// module. Requires the module symbol table, and the exportMap of all the
-/// canonicalization functions.
-static ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>
-compileCustomCanonicalizationFns(ModuleOp module, SymbolTable &table,
-                                 const ExportMap &exportMap,
-                                 TargetInfoAttr target) {
-  MLIRContext *ctx = module.getContext();
-  CompilationOptions options;
-  ExecutionEngineOptions eeOptions;
-
-  // Start the execution engine.
-  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(*ctx, options, std::move(eeOptions),
-                                /*isJIT=*/true, PassManagerConfigOptions());
-  if (execEngineOr.isError())
-    return execEngineOr.takeError();
-
-  // We place the engine in a shared pointer that is going to be owned by all
-  // canonicalization patterns. This is so it stays alive for as long the
-  // operations are loaded.
-  std::shared_ptr<ExecutionEngine> engine(execEngineOr->release());
-
-  // Create the object compiler and slice a new module with the operations we
-  // want to JIT.
-  auto objCompilerOr =
-      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, *ctx);
-  if (failed(objCompilerOr))
-    return objCompilerOr.takeError();
-  ObjectCompiler &objCompiler = **objCompilerOr;
-  auto newModule = produceStandaloneModule(table, exportMap);
-
-  // Add an environment variable to specify that the CAPI is linked in the
-  // JIT'ed code.
-  auto dict = DictionaryAttr::get(
-      ctx,
-      {NamedAttribute(StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
-                      mlir::UnitAttr::get(ctx))});
-  (**newModule).setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
-
-  // Run the KGEN pipeline, and compile it to an archive.
-  KGENCompiler compiler(*ctx, options);
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(
-          *newModule, target, KGENCompiler::StartPipelineAt::AfterLowerLIT))
-    return err.takeError();
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(*newModule);
-  if (archiveOr.isError())
-    return archiveOr.takeError();
-
-  // Add the canonicalization pattern layer.
-  if (ErrorOrSuccess err = engine->addIfAbsent<StaticArchiveLayer>(
-          "canonicalization_patterns", archiveOr.takeValue()))
-    return err.takeError();
-
-  // The map of compiled functions.
-  DenseMap<StringAttr, CAPICanonicalizationFn> compiledFns;
-  for (auto [name, _] : exportMap) {
-    ErrorOr<CompiledFunc> funcOrRes = engine->lookup(name);
-    if (funcOrRes.isError())
-      return funcOrRes.takeError();
-    // Both the operation and the rewriter are passed as pointers, as the
-    // mojo canonicalization pattern is marked as inout.
-    compiledFns.try_emplace(
-        name, [engine = engine, func = *funcOrRes](
-                  MlirOperation *op, MlirRewriterBase *rewriter) mutable {
-          return func.invoke<bool>(op, rewriter);
-        });
-  }
-
-  return compiledFns;
-}
-
-std::unique_ptr<Pass> KGEN::createRegisterCustomOpsWithDefaultJIT() {
-  return createRegisterCustomOps(compileCustomCanonicalizationFns);
-}
-
-//===----------------------------------------------------------------------===//
 // createLowerCustomOpsWithDefaultJIT
 //===----------------------------------------------------------------------===//
 
@@ -538,7 +539,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
         return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options);
       });
-  buildPostElaborationPipeline(pm, options);
+  buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
 }
 
 //===----------------------------------------------------------------------===//
@@ -638,7 +639,8 @@ AnyAsyncValueRef KGENCompiler::runKGENPipeline(
   }
 
   // Populate the passes.
-  buildGenerateLibraryPipeline(pm, options, startAt);
+  buildGenerateLibraryPipeline(pm, options, compileCustomCanonicalizationFns,
+                               startAt);
   populateElaborateModulePasses(pm, target, options);
 
   // Run the passes as a cached transform.
@@ -670,7 +672,7 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
         configPM.getError());
   }
 
-  buildGenerateLibraryPipeline(pm, options);
+  buildGenerateLibraryPipeline(pm, options, compileCustomCanonicalizationFns);
 
   AsyncRT::Runtime &runtime =
       *loadContext(module.getContext())->get<AsyncRT::Runtime>();

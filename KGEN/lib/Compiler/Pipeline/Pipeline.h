@@ -29,10 +29,11 @@ void buildCheckLITPipeline(mlir::PassManager &pm,
 /// This populates the pre-elaboration phase passes of the KGEN compiler. The
 /// distribution format of a KGEN library is essentially what comes just before
 /// elaboration because the parameter system allows significant extension.
-void buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options,
-                                  KGENCompiler::StartPipelineAt startAt =
-                                      KGENCompiler::StartPipelineAt::Beginning);
+void buildGenerateLibraryPipeline(
+    mlir::PassManager &pm, const CompilationOptions &options,
+    const CompileCanonicalizationFnsFn &compileCanonFn,
+    KGENCompiler::StartPipelineAt startAt =
+        KGENCompiler::StartPipelineAt::Beginning);
 
 //===----------------------------------------------------------------------===//
 // ElaborateModulePipeline
@@ -60,8 +61,9 @@ void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
 
 /// This populates the post-elaboration optimization and simplification passes.
 /// These passes are intended to run immediately after the elaborator.
-void buildPostElaborationPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
+void buildPostElaborationPipeline(
+    mlir::PassManager &pm, const CompilationOptions &options,
+    const CompileCanonicalizationFnsFn &compileCanonFn);
 
 } // namespace KGEN
 } // namespace M
