@@ -8,6 +8,12 @@
 # TODO (MSDK-465): Remove env var
 # RUN: TMP_ALLOCATE_ON_DEVICE=1 %mojo %s
 
+# COM: Test with mojo build
+# RUN: mkdir -p %t
+# RUN: rm -rf %t/cuda-test-graph
+# RUN: mojo build %s -o %t/cuda-test-graph
+# RUN: TMP_ALLOCATE_ON_DEVICE=1 %t/cuda-test-graph
+
 import tensor
 from max.graph import Graph, TensorType, Type, ops
 from max._driver import cpu_device, cuda_device, Tensor

@@ -6,6 +6,12 @@
 
 # RUN: %mojo %s
 
+# COM: Test with mojo build
+# RUN: mkdir -p %t
+# RUN: rm -rf %t/test-tensor
+# RUN: mojo build %s -o %t/test-tensor
+# RUN: %t/test-tensor
+
 from max._driver import (
     CPUDescriptor,
     cpu_device,

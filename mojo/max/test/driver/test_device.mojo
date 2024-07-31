@@ -6,6 +6,12 @@
 
 # RUN: %mojo %s
 
+# COM: Test with mojo build
+# RUN: mkdir -p %t
+# RUN: rm -rf %t/test-device
+# RUN: mojo build %s -o %t/test-device
+# RUN: %t/test-device
+
 from max._driver import (
     cpu_device,
     DeviceMemory,

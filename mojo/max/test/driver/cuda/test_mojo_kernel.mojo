@@ -7,6 +7,12 @@
 # REQUIRES: cuda
 # RUN: %mojo %s
 
+# COM: Test with mojo build
+# RUN: mkdir -p %t
+# RUN: rm -rf %t/cuda-test-mojo-kernel
+# RUN: mojo build %s -o %t/cuda-test-mojo-kernel
+# RUN: %t/cuda-test-mojo-kernel
+
 from max._driver import (
     cpu_device,
     cuda_device,
