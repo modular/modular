@@ -772,7 +772,8 @@ void LowerAsyncBuildContext::storeOpInFrameIfNeeded(
       return;
     }
     builder.setInsertionPointAfter(op);
-    Type frameEntryType = frameData.frameTypes[entry->getSecond()];
+    [[maybe_unused]] Type frameEntryType =
+        frameData.frameTypes[entry->getSecond()];
     assert(frameEntryType == op->getResultTypes().front() &&
            "The frame type slot does not match the value");
     assert(op->getNumResults() == 1 && "TODO: support multiple results");
