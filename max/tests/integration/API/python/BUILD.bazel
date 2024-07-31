@@ -12,7 +12,7 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
-        "//PyTorch:TorchRuntimePlugin",
+        "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/EngineAPI:inputs",

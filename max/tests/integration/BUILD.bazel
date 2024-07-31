@@ -34,7 +34,7 @@ lit_tests(
     data = glob(["max-cli/benchmark/Inputs/**"]) + [
         ":inputs",
         "//KGEN:CompilerRT",
-        "//PyTorch:TorchRuntimePlugin",
+        "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
         "@llvm-project//compiler-rt:orc_rt",
     ],
