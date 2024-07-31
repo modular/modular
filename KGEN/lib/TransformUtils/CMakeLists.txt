@@ -9,6 +9,7 @@ add_modular_library(KGENTransformUtils
   InliningUtils.cpp
   Walkers.cpp
   SlicingUtils.cpp
+  ManglingUtils.cpp
 
   LINK_LIBS PUBLIC
   MLIRIR
