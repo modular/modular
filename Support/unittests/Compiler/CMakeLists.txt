@@ -14,6 +14,7 @@ add_modular_unittest(
   TEST_NAME
   SupportCompilerTests
 
+  DomainAwareReplacerTest.cpp
   MLIRDenseAttrTest.cpp
 
   LINK_LIBS PRIVATE
