@@ -408,7 +408,7 @@ void CallGraph::performInlining(uint64_t threshold) {
   AsyncRT::await(done);
 }
 
-LogicalResult
+[[maybe_unused]] LogicalResult
 CallGraph::diagnoseAlwaysInliningCycle(ModuleOp module,
                                        const SymbolTable &symtab) {
   CallGraphBase::build(module, symtab, runtime);

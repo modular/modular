@@ -206,7 +206,7 @@ TupleDLValue::TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues,
                            ASTType tupleType, const ExprNode *expr)
     : BaseDLValue(tupleType), expr(expr),
       eltLValues(eltLValues.begin(), eltLValues.end()) {
-  for (auto &elt : eltLValues)
+  for ([[maybe_unused]] auto &elt : eltLValues)
     assert(elt.ir.getIfLValue() && "element must be an lvalue");
 }
 

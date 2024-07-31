@@ -861,7 +861,7 @@ private:
 };
 } // namespace
 
-void UninitializedValueScan::dump() const {
+[[maybe_unused]] void UninitializedValueScan::dump() const {
   auto &os = llvm::errs();
   if (valueSet.getValueInfos().size() < 10) {
     valueSet.dump();
@@ -1599,7 +1599,7 @@ private:
 };
 } // namespace
 
-void DestructorInsertion::dump() const {
+[[maybe_unused]] void DestructorInsertion::dump() const {
   auto &os = llvm::errs();
   if (valueSet.getValueInfos().size() < 32) {
     valueSet.dump();
