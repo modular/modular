@@ -20,6 +20,7 @@ from gpu.host.function import FunctionCache
 
 
 struct Context:
+    var device: Device
     var ctx: _ContextHandle
     var cuda_dll: Optional[CudaDLL]
     var cuda_function_cache: UnsafePointer[FunctionCache]
@@ -29,6 +30,7 @@ struct Context:
         self.__init__(Device())
 
     fn __init__(inout self, device: Device, flags: Int = 0) raises:
+        self.device = device
         self.cuda_dll = device.cuda_dll
         self.cuda_function_cache = UnsafePointer[FunctionCache]().alloc(1)
         self.cuda_function_cache.init_pointee_move(FunctionCache())
@@ -58,6 +60,7 @@ struct Context:
         return self^
 
     fn __moveinit__(inout self, owned existing: Self):
+        self.device = existing.device
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
         self.cuda_function_cache = existing.cuda_function_cache
@@ -67,6 +70,7 @@ struct Context:
         existing.owner = False
 
     fn __copyinit__(inout self, existing: Self):
+        self.device = existing.device
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
         self.cuda_function_cache = existing.cuda_function_cache
@@ -318,3 +322,7 @@ struct Context:
 
         var cuMemFreeAsync = self.cuda_dll.value().cuMemFreeAsync if self.cuda_dll else cuMemFreeAsync.load()
         _check_error(cuMemFreeAsync(ptr.bitcast[Int](), stream.stream))
+
+    fn get_compute_capability(self) raises -> Float64:
+        """Returns the device compute capability version."""
+        return self.device.compute_capability()

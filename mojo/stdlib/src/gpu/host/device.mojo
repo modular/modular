@@ -621,6 +621,10 @@ struct Device(StringableRaising):
         self.id = id
         self.cuda_dll = cuda_instance.cuda_dll
 
+    fn __copyinit__(inout self, existing: Self):
+        self.id = existing.id
+        self.cuda_dll = existing.cuda_dll
+
     @no_inline
     fn __str__(self) raises -> String:
         var res = "name: " + self._name() + "\n"
@@ -722,3 +726,9 @@ struct Device(StringableRaising):
     fn max_threads_per_sm(self) raises -> Int:
         """Returns the maximum resident threads per multiprocessor."""
         return self._query(DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR)
+
+    fn compute_capability(self) raises -> Float64:
+        """Returns the device compute capability version."""
+        return self._query(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR) + (
+            self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR) / 10
+        )

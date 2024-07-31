@@ -241,15 +241,16 @@ struct DeviceContext:
         -1
     ) > 0
 
+    # We only support CUDA architectures sm_80 and above.
+    alias min_supported_cuda_arch = 8.0
+
     # Default initializer for all existing cases outside MGP; this currently
     # includes tests, benchmarks, Driver API. The tests and benchmarks (all of
     # which, except the test_deviceContext_profiling.mojo) would have the
     # profiling_enabled = False, which is OK. But for the Driver API, we would
     # want profiling to occur for appropriate builds when it substitutes the
     # current MGP implementation.
-    fn __init__(
-        inout self,
-    ) raises:
+    fn __init__(inout self) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance))
         self.cuda_stream = Stream(self.cuda_context)
@@ -476,4 +477,14 @@ struct DeviceContext:
             print(
                 "<clear_kernel_timing_info>: Kernel profiling has not been"
                 " enabled."
+            )
+
+    fn is_compatible(self) raises:
+        """Returns whether the current CUDA device is compatible with MAX."""
+        if (
+            self.cuda_context.get_compute_capability()
+            < self.min_supported_cuda_arch
+        ):
+            raise Error(
+                "MAX only supports CUDA architectures `sm_80` or higher"
             )
