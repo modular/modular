@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: has_cuda_device
 # RUN: %bare-mojo build %s
 
 from gpu.host.device_context import DeviceContext
