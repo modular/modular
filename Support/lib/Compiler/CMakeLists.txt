@@ -8,6 +8,7 @@ add_modular_mlir_library(MCompilerSupport
   BytecodeReaderWriter.cpp
   DiagnosticHandler.cpp
   Diags.cpp
+  DomainAwareReplacer.cpp
   ErrorTree.cpp
   MLIRDenseAttr.cpp
   MLIRDType.cpp
