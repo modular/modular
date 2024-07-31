@@ -605,6 +605,15 @@ fn mgp_buffer_to_bool[
     return buffer[0] != 0
 
 
+@mogg_register("mgp.buffer.slice")
+@always_inline
+@export
+fn mgp_buffer_slice(
+    buffer: NDBuffer[DType.uint8, 1], offset: Int, size: Int
+) -> NDBuffer[DType.uint8, 1]:
+    return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), size)
+
+
 # ===----------------------------------------------------------------------===#
 # MGP Tensor Spec Primitives
 # ===----------------------------------------------------------------------===#
