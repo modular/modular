@@ -361,9 +361,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                         ] = self.element_data[i]
                 else:
                     alias alignment = alignof[Self.element_data_type]()
-                    Self.element_data_type.store[alignment=alignment](
-                        ptr, self.element_data
-                    )
+                    ptr.store(self.element_data)
             else:
 
                 @parameter
@@ -395,8 +393,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                         for j in range(dim_1):
                             if j >= element_bounds[1]:
                                 break
-                            self.element_data[i + j * dim_1].store(
-                                ptr, __get_offset[i, j](self.runtime_layout)
+                            ptr.store[width=1](
+                                __get_offset[i, j](self.runtime_layout)
                             )
 
                 else:
@@ -405,8 +403,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for i in range(elements):
                         if i >= element_bounds[0]:
                             break
-                        vec_type.store[alignment=alignment](
-                            ptr + __get_offset[i, 0](self.runtime_layout),
+                        (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                            alignment=alignment
+                        ](
                             self.element_data.slice[size, offset = i * size](),
                         )
 
@@ -430,8 +429,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                         for j in range(dim_1):
                             if j >= element_bounds[1]:
                                 break
-                            self.element_data[i + j * dim_1].store(
-                                ptr,
+                            ptr.store(
                                 __get_offset[i, j](self.runtime_layout),
                                 self.element_data[i + j * dim_1],
                             )
@@ -441,8 +439,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for i in range(elements):
                         if i >= element_bounds[1]:
                             break
-                        vec_type.store[alignment=alignment](
-                            ptr + __get_offset[i, 0](self.runtime_layout),
+                        (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                            alignment=alignment
+                        ](
                             self.element_data.slice[size, offset = i * size](),
                         )
             else:
@@ -458,8 +457,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        self.element_data[i + j * dim_1].store(
-                            ptr, __get_offset[i, j](self.runtime_layout)
+                        ptr.store[width=1](
+                            __get_offset[i, j](self.runtime_layout)
                         )
 
     @no_inline
