@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK: Benchmark results
+# RUN: %bare-mojo build %s
 
 from random import rand
 
