@@ -779,6 +779,8 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
 
     /// Get the number of bits allocated for the discriminator.
     size_t getDiscrSizeInBits() const;
+    /// Get the size of the content section of the variant.
+    std::optional<int64_t> getContentSize(TargetInfoAttr target) const;
 
     /// Get the concrete variant types.
     llvm::iterator_range<llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator,
