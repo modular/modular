@@ -15,7 +15,7 @@ from pathlib import Path
 from sys.ffi import _get_global_or_null
 from memory import Arc, UnsafePointer
 from max._utils import call_dylib_func
-from max._driver import cpu_device, Device
+from max._driver import check_compute_capability, cpu_device, Device
 
 from ._compilation import (
     CCompiledModel,
@@ -456,6 +456,10 @@ struct InferenceSession:
 
         """
         var device = options._device.or_else(cpu_device())
+        if "CUDA" in str(device):
+            # This should eventually be a method on the device itself so we can
+            # avoid having `session.mojo` depend on CUDA.
+            check_compute_capability(device)
         var path = _get_engine_path()
         self._ptr = Arc(_InferenceSessionImpl(path, device))
 

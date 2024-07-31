@@ -159,6 +159,15 @@ fn cuda_device(gpu_id: Int = 0) raises -> Device:
     return cuda_dev
 
 
+fn check_compute_capability(device: Device) raises:
+    """Checks if a device is compatible with MAX. Will raise an exception if
+    CUDA version is below 8.0."""
+    var device_context = call_dylib_func[UnsafePointer[DeviceContext]](
+        device.lib.value().get_handle(), "M_getDeviceContext", device._cdev
+    )
+    device_context[].is_compatible()
+
+
 # TODO: Make this polymorphic on Device type.
 @value
 struct CompiledDeviceKernel[
