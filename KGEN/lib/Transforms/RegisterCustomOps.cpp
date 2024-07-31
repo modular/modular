@@ -7,9 +7,13 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 
 #include "KGEN/CustomDialect/CustomDialect.h"
+#include "KGEN/CustomDialect/CustomUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/TransformUtils/SlicingUtils.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Rewrite.h"
@@ -43,6 +47,20 @@ struct RegisterCustomOpsPass
   /// In case of a failure, returns an empty DenseMap.
   LogicalResult collectCanonicalizationGenerators(
       DenseMap<StringAttr, GeneratorOp> &canonGens);
+
+  /// JIT and register canonicalization patterns for custom ops.
+  void registerCanonicalizationPatterns(ModuleOp theModule,
+                                        SymbolTableCollection &tables);
+
+  /// Slice custom operation definitions from the module to a new module, that
+  /// is then translated into bytecode and stored in a dense resource attribute.
+  static DenseResourceElementsAttr
+  sliceCustomModuleToAttr(ModuleOp theModule, SymbolTableCollection &tables);
+
+  /// Wrap the op implementation parameters in custom operation in a
+  /// `kgen.preserved` attribute so they are not lowered anymore in the
+  /// pipeline.
+  static void preserveCustomOpParams(ModuleOp theModule);
 
   void runOnOperation() override;
 
@@ -98,10 +116,62 @@ LogicalResult RegisterCustomOpsPass::collectCanonicalizationGenerators(
   return success();
 }
 
-void RegisterCustomOpsPass::runOnOperation() {
-  ModuleOp theModule = getOperation();
-  MLIRContext *ctx = theModule->getContext();
+DenseResourceElementsAttr
+RegisterCustomOpsPass::sliceCustomModuleToAttr(ModuleOp theModule,
+                                               SymbolTableCollection &tables) {
+  auto implsOp = CustomOpImplsOp::lookupOp(theModule);
 
+  // Do not clone the module if no custom operations are defined.
+  if (!implsOp)
+    return {};
+
+  ExportMap exportedSymbols;
+  // This operation maps custom operation names to their implementations.
+  // It should stay as exported to not get deleted.
+  exportedSymbols.try_emplace(
+      StringAttr::get(implsOp.getContext(), CustomOpImplsOp::kSymbolName),
+      ExportKind::Exported);
+
+  // Add all op implementation and canonicalization patterns.
+  // They specifically are not marked as exported.
+  for (CustomOpImplAttr impl : implsOp.getImpls()) {
+    exportedSymbols.try_emplace(
+        impl.getOpImplementation().getSymbol().getRootReference(),
+        ExportKind::NotExported);
+
+    SymbolConstantAttr canonSym = impl.getOpCanonicalization();
+    if (!canonSym)
+      continue;
+    exportedSymbols.try_emplace(canonSym.getSymbol().getRootReference(),
+                                ExportKind::NotExported);
+  }
+
+  // Create a new module that will contain all the symbols, and place it in a
+  // dense resoruce attribute.
+  OwningOpRef<ModuleOp> newModule = produceStandaloneModule(
+      tables.getSymbolTable(theModule.getOperation()), exportedSymbols);
+  return writeModuleToBytecodeAttr(*newModule);
+}
+
+void RegisterCustomOpsPass::preserveCustomOpParams(ModuleOp theModule) {
+  auto customDialect =
+      theModule->getContext()->getLoadedDialect<CustomDialect>();
+  theModule.walk([customDialect](Operation *op) {
+    if (op->getDialect() != customDialect)
+      return;
+
+    Attribute implParamsAttr = op->getAttr(kCustomOpParamsAttrName);
+    if (!implParamsAttr)
+      return;
+
+    op->setAttr(kCustomOpParamsAttrName,
+                KGEN::PreservedAttr::get(implParamsAttr));
+  });
+}
+
+void RegisterCustomOpsPass::registerCanonicalizationPatterns(
+    ModuleOp theModule, SymbolTableCollection &tables) {
+  MLIRContext *ctx = theModule->getContext();
   // Collect all the canonicalization patterns.
   DenseMap<StringAttr, GeneratorOp> canonGens;
   if (failed(collectCanonicalizationGenerators(canonGens))) {
@@ -109,19 +179,10 @@ void RegisterCustomOpsPass::runOnOperation() {
     return;
   }
 
-  // No canonicalization patterns here, or a failure somewhere, so we exit
-  // early.
-  if (canonGens.empty())
-    return;
-
   // Create the list of symbols we want to JIT.
   ExportMap exportMap;
   for (auto [opName, generatorOp] : canonGens)
     exportMap.try_emplace(generatorOp.getSymNameAttr(), ExportKind::Exported);
-
-  auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
-  SymbolTableCollection &tables = symtabAnalysis.getSymbolTables();
-
   ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>> funcsOrErr =
       compileCanonicalizationFnFn(
           theModule, tables.getSymbolTable(theModule.getOperation()), exportMap,
@@ -133,7 +194,6 @@ void RegisterCustomOpsPass::runOnOperation() {
     return;
   }
   DenseMap<StringAttr, CAPICanonicalizationFn> funcs = funcsOrErr.takeValue();
-
   // Register the canonicalization patterns in the custom dialect.
   CustomDialect *customDialect = ctx->getLoadedDialect<CustomDialect>();
   for (auto [opName, generatorOp] : canonGens) {
@@ -149,6 +209,36 @@ void RegisterCustomOpsPass::runOnOperation() {
     customDialect->canonicalizationFns.try_emplace(opName,
                                                    std::move(canonFunc));
   }
+}
+
+void RegisterCustomOpsPass::runOnOperation() {
+  ModuleOp theModule = getOperation();
+  auto implsOp = CustomOpImplsOp::lookupOp(theModule);
+
+  // No canonicalization patterns here, or a failure somewhere, so we exit
+  // early.
+  if (implsOp.getImpls().empty())
+    return;
+
+  auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
+  SymbolTableCollection &tables = symtabAnalysis.getSymbolTables();
+
+  // Slice a module for the op implementations.
+  DenseResourceElementsAttr customOpResource =
+      sliceCustomModuleToAttr(theModule, tables);
+  theModule->setAttr(kCustomOpImplModuleAttr, customOpResource);
+
+  // Set all custom op attributes to preserved.
+  preserveCustomOpParams(theModule);
+
+  // Erase the custom op definitions mapping.
+  // This allows custom op definitions to be DCE'd, as now all information is
+  // stored in the dense resource attribute attached to the main module.
+  // TODO(math-fehr): Enable this once the `canonicalizer` starts fetching and
+  // JIT'ing operations in the dense resource module.
+  // implsOp.erase();
+
+  registerCanonicalizationPatterns(theModule, tables);
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createRegisterCustomOps(

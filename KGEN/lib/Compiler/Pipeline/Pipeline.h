@@ -6,6 +6,7 @@
 #ifndef KGEN_COMPILER_PIPELINE_PIPELINE_H
 #define KGEN_COMPILER_PIPELINE_PIPELINE_H
 
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/LLVMForwardDecls.h"
 
@@ -29,7 +30,9 @@ void buildCheckLITPipeline(mlir::PassManager &pm,
 /// distribution format of a KGEN library is essentially what comes just before
 /// elaboration because the parameter system allows significant extension.
 void buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
+                                  const CompilationOptions &options,
+                                  KGENCompiler::StartPipelineAt startAt =
+                                      KGENCompiler::StartPipelineAt::Beginning);
 
 //===----------------------------------------------------------------------===//
 // ElaborateModulePipeline

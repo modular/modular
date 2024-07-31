@@ -11,6 +11,12 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M {
+/// Slice the dependencies of an operation out of the existing module into the
+/// self-contained slice module.
+void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
+                       const SymbolTable &symtab, IRMapping &reusedMapping,
+                       DenseSet<const void *> &visited);
+
 /// Produce a standalone MLIR module by slicing out the dependencies of the
 /// provided exported ops.
 OwningOpRef<ModuleOp>

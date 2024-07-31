@@ -11,6 +11,8 @@ lit_tests(
         exclude = [
             # Both Handled below
             "canonicalize-custom-ops.mojo",
+            "lower-parametric-custom-ops.mojo",
+            "lower-parametric-custom-ops-error.mojo",
             "multiresult_asm_mma.mojo",
         ],
     ),
@@ -44,6 +46,8 @@ lit_tests(
     # not require them
     srcs = glob(["*.test"]) + [
         "canonicalize-custom-ops.mojo",
+        "lower-parametric-custom-ops.mojo",
+        "lower-parametric-custom-ops-error.mojo",
         "multiresult_asm_mma.mojo",
     ],
     data = glob(["inputs/**/*.mojo"]) + [

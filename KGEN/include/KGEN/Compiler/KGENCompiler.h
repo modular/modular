@@ -27,16 +27,20 @@ public:
       MLIRContext &context, CompilationOptions options,
       PassManagerConfigOptions pmConfigOptions = PassManagerConfigOptions());
 
+  enum class StartPipelineAt { Beginning, AfterLowerLIT };
+
   /// Run KGEN compilation pipeline, including pre-elaboration passes,
   /// elaboration, and post-elaboration pass. Get the theModule ready before
   /// llvm lowering.
   AnyAsyncValueRef runKGENPipeline(
-      ModuleOp theModule, TargetInfoAttr target,
+      ModuleOp theModule, TargetInfoAttr target, StartPipelineAt startAt,
       RCRef<Cache::TransformCache> transformCache, AnyAsyncValueRef chain,
       std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
       std::function<void(Operation *)> moreOnHit = [](Operation *) {});
 
-  ErrorOrSuccess runKGENPipeline(ModuleOp theModule, TargetInfoAttr target);
+  ErrorOrSuccess
+  runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
+                  StartPipelineAt startAt = StartPipelineAt::Beginning);
 
   /// Run the library generation pipeline on the given module. If
   /// `materializeDependencies` is true, the pipeline will ensure all
@@ -87,6 +91,11 @@ std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 /// configuration. The created pass uses a default specialization executor that
 /// JITs and executes in-process.
 std::unique_ptr<Pass> createRegisterCustomOpsWithDefaultJIT();
+
+/// Create an instance of the custom ops lowering pass using the given
+/// configuration. The created pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass> createLowerCustomOpsWithDefaultJIT();
 
 } // namespace M::KGEN
 

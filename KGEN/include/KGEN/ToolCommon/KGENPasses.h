@@ -145,6 +145,16 @@ std::unique_ptr<mlir::Pass>
 createRegisterCustomOps(CompileCanonicalizationFnFn compileModuleFn = {});
 
 //===----------------------------------------------------------------------===//
+// Lower custom ops
+//===----------------------------------------------------------------------===//
+
+using RunKGENPipelineFn =
+    std::function<ErrorOrSuccess(ModuleOp theModule, TargetInfoAttr target)>;
+
+std::unique_ptr<mlir::Pass>
+createLowerCustomOps(RunKGENPipelineFn compileModuleFn = {});
+
+//===----------------------------------------------------------------------===//
 // Inlining
 //===----------------------------------------------------------------------===//
 

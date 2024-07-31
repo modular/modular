@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Pipeline.h"
-#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -33,15 +32,10 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   pm.addPass(createCheckLifetimes());
 }
 
-void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                        const CompilationOptions &options) {
-  // If the compilation options aren't for full debug, strip the extra info from
-  // the module.
-  if (options.debugLevel != CompilationOptions::kFullDebugInfo) {
-    pm.addPass(DebugInfo::createDebugInfoStrip(
-        {/*preserveLineTables=*/options.debugLevel ==
-         CompilationOptions::kLineTablesOnly}));
-  }
+/// This populates the early pipeline passes of the KGEN compiler that lowers
+/// the lit dialect. It also runs the mogg-annotate pass. `
+static void buildLowerLITPipeline(mlir::PassManager &pm,
+                                  const CompilationOptions &options) {
   buildCheckLITPipeline(pm, options);
 
   pm.addPass(MOGGPreElab::createMOGGAnnotate());
@@ -56,6 +50,22 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 #ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
 #endif
+}
+
+void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
+                                        const CompilationOptions &options,
+                                        KGENCompiler::StartPipelineAt startAt) {
+  if (startAt == KGENCompiler::StartPipelineAt::Beginning) {
+    // If the compilation options aren't for full debug, strip the extra info
+    // from the module.
+    if (options.debugLevel != CompilationOptions::kFullDebugInfo) {
+      pm.addPass(DebugInfo::createDebugInfoStrip(
+          {/*preserveLineTables=*/options.debugLevel ==
+           CompilationOptions::kLineTablesOnly}));
+    }
+
+    buildLowerLITPipeline(pm, options);
+  }
 
   // Slice MOGG compute & shape functions out of base kernels.
   MOGGPreElab::MOGGPreElabPipelineOptions moggOpts;

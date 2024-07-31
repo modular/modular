@@ -65,10 +65,9 @@ static void sliceDependenciesFrom(AttrOrType value, SymbolTable &sliceSymtab,
 
 /// Slice the dependencies of an operation out of the existing module into the
 /// self-contained slice module.
-static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
-                              const SymbolTable &symtab,
-                              IRMapping &reusedMapping,
-                              DenseSet<const void *> &visited) {
+void M::sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
+                          const SymbolTable &symtab, IRMapping &reusedMapping,
+                          DenseSet<const void *> &visited) {
   std::vector<Operation *> worklist;
   auto visit = [&](auto value) {
     sliceDependenciesFrom(value, sliceSymtab, symtab, visited, reusedMapping,

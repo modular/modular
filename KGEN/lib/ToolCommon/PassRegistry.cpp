@@ -38,7 +38,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();
   KGEN::registerLowerArgConventions();
-  KGEN::registerLowerCustomOps();
   KGEN::registerLowerLoops();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
@@ -74,6 +73,8 @@ void KGEN::registerDefaultKGENPasses() {
   // Passes that require a runtime.
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
+  mlir::registerPass(
+      [&] { return KGEN::createLowerCustomOpsWithDefaultJIT(); });
   mlir::registerPass(
       [&] { return KGEN::createRegisterCustomOpsWithDefaultJIT(); });
   KGEN::registerInlineParametric();

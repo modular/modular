@@ -941,14 +941,23 @@ def RemoveUnusedParams : Pass<"remove-unused-params", "mlir::ModuleOp"> {
 // `custom` dialect lowering
 //===----------------------------------------------------------------------===//
 
-def LowerCustomOps : Pass<"lower-custom-ops"> {
+def LowerCustomOps : Pass<"lower-custom-ops", "ModuleOp"> {
   let summary = "Lower operations from the `custom` dialect";
   let description = [{
     This pass lowers all operations of the `custom` dialect to function calls
     to their implementation.
   }];
 
-  let dependentDialects = ["KGENDialect", "Custom::CustomDialect"];
+  let dependentDialects = [
+    "KGENDialect",
+    "DebugInfo::DebugInfoDialect",
+    "HLCF::HLCFDialect",
+    "MDialect",
+    "Custom::CustomDialect",
+    "mlir::LLVM::LLVMDialect",
+    "mlir::NVVM::NVVMDialect",
+    "mlir::index::IndexDialect",
+  ];
 }
 
 //===----------------------------------------------------------------------===//
