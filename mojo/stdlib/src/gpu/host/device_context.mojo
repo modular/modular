@@ -237,7 +237,9 @@ struct DeviceContext:
     # Profiling is enabled only when the optional returned by the below call is
     # not None and has a non-zero value (this will be True for a
     # cmake-modular-profiling build).
-    alias profiling_enabled = True if build_info_asyncrt_max_profiling_level() is not None and build_info_asyncrt_max_profiling_level().value() > 0 else False
+    alias profiling_enabled = build_info_asyncrt_max_profiling_level().or_else(
+        -1
+    ) > 0
 
     # Default initializer for all existing cases outside MGP; this currently
     # includes tests, benchmarks, Driver API. The tests and benchmarks (all of
