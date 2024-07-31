@@ -287,6 +287,7 @@ fn _matmul_kv_cache[
     Parameters:
         hidden_state_shape: The static shapes for the hidden_state tensor
         weight_shape: The static shapes for the weight tensor
+        kv_params: The static parameters for our KVCache object
         target: StringLiteral identifying the device target (cpu vs cuda)
 
     Args:
@@ -545,6 +546,7 @@ fn flash_attention_kv_cache_h6_d48_bhsd[
 
 
 fn _flash_attention_kv_cache[
+    mask_rank: Int,
     q_shape: DimList,
     mask_shape: DimList,
     scale_shape: DimList,
@@ -555,7 +557,7 @@ fn _flash_attention_kv_cache[
     q: NDBuffer[DType.float32, 4, q_shape],
     k: ContiguousKVCache[DType.float32, kv_params],
     v: ContiguousKVCache[DType.float32, kv_params],
-    mask: NDBuffer[DType.float32, 2, mask_shape],
+    mask: NDBuffer[DType.float32, mask_rank, mask_shape],
     scale: NDBuffer[DType.float32, 1, scale_shape],
     output: NDBuffer[DType.float32, 4, output_shape],
     context: MojoCallContextPtr,
@@ -576,6 +578,7 @@ fn _flash_attention_kv_cache[
     @parameter
     if target == "cpu":
         return _flash_attention_kv_cache_cpu[
+            mask_rank,
             q_shape,
             mask_shape,
             scale_shape,
@@ -583,6 +586,7 @@ fn _flash_attention_kv_cache[
         ](q, k, v, mask, scale, output, context)
     else:
         return _flash_attention_kv_cache_gpu[
+            mask_rank,
             q_shape,
             mask_shape,
             scale_shape,
@@ -591,6 +595,7 @@ fn _flash_attention_kv_cache[
 
 
 fn _flash_attention_kv_cache_cpu[
+    mask_rank: Int,
     q_shape: DimList,
     mask_shape: DimList,
     scale_shape: DimList,
@@ -600,7 +605,7 @@ fn _flash_attention_kv_cache_cpu[
     q: NDBuffer[DType.float32, 4, q_shape],
     k: ContiguousKVCache[DType.float32, kv_params],
     v: ContiguousKVCache[DType.float32, kv_params],
-    mask: NDBuffer[DType.float32, 2, mask_shape],
+    mask: NDBuffer[DType.float32, mask_rank, mask_shape],
     scale: NDBuffer[DType.float32, 1, scale_shape],
     output: NDBuffer[DType.float32, 4, output_shape],
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -640,7 +645,13 @@ fn _flash_attention_kv_cache_cpu[
     fn input_mask_fn[
         width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[DType.float32, width]:
-        return mask.load[width=width]((idx[2], idx[3]))
+        @parameter
+        if mask_rank == 4:
+            return mask.load[width=width](
+                rebind[StaticIntTuple[mask_rank]](idx)
+            )
+        else:
+            return mask.load[width=width]((idx[2], idx[3]))
 
     var batch_size = q.dim[0]()
     var num_heads = q.dim[1]()
@@ -672,6 +683,7 @@ fn _flash_attention_kv_cache_cpu[
 
 
 fn _flash_attention_kv_cache_gpu[
+    mask_rank: Int,
     q_shape: DimList,
     mask_shape: DimList,
     scale_shape: DimList,
@@ -681,7 +693,7 @@ fn _flash_attention_kv_cache_gpu[
     q: NDBuffer[DType.float32, 4, q_shape],
     k: ContiguousKVCache[DType.float32, kv_params],
     v: ContiguousKVCache[DType.float32, kv_params],
-    mask: NDBuffer[DType.float32, 2, mask_shape],
+    mask: NDBuffer[DType.float32, mask_rank, mask_shape],
     scale: NDBuffer[DType.float32, 1, scale_shape],
     output: NDBuffer[DType.float32, 4, output_shape],
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -690,10 +702,34 @@ fn _flash_attention_kv_cache_gpu[
         kv_params.layout == KVCacheLayout.BSHD,
         "GPU Flash attention only supports the BSHD layout.",
     ]()
-    var mask_nd = NDBuffer[DType.float32, 3, DimList(Dim(), Dim(), Dim()),](
-        mask.data,
-        StaticIntTuple[3](q.dim[0](), mask.dim[0](), mask.dim[1]()),
-    )
+
+    alias wrapped_mask_rank = mask_rank if mask_rank == 4 else 3
+    var mask_nd: NDBuffer[
+        DType.float32,
+        wrapped_mask_rank,
+        DimList.create_unknown[wrapped_mask_rank](),
+    ]
+
+    @parameter
+    if mask_rank == 2:
+        mask_nd = NDBuffer[
+            DType.float32,
+            wrapped_mask_rank,
+            DimList.create_unknown[wrapped_mask_rank](),
+        ](
+            mask.data,
+            StaticIntTuple[wrapped_mask_rank](
+                q.dim[0](), mask.dim[0](), mask.dim[1]()
+            ),
+        )
+    else:
+        mask_nd = rebind[
+            NDBuffer[
+                DType.float32,
+                wrapped_mask_rank,
+                DimList.create_unknown[wrapped_mask_rank](),
+            ]
+        ](mask)
 
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
@@ -708,7 +744,7 @@ fn _flash_attention_kv_cache_gpu[
     try:
         gpu_flash_attention[
             4,
-            3,
+            wrapped_mask_rank,
             q.shape,
             k_nd.shape,
             v_nd.shape,
