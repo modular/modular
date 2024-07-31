@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, List, Optional, Union
 
 InputShape = Optional[List[Union[int, str, None]]]
+CustomExtensionType = Union[str, Path, Any]
+CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
 
 class DType(Enum): ...
 
