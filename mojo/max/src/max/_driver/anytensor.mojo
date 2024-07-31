@@ -81,6 +81,12 @@ struct AnyTensor:
         var spec = self._spec
         return DeviceTensor(DeviceMemory(self^), spec)
 
+    fn to_tensor[
+        type: DType, rank: Int
+    ](owned self) raises -> Tensor[type, rank]:
+        """Consumes this anytensor and convert it into a tensor."""
+        return self^.to_device_tensor().to_tensor[type, rank]()
+
     fn take(inout self) raises -> Self:
         """The returned value takes self's resources and replaces them with default
         initialized values."""

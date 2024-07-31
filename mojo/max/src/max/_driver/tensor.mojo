@@ -320,3 +320,15 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
             self._ptr, shape
         )
         writer.write(")")
+
+    fn move_to(owned self, dev: Device) raises -> Self:
+        """Returns self if already allocated on dev, otherwise copy the contents
+        of self to dev.
+
+        Args:
+            dev: The Device of the returned buffer.
+
+        Returns:
+            Instance of Tensor allocated on given device.
+        """
+        return self^.to_device_tensor().move_to(dev).to_tensor[type, rank]()

@@ -397,6 +397,15 @@ def test_print():
     assert_equal(s, expected)
 
 
+def test_move():
+    alias shape = (1,)
+    t = Tensor[DType.float32, len(shape)](shape)
+    t[0] = 1.0
+    dev = cpu_device()
+    t1 = t.move_to(dev)
+    assert_equal(t1[0], 1.0)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -406,7 +415,6 @@ def main():
     test_2dslice_with_step()
     test_4dslice_with_step()
     test_2dslice_with_step_row_column()
-    test_4dslice_with_step()
     test_round_trip()
     test_copy()
     test_set_through_slice()
@@ -416,3 +424,4 @@ def main():
     test_unsafe_slice_simd()
     test_slice_mutability()
     test_print()
+    test_move()

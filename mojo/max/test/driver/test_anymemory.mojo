@@ -6,7 +6,7 @@
 
 # RUN: %mojo %s
 from max._driver import AnyTensor, cpu_device, Tensor, AnyMemory, AnyMojoValue
-from testing import assert_equal, assert_true, assert_false
+from testing import assert_equal, assert_true, assert_false, assert_raises
 from max.tensor import TensorSpec
 
 
@@ -21,10 +21,11 @@ def test_from_device_memory():
 
     assert_equal(anytensor.get_rank(), 2)
 
+    dm_back = anytensor^.to_device_tensor()
+    assert_equal(dm_back.spec.rank(), 2)
+
 
 def test_from_tensor():
-    dev = cpu_device()
-
     tensor = Tensor[DType.float32, 2]((2, 2))
 
     tensor[0, 0] = 1
@@ -33,9 +34,21 @@ def test_from_tensor():
 
     assert_equal(anytensor.get_rank(), 2)
 
-    dm_back = anytensor^.to_device_tensor()
-    tensor2 = dm_back^.to_tensor[DType.float32, 2]()
+    tensor2 = anytensor^.to_tensor[DType.float32, 2]()
     assert_equal(tensor2[0, 0], 1)
+
+
+def test_from_tensor_incorrect():
+    tensor = Tensor[DType.float32, 2]((2, 2))
+
+    tensor[0, 0] = 1
+
+    anytensor = AnyTensor(tensor^)
+
+    assert_equal(anytensor.get_rank(), 2)
+
+    with assert_raises(contains="dtype does not match"):
+        tensor2 = anytensor^.to_tensor[DType.int32, 2]()
 
 
 def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
@@ -111,6 +124,7 @@ def test_print_any_tensor():
 def main():
     test_from_device_memory()
     test_from_tensor()
+    test_from_tensor_incorrect()
     test_implicit_conversion()
     test_any_memory()
     test_print_any_tensor()
