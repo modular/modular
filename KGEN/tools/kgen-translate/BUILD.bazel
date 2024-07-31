@@ -24,9 +24,9 @@ modular_cc_binary(
 
 run_tool(
     name = "kgen-translate-standalone",
-    data = [
-        "//open-source/mojo/stdlib/stdlib",
-    ],
+    env = {
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib,Kernels/mojo",
+    },
     tags = ["manual"],
     tool = ":kgen-translate",
     visibility = ["//visibility:private"],
