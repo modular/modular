@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-# REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s -t
+# RUN: %bare-mojo build %s
 
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

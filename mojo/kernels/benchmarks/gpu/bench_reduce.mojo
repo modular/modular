@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s -t
+# RUN: %bare-mojo build %s
 
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
