@@ -88,14 +88,6 @@ def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "mlir::ModuleOp"> {
   }];
 }
 
-def MOGGIdentifyKernels : Pass<"mogg-identify-kernels", "mlir::ModuleOp"> {
-  let summary = "Identifies kernels and labels them";
-  let description = [{
-    A mogg domain specific pass which will identify kernels and label execute
-    and shape functions (if present).
-  }];
-}
-
 def MOGGLabelTensorParams : Pass<"mogg-label-tensor-params", "mlir::ModuleOp"> {
   let summary = "Attaches a label to kernel tensors for subsequent use";
   let description = [{

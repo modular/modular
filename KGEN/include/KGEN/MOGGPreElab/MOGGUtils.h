@@ -21,11 +21,11 @@ inline bool symbolMatches(mlir::SymbolRefAttr symbol,
   if (symbol.getNestedReferences().size() != N - 1)
     return false;
 
-  if (!symbol.getRootReference().strref().starts_with(path.front()))
+  if (!symbol.getRootReference().strref().contains(path.front()))
     return false;
 
   for (auto [i, ref] : llvm::enumerate(symbol.getNestedReferences())) {
-    if (!ref.getValue().starts_with(path[i + 1]))
+    if (!ref.getValue().contains(path[i + 1]))
       return false;
   }
 

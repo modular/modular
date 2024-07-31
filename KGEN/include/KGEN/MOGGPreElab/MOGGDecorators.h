@@ -10,6 +10,10 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/StringRef.h"
 
+//===----------------------------------------------------------------------===//
+// Deprecated Tensor API definitions (will be removed)
+//===----------------------------------------------------------------------===//
+
 namespace M::KGEN::MOGGPreElab {
 
 // Attribute on generator ops to look for which marks the function as being a
@@ -92,10 +96,23 @@ constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
 
 } // namespace Decorators
 
+//===----------------------------------------------------------------------===//
+// DPS Tensor API definitions
+//===----------------------------------------------------------------------===//
+
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
+static constexpr StringLiteral kMOGGKernelSpecLabel = "mogg.spec";
 static constexpr StringLiteral kKernelTensorParameterAttrName =
     "mogg.tensor_params";
+
+inline bool isExecuteFunc(Operation *gen) {
+  return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);
+}
+
+inline bool isShapeFunc(Operation *gen) {
+  return gen != nullptr && gen->hasAttr(kMOGGShapeFunctionLabel);
+}
 
 inline bool isDPSKernel(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
