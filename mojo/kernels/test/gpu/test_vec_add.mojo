@@ -8,13 +8,15 @@
 
 # ===----------------------------------------------------------------------=== #
 # Debugging tests:
+# Run them with `./bazelw test Kernels/test-gpu-debugging/test_vec_add.mojo.test`
+
 # GDB-COMMAND: b %breakpoint1:location
 # GDB-COMMAND: c
 # GDB-COMMAND: cuda thread 0
 # GDB-COMMAND: info locals
 # GDB-COMMAND: info args
 
-# RUN: %cuda-gdb-commands mojo run -O0 -g %s | FileCheck %s --check-prefix=CHECK-GDB
+# RUN: %if cuda-gdb %{ %cuda-gdb-commands mojo run -O0 -g %s | FileCheck %s --check-prefix=CHECK-GDB %}
 
 # CHECK-GDB: hit Breakpoint
 # CHECK-GDB: tid = 0
