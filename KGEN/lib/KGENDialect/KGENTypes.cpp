@@ -1434,6 +1434,8 @@ VariantType::getContentSize(TargetInfoAttr target) const {
 /// greater than the number of possible subtypes, but which is at least `i1`.
 /// The size is rounded to the nearest integer type with a power of 2 bytewidth.
 size_t VariantType::getDiscrSizeInBits() const {
+  if (!getNumTypes())
+    return CHAR_BIT;
   // Compute the smallest iN where N > 0 that fits the count.
   uint64_t bits = std::max(1u, llvm::Log2_32_Ceil(getNumTypes()));
   // Now ceildiv this to the nearest byte multiple.

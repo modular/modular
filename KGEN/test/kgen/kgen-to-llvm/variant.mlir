@@ -2,6 +2,12 @@
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
+// CHECK-LABEL: @empty_variant
+// CHECK-SAME: %arg0: !llvm.struct<(array<0 x i64>, i8)>
+kgen.func @empty_variant(%arg0: !kgen.variant<[[]]>) {
+  kgen.return
+}
+
 // CHECK-LABEL: @variant_create_0
 kgen.func @variant_create_0(%arg0: i32) -> !kgen.variant<i32> {
   // CHECK-DAG: %[[DISCR:.*]] = llvm.mlir.constant(0 : i8) : i8
