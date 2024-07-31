@@ -29,12 +29,6 @@ set(sources
   Run/mojo-run.cpp
   Test/mojo-test.cpp)
 
-set(tablegen_definitions)
-if (MODULAR_MOJO_BUILD_SERVER_PREVIEW)
-  set(sources ${sources} BuildProject/mojo-build-project.cpp)
-  list(APPEND tablegen_definitions MODULAR_MOJO_BUILD_SERVER_PREVIEW)
-endif()
-
 add_modular_tool(mojo
   ${sources}
 
@@ -57,7 +51,6 @@ add_modular_tool(mojo
   MCrashReporting
   MojoToolsCommon
   MojoParser
-  MojoBuild
   MojoTesting
   MojoTooling
   MSupport
@@ -82,7 +75,6 @@ add_custom_target(MojoDriverOptions)
 add_driver_option_tablegen(Mojo DriverOptions.td
   MANUAL_NAME mojo
   MARKDOWN_NAME index
-  EXTRA_DEFINITIONS ${tablegen_definitions}
   EXTRA_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR})
 # Each subcommand generates its own option definitions.
 add_subdirectory(Build)
@@ -94,9 +86,6 @@ add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)
 add_subdirectory(Test)
-if(MODULAR_MOJO_BUILD_SERVER_PREVIEW)
-  add_subdirectory(BuildProject)
-endif()
 
 # Copy all generated Markdown files to a convenient location.
 collect_driver_markdown(MojoDriverOptions)

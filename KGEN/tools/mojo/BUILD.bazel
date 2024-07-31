@@ -46,7 +46,6 @@ modular_cc_library(
     )
     for command in [
         "Build",
-        "BuildProject",
         "Debug",
         "Demangle",
         "Doc",
@@ -62,7 +61,6 @@ td_library(
     name = "MojoDescriptionTdFiles",
     srcs = glob([
         "*.td",
-        "BuildProject/*.td",
         "Common/*.td",
     ]),
     includes = ["."],
@@ -78,12 +76,9 @@ driver_option_tablegen(
     includes = ["."],
     manual_name = "mojo",
     markdown_name = "index",
-    # TODO: Currently enabling this only for production doesn't work
-    # opts = ["-DMODULAR_MOJO_BUILD_SERVER_PREVIEW"],
     td_file = "DriverOptions.td",
     deps = [
         ":Build.td_library",
-        ":BuildProject.td_library",
         ":Debug.td_library",
         ":Demangle.td_library",
         ":Doc.td_library",
@@ -109,10 +104,7 @@ pkg_files(
         ":REPL.man_files",
         ":Run.man_files",
         ":Test.man_files",
-    ] + select({
-        "@//:production_build": [],
-        "//conditions:default": [":BuildProject.man_files"],
-    }),
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -123,13 +115,8 @@ modular_cc_binary(
         "**/*.cpp",
     ]),
     includes = ["."],
-    local_defines = select({
-        "@//:production_build": [],
-        "//conditions:default": ["MODULAR_MOJO_BUILD_SERVER_PREVIEW"],
-    }),
     deps = [
         ":Build.inc_files",
-        ":BuildProject.inc_files",
         ":Debug.inc_files",
         ":Demangle.inc_files",
         ":Doc.inc_files",
@@ -149,7 +136,6 @@ modular_cc_binary(
         "//KGEN:ExecutionEngine",
         "//KGEN:KGENDialect",
         "//KGEN:LITDialect",
-        "//KGEN:MojoBuild",
         "//KGEN:MojoParser",
         "//KGEN:MojoTesting",
         "//KGEN:MojoTooling",

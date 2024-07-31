@@ -56,7 +56,6 @@ add_subdirectory(lib/Compiler)
 add_subdirectory(lib/MojoParser)
 add_subdirectory(lib/MojoTooling)
 
-add_subdirectory(lib/MojoBuild)
 add_subdirectory(lib/MojoLLDB)
 add_subdirectory(lib/MojoJupyter)
 add_subdirectory(lib/MojoTesting)
@@ -636,8 +635,6 @@ function(add_internal_mojo_doc target doc_filename output_file output_directory)
   add_custom_target(${target}DocGen DEPENDS ${GEN_DOC_FILE})
   add_dependencies(modular-internal-doc ${target}DocGen)
 endfunction()
-
-add_subdirectory(tools/mojo-build-server)
 
 # Testing infrastructure
 add_subdirectory(test)

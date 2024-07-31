@@ -1,9 +1,0 @@
-//===----------------------------------------------------------------------===//
-//
-// This file is Modular Inc proprietary.
-//
-//===----------------------------------------------------------------------===//
-
-// RUN: mojo-build-server --does-not-exist --help invalid-arg | FileCheck %s
-// CHECK:      NAME
-// CHECK-NEXT: mojo-build-server

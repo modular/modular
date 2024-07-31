@@ -1,9 +1,0 @@
-load("//bazel:api.bzl", "lit_tests")
-
-lit_tests(
-    name = "mojo-build-server",
-    srcs = glob(["**/*.test"]),
-    tools = [
-        "//KGEN/tools/mojo-build-server",
-    ],
-)
