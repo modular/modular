@@ -1411,9 +1411,9 @@ Type VariantType::getType(unsigned index) const {
 /// Compute the size in bytes of just the content section of a variant. The
 /// content field is the biggest element size rounded up to the nearest
 /// multiple of the content element type size, which is i64.
-static std::optional<int64_t> computeVariantContentSize(VariantType type,
-                                                        TargetInfoAttr target) {
-  auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+std::optional<int64_t>
+VariantType::getContentSize(TargetInfoAttr target) const {
+  auto variadic = ::dyn_cast<VariadicAttr>(getVariadic());
   if (!variadic)
     return {};
 
@@ -1426,7 +1426,7 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
       return {};
     maxSize = std::max(maxSize, *typeSize);
   }
-  return llvm::alignTo(maxSize, *type.getTypeAlign(target));
+  return llvm::alignTo(maxSize, *getTypeAlign(target));
 }
 
 /// Get bitwidth of the integer used to represent the discriminator. The
@@ -1452,7 +1452,7 @@ static int64_t getVariantDiscrSize(VariantType type) {
 std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   // A variant is lowered to a struct that consists of a content field and a
   // discriminator field.
-  std::optional<int64_t> contentSize = computeVariantContentSize(*this, target);
+  std::optional<int64_t> contentSize = getContentSize(target);
   if (!contentSize)
     return {};
   // Align to the content array element alignment. We don't expect the
@@ -1477,7 +1477,7 @@ ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,
   ErrorOrSuccess result = state.writeAttributeToMemory(addr, typeValue);
   if (result.isError())
     return result.takeError();
-  addr += *computeVariantContentSize(*this, state.getTarget());
+  addr += *getContentSize(state.getTarget());
 
   unsigned discrSize = getVariantDiscrSize(*this);
   ErrorOr<void *> mem = state.getWritableMemory(addr, discrSize);
@@ -1494,7 +1494,7 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
   // Read the discriminator first so we know what type to read.
   unsigned discrSize = getVariantDiscrSize(*this);
   ErrorOr<const void *> mem = state.getReadableMemory(
-      addr + *computeVariantContentSize(*this, state.getTarget()), discrSize);
+      addr + *getContentSize(state.getTarget()), discrSize);
   if (mem.isError())
     return mem.takeError();
   APInt discrVal(discrSize * CHAR_BIT, 0);

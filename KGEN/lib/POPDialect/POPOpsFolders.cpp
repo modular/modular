@@ -1742,16 +1742,9 @@ ErrorTreeOrSuccess VariantDiscrGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   auto variantType = getVariant().getType().getElementAs<VariantType>();
-  uint64_t maxElementSize = 0;
-  TargetInfoAttr target = state.getTarget();
-  for (unsigned i = 0, e = variantType.getNumTypes(); i != e; ++i) {
-    auto dl = cast<DataLayoutInterface>(variantType.getType(i));
-    maxElementSize =
-        std::max(maxElementSize, llvm::alignTo(*dl.getTypeSize(target),
-                                               *dl.getTypeAlign(target)));
-  }
-
-  state.mapResults(PointerAttr::get(ptr.getAddr() + maxElementSize, getType()));
+  state.mapResults(PointerAttr::get(
+      ptr.getAddr() + *variantType.getContentSize(state.getTarget()),
+      getType()));
   return success();
 }
 
