@@ -22,15 +22,6 @@
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
-// mangleParameterValues
-//===----------------------------------------------------------------------===//
-
-/// This returns a name to use when the specified generator is specialized
-/// with the specified input parameters.
-std::string mangleParameterValues(GeneratorOp generator,
-                                  ArrayRef<TypedAttr> inputParamValues);
-
-//===----------------------------------------------------------------------===//
 // ExpansionGraph
 //===----------------------------------------------------------------------===//
 
