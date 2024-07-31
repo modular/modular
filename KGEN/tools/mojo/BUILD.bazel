@@ -153,6 +153,7 @@ modular_cc_binary(
         "//Support:MArchTarget",
         "//Support:MDialect",
         "//Support:Telemetry",
+        "@llvm-project//mlir:IndexDialect",
     ],
 )
 
