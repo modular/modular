@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
 import numpy as np
 from max.engine.core import DType as _DType
@@ -19,6 +19,8 @@ from max.engine.core import TensorSpec as _TensorSpec
 from max.engine.core import TorchInputSpec as _TorchInputSpec
 
 InputShape = Optional[List[Union[int, str, None]]]
+CustomExtensionType = Union[str, Path, Any]
+CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
 
 
 class Model:
@@ -335,6 +337,11 @@ def _unwrap_pybind_objects(value: Any) -> Any:
     return value
 
 
+def _is_torch_metadata_module(obj: Any) -> bool:
+    """Checks if an object is an `TorchMetadata`."""
+    return type(obj).__name__ == "TorchMetadata"
+
+
 def _is_torchscript_module(obj: Any) -> bool:
     """Checks if an object is a `torch.jit.script.ScriptModule` or a compatible (sub)class thereof.
     """
@@ -392,6 +399,31 @@ def _remove_static_info_from_torch_jit_graph(graph: Any):
         _remove_static_info_from_node(node)
 
 
+def _process_custom_extensions_object(
+    custom_extension: CustomExtensionType,
+) -> CustomExtensionType:
+    if isinstance(custom_extension, Path) or isinstance(custom_extension, str):
+        return custom_extension
+    if _is_torch_metadata_module(custom_extension):
+        return custom_extension._get_jit_functions()._c
+    if _is_torchscript_module(custom_extension):
+        return custom_extension._c
+    raise TypeError("Unsupported type for custom ops libraries.")
+
+
+def _process_custom_extensions_objects(
+    custom_extensions: CustomExtensionsType,
+) -> CustomExtensionsType:
+    if not isinstance(custom_extensions, Iterable) or isinstance(
+        custom_extensions, str
+    ):
+        custom_extensions = [custom_extensions]
+    return [
+        _process_custom_extensions_object(custom_extension)
+        for custom_extension in custom_extensions
+    ]
+
+
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -421,8 +453,10 @@ class InferenceSession:
         device = kwargs["device"] if kwargs and "device" in kwargs else None
         if device:
             config["device"] = device
-        if "custom_ops_path" in kwargs:
-            config["custom_ops_path"] = str(kwargs["custom_ops_path"])
+        if "custom_extensions" in kwargs:
+            config["custom_extensions"] = _process_custom_extensions_objects(
+                kwargs["custom_extensions"]
+            )
         self._impl = _InferenceSession(config)
 
     def __repr__(self) -> str:
@@ -438,6 +472,7 @@ class InferenceSession:
         self,
         model: Union[str, Path, Any],
         *,
+        custom_extensions: Optional[CustomExtensionsType] = None,
         custom_ops_path: Optional[str] = None,
         input_specs: Optional[List[TorchInputSpec]] = None,
     ) -> Model:
@@ -451,8 +486,17 @@ class InferenceSession:
             Path to a model, or a TorchScript model instance.
             May be a TorchScript model or an ONNX model.
 
-        custom_ops_path: str
+        custom_extensions: Optional[CustomExtensionsType]
+            The extensions to load for the model.
+            Supports paths to `.mojopkg` custom ops, `.so` custom op libraries
+            for PyTorch and `.pt` torchscript files for torch metadata
+            libraries. Supports :obj:`TorchMetadata` and
+            :obj:`torch.jit.ScriptModule` objects for
+            torch metadata libraries without serialization.
+
+         custom_ops_path: str
             The path to your custom ops Mojo package.
+            Deprecated, use ``custom_extensions`` instead.
 
         input_specs:
             The tensor specifications (shape and data type) for each of the
@@ -495,9 +539,15 @@ class InferenceSession:
 
         options_dict = {}
 
+        if custom_extensions is not None:
+            options_dict[
+                "custom_extensions"
+            ] = _process_custom_extensions_objects(custom_extensions)
         if custom_ops_path is not None:
-            options_dict["custom_ops_path"] = _unwrap_pybind_objects(
-                custom_ops_path
+            if "custom_extensions" not in options_dict:
+                options_dict["custom_extensions"] = list()
+            options_dict["custom_extensions"].extend(
+                _process_custom_extensions_objects(custom_ops_path)
             )
         if input_specs is not None:
             options_dict["input_specs"] = _unwrap_pybind_objects(input_specs)
