@@ -264,6 +264,38 @@ def main():
             ]
         ]()
 
+        print("===> test float32 with shapes in llama2")
+
+        test_matmul[DType.float32, DimList(4096, 4096)](
+            ctx, (100, 4096, 4096)
+        ).run_test[
+            basic_test[
+                DType.float32,
+                shape = DimList(4096, 4096),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.float32, DimList(4096, 12288)](
+            ctx, (100, 12288, 4096)
+        ).run_test[
+            basic_test[
+                DType.float32,
+                shape = DimList(4096, 12288),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.float32, DimList(11008, 4096)](
+            ctx, (100, 4096, 11008)
+        ).run_test[
+            basic_test[
+                DType.float32,
+                shape = DimList(11008, 4096),
+                use_tensor_core=True,
+            ]
+        ]()
+
         print("===> test bfloat16 using shape in context encoding in replit 3B")
 
         test_matmul[DType.bfloat16, DimList(12288, 3072)](
@@ -447,6 +479,48 @@ def main():
 
         test_matmul[DType.float32, DimList(12288, 4096)](
             ctx, (256, 4096, 12288)
+        ).run_test[
+            epilogue_test[
+                DType.float32,
+                shape = DimList(12288, 4096),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        print("===> float32 with shapes in llama2")
+
+        test_matmul[DType.float32, DimList(4096, 4096)](
+            ctx, (100, 4096, 4096)
+        ).run_test[
+            epilogue_test[
+                DType.float32,
+                shape = DimList(4096, 4096),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.float32, DimList(4096, 12288)](
+            ctx, (100, 12288, 4096)
+        ).run_test[
+            epilogue_test[
+                DType.float32,
+                shape = DimList(4096, 12288),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.float32, DimList(11008, 4096)](
+            ctx, (100, 4096, 11008)
+        ).run_test[
+            epilogue_test[
+                DType.float32,
+                shape = DimList(11008, 4096),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.float32, DimList(12288, 4096)](
+            ctx, (100, 4096, 12288)
         ).run_test[
             epilogue_test[
                 DType.float32,
