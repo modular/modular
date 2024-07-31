@@ -1294,6 +1294,16 @@ fn testUnmovable(a: Unmovable):
    # CHECK-NEXT: lit.call {{.*}}(%a, %x)
    var x : Unmovable = getUnmovable(a)
 
+
+@value
+@register_passable("trivial")
+struct StaticIntTuple[size: Int]:
+    fn __init__(inout self, *elements: Int):
+        pass
+
+    fn __setitem__(inout self, val: Int):
+        pass
+
 # Issue 23233 https://github.com/modularml/modular/issues/23233
 fn setitemParamToDLValue():
   alias x = 3
