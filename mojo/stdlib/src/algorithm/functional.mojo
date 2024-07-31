@@ -1436,7 +1436,7 @@ fn _elementwise_impl_cpu_nd[
 fn _elementwise_impl_gpu[
     rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
+    simd_width: UInt,
 ](shape: StaticIntTuple[rank], ctx: DeviceContext):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
@@ -1457,8 +1457,8 @@ fn _elementwise_impl_gpu[
     alias registers_per_block = 65536
 
     # optimize based on device attributes
-    var sm_count = 142
-    var threads_per_sm = 1536
+    var sm_count: UInt = 142
+    var threads_per_sm: UInt = 1536
     try:
         sm_count = Device().multiprocessor_count()
         threads_per_sm = Device().max_threads_per_sm()
@@ -1466,13 +1466,13 @@ fn _elementwise_impl_gpu[
         pass
 
     # split between packed and tail regions of input
-    var length = shape.flattened_length()
+    var length: UInt = shape.flattened_length()
     var num_packed_elems = length // simd_width
     var unpacked_tail_length = length % simd_width
     var packed_region_length = length - unpacked_tail_length
 
     alias block_size_unrounded = registers_per_block // registers_per_thread
-    alias block_size = block_size_unrounded - (block_size_unrounded % 2)
+    alias block_size: UInt = block_size_unrounded - (block_size_unrounded % 2)
     var num_blocks = max(
         1,
         min(
@@ -1486,26 +1486,26 @@ fn _elementwise_impl_gpu[
     )
     @parameter
     @__llvm_metadata(`nvvm.maxntid`=Index(block_size))
-    fn _elementwise_gpu_kernel[*, block_size: Int, handle_uneven_simd: Bool]():
+    fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
-        var tid = ThreadIdx.x() + UInt(block_size.value) * BlockIdx.x()
+        var tid = ThreadIdx.x() + block_size * BlockIdx.x()
         for idx in range(
-            Int(tid.value),
-            Int(num_packed_elems.value),
-            block_size * Int(GridDim.x().value),
+            tid,
+            num_packed_elems,
+            block_size * GridDim.x(),
         ):
             var start_indices = _get_start_indices_of_nth_subvolume_uint[
                 rank, 0
-            ](UInt(idx.value) * simd_width.value, shape)
+            ](idx * simd_width, shape)
 
             @parameter
             if handle_uneven_simd:
                 if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
 
                     @parameter
-                    for off in range(simd_width):
+                    for off in range(int(simd_width)):
                         func[1, rank](
-                            _get_start_indices_of_nth_subvolume[rank, 0](
+                            _get_start_indices_of_nth_subvolume_uint[rank, 0](
                                 idx * simd_width + off,
                                 shape,
                             )
@@ -1517,8 +1517,8 @@ fn _elementwise_impl_gpu[
 
         # process the tail region
         if tid < unpacked_tail_length:
-            var index_tup = _get_start_indices_of_nth_subvolume[rank, 0](
-                packed_region_length + Int(tid.value), shape
+            var index_tup = _get_start_indices_of_nth_subvolume_uint[rank, 0](
+                packed_region_length + tid, shape
             )
             func[1, rank](index_tup)
 
@@ -1530,7 +1530,7 @@ fn _elementwise_impl_gpu[
                 ]
             ]()
             ctx.enqueue_function(
-                gpu_func, grid_dim=num_blocks, block_dim=block_size
+                gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
             )
         else:
             var gpu_func = ctx.compile_function[
@@ -1539,7 +1539,7 @@ fn _elementwise_impl_gpu[
                 ]
             ]()
             ctx.enqueue_function(
-                gpu_func, grid_dim=num_blocks, block_dim=block_size
+                gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
             )
 
     except e:
