@@ -1226,4 +1226,31 @@ def KGEN_CustomOpImplArrayAttr : ArrayOfAttr<KGENDialect, "CustomOpImplArray",
   let skipDefaultBuilders = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// TailKindAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TailKindAttr : EnumAttr<KGENDialect, KGEN_TailKind, "tailkind"> {
+  let summary = "Defines the tail call type.";
+  let description = [{
+    The `#kgen.tailkind` attribute defines the export semantics of a symbol. A
+    symbol can be:
+
+    - None: Unspecified.
+    - Musttail: Compilation will fail if this call cannot be tail call
+                optimized.
+    - NoTail: Do not tail call optimize this call.
+
+    Example:
+
+    ```mlir
+    #kgen.tailkind<none>
+    #kgen.tailkind<musttail>
+    #kgen.tailkind<notail>
+    ```
+  }];
+
+  let assemblyFormat = "`<` $value `>`";
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
