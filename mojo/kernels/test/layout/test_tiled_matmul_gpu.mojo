@@ -19,6 +19,7 @@ from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 

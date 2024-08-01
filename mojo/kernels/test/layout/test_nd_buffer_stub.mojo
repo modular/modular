@@ -28,7 +28,7 @@ from layout.nd_buffer_stub import (
     vectorize,
 )
 
-from utils import Index, StaticTuple
+from utils import Index, StaticTuple, StaticIntTuple
 
 
 fn linspace_fill[

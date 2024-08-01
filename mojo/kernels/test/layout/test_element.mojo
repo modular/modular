@@ -9,6 +9,7 @@
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
+from utils import StaticIntTuple
 
 
 # CHECK-LABEL: test_element_load
