@@ -77,7 +77,7 @@ class GraphValue:
         """
         return ops.add(self, rhs)
 
-    def __matmul__(self, rhs: GraphValue) -> GraphValue:
+    def __matmul__(self, rhs: ValueLike) -> GraphValue:
         """Matrix multiplication.
 
         Args:
@@ -86,7 +86,7 @@ class GraphValue:
         Returns:
             The operation result.
         """
-        return ops.matmul(self, rhs)
+        return ops.matmul(self, GraphValue(rhs))
 
 
 ValueLike = Union[mlir.Value, GraphValue, np.ndarray]

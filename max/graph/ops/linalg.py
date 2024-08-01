@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Linear algebra operations."""
 import numpy as np
+from typing import Union
 from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
 from ..graph_value import GraphValue, ValueLike
 
 
-def matmul(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
+def matmul(lhs: ValueLike, rhs: ValueLike) -> GraphValue:
     """Computes the matrix multiplication of two tensor graph values.
 
     Performs general matrix multiplication with broadcasting.
@@ -40,7 +41,9 @@ def matmul(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
         matricies together and then performing a matrix multiply
         along the innermost two dimension of each tensor.
     """
-    return Graph.current._add_op(rmo.matmul, lhs, rhs)[0]
+    return Graph.current._add_op(rmo.matmul, GraphValue(lhs), GraphValue(rhs))[
+        0
+    ]
 
 
 def layer_norm(
