@@ -25,6 +25,7 @@ from linalg.utils import (
     use_vnni_fn,
 )
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 alias M: Int = 64
