@@ -134,7 +134,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                     @parameter
                     for j in range(dim_1):
-                        element_data[i + j * dim_1] = ptr[
+                        element_data[i + j * dim_0] = ptr[
                             __get_offset[i, j](runtime_layout)
                         ]
 
@@ -203,7 +203,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        element_data[i + j * dim_1] = ptr[
+                        element_data[i + j * dim_0] = ptr[
                             __get_offset[i, j](runtime_layout)
                         ]
                 return Element(element_data, runtime_layout)
@@ -237,7 +237,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        element_data[i + j * dim_1] = ptr[
+                        element_data[i + j * dim_0] = ptr[
                             __get_offset[i, j](runtime_layout)
                         ]
                 return Element(element_data, runtime_layout)
@@ -264,7 +264,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             for j in range(dim_1):
                 if j >= element_bounds[1]:
                     break
-                element_data[i + j * dim_1] = ptr[
+                element_data[i + j * dim_0] = ptr[
                     __get_offset[i, j](runtime_layout)
                 ]
         return Element(element_data, runtime_layout)
@@ -330,7 +330,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
                     @parameter
                     for j in range(dim_1):
-                        ptr.store(__get_offset[i, j](self.runtime_layout))
+                        (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                            self.element_data[i + j * dim_0]
+                        )
 
     fn masked_store[
         address_space: AddressSpace, rank: Int
@@ -431,7 +433,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                                 break
                             ptr.store(
                                 __get_offset[i, j](self.runtime_layout),
-                                self.element_data[i + j * dim_1],
+                                self.element_data[i + j * dim_0],
                             )
                 else:
 
@@ -457,8 +459,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        ptr.store[width=1](
-                            __get_offset[i, j](self.runtime_layout)
+                        (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                            self.element_data[i + j * dim_0]
                         )
 
     @no_inline

@@ -845,7 +845,7 @@ struct LayoutTensor[
         dtype,
         coalesce(__tiled_layout[1], keep_rank=True),
         address_space=address_space,
-        element_layout = coalesce(__tiled_layout[0]),
+        element_layout = __tiled_layout[0],
     ]:
         # Update element stride to account for vector shapes.
         var org_coords_stride = StaticIntTuple[rank]()
@@ -860,7 +860,7 @@ struct LayoutTensor[
                 dtype,
                 coalesce(__tiled_layout[1], keep_rank=True),
                 address_space=address_space,
-                element_layout = coalesce(__tiled_layout[0]),
+                element_layout = __tiled_layout[0],
             ](
                 self.ptr,
                 org_coords_offset=rebind[
@@ -906,16 +906,14 @@ struct LayoutTensor[
                 dtype,
                 coalesce(__tiled_layout[1], keep_rank=True),
                 address_space=address_space,
-                element_layout = coalesce(__tiled_layout[0]),
+                element_layout = __tiled_layout[0],
             ](
                 self.ptr,
                 RuntimeLayout(runtime_shape, runtime_stride),
-                rebind[RuntimeLayout[coalesce(__tiled_layout[0])]](
-                    runtime_coalesce(
-                        RuntimeLayout(
-                            runtime_element_layout_shape,
-                            runtime_element_layout_stride,
-                        )
+                rebind[RuntimeLayout[__tiled_layout[0]]](
+                    RuntimeLayout(
+                        runtime_element_layout_shape,
+                        runtime_element_layout_stride,
                     )
                 ),
                 org_coords_offset=rebind[
@@ -1491,12 +1489,16 @@ struct LayoutTensor[
         ]()
         var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
 
+        # Coalesce element layouts to simplify vectorization condition.
+        alias coalesce_src_element_layout = coalesce(src_element_layout)
+        alias coalesce_dst_element_layout = coalesce(self.element_layout)
+
         @parameter
         if (
-            src_element_layout.rank() == 1
-            and src_element_layout.stride[0] == 1
-            and self.element_layout.rank() == 1
-            and self.element_layout.stride[0] == 1
+            coalesce_src_element_layout.rank() == 1
+            and coalesce_dst_element_layout.stride[0] == 1
+            and coalesce_dst_element_layout.rank() == 1
+            and coalesce_dst_element_layout.stride[0] == 1
         ):
 
             @parameter
