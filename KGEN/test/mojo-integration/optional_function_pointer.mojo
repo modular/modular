@@ -7,6 +7,8 @@
 
 # COM: See MOCO-756
 
+from collections import Optional
+
 
 fn print_second_string(first: String, second: String) -> None:
     print("Received", second)
