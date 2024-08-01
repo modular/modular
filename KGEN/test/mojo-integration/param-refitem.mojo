@@ -6,6 +6,8 @@
 
 # RUN: kgen %s -elaborate -S -o - | FileCheck %s
 
+from utils import Variant
+
 
 # CHECK-LABEL: func export @param_refitem
 @export
