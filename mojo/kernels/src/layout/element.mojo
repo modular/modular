@@ -69,6 +69,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
     ) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
+        var element_data = Self.element_data_type()
+
         @parameter
         if layout.rank() == 1:
             alias size = layout.size()
@@ -79,66 +81,53 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                 return ptr.load[
                     width = Self.element_data_type.size, alignment=alignment
                 ]()
-            else:
-                var element_data = Self.element_data_type()
-
-                @parameter
-                for i in range(size):
-                    element_data[i] = ptr[__get_offset[i](runtime_layout)]
-                return Element(element_data, runtime_layout)
-        else:
 
             @parameter
-            if layout.stride[0] == 1:
-                alias size = to_int(layout.shape[0])
-                alias elements = to_int(layout.shape[1])
+            for i in range(size):
+                element_data[i] = ptr[__get_offset[i](runtime_layout)]
+            return Element(element_data, runtime_layout)
 
-                alias vec_type = SIMD[dtype, size]
-                alias alignment = alignof[vec_type]
+        @parameter
+        if layout.stride[0] == 1:
+            alias size = to_int(layout.shape[0])
+            alias elements = to_int(layout.shape[1])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]
 
-                var element_data = Self.element_data_type()
+            @parameter
+            for i in range(elements):
+                var vec_i = ptr.load[width=size](
+                    __get_offset[0, i](runtime_layout)
+                )
+                element_data = element_data.insert[offset = i * size](vec_i)
+            return Element(element_data, runtime_layout)
 
-                @parameter
-                for i in range(elements):
-                    var vec_i = ptr.load[width=size](
-                        __get_offset[0, i](runtime_layout)
-                    )
-                    element_data = element_data.insert[offset = i * size](vec_i)
+        elif layout.stride[1] == 1:
+            alias size = to_int(layout.shape[1])
+            alias elements = to_int(layout.shape[0])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]
 
-                return Element(element_data, runtime_layout)
-            elif layout.stride[1] == 1:
-                alias size = to_int(layout.shape[1])
-                alias elements = to_int(layout.shape[0])
+            @parameter
+            for i in range(elements):
+                var vec_i = ptr.load[width=size](
+                    __get_offset[i, 0](runtime_layout)
+                )
+                element_data = element_data.insert[offset = i * size](vec_i)
+            return Element(element_data, runtime_layout)
 
-                alias vec_type = SIMD[dtype, size]
-                alias alignment = alignof[vec_type]
+        alias dim_0 = to_int(layout.shape[0])
+        alias dim_1 = to_int(layout.shape[1])
 
-                var element_data = Self.element_data_type()
+        @parameter
+        for i in range(dim_0):
 
-                @parameter
-                for i in range(elements):
-                    var vec_i = ptr.load[width=size](
-                        __get_offset[i, 0](runtime_layout)
-                    )
-                    element_data = element_data.insert[offset = i * size](vec_i)
-
-                return Element(element_data, runtime_layout)
-            else:
-                var element_data = Self.element_data_type()
-
-                alias dim_0 = to_int(layout.shape[0])
-                alias dim_1 = to_int(layout.shape[1])
-
-                @parameter
-                for i in range(dim_0):
-
-                    @parameter
-                    for j in range(dim_1):
-                        element_data[i + j * dim_0] = ptr[
-                            __get_offset[i, j](runtime_layout)
-                        ]
-
-                return Element(element_data, runtime_layout)
+            @parameter
+            for j in range(dim_1):
+                element_data[i + j * dim_0] = ptr[
+                    __get_offset[i, j](runtime_layout)
+                ]
+        return Element(element_data, runtime_layout)
 
     @staticmethod
     fn masked_load[
