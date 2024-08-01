@@ -76,6 +76,33 @@ def ArrayKnownSize : ConfinedType<POP_ArrayType,
     "array with known size">;
 
 //===----------------------------------------------------------------------===//
+// UnionType
+//===----------------------------------------------------------------------===//
+
+def POP_UnionType : POPType<"Union", "union", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "a parameterized union type";
+  let description = [{
+    The `!pop.union` type is a type that can contain any one of its union
+    element types. Its size is large enough to contain the largest element and
+    its alignment meets the strictest of its elements' alignment requirements.
+    Unlike `!kgen.variant`, this union is not discriminated.
+
+    Example:
+
+    ```mlir
+    !kgen.union<>
+    !kgen.union<i32>
+    !kgen.union<i32, i64>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"Type">:$types);
+  let assemblyFormat = "`<` (`>`) : (custom<ParamTypes>($types)^ `>`)?";
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 

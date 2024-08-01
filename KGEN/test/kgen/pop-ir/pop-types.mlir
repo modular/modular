@@ -71,3 +71,11 @@ kgen.generator @variadic<ty: type>(
 ) {
   kgen.return
 }
+
+// CHECK-LABEL: @union
+// CHECK-SAME: !pop.union<>
+// CHECK-SAME: !pop.union<i32>
+// CHECK-SAME: !pop.union<i32, i64>
+kgen.func @union(%arg0: !pop.union<>, %arg1: !pop.union<i32>, %arg2: !pop.union<i32, i64>) {
+  kgen.return
+}

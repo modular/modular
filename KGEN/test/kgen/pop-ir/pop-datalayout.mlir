@@ -77,6 +77,11 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_alignof(variadic<i32>, #target)>
 
+  // CHECK-NEXT: <16>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(union<simd<4, f32>, i64>, #target)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(union<simd<4, f32>, i64>, #target)>
+
   kgen.return
 }
 

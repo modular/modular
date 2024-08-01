@@ -51,6 +51,16 @@ kgen.generator @variadic_constants<T: type, value: si32>() {
   kgen.return
 }
 
+// CHECK-LABEL: @union_constants
+kgen.func @union_constants() {
+  // CHECK: constant: union<i32, i64> = <{:i32 42}>
+  kgen.param.constant: union<i32, i64> = <{:i32 42}>
+  kgen.return
+}
+
+// CHECK: f0 = #pop.union<:i32 42> : !pop.union<i32, i64>
+"union.attr"() { f0 = #pop.union<:i32 42> : !pop.union<i32, i64> } : () -> ()
+
 // CHECK: f0 = #pop<fmf none>
 // CHECK: f1 = #pop<fmf reassoc>
 // CHECK: f2 = #pop<fmf nnan|ninf|reassoc>

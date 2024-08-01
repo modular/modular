@@ -130,6 +130,64 @@ ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
+// UnionType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult UnionType::parseValue(AsmParser &p,
+                                          TypedAttr &value) const {
+  if (failed(p.parseOptionalLBrace()))
+    return {};
+  TypedAttr element;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (parseColonTypeParamValue(p, element) || p.parseRBrace())
+    return failure();
+  value =
+      UnionAttr::getChecked([&] { return p.emitError(loc); }, element, *this);
+  return mlir::success((bool)value);
+}
+
+LogicalResult UnionType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto attr = ::dyn_cast<UnionAttr>(value);
+  if (!attr)
+    return failure();
+  p << '{';
+  printColonTypeParamValue(p, attr.getValue());
+  p << '}';
+  return success();
+}
+
+std::optional<int64_t> UnionType::getTypeSize(TargetInfoAttr target) const {
+  int64_t maxSize = 0;
+  for (Type type : getTypes()) {
+    std::optional<int64_t> size =
+        DataLayoutInterface::getTypeAllocSize(target, type);
+    if (!size)
+      return {};
+    maxSize = std::max(maxSize, *size);
+  }
+  return llvm::alignTo(maxSize, *getTypeAlign(target));
+}
+
+std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
+  // The alignment of the union type is the alignment of the integer type
+  // equal to the pointer width.
+  // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
+  return target.getDataLayout().getIntegerABIAlign(
+      target.getDataLayout().getPointerBitWidth());
+}
+
+ErrorOrSuccess UnionType::writeTo(TypedAttr value, int64_t addr,
+                                  InterpreterState &state) const {
+  return state.writeAttributeToMemory(addr,
+                                      ::cast<UnionAttr>(value).getValue());
+}
+
+ErrorOr<TypedAttr> UnionType::readFrom(int64_t addr,
+                                       InterpreterState &state) const {
+  return Error("cannot read a union-typed value");
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 
@@ -294,6 +352,7 @@ void POPDialect::registerTypes() {
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
   dialect->registerMnemonicType<ArrayType>();
+  dialect->registerMnemonicType<UnionType>();
 
   dialect->registerKeywordParser("scalar", parseScalarType);
   dialect->registerPrettyType(

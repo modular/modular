@@ -182,6 +182,14 @@ kgen.generator @variant_discr_gep<Ts: variadic<type>>(%arg0: !kgen.pointer<varia
   kgen.return %0 : !kgen.pointer<scalar<ui8>>
 }
 
+kgen.generator @store_union(%arg0: !pop.union<i32>) -> i32 {
+  %0 = pop.stack_allocation 1 x union<i32>
+  pop.store %arg0, %0 : !kgen.pointer<union<i32>>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<union<i32>> to !kgen.pointer<i32>
+  %2 = pop.load %1 : !kgen.pointer<i32>
+  kgen.return %2 : i32
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -342,6 +350,9 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <16>
   kgen.param.constant: pointer<scalar<ui8>> = <apply(:(!kgen.pointer<variant<i24, i48>>) -> !kgen.pointer<scalar<ui8>>
     @variant_discr_gep<:variadic<type> [simd<4, f32>, i8]>, 0)>
+
+  // CHECK-NEXT: <42>
+  kgen.param.constant: i32 = <apply(:(!pop.union<i32>) -> i32 @store_union, {:i32 42})>
 
   kgen.return
 }

@@ -34,6 +34,19 @@ void POPDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// UnionAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                TypedAttr value, UnionType type) {
+  auto it = llvm::find(type.getTypes(), value.getType());
+  if (it != type.getTypes().end())
+    return success();
+  return emitError() << "value type " << value.getType()
+                     << " is not a union element type of " << type;
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeValue
 //===----------------------------------------------------------------------===//
 

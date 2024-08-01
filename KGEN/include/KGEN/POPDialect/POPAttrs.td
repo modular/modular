@@ -126,6 +126,37 @@ def POP_FastmathFlags : I32BitEnumAttr<"FastmathFlags", "fastmath flags", [
 def POP_FastmathFlagsAttr : EnumAttr<POPDialect, POP_FastmathFlags, "fmf">;
 
 //===----------------------------------------------------------------------===//
+// UnionAttr
+//===----------------------------------------------------------------------===//
+
+def POP_UnionAttr : POP_Attr<"Union", "union", [TypedAttrInterface]> {
+  let summary = "a union with a specific typed value";
+  let description = [{
+    The `#kgen.union` attribute represents a union with a value of one of the
+    union's element types. The attribute knows which union element the value is
+    and contains an attribute of said value type.
+
+    Example:
+
+    ```mlir
+    #kgen.union<0> : !kgen.union<index, struct<()>>
+    #kgen.union<:i64 42> : !kgen.union<i64, none>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$value,
+                         AttributeSelfTypeParameter<"", "UnionType">:$type);
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($value) `>`";
+  let genVerifyDecl = 1;
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value, "UnionType":$type), [{
+      return $_get(type.getContext(), value, type);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDAttr
 //===----------------------------------------------------------------------===//
 
