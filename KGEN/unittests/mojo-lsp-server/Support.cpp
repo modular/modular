@@ -38,7 +38,7 @@ LSPBatchClient M::createTestClient(bool attachDebugger) {
 }
 
 Document M::createDocumentFromInputFile(StringRef fileName) {
-  std::string fullPath = std::filesystem::absolute(
+  std::string fullPath = std::filesystem::canonical(
                              std::filesystem::path(std::getenv("MODULAR_PATH")))
                              .lexically_normal() /
                          "KGEN" / "unittests" / "mojo-lsp-server" / "inputs" /
