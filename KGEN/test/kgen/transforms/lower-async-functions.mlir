@@ -1860,7 +1860,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Check that callback is invoked.
 // This is needed because in this path a suspension point is not hit.
-// CHECK-NEXT: kgen.call_indirect %arg0(%arg1) : (!kgen.pointer<none>) -> ()
+// CHECK-NEXT: kgen.call_indirect musttail %arg0(%arg1) : (!kgen.pointer<none>) -> ()
 
 // Direct Result value is stored in frame
 // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME6:]]]

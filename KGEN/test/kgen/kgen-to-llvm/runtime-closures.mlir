@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s --lower-runtime-closures -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s --lower-runtime-closures -allow-unregistered-dialect -split-input-file | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @take_closure_no_args
@@ -36,4 +36,21 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK: %1 = llvm.load %0 : !llvm.ptr -> i64
   // CHECK: %2 = llvm.call @h(%1)
   // CHECK: llvm.return %2 : i64
+}
+
+// -----
+
+// COM: Check TailCallKind is passed to LLVM.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  llvm.func @h(%arg0: i64) -> i64 {
+    llvm.return %arg0 : i64
+  }
+  // CHECK-LABEL: llvm.func @tailcall
+  llvm.func @tailcall(%arg0: i64) -> i64 {
+    %0 = kgen.create_closure[(i64) -> i64: @h](%arg0)
+    // CHECK: llvm.call musttail
+    %1 = kgen.call_indirect musttail %0() : !kgen.signature<() capturing -> i64>
+    llvm.return %1 : i64
+  }
 }
