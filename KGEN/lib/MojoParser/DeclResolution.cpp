@@ -533,7 +533,6 @@ private:
   void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
                               StringRef decorator);
   void applyLLVMMetadata(const CallNode &node);
-  void applyNamedResult(const CallNode &node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
@@ -579,8 +578,6 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
         applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
-      else if (declRef->spelling == "__named_result")
-        applyNamedResult(*callNode);
       else
         return failure();
       return success();
@@ -705,29 +702,6 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
       attrs.append(value.name, attr);
   }
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
-}
-
-void FnDecorators::applyNamedResult(const CallNode &node) {
-  DeclRefNode *dre;
-  if (node.operands.size() != 1 ||
-      !(dre = dyn_cast<DeclRefNode>(node.operands.front().expr))) {
-    emitError(node.getLoc(), "`@__named_result` expected an identifier");
-    return;
-  }
-  MutableArrayRef<ParsedArgument> args = tcSignature.argList.parsedArgs;
-  if (args.empty() ||
-      args.back().kgenConvention != ArgConvention::ByRefResult) {
-    // TODO: We should make this decorator force the function to have a
-    // `byref_result` instead, even for regpassable types.
-    emitError(decl.getLoc())
-        << "named results can only be used on functions with in-memory "
-           "results, result type "
-        << tcSignature.resultType << " is register-passable";
-    return;
-  }
-  auto name = StringAttr::get(getContext(), dre->spelling);
-  funcOp.setNamedResultAttr(name);
-  args.back().name = name;
 }
 
 /// Process an extensibility decorator by generating additional trait binding
@@ -1037,24 +1011,26 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
 
   // Parse the result type if present.
-  ExprNode *resultTypeExpr = nullptr;
-  ExprNode *resultRefLifetimeExpr = nullptr;
-  SMLoc resultLoc = p.getToken().getLoc();
+  ParsedArgument resultArg;
+  resultArg.loc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
     // Parse a result reference if present.
-    (void)p.parseRefSpecifier(resultRefLifetimeExpr);
+    (void)p.parseRefSpecifier(resultArg.refLifetimeExpr);
 
     // Parse the result type expression.
     // If this result parsing fails, then we just continue on as if none was
     // specified.
-    (void)p.parseExpression(resultTypeExpr);
+    (void)p.parseExpression(resultArg.typeExpr);
+
+    // Parse a name binding for the result if present.
+    if (p.consumeIf(Token::kw_as))
+      (void)p.parseIdentifier(resultArg.name, "expected result name");
   }
 
   // Emit the argument and result types.
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
-  TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultTypeExpr,
-                                     resultRefLifetimeExpr, resultLoc, isDef,
+  TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultArg, isDef,
                                      &decl, fnInfo);
 
   // If any of the arguments had an error or if the result type is a type check
@@ -1128,6 +1104,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getSymNameAttrName(),
             getMangledName(baseName, *decl.getParentDecl(), signature));
   attrs.set(funcOp.getSourceNameAttrName(), baseName);
+
+  // Set the result name binding if specified.
+  if (StringAttr resultName = tcSignature.resultArg.name)
+    attrs.set(funcOp.getNamedResultAttrName(), resultName);
 
   // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
   // that method for an explanation.

@@ -230,9 +230,8 @@ fn reassign_might_raise():
         _ = value  # expected-error {{use of uninitialized value 'value'}}
 
 
-@__named_result(out)
 # expected-note @below {{'out' declared here}}
-fn uninitialized_result(c: Bool) -> MemExample:
+fn uninitialized_result(c: Bool) -> MemExample as out:
     if c:
         # expected-error @below {{'out' is uninitialized at return from this function}}
         return

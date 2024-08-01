@@ -1157,16 +1157,14 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 /// Type check the result type for the function.  `resultTypeExpr` will be
 /// non-null if explicitly specified in source code, and the `resultLoc` will
 /// always be valid point for end of the argument list.
-static void typeCheckResult(const ExprNode *resultTypeExpr,
-                            const ExprNode *resultRefLifetimeExpr,
-                            SMLoc resultLoc, bool isDef,
+static void typeCheckResult(ParsedArgument resultArg, bool isDef,
                             const SpecialFunctionInfo &fnInfo, ASTDecl *fnDecl,
                             TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
 
   ASTType resultType;
-  if (!resultTypeExpr) {
+  if (!resultArg.typeExpr) {
     // If the result type wasn't specified, we default to either "None" or
     // "object" depending on whether this is a def.
     resultType = shared.getNoneType();
@@ -1174,16 +1172,16 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
     // If this is a 'def', then we want to default to 'object' unless this is a
     // known function that doesn't support that.
     if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-      resultType = shared.lookupObjectType(declScope, resultLoc);
+      resultType = shared.lookupObjectType(declScope, resultArg.loc);
       if (!resultType)
         resultType = shared.getTypeCheckErrorType();
     }
-  } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
+  } else if (resultArg.typeExpr->kind == ExprNode::kNoneLiteral) {
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else {
     ExprEmitter typeEmitter(shared, declScope, EC_Type);
-    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
     // On error, a diagnostic will be emitted, but we don't want to kill the
     // entire function definition.  We won't be able to correctly type check any
@@ -1194,17 +1192,17 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
 
   // If a result lifetime is specified with `ref [life] Ty`, then form a ref
   // result.
-  if (resultRefLifetimeExpr) {
+  if (resultArg.refLifetimeExpr) {
     if (tcSignature.argList.effects.isAsync()) {
       // TODO(MOCO-787): Async functions don't support ref results yet. We need
       // to define a `CoroutineRef` or support perfect forwarding in generic
       // results.
-      shared.emitError(resultRefLifetimeExpr->getLoc())
+      shared.emitError(resultArg.refLifetimeExpr->getLoc())
           << "TODO: ref results aren't supported in async functions yet";
-      resultRefLifetimeExpr = nullptr;
+      resultArg.refLifetimeExpr = nullptr;
     } else {
       resultType = processLifetimeSpecifier(
-          resultRefLifetimeExpr, resultType,
+          resultArg.refLifetimeExpr, resultType,
           // TODO: Use the name of the return slot if present.
           "__result__", tcSignature.paramList, /*isResult*/ true);
       tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
@@ -1217,17 +1215,17 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
   // Now that we have the user's result type, compute the full type of the
   // result, which can can be different when memory only, when throwing, etc.
   ASTType fullResultType = resultType;
-  TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
+  TypeConvention rp = resultType.getRegisterPassability(resultArg.loc, shared);
 
   // If this function throws, add a result slot for the error that may be
   // raised.
   if (tcSignature.argList.effects.isThrows()) {
-    ASTType errorType =
-        shared.getBuiltinErrorType(tcSignature.paramList.declScope, resultLoc);
+    ASTType errorType = shared.getBuiltinErrorType(
+        tcSignature.paramList.declScope, resultArg.loc);
 
     // Synthesize a ByRefError argument for the error.
     ParsedArgument errArg;
-    errArg.loc = resultLoc;
+    errArg.loc = resultArg.loc;
     errArg.name = StringAttr::get(shared.getContext(), "__error__");
     errArg.convention = ParsedArgument::kConventionByRefResult;
     errArg.kgenConvention = ArgConvention::ByRefError;
@@ -1244,7 +1242,7 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
     // add a block argument for this.
     if (fnDecl) {
       Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
-      (void)body.addArgument(refType, shared.translateLocation(resultLoc));
+      (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
     }
 
     // The ABI result type is an i1 indicating the error state.
@@ -1259,17 +1257,19 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
   if (tcSignature.argList.effects.isAsync())
     rp = TypeConvention::MemoryOnly;
 
+  // If the result has a name binding, then always return it in-memory.
+  if (resultArg.name)
+    rp = TypeConvention::MemoryOnly;
+
   // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
   if (rp == TypeConvention::MemoryOnly) {
     // Synthesize a ByRefResult argument for the result.
-    ParsedArgument resultArg;
-    resultArg.loc = resultLoc;
-    resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+    if (!resultArg.name)
+      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
     resultArg.convention = ParsedArgument::kConventionByRefResult;
     resultArg.kgenConvention = ArgConvention::ByRefResult;
     resultArg.kwArgHandling = KWArgHandling::kKeywordOnly;
-    resultArg.typeExpr = resultTypeExpr;
     tcSignature.argList.parsedArgs.push_back(resultArg);
     tcSignature.argTypes.push_back(resultType);
 
@@ -1284,7 +1284,7 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
     // never looked up directly.
     if (fnDecl) {
       Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
-      (void)body.addArgument(refType, shared.translateLocation(resultLoc));
+      (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
     }
 
     // We know the ABI register result will be None now, which is trivial.
@@ -1300,12 +1300,12 @@ static void typeCheckResult(const ExprNode *resultTypeExpr,
 ///
 /// 'fnDecl' will be null when this is a function type, which doesn't have a
 /// declaration.
-TypeCheckedFnSignature::TypeCheckedFnSignature(
-    TypeCheckedParamList &paramList, ParsedArgumentList &argList,
-    const ExprNode *resultTypeExpr, const ExprNode *resultRefLifetimeExpr,
-    SMLoc resultLoc, bool isDef, ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo)
-    : paramList(paramList), argList(argList) {
-
+TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
+                                               ParsedArgumentList &argList,
+                                               const ParsedArgument &resultArg,
+                                               bool isDef, ASTDecl *fnDecl,
+                                               SpecialFunctionInfo &fnInfo)
+    : paramList(paramList), argList(argList), resultArg(resultArg) {
   SharedState &shared = paramList.shared;
   ExprEmitter typeEmitter(shared, paramList.declScope, EC_Type);
 
@@ -1400,8 +1400,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(
     typeCheckOneArgument(i, selfType, isDef, isStaticMethod, fnDecl, *this);
 
   // Compute the result type.
-  typeCheckResult(resultTypeExpr, resultRefLifetimeExpr, resultLoc, isDef,
-                  fnInfo, fnDecl, *this);
+  typeCheckResult(resultArg, isDef, fnInfo, fnDecl, *this);
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {

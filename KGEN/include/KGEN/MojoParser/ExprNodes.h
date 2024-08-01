@@ -543,23 +543,19 @@ struct ChainedCmpOpNode final : public ExprNode {
 struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
-                   const ExprNode *resultTypeExpr,
-                   const ExprNode *resultRefLifetimeExpr, FnEffects effects,
-                   SMLoc endLoc, bool isDef, SMLoc resultLoc)
+                   ArrayRef<ParsedArgument> resultArgs, FnEffects effects,
+                   SMLoc endLoc, bool isDef)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
-        parsedArgs(parsedArgs), resultTypeExpr(resultTypeExpr),
-        resultRefLifetimeExpr(resultRefLifetimeExpr), effects(effects),
-        endLoc(endLoc), isDef(isDef), resultLoc(resultLoc) {}
+        parsedArgs(parsedArgs), resultArgs(resultArgs), effects(effects),
+        endLoc(endLoc), isDef(isDef) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
   ArrayRef<ParsedArgument> parsedArgs;   // Argument list
-  const ExprNode *resultTypeExpr;
-  const ExprNode *resultRefLifetimeExpr;
+  ArrayRef<ParsedArgument> resultArgs;   // Result list
   FnEffects effects;
   SMLoc endLoc;
   bool isDef;
-  SMLoc resultLoc;
 
   static bool classof(const ExprNode *node) {
     return node->kind == kFunctionType;
