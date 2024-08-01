@@ -1364,6 +1364,29 @@ static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
   printParamTypes(p, values);
 }
 
+OptionalParseResult VariantType::parseValue(AsmParser &p,
+                                            TypedAttr &value) const {
+  if (failed(p.parseOptionalLBrace()))
+    return {};
+  TypedAttr element;
+  unsigned index;
+  if (parseColonTypeParamValue(p, element) || p.parseComma() ||
+      p.parseInteger(index) || p.parseRBrace())
+    return failure();
+  value = VariantAttr::get(element, index, *this);
+  return mlir::success();
+}
+
+LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto variant = ::dyn_cast<VariantAttr>(value);
+  if (!variant)
+    return failure();
+  p << '{';
+  printColonTypeParamValue(p, variant.getValue());
+  p << ", " << variant.getIndex() << '}';
+  return success();
+}
+
 VariantType VariantType::get(MLIRContext *ctx, TypedAttr variadic) {
   // When the type is concrete, canonicalize away the type info.
   if (auto attr = ::dyn_cast<VariadicAttr>(variadic)) {

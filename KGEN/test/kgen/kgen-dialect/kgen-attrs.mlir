@@ -63,10 +63,10 @@ kgen.generator @pack_constants<Ts: variadic<i32>>() {
 
 // CHECK-LABEL: @variant_constants
 kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
-  // CHECK: variant<f32, f64> = <#kgen.variant<:f32 2.5{{0+}}e+00, 0>>
-  %0 = kgen.param.constant: variant<f32, f64> = <#kgen.variant<:f32 2.5, 0>>
-  // CHECK: variant<T, U> = <#kgen.variant<:!kgen.paramref<T> value, 0>>
-  %1 = kgen.param.constant: variant<T, U> = <#kgen.variant<:!kgen.paramref<T> value, 0>>
+  // CHECK: variant<f32, f64> = <{:f32 2.5{{0+}}e+00, 0}>
+  %0 = kgen.param.constant: variant<f32, f64> = <{:f32 2.5, 0}>
+  // CHECK: variant<T, U> = <{:!kgen.paramref<T> value, 0}>
+  %1 = kgen.param.constant: variant<T, U> = <{:!kgen.paramref<T> value, 0}>
   kgen.return
 }
 

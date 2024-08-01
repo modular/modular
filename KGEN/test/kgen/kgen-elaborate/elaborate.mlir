@@ -1441,7 +1441,7 @@ kgen.generator @create<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.variant<T, i1
 
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
-  // CHECK: constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <#kgen.variant<:<index>() -> !pop.simd<*(0,0), f32> @func, 0>>
+  // CHECK: constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <{:<index>() -> !pop.simd<*(0,0), f32> @func, 0}>
   kgen.param.apply value = [(!kgen.signature<<index>() -> !pop.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !pop.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !pop.simd<*(0,0), f32>>](@func)
   kgen.param.constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <value>
   kgen.return
@@ -1971,7 +1971,7 @@ kgen.generator export @load_from_mem() {
 
 // This should not get the full vtable substituted in.
 // CHECK: kgen.func @"genA,type_param=::string_literal::StringLiteral"() no_inline {
-// CHECK: kgen.func @"genA,type_param=x::y::z"() no_inline { 
+// CHECK: kgen.func @"genA,type_param=x::y::z"() no_inline {
 kgen.generator @genA<type_param: type>() no_inline {
   kgen.return
 }
@@ -1991,4 +1991,3 @@ kgen.generator @call_generator_test() {
   kgen.call @genA<:type [string, {"__del__" : (!kgen.pointer<string> owned_in_mem) -> !kgen.none = @"x::y::z::__del__(x::y::z)"}]>() : () -> ()
   kgen.return
 }
-
