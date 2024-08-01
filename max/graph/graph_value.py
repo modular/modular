@@ -63,6 +63,9 @@ class GraphValue:
         """
         return self.tensor_type.shape
 
+    def print(self, label: str = "debug_tensor"):
+        ops.print(self, label=label)
+
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)
 
