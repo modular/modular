@@ -7,10 +7,13 @@
 # REQUIRES: requests
 # RUN: %mojo -debug-level full %s
 
+from collections import Dict
 from python import Python
 from sys import argv
 from testing import assert_true, assert_false
 from time import sleep
+
+import random
 
 
 from max.engine import InferenceSession, InputSpec
