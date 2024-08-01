@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library")
-load("//Config:version.bzl", "status_template")
+load("//bazel:api.bzl", "modular_cc_library", "modular_versioned_expand_template")
 
 modular_cc_library(
     name = "Config",
@@ -11,10 +10,9 @@ modular_cc_library(
     visibility = ["//visibility:public"],
 )
 
-status_template(
+modular_versioned_expand_template(
     name = "GeneratedVersion",
-    # Note that this still incldues the include/ prefix, which will be stripped
-    # above. This can only be used via a dependency on the Config library.
-    src = "include/GeneratedVersion.h.tmpl",
     out = "GeneratedVersion.h",
+    substitutions = {},
+    template = "include/GeneratedVersion.h.tmpl",
 )

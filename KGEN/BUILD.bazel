@@ -1,7 +1,18 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
-load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_binary", "modular_cc_library", "modular_cc_test", "modular_shared_library", "td_library")
+load(
+    "//bazel:api.bzl",
+    "gentbl_cc_library",
+    "gentbl_mlir_dialect",
+    "gentbl_modular_passes",
+    "modular_cc_binary",
+    "modular_cc_library",
+    "modular_cc_test",
+    "modular_shared_library",
+    "modular_versioned_expand_template",
+    "td_library",
+)
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES", "KERNELS_BUILD_TYPE_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 
@@ -884,15 +895,11 @@ modular_cc_library(
     ],
 )
 
-# TODO: This should get replaced with something that actually generates the
-# correct version number. (NOTE: It looks like clang, llvm, and lldb do this...)
-# For now, just hard code some values.
-genrule(
+modular_versioned_expand_template(
     name = "kgen_version_gen",
-    outs = ["KGENVersion.h"],
-    # TODO: Properly generate a version using shared variables. See Version.h.in
-    #       for all the macro magic to generate versions.
-    cmd = "echo '#define KGEN_VERSION_STRING \"1.0.0\"' >> $@\n",
+    out = "KGENVersion.h",
+    substitutions = {},
+    template = "include/KGEN/KGENVersion/KGENVersion.h.tmpl",
 )
 
 modular_cc_library(
