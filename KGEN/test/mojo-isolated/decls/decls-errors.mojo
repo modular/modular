@@ -82,17 +82,6 @@ fn missingColon(x: Int)
 
 
 ##===----------------------------------------------------------------------===##
-# Named Results
-##===----------------------------------------------------------------------===##
-
-
-@__named_result(out)
-# expected-error @below {{named results can only be used on functions with in-memory results, result type 'Int' is register-passable}}
-fn regpassable_result() -> Int:
-  pass
-
-
-##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
 

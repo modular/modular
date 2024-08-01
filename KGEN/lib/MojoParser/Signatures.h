@@ -102,7 +102,7 @@ struct ParsedArgument {
 
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
-  const ExprNode *typeExpr = nullptr;
+  ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;
   // If this is a ref convention, this specifies the lifetime expression.
   ExprNode *refLifetimeExpr = nullptr;
@@ -189,12 +189,11 @@ public:
   /// declaration.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ExprNode *resultTypeExpr,
-                         const ExprNode *resultRefLifetimeExpr, SMLoc resultLoc,
-                         bool isDef, ASTDecl *fnDecl,
-                         SpecialFunctionInfo &fnInfo);
+                         const ParsedArgument &resultArg, bool isDef,
+                         ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
+  const ParsedArgument &resultArg;
 
   // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;

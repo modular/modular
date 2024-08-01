@@ -972,7 +972,6 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   ParsedParamList paramList;
   ParsedArgumentList fnSignature;
 
-  ExprNode *resultTypeExpr = nullptr, *resultRefLifetimeExpr = nullptr;
   bool isDef = false;
 
   // Parse the function effects from the leading keyword.
@@ -990,21 +989,28 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
-  SMLoc resultLoc = getToken().getLoc();
+  ParsedArgument resultArg;
+  resultArg.loc = getToken().getLoc();
   if (!isDef || getToken().is(Token::minus_greater)) {
     if (parseToken(Token::minus_greater, "expected '->' in function type"))
       return failure();
 
     // Parse a result reference if present.
-    if (parseRefSpecifier(resultRefLifetimeExpr) ||
-        ParserBase::parseExpression(resultTypeExpr, stmtIndent))
+    if (parseRefSpecifier(resultArg.refLifetimeExpr) ||
+        ParserBase::parseExpression(resultArg.typeExpr, stmtIndent))
+      return failure();
+
+    // Parse a result name binding if present.
+    if (consumeIf(Token::kw_as) &&
+        parseIdentifier(resultArg.name, "expected result name"))
       return failure();
   }
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
-      copyArrayRef<ParsedArgument>(fnSignature.parsedArgs), resultTypeExpr,
-      resultRefLifetimeExpr, fnSignature.effects, endLoc, isDef, resultLoc);
+      copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
+      copyArrayRef<ParsedArgument>(resultArg), fnSignature.effects, endLoc,
+      isDef);
   return success();
 }
 

@@ -31,7 +31,7 @@ decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt)
 async_funcdef: ASYNC funcdef
-funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME] ['->' result_type] ':' suite
+funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME] ['->' result_type] ['as' NAME] ':' suite
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test ] ']'] test
