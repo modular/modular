@@ -7,6 +7,7 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -65,7 +66,8 @@ public:
 
 private:
   DIBuilder::ScopeGuard buildDebugInfo(mlir::FunctionOpInterface op);
-  void buildDebugInfo(Region *region);
+  DIBuilder::ScopeGuard buildDebugInfo(SubprogramScoped sp);
+  void buildDebugInfo(Region *region, bool pushLexicalBlock);
   void buildDebugInfo(Block *block, bool isFunctionEntryBlock = false);
   void buildDebugInfo(Operation *op);
 
@@ -173,13 +175,42 @@ DebugInfoBuilder::buildDebugInfo(mlir::FunctionOpInterface op) {
   return spGuard;
 }
 
-void DebugInfoBuilder::buildDebugInfo(Region *region) {
+DIBuilder::ScopeGuard DebugInfoBuilder::buildDebugInfo(SubprogramScoped sp) {
+  // The CallLoc is the instantiated location of the inlined subprogram.
+  Location callLoc = dibuilder.createScopedLoc(sp->getLoc());
+
+  SmallVector<DIType> resultTypes, argumentTypes;
+  for (Type type : sp.getBodyRegion().getArgumentTypes())
+    resultTypes.push_back(typeConverter.convertDebugType(type));
+  for (Type type : sp->getResultTypes())
+    argumentTypes.push_back(typeConverter.convertDebugType(type));
+  auto subroutineType =
+      builder.getType<DISubroutineType>(argumentTypes, resultTypes);
+
+  StringAttr name = sp->getName().getIdentifier();
+  unsigned line = extractLine(sp);
+  SubprogramFlags spFlags =
+      SubprogramFlags::Optimized | SubprogramFlags::Definition;
+  DIBuilder::ScopeGuard spGuard =
+      dibuilder.pushSubprogram(SourceNameAttr::get(name), name, fileAttr, line,
+                               line, spFlags, subroutineType);
+  sp->setLoc(dibuilder.createScopedLoc(sp->getLoc()));
+
+  if (auto isp = dyn_cast<InlinedSubprogramScoped>(sp.getOperation()))
+    isp.setCallLocAttr(callLoc);
+
+  return spGuard;
+}
+
+void DebugInfoBuilder::buildDebugInfo(Region *region, bool pushLexicalBlock) {
   if (region->empty())
     return;
 
-  // Push a new lexical scope for this region.
-  auto [line, column] = extractLineColumn(&region->front());
-  auto scopeGuard = dibuilder.pushNestedLexicalBlock(fileAttr, line, column);
+  DIBuilder::ScopeGuard scopeGuard;
+  if (pushLexicalBlock) {
+    auto [line, column] = extractLineColumn(&region->front());
+    scopeGuard = dibuilder.pushNestedLexicalBlock(fileAttr, line, column);
+  }
 
   // Recursively build debug information for all blocks within the region.
   for (Block &block : *region)
@@ -214,11 +245,17 @@ void DebugInfoBuilder::buildDebugInfo(Block *block, bool isFunctionEntryBlock) {
 }
 
 void DebugInfoBuilder::buildDebugInfo(Operation *op) {
+  if (auto sp = dyn_cast<SubprogramScoped>(op)) {
+    DIBuilder::ScopeGuard scopeGuard = buildDebugInfo(sp);
+    buildDebugInfo(&sp.getBodyRegion(), /*pushLexicalBlock=*/false);
+    return;
+  }
+
   op->setLoc(dibuilder.createScopedLoc(op->getLoc()));
 
   // Traverse into regions of this operation.
   for (auto &region : op->getRegions())
-    buildDebugInfo(&region);
+    buildDebugInfo(&region, /*pushLexicalBlock=*/true);
 
   // Check for results to this operation.
   auto opResults = op->getResults();
