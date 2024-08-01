@@ -22,6 +22,7 @@ from memory import UnsafePointer, bitcast
 
 from utils import Index, StaticTuple, unroll
 from utils.numerics import isnan
+from sys import llvm_intrinsic
 
 
 @always_inline

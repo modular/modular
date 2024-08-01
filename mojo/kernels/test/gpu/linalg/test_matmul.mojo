@@ -27,6 +27,7 @@ from gpu.cublas.cublas import (
 )
 
 from linalg.cublas import cublas_matmul
+from utils import StaticIntTuple
 from utils.index import Index
 from internal_utils import (
     HostNDBuffer,

@@ -17,6 +17,7 @@ from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 

@@ -20,6 +20,7 @@ from linalg.matmul_gpu import (
 )
 from memory import UnsafePointer
 
+from utils import StaticIntTuple
 from utils.index import Index
 from utils.numerics import isnan
 

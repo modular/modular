@@ -12,6 +12,7 @@ from sys import argv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import Optional
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (

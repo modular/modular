@@ -15,6 +15,7 @@ from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from testing import assert_equal
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 
