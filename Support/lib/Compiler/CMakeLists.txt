@@ -12,6 +12,7 @@ add_modular_mlir_library(MCompilerSupport
   ErrorTree.cpp
   MLIRDenseAttr.cpp
   MLIRDType.cpp
+  MLIRToString.cpp
   OperationUtils.cpp
   ParserUtils.cpp
   TimeProfilerTimingManager.cpp

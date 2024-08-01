@@ -7,6 +7,7 @@
 #ifndef SUPPORT_COMPILER_OPERATIONUTILS_H
 #define SUPPORT_COMPILER_OPERATIONUTILS_H
 
+#include "Support/Compiler/MLIRToString.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/SetVector.h"
