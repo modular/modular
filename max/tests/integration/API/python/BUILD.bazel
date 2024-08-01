@@ -35,6 +35,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//ModularFramework/examples/pipelines_python:llama3",
         "//SDK/lib/EngineAPI/python:max_engine",
         requirement("torch"),
     ],
