@@ -114,6 +114,19 @@ def KGEN_ExportKind : I32EnumAttr<"ExportKind", "export kind", [
 }
 
 //===----------------------------------------------------------------------===//
+// TailKind
+//===----------------------------------------------------------------------===//
+
+def KGEN_TailKind : I32EnumAttr<"TailKind", "tail kind", [
+  I32EnumAttrCase<"None", 0, "none">,
+  I32EnumAttrCase<"MustTail", 1, "musttail">,
+  I32EnumAttrCase<"NoTail", 2, "notail">
+]> {
+  let cppNamespace = "::M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
 // Conventions
 //===----------------------------------------------------------------------===//
 
