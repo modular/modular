@@ -166,11 +166,10 @@ fn parallelism_level() -> Int:
     )
 
 
-@__named_result(task)
 fn create_task(
     owned handle: Coroutine[*_],
     desired_worker_id: Int = -1,
-) -> Task[handle.type, handle.lifetimes]:
+) -> Task[handle.type, handle.lifetimes] as task:
     """Run the coroutine as a task on the LLCL Runtime."""
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
@@ -180,8 +179,7 @@ fn create_task(
 
 
 @always_inline
-@__named_result(out)
-fn run(owned handle: Coroutine[*_]) -> handle.type:
+fn run(owned handle: Coroutine[*_]) -> handle.type as out:
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
@@ -194,8 +192,7 @@ fn run(owned handle: Coroutine[*_]) -> handle.type:
 
 
 @always_inline
-@__named_result(out)
-fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type:
+fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type as out:
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
