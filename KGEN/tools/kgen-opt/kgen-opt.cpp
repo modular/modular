@@ -23,6 +23,7 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Context.h"
+#include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/IRMapping.h"
@@ -204,6 +205,7 @@ int main(int argc, char **argv) {
 
   // Register passes.
   KGEN::registerDefaultKGENPasses();
+  DebugInfo::registerTransformsPasses();
 
   // Register cl options.
   static llvm::cl::opt<bool> dummyOpt{"asyncrt-single-thread"};
