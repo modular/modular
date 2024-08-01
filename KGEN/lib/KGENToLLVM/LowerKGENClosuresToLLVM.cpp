@@ -358,6 +358,18 @@ struct CallIndirectOpConversion
 
       llvmCall =
           createLLVMCall(rewriter, op.getLoc(), wrapperFnType, llvmCallArgs);
+      if (op.getTailKind().has_value()) {
+        switch (op.getTailKind().value()) {
+        case TailKind::MustTail:
+          llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::MustTail);
+          break;
+        case TailKind::NoTail:
+          llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::MustTail);
+          break;
+        default:
+          break;
+        }
+      }
     } else {
       // Create the LLVM call operation.
       // Note: adaptor.getOperands() is a list of callee followed by inputs.

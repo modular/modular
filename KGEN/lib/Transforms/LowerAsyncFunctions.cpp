@@ -401,11 +401,11 @@ LowerAsyncBuildContext::addSlicedFirstStateTo(FuncOp hotRamp, FuncOp fromFuncOp,
         break;
       }
       if (isa<ReturnOp>(operation) && needsEdit) {
-        // TODO: enable musttail at the kgen level. MOCO-987
         builder.setInsertionPoint(operation);
         SignatureType signatureType = cast<SignatureType>(callback.getType());
         auto callIndirect = builder.create<CallIndirectOp>(
             signatureType.getResults(), callback, closureState);
+        callIndirect.setTailKind(TailKind::MustTail);
         reachable.insert(callIndirect);
         break;
       }
