@@ -7,6 +7,7 @@
 
 from math import exp
 from random import randn_float64, seed
+from sys import has_neon
 
 from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal

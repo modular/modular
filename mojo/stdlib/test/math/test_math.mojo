@@ -35,6 +35,7 @@ from sys.info import has_neon
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
+from utils import Span, InlineArray
 from utils.numerics import inf, isinf, nan, neg_inf
 
 
