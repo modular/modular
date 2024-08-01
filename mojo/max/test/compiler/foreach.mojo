@@ -10,6 +10,7 @@ from max._driver import cpu_device, UnsafeTensorSlice, Tensor
 from utils import Index
 from max.tensor import TensorSpec
 from testing import assert_equal
+from utils import StaticIntTuple
 
 
 # CHECK-LABEL: == test_foreach

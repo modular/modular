@@ -22,7 +22,7 @@ from max._driver import (
 from max.tensor import TensorSpec, TensorShape
 from max.tensor import Tensor as OldTensor
 from testing import assert_equal, assert_raises
-from utils import Index
+from utils import Index, StaticIntTuple
 
 
 def test_tensor():
