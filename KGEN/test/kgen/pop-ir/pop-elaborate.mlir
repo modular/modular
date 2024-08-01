@@ -212,10 +212,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<(i8, i16, f64)> = <apply(
     :(!kgen.struct<(i8, i16, f64)>) -> !kgen.struct<(i8, i16, f64)> @store_load<:type !kgen.struct<(i8, i16, f64)>>,
     { 120, 32112, 1.125 })>
-  // CHECK-NEXT: #kgen.variant<:i32 42, 0>
+  // CHECK-NEXT: <{:i32 42, 0}>
   kgen.param.constant: variant<i32, f64> = <apply(
     :(!kgen.variant<i32, f64>) -> !kgen.variant<i32, f64> @store_load<:type !kgen.variant<i32, f64>>,
-    #kgen.variant<:i32 42, 0>)>
+    {:i32 42, 0})>
 
   // CHECK-NEXT: <1099511627792>
   kgen.param.constant: i64 = <apply(

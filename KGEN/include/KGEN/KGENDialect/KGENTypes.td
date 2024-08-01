@@ -738,6 +738,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_VariantType : KGENType<"Variant", "variant", [
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>
 ]> {

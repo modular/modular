@@ -301,7 +301,7 @@ kgen.func @struct_replace() -> !kgen.struct<(si4, ui4)> {
 
 // CHECK-LABEL: @variant_create
 kgen.func @variant_create() -> !kgen.variant<si4, ui4> {
-  // CHECK-NEXT: constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
+  // CHECK-NEXT: constant: variant<si4, ui4> = <{:ui4 7, 1}>
   %0 = kgen.param.constant: ui4 = <7>
   %1 = kgen.variant.create %0, 1 : <si4, ui4>
   kgen.return %1 : !kgen.variant<si4, ui4>
