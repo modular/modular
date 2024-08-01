@@ -72,7 +72,7 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
         posOnlyPassedByKw.push_back(name);
       continue;
     }
-    auto [_, addedNew] = kwPassableNames.insert(name);
+    [[maybe_unused]] auto [_, addedNew] = kwPassableNames.insert(name);
     assert(addedNew && "duplicate argument/parameter name in signature");
   }
 

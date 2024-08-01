@@ -147,7 +147,8 @@ ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
 
 void ValueDest::dump() const { llvm::errs() << *this; }
 
-raw_ostream &LIT::operator<<(raw_ostream &os, const ValueDest &value) {
+[[maybe_unused]] raw_ostream &LIT::operator<<(raw_ostream &os,
+                                              const ValueDest &value) {
   os << "ValueDest context=" << (int)value.context << " destination = ";
 
   auto &representation = value.representation;

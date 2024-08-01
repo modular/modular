@@ -579,7 +579,7 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
   }
 }
 
-void DeadArgumentElimination::print() {
+[[maybe_unused]] void DeadArgumentElimination::print() {
   llvm::dbgs() << "Live functions: \n";
   for (FuncOp func : liveFunctions)
     llvm::dbgs() << "  " << func.getSymName() << "\n";
