@@ -811,7 +811,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
-  auto calleeSignature =
+  [[maybe_unused]] auto calleeSignature =
       cast<LITSignatureType>(directSymbolAttr.getType().mlirType);
 
   assert(!calleeSignature.isAnyVarArg(0) && "Error: self shouldn't be varargs");
