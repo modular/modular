@@ -208,11 +208,22 @@ struct LayoutTensor[
 
     @always_inline
     fn bitcast[
-        new_type: DType, /, address_space: AddressSpace = Self.address_space
-    ](self) -> LayoutTensor[new_type, layout, address_space=address_space]:
-        return LayoutTensor[new_type, layout, address_space=address_space](
-            self.ptr.bitcast[new_type, address_space=address_space]()
-        )
+        new_type: DType,
+        /,
+        address_space: AddressSpace = Self.address_space,
+        element_layout: Layout = Self.element_layout,
+    ](self) -> LayoutTensor[
+        new_type,
+        layout,
+        address_space=address_space,
+        element_layout=element_layout,
+    ]:
+        return LayoutTensor[
+            new_type,
+            layout,
+            address_space=address_space,
+            element_layout=element_layout,
+        ](self.ptr.bitcast[new_type, address_space=address_space]())
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
