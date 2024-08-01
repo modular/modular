@@ -163,3 +163,26 @@ kgen.generator export @use_it() {
 }
 
 }
+
+// -----
+
+module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+
+// expected-note @below {{failed to interpret function @load_union}}
+kgen.generator @load_union() -> !pop.union<index> {
+  %0 = pop.stack_allocation 1 x union<index>
+  %1 = kgen.param.constant: union<index> = <{42}>
+  pop.store %1, %0 : !kgen.pointer<union<index>>
+  // expected-note @below {{failed to interpret operation pop.load}}
+  // expected-note @below {{cannot read a union-typed value}}
+  %2 = pop.load %0 : !kgen.pointer<union<index>>
+  kgen.return %2 : !pop.union<index>
+}
+
+kgen.generator export @use_it() {
+  // expected-error @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant: union<index> = <apply(:() -> !pop.union<index> @load_union)>
+  kgen.return
+}
+
+}

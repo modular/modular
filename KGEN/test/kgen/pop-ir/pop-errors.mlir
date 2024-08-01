@@ -269,3 +269,11 @@ kgen.func @variant_discr_gep_type(%arg0: !kgen.pointer<variant<i32, i64>>) {
   %0 = pop.variant.discr_gep %arg0 : <variant<i32, i64>> as <scalar<ui16>>
   kgen.return
 }
+
+// -----
+
+kgen.func @invalid_union() {
+  // expected-error @below {{value type 'i64' is not a union element type of '!pop.union<i32>'}}
+  kgen.param.constant: union<i32> = <{:i64 42}>
+  kgen.return
+}
