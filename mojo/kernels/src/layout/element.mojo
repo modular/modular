@@ -271,57 +271,55 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             if layout.stride[0] == 1:
                 alias alignment = alignof[Self.element_data_type]()
                 ptr.store[alignment=alignment](self.element_data)
-            else:
-
-                @parameter
-                for i in range(size):
-                    ptr[
-                        __get_offset[i](self.runtime_layout)
-                    ] = self.element_data[i]
-        else:
+                return
 
             @parameter
-            if layout.stride[0] == 1:
-                alias size = to_int(layout.shape[0])
-                alias elements = to_int(layout.shape[1])
+            for i in range(size):
+                ptr[__get_offset[i](self.runtime_layout)] = self.element_data[i]
+            return
 
-                alias vec_type = SIMD[dtype, size]
-                alias alignment = alignof[vec_type]()
+        @parameter
+        if layout.stride[0] == 1:
+            alias size = to_int(layout.shape[0])
+            alias elements = to_int(layout.shape[1])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]()
 
-                @parameter
-                for i in range(elements):
-                    (ptr + __get_offset[i, 0](self.runtime_layout)).store[
-                        width=size, alignment=alignment
-                    ](
-                        self.element_data.slice[size, offset = i * size](),
-                    )
+            @parameter
+            for i in range(elements):
+                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                    width=size, alignment=alignment
+                ](
+                    self.element_data.slice[size, offset = i * size](),
+                )
+            return
 
-            elif layout.stride[1] == 1:
-                alias size = to_int(layout.shape[1])
-                alias elements = to_int(layout.shape[0])
+        elif layout.stride[1] == 1:
+            alias size = to_int(layout.shape[1])
+            alias elements = to_int(layout.shape[0])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]()
 
-                alias vec_type = SIMD[dtype, size]
-                alias alignment = alignof[vec_type]()
+            @parameter
+            for i in range(elements):
+                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                    width=size, alignment=alignment
+                ](
+                    self.element_data.slice[size, offset = i * size](),
+                )
+            return
 
-                @parameter
-                for i in range(elements):
-                    (ptr + __get_offset[i, 0](self.runtime_layout)).store[
-                        width=size, alignment=alignment
-                    ](
-                        self.element_data.slice[size, offset = i * size](),
-                    )
-            else:
-                alias dim_0 = to_int(layout.shape[0])
-                alias dim_1 = to_int(layout.shape[1])
+        alias dim_0 = to_int(layout.shape[0])
+        alias dim_1 = to_int(layout.shape[1])
 
-                @parameter
-                for i in range(dim_0):
+        @parameter
+        for i in range(dim_0):
 
-                    @parameter
-                    for j in range(dim_1):
-                        (ptr + __get_offset[i, j](self.runtime_layout)).store(
-                            self.element_data[i + j * dim_0]
-                        )
+            @parameter
+            for j in range(dim_1):
+                (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                    self.element_data[i + j * dim_0]
+                )
 
     fn masked_store[
         address_space: AddressSpace, rank: Int
