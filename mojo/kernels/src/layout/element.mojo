@@ -348,92 +348,26 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                         ptr[
                             __get_offset[i](self.runtime_layout)
                         ] = self.element_data[i]
-                else:
-                    alias alignment = alignof[Self.element_data_type]()
-                    ptr.store(self.element_data)
-            else:
+                    return
 
-                @parameter
-                for i in range(size):
-                    if i >= element_bounds[0]:
-                        break
-                    ptr[
-                        __get_offset[i](self.runtime_layout)
-                    ] = self.element_data[i]
-        else:
+                alias alignment = alignof[Self.element_data_type]()
+                ptr.store(self.element_data)
+                return
 
             @parameter
-            if layout.stride[0] == 1:
-                alias size = to_int(layout.shape[0])
-                alias elements = to_int(layout.shape[1])
+            for i in range(size):
+                if i >= element_bounds[0]:
+                    break
+                ptr[__get_offset[i](self.runtime_layout)] = self.element_data[i]
+            return
 
-                alias vec_type = SIMD[dtype, size]
-                alias alignment = alignof[vec_type]()
-                if element_bounds[1] < size:
-                    alias dim_0 = to_int(layout.shape[0])
-                    alias dim_1 = to_int(layout.shape[1])
-
-                    @parameter
-                    for i in range(dim_0):
-                        if i >= element_bounds[0]:
-                            break
-
-                        @parameter
-                        for j in range(dim_1):
-                            if j >= element_bounds[1]:
-                                break
-                            ptr.store[width=1](
-                                __get_offset[i, j](self.runtime_layout)
-                            )
-
-                else:
-
-                    @parameter
-                    for i in range(elements):
-                        if i >= element_bounds[0]:
-                            break
-                        (ptr + __get_offset[i, 0](self.runtime_layout)).store[
-                            alignment=alignment
-                        ](
-                            self.element_data.slice[size, offset = i * size](),
-                        )
-
-            elif layout.stride[1] == 1:
-                alias size = to_int(layout.shape[1])
-                alias elements = to_int(layout.shape[0])
-
-                alias vec_type = SIMD[dtype, size]
-                alias alignment = alignof[vec_type]()
-
-                if element_bounds[1] < size:
-                    alias dim_0 = to_int(layout.shape[0])
-                    alias dim_1 = to_int(layout.shape[1])
-
-                    @parameter
-                    for i in range(dim_0):
-                        if i >= element_bounds[0]:
-                            break
-
-                        @parameter
-                        for j in range(dim_1):
-                            if j >= element_bounds[1]:
-                                break
-                            ptr.store(
-                                __get_offset[i, j](self.runtime_layout),
-                                self.element_data[i + j * dim_0],
-                            )
-                else:
-
-                    @parameter
-                    for i in range(elements):
-                        if i >= element_bounds[1]:
-                            break
-                        (ptr + __get_offset[i, 0](self.runtime_layout)).store[
-                            alignment=alignment
-                        ](
-                            self.element_data.slice[size, offset = i * size](),
-                        )
-            else:
+        @parameter
+        if layout.stride[0] == 1:
+            alias size = to_int(layout.shape[0])
+            alias elements = to_int(layout.shape[1])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]()
+            if element_bounds[1] < size:
                 alias dim_0 = to_int(layout.shape[0])
                 alias dim_1 = to_int(layout.shape[1])
 
@@ -446,9 +380,72 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        (ptr + __get_offset[i, j](self.runtime_layout)).store(
-                            self.element_data[i + j * dim_0]
+                        ptr.store[width=1](
+                            __get_offset[i, j](self.runtime_layout)
                         )
+                return
+
+            @parameter
+            for i in range(elements):
+                if i >= element_bounds[0]:
+                    break
+                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                    alignment=alignment
+                ](
+                    self.element_data.slice[size, offset = i * size](),
+                )
+            return
+
+        elif layout.stride[1] == 1:
+            alias size = to_int(layout.shape[1])
+            alias elements = to_int(layout.shape[0])
+            alias vec_type = SIMD[dtype, size]
+            alias alignment = alignof[vec_type]()
+            if element_bounds[1] < size:
+                alias dim_0 = to_int(layout.shape[0])
+                alias dim_1 = to_int(layout.shape[1])
+
+                @parameter
+                for i in range(dim_0):
+                    if i >= element_bounds[0]:
+                        break
+
+                    @parameter
+                    for j in range(dim_1):
+                        if j >= element_bounds[1]:
+                            break
+                        ptr.store(
+                            __get_offset[i, j](self.runtime_layout),
+                            self.element_data[i + j * dim_0],
+                        )
+                return
+
+            @parameter
+            for i in range(elements):
+                if i >= element_bounds[1]:
+                    break
+                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                    alignment=alignment
+                ](
+                    self.element_data.slice[size, offset = i * size](),
+                )
+            return
+
+        alias dim_0 = to_int(layout.shape[0])
+        alias dim_1 = to_int(layout.shape[1])
+
+        @parameter
+        for i in range(dim_0):
+            if i >= element_bounds[0]:
+                break
+
+            @parameter
+            for j in range(dim_1):
+                if j >= element_bounds[1]:
+                    break
+                (ptr + __get_offset[i, j](self.runtime_layout)).store(
+                    self.element_data[i + j * dim_0]
+                )
 
     @no_inline
     fn __str__(self) -> String:
