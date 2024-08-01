@@ -205,7 +205,7 @@ run_tool(
         requirement("torch"),
     ],
     env = {
-        "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
+        "LLDB_DEBUGSERVER_PATH": "$(rlocationpath //KGEN:gdb-server)",
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
     },
     env_inherit = [
