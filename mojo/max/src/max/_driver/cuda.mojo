@@ -256,7 +256,6 @@ fn compile[
         kwargs:
             verbose (Bool): Prints verbose log messages from cuModuleLoadEx during compilation/linking.
             dump_ptx (Path): File in which to write the PTX for your kernel.
-            dump_llvm (Path): File in which to write the LLVM IR for your kernel.
             max_registers (Int): Limits the max of registers that can be used by your kernel.
             threads_per_block (Int): Block size that will be used to launch the kernel. Can help
                 the compiler decide how to tradeoff resources (e.g. registers).
