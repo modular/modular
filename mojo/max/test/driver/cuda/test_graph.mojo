@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: cuda
-# TODO (MSDK-465): Remove env var
 # RUN: TMP_ALLOCATE_ON_DEVICE=1 %mojo %s
 
 # COM: Test with mojo build
