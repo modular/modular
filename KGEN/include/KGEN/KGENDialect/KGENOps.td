@@ -975,11 +975,20 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
   }];
 
   let arguments = (ins KGEN_SignatureType:$callee,
-                       Variadic<AnyType>:$arguments);
+                       Variadic<AnyType>:$arguments,
+                        OptionalAttr<KGEN_TailKindAttr>:$tailKind);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    $callee `(` $arguments `)` `:` custom<Signature>(type($callee)) attr-dict
+    custom<TailKind>($tailKind) $callee `(` $arguments `)` `:` custom<Signature>(type($callee)) attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "TypeRange": $results,
+                   "Value":$callee,
+                   "ValueRange":$operands), [{
+      build($_builder, $_state, results, callee, operands, /*tailKind=*/{});
+    }]>,
+  ];
 
   let hasCanonicalizeMethod = 1;
 }

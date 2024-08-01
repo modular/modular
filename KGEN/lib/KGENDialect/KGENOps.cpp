@@ -548,6 +548,37 @@ FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
 }
 
 //===----------------------------------------------------------------------===//
+// CallIndirectOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseTailKind(AsmParser &p, TailKindAttr &tailKindAttr) {
+  TailKind value = TailKind::None;
+  if (succeeded(p.parseOptionalKeyword("musttail")))
+    value = TailKind::MustTail;
+  if (succeeded(p.parseOptionalKeyword("notail")))
+    value = TailKind::NoTail;
+  tailKindAttr = TailKindAttr::get(p.getContext(), value);
+  return success();
+}
+
+static void printTailKind(AsmPrinter &p, Operation *op, TailKindAttr tailKind) {
+  if (!tailKind)
+    return;
+  if (tailKind.getValue() != TailKind::None) {
+    switch (tailKind.getValue()) {
+    case M::KGEN::TailKind::MustTail:
+      p << "musttail ";
+      break;
+    case TailKind::NoTail:
+      p << "notail ";
+      break;
+    default:
+      break;
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // CallParamOp
 //===----------------------------------------------------------------------===//
 

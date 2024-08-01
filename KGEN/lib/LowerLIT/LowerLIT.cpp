@@ -185,8 +185,9 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       // Cast the arguments, but not the callee.
       auto newOperands =
           castCallOperands(call.getArguments(), calleeType, call.getLoc(), b);
-      b.replaceOpWithNewOp<KGEN::CallIndirectOp>(call, call.getResultTypes(),
-                                                 call.getCallee(), newOperands);
+      b.replaceOpWithNewOp<KGEN::CallIndirectOp>(
+          call, call.getResultTypes(), call.getCallee(), newOperands,
+          TailKindAttr::get(b.getContext(), TailKind::None));
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       auto calleeType = cast<SignatureType>(call.getCallee().getType());
       // Cast the arguments, but not the callee.
