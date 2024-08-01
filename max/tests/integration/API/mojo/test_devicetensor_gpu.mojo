@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # REQUIRES: cuda
-# TODO (MSDK-465): Remove env var
-# RUN: TMP_ALLOCATE_ON_DEVICE=1 %mojo %s %S/mo_unnamed.mlir
+# RUN: %mojo %s %S/mo_unnamed.mlir
 
 from sys import argv
 from testing import assert_equal, assert_true

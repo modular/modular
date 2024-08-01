@@ -60,7 +60,6 @@ lit_tests(
     gpu_only_srcs = [
         "c/gpu.api",
         "mojo/test_devicetensor_gpu.mojo",
-        "mojo/test_model_gpu.mojo",
     ],
     mojo_deps = [
         "//SDK/lib/API/mojo/max/max",
