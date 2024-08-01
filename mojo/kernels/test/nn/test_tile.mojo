@@ -8,6 +8,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.tile import tile
+from utils import StaticIntTuple
 
 
 # CHECK-LABEL: test_tile_eg1

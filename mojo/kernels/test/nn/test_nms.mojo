@@ -10,6 +10,7 @@ from collections import List
 from buffer import NDBuffer
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
+from utils import StaticIntTuple
 from utils.index import Index
 
 
