@@ -15,27 +15,20 @@ modular_cc_test(
     name = "unittests",
     srcs = glob(
         ["*.cpp"],
-        exclude = [
-            "Support.cpp",
-            # TODO: Fix these
-            "CodeBlockTest.cpp",
-            "CompletionTest.cpp",
-            "DefinitionTest.cpp",
-            "HoverTest.cpp",
-        ],
+        exclude = ["Support.cpp"],
     ),
-    data = glob(
-        ["inputs/*.mojo"],
-        exclude = ["inputs/__init__.mojo"],  # TODO: when this is included tests fail, but some of the excluded tests depend on it
-    ) + [
+    data = glob(["inputs/*.mojo"]) + [
         "//KGEN/tools/mojo-lsp-server",
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
         "@crashpad//:modular-crashpad-handler",
     ],
     env = {
-        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib/stdlib,Kernels/mojo",
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib",
         "MODULAR_PATH": ".",
     },
+    tags = [
+        "no-sandbox",  # The LSP server currently has issues with symlinks and non-canonical paths
+    ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
