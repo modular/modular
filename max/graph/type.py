@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from typing import Iterable, TypeGuard, Union
+from typing import Any, Iterable, TypeGuard, Union
 
 from max import _graph, mlir
 
@@ -71,7 +71,7 @@ class Dim:
         """
         raise NotImplementedError
 
-    def __eq__(self, other: any) -> bool:
+    def __eq__(self, other: Any) -> bool:
         """Checks whether two dimensions are equal.
 
         Dimensions are equal if they are the same dimension type
@@ -87,7 +87,7 @@ class Dim:
         """
         raise NotImplementedError
 
-    def __ne__(self, other: any) -> bool:
+    def __ne__(self, other: Any) -> bool:
         """Checks whether two dimensions are not equal.
 
         The inverse of __eq__.
@@ -174,7 +174,7 @@ class SymbolicDim(Dim):
         """
         return True
 
-    def __eq__(self, other: any) -> bool:
+    def __eq__(self, other: Any) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
 
         Symbolic dimensions with the same name are interpreted as the same
@@ -254,7 +254,7 @@ class StaticDim(Dim):
         """
         return False
 
-    def __eq__(self, other: StaticDim) -> bool:
+    def __eq__(self, other: Any) -> bool:
         """Whether the dimension has the same size as another dimension.
 
         Args:
@@ -459,7 +459,7 @@ class TensorType(Type):
         """
         return self.shape[pos + (self.rank() if pos < 0 else 0)]
 
-    def __eq__(self, other: any) -> bool:
+    def __eq__(self, other: Any) -> bool:
         """Checks whether the two tensors have the same rank, type, and shape.
 
         Args:
