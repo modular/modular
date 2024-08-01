@@ -210,7 +210,6 @@ run_tool(
     },
     env_inherit = [
         "MODULAR_PROFILE_FILENAME",
-        "TMP_ALLOCATE_ON_DEVICE",
     ],
     tags = ["manual"],
     tool = ":mojo",
