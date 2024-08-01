@@ -13,6 +13,7 @@ from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, bench_compile_time
+from utils import StaticIntTuple
 
 
 fn _get_run_name[
