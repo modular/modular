@@ -20,6 +20,11 @@ def collect_only : Flag<["--"], "collect-only">,
 def : Flag<["--"], "co">, Group<CollectionOptionGroup>, Index<0>,
   Alias<collect_only>;
 
+def keep_entrypoint : Flag<["--"], "keep-entrypoint">,
+  Group<CollectionOptionGroup>, Index<1>,
+  HelpText<"Keep the test entrypoint for later debugging.">,
+  Flags<[HelpHidden]>;
+
 //===----------------------------------------------------------------------===//
 // Compilation Options
 //===----------------------------------------------------------------------===//
