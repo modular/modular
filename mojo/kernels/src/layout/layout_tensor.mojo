@@ -1593,12 +1593,16 @@ struct LayoutTensor[
         ]()
         var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
 
+        # Coalesce element layouts to simplify vectorization condition.
+        alias coalesce_src_element_layout = coalesce(src_element_layout)
+        alias coalesce_dst_element_layout = coalesce(self.element_layout)
+
         @parameter
         if (
-            src_element_layout.rank() == 1
-            and src_element_layout.stride[0] == 1
-            and self.element_layout.rank() == 1
-            and self.element_layout.stride[0] == 1
+            coalesce_src_element_layout.rank() == 1
+            and coalesce_dst_element_layout.stride[0] == 1
+            and coalesce_dst_element_layout.rank() == 1
+            and coalesce_dst_element_layout.stride[0] == 1
         ):
 
             @parameter
@@ -1617,11 +1621,6 @@ struct LayoutTensor[
                     async_copy[element_size_bytes](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
-                # else:
-                #     async_copy[element_size_bytes](
-                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
-                #     )
-
         else:
 
             @parameter
@@ -1634,10 +1633,6 @@ struct LayoutTensor[
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
                     async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
-                # else:
-                #     async_copy[element_size_bytes](
-                #         src_ptr + src_idx, dst_ptr + dst_idx, 0
-                #     )
 
     fn linspace(self):
         @parameter
