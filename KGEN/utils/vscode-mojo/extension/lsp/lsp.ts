@@ -45,19 +45,29 @@ export class MojoLSPContext extends DisposableContext {
       })
     );
 
+    vscode.workspace.textDocuments.forEach(doc => this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached));
+    this.pushSubscription(vscode.workspace.onDidOpenTextDocument(doc => this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached)));
+  }
+
+  async tryStartLanguageClient(doc: vscode.TextDocument, debuggerAttached: boolean): Promise<void> {
+    if (doc.languageId !== "mojo")
+      return;
+
     let sdk = await this.mojoContext.sdkManager.findSDK();
 
-    if (!sdk) {
+    if (!sdk)
       return;
-    }
 
-    const includeDirs = await config.get<string[]>(
+    if (this.lspClient !== undefined)
+      return;
+
+    const includeDirs = config.get<string[]>(
       'lsp.includeDirs',
       /*workspaceFolder=*/ undefined,
       []
     );
-    const lspClient = await this.activateLanguageClient(
-      launchServerWithDebuggerAttached,
+    const lspClient = this.activateLanguageClient(
+      debuggerAttached,
       sdk,
       includeDirs
     );
