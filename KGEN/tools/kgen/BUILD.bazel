@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_binary")
+load("//bazel:api.bzl", "modular_cc_binary", "run_tool")
 
 modular_cc_binary(
     name = "kgen",
@@ -22,4 +22,14 @@ modular_cc_binary(
         "//Support:MArchTarget",
         "@llvm-project//mlir:BytecodeWriter",
     ],
+)
+
+run_tool(
+    name = "kgen-standalone",
+    env = {
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib,Kernels/mojo",
+    },
+    tags = ["manual"],
+    tool = ":kgen",
+    visibility = ["//visibility:private"],
 )
