@@ -13,6 +13,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTesting/Test.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "llvm/Option/ArgList.h"
@@ -142,6 +143,55 @@ static int test(const State &subcommandState) {
   if (!test) {
     llvm::outs() << "Total Discovered Tests: 0\n";
     return 0;
+  }
+
+  // Find a full list of unit tests. We'll generate an entry point with these.
+  std::vector<TestID> unitTests;
+  std::function<void(const Test &test)> visit = [&unitTests,
+                                                 &visit](const Test &test) {
+    TestID id = test.getTestID();
+    if (id.getTest()) {
+      if (!id.getTestSuite()) {
+        unitTests.push_back(std::move(id));
+      }
+    } else {
+      for (const auto &child : test.getChildren()) {
+        visit(child);
+      }
+    }
+  };
+  visit(*test);
+
+  ErrorOr<TempFile> testFileOr = TempFile::create("test-%%%%%%.mojo");
+  if (failed(testFileOr))
+    return state.reportError(testFileOr.getError());
+
+  {
+    llvm::raw_fd_ostream os(testFileOr->getFD(), /*shouldClose=*/false);
+    for (const TestID &id : unitTests)
+      os << "import `" << id.getFilePath().stem() << "`\n";
+
+    os << "fn main(args) raises:\n";
+    os << "\ttestName = args[1]\n";
+
+    for (const TestID &id : unitTests) {
+      StringRef testName = *id.getTest();
+      assert(testName.consume_back("()") &&
+             "id does not reference a valid test");
+
+      ErrorOr<SmallVector<std::string>> names =
+          TestID::parseScopedName(testName);
+      assert(!names.isError());
+      assert(names->size() == 1 && "id does not reference a valid test");
+      os << formatv("\tif testName == \"{0}\":\n\t\t`{1}`.`{2}`()\n",
+                    id.strref(), id.getFilePath().stem(), names->back());
+    }
+  }
+
+  if (args.hasArg(options::OPT_keep_entrypoint)) {
+    testFileOr->keep();
+    llvm::outs() << "Keeping entrypoint source code at "
+                 << testFileOr->getPath() << "\n";
   }
 
   // Execute the test and print the results.
