@@ -1458,6 +1458,7 @@ struct LayoutTensor[
         src_layout: Layout,
         src_addr_space: AddressSpace,
         src_element_layout: Layout,
+        masked: Bool = False,
     ](
         self,
         src: LayoutTensor[
@@ -1466,6 +1467,7 @@ struct LayoutTensor[
             address_space=src_addr_space,
             element_layout=src_element_layout,
         ],
+        src_idx_bound: Int = UNKNOWN_VALUE,
     ):
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
@@ -1521,9 +1523,16 @@ struct LayoutTensor[
                     i * dst_element_size
                 )
 
-                async_copy[element_size_bytes](
-                    src_ptr + src_idx, dst_ptr + dst_idx
-                )
+                @parameter
+                if masked:
+                    var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
+                    async_copy[element_size_bytes](
+                        src_ptr + src_idx, dst_ptr + dst_idx, src_copy_size
+                    )
+                else:
+                    async_copy[element_size_bytes](
+                        src_ptr + src_idx, dst_ptr + dst_idx
+                    )
 
         else:
 
@@ -1823,6 +1832,7 @@ fn copy_dram_to_sram_async[
     src_element_layout: Layout,
     dst_element_layout: Layout,
     swizzle: Optional[_swizzle_signature] = None,
+    masked: Bool = False,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1836,12 +1846,26 @@ fn copy_dram_to_sram_async[
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
     ],
+    num_rows: Int = UNKNOWN_VALUE,
 ):
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
-    dst_fragments.copy_from_async(src_fragments)
+
+    @parameter
+    if not masked:
+        dst_fragments.copy_from_async(src_fragments)
+    else:
+        constrained[
+            src_layout.stride[1].value() == src.element_size
+            and src_layout.rank() == 2,
+            "Only support masking rows and 2D row major layout.",
+        ]()
+        var src_frag_offset = src_fragments.distance(src.ptr)
+        alias stride = src_layout.stride[0].value()
+        var src_idx_bound = num_rows * stride - src_frag_offset
+        dst_fragments.copy_from_async[masked=True](src_fragments, src_idx_bound)
 
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
@@ -1896,6 +1920,7 @@ fn copy_dram_to_sram_async[
     src_element_layout: Layout,
     dst_element_layout: Layout,
     swizzle: Optional[_swizzle_signature] = None,
+    masked: Bool = False,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1909,6 +1934,7 @@ fn copy_dram_to_sram_async[
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
     ],
+    num_rows: Int = UNKNOWN_VALUE,
 ):
     copy_dram_to_sram_async[
         src_layout,
@@ -1919,7 +1945,8 @@ fn copy_dram_to_sram_async[
         src_element_layout,
         dst_element_layout,
         swizzle,
-    ](dst, src)
+        masked,
+    ](dst, src, num_rows)
 
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
