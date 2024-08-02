@@ -428,7 +428,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     std::optional<SymbolFile::ArrayInfo> arrayInfo = ParseChildArrayInfo(die);
 
     if (elementType && arrayInfo && !arrayInfo->element_orders.empty()) {
-      size_t numElements = arrayInfo->element_orders.front();
+      assert(arrayInfo->element_orders.front().has_value());
+      size_t numElements = *arrayInfo->element_orders.front();
 
       CompilerType mojoType =
           attrs.isVector
