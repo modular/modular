@@ -91,5 +91,11 @@ class GraphValue:
         """
         return ops.matmul(self, GraphValue(rhs))
 
+    def __mul__(self, rhs: ValueLike) -> GraphValue:
+        return ops.mul(self, GraphValue(rhs))
+
+    def __pow__(self, rhs: ValueLike) -> GraphValue:
+        return ops.pow(self, GraphValue(rhs))
+
 
 ValueLike = Union[mlir.Value, GraphValue, np.ndarray]

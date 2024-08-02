@@ -11,6 +11,7 @@ import numpy as np
 from max.graph import DType, Graph, TensorType
 from dataclasses import dataclass
 from llama3.mlp import MLP
+from llama3.norm import RMSNorm
 import torch
 import torch.nn.functional as F
 
@@ -83,5 +84,47 @@ def test_mlp():
         .reshape((2, 2, 2))
         .astype(np.float32)
     )
+    # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
+    # assert np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
+
+
+def test_norm():
+    session = me.InferenceSession()
+    model = NanoLlama3()
+
+    norm = Graph(
+        "norm",
+        RMSNorm(np.array([1.0476, -0.3264])),
+        input_types=[TensorType(dtype=DType.float32, shape=[2, 2, 2])],
+    )
+    compiled = session.load(norm)
+
+    input = (
+        np.array(
+            [-0.8566, 0.4401, 0.6973, -0.6199, -1.6010, 0.4166, -0.8575, 0.4400]
+        )
+        .reshape((2, 2, 2))
+        .astype(np.float32)
+    )
+
+    output = compiled.execute(input0=input)
+
+    expected = (
+        np.array(
+            [
+                -1.3178,
+                -0.2109,
+                1.1073,
+                0.3067,
+                -1.4338,
+                -0.1162,
+                -1.3181,
+                -0.2107,
+            ]
+        )
+        .reshape((2, 2, 2))
+        .astype(np.float32)
+    )
+
     # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
     # assert np.testing.assert_almost_equal(output["output0"], expected, decimal=4)

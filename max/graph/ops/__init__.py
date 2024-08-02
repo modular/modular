@@ -20,8 +20,9 @@ convenience methods such as
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
 from .constant import constant
+from .casting import reshape, cast
 from .debug import print
 from .elementwise import *
-from .casting import reshape
 from .linalg import layer_norm, matmul
+from .reduction import mean
 from .slicing import select

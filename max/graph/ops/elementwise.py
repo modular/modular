@@ -8,7 +8,7 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..graph_value import GraphValue, ValueLike
 
 # ===----------------------------------------------------------------------=== #
 # Binary Ops
@@ -17,8 +17,8 @@ from ..graph_value import GraphValue
 
 
 def _elementwise_binary(op):
-    def elementwise_op(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
-        return Graph.current._add_op(op, lhs, rhs)[0]
+    def elementwise_op(lhs: ValueLike, rhs: ValueLike) -> GraphValue:
+        return Graph.current._add_op(op, GraphValue(lhs), GraphValue(rhs))[0]
 
     elementwise_op.__name__ = op.__name__
     return elementwise_op
