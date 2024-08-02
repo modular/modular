@@ -10,7 +10,7 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id, GridDim
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
 from gpu.memory import (
@@ -479,7 +479,8 @@ fn multistage_gemm[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        (int(BlockIdx.x()), int(BlockIdx.y())), (int(N // BN), int(M // BM))
+        (int(BlockIdx.x()), int(BlockIdx.y())),
+        (int(GridDim.x()), int(GridDim.y())),
     ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
 
     # Coordinates of the current warp.
