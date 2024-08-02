@@ -438,19 +438,33 @@ fn _parallelize_impl[
 
     Args:
         num_work_items: Number of parallel tasks.
-        num_workers: The number of works to use for execution.
+        num_workers: The number of workers to use for execution.
     """
 
-    var chunk_size = max(ceildiv(num_work_items, num_workers), 1)
+    # Calculate how many items are picked up by each worker.
+    var chunk_size = num_work_items // num_workers
+    # Calculate how many workers need to add an extra item to their work.
+    var extra_items = num_work_items % num_workers
 
+    # We coalesce consecutive groups of work items into a single dispatch by
+    # using the coarse_grained_func below.
     @always_inline
-    @__copy_capture(chunk_size)
+    @__copy_capture(chunk_size, extra_items)
     @parameter
     fn coarse_grained_func(thread_idx: Int):
-        for i in range(
-            chunk_size * thread_idx,
-            min(chunk_size * (thread_idx + 1), num_work_items),
-        ):
+        # Calculate the start for the consecutive range of work items this
+        # invocation is responsible for.
+        var start_idx = thread_idx * (
+            chunk_size + 1
+        ) if thread_idx <= extra_items else extra_items * (chunk_size + 1) + (
+            thread_idx - extra_items
+        ) * chunk_size
+        # Calculate the exclusive end of the range
+        var end_idx = start_idx + chunk_size
+        if thread_idx < extra_items:
+            # Add one work item to threads that get an extra assignment.
+            end_idx += 1
+        for i in range(start_idx, end_idx, 1):
             func(i)
 
     sync_parallelize[coarse_grained_func](num_workers)
