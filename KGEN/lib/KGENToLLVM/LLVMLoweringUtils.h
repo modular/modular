@@ -177,6 +177,10 @@ public:
   /// of the given LLVM type.
   Value materializeLLVMVariant(Type type, Value value, int64_t index);
 
+  /// Generate the code required to materialize the provided value as a union
+  /// of the given LLVM type.
+  Value materializeLLVMUnion(mlir::LLVM::LLVMArrayType type, Value value);
+
   /// Walk a simple or aggregate LLVM type and generate the code to insert its
   /// elements into a variant's content type. This tightly packs the element
   /// types within the content type. The first argument is an iterator to the
