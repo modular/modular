@@ -277,6 +277,28 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return LLVM::LLVMStructType::getLiteral(&getContext(),
                                             {contentType, discrType});
   });
+  // FIXME: Delete the above once the lowering has transitioned.
+
+  // Convert union types to an array with enough space to contain the largest
+  // union element type.
+  addConversion([=](POP::UnionType unionType) -> std::optional<Type> {
+    // TODO: The generated assembly is sensitive to the content type of the
+    // union type. This needs to be optimized. For now, use an array of
+    // word-size integers.
+    int64_t maxSize = 0;
+    for (Type unionType : unionType.getTypes()) {
+      Type type = convertType(unionType);
+      if (!type)
+        return {};
+      maxSize = std::max(maxSize, getTypeAllocSize(type));
+    }
+    // FIXME: The alignment of the generated type must equal or exceed the
+    // greatest alignment requirement of any subtype. Right now it's just the
+    // pointer width.
+    return LLVM::LLVMArrayType::get(
+        getIndexType(),
+        llvm::divideCeil(maxSize * CHAR_BIT, getIndexTypeBitwidth()));
+  });
 
   // Coroutine handles are always lowered to opaque pointers.
   addConversion([](CO::CoroutineType coro) {
@@ -507,6 +529,24 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
   Value discrVal = b.create<LLVM::ConstantOp>(
       llvm::cast<IntegerType>(variantType.getBody().back()), index);
   return b.create<LLVM::InsertValueOp>(variant, discrVal, 1);
+}
+
+Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType type,
+                                          Value value) {
+  SmallVector<Value> storageValues;
+  for (unsigned i = 0, e = type.getNumElements(); i < e; ++i)
+    storageValues.push_back(
+        b.create<LLVM::ConstantOp>(type.getElementType(), 0));
+
+  MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
+  unsigned storageOffset = 0;
+  unsigned offset = 0;
+  walkAndCreateVariant(valueIt, storageOffset, offset, value);
+
+  Value content = b.create<LLVM::UndefOp>(type);
+  for (auto [idx, value] : llvm::enumerate(storageValues))
+    content = b.create<LLVM::InsertValueOp>(content, value, idx);
+  return content;
 }
 
 //===----------------------------------------------------------------------===//
@@ -981,6 +1021,21 @@ Value KGEN::convertParameterToLLVM(
     VariantHelper helper(b, b.getLoc(), tc);
     return helper.materializeLLVMVariant(variantType, value,
                                          variant.getIndex());
+  }
+
+  // Bitpack union constants.
+  if (auto unionAttr = dyn_cast<POP::UnionAttr>(attr)) {
+    Value value =
+        convertParameterToLLVM(b, tc, imc, scope, unionAttr.getValue());
+    if (!value)
+      return {};
+
+    auto contentType =
+        cast_or_null<LLVM::LLVMArrayType>(tc.convertType(unionAttr.getType()));
+    if (!contentType)
+      return {};
+    VariantHelper helper(b, b.getLoc(), tc);
+    return helper.materializeLLVMUnion(contentType, value);
   }
 
   // Convert variadic sequence constants to an LLVM struct constant.

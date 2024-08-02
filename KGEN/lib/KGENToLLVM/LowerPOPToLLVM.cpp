@@ -1306,6 +1306,76 @@ struct ConvertPOPVariantDiscrGEP
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPUnionBitcast
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPUnionBitcast : public ConvertPOPToLLVMPattern<UnionBitcastOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(UnionBitcastOp op,
+                                UnionBitcastOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    b.replaceOp(op, adaptor.getValue());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPUnionWrap
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(UnionWrapOp op, UnionWrapOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    auto variantType =
+        dyn_cast_or_null<LLVM::LLVMArrayType>(convertType(op.getType()));
+    if (!variantType)
+      return failure();
+
+    VariantHelper helper(b, op.getLoc(), *getTypeConverter());
+    Value result = helper.materializeLLVMUnion(variantType, adaptor.getValue());
+    if (!result)
+      return failure();
+    b.replaceOp(op, result);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPUnionUnwrap
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(UnionUnwrapOp op, UnionUnwrapOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    Type valueType = convertType(op.getType());
+    if (!valueType)
+      return failure();
+    auto contentType = cast<LLVM::LLVMArrayType>(adaptor.getValue().getType());
+
+    SmallVector<Value> storageValues;
+    for (unsigned i = 0, e = contentType.getNumElements(); i != e; ++i) {
+      storageValues.push_back(
+          b.create<LLVM::ExtractValueOp>(op.getLoc(), adaptor.getValue(), i));
+    }
+
+    VariantHelper helper(b, op.getLoc(), *getTypeConverter());
+    ArrayRef<Value>::iterator valueIt = storageValues.begin();
+    unsigned storageOffset = 0;
+    unsigned offset = 0;
+    Value result =
+        helper.walkAndExtractVariant(valueIt, storageOffset, offset, valueType);
+
+    b.replaceOp(op, result);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1385,6 +1455,9 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPStringAddress,
       ConvertPOPStringSize,
       ConvertPOPSub,
+      ConvertPOPUnionBitcast,
+      ConvertPOPUnionUnwrap,
+      ConvertPOPUnionWrap,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
       ConvertPOPVariantBitcast,
