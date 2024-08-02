@@ -1808,3 +1808,47 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
       Twine("unable to interpret call to unknown external function: " + callee)
           .str());
 }
+
+//===----------------------------------------------------------------------===//
+// UnionBitcastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult UnionBitcastOp::fold(FoldAdaptor adaptor) {
+  auto ptr = dyn_cast_or_null<PointerAttr>(adaptor.getValue());
+  if (!ptr)
+    return {};
+  return PointerAttr::get(ptr.getAddr(), getType());
+}
+
+//===----------------------------------------------------------------------===//
+// UnionWrapOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult UnionWrapOp::fold(FoldAdaptor adaptor) {
+  if (auto attr = dyn_cast_or_null<TypedAttr>(adaptor.getValue()))
+    return UnionAttr::get(attr, getType());
+
+  // Fold `wrap(unwrap(x)) -> x` if the types are the same.
+  if (auto unwrap = getValue().getDefiningOp<UnionUnwrapOp>();
+      unwrap && unwrap.getValue().getType() == getType())
+    return unwrap.getValue();
+
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// UnionUnwrapOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult UnionUnwrapOp::fold(FoldAdaptor adaptor) {
+  if (auto attr = dyn_cast_or_null<UnionAttr>(adaptor.getValue()))
+    if (attr.getValue().getType() == getType())
+      return attr.getValue();
+
+  // Fold `unwrap(wrap(x)) -> x`.
+  if (auto wrap = getValue().getDefiningOp<UnionWrapOp>();
+      wrap && wrap.getValue().getType() == getType())
+    return wrap.getValue();
+
+  return {};
+}

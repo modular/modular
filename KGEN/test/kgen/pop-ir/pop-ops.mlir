@@ -1083,3 +1083,19 @@ kgen.generator @variant_discr_gep<Ts: variadic<type>, dt: dtype>(%arg0: !kgen.po
   %1 = pop.variant.discr_gep %arg1 : <variant<[Ts]>> as <scalar<dt>>
   kgen.return
 }
+
+// CHECK-LABEL: @union_bitcast
+kgen.func @union_bitcast(%arg0: !kgen.pointer<union<i32, i64>>) -> !kgen.pointer<i32> {
+  // CHECK-NEXT: pop.union.bitcast %arg0 : <union<i32, i64>> as <i32>
+  %0 = pop.union.bitcast %arg0 : <union<i32, i64>> as <i32>
+  kgen.return %0 : !kgen.pointer<i32>
+}
+
+// CHECK-LABEL: @union_wrap_unwrap
+kgen.func @union_wrap_unwrap(%arg0: i32) -> i64 {
+  // CHECK-NEXT: %0 = pop.union.wrap %arg0 : i32 as <i64, i32>
+  %0 = pop.union.wrap %arg0 : i32 as <i64, i32>
+  // CHECK-NEXT: %1 = pop.union.unwrap %0 : <i64, i32> as i64
+  %1 = pop.union.unwrap %0 : <i64, i32> as i64
+  kgen.return %1 : i64
+}

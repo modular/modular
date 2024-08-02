@@ -277,3 +277,27 @@ kgen.func @invalid_union() {
   kgen.param.constant: union<i32> = <{:i64 42}>
   kgen.return
 }
+
+// -----
+
+kgen.func @invalid_union_bitcast(%arg0: !kgen.pointer<union<i32>>) {
+  // expected-error @below {{result pointer element type 'i64' is not an element type of '!pop.union<i32>'}}
+  pop.union.bitcast %arg0 : <union<i32>> as <i64>
+  kgen.return
+}
+
+// -----
+
+kgen.func @invalid_union_wrap(%arg0: i32) {
+  // expected-error @below {{operand type 'i32' is not an element type of '!pop.union<i64>'}}
+  %0 = pop.union.wrap %arg0 : i32 as <i64>
+  kgen.return
+}
+
+// -----
+
+kgen.func @invalid_union_unwrap(%arg0: !pop.union<i32>) {
+  // expected-error @below {{result type 'i64' is not an element type of '!pop.union<i32>'}}
+  %0 = pop.union.unwrap %arg0 : <i32> as i64
+  kgen.return
+}

@@ -773,6 +773,46 @@ LogicalResult VariantDiscrGEPOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// UnionBitcastOp
+//===----------------------------------------------------------------------===//
+
+static bool findUnionType(UnionType unionType, Type type) {
+  auto it = llvm::find(unionType.getTypes(), type);
+  return it != unionType.getTypes().end();
+}
+
+static LogicalResult verifyUnionType(Operation *op, UnionType unionType,
+                                     Type type, StringRef desc) {
+  if (findUnionType(unionType, type))
+    return success();
+  return op->emitOpError(desc)
+         << " type " << type << " is not an element type of " << unionType;
+}
+
+LogicalResult UnionBitcastOp::verify() {
+  return verifyUnionType(*this, getValue().getType().getElementAs<UnionType>(),
+                         getType().getElementType(), "result pointer element");
+}
+
+//===----------------------------------------------------------------------===//
+// UnionWrapOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult UnionWrapOp::verify() {
+  return verifyUnionType(*this, getResult().getType(), getValue().getType(),
+                         "operand");
+}
+
+//===----------------------------------------------------------------------===//
+// UnionUnwrapOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult UnionUnwrapOp::verify() {
+  return verifyUnionType(*this, getValue().getType(), getResult().getType(),
+                         "result");
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
