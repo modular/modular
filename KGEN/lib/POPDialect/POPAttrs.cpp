@@ -284,6 +284,14 @@ LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 /// Value is a constant by definition.
 bool SIMDAttr::isConstant() const { return true; }
 
+SIMDAttr SIMDAttr::get(uint64_t intVal, SIMDType type) {
+  DType dtype = *type.getResolvedDType();
+  APInt apVal(dtype.getIntegerWidthInBits(), intVal);
+  APSInt apsVal(std::move(apVal), /*isUnsigned=*/dtype.isUInt());
+  POP::DTypeValue scalarVal(std::move(apsVal), dtype);
+  return SIMDAttr::get(scalarVal, type);
+}
+
 //===----------------------------------------------------------------------===//
 // custom<DTypeValues>
 //===----------------------------------------------------------------------===//

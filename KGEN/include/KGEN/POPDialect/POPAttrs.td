@@ -198,7 +198,8 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
     AttrBuilderWithInferredContext<(ins "DTypeValue":$value,
                                         "SIMDType":$type), [{
       return get(ArrayRef(value), type);
-    }]>
+    }]>,
+    AttrBuilderWithInferredContext<(ins "uint64_t":$intVal, "SIMDType":$type)>
   ];
 
   let genVerifyDecl = 1;
