@@ -48,6 +48,7 @@ class PrefetchLocalityAttr;
 
 class ArrayType;
 class SIMDType;
+class UnionType;
 } // namespace M::KGEN::POP
 
 //===----------------------------------------------------------------------===//

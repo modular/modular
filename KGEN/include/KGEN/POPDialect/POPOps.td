@@ -2112,4 +2112,77 @@ def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// UnionBitcastOp
+//===----------------------------------------------------------------------===//
+
+def POP_UnionBitcastOp : POPOp<"union.bitcast", [Pure]> {
+  let summary = "bitcast a union pointer to an element type";
+  let description = [{
+    The `pop.union.bitcast` operation casts a pointer of a union to a pointer of
+    one of its element types. This operation guarantees reading and writing of
+    the resultant pointer to be inbounds for the underlying union value.
+
+    Example:
+
+    ```mlir
+    %0 = pop.union.bitcast %arg0 : <union<i32, i64>> to <i64>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<POP_UnionType>:$value);
+  let results = (outs PointerType:$result);
+  let assemblyFormat = "$value attr-dict `:` type($value) `as` type($result)";
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// UnionWrapOp
+//===----------------------------------------------------------------------===//
+
+def POP_UnionWrapOp : POPOp<"union.wrap", [Pure]> {
+  let summary = "wrap a value as a union value";
+  let description = [{
+    The `pop.union.wrap` operation wraps a value into a union type where the
+    value type is one of the union element types.
+
+    Example:
+
+    ```mlir
+    %0 = pop.union.wrap %arg0 : i32 as !pop.union<i32, i64>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$value);
+  let results = (outs POP_UnionType:$result);
+  let assemblyFormat = "$value attr-dict `:` type($value) `as` type($result)";
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// UnionUnwrapOp
+//===----------------------------------------------------------------------===//
+
+def POP_UnionUnwrapOp : POPOp<"union.unwrap", [Pure]> {
+  let summary = "unwrap a union as one of its element types";
+  let description = [{
+    The `pop.union.unwrap` operation takes a union and converts it to a value of
+    one of its element types.
+
+    Example:
+
+    ```mlir
+    %0 = pop.union.unwrap %arg0 : !pop.union<i32, i64> as i64
+    ```
+  }];
+
+  let arguments = (ins POP_UnionType:$value);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$value attr-dict `:` type($value) `as` type($result)";
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
 #endif // KGEN_POPDIALECT_POPOPS_TD

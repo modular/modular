@@ -1044,3 +1044,66 @@ kgen.func @variant_bitcast() -> !kgen.pointer<i32> {
   %1 = pop.variant.bitcast %0, <0> : <variant<i32, i64>> as <i32>
   kgen.return %1 : !kgen.pointer<i32>
 }
+
+// CHECK-LABEL: @union_bitcast
+kgen.func @union_bitcast() -> !kgen.pointer<i32> {
+  %0 = kgen.param.constant: pointer<union<i32>> = <0>
+  // CHECK-NEXT: constant: pointer<i32> = <0>
+  %1 = pop.union.bitcast %0 : <union<i32>> as <i32>
+  kgen.return %1 : !kgen.pointer<i32>
+}
+
+// CHECK-LABEL: @union_wrap
+kgen.func @union_wrap() -> !pop.union<i32> {
+  %0 = kgen.param.constant: i32 = <42>
+  // CHECK-NEXT: constant: union<i32> = <{:i32 42}>
+  %1 = pop.union.wrap %0 : i32 as <i32>
+  kgen.return %1 : !pop.union<i32>
+}
+
+// CHECK-LABEL: @union_unwrap
+kgen.func @union_unwrap() -> i32 {
+  %0 = kgen.param.constant: union<i32> = <{:i32 42}>
+  // CHECK-NEXT: constant: i32 = <42>
+  %1 = pop.union.unwrap %0 : <i32> as i32
+  kgen.return %1 : i32
+}
+
+kgen.func @union_unwrap_type() -> i64 {
+  %0 = kgen.param.constant: union<i32, i64> = <{:i32 42}>
+  // CHECK: pop.union.unwrap
+  %1 = pop.union.unwrap %0 : <i32, i64> as i64
+  kgen.return %1 : i64
+}
+
+// CHECK-LABEL: @wrap_unwrap
+kgen.func @wrap_unwrap(%arg0: !pop.union<i32, i64>) -> !pop.union<i32, i64> {
+  %0 = pop.union.unwrap %arg0 : <i32, i64> as i64
+  %1 = pop.union.wrap %0 : i64 as <i32, i64>
+  // CHECK-NEXT: return %arg0
+  kgen.return %1 : !pop.union<i32, i64>
+}
+
+// CHECK-LABEL: @wrap_unwrap_type
+kgen.func @wrap_unwrap_type(%arg0: !pop.union<i32>) -> !pop.union<i32, i64> {
+  // CHECK-NEXT: pop.union.unwrap
+  %0 = pop.union.unwrap %arg0 : <i32> as i32
+  %1 = pop.union.wrap %0 : i32 as <i32, i64>
+  kgen.return %1 : !pop.union<i32, i64>
+}
+
+// CHECK-LABEL: @unwrap_wrap
+kgen.func @unwrap_wrap(%arg0: i32) -> i32 {
+  %0 = pop.union.wrap %arg0 : i32 as <i32, i64>
+  %1 = pop.union.unwrap %0 : <i32, i64> as i32
+  // CHECK-NEXT: return %arg0
+  kgen.return %1 : i32
+}
+
+// CHECK-LABEL: @unwrap_wrap_type
+kgen.func @unwrap_wrap_type(%arg0: i32) -> i64 {
+  // CHECK-NEXT: pop.union.wrap
+  %0 = pop.union.wrap %arg0 : i32 as <i32, i64>
+  %1 = pop.union.unwrap %0 : <i32, i64> as  i64
+  kgen.return %1 : i64
+}
