@@ -2083,6 +2083,7 @@ fn copy_sram_to_dram[
     var dst_fragments = dst.distribute[thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
+    var thread_offset = offset + dst_fragments.distance(dst.ptr)
 
     @parameter
     if src_type == dst_type:
@@ -2102,20 +2103,23 @@ fn copy_sram_to_dram[
         ]()
 
         alias num_stores_per_thread = dst_fragments.layout.size()
+        alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
+        alias dst_align = alignof[SIMD[dst_type, simd_size]]()
 
         @parameter
         for i in range(num_stores_per_thread):
             alias src_idx = src_fragments.layout(i)
+            alias dst_idx = dst_fragments.layout(i)
+
             var m: Int
             var n: Int
-            m, n = divmod(offset + src_idx, cols)
+            m, n = divmod(thread_offset + src_idx, cols)
             if m < rows:
-                dst_fragments.aligned_store[simd_size](
-                    i,
-                    0,
-                    src_fragments.aligned_load[simd_size](i, 0).cast[
-                        dst_type
-                    ](),
+                var src_vec = (src_fragments.ptr + src_idx).load[
+                    width=simd_size, alignment=src_align
+                ]()
+                dst_fragments.ptr.store[alignment=dst_align](
+                    dst_idx, src_vec.cast[dst_type]()
                 )
 
 
