@@ -946,6 +946,24 @@ struct Bencher:
         var stop = time.perf_counter_ns()
         self.elapsed = stop - start
 
+    fn iter_preproc[
+        iter_fn: fn () capturing -> None, preproc_fn: fn () capturing -> None
+    ](inout self):
+        """Returns the total elapsed time by running a target function a particular
+        number of times.
+
+        Parameters:
+            iter_fn: The target function to benchmark.
+            preproc_fn: The function to preprocess the target function.
+        """
+
+        for _ in range(self.num_iters):
+            preproc_fn()
+            var start = time.perf_counter_ns()
+            iter_fn()
+            var stop = time.perf_counter_ns()
+            self.elapsed += stop - start
+
     fn iter_custom[iter_fn: fn (Int) capturing -> Int](inout self):
         """Times a target function with custom number of iterations.
 
