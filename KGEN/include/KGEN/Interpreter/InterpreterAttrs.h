@@ -19,6 +19,30 @@
 namespace M {
 enum class MemoryKind : uint8_t { Heap, Stack, ConstGlobal, Persistent };
 
+struct OwnedAlignedBlob {
+  uint64_t align;
+  std::string data;
+  bool isString;
+};
+
+struct AlignedBlob {
+  AlignedBlob(uint64_t align = 0, ArrayRef<char> data = {},
+              bool isString = false)
+      : align(align), data(data), isString(isString) {}
+  AlignedBlob(OwnedAlignedBlob blob)
+      : align(blob.align), data(blob.data.data(), blob.data.size()),
+        isString(blob.isString) {}
+
+  bool operator==(const AlignedBlob &other) const {
+    return std::tie(align, data, isString) ==
+           std::tie(other.align, other.data, other.isString);
+  }
+
+  uint64_t align;
+  ArrayRef<char> data;
+  bool isString;
+};
+
 /// A pointer region is a chunk of memory in the reference blob that
 /// represents a pointer.
 struct PointerRegion {

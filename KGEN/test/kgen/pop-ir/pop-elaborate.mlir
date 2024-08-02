@@ -1,5 +1,20 @@
 // RUN: kgen-opt -elaborate-generators --kgen-print-inline-type-values %s | FileCheck %s
 
+// NOTE: Bytes are encoded backwards in resource blobs.
+
+#mem = #interp.memory_handle<32, "0xADDEEFBE">
+#stack = #interp.memory_handle<32, "0xADDE">
+#some_ptr = #interp.memory_handle<32, "0xEFBE">
+#pointer = #interp.memory_handle<64, "0x000000000000000000F2052A01000000">
+#string = #interp.memory_handle<16, "hello world" string>
+// CHECK-DAG: [[RETURN_HEAP:#.*]] = #interp.memory_handle<8192, "0xADDEEFBE">
+// CHECK-DAG: [[MODIFY_STACK_MEM:#.*]] = #interp.memory_handle<32, "0x0000">
+// COM: 0x77359400 -> 2000000000, the base stack address
+// CHECK-DAG: [[RETURN_POINTER:#.*]] = #interp.memory_handle<64, "0x00000000000000000094357700000000">
+// CHECK-DAG: [[RETURN_POINTER_1:#.*]] = #interp.memory_handle<32, "0xEFBE">
+// CHECK-DAG: [[FREED_CONCRETE_MEM:#.*]]:
+// CHECK-DAG: [[STRING:#.*]] = #interp.memory_handle<16, "hello world" string>
+
 kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32
   pop.store %arg0, %0 : !kgen.pointer<i32>
@@ -279,23 +294,23 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
     :(!kgen.pointer<i16>, !kgen.pointer<i16>) -> i16 @copy_load,
-    #interp.memref<[(mem, heap, [])], 0, 2>, #interp.memref<[(mem, heap, [])], 0, 0>)>
+    #interp.memref<[(#mem, heap, [])], 0, 2>, #interp.memref<[(#mem, heap, [])], 0, 0>)>
 
   // CHECK-NEXT: <#interp.memref<[([[MODIFY_STACK_MEM:.*]], stack, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(
     :(!kgen.pointer<i16>) -> !kgen.pointer<i16> @modify_stack_mem,
-    #interp.memref<[(stack, stack, [])], 0, 0>)>
+    #interp.memref<[(#stack, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <#interp.memref<[([[RETURN_POINTER:.*]], heap, [(8, 1, 0)]),
   // CHECK-SAME:             ([[RETURN_POINTER_1:.*]], stack, [])], 0, 8>>
   kgen.param.constant: !kgen.pointer<pointer<i16>> = <apply(
     :(!kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> @return_pointer_to_pointer,
-    #interp.memref<[(some_ptr, stack, [])], 0, 0>)>
+    #interp.memref<[(#some_ptr, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
     :(!kgen.pointer<pointer<i16>>) -> i16 @load_pointer_to_pointer,
-    #interp.memref<[(pointer, stack, [(8, 1, 0)]), (stack, stack, [])], 0, 0>)>
+    #interp.memref<[(#pointer, stack, [(8, 1, 0)]), (#stack, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <0>
   kgen.param.constant: index = <apply(
@@ -305,10 +320,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: pointer<i16> = <apply(:() -> !kgen.pointer<i16> @freed_memory)>
 
   // COM: `ord("hello world"[2]) -> 108`.
-  // CHECK-NEXT: <{ 108, #interp.memref<[(string, const_global, [])], 0, 4> }>
+  // CHECK-NEXT: <{ 108, #interp.memref<[([[STRING]], const_global, [])], 0, 4> }>
   kgen.param.constant: struct<(i8, pointer<i8>)> = <apply(
     :(!kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> @const_string,
-    #interp.memref<[(string, const_global, [])], 0, 2>)>
+    #interp.memref<[(#string, const_global, [])], 0, 2>)>
 
   // CHECK-NEXT: <1>
   kgen.param.constant = <apply(:(index) -> index @region_parameter, 1)>
@@ -356,26 +371,3 @@ kgen.generator export @do_it() {
 
   kgen.return
 }
-
-// NOTE: Bytes are encoded backwards in resource blobs.
-{-#
-  // CHECK: dialect_resources
-  dialect_resources: {
-    // CHECK-NEXT: interp: {
-    interp: {
-      mem: "0x20000000ADDEEFBE",
-      stack: "0x20000000ADDE",
-      some_ptr: "0x20000000EFBE",
-      pointer: "0x40000000000000000000000000F2052A01000000",
-      string: "hello world"
-      // CHECK-NEXT: [[RETURN_HEAP]]: "0x00200000ADDEEFBE"
-      // CHECK-NEXT: [[MODIFY_STACK_MEM]]: "0x200000000000"
-      // COM: 0x77359400 -> 2000000000, the base stack address
-      // CHECK-NEXT: [[RETURN_POINTER]]: "0x4000000000000000000000000094357700000000"
-      // CHECK-NEXT: [[RETURN_POINTER_1]]: "0x20000000EFBE"
-      // CHECK-NEXT: [[FREED_CONCRETE_MEM]]:
-      // CHECK-NEXT: string: "hello world"
-    // CHECK-NEXT: }
-    }
-  }
-#-}

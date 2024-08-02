@@ -144,13 +144,15 @@ mlir::AsmResourceBlob *MemoryHandle::getBlob() {
 }
 
 //===----------------------------------------------------------------------===//
-// MOpAsmDialectInterface
+// InterpreterDialectOpAsmDialectInterface
 //===----------------------------------------------------------------------===//
 
 namespace {
-class MOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
+class InterpreterDialectOpAsmDialectInterface
+    : public mlir::OpAsmDialectInterface {
 public:
-  MOpAsmDialectInterface(Dialect *dialect, DialectResourceManager &blobMgr)
+  InterpreterDialectOpAsmDialectInterface(Dialect *dialect,
+                                          DialectResourceManager &blobMgr)
       : OpAsmDialectInterface(dialect), blobMgr(blobMgr) {}
 
   std::string
@@ -201,6 +203,14 @@ public:
     }
   }
 
+  AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    if (isa<MemoryHandleAttr>(attr)) {
+      os << "memory_handle";
+      return AliasResult::OverridableAlias;
+    }
+    return AliasResult::NoAlias;
+  }
+
 private:
   /// The blob manager.
   DialectResourceManager &blobMgr;
@@ -215,6 +225,21 @@ using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;
 using mlir::readResourceHandle;
+
+static LogicalResult readAlignedBlob(DialectBytecodeReader &reader,
+                                     AlignedBlob &blob) {
+  if (failed(reader.readVarInt(blob.align)) ||
+      failed(reader.readBlob(blob.data)) ||
+      failed(reader.readBool(blob.isString)))
+    return failure();
+  return success();
+}
+
+static void writeAlignedBlob(DialectBytecodeWriter &writer, AlignedBlob blob) {
+  writer.writeVarInt(blob.align);
+  writer.writeOwnedBlob(blob.data);
+  writer.writeOwnedBool(blob.isString);
+}
 
 static LogicalResult
 readPointerRegions(DialectBytecodeReader &reader,
@@ -282,7 +307,7 @@ void InterpreterDialect::initialize() {
   registerAttributes();
 
   auto &blobMgr = addInterface<DialectResourceManager>();
-  addInterface<MOpAsmDialectInterface>(blobMgr);
+  addInterface<InterpreterDialectOpAsmDialectInterface>(blobMgr);
   addInterface<InterpreterDialectBytecodeInterface>();
 }
 

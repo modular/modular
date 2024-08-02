@@ -8,6 +8,7 @@
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -24,14 +25,57 @@ void InterpreterDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// MemoryHandleAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseAlignedHex(AsmParser &p, OwnedAlignedBlob &blob) {
+  // Parse the alignment and then hex data.
+  std::string hex;
+  llvm::SMLoc loc;
+  if (p.parseInteger(blob.align) || p.parseComma() ||
+      p.getCurrentLocation(&loc) || p.parseString(&hex))
+    return failure();
+  blob.isString = succeeded(p.parseOptionalKeyword("string"));
+  if (blob.isString) {
+    blob.data = std::move(hex);
+    return success();
+  }
+  StringRef str = hex;
+  if (!str.consume_front("0x") || !llvm::tryGetFromHex(str, blob.data))
+    return p.emitError(loc, "expected a hex string blob");
+  return success();
+}
+
+static void printAlignedHex(AsmPrinter &p, AlignedBlob blob) {
+  p << blob.align << ", \"";
+  StringRef str(blob.data.data(), blob.data.size());
+  if (blob.isString)
+    llvm::printEscapedString(str, p.getStream());
+  else
+    p << "0x" << llvm::toHex(str);
+  p << '"';
+  if (blob.isString)
+    p << " string";
+}
+
+MemoryHandleAttr MemoryHandleAttr::get(MLIRContext *ctx, StringRef str) {
+  return get(ctx, AlignedBlob(/*align=*/16, {str.data(), str.size()},
+                              /*isString=*/true));
+}
+
+namespace M {
+static llvm::hash_code hash_value(AlignedBlob blob) {
+  return llvm::hash_combine(blob.align, blob.data, blob.isString);
+}
+} // namespace M
+
+//===----------------------------------------------------------------------===//
 // MemoryBlobAttr
 //===----------------------------------------------------------------------===//
 
 Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
-  if (p.parseLParen())
-    return {};
-  FailureOr<MemoryHandle> hdl = p.parseResourceHandle<MemoryHandle>();
-  if (failed(hdl))
+  MemoryHandleAttr hdl;
+  if (p.parseLParen() || p.parseAttribute(hdl))
     return {};
   StringRef kindStr;
   SmallVector<PointerRegion> pointerRegions;
@@ -55,13 +99,11 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
                         .Case("heap", MemoryKind::Heap)
                         .Case("const_global", MemoryKind::ConstGlobal)
                         .Case("persistent", MemoryKind::Persistent);
-  return get(*hdl, kind, pointerRegions);
+  return get(hdl, kind, pointerRegions);
 }
 
 void MemoryBlobAttr::print(AsmPrinter &p) const {
-  p << '(';
-  p.printResourceHandle(getHandle());
-  p << ", ";
+  p << '(' << getHandle() << ", ";
   switch (getKind()) {
   case MemoryKind::Stack:
     p << "stack";

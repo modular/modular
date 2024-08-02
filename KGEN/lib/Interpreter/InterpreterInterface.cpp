@@ -34,7 +34,7 @@ static constexpr int64_t kPersistentBaseAddr =
     kConstGlobalBaseAddr + kTableSize;
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
-    : ctx(ctx), target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
+    : ctx(ctx), target(target),
       memory{{MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize},
              {MemoryKind::Stack, kStackBaseAddr, kStackBaseAddr + kTableSize},
              {MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
@@ -46,11 +46,10 @@ InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
 
 InterpreterState::MemoryBlob::MemoryBlob(int64_t baseAddr, size_t size,
-                                         size_t align,
-                                         std::optional<MemoryHandle> hdl)
+                                         size_t align, MemoryHandleAttr hdl)
     : baseAddr(baseAddr), size(size), align(align),
       memory(
-          hdl ? MemoryT(*hdl)
+          hdl ? MemoryT(hdl)
               : MemoryT(OwnedMemory(alignedAlloc(align, size), &alignedFree))) {
 }
 
@@ -85,7 +84,7 @@ ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
 
 ErrorOr<InterpreterState::MemoryBlob &>
 InterpreterState::MemoryTable::addBlob(size_t size, size_t align,
-                                       std::optional<MemoryHandle> hdl) {
+                                       MemoryHandleAttr hdl) {
   // Pick the base address of the new blob.
   int64_t baseAddr = minAddr;
   if (!blobs.empty()) {
@@ -188,7 +187,7 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
   return success();
 }
 
-ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandle hdl) {
+ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandleAttr hdl) {
   // Look for an existing mapped blob for the handle.
   MemoryTable &table = getTable(MemoryKind::ConstGlobal);
   for (const MemoryBlob &blob : table.blobs)
@@ -196,9 +195,8 @@ ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandle hdl) {
       return blob.baseAddr;
 
   // Otherwise, try to map it in.
-  mlir::AsmResourceBlob *mem = hdl.getBlob();
   ErrorOr<MemoryBlob &> blob =
-      table.addBlob(mem->getData().size(), mem->getDataAlignment(), hdl);
+      table.addBlob(hdl.getSize(), hdl.getAlign(), hdl);
   if (blob.isError())
     return blob.takeError();
   return blob->baseAddr;
@@ -402,10 +400,13 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
 
         // Add the new blob value to the blob manager if one with the same value
         // does not already exist.
-        MemoryHandle hdl =
-            blob.isOwned() ? blobMgr.getOrAddBlobResource(blob.getOwned(),
-                                                          blob.size, blob.align)
-                           : blob.getHandle();
+        MemoryHandleAttr hdl;
+        if (blob.isOwned()) {
+          ArrayRef<char> dataRef((const char *)blob.getOwned(), blob.size);
+          hdl = MemoryHandleAttr::get(ctx, blob.align, dataRef);
+        } else {
+          hdl = blob.getHandle();
+        }
         blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions));
       }
     }
@@ -456,20 +457,19 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       MemoryTable &table = getTable(blob.getKind());
 
       // Constant global is mapped directly into the interpreter.
-      std::optional<MemoryHandle> hdl;
+      MemoryHandleAttr hdl;
       if (blob.getKind() == MemoryKind::ConstGlobal)
         hdl = blob.getHandle();
 
       // Initialize the memory.
-      mlir::AsmResourceBlob *asmBlob = blob.getHandle().getBlob();
+      MemoryHandleAttr asmBlob = blob.getHandle();
       map.blobs.emplace_back(&table, table.blobs.size());
-      ErrorOr<MemoryBlob &> mem = table.addBlob(
-          asmBlob->getData().size(), asmBlob->getDataAlignment(), hdl);
+      ErrorOr<MemoryBlob &> mem =
+          table.addBlob(asmBlob.getSize(), asmBlob.getAlign(), hdl);
       if (mem.isError())
         return mem.takeError();
       if (!hdl)
-        memcpy(mem->getOwned(), asmBlob->getData().data(),
-               asmBlob->getData().size());
+        memcpy(mem->getOwned(), asmBlob.getData(), asmBlob.getSize());
     }
 
     // Now that all the blobs have been processed, map any pointer values.
