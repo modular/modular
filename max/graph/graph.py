@@ -198,7 +198,12 @@ class Graph:
 
     def _add_op(self, op, *args, **kwargs) -> list[GraphValue]:
         def unwrap(arg):
-            return arg._mlir_value if isinstance(arg, GraphValue) else arg
+            if isinstance(arg, GraphValue):
+                return arg._mlir_value
+            if isinstance(arg, list):
+                return [unwrap(elem) for elem in arg]
+            else:
+                return arg
 
         args = [unwrap(arg) for arg in args]
         kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}

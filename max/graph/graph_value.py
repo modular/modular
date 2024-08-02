@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Union, Iterable
 
 import numpy as np
 from max import mlir
@@ -68,6 +68,13 @@ class GraphValue:
 
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)
+
+    def __getitem__(self, index):
+        if isinstance(index, Iterable):
+            return ops.slice_tensor(self, index)
+        else:
+            # Need to wrap it to make it iterable
+            return ops.slice_tensor(self, [index])
 
     def __add__(self, rhs: GraphValue) -> GraphValue:
         """Element-wise addition.

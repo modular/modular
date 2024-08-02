@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
+from typing import Union
+
 import numpy as np
 from max import _graph
 from max.mlir.dialects import mo
@@ -33,6 +35,18 @@ def constant(value: np.ndarray) -> GraphValue:
         DType.from_numpy(value.dtype), value.shape
     ).to_mlir()
     array_attr = _graph.array_attr("value", value, tensor_type)
+    return Graph.current._add_op(
+        mo.constant, result=tensor_type, value=array_attr
+    )[0]
+
+
+def scalar(value: Union[int, float], dtype: DType, rank: int = 0) -> GraphValue:
+    """Creates a scalar in the graph and returns the value.
+
+    A scalar is a tensor with a single element. Generally scalars are of rank 0, but that is configurable.
+    """
+    tensor_type = TensorType(dtype, [1] * rank).to_mlir()
+    array_attr = _graph.array_attr("value", np.array([value]), tensor_type)
     return Graph.current._add_op(
         mo.constant, result=tensor_type, value=array_attr
     )[0]
