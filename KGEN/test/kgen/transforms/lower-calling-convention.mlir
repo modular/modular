@@ -236,3 +236,35 @@ kgen.func @noargs_create_reg_stub() -> !kgen.signature<() -> !kgen.none> {
   %0 = kgen.create_reg_stub [() -> !kgen.none: @noargs_create_reg_stub] : <() -> !kgen.none>
   kgen.return %0 : !kgen.signature<() -> !kgen.none>
 }
+
+// CHECK-LABEL: @lower_variants
+kgen.func @lower_variants(%arg0: i64) {
+  // CHECK-NEXT: kgen.param.constant: struct<(union<i32, i64>, scalar<ui8>)> = <{ {:i32 44}, 0 }>
+  kgen.param.constant: variant<i32, i64> = <#kgen.variant<:i32 44, 0>>
+
+  // CHECK-NEXT: [[UNION:%.*]] = pop.union.wrap %arg0 : i64 as <i32, i64>
+  // CHECK-NEXT: [[DISCR:%.*]] = kgen.param.constant: scalar<ui8> = <1>
+  // CHECK-NEXT: [[VARIANT:%.*]] = kgen.struct.create([[UNION]], [[DISCR]]) : !kgen.struct<(union<i32, i64>, scalar<ui8>)>
+  %0 = kgen.variant.create %arg0, 1 : <i32, i64>
+
+  // CHECK-NEXT: [[DISCR:%.*]] = kgen.struct.extract [[VARIANT]][1]
+  // CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: scalar<ui8> = <0>
+  // CHECK-NEXT: [[EQ:%.*]] = pop.cmp eq([[DISCR]], [[ZERO]])
+  // CHECK-NEXT: pop.cast_to_builtin [[EQ]] : !pop.scalar<bool> to i1
+  %1 = kgen.variant.is %0, 0 : <i32, i64>
+
+  // CHECK-NEXT: [[UNION:%.*]] = kgen.struct.extract [[VARIANT]][0]
+  // CHECK-NEXT: pop.union.unwrap [[UNION]] : <i32, i64> as i32
+  %2 = kgen.variant.get %0, 0 : <i32, i64>
+
+  // CHECK-NEXT: [[ALLOC:%.*]] = pop.stack_allocation
+  %3 = pop.stack_allocation 1 x variant<i32, i64>
+
+  // CHECK-NEXT: [[UNION:%.*]] = kgen.struct.gep [[ALLOC]][0]
+  // CHECK-NEXT: pop.union.bitcast [[UNION]] : <union<i32, i64>> as <i64>
+  %4 = pop.variant.bitcast %3, <1> : <variant<i32, i64>> as <i64>
+
+  // CHECK-NEXT: kgen.struct.gep [[ALLOC]][1]
+  %5 = pop.variant.discr_gep %3 : <variant<i32, i64>> as <scalar<ui8>>
+  kgen.return
+}

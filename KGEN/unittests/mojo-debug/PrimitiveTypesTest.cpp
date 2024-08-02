@@ -252,8 +252,9 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
             "(simd<2, index>) c_simd = ([0] = 5, [1] = 6)\n");
   EXPECT_EQ(
       ctx.runCommand("v a_float_or_bool_or_simd").output,
-      R"((variant<scalar<f64>, i1, simd<2, index>>) a_float_or_bool_or_simd = {
-  variant[2] = ([0] = 5, [1] = 6)
+      R"((struct<(union<scalar<f64>, i1, simd<2, index>>, scalar<ui8>)>) a_float_or_bool_or_simd = {
+  [0] =
+  [1] = ([0] = 2)
 }
 )");
   EXPECT_EQ(ctx.runCommand("v none").output, "(None) none = None\n");

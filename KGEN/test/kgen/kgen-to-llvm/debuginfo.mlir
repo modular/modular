@@ -4,7 +4,7 @@
 !pointerTest = !kgen.pointer<index>
 !voidPointerTest = !kgen.pointer<none>
 !structTest = !kgen.struct<(index, struct<(index)>)>
-!variantTest = !kgen.variant<index, index>
+!variantTest = !pop.union<index, index>
 !signatureTest = !kgen.signature<(index) -> index>
 
 // CHECK-DAG: ![[INDEX:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
@@ -20,13 +20,9 @@
 // CHECK-DAG: ![[STRUCT_MEMBER:.*]] = !debuginfo.member<m1: ![[INNER_STRUCT]]>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<"!kgen.struct<(index, struct<(index)>)>"(![[MEMBER0]], ![[STRUCT_MEMBER]])>
 
-// CHECK-DAG: ![[I1:.*]] = !debuginfo.basic<i8 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>
-// CHECK-DAG: ![[DISCR:.*]] = !debuginfo.member<discr: ![[I1]]>
 // CHECK-DAG: ![[VARIANT0:.*]] = !debuginfo.member<v0: ![[INDEX]]>
 // CHECK-DAG: ![[VARIANT1:.*]] = !debuginfo.member<v1: ![[INDEX]]>
-// CHECK-DAG: ![[VARIANT:.*]] = !debuginfo.variant<""(![[VARIANT0]], ![[VARIANT1]]), ![[DISCR]] {sizeInBits = 64, alignInBits = 64}>
-// CHECK-DAG: ![[UNION:.*]] = !debuginfo.member<"": ![[VARIANT]]>
-// CHECK-DAG: ![[VARIANT_TYPE:.*]] = !debuginfo.struct<"!kgen.variant<index, index>"(![[UNION]], ![[DISCR]])>
+// CHECK-DAG: ![[VARIANT:.*]] = !debuginfo.variant<""(![[VARIANT0]], ![[VARIANT1]]) {sizeInBits = 64, alignInBits = 64}>
 
 // CHECK-DAG: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<(![[INDEX]]) -> (![[INDEX]]): DW_CC_normal>
 // CHECK-DAG: ![[SIGNATURE:.*]] = !debuginfo.ptr<![[SUBROUTINE]] {sizeInBits = 64, alignInBits = 64}>
@@ -37,7 +33,7 @@
 // CHECK-DAG: ![[DATA_MEMBER:.*]] = !debuginfo.member<data: ![[CHAR_PTR]]>
 // CHECK-DAG: ![[STRING:.*]] = !debuginfo.struct<"!kgen.string"(![[DATA_MEMBER]], ![[SIZE_MEMBER]])>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT_TYPE]], ![[SIGNATURE]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
+// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT]], ![[SIGNATURE]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
   !debuginfo.unresolved<!pointerTest>,

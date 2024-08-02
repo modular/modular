@@ -84,6 +84,33 @@ static StructAttr lowerPackAttrToStruct(PackAttr pack) {
   return StructAttr::get(pack.getValues(), structType);
 }
 
+/// Lower `!kgen.variant` to a pair of `!pop.union` and a `!pop.scalar`.
+static StructType lowerVariantType(VariantType type) {
+  SmallVector<Type> types = llvm::to_vector(type.getTypes());
+  auto unionType = POP::UnionType::get(type.getContext(), types);
+  // Get the unsigned integer dtype with the right width.
+  size_t discrWidth = type.getDiscrSizeInBits();
+  FailureOr<DType> discrType = DType::getInt(discrWidth, /*isSigned=*/false);
+  assert(succeeded(discrType) && "expected to get a discriminant dtype");
+
+  return StructType::get(
+      {unionType,
+       POP::SIMDType::get(type.getContext(), /*size=*/1, *discrType)});
+}
+
+/// Lower `#kgen.variant` to a struct attribute.
+static StructAttr lowerVariantAttr(VariantAttr attr) {
+  StructType structType = lowerVariantType(attr.getType());
+
+  auto unionType = cast<POP::UnionType>(structType.getElementTypes().front());
+  auto unionAttr = POP::UnionAttr::get(attr.getValue(), unionType);
+
+  auto scalarType = cast<POP::SIMDType>(structType.getElementTypes().back());
+  auto discrAttr = POP::SIMDAttr::get(attr.getIndex(), scalarType);
+
+  return StructAttr::get({unionAttr, discrAttr}, structType);
+}
+
 static void lowerCreateRegStubOp(mlir::IRRewriter &b, CreateRegStubOp op) {
   SignatureType resSig = op.getResult().getType();
   SignatureType calleeSig = cast<SignatureType>(op.getCallee().getType());
@@ -253,6 +280,53 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     return;
   }
 
+  // Handle variant operations.
+  if (auto create = dyn_cast<VariantCreateOp>(op)) {
+    auto structType = cast<StructType>(create->getResultTypes().front());
+    auto unionType = cast<POP::UnionType>(structType.getElementTypes().front());
+    auto discrType = cast<POP::SIMDType>(structType.getElementTypes().back());
+    Value unionVal = b.create<POP::UnionWrapOp>(op->getLoc(), unionType,
+                                                create.getOperand());
+    Value discrVal = b.create<ParamConstantOp>(
+        op->getLoc(), POP::SIMDAttr::get(create.getIndex(), discrType));
+    b.replaceOpWithNewOp<StructCreateOp>(op, structType,
+                                         ValueRange{unionVal, discrVal});
+    return;
+  }
+  if (auto is = dyn_cast<VariantIsOp>(op)) {
+    Value variantVal = is->getOperand(0);
+    auto structType = cast<StructType>(variantVal.getType());
+    auto discrType = cast<POP::SIMDType>(structType.getElementTypes().back());
+    Value discrVal =
+        b.create<StructExtractOp>(op->getLoc(), variantVal, /*index=*/1);
+    Value discrCst = b.create<ParamConstantOp>(
+        op->getLoc(), POP::SIMDAttr::get(is.getIndex(), discrType));
+    Value isEq = b.create<POP::CmpOp>(op->getLoc(), POP::CmpPredicate::EQ,
+                                      discrVal, discrCst);
+    b.replaceOpWithNewOp<POP::CastToBuiltinOp>(op, b.getI1Type(), isEq);
+    return;
+  }
+  if (auto get = dyn_cast<VariantGetOp>(op)) {
+    Value variantVal = get->getOperand(0);
+    Value unionVal =
+        b.create<StructExtractOp>(op->getLoc(), variantVal, /*index=*/0);
+    b.replaceOpWithNewOp<POP::UnionUnwrapOp>(op, get.getType(), unionVal);
+    return;
+  }
+  if (auto bitcast = dyn_cast<POP::VariantBitcastOp>(op)) {
+    Value variantPtr = bitcast->getOperand(0);
+    Value unionPtr =
+        b.create<StructGEPOp>(op->getLoc(), variantPtr, /*index=*/0);
+    b.replaceOpWithNewOp<POP::UnionBitcastOp>(op, bitcast.getType(), unionPtr);
+    return;
+  }
+  if (auto gep = dyn_cast<POP::VariantDiscrGEPOp>(op)) {
+    Value variantPtr = gep->getOperand(0);
+    b.replaceOpWithNewOp<StructGEPOp>(op, variantPtr, /*index=*/1);
+    return;
+  }
+
+  // Handle thunking operations.
   if (auto createRegStubOp = dyn_cast<CreateRegStubOp>(op)) {
     lowerCreateRegStubOp(b, createRegStubOp);
     return;
@@ -275,6 +349,8 @@ void LowerCallingConventionsPass::runOnOperation() {
   replacer.addReplacement(removeDINoneResults);
   replacer.addReplacement(lowerPackTypeToStruct);
   replacer.addReplacement(lowerPackAttrToStruct);
+  replacer.addReplacement(lowerVariantType);
+  replacer.addReplacement(lowerVariantAttr);
 
   rewriteFn(getOperation(), replacer);
 }

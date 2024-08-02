@@ -25,7 +25,6 @@ namespace M::KGEN {
 class KGENDType;
 class ParamRefType;
 class PointerType;
-class VariantType;
 class NoneType;
 class SignatureType;
 class StringType;
@@ -34,6 +33,7 @@ class StructType;
 namespace POP {
 class ArrayType;
 class SIMDType;
+class UnionType;
 } // namespace POP
 
 namespace CO {
@@ -328,7 +328,7 @@ private:
   DebugInfo::DIType buildDebugType(ParamRefType type);
   DebugInfo::DIType buildDebugType(StringType type);
   DebugInfo::DIType buildDebugType(SignatureType type);
-  DebugInfo::DIType buildDebugType(KGEN::VariantType type);
+  DebugInfo::DIType buildDebugType(POP::UnionType type);
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
   DebugInfo::DIType buildDebugType(CO::CoroutineType type);

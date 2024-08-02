@@ -172,14 +172,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(ParamRefType type) {
   llvm_unreachable("unresolved type parameter in debuginfo");
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::VariantType type) {
-  // This must be kept in sync with how KGEN VariantTypes are represented in
-  // LLVM.
-  DIType discriminatorType = convertDebugType(
-      IntegerType::get(type.getContext(), type.getDiscrSizeInBits()));
-  DIMemberType discriminatorPart =
-      DIMemberType::get("discr", discriminatorType);
-
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::UnionType type) {
   SmallVector<DIMemberType> variantMembers;
   uint64_t maxMemberSizeInBits = 0;
   for (auto [index, member] : llvm::enumerate(type.getTypes())) {
@@ -189,14 +182,9 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::VariantType type) {
         std::max(maxMemberSizeInBits, debugType.getSizeInBits());
   }
 
-  DIVariantType variantPart = DIVariantType::get(
+  return DIVariantType::get(
       StringAttr::get(type.getContext(), ""), maxMemberSizeInBits,
-      *type.getTypeAlign(tc.getTarget()) * CHAR_BIT, variantMembers,
-      discriminatorPart);
-
-  return DIStructType::get(
-      StringAttr::get(type.getContext(), mlir::debugString(type)),
-      {DIMemberType::get("", variantPart), discriminatorPart});
+      *type.getTypeAlign(tc.getTarget()) * CHAR_BIT, variantMembers);
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::NoneType type) {
@@ -250,7 +238,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
   addConversion([&](ParamRefType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
   addConversion([&](SignatureType type) { return buildDebugType(type); });
-  addConversion([&](KGEN::VariantType type) { return buildDebugType(type); });
+  addConversion([&](POP::UnionType type) { return buildDebugType(type); });
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
   addConversion([&](CO::CoroutineType type) { return buildDebugType(type); });
