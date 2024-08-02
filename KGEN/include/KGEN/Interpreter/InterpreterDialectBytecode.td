@@ -18,18 +18,25 @@ def PointerAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def AlignedBlob :
+  WithParser<"succeeded(readAlignedBlob($_reader, $_var))",
+  WithPrinter<"writeAlignedBlob($_writer, $_getter)",
+  WithType<"AlignedBlob">>>;
+
+def MemoryHandleAttr : DialectAttribute<(attr
+  AlignedBlob:$memory
+)>;
+
 def PointerRegions :
   WithParser<"succeeded(readPointerRegions($_reader, $_var))",
   WithPrinter<"writePointerRegions($_writer, $_getter)",
   WithType<"SmallVector<PointerRegion>">>>;
 
 def MemoryBlobAttr : DialectAttribute<(attr
-  ResourceHandle<"MemoryHandle">:$handle,
+  MemoryHandleAttr:$handle,
   EnumAttr<"MemoryKind">:$kind,
   PointerRegions:$pointerRegions
-)> {
-  let cBuilder = "get<$_resultType>(context, *handle, kind, pointerRegions)";
-}
+)>;
 
 def MemorySpaceAttr : DialectAttribute<(attr
   ConcreteAttrArray<"MemoryBlobAttr">:$value
@@ -50,6 +57,7 @@ def StoreToMemAttr : DialectAttribute<(attr
 def InterpreterDialectAttributes : DialectAttributes<"interp"> {
   let elems = [
     PointerAttr,
+    MemoryHandleAttr,
     MemoryBlobAttr,
     MemorySpaceAttr,
     MemRefAttr,

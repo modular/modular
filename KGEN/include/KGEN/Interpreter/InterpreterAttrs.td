@@ -104,6 +104,48 @@ def StoreToMemAttr : InterpreterAttr<"StoreToMem", "store_to_mem",
 }
 
 //===----------------------------------------------------------------------===//
+// MemoryHandleAttr
+//===----------------------------------------------------------------------===//
+
+def AlignedBlob : AttrParameter<"AlignedBlob", "an aligned byte array"> {
+  let allocator = [{
+    {
+      size_t blobSize = $_self.data.size();
+      void *blobMemory = $_allocator.allocate(blobSize, $_self.align);
+      memcpy(blobMemory, $_self.data.data(), blobSize);
+      ArrayRef<char> data((const char *)blobMemory, blobSize);
+      $_dst = AlignedBlob($_self.align, data, $_self.isString);
+    }
+  }];
+  let cppStorageType = "OwnedAlignedBlob";
+}
+
+def MemoryHandleAttr : InterpreterAttr<"MemoryHandle", "memory_handle"> {
+  let summary = "reference to a physical blob of memory";
+  let description = [{
+    The `#interp.memory_handle` attribute contains an array of aligned bytes. It
+    is the backing memory of materialized interpreter memory blobs.
+  }];
+
+  let parameters = (ins AlignedBlob:$memory);
+  let assemblyFormat = "`<` custom<AlignedHex>($memory) `>`";
+
+  let builders = [
+    AttrBuilder<(ins "uint64_t":$align, "ArrayRef<char>":$memory), [{
+      return $_get($_ctxt, AlignedBlob{align, memory, /*isString=*/false});
+    }]>,
+    AttrBuilder<(ins "StringRef":$str)>
+  ];
+
+  let extraClassDeclaration = [{
+    const char *getData() { return getMemory().data.data(); }
+    size_t getSize() {  return getMemory().data.size(); }
+    uint64_t getAlign() { return getMemory().align; }
+    bool isString() { return getMemory().isString; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // MemoryBlobAttr
 //===----------------------------------------------------------------------===//
 
@@ -117,18 +159,17 @@ def MemoryBlobAttr : InterpreterAttr<"MemoryBlob", "memory_blob"> {
   }];
 
   let parameters = (ins
-    ResourceHandleParameter<"MemoryHandle">:$handle,
+    "MemoryHandleAttr":$handle,
     "MemoryKind":$kind,
     ArrayRefParameter<"PointerRegion">:$pointerRegions
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-        "MemoryHandle":$handle,
+        "MemoryHandleAttr":$handle,
         "MemoryKind":$kind,
         "ArrayRef<PointerRegion>":$pointerRegions), [{
-      return $_get(handle.getDialect()->getContext(), handle, kind,
-                   pointerRegions);
+      return $_get(handle.getContext(), handle, kind, pointerRegions);
     }]>
   ];
 

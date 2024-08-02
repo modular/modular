@@ -64,7 +64,7 @@ public:
 
   /// Map a constant global memory handle into the interpreter if it hasn't been
   /// added yet and return the address to the start of the blob.
-  ErrorOr<int64_t> mapConstGlobalMemory(MemoryHandle hdl);
+  ErrorOr<int64_t> mapConstGlobalMemory(MemoryHandleAttr hdl);
 
   /// Get writable memory for the given address to interpreter memory.
   ///
@@ -261,11 +261,11 @@ private:
   /// This struct represents a piece of memory in the interpreter.
   struct MemoryBlob {
     using OwnedMemory = std::unique_ptr<void, void (*)(void *)>;
-    using MemoryT = SmartVariant<OwnedMemory, MemoryHandle, std::nullptr_t>;
+    using MemoryT = SmartVariant<OwnedMemory, MemoryHandleAttr, std::nullptr_t>;
 
     /// Create a memory blob. If `hdl` is null, an owned blob will be created.
     explicit MemoryBlob(int64_t baseAddr, size_t size, size_t align,
-                        std::optional<MemoryHandle> hdl);
+                        MemoryHandleAttr hdl);
 
     /// Mark or unmark the given region of the blob as a pointer value.
     ErrorOrSuccess setPointerRegion(int64_t offset, int64_t regionSize,
@@ -275,7 +275,9 @@ private:
     bool isOwned() const { return isa<OwnedMemory>(memory); }
 
     /// Get the handle to external memory.
-    MemoryHandle getHandle() const { return cast<MemoryHandle>(memory); }
+    MemoryHandleAttr getHandle() const {
+      return cast<MemoryHandleAttr>(memory);
+    }
 
     /// Get the pointer to owned memory.
     void *getOwned() const { return cast<OwnedMemory>(memory).get(); }
@@ -284,7 +286,7 @@ private:
     void *getMemory() const {
       if (isOwned())
         return getOwned();
-      return (void *)getHandle().getBlob()->getMutableData().data();
+      return (void *)getHandle().getData();
     }
 
     /// Return true if the memory has been freed.
@@ -316,7 +318,7 @@ private:
 
     /// Allocate a new memory blob .
     ErrorOr<MemoryBlob &> addBlob(size_t size, size_t align,
-                                  std::optional<MemoryHandle> hdl);
+                                  MemoryHandleAttr hdl);
 
     /// Return true if the table contains the address.
     bool contains(int64_t addr) { return addr >= minAddr && addr < maxAddr; }
@@ -345,10 +347,6 @@ private:
   MemoryTable &getTable(MemoryKind kind) {
     return memory[static_cast<unsigned>(kind)];
   }
-
-  /// The blob manager to materializing interpreter memory into the IR. Access
-  /// to the blob manager is thread-safe.
-  DialectResourceManager &blobMgr;
 
   /// All interpreter memory tables, containing stack, heap, persistent, and
   /// constant global memory.

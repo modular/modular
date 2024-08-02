@@ -1,5 +1,15 @@
 // RUN: kgen-opt %s -lower-kgen-to-llvm -split-input-file | FileCheck %s
 
+#mem_heap = #interp.memory_handle<32, "0xEFBE">
+#mem_stack = #interp.memory_handle<32, "0xADDE">
+
+#mem_global = #interp.memory_handle<32, "0x01020304">
+#mem_string = #interp.memory_handle<16, "hello world" string>
+#foo = #interp.memory_handle<16, "0x000000000000000008">
+#bar = #interp.memory_handle<16, "0x0000">
+#large = #interp.memory_handle<16, "0x000102030405060708090001020304050607080900">
+#variadic = #interp.memory_handle<8, "0xDEAD">
+
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
 
 // CHECK-LABEL: llvm.func internal @heap
@@ -12,7 +22,7 @@ kgen.func @heap() -> !kgen.pointer<i16> {
   // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] {alignment = 32 :
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
-  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(mem_heap, heap, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(#mem_heap, heap, [])], 0, 0>>
   // CHECK: llvm.return %[[RESULT_TYPED]] : !llvm.ptr
   kgen.return %0 : !kgen.pointer<i16>
 }
@@ -21,31 +31,31 @@ kgen.func @heap() -> !kgen.pointer<i16> {
 kgen.func @stack() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
   // CHECK-NEXT: builtin.unrealized_conversion_cast %[[ALLOC]]
-  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(mem_stack, stack, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(#mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 
 // CHECK-LABEL: llvm.func internal @persistent
 kgen.func @persistent() {
   // CHECK: pop.stack_allocation 2 x i8 align 8
-  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(variadic, persistent, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(#variadic, persistent, [])], 0, 0>>
   kgen.return
 }
 
 // CHECK-LABEL: llvm.func internal @stack_shared
 kgen.func @stack_shared() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
-  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(mem_stack, stack, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(#mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 
 // CHECK-LABEL: llvm.func internal @global
 kgen.func @global() -> !kgen.pointer<i8> {
-  // CHECK: %[[BASE:.*]] = llvm.mlir.addressof @mem_global : !llvm.ptr
+  // CHECK: %[[BASE:.*]] = llvm.mlir.addressof [[MEM_GLOBAL:@.*]] : !llvm.ptr
   // CHECK: %[[BASE_OPAQUE:.*]] = llvm.bitcast %[[BASE]]
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE_OPAQUE]][2]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
-  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(mem_global, const_global, [])], 0, 2>>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(#mem_global, const_global, [])], 0, 2>>
   // CHECK: llvm.return %[[RESULT_TYPED]]
   kgen.return %0 : !kgen.pointer<i8>
 }
@@ -68,19 +78,19 @@ kgen.func @pointer_to_pointer() {
   // CHECK: %[[C8:.*]] = llvm.mlir.constant(8 :
   // CHECK: llvm.store %[[C8]], %[[TAIL]]
   %0 = kgen.param.materialize: !kgen.pointer<pointer<i16>> = <#interp.memref<[
-    (foo, stack, [(0, 1, 0)]),
-    (bar, heap, [])
+    (#foo, stack, [(0, 1, 0)]),
+    (#bar, heap, [])
   ], 0, 0>>
   kgen.return
 }
 
 // CHECK-LABEL: llvm.func internal @string
 kgen.func @string() {
-  // CHECK: llvm.mlir.addressof @mem_string :
-  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(mem_string, const_global, [])], 0, 0>>
+  // CHECK: llvm.mlir.addressof [[MEM_STRING:@.*]] :
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(#mem_string, const_global, [])], 0, 0>>
   // COM: Ensure `const_global` handle gets deduplicated.
-  // CHECK: llvm.mlir.addressof @mem_string :
-  %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(mem_string, const_global, []), (mem_stack, stack, [])], 0, 0>>
+  // CHECK: llvm.mlir.addressof [[MEM_STRING]] :
+  %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(#mem_string, const_global, []), (#mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 
@@ -97,7 +107,7 @@ kgen.func @long() {
   // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][16]
   // CHECK: %[[V2:.*]] = llvm.mlir.constant(#M.dense_array<6, 7, 8, 9> : vector<4xi8>)
   // CHECK: llvm.store %[[V2]], %[[P2]]
-  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(large, stack, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(#large, stack, [])], 0, 0>>
 
   // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
   // CHECK: %[[V3:.*]] = llvm.mlir.constant(0 : i8)
@@ -134,33 +144,20 @@ kgen.func @ptr_inside_blob() {
   // CHECK: llvm.store %[[V5]], %[[P5]]
 
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[
-    (large, stack, [(6, 1, 1)]),
-    (bar, stack, [])
+    (#large, stack, [(6, 1, 1)]),
+    (#bar, stack, [])
   ], 0, 0>>
   kgen.return
 }
 
-// CHECK: llvm.mlir.global internal constant @mem_global(#M.dense_array<1, 2, 3, 4> : !M.array<4xi8>) {addr_space = 0 : i32, alignment = 32 : i64} : !llvm.array<4 x i8>
-// CHECK: llvm.mlir.global internal constant @mem_string("hello world")
+// CHECK: llvm.mlir.global internal constant [[MEM_GLOBAL]](#M.dense_array<1, 2, 3, 4> : !M.array<4xi8>) {addr_space = 0 : i32, alignment = 32 : i64} : !llvm.array<4 x i8>
+// CHECK: llvm.mlir.global internal constant [[MEM_STRING]]("hello world")
 
 }
 
-{-#
-  dialect_resources: {
-    interp: {
-      mem_stack: "0x20000000ADDE",
-      mem_heap: "0x20000000EFBE",
-      mem_global: "0x2000000001020304",
-      mem_string: "hello world",
-      foo: "0x10000000000000000000000008",
-      bar: "0x100000000000",
-      large: "0x10000000000102030405060708090001020304050607080900",
-      variadic: "0x08000000DEAD"
-    }
-  }
-#-}
-
 // -----
+
+#compress_me = #interp.memory_handle<16, "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFDEDEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF">
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=16>} {
 // CHECK-LABEL: llvm.func internal @compress_me
@@ -178,15 +175,7 @@ kgen.func @compress_me() {
   // CHECK-DAG: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(30 : i64)
   // CHECK: "llvm.intr.memset"(%[[P2]], %[[VAL]], %[[SIZE]]) <{isVolatile = false}>
-  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(compress_me, heap, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(#compress_me, heap, [])], 0, 0>>
   kgen.return
 }
 }
-
-{-#
-  dialect_resources: {
-    interp: {
-      compress_me: "0x10000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFDEDEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-    }
-  }
-#-}

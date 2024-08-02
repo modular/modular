@@ -363,6 +363,9 @@ kgen.generator export @malloc_nullptr() {
 // COM: This test ensures scalar data and a pointer region can co-exist
 // COM: correctly in the same memory allocation.
 
+// CHECK: [[BLOB1:#.*]] = #interp.memory_handle<8, "0x0100000000000000000000000000000020CA9A3B000000000000000000000000">
+// CHECK: [[BLOB2:#.*]] = #interp.memory_handle<1, "0x00">
+
 !ptr_t = !kgen.pointer<variant<index, pointer<none>>>
 
 kgen.generator @fill_ptr() -> !ptr_t {
@@ -388,13 +391,10 @@ kgen.generator @fill_ptr() -> !ptr_t {
 
 // CHECK-LABEL: kgen.func export @pointer_overwrite
 kgen.generator export @pointer_overwrite() {
-  // CHECK-NEXT: memref<[([[BLOB1:.*]], heap, [(16, 1, 0)]), ([[BLOB2:.*]], heap, [])], 0, 0>>
+  // CHECK-NEXT: memref<[([[BLOB1]], heap, [(16, 1, 0)]), ([[BLOB2]], heap, [])], 0, 0>>
   kgen.param.constant: !ptr_t = <apply(:() -> !ptr_t @fill_ptr)>
   kgen.return
 }
-
-// CHECK: [[BLOB1]]: "0x080000000100000000000000000000000000000020CA9A3B000000000000000000000000"
-// CHECK: [[BLOB2]]: "0x0100000000"
 
 // -----
 

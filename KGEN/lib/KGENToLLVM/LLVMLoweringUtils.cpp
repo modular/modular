@@ -19,6 +19,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/BLAKE3.h"
 
 using namespace M;
 using namespace KGEN;
@@ -576,32 +577,33 @@ Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
 }
 
 Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
-                                                         MemoryHandle hdl) {
+                                                         MemoryHandleAttr hdl) {
   // Lookup an existing global for this handle.
-  if (Operation *global = globals.lookup(hdl.getKey()))
+  if (Operation *global = globals.lookup(hdl))
     return global;
 
   // If not, create it.
   OpBuilder b(loc.getContext());
   Attribute value;
-  mlir::AsmResourceBlob *mem = hdl.getBlob();
-  if (hdl.getResource()->getKind() ==
-      DialectResourceManager::ResourceKind::String) {
+  if (hdl.isString()) {
     // Create a string attribute for readability.
-    value = b.getStringAttr(
-        StringRef(mem->getData().data(), mem->getData().size()));
+    value = b.getStringAttr(StringRef(hdl.getData(), hdl.getSize()));
   } else {
     // Store the raw bytes into an elements attribute.
-    value = IntArrayElementsAttr::get(b.getContext(), mem->getData(),
+    value = IntArrayElementsAttr::get(b.getContext(), hdl.getMemory().data,
                                       IntegerType::Signless);
   }
 
+  auto hash =
+      llvm::BLAKE3::hash({(const uint8_t *)hdl.getData(), hdl.getSize()});
+  std::string key = (hdl.isString() ? "static_string_" : "memory_blob_") +
+                    llvm::toHex(hash, /*LowerCase=*/true);
+
   auto global = b.create<LLVM::GlobalOp>(
-      loc, LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
-      /*isConstant=*/true, LLVM::Linkage::Internal, hdl.getKey(), value,
-      mem->getDataAlignment());
+      loc, LLVM::LLVMArrayType::get(b.getI8Type(), hdl.getSize()),
+      /*isConstant=*/true, LLVM::Linkage::Internal, key, value, hdl.getAlign());
   symtab.insert(global);
-  globals.try_emplace(hdl.getKey(), global);
+  globals.try_emplace(hdl, global);
   return global;
 }
 
@@ -655,19 +657,19 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     }
     // Create the relevant allocation.
     Value popAlloc;
-    mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
+    MemoryHandleAttr hdl = blob.getHandle();
     if (blob.getKind() == MemoryKind::Stack ||
         // FIXME(#32052): Persistent memory requires planning, but downcast to a
         // stack allocation for now.
         blob.getKind() == MemoryKind::Persistent) {
       popAlloc = b.create<POP::StackAllocationOp>(
-          PointerType::get(b.getI8Type()), mem->getData().size(),
-          b.getIndexAttr(mem->getDataAlignment()));
+          PointerType::get(b.getI8Type()), hdl.getSize(),
+          b.getIndexAttr(hdl.getAlign()));
     } else {
       popAlloc = b.create<POP::AlignedAllocOp>(
           PointerType::get(b.getI8Type()),
-          b.create<mlir::index::ConstantOp>(mem->getDataAlignment()),
-          b.create<mlir::index::ConstantOp>(mem->getData().size()));
+          b.create<mlir::index::ConstantOp>(hdl.getAlign()),
+          b.create<mlir::index::ConstantOp>(hdl.getSize()));
     }
     Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
                     .getResult(0);
@@ -683,10 +685,10 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
       continue;
 
     auto ptr = cast<Value>(value);
-    mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
-    ArrayRef<char> data = mem->getData();
-    auto materializeStoreImpl = [&, align = mem->getDataAlignment()](
-                                    int64_t idx, int64_t size) {
+    MemoryHandleAttr hdl = blob.getHandle();
+    ArrayRef<char> data = hdl.getMemory().data;
+    auto materializeStoreImpl = [&, align = hdl.getAlign()](int64_t idx,
+                                                            int64_t size) {
       materializeVectorStores(idx, size, ptr, data.data(), b, ptrType, align);
     };
 
@@ -764,7 +766,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
         auto [_, index, offset] = *ptrIt++;
         b.create<LLVM::StoreOp>(
             getBlobPointer(b, ptrType, materialized, index, offset), gep,
-            mem->getDataAlignment());
+            hdl.getAlign());
         i += pointerSize;
         continue;
       }
@@ -865,9 +867,7 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
     str = "\0";
 
   // Add the string to the global string table.
-  DialectResourceManager &mgr =
-      MemoryHandle::getManagerInterface(strAttr.getContext());
-  MemoryHandle hdl = mgr.getOrAddStringResource(str);
+  MemoryHandleAttr hdl = MemoryHandleAttr::get(strAttr.getContext(), str);
   auto global = cast<LLVM::GlobalOp>(imc.getOrCreateGlobal(b.getLoc(), hdl));
 
   // The actual string size does not include \0.

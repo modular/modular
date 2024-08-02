@@ -820,14 +820,13 @@ readPointerAndSize(int64_t readAddr, InterpreterState &state) {
 
 ErrorOrSuccess StringType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
-  DialectResourceManager &mgr = MemoryHandle::getManagerInterface(getContext());
   // Ensure the string is null-terminated. This is safe because `StringAttr`
   // always stores a null terminator.
   auto strAttr = ::cast<StringAttr>(value);
   StringRef str(strAttr.data(), strAttr.size() + 1);
   if (strAttr.getValue().empty())
     str = "\0";
-  MemoryHandle hdl = mgr.getOrAddStringResource(str);
+  MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
   ErrorOr<int64_t> strAddr = state.mapConstGlobalMemory(hdl);
   if (strAddr.isError())
     return strAddr.takeError();

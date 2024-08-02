@@ -1657,7 +1657,6 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess StringAddressOp::interpret(ArrayRef<Attribute> operands,
                                               InterpreterState &state) {
-  DialectResourceManager &mgr = MemoryHandle::getManagerInterface(getContext());
   // Ensure the string is null-terminated. This is safe because `StringAttr`
   // always stores a null terminator.
   auto value = cast<StringAttr>(operands.front());
@@ -1665,7 +1664,7 @@ ErrorTreeOrSuccess StringAddressOp::interpret(ArrayRef<Attribute> operands,
   if (value.getValue().empty())
     str = "\0";
 
-  MemoryHandle hdl = mgr.getOrAddStringResource(str);
+  MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
   ErrorOr<int64_t> addr = state.mapConstGlobalMemory(hdl);
   if (addr.isError())
     return ErrorTree(getLoc(), addr.takeError());

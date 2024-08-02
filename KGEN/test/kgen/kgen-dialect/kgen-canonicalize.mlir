@@ -46,14 +46,16 @@ kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
   kgen.return
 }
 
+#undef = #interp.memory_handle<8, "" string>
+
 // CHECK-LABEL: @param_materialize
 kgen.generator @param_materialize() -> (i32, !kgen.pointer<i32>) {
   // CHECK-NEXT: kgen.param.constant: i32 = <2>
   %0 = kgen.param.materialize: i32 = <2>
   // CHECK-NEXT: kgen.param.materialize
-  %1 = kgen.param.materialize: pointer<i32> = <#interp.memref<[(undef, heap, [])], 0, 0>>
+  %1 = kgen.param.materialize: pointer<i32> = <#interp.memref<[(#undef, heap, [])], 0, 0>>
   // CHECK-NOT: kgen.param.materialize
-  %2 = kgen.param.materialize: pointer<i32> = <#interp.memref<[(undef, heap, [])], 0, 0>>
+  %2 = kgen.param.materialize: pointer<i32> = <#interp.memref<[(#undef, heap, [])], 0, 0>>
   kgen.return %0, %1 : i32, !kgen.pointer<i32>
 }
 
