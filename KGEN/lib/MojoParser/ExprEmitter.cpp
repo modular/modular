@@ -588,13 +588,11 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // Handle M*Value's by decaying to MBValue.
   if (value.ir.isMValue())
-    value.ir = MBValue(value.ir.getMValueReference());
+    return MBValue(value.ir.getMValueReference());
 
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
-    value.ir = SBValue(srVal);
-  else if (auto refVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
-    value.ir = MBValue(refVal);
+    return SBValue(srVal);
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();

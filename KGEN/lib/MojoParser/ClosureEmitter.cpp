@@ -853,10 +853,10 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                      /*startUninit=*/true,
                                                      /*endUninit=*/false);
 
-  // Copy the contents of the injected impl into the heap memory.
+  // Move the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
-  ValueDest implDest(MLValue(targetRef), EC_Assignment);
-  emitter.emitResult(MRValue(source), &node, implDest);
+  emitter.emitStoreToLValue({MRValue(source), &node}, MLValue(targetRef),
+                            EC_Assignment);
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
@@ -936,9 +936,9 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                          /*endUninit=*/false);
 
     // Copy the existing value into the target.
-    ValueDest copyDest(MLValue(targetRef), EC_Assignment);
     ExprEmitter emitter(shared, moduleDecl, builder);
-    emitter.emitResult(MBValue(existingRef), &node, copyDest);
+    emitter.emitStoreToLValue({MLValue(existingRef), &node}, MLValue(targetRef),
+                              EC_Assignment);
 
     // Return the allocated and populated impl.
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(), body);
