@@ -433,11 +433,11 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
         // We emit this as an MBValue instead of an MRValue specifically so we
         // do not infer mutability from the temporary.  We don't want ref's with
         // parametric lifetime to bind to these values.
-        auto newVal = emitter.emitRefValue({operands[i]},
-                                           ExprContext::EC_CallRefArgValue);
+        auto newVal =
+            emitter.emitMBValue({operands[i]}, ExprContext::EC_CallRefArgValue);
         if (!newVal)
-          return {}; // Could not emit the PValue/SValue to an MRValue.
-        operands.values[i].ir = MBValue(newVal);
+          return {}; // Could not emit the PValue/SValue to an MBValue.
+        operands.values[i].ir = newVal;
       }
 
       // Now that we have the operands set, we re-evaluate the bindings, which
