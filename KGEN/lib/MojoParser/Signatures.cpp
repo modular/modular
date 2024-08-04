@@ -1113,7 +1113,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // into a holding block owned by SharedState so it isn't leaked.
   Block &blockOwningArg = fnDecl ? *cast<LIT::FuncOp>(fnDecl).getBody()
                                  : shared.getArgumentOwningBlock();
-  BlockArgument blockArg =
+  BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
   DeclIRValue argIRValue;
@@ -1126,18 +1126,25 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::OwnedInMem:
   case ArgConvention::Ref:
   case ArgConvention::BorrowedInMem:
-    // TODO: Collapse MLValue and MBValue.
-    if (cast<RefType>(fullType).isMutableKnown(true))
-      argIRValue = MLValue(blockArg);
-    else
-      argIRValue = MBValue(blockArg);
+    // TODO: Use CValue::getMValueForRef when DeclIRValue goes away.
+    switch (cast<RefType>(bbArg.getType()).getMutabilityClass()) {
+    case LifetimeType::Mutable:
+      argIRValue = MLValue(bbArg);
+      break;
+    case LifetimeType::Immutable:
+      argIRValue = MBValue(bbArg);
+      break;
+    case LifetimeType::Parametric:
+      argIRValue = MBPValue(bbArg);
+      break;
+    }
     break;
   case ArgConvention::OwnedInReg:
     // NOTE: This will get wrapped and turned into an SLValue within the body.
-    argIRValue = SRValue(blockArg);
+    argIRValue = SRValue(bbArg);
     break;
   case ArgConvention::BorrowedInReg:
-    argIRValue = SBValue(blockArg);
+    argIRValue = SBValue(bbArg);
     break;
   }
 

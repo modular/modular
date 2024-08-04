@@ -1316,10 +1316,18 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // Ref convention works with registers and def functions without any funny
     // business.
     if (convention == ArgConvention::Ref) {
-      if (cast<RefType>(bbArg.getType()).isMutableKnown(true))
+      // TODO: Use CValue::getMValueForRef when DeclIRValue goes away.
+      switch (cast<RefType>(bbArg.getType()).getMutabilityClass()) {
+      case LifetimeType::Mutable:
         setDecl(MLValue(bbArg));
-      else
+        break;
+      case LifetimeType::Immutable:
         setDecl(MBValue(bbArg));
+        break;
+      case LifetimeType::Parametric:
+        setDecl(MBPValue(bbArg));
+        break;
+      }
       continue;
     }
 
@@ -1344,28 +1352,21 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // To handle this, we cast the value to a marker lifetime which cannot be
     // bound to Reference.
     if (SignatureType::hasAddress(convention)) {
+      Value argValue = bbArg;
       auto argRefType = cast<RefType>(bbArg.getType());
       if (ASTType(argRefType.getElementType())
               .mightBeRegisterPassable(argDecl.getLoc(), shared)) {
         // Cast away our lifetime since the body can't use it.
         auto expectedType = argRefType.getWithLifetime(
             InvalidRefLifetimeAttr::get(argRefType.isMutable()));
-        Value castedArg = emitter.builder->create<RebindOp>(
+        argValue = emitter.builder->create<RebindOp>(
             emitter.translateLocation(argDecl.getLoc()), expectedType, bbArg);
-        if (convention != ArgConvention::BorrowedInMem) {
-          setDecl(MLValue(castedArg)); // owned or inout
-          continue;
-        }
-
-        // Otherwise normal MBValue argument.
-        setBorrowedDecl(MBValue(castedArg));
-        continue;
       }
 
       if (convention == ArgConvention::BorrowedInMem)
-        setBorrowedDecl(MBValue(bbArg)); // borrowed
+        setBorrowedDecl(MBValue(argValue)); // borrowed
       else
-        setDecl(MLValue(bbArg)); // owned or inout
+        setDecl(MLValue(argValue)); // owned or inout
       continue;
     }
 
@@ -1420,7 +1421,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     for (auto &[name, decls] : decl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         TypeSwitch<DeclIRValue>(decl->getIRValue())
-            .Case<SRValue, SBValue, MBValue, MRValue, MLValue>(
+            .Case<SRValue, SBValue, MBValue, MRValue, MLValue, MBPValue>(
                 [&](Value value) {
                   if (!isa<mlir::BlockArgument>(value))
                     decl->setIRValue(nullptr);

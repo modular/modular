@@ -587,8 +587,13 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   }
 
   // Handle M*Value's by decaying to MBValue.
-  if (value.ir.isMValue())
+  if (value.ir.isMValue()) {
+    // Maintain parametric mutability if we have it.
+    if (auto mbp = value.ir.getIfMBPValue())
+      return mbp;
+    // Otherwise decay MLValue/MRValue to MBValue.
     return MBValue(value.ir.getMValueReference());
+  }
 
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
@@ -824,6 +829,10 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   if (auto mb = bValue.getIfMBValue())
     return mb;
 
+  // Drop parametric mutability.
+  if (auto mbp = bValue.getIfMBPValue())
+    return MBValue(mbp);
+
   // Emit PValues to memory and promote to borrow.
   if (auto pValue = bValue.getIfPValue()) {
     auto mrVal = emitPValueToMRValue({pValue, value.expr}, context);
@@ -897,6 +906,7 @@ Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
   if (auto dlValue = value.ir.getIfDLValue()) {
     if (MBValue underlying = dlValue->emitMBValueFromDefArgument(*this))
       value.ir = underlying;
+    // TODO: Support all the other computed LValues.
   }
 
   // Otherwise we can't support other non-MValue's like borrowed registers or
@@ -958,6 +968,8 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
     return MRValue(rebind(refValue));
   if (auto refValue = value.ir.getIfMBValue())
     return MBValue(rebind(refValue));
+  if (auto refValue = value.ir.getIfMBPValue())
+    return MBPValue(rebind(refValue));
   if (auto sbValue = value.ir.getIfSBValue())
     return SBValue(rebind(sbValue));
 

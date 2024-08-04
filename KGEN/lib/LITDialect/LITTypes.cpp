@@ -586,6 +586,14 @@ bool LifetimeType::isMutableKnown(bool value) {
   return false;
 }
 
+/// Classify the mutability into Mutable/Immutable/Parametric.
+LifetimeType::MutabilityClass LifetimeType::getMutabilityClass() {
+  auto cst = ::dyn_cast<BoolAttr>(getIsMutable());
+  if (!cst)
+    return Parametric;
+  return cst.getValue() ? Mutable : Immutable;
+}
+
 //===----------------------------------------------------------------------===//
 // LifetimeSetType
 //===----------------------------------------------------------------------===//
@@ -674,6 +682,11 @@ RefType RefType::getImmortal(Type elementType, bool isMut, unsigned addrSpace) {
 /// constant.  This returns false if parametric or if the other value.
 bool RefType::isMutableKnown(bool value) {
   return ::cast<LifetimeType>(getLifetime().getType()).isMutableKnown(value);
+}
+
+/// Classify the mutability into Mutable/Immutable/Parametric.
+LifetimeType::MutabilityClass RefType::getMutabilityClass() {
+  return ::cast<LifetimeType>(getLifetime().getType()).getMutabilityClass();
 }
 
 /// Return a (possibly parameteric) specification for whether this reference

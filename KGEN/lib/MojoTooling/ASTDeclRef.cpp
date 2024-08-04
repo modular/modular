@@ -56,7 +56,7 @@ static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
     DeclIRValue childValue = decls.front()->getIRValue();
     auto resIndex =
         TypeSwitch<DeclIRValue, std::optional<size_t>>(childValue)
-            .Case<MLValue, SRValue, SBValue, MBValue>([&](Value val) {
+            .Case<MLValue, SRValue, SBValue, MBValue, MBPValue>([&](Value val) {
               if (val == arg)
                 return std::make_optional(argIndex);
               ++argIndex;
@@ -74,7 +74,7 @@ static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
   DeclIRValue irValue = declRef->getIRValue();
   return TypeSwitch<DeclIRValue, BlockArgument>(irValue)
-      .Case<SBValue, SRValue, MBValue, MLValue>([&](Value val) {
+      .Case<SBValue, SRValue, MBValue, MLValue, MBPValue>([&](Value val) {
         // Look through rebinds of arguments, which may happen for certain
         // argument conventions.
         if (auto rebind = val.getDefiningOp<RebindOp>())
@@ -108,7 +108,7 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
-      .Case<SBValue, SRValue, MBValue, MLValue>(
+      .Case<SBValue, SRValue, MBValue, MLValue, MBPValue>(
           [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
       .Default((Operation *)nullptr);
 }
