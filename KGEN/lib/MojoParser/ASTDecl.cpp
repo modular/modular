@@ -16,6 +16,17 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+ASTDecl::ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
+                 LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
+    : irValue(irValue), loc(loc), parentDecl(parentDecl), cursor(cursor),
+      endCursorState(endCursor.getState()), indentation(indentation) {
+  resolvedness = DeclResolvedness::unparsed;
+  referencedFromBytecode = false;
+  hasReferenceError = false;
+  hasBodyDecorators = false;
+  loadedFromBytecode = false;
+}
+
 DocStringAttr ASTDecl::getDocString() const {
   if (auto astDeclOp = dyn_cast<ASTDeclInterface>(this))
     return astDeclOp.getDocStringAttr();
@@ -37,8 +48,11 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   assert(resolvedness == DeclResolvedness::fully &&
          "cannot perform lookup in a decl that isn't fully resolved");
-  auto it = declsInScope.find(name);
-  if (it != declsInScope.end() && !it->second.empty())
+  if (!declsInScope)
+    return {};
+
+  auto it = declsInScope->find(name);
+  if (it != declsInScope->end() && !it->second.empty())
     return it->second;
   return {};
 }
@@ -46,7 +60,7 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 void ASTDecl::takeDecls(ASTDecl &src) {
   if (src.isErroneous())
     setErroneous();
-  for (auto &[name, children] : src.declsInScope)
+  for (auto &[name, children] : src.getDeclsInScope())
     for (ASTDecl *child : children)
       child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
@@ -74,6 +88,15 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
   }
 
   return {paramScope, --depth}; // Adjust so depth starts at 0.
+}
+
+/// Add an unresolved wild card import into this scope.
+void ASTDecl::addUnresolvedWildCardImport(StringAttr importedModule,
+                                          bool isFullImport, SMLoc loc) {
+  // Lazy allocate the MapVector.
+  if (!unresolvedWildcardImports)
+    unresolvedWildcardImports.reset(new UnresolvedWildcardImportsType());
+  unresolvedWildcardImports->insert({importedModule, {loc, isFullImport}});
 }
 
 /// Mangle a parameter name for the given parameter scope and scope depth. Due
