@@ -353,3 +353,34 @@ fn test_byref_slot_with_references():
     f = also_broken(Reference(f))
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
 
+fn test_int_ref(ref [_] x: Int) -> ref [__lifetime_of(x)] Int:
+    return x
+
+# CHECK-LABEL: lit.func @"complex_ref_box_emission
+fn complex_ref_box_emission[p: Int](a: Int):
+    # Parameter ref just needs a box.
+    _ = test_int_ref(p)
+    # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
+    # CHECK-NEXT: kgen.param.constant: !Int = <p>
+    # CHECK-NEXT: lit.ref.store {{.*}}, [[VAR]]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
+    # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
+
+    # Needs a conversion from IntegerLiteral to Int
+    _ = test_int_ref(4)
+    # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
+    # CHECK-NEXT: kgen.param.constant: !Int = <{4}>
+    # CHECK-NEXT: lit.ref.store {{.*}}, [[VAR]]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
+    # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
+
+    # RValues infer as immutable, just like you can't pass them to inout.
+    _ = test_int_ref(Int())
+    # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[VAR]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
+    # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
+
+    # TODO: Should work fine; needs generalized writeback.
+    # _ = test_int_ref(a)
+    # _ = test_int_ref(a+a)

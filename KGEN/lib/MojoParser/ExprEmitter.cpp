@@ -822,8 +822,8 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
 /// memory-only representation, materializing PValues as needed. This
 /// returns null if emission fails.
 MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context) {
-  BValue bValue = emitBValue(value, context);
+                                 ExprContext context, ASTType resultType) {
+  BValue bValue = emitBValue(value, context, resultType);
   if (!bValue)
     return {};
 
