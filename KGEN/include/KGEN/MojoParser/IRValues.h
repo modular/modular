@@ -16,7 +16,7 @@
 //   UValue         <- unresolved value that cannot be materialized
 //     OverloadSetUValue  <- with an unresolved overload set
 //     InitializerUValue  <- constructor operands for an unknown type
-//   CValue        <- Concrete value: LValue or RValue with a known type.
+//   CValue        <- Concrete value: something with a known type.
 //     LValue         <- mutable reference to storage
 //       MLValue        <- value is in memory with a mutable reference
 //       DLValue        <- with dynamic get/set accessors
@@ -31,6 +31,13 @@
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
 // can hold any type, including a @register_passable type.
+//
+// One of the important functions of IRValue is to allow the parser to track
+// different value kinds without inserting lots of casts everywhere.  In
+// particular, MBValue can be a reference with arbitrary mutability because
+// ExprEmitter::emitResult needs to return a borrow to a value emitted to a
+// ValueDest, but often the result is ignored.  We wouldn't want the parser to
+// insert tons of dead "imm cast" ops into the IR.
 //
 //===----------------------------------------------------------------------===//
 
@@ -118,11 +125,11 @@ private:
 
 /// Instances of MBValue model a borrowed reference to dynamic value stored
 /// into memory. The address is represented with an SSA value of !lit.ref type,
-/// which might (or might not) be mutable.
+/// which might (or might not) be mutable.  See the comment at the top of the
+/// file for rationale for why we allow to point to mutable references.
 ///
 /// This representation is used for borrowed arguments, and for some expressions
-/// like `a.b` where `a` is an MRValue or MBValue (like a let) and `b` is a
-/// stored property.
+/// like `a.b` where `a` is an MRValue or MBValue and `b` is a stored property.
 class MBValue : public Value {
 public:
   using Value::Value;
