@@ -396,7 +396,7 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
   builtinsDecl.resolvedness = DeclResolvedness::fully;
 
   // The outermost scope contains all of the __builtins__ function definitions.
-  for (auto &[name, decls] : builtinsDecl.declsInScope)
+  for (auto &[name, decls] : builtinsDecl.getDeclsInScope())
     declResolver->aliasDecls(decls, name, topLevelDecl.getLoc(), topLevelDecl);
 
   // Top level is fully resolved now.
@@ -415,11 +415,6 @@ void SharedState::deleteDecl(ASTDecl &decl) {
   if (!name)
     return;
   Operation *op = decl.getIfOperation();
-
-  // Remove from parent decl.
-  TinyPtrVector<ASTDecl *> decls =
-      decl.getParentDecl()->declsInScope[StringAttr::get(getContext(), *name)];
-  llvm::erase_if(decls, [&](ASTDecl *entry) { return entry == &decl; });
 
   // Remove from global maps.
   // Func needs a special case since it may or may not be a symbol.
@@ -646,8 +641,11 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
     // If the lookup failed, try to resolve any wildcard imports in the scope.
     // We don't know if these imports will actually provide the decl we are
     // looking for, so we have to try until we find one that does.
-    for (int i = 0, e = scope.unresolvedWildcardImports.size(); i < e;) {
-      auto it = std::next(scope.unresolvedWildcardImports.begin(), i);
+    if (!scope.unresolvedWildcardImports)
+      return {};
+
+    for (size_t i = 0, e = scope.unresolvedWildcardImports->size(); i < e;) {
+      auto it = std::next(scope.unresolvedWildcardImports->begin(), i);
       auto [moduleName, locAndIsFullImport] = *it;
       auto [loc, isFullImport] = locAndIsFullImport;
 
@@ -657,7 +655,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
         continue;
       }
       --e;
-      scope.unresolvedWildcardImports.erase(it);
+      scope.unresolvedWildcardImports->erase(it);
 
       // Resolve the import. If it fails, don't fail the search immediately,
       // keep checking for something that can resolve the decl we care about.
@@ -669,7 +667,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
         if (!result.empty())
           return result;
       }
-      e = scope.unresolvedWildcardImports.size();
+      e = scope.unresolvedWildcardImports->size();
     }
 
     return {};
@@ -1019,19 +1017,23 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   // import, mark it as resolved and import the state for the module.
   if (failed(declResolver->resolveFully(*parentDecl, loc)))
     return emitError();
-  TinyPtrVector<ASTDecl *> &existingDecls =
-      parentDecl->declsInScope[StringAttr::get(getContext(), name)];
-  if (!existingDecls.empty()) {
-    ASTDecl *existingDecl = existingDecls.front();
+  if (parentDecl->declsInScope) {
+    auto it =
+        parentDecl->declsInScope->find(StringAttr::get(getContext(), name));
+    if (it != parentDecl->declsInScope->end() && !it->second.empty()) {
+      TinyPtrVector<ASTDecl *> &existingDecls = it->second;
+      ASTDecl *existingDecl = existingDecls.front();
 
-    // The decl already exists, so we can just return it.
-    if (isa<FileModuleOp, PackageOp>(*existingDecl))
-      return *impl->moduleStates[existingDecl];
+      // The decl already exists, so we can just return it.
+      if (isa<FileModuleOp, PackageOp>(*existingDecl))
+        return *impl->moduleStates[existingDecl];
 
-    // If the decl isn't an unresolved import, emit an error.
-    if (!isa<UnresolvedImportOp>(*existingDecl))
-      return emitError("'" + name + "' does not refer to a package or module");
-    existingDecls.clear();
+      // If the decl isn't an unresolved import, emit an error.
+      if (!isa<UnresolvedImportOp>(*existingDecl))
+        return emitError("'" + name +
+                         "' does not refer to a package or module");
+      existingDecls.clear();
+    }
   }
 
   return importSubModuleState(name, parentDecl, loc, identifierLoc);
@@ -1720,7 +1722,7 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
   // documentation.
   if (failed(declResolver.resolveFully(decl, loc)))
     return;
-  const llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> &decls =
+  ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> decls =
       decl.getDeclsInScope();
   for (int i = 0, e = decls.size(); i < e; ++i) {
     // Resolution may invalidate the decls vector, so we can't rely on

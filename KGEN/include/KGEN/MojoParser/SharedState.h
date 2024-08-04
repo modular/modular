@@ -74,7 +74,7 @@ private:
 
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
-enum class DeclResolvedness : int8_t {
+enum class DeclResolvedness : uint8_t {
   /// This declaration hasn't been parsed outside of its identifier being
   /// processed.  We don't know anything about its arguments, generic
   /// signature, etc.

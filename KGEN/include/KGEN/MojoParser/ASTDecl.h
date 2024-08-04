@@ -132,9 +132,7 @@ public:
 
   /// Add an unresolved wild card import into this scope.
   void addUnresolvedWildCardImport(StringAttr importedModule, bool isFullImport,
-                                   SMLoc loc) {
-    unresolvedWildcardImports.insert({importedModule, {loc, isFullImport}});
-  }
+                                   SMLoc loc);
 
   /// Return the doc string for this decl, or nullptr if there isn't one.
   DocStringAttr getDocString() const;
@@ -171,19 +169,18 @@ public:
     return {};
   }
 
-  /// Return the set of declarations in this scope.
-  const llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> &
+  /// Return an iterable set of declarations in this scope.  For lookups, use
+  /// lookup or lookupInCurrentScope.
+  ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>
   getDeclsInScope() const {
-    return declsInScope;
+    if (declsInScope)
+      return ArrayRef(declsInScope->begin(), declsInScope->end());
+    return {};
   }
 
   //===--------------------------------------------------------------------===//
   // Other State management.
   //===--------------------------------------------------------------------===//
-
-  /// This keeps track of what level of type checking this declaration has been
-  /// through.  It is maintained by DeclResolver.
-  DeclResolvedness resolvedness = DeclResolvedness::unparsed;
 
   /// Indicate that the decl has reference errors.
   void setErroneous();
@@ -218,25 +215,10 @@ public:
   unsigned getNextUniqueID() { return counter++; }
 
 private:
-  /// This is set to true if there is an entry for body-decorators in a
-  /// backing hashtable.  Clients should use "getBodyDecorators().
-  bool hasBodyDecorators = false;
-
-  /// This is set to true when the declaration was loaded from bytecode, not
-  /// parsed from a textual source file. These declarations behave differently
-  /// than source decls, and e.g., do not resolve in the same way as source
-  /// decls.
-  bool loadedFromBytecode = false;
-
-  /// The counter to allow the generation of unique IDs for this ASTDecl.
-  unsigned counter = 0;
-
   friend class DeclResolver;
   friend class SharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
-          LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
-      : irValue(irValue), loc(loc), parentDecl(parentDecl), cursor(cursor),
-        endCursorState(endCursor.getState()), indentation(indentation) {}
+          LexerCursor cursor, LexerCursor endCursor, ssize_t indentation);
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 
@@ -270,23 +252,48 @@ private:
   /// start of a line or this is the top level module, then this is set to -1.
   ssize_t indentation;
 
+public:
+  /// This keeps track of what level of type checking this declaration has been
+  /// through.  It is maintained by DeclResolver.
+  DeclResolvedness resolvedness : 3; // Starts as DeclResolvedness::unparsed
+
+private:
   /// When a bytecode decl depends on a source decl's children, we have to parse
   /// the signatures of all the children to register them in the symbol table.
   /// Cache this process using a flag on the decl.
-  bool referencedFromBytecode = false;
+  bool referencedFromBytecode : 1;
 
   /// This is set to true when an error is detected and reported about this
   /// declaration that could cause references to it to cause spurious downstream
   /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
   /// every reference to 'x' because the type will be bogus.
-  bool hasReferenceError = false;
+  bool hasReferenceError : 1;
 
-  /// These are the declarations defined within this scope.
-  llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
+  /// This is set to true if there is an entry for body-decorators in a
+  /// backing hashtable.  Clients should use "getBodyDecorators().
+  bool hasBodyDecorators : 1;
+
+  /// This is set to true when the declaration was loaded from bytecode, not
+  /// parsed from a textual source file. These declarations behave differently
+  /// than source decls, and e.g., do not resolve in the same way as source
+  /// decls.
+  bool loadedFromBytecode : 1;
+
+  /// The counter to allow the generation of unique IDs for this ASTDecl.
+  unsigned counter = 0;
+
+  /// These are the declarations defined within this scope.  This is lazily
+  /// allocated the first time something is added, because it the vast majority
+  /// of decls (leaves in the tree) don't need it.  (5-12% need it).
+  using DeclInScopeType = llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>>;
+  std::unique_ptr<DeclInScopeType> declsInScope;
 
   /// A set of modules with unresolved wildcard imports into this decl, mapped
-  /// to the location of the import and whether it's a full import.
-  llvm::MapVector<StringAttr, std::pair<SMLoc, bool>> unresolvedWildcardImports;
+  /// to the location of the import and whether it's a full import.  This is
+  /// lazily initialized because it is very rarely needed (~0.6% of all decls).
+  using UnresolvedWildcardImportsType =
+      llvm::MapVector<StringAttr, std::pair<SMLoc, bool>>;
+  std::unique_ptr<UnresolvedWildcardImportsType> unresolvedWildcardImports;
 };
 
 } // namespace M::KGEN::LIT

@@ -942,6 +942,24 @@ MojoTypeSystem::createPOPArrayType(lldb::opaque_compiler_type_t elementType,
   return createCompilerType(POP::ArrayType::get(numElements, mlirEltType));
 }
 
+/// This looks up the specified name in the indicated decl and returns a match
+/// if one exists, or null if not.
+static LIT::ASTDecl *lookupSingleMember(LIT::ASTDecl &decl, StringAttr name) {
+  // Mark the decl as fully resolved so we can look up into it.  This is pretty
+  // unfortunate, should we resolve the decl instead?
+  auto oldResolvedness = decl.resolvedness;
+  decl.resolvedness = LIT::DeclResolvedness::fully;
+
+  ArrayRef<LIT::ASTDecl *> existingDecls = decl.lookupInCurrentScope(name);
+  decl.resolvedness = oldResolvedness;
+
+  if (existingDecls.empty())
+    return nullptr;
+  assert(existingDecls.size() == 1 &&
+         "We expect one single decl with a given name");
+  return existingDecls[0];
+}
+
 MojoASTDeclRef
 MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
                                        MojoASTDeclRef parentDeclRef) {
@@ -950,16 +968,12 @@ MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
   LIT::ASTDecl &parentDecl =
       parentDeclRef ? *parentDeclRef
                     : impl->parserContext->getSharedState().getTopLevelDecl();
-  auto &declsInScope = parentDecl.getDeclsInScope();
 
   // We first check if the package already exists, in which case we just return
   // its decl.
-  if (auto it = declsInScope.find(StringAttr::get(getMLIRContext(), name));
-      it != declsInScope.end()) {
-    assert(it->second.size() == 1 &&
-           "We expect one single package decl with a given name.");
-    return it->second[0];
-  }
+  if (auto decl = lookupSingleMember(parentDecl,
+                                     StringAttr::get(getMLIRContext(), name)))
+    return decl;
 
   auto moduleBuilder = parentDecl.getDeclEndBuilder();
   auto packageName = StringAttr::get(sharedState.getContext(), name);
@@ -1067,14 +1081,9 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
 
   // We first check if the module already exists, in which case we just return
   // its decl.
-  auto &declsInScope = parentDecl.getDeclsInScope();
-  if (auto it =
-          declsInScope.find(StringAttr::get(getMLIRContext(), moduleName));
-      it != declsInScope.end()) {
-    assert(it->second.size() == 1 &&
-           "We expect one single module decl with a given name.");
-    return it->second[0];
-  }
+  if (auto decl = lookupSingleMember(
+          parentDecl, StringAttr::get(getMLIRContext(), moduleName)))
+    return decl;
 
   // We create a fake empty file so that parser diagnostics can be emitted if
   // we are doing something wrong when creating the decls. Otherwise, we hit
@@ -1105,12 +1114,8 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
 
   // We first check if the function already exists, in which case we just return
   // its decl.
-  auto &declsInScope = parentDecl->getDeclsInScope();
-  if (auto it = declsInScope.find(name); it != declsInScope.end()) {
-    assert(it->second.size() == 1 &&
-           "We expect one single function decl with a given name.");
-    return it->second[0];
-  }
+  if (auto decl = lookupSingleMember(*parentDecl, name))
+    return decl;
 
   LIT::SharedState &sharedState = impl->parserContext->getSharedState();
   auto builder = parentDecl->getDeclEndBuilder();
@@ -1141,12 +1146,8 @@ MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
 
   // We first check if the struct already exists, in which case we just return
   // its decl.
-  auto &declsInScope = parentDecl->getDeclsInScope();
-  if (auto it = declsInScope.find(name); it != declsInScope.end()) {
-    assert(it->second.size() == 1 &&
-           "We expect one single struct decl with a given name.");
-    return it->second[0];
-  }
+  if (auto decl = lookupSingleMember(*parentDecl, name))
+    return decl;
 
   auto newStruct = parentDecl->getDeclEndBuilder().create<LIT::StructDeclOp>(
       getSharedState().translateLocation(parentDecl->getLoc()), name);

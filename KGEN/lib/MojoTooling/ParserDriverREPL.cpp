@@ -737,17 +737,16 @@ static ASTDecl &buildAndResolveREPLModule(
     // because we also want to import _ and other traditionally "hidden" decls
     // from previous cells.
     SmallVector<std::pair<StringAttr, const TinyPtrVector<ASTDecl *>>> fnDecls;
-    auto &moduleChildDecls = moduleDecl.getDeclsInScope();
     for (auto &[name, decls] : prevReplExpr->getDeclsInScope()) {
-      auto existingDeclsIt = moduleChildDecls.find(name);
-      if (existingDeclsIt == moduleChildDecls.end()) {
+      auto existingDecls = moduleDecl.lookupInCurrentScope(name);
+      if (existingDecls.empty()) {
         sharedState.declResolver->aliasDecls(decls, name, SMLoc(), moduleDecl);
         continue;
       }
       // If we hit an overlap and these are function decls, save them for
       // processing for later. We might be able to import if the signatures
       // don't overlap.
-      if (isa<LIT::FuncOp>(*existingDeclsIt->second.front()) &&
+      if (isa<LIT::FuncOp>(*existingDecls.front()) &&
           isa<LIT::FuncOp>(*decls.front())) {
         fnDecls.push_back({name, decls});
       }

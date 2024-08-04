@@ -1409,13 +1409,15 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   if (emptyBody && isa<TraitDeclOp>(*decl.getParentDecl())) {
     // Wipe out the body which may already contain some compiler generated
     // operations for handling argLValueVarSlot.
-    body->walk([&](LIT::VarDeclOp op) {
-      // Remove the value from parent's declsInScope first before destroying the
-      // value.
-      auto iter = decl.declsInScope.find(op.getNameAttr());
-      if (iter != decl.declsInScope.end())
-        iter->second.clear();
-    });
+    if (decl.declsInScope) {
+      body->walk([&](LIT::VarDeclOp op) {
+        // Remove the value from parent's declsInScope first before destroying
+        // the value.
+        auto iter = decl.declsInScope->find(op.getNameAttr());
+        if (iter != decl.declsInScope->end())
+          iter->second.clear();
+      });
+    }
 
     // Clear out any decls in the scope that reference IR in the body.
     for (auto &[name, decls] : decl.getDeclsInScope()) {
@@ -2525,7 +2527,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   // the mangled name contains the required information for distinguishing
   // overload candidates.
   DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
-  for (auto &[name, decls] : traitDecl.declsInScope) {
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
       continue;
     for (ASTDecl *decl : decls) {

@@ -133,8 +133,13 @@ ASTDecl &DeclResolver::createUnlistedDecl(Operation *declOp, SMLoc loc,
 
 void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   ASTDecl *parentDecl = decl->getParentDecl();
+
+  // Lazy allocate declsInScope.
+  if (!parentDecl->declsInScope)
+    parentDecl->declsInScope.reset(new ASTDecl::DeclInScopeType());
+
   // Remember the named decl in the symbol table so it can be looked up.
-  TinyPtrVector<ASTDecl *> &entries = parentDecl->declsInScope[name];
+  TinyPtrVector<ASTDecl *> &entries = (*parentDecl->declsInScope)[name];
   if (entries.empty()) {
     entries.push_back(decl);
 
@@ -251,8 +256,12 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
     return success(!importDecl.isErroneous());
   }
 
+  // Lazy allocate declsInScope.
+  if (!context.declsInScope)
+    context.declsInScope.reset(new ASTDecl::DeclInScopeType());
+
   auto [it, inserted] =
-      context.declsInScope.insert({name, TinyPtrVector<ASTDecl *>(decls)});
+      context.declsInScope->insert({name, TinyPtrVector<ASTDecl *>(decls)});
   if (inserted)
     return success();
   TinyPtrVector<ASTDecl *> &entries = it->second;
@@ -388,7 +397,7 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
 
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
-  for (const auto &[name, decls] : module.declsInScope) {
+  for (const auto &[name, decls] : module.getDeclsInScope()) {
     // Ignore erroneous children, which have nothing in them.
     if (decls.empty())
       continue;
@@ -576,14 +585,14 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     // Normally these get lazily resolved, but if we're forcing pulling them in,
     // we need to do it now.
     if (isa<PackageOp>(*declIt)) {
-      for (auto &decls : llvm::make_second_range(declIt->declsInScope))
+      for (auto &[_, decls] : declIt->getDeclsInScope())
         if (isa<UnresolvedImportOp>(*decls.front()))
           (void)resolveFully(*decls.front(), declIt->getLoc());
     }
 
     // Traverse the children. We don't resolve alias children, these will be
     // resolved separately if they actually got referenced.
-    for (auto &decls : llvm::make_second_range(declIt->declsInScope)) {
+    for (auto &[_, decls] : declIt->getDeclsInScope()) {
       for (ASTDecl *decl : decls)
         if (decl->getParentDecl() == declIt)
           worklist.push_front(decl);
@@ -647,10 +656,13 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
 }
 
 LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
-  while (!module.unresolvedWildcardImports.empty()) {
-    auto it = module.unresolvedWildcardImports.begin();
+  if (!module.unresolvedWildcardImports)
+    return success();
+
+  while (!module.unresolvedWildcardImports->empty()) {
+    auto it = module.unresolvedWildcardImports->begin();
     auto [moduleName, locAndIsFullImport] = *it;
-    module.unresolvedWildcardImports.erase(it);
+    module.unresolvedWildcardImports->erase(it);
 
     if (failed(importWildCardDeclsFromModule(module, moduleName,
                                              locAndIsFullImport.second,
