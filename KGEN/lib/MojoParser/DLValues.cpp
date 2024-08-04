@@ -57,11 +57,12 @@ CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   return {};
 }
 
-void DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
-                               ExprEmitter &emitter) const {
-  // Convert to an RValue to fully evaluate it, but otherwise just discard the
-  // value!
-  (void)emitter.emitRValue(value, EC_Assignment, elementType);
+BValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
+                                 ExprEmitter &emitter) const {
+  // Convert to an RValue to fully evaluate it.
+  auto rvalue = emitter.emitRValue(value, EC_Assignment, elementType);
+  // Promote to a BValue to return.
+  return emitter.emitBValue({rvalue, value.expr}, EC_Assignment);
 }
 
 //===----------------------------------------------------------------------===//
@@ -94,12 +95,12 @@ CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
                                               expr, dest, emitter);
 }
 
-void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
-                                          ExprEmitter &emitter) const {
+BValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
+                                            ExprEmitter &emitter) const {
 
   if (!emitter.builder) {
     emitter.emitErrorForDynamicValueInParameter(expr);
-    return;
+    return BValue();
   }
 
   // tmp = load(base)
@@ -115,7 +116,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!base) {
     tmpValueDest.resetForError();
-    return;
+    return BValue();
   }
 
   // Store into the field.
@@ -123,8 +124,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
       emitter.builder->create<RefStructGEROp>(loc, tmpDecl, getField());
   emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
-  // Store the whole result back, transfering ownership as an MRValue.
-  baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
+  // Store the whole result back, transferring ownership as an MRValue.
+  return baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
 }
 
 MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
@@ -179,8 +180,8 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitIndirectCall(getter, CallOperands(operands), dest, expr);
 }
 
-void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
-                                 ExprEmitter &emitter) const {
+BValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
+                                   ExprEmitter &emitter) const {
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
   CallOperands operandsWithValue(operands);
@@ -194,8 +195,10 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
 
-  emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
-                              storeDest, CallSyntax::kMethodCall, expr);
+  auto result =
+      emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
+                                  storeDest, CallSyntax::kMethodCall, expr);
+  return emitter.emitBValue({result, value.expr}, EC_Subscript);
 }
 
 //===----------------------------------------------------------------------===//
@@ -228,8 +231,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
 /// Storing to a tuple LValue extracts the elements out of the provided value
 /// stores them into each component LValue.
-void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
-                             ExprEmitter &emitter) const {
+BValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
+                               ExprEmitter &emitter) const {
   auto emitError = [&]() -> InflightDiag {
     return emitter.emitError(expr->getLoc())
            << value.expr->getRange() << expr->getRange();
@@ -255,7 +258,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   if (srcRValueType.getDecl(emitter.shared) != &tupleLiteralDecl) {
     emitError() << "cannot unpack value of type " << srcRValueType
                 << " into a tuple";
-    return;
+    return BValue();
   }
 
   assert(srcRValueType.getParamBindings().size() == 1 &&
@@ -265,15 +268,24 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   if (!packVariadic) {
     emitError() << "cannot unpack value of parametric tuple type "
                 << srcRValueType << " into a fixed arity";
-    return;
+    return BValue();
   }
   if (packVariadic.getValues().size() != eltLValues.size()) {
     emitError() << "cannot unpack tuple value with "
                 << packVariadic.getValues().size()
                 << " elements into tuple binding with " << eltLValues.size()
                 << " elements";
-    return;
+    return BValue();
   }
+
+  // Emit the input value to a BValue, loading it if it is an LValue and
+  // decaying from an RValue. We need to do this because each of the tuple
+  // subscript operations we generate below will operate on this same IR value
+  // multiple times: we don't want each of them to load the LValue redundantly
+  // and do not want them to consume an RValue multiple times.
+  auto bvalue = emitter.emitBValue(value, EC_TupleElement);
+  if (!bvalue)
+    return BValue();
 
   // Ok, we have a tuple with the right number of elements, extract each element
   // and store into the corresponding lvalue.
@@ -294,12 +306,14 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
     // We emit the extraction from the tuple as a synthesized subscript with
     // this value as an index.
-    if (!emitGetterSetterAccess(&subscript, {value.ir, value.expr}, exprOperand,
+    if (!emitGetterSetterAccess(&subscript, {bvalue, value.expr}, exprOperand,
                                 eltDest, emitter)) {
       eltDest.resetForError();
-      return;
+      return BValue();
     }
   }
+
+  return bvalue;
 }
 
 //===----------------------------------------------------------------------===//
@@ -367,14 +381,14 @@ CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
   return emitter.emitCResult(argRef, &expr, dest);
 }
 
-void DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
-                                          ExprEmitter &emitter) const {
+BValue DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
+                                            ExprEmitter &emitter) const {
   // Okay, if the def argument is mutated, we need to snap into action and
   // lazily build a shadow in the function entry.
   LValue newVal = prepareForInoutAccess(value.expr->getLoc(), emitter);
   if (!newVal)
-    return;
+    return BValue();
 
   // Ok, now emit a normal store.
-  emitter.emitStoreToLValue(value, newVal, ExprContext::EC_Assignment);
+  return emitter.emitStoreToLValue(value, newVal, ExprContext::EC_Assignment);
 }

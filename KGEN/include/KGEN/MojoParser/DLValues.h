@@ -25,7 +25,8 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+  BValue emitStore(ASTExprAnd<CValue> value,
+                   ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents a stored attribute projected from
@@ -48,7 +49,8 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+  BValue emitStore(ASTExprAnd<CValue> value,
+                   ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents property access `a.x =`
@@ -77,7 +79,8 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+  BValue emitStore(ASTExprAnd<CValue> value,
+                   ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents tuple lvalues, e.g. `(a[i], b) = x`.
@@ -92,7 +95,8 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+  BValue emitStore(ASTExprAnd<CValue> value,
+                   ExprEmitter &emitter) const override;
 };
 
 /// This DLValue is used to lazily synthesize a def argument box the first time
@@ -111,7 +115,8 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
+  BValue emitStore(ASTExprAnd<CValue> value,
+                   ExprEmitter &emitter) const override;
 
   /// If this is a def argument shadow, resolve it to the incoming immutable
   /// borrowed value without forming a local copy.  Otherwise return null.

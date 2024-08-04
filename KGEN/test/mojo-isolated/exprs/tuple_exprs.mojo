@@ -75,14 +75,11 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     iTup = (i1, i2)
 
     # Tuple LValue
-    # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
-    # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
-    # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}([[TMPVAR]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}(%iTup)
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}(
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}(%iTup)
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = iTup

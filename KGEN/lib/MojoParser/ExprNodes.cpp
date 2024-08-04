@@ -2571,7 +2571,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   CValue argCValue = argValue.getIfCValue();
   assert(argCValue && "MValue and SValue is always a CValue");
   if (argCValue.getRValueType().isTrivial(getLoc(), emitter.shared)) {
-    // We don't support transfering from register-passable trivial values,
+    // We don't support transferring from register-passable trivial values,
     // since this won't end the lifetime. CheckLifetimes doesn't and can't track
     // these things because they don't have consume operators, move operators,
     // etc.
