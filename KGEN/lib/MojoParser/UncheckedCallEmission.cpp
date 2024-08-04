@@ -278,6 +278,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
     // Lifetimes must be convertible, this is checked by OverloadFitness.
     // The destination may be less mutable because of canConvertWithRebind.
+    // This also lazy materializes cast to immutable that MBValue avoided.
     if (!refValueType.isMutableKnown(false) &&
         expectedRefType.isMutableKnown(false)) {
       refValue = emitter.builder->create<RefImmutOp>(
@@ -308,10 +309,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     }
 
     assert(refValueType == expectedType && "Should have exact match now");
-    // TODO: Unify MLValue and MBValue.
-    if (expectedRefType.isMutableKnown(true))
-      return MLValue(refValue);
-    return MBValue(refValue);
+    return CValue::getMValueForRef(refValue);
   }
 
   case ArgConvention::BorrowedInReg:
@@ -782,7 +780,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // If this is an MBValue, the element must be register passable but not
     // loaded.
-    if (auto refVal = argValAndExpr.ir.getIfMBValue()) {
+    if (argValAndExpr.ir.isMValue()) {
+      auto refVal = argValAndExpr.ir.getMValueReference();
       auto load = emitter.builder->create<RefLoadOp>(
           argValAndExpr.expr->getLocation(emitter), refVal);
       argValAndExpr.ir = SBValue(load);
@@ -1434,7 +1433,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       callResult = PValue(shared.getNoneAttr());
   }
 
-  // If returning a reference, we need to convert to an MBValue or MLValue from
+  // If returning a reference, we need to convert to an MValue from
   // the SRValue we've got.
   if (calleeSig.isRefResult()) {
     auto resultVal = emitSRValue({callResult, callExpr}, EC_CallCalleeValue);
@@ -1443,10 +1442,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       return {};
     }
 
-    if (cast<RefType>(resultVal.getType()).isMutableKnown(true))
-      callResult = MLValue(resultVal);
-    else
-      callResult = MBValue(resultVal);
+    // Use the appropriate classification for the value based on its mutability.
+    callResult = CValue::getMValueForRef(resultVal);
   }
 
   // Otherwise, register-passable results are the call result which may need to

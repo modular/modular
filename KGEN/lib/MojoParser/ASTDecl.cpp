@@ -123,7 +123,7 @@ void ASTDecl::dump() const {
         op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
         llvm::errs() << "\n";
       })
-      .Case<PValue, SRValue, MRValue, SBValue, MBValue, MLValue>(
+      .Case<PValue, SRValue, MRValue, SBValue, MBValue, MLValue, MBPValue>(
           [](auto v) { v.dump(); })
       .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
 }
@@ -158,6 +158,8 @@ BValue ASTDecl::getIfBValue() const {
   if (auto value = dyn_cast_or_null<SBValue>(irValue))
     return value;
   if (auto value = dyn_cast_or_null<MBValue>(irValue))
+    return value;
+  if (auto value = dyn_cast_or_null<MBPValue>(irValue))
     return value;
   return {};
 }

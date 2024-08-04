@@ -23,6 +23,7 @@
 //     BValue         <- with a borrowed value
 //       SBValue        <- value is register-passable and in an SSA register
 //       MBValue        <- value is in memory with a reference (may be mutable)
+//       MBPValue       <- reference with parametric mutability
 //       PValue         <- value is a parameter expression.
 //     RValue         <- with an owned value
 //       SRValue        <- with a register-passable value in an SSA register
@@ -135,6 +136,26 @@ public:
   using Value::Value;
   using Value::operator=;
   MBValue(Value v) : Value(v) { check(); }
+
+  /// This returns the declared type of the value without the wrapping pointer.
+  ASTType getRValueType() const { return getType().getReferenceElementType(); }
+  ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
+};
+
+/// Instances of MBPValue model a reference with parametric lifetime, e.g.
+/// derived from a 'ref' argument, or the result of a call that returns a 'ref'.
+/// These values are BValue's because they cannot be stored into, but are not
+/// MBValue's because the parametric nature of their reference is meaningful
+/// (MBValue is never mutable even if the reference it is pointing to says it is
+/// fully mutable).
+class MBPValue : public Value {
+public:
+  using Value::Value;
+  using Value::operator=;
+  MBPValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getReferenceElementType(); }
@@ -312,7 +333,7 @@ struct VariantValueStorageBase {
   /// These are all the forms of storage we can have.
   using Storage = SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
                                OverloadSetUValue, InitializerUValue, SBValue,
-                               MBValue, DLValue, MLValue>;
+                               MBPValue, MBValue, DLValue, MLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -330,8 +351,7 @@ struct VariantValueStorageBase {
   }
   // Return true if this is one of the reference representation.
   bool isMValue() const {
-    return isa<MBValue>(storage) || isa<MRValue>(storage) ||
-           isa<MLValue>(storage);
+    return isa<MBValue, MRValue, MLValue, MBPValue>(storage);
   }
 
   /// Given an M*Value, return the underlying reference.
@@ -540,6 +560,10 @@ struct VariantBValue {
     if (value)
       getStorageB() = value;
   }
+  VariantBValue(MBPValue value) {
+    if (value)
+      getStorageB() = value;
+  }
   VariantBValue(PValue value) {
     if (value)
       getStorageB() = value;
@@ -547,6 +571,7 @@ struct VariantBValue {
 
   SBValue getIfSBValue() const { return dyn_cast<SBValue>(getStorageB()); }
   MBValue getIfMBValue() const { return dyn_cast<MBValue>(getStorageB()); }
+  MBPValue getIfMBPValue() const { return dyn_cast<MBPValue>(getStorageB()); }
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorageB()); }
 
 private:
@@ -561,7 +586,7 @@ private:
   }
 };
 
-/// BValue = SBValue|MBValue|PValue.
+/// BValue = SBValue|MBValue|MBPValue|PValue.
 class BValue : public VariantValueStorage<BValue>,
                public VariantBValue<BValue> {
 public:
@@ -571,7 +596,7 @@ public:
   static BValue getFrom(Storage storage) {
     BValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<SBValue, MBValue, PValue>(storage))
+    if (isa<SBValue, MBValue, MBPValue, PValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
@@ -608,11 +633,15 @@ public:
   static CValue getFrom(Storage storage) {
     CValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<PValue, SRValue, MRValue, SBValue, MBValue, MLValue, DLValue>(
-            storage))
+    if (isa<PValue, SRValue, MRValue, SBValue, MBValue, MBPValue, MLValue,
+            DLValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
+
+  /// Given a value of !lit.ref type, return an MLValue/MBValue/MBPValue
+  /// depending on the mutability of the reference.
+  static CValue getMValueForRef(Value refValue);
 
   BValue getIfBValue() const { return BValue::getFrom(getStorage()); }
   RValue getIfRValue() const { return RValue::getFrom(getStorage()); }
@@ -743,6 +772,10 @@ struct PointerLikeTypeTraits<M::KGEN::LIT::SBValue>
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::MBValue>
     : public MLIRValueWrapper<M::KGEN::LIT::MBValue> {};
+
+template <>
+struct PointerLikeTypeTraits<M::KGEN::LIT::MBPValue>
+    : public MLIRValueWrapper<M::KGEN::LIT::MBPValue> {};
 
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::PValue> {

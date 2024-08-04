@@ -370,6 +370,13 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
     /// Return a (possibly parameteric) specification for whether this reference
     /// is a mutation or a read.
     TypedAttr isMutable() { return getIsMutable(); }
+
+    enum MutabilityClass {
+      Mutable, Immutable, Parametric
+    };
+
+    /// Classify the mutability into Mutable/Immutable/Parametric.
+    MutabilityClass getMutabilityClass();
   }];
 }
 
@@ -458,6 +465,9 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// Return a (possibly parameteric) specification for whether this reference
     /// is a mutation or a read.
     TypedAttr isMutable();
+
+    /// Classify the mutability into Mutable/Immutable/Parametric.
+    LifetimeType::MutabilityClass getMutabilityClass();
 
     /// Return the type of the lifetime reference, which is always a
     /// `!lit.lifetime<mutability>` type.

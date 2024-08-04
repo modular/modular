@@ -50,6 +50,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "MB: ";
     os << val;
+  } else if (auto val = dyn_cast<MBPValue>(storage)) {
+    if (isDump)
+      os << "MBP: ";
+    os << val;
   } else if (auto val = dyn_cast<OverloadSetUValue>(storage)) {
     if (isDump)
       os << "OverloadSetUValue: ";
@@ -148,6 +152,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<MBPValue>(storage))
+    return value.getType();
   if (auto value = dyn_cast<MLValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
@@ -200,7 +206,7 @@ ASTType RValue::getRValueType() const {
 
 ASTType CValue::getRValueType() const {
   auto type = getType();
-  if (isa<MLValue, MRValue, MBValue>(storage))
+  if (isMValue())
     return type.getReferenceElementType();
   return type;
 }
@@ -214,7 +220,7 @@ ASTType LValue::getRValueType() const {
 
 ASTType BValue::getRValueType() const {
   auto type = getType();
-  if (isa<MBValue>(storage))
+  if (isa<MBValue, MBPValue>(storage))
     return type.getReferenceElementType();
   return type;
 }
@@ -227,6 +233,8 @@ Value VariantValueStorageBase::getMValueReference() const {
     return rvalue;
   if (auto bvalue = dyn_cast<MBValue>(storage))
     return bvalue;
+  if (auto mbpvalue = dyn_cast<MBPValue>(storage))
+    return mbpvalue;
   llvm_unreachable("invalid use of non-MValue");
 }
 
@@ -256,6 +264,26 @@ void MLValue::check() const {
 void MBValue::check() const {
   // MBValue allow any mutability.
   assert(::isa<RefType>(Value::getType()));
+}
+
+void MBPValue::check() const {
+  assert(::isa<RefType>(Value::getType()) &&
+         ::cast<RefType>(Value::getType()).getMutabilityClass() ==
+             LifetimeType::Parametric &&
+         "MBPValue can only be used for a parametric mutability reference");
+}
+
+/// Given a value of !lit.ref type, return an MLValue/MBValue/MBPValue
+/// depending on the mutability of the reference.
+CValue CValue::getMValueForRef(Value refValue) {
+  switch (cast<RefType>(refValue.getType()).getMutabilityClass()) {
+  case LifetimeType::Mutable:
+    return MLValue(refValue);
+  case LifetimeType::Immutable:
+    return MBValue(refValue);
+  case LifetimeType::Parametric:
+    return MBPValue(refValue);
+  }
 }
 
 //===----------------------------------------------------------------------===//

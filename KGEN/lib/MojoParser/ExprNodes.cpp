@@ -776,17 +776,20 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return {};
   }
 
-  // If the base is an MRValue or MBValue, reference the field as an
-  // MBValue so we lazy copy only the piece that is needed in the case of
-  // `x.y.z.w`
+  // If the base is an MBValue or MBPValue, project the field reference in the
+  // same way.
   if (MBValue baseMBV = baseBVal.getIfMBValue()) {
     auto fieldRef =
         emitter.builder->create<RefStructGEROp>(mlirLoc, baseMBV, fieldOp);
     return emitter.emitCResult(MBValue(fieldRef), expr, dest);
   }
+  if (MBPValue baseMBPV = baseBVal.getIfMBPValue()) {
+    auto fieldRef =
+        emitter.builder->create<RefStructGEROp>(mlirLoc, baseMBPV, fieldOp);
+    return emitter.emitCResult(MBPValue(fieldRef), expr, dest);
+  }
 
-  // Otherwise, we have an SSA register for the base, which must be an SRValue
-  // or SBValue.
+  // Otherwise, it must be a SBValue in an SSA value.
   SBValue baseSB = baseBVal.getIfSBValue();
   assert(baseSB && "All cases handled above");
   auto extractVal =
@@ -3074,16 +3077,13 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
         emitter.emitSRValue({subExprValue, subExpr}, dest.getContext());
     if (!exprVal)
       return {};
-    auto refType = dyn_cast<RefType>(exprVal.getType());
-    if (!refType) {
+    if (!isa<RefType>(exprVal.getType())) {
       emitter.emitError(getLoc(), "operand isn't a '!lit.ref' type ")
           << ASTType(exprVal.getType()) << getRange();
       return {};
     }
 
-    if (refType.isMutableKnown(true))
-      return emitter.emitResult(MLValue(exprVal), this, dest);
-    return emitter.emitResult(MBValue(exprVal), this, dest);
+    return emitter.emitResult(CValue::getMValueForRef(exprVal), this, dest);
   }
 
   // __get_address_as_uninit_lvalue and __get_address_as_owned_value take a
