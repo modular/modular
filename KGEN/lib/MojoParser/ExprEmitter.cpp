@@ -1542,44 +1542,21 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // If the destination is an MLValue with a matching type, then just
       // materialize directly into it and return instead of allocating a
       // temporary if the conversion constructor requires one.
-      MLValue destML = destLV.getIfMLValue();
-      ValueDest nmConversionDest =
-          destML ? ValueDest(destML, context) : ValueDest(context);
-      CValue nmConversionVal =
+      ValueDest nmConversionDest(destLV, context);
+      CValue convertedVal =
           emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
                               CallSyntax::kIndirectCall, nmConversionDest,
                               /*allowImplicitConversion=*/true);
-      if (destML)
-        return MBValue(destML);
-      value = {nmConversionVal, value.expr};
+      return emitBValue({convertedVal, value.expr}, context);
     }
   }
-
-  if (!value.ir.getRValueType())
-    return {};
 
   assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
          "Types should match");
 
-  // If this is a computed LValue, then perform a writeback.
-  if (auto dlValue = destLV.getIfDLValue()) {
-    // If the value itself is an LValue, emit a load so we can call the setter.
-    if (auto valueLV = value.ir.getIfLValue()) {
-      ValueDest loadDest(context);
-      value.ir = emitLoadOfLValue({valueLV, value.expr}, loadDest);
-      if (!value)
-        return {};
-    }
-
-    // Then store into the dest DLValue.
-    {
-      llvm::SaveAndRestore savedContext(paramContext, context);
-      dlValue->emitStore(value, *this);
-    }
-
-    // Decay the input value to a BValue since ownership was taken by the store.
-    return emitBValue(value, context, {});
-  }
+  // If the destination is a computed LValue, then perform a write.
+  if (auto dlValue = destLV.getIfDLValue())
+    return dlValue->emitStore(value, *this);
 
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();

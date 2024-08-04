@@ -312,8 +312,8 @@ public:
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
-  /// This emits the value to the specified value dest, transfering ownership to
-  /// the destination and returning a reference if dest consumes it, or the
+  /// This emits the value to the specified value dest, transferring ownership
+  /// to the destination and returning a reference if dest consumes it, or the
   /// RValue directly if not.
 
   /// This emits the value to the specified destination as a concrete RValue.

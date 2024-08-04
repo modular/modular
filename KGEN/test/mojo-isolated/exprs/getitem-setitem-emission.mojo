@@ -66,24 +66,22 @@ fn test_setitem[x: int](a: WeirdArray, idx: int):
 
 # CHECK-LABEL: lit.func @"test_getitem_slice
 fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
-    # CHECK: lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}([[SLICEPTR:%.*]], %none, %none_0, %none_1)
+    # CHECK: lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}([[SLICEPTR:%.*]], %none{{.*}}, %none{{.*}}, %none{{.*}})
     # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:]
 
-    # CHECK: lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}([[SLICEPTR:%.*]], %none_2, %none_3, %none_4)
+    # CHECK: lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}([[SLICEPTR:%.*]], %none{{.*}}, %none{{.*}}, %none{{.*}})
     # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[::]
 
-    # CHECK: %[[NONE:.*]] = kgen.param.constant: none
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type index, :type index, :type none>([[SLICEPTR:%.*]], %i, %j, %[[NONE]])
+    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type index, :type index, :type none>([[SLICEPTR:%.*]], %i, %j, %none{{.*}})
     # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j]
 
-    # CHECK: %[[NONE:.*]] = kgen.param.constant: none
-    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type index, :type index>([[SLICEPTR:%.*]], %[[NONE]], %i, %j)
+    # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type index, :type index>([[SLICEPTR:%.*]], %none{{.*}}, %i, %j)
     # CHECK-NEXT: [[SLICE:%.*]] = lit.ref.load [[SLICEPTR]]
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:i:j]

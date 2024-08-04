@@ -665,7 +665,7 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
     if (!captureRVal)
       return;
 
-    // How is this transfering the RValue into the closure?
+    // How is this transferring the RValue into the closure?
     DeclIRValue resultVal;
     if (auto srVal = captureRVal.getIfSRValue())
       resultVal = srVal;
@@ -919,7 +919,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   SyntheticNode node(loc);
 
   // Pass all the captured values into the initializer.  In the case of a move
-  // capture, this will be an RValue for the thing captured, transfering to the
+  // capture, this will be an RValue for the thing captured, transferring to the
   // owned argument in the initializer.
   CallOperands closureImplInitArgs;
   for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl))
