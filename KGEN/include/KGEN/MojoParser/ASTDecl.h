@@ -11,7 +11,6 @@
 #ifndef KGEN_MOJOPARSER_ASTDECL_H
 #define KGEN_MOJOPARSER_ASTDECL_H
 
-#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -23,6 +22,12 @@ namespace M::KGEN::LIT {
 class StructType;
 class DocStringAttr;
 class DocString;
+class TraitDeclOp;
+class TraitType;
+
+using DeclIRValue =
+    SmartVariant<Operation *, PValue, SRValue, SBValue, MBValue, MRValue,
+                 MLValue, MBPValue, RCRef<BaseDLValue>>;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other

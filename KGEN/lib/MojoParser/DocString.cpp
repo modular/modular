@@ -5,11 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DocString.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MojoParser/ASTDecl.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"

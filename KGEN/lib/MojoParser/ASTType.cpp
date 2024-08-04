@@ -10,6 +10,7 @@
 
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
