@@ -5,11 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/SharedState.h"
+
 #include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
