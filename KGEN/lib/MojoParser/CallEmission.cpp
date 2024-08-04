@@ -415,50 +415,68 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       operands.hasSelfOperand = false;
     }
 
-    // It is possible this candidate needs some arguments emitted as MValues
-    // (from PValue or SValues) to be passed as 'ref' arguments.  If this
-    // happens, emit them now and then re-infer the correct lifetimes.
-    const auto &argsNeedingLifetimes = bestFitness->getArgsNeedingLifetimes();
-    std::optional<OverloadFitness> replaced;
-    if (argsNeedingLifetimes.any() &&
-        // Parameter emission can always use immortal lifetimes.
-        emitter.builder) {
-      // Emit each of the arguments that needs a lifetime to an MValue.
-      for (size_t i = 0, e = argsNeedingLifetimes.size(); i != e; ++i) {
-        if (!argsNeedingLifetimes[i])
-          continue;
-        // If the operand is a positional argument it will be in the normal
-        // operand list, otherwise it will be in the kwargs list.
-        assert(i < operands.size() && "argument index incorrect");
-
-        // We emit this as an MBValue instead of an MRValue specifically so we
-        // do not infer mutability from the temporary.  We don't want ref's with
-        // parametric lifetime to bind mutably to these values.
-        auto newVal =
-            emitter.emitMBValue({operands[i]}, ExprContext::EC_CallRefArgValue);
-        if (!newVal)
-          return {}; // Failed to emit the PValue/SValue to an MBValue.
-        operands.values[i].ir = newVal;
-      }
-
-      // Now that we have the operands set, we re-evaluate the bindings, which
-      // will reinfer parameters, getting the correct lifetimes from the MValues
-      // that are required by this overload candidate.
-      replaced.emplace(OverloadFitness::evaluate(
-          selectedFunc.getFullSignature(), selectedDecl, *this, operands,
-          allowImplicitConversions));
-      bestFitness = &replaced.value();
-
-      assert(bestFitness->isValid() &&
-             "Re-emitting function to infer lifetimes didn't work");
-      assert(bestFitness->getArgsNeedingLifetimes().none() &&
-             "Re-emitting function infer lifetimes shouldn't need more MValues "
-             "emitted");
-    }
-
-    // Finally, wrap things up into one callee.
+    // Finally, wrap things up into one callee, resolving it to a PValue with
+    // the parameters bound and substituted into its signature.
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
+      newBindings.addPrechecked(expr, bind);
+
+    PValue boundFunction =
+        getCallee(getShared(), selectedDecl, baseName, newBindings, expr);
+
+    // It is possible this candidate needs some arguments emitted as MValues
+    // (from PValue or SValues) to be passed as 'ref' arguments.  If this
+    // happens, emit them now and then re-infer the correct lifetimes.  If not,
+    // we're done.
+    const auto &argsNeedingLifetimes = bestFitness->getArgsNeedingLifetimes();
+    if (!argsNeedingLifetimes.any() ||
+        // Parameter emission can always use immortal lifetimes.
+        !emitter.builder) {
+      // No arguments need to be spilled to boxes.
+      return boundFunction;
+    }
+
+    // Emit each of the arguments that needs a lifetime to an MValue.
+    for (size_t i = 0, e = argsNeedingLifetimes.size(); i != e; ++i) {
+      if (!argsNeedingLifetimes[i])
+        continue;
+      // If the operand is a positional argument it will be in the normal
+      // operand list, otherwise it will be in the kwargs list.
+      assert(i < operands.size() && "argument index incorrect");
+
+      // The argument value may have implicit conversions necessary, so make
+      // sure to emit it into the expected type.
+      ASTType argType =
+          cast<SignatureType>(boundFunction.getType()).getArguments()[i];
+      // Strip off the ref to get the RValue type.
+      argType = argType.getReferenceElementType();
+
+      // We emit this as an MBValue instead of an MRValue specifically so we
+      // do not infer mutability from the temporary.  We don't want ref's with
+      // parametric lifetime to bind to these values.
+      auto newVal = emitter.emitMBValue(
+          {operands[i]}, ExprContext::EC_CallRefArgValue, argType);
+      if (!newVal)
+        return {}; // Failed to emit the PValue/SValue to an MBValue.
+      operands.values[i].ir = newVal;
+    }
+
+    // Now that we have the operands set, we re-evaluate the bindings, which
+    // will reinfer parameters, getting the correct lifetimes from the MValues
+    // that are required by this overload candidate.
+    auto newFitness =
+        OverloadFitness::evaluate(selectedFunc.getFullSignature(), selectedDecl,
+                                  *this, operands, allowImplicitConversions);
+
+    assert(newFitness.isValid() &&
+           "Re-emitting function to infer lifetimes didn't work");
+    assert(newFitness.getArgsNeedingLifetimes().none() &&
+           "Re-emitting function infer lifetimes shouldn't need more MValues "
+           "emitted");
+
+    // Update boundFunction to include the newly inferred parameters.
+    newBindings = ParamBindings((const TypeCheckScopeInfo &)paramBindings);
+    for (TypedAttr bind : newFitness.getParamBindings())
       newBindings.addPrechecked(expr, bind);
 
     return getCallee(getShared(), selectedDecl, baseName, newBindings, expr);

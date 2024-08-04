@@ -429,7 +429,7 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest, mut *"anonymous*`1">
   var r = a.method()
   # The result reference should have inferred the lifetime of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :lifetime<1> *"anonymous*`1",
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :lifetime<0> (mutcast mut *"anonymous*`1"),
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r

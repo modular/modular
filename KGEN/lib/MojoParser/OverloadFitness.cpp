@@ -443,38 +443,44 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     RefType valueRefType;
     if (operand.ir.isMValue()) {
       valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
-    } else if (auto cv = operand.ir.getIfCValue()) {
-      // Otherwise, we are binding something like a PValue or SRValue to a
-      // reference argument, which doesn't have a lifetime.  This is a problem
-      // because lifetimes can be propagated through the type system of the
-      // function call to other arguments and they all need to line up.  We
-      // handle this in two phases: during overload resolution we bind this to
-      // an immortal lifetime, and then after the candidate is selected, we
-      // re-emit these arguments to memory and re-infer all the parameters.
-      //
-      // One detail is how we do this: we bind these arguments to immutable
-      // temporaries, because we specifically do NOT want 'ref' arguments with
-      // parametric mutability to treat these things as mutable.
-      valueRefType = RefType::getImmortal(cv.getRValueType(), /*isMut=*/false);
-
-      // Remember that this argument needs to be emitted.
-      argsNeedingLifetimes.resize(operandIdx + 1);
-      argsNeedingLifetimes[operandIdx] = true;
     } else {
-      // TODO: See if we can resolve the OValue based on the expectedType.
+      // If this is a def argument box, infer the reference from the underlying
+      // def argument.
+      if (auto dlv = operand.ir.getIfDLValue())
+        valueRefType = dlv->getMBValueTypeFromDefArgument();
+    }
+
+    // If we are binding to something that is already a reference, check for
+    // compatibility of the references and we're done.
+    if (valueRefType) {
+      if (canConvertWithRebind(valueRefType, expectedType, shared))
+        return {kValidType, expectedType};
+      // Otherwise this is the wrong type for the argument.
       return {kWrongType, expectedType};
     }
 
-    // If the available reference type is compatible with what we need, then
-    // we succeed.
-    if (canConvertWithRebind(valueRefType, expectedType, shared))
-      return {kValidType, expectedType};
+    // Otherwise, we are binding something like a PValue or SRValue to a
+    // reference argument, which doesn't have a lifetime.  This is a problem
+    // because lifetimes can be propagated through the type system of the
+    // function call to other arguments and they all need to line up.  We
+    // handle this in two phases: during overload resolution we bind this to
+    // an immortal lifetime, and then after the candidate is selected, we
+    // re-emit these arguments to memory and re-infer all the parameters.
+    //
+    // One detail is how we do this: we bind these arguments to immutable
+    // temporaries, because we specifically do NOT want 'ref' arguments with
+    // parametric mutability to treat these things as mutable.
+    if (cast<RefType>(expectedType).isMutableKnown(true))
+      return {kWrongType, expectedType};
 
-    // Otherwise this is the wrong type for the argument.
-    return {kWrongType, expectedType};
-  }
+    // Remember that this argument needs to be emitted.
+    argsNeedingLifetimes.resize(operandIdx + 1);
+    argsNeedingLifetimes[operandIdx] = true;
 
+    // Handle this like a normal memory argument, since the value can undergo
+    // implicit conversions etc.
     [[fallthrough]];
+  }
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
     // Ignore the pointer type on memory conventions when matching types.

@@ -759,13 +759,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   Value arg;
   switch (convention) {
-  case ArgConvention::Ref:
-    if (argValAndExpr.ir.isMValue())
-      return argValAndExpr.ir.getMValueReference();
-
-    // Promote PValue's if needed.
-    return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
-
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("this is handled specially during call emission");
@@ -790,7 +783,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     arg = argValAndExpr.ir.getIfSBValue();
     assert(arg && "unknown BValue");
-    break;
+    return arg;
+  case ArgConvention::Ref:
+    assert(argValAndExpr.ir.isMValue() &&
+           "Ref args are already emitted to boxes during overload resolution");
+    return argValAndExpr.ir.getMValueReference();
+
   case ArgConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
       // "Convert" an SBValue to an MBValue by performing a bitcopy of the value
@@ -870,12 +868,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     return mlvBuffer;
   }
   }
-  if (!arg) {
-    llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";
-    argValAndExpr.ir.dump();
-    llvm_unreachable("didn't get a value as expected");
-  }
-  return arg;
+  llvm_unreachable("unexpected argument convention");
 }
 
 /// This function drops `init_self` or `byref_result` result slots from an

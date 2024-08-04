@@ -662,27 +662,42 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return failure();
 
     RefType valueRefType;
-    if (value.isMValue()) {
+    if (argVal.isMValue()) {
       valueRefType = cast<RefType>(value.getMValueReference().getType());
-    } else if (auto cv = value.getIfCValue()) {
+      // If the IRValue type is MBValue or MRValue then we need infer an
+      // immutable ref, to match behavior where we don't allow passing an
+      // MBValue or MRValue as inout.
+      if (!argVal.getIfMLValue() && !argVal.getIfMBPValue() &&
+          !valueRefType.isMutableKnown(false))
+        valueRefType = valueRefType.getWithMutability(false);
+
+    } else {
       // If this is a def argument box, infer the reference from the underlying
       // def argument.
-      if (auto dlv = value.getIfDLValue())
+      if (auto dlv = argVal.getIfDLValue())
         valueRefType = dlv->getMBValueTypeFromDefArgument();
-
-      // This argument will need to be emitted to a temporary in a later pass,
-      // but for now we can just infer immortal.
-      if (!valueRefType)
-        valueRefType =
-            RefType::getImmortal(cv.getRValueType(), /*isMut=*/false);
-    } else {
-      // TODO: Could infer from expected type to resolve OValues?
-      return failure();
     }
 
+    // If we are binding the reference to a value in memory directly, check for
+    // reference compatibility.
     if (valueRefType)
       return matchTypes(valueRefType, expectedType);
-    return success();
+
+    // Otherwise, we'll need to drop this value into a temporary.  For now, we
+    // infer it as immortal.  We bind the lifetime directly and then handle it
+    // like any other argument because we can support implicit conversions.
+    valueRefType =
+        RefType::getImmortal(argVal.getRValueType(), /*isMut=*/false);
+    auto expectedRef = cast<RefType>(expectedType);
+
+    (void)matchParams(valueRefType.getLifetime(), expectedRef.getLifetime());
+    (void)matchSingleEltStruct(valueRefType.getAddressSpace(),
+                               expectedRef.getAddressSpace());
+
+    // Handle the element type compatibility check below to allow implicit
+    // conversions etc.
+    expectedType = expectedType.getReferenceElementType();
+    break;
   }
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:

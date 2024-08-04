@@ -355,7 +355,8 @@ public:
   /// This helper emits the specified value as an MBValue which has
   /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.
-  MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context);
+  MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                      ASTType resultType = {});
 
   /// This helper emits the specified expression as a parameter value,
   /// diagnosing the problem if the expression is only valid as a runtime value.
