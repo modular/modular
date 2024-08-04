@@ -147,3 +147,13 @@ fn initialize_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
 fn mutate_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
     # expected-error @+1 {{value cannot be passed from a non-default address space}}
     mutateMem(ptr[])
+
+struct ParametricMutability:
+    fn take_inout(inout self): # expected-note {{function declared here}}
+       # This is ok
+       self.take_parametric()
+
+    fn take_parametric(ref [_]self: Self):
+        # expected-error @+1 {{invalid call to 'take_inout': invalid use of mutating method on rvalue of type 'ParametricMutability'}}
+        self.take_inout()
+

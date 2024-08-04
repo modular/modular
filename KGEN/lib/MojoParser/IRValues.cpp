@@ -243,10 +243,20 @@ Value VariantValueStorageBase::getSValueRegister() const {
   llvm_unreachable("invalid use of non-SValue");
 }
 
-// TODO(lifetimes): remove pedantic checks.
-void MRValue::check() const { assert(::isa<RefType>(Value::getType())); }
-void MLValue::check() const { assert(::isa<RefType>(Value::getType())); }
-void MBValue::check() const { assert(::isa<RefType>(Value::getType())); }
+void MRValue::check() const {
+  assert(::isa<RefType>(Value::getType()) &&
+         ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
+         "MRValue can only be used for a mutable reference");
+}
+void MLValue::check() const {
+  assert(::isa<RefType>(Value::getType()) &&
+         ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
+         "MLValue can only be used for a mutable reference");
+}
+void MBValue::check() const {
+  // MBValue allow any mutability.
+  assert(::isa<RefType>(Value::getType()));
+}
 
 //===----------------------------------------------------------------------===//
 // OverloadSetUValue
