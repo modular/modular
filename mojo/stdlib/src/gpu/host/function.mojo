@@ -433,7 +433,7 @@ struct Function[
         *Ts: AnyType
     ](
         self,
-        args: VariadicPack[_, _, AnyType, Ts],
+        args: VariadicPack[_, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
