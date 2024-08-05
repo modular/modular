@@ -17,6 +17,7 @@ modular_py_test(
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/EngineAPI:inputs",
         "//SDK/integration-test/EngineAPI:pytest_inputs",
+        "//SDK/test/API/graph/python:testdata",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
@@ -24,6 +25,7 @@ modular_py_test(
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "MODULAR_IS_CUDA_AVAILABLE": "false",  # TODO: Run tests on GPU if they get re-enabled
+        "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
@@ -38,5 +40,7 @@ modular_py_test(
         "//ModularFramework/examples/pipelines_python:llama3",
         "//SDK/lib/EngineAPI/python:max_engine",
         requirement("torch"),
+        requirement("sentencepiece"),
+        requirement("gguf"),
     ],
 )
