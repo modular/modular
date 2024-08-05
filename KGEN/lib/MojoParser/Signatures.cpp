@@ -1127,18 +1127,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::OwnedInMem:
   case ArgConvention::Ref:
   case ArgConvention::BorrowedInMem:
-    // TODO: Use CValue::getMValueForRef when DeclIRValue goes away.
-    switch (cast<RefType>(bbArg.getType()).getMutabilityClass()) {
-    case LifetimeType::Mutable:
-      argIRValue = MLValue(bbArg);
-      break;
-    case LifetimeType::Immutable:
-      argIRValue = MBValue(bbArg);
-      break;
-    case LifetimeType::Parametric:
-      argIRValue = MBPValue(bbArg);
-      break;
-    }
+    argIRValue = CValue::getMValueForRef(bbArg);
     break;
   case ArgConvention::OwnedInReg:
     // NOTE: This will get wrapped and turned into an SLValue within the body.

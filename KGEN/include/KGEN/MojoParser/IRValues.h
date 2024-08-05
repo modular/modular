@@ -361,6 +361,10 @@ struct VariantValueStorageBase {
   /// Given an S*Value, return the underlying register.
   Value getSValueRegister() const;
 
+  /// Given an S*Value or M*Value, return the underlying register/reference.  If
+  /// not, return a null Value.
+  Value getMlirValue() const;
+
 protected:
   Storage storage;
 };

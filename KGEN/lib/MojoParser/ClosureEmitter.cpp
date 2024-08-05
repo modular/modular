@@ -690,7 +690,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     //      fn closure(self: CaptureStruct):
     //        use(self.a)
     // which now has the lifetime (and mutability) of 'self'.
-    Value captureValue = capture.getMlirValue();
+    Value captureValue = capture.getValue().getMlirValue();
     if (captureValue.getType() != target.getType()) {
       auto captureType = cast<RefType>(captureValue.getType());
       auto targetRef = cast<RefType>(target.getType());
@@ -1065,12 +1065,4 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   }
   setMember(topLevelCall, callFieldAttr, topLevelTypes.callFuncFieldType);
   return init;
-}
-
-Value Capture::getMlirValue() const {
-  if (value.isSValue())
-    return value.getSValueRegister();
-  if (value.isMValue())
-    return value.getMValueReference();
-  return {};
 }

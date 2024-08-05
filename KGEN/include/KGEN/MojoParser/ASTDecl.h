@@ -25,9 +25,7 @@ class DocString;
 class TraitDeclOp;
 class TraitType;
 
-using DeclIRValue =
-    SmartVariant<Operation *, PValue, SRValue, SBValue, MBValue, MRValue,
-                 MLValue, MBPValue, RCRef<BaseDLValue>>;
+using DeclIRValue = SmartVariant<Operation *, CValue>;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
@@ -44,25 +42,12 @@ class ASTDecl {
 public:
   MLIRContext *getContext() const;
 
-  /// Return the Module, StructDecl, Func, or ParamDecl that this scope
-  /// corresponds to.
-  DeclIRValue getIRValue() const { return irValue; }
-  void setIRValue(DeclIRValue value) { irValue = std::move(value); }
-
-  /// Dump the underlying IR value.
-  void dump() const;
-
-  /// If this declaration is defined by its value (e.g. a parameter value or an
-  /// SSA value) then return it.
-  RValue getIfRValue() const;
-  BValue getIfBValue() const;
-  PValue getIfPValue() const { return dyn_cast_or_null<PValue>(irValue); }
-  LValue getIfLValue() const;
+  CValue getIfIRValue() const { return dyn_cast<CValue>(irValue); }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
-  Operation *getIfOperation() const {
-    return dyn_cast_or_null<Operation *>(irValue);
-  }
+  /// This is used for things like Module, StructDecl, Func, or ParamDecl.
+  Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
+  void setIRValue(DeclIRValue value) { irValue = value; }
 
   /// Get the name of the declaration if it has one.
   std::optional<StringRef> getNameIfOperation() const;
@@ -106,7 +91,7 @@ public:
 
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
-    if (Operation *op = dyn_cast<Operation *>(irValue))
+    if (Operation *op = getIfOperation())
       if (op->getNumRegions() != 0)
         return OpBuilder::atBlockEnd(&op->getRegion(0).front());
     return OpBuilder(getContext());
@@ -214,6 +199,9 @@ public:
   /// ASTDecl instance and help generate such names.
   unsigned getNextUniqueID() { return counter++; }
 
+  /// Dump the underlying IR value.
+  void dump() const;
+
 private:
   friend class DeclResolver;
   friend class SharedState;
@@ -223,7 +211,8 @@ private:
   ASTDecl &operator=(const ASTDecl &) = delete;
 
 private:
-  /// This is the MLIR declaration that this scope corresponds to.
+  /// This is the IRValue or MLIR operation that this decl corresponds to if it
+  /// has one.
   DeclIRValue irValue;
 
   /// This is the source location of the declaration, used for diagnostics and
@@ -308,11 +297,11 @@ struct CastInfo<T, M::KGEN::LIT::ASTDecl>
   // Provide isPossible here because here we have the const-stripping from
   // ConstStrippingCast.
   static bool isPossible(M::KGEN::LIT::ASTDecl &decl) {
-    auto *op = dyn_cast_or_null<mlir::Operation *>(decl.getIRValue());
+    auto *op = decl.getIfOperation();
     return op && T::classof(op);
   }
   static T doCast(M::KGEN::LIT::ASTDecl &decl) {
-    return T(cast<mlir::Operation *>(decl.getIRValue()));
+    return T(decl.getIfOperation());
   }
 };
 template <typename T>
@@ -332,11 +321,11 @@ struct CastInfo<T, M::KGEN::LIT::ASTDecl *>
   static bool isPossible(M::KGEN::LIT::ASTDecl *decl) {
     if (!decl)
       return false;
-    auto *op = dyn_cast_or_null<mlir::Operation *>(decl->getIRValue());
+    auto *op = decl->getIfOperation();
     return op && T::classof(op);
   }
   static T doCast(M::KGEN::LIT::ASTDecl *decl) {
-    return T(cast<mlir::Operation *>(decl->getIRValue()));
+    return T(decl->getIfOperation());
   }
 };
 template <typename T>

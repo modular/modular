@@ -16,6 +16,7 @@
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
+
 #include "MojoUtils.h"
 #include "Signatures.h"
 
@@ -455,7 +456,8 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
                                           ExprEmitter &emitter) {
   for (ASTDecl *decl : lookup.getIfSuccess()) {
     // If this contains anything mutable, return false.
-    if (isa<VarDeclOp, GlobalVarDeclOp>(*decl) || decl->getIfLValue())
+    if (isa<VarDeclOp, GlobalVarDeclOp>(*decl) ||
+        decl->getIfIRValue().getIfLValue())
       return false;
 
     // If this is an immutable thing in the current scope, then return false.
@@ -634,7 +636,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(result, this, dest);
   }
 
-  if (auto pvalue = decl.getIfPValue())
+  if (auto pvalue = decl.getIfIRValue().getIfPValue())
     return emitter.emitResult(pvalue, this, dest);
 
   // Narrow the decl to a CValue.
@@ -649,12 +651,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto ref =
         emitter.builder->create<GlobalVarRefOp>(getLocation(emitter), globalOp);
     value = MLValue(ref);
-  } else if (auto rvalue = decl.getIfRValue()) {
-    value = rvalue;
-  } else if (auto bvalue = decl.getIfBValue()) {
-    value = bvalue;
-  } else if (auto lvalue = decl.getIfLValue()) {
-    value = lvalue;
+  } else if (auto cv = decl.getIfIRValue()) {
+    value = cv;
   } else {
     emitter.emitError(getLoc(), "use of declaration '")
         << spelling << "' as a value isn't supported yet" << getRange();
@@ -1355,7 +1353,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // This parameter will refer to the generic parameter on the base type decl,
   // e.g the base struct. We need to substitute it for the "real" parameter used
   // to construct this specific type, not the shared type on the struct.
-  if (auto parameter = memberDecl.getIfPValue()) {
+  if (auto parameter = memberDecl.getIfIRValue().getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
     if (auto baseDecl = dyn_cast<LIT::StructType>(baseRVType)) {
       for (auto [name, value] :
