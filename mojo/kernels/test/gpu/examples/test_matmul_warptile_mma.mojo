@@ -533,7 +533,7 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     ]()
 
     @always_inline
-    @__copy_capture(a_buffer, b_buffer, c_buffer, func_naive)
+    @__copy_capture(a_buffer, b_buffer, c_buffer)
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
         ctx.enqueue_function(
