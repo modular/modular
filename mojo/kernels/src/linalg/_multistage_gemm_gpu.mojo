@@ -854,25 +854,25 @@ fn multistage_gemm[
                 1, simd_size
             ]().distribute[c_store_layout](ThreadIdx.x())
             var thread_offset = c_gmem_frag.distance(c.data)
+            alias num_stores_per_thread = c_gmem_frag.layout.size()
+            alias src_align = alignof[
+                SIMD[accum_type, simdwidthof[accum_type]()]
+            ]()
+            alias dst_align = alignof[SIMD[c_type, simd_size]]()
 
             @parameter
-            for i in range(c_gmem_frag.layout.size()):
-                alias dst_idx: UInt = c_gmem_frag.layout(i)
+            for i in range(num_stores_per_thread):
+                alias src_idx = c_smem_frag.layout(i)
+                alias dst_idx = c_gmem_frag.layout(i)
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     epilogue(
                         (m, n),
-                        c_smem_frag.aligned_load[simd_size](i, 0).cast[
-                            c_type
-                        ](),
+                        c_smem_frag.ptr.load[
+                            width=simd_size, alignment=src_align
+                        ](src_idx).cast[c_type](),
                     )
-                # if M % BM == 0:
-                #     epilogue((m, n), vec)
-                # else:
-                #     if m < M:
-                #         epilogue((m, n), vec)
-
         else:
             if M % BM == 0:
                 copy_sram_to_dram[
