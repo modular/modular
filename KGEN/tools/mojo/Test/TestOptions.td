@@ -5,8 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 include "Test/TestDescription.td"
-include "Common/DiagnosticFormatOptions.td"
 include "Support/Driver/CommonOptions.td"
+include "Common/DiagnosticFormatOptions.td"
+include "../Common/CompilationOptions.td"
+include "../Common/DiagnosticOptions.td"
+include "../Common/TargetOptions.td"
 
 //===----------------------------------------------------------------------===//
 // Collection Options
@@ -24,16 +27,3 @@ def keep_entrypoint : Flag<["--"], "keep-entrypoint">,
   Group<CollectionOptionGroup>, Index<1>,
   HelpText<"Keep the test entrypoint for later debugging.">,
   Flags<[HelpHidden]>;
-
-//===----------------------------------------------------------------------===//
-// Compilation Options
-//===----------------------------------------------------------------------===//
-
-def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<2>;
-
-// TODO: Remove this when we can infer additional import directories from the
-// test file's location.
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
-  MetaVarName<"PATH">,
-  HelpText<"Appends the given path to the list of directories to search for "
-           "imported Mojo files.">;
