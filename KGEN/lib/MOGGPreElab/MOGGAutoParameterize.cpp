@@ -14,6 +14,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
+#include "Support/AssertStream.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/AttrTypeSubElements.h"
@@ -24,6 +25,8 @@
 #include "UserLibraryChecker.h"
 
 #include "Helpers.h"
+
+#define DEBUG_TYPE "mogg-autoparameterize"
 
 using namespace M;
 using namespace KGEN;
@@ -165,34 +168,225 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   const SymbolTable &symtab;
   llvm::sys::SmartRWMutex<true> mutex;
 };
+
+using CallGraphImpl = CallGraph;
+
 } // namespace
 
 /// Create a specialzied version of the function now accepting a tensor spec
 /// parameter.
 static GeneratorOp specializeOnSpec(CallGraphNode *node,
-                                    TensorSpecKGEN &specTemplate) {
+                                    TensorSpecKGEN &specTemplate,
+                                    const CallGraphImpl &cg) {
+  const SymbolTable &symTab = cg.symtab;
+
   GeneratorOp gen = node->func;
   ArrayAttr argNames = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_SRC_NAMES);
+  ArrayAttr argParams = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_PARAMS);
   llvm::BitVector &argsToSpec = node->argsNeedingSpec;
 
+  LLVM_DEBUG(llvm::dbgs() << "BEGIN specializeOnSpec for " << gen.getSymName()
+                          << "\n");
+
   // Track the spec params we have for each argument.
-  llvm::StringMap<ParamDeclAttr> argNameToSpecParam;
+  // Pair paramDecl / argument index.
+  llvm::StringMap<std::pair<ParamDeclAttr, size_t>> argNameToSpecParam;
 
   GeneratorOp cloned = gen.clone();
 
   // Get the existing params, these won't change.
   SmallVector<ParamDeclAttr> params(cloned.getInputParams());
 
-  // Add the new param decl for the tensor spec.
+  // Reset the argsToSpec and prepare for optional parameters.
+  // We'll only add parameters if needed (specsof or call to another kernel).
   for (size_t argIdx = 0, e = argsToSpec.size(); argIdx < e; ++argIdx) {
     if (argsToSpec[argIdx]) {
-      std::string paramName = (SPEC_PREFIX_STR + std::to_string(argIdx)).str();
-      params.push_back(ParamDeclAttr::get(paramName, specTemplate.getType()));
-
-      argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()] =
-          params.back();
+      argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()] = {
+          nullptr, argIdx};
+      argsToSpec[argIdx] = false;
     }
   }
+
+  // Replace all references to the "get_param" intrinsic which the concrete
+  // param.
+  mlir::AttrTypeReplacer walker;
+  walker.addReplacement(
+      [&](ParamOperatorAttr attr) -> std::optional<TypedAttr> {
+        // Check if it matches any of our getter functions, if so replace it
+        // with a reference to that parameter.
+        for (ParamOperatorAttr getter : node->getterFunctions) {
+          if (attr != getter)
+            continue;
+
+          StringAttr tensorName = cast<StringAttr>(attr.getOperand(1));
+          auto itr = argNameToSpecParam.find(tensorName.strref());
+          if (itr == argNameToSpecParam.end())
+            continue;
+
+          std::pair<ParamDeclAttr, size_t> &paramInfos = itr->second;
+          if (paramInfos.first == nullptr) {
+            // First time we encounter a getter function for this argument.
+            // Define and add a specs parameter to the function.
+            size_t argIdx = paramInfos.second;
+            std::string paramName =
+                (SPEC_PREFIX_STR + std::to_string(argIdx)).str();
+            paramInfos.first = ParamDeclAttr::get(paramName, attr.getType());
+            argsToSpec[argIdx] = true;
+
+            LLVM_DEBUG(llvm::dbgs() << "Add param (specsof) for "
+                                    << tensorName.getValue() << " (input #"
+                                    << argIdx << ").\n";);
+          }
+
+          return ParamDeclRefAttr::get(paramInfos.first);
+        }
+        return std::nullopt;
+      });
+
+  // Apply the replacement on every op in the function.
+  walker.recursivelyReplaceElementsIn(cloned, /*replaceAttrs=*/true,
+                                      /*replaceLocs=*/true,
+                                      /*replaceTypes=*/true);
+
+  // The Spec type from the callee refers to parameter of the callee.
+  // Replace it to use parameters of the caller.
+  auto fixupCalleeSpecType = [&](Type specType, GeneratorOp callee,
+                                 size_t calleeArgIdx,
+                                 size_t callerArgIdx) -> Type {
+    ArrayAttr callerArgParams =
+        cast<ArrayAttr>(argParams.getValue()[callerArgIdx]);
+    ArrayAttr calleeParams = callee->getAttrOfType<ArrayAttr>(MOGG_ARG_PARAMS);
+    ArrayAttr calleeArgParams =
+        cast<ArrayAttr>(calleeParams.getValue()[calleeArgIdx]);
+
+    struct Substitutor : IndexParameterReplacer<Substitutor> {
+      Type tryReplace(Type, size_t) { return nullptr; }
+      Attribute tryReplace(Attribute attr, size_t depth) {
+
+        // Look for a parameter reference.
+        StringRef paramName;
+
+        if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr))
+          paramName = paramRef.getName();
+
+        if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
+          // For index, manually find the reference.
+          if (indexRef.getDepth() != depth || indexRef.getIsResult())
+            return nullptr;
+
+          paramName = callee.getInputParams()[indexRef.getIndex()].getName();
+        };
+
+        if (paramName.empty())
+          return nullptr;
+
+        // Look at the callee parameters to see if we can find it.
+        auto it =
+            llvm::find_if(calleeArgParams, [paramName](Attribute paramAttr) {
+              return cast<ParamDeclRefAttr>(paramAttr).getName() == paramName;
+            });
+        ASSERT_STREAM(it != calleeArgParams.end(),
+                      << "failed to specialize spec type: unknown parameter "
+                      << paramName << " for " << attr);
+
+        // Since the list of parameter match, we can get the new parameter from
+        // the caller list.
+        auto replacedParam = cast<ParamDeclRefAttr>(
+            callerArgParams[std::distance(calleeArgParams.begin(), it)]);
+
+        LLVM_DEBUG(llvm::dbgs()
+                   << "specType: replaced " << attr << " (" << paramName
+                   << ") with " << replacedParam << "\n");
+        return replacedParam;
+      }
+
+      GeneratorOp callee;
+      ArrayAttr callerArgParams;
+      ArrayAttr calleeArgParams;
+    } substitutor;
+    substitutor.callee = callee;
+    substitutor.callerArgParams = callerArgParams;
+    substitutor.calleeArgParams = calleeArgParams;
+    return substitutor.replace(specType);
+  };
+
+  // Find calls to detect other params
+  cloned.walk([&](CallOp oldCall) {
+    // Identify the call
+    auto calledSym =
+        cast<FlatSymbolRefAttr>(oldCall.getCalleeSymbol()).getValue();
+    auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(calledSym));
+    // Skip any non generators.
+    if (!calledFunc)
+      return;
+
+    // We now have unreachable calls because we are dealing with the cloned
+    // calls.
+    auto itr = cg.nodes.find(calledFunc);
+    if (itr == cg.nodes.end())
+      return;
+
+    // Specialize the node.
+    const CallGraphNode *calledFuncNode = &cg.nodes.find(calledFunc)->second;
+    if (!calledFuncNode->specialization)
+      return;
+
+    GeneratorOp specialized = calledFuncNode->specialization;
+
+    size_t calleeParamIdx = oldCall.getCallee().getParamValues().size();
+
+    for (auto [calleeIdx, val] : llvm::enumerate(oldCall->getOperands())) {
+      if (!calledFuncNode->argsNeedingSpec[calleeIdx])
+        continue;
+      ++calleeParamIdx;
+
+      auto blockArg = dyn_cast<BlockArgument>(val);
+      if (!blockArg)
+        continue;
+      auto callerIdx = blockArg.getArgNumber();
+
+      StringRef tensorName = cast<StringAttr>(argNames[callerIdx]).strref();
+      auto itr = argNameToSpecParam.find(tensorName);
+      if (itr == argNameToSpecParam.end())
+        continue;
+
+      std::pair<ParamDeclAttr, size_t> &paramInfos = itr->second;
+      if (paramInfos.first == nullptr) {
+        // First time we encounter this arguments.
+        // Define and add a specs parameter to the function.
+        std::string paramName =
+            (SPEC_PREFIX_STR + std::to_string(callerIdx)).str();
+
+        Type calleeParamTy =
+            specialized.getSignature().getInputParamTypes()[calleeParamIdx - 1];
+        paramInfos.first = ParamDeclAttr::get(
+            paramName, fixupCalleeSpecType(calleeParamTy, specialized,
+                                           calleeIdx, callerIdx));
+        argsToSpec[callerIdx] = true;
+
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Add param (call) for " << tensorName << " (#"
+                   << callerIdx << "): callee input #" << calleeIdx
+                   << " (param #" << (calleeParamIdx - 1) << ") " << "@"
+                   << oldCall.getCalleeSymbol() << ".\n");
+      }
+    }
+  });
+
+  // Let's add the parameters now.
+  // We need to add them at the end to ensure they follow the arguments order.
+  LLVM_DEBUG(llvm::dbgs() << "Original parameters count: " << params.size()
+                          << "\n");
+  for (size_t argIdx = 0, e = argsToSpec.size(); argIdx < e; ++argIdx) {
+    if (argsToSpec[argIdx]) {
+      std::pair<ParamDeclAttr, size_t> &paramInfos =
+          argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()];
+      ASSERT_STREAM(paramInfos.first != nullptr, << "parameter undefined");
+      params.push_back(paramInfos.first);
+    }
+  }
+  LLVM_DEBUG(llvm::dbgs() << "Final parameters count: " << params.size()
+                          << "\n");
 
   // Update the signature to add the new tensor types.
   SignatureType oldSig = cloned.getSignature();
@@ -207,31 +401,12 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
   // Remove the old params from the function.
   cloned.setInputParams(params);
 
-  // Replace all references to the "get_param" intrinsic which the concrete
-  // param.
-  mlir::AttrTypeReplacer walker;
-  walker.addReplacement(
-      [&](ParamOperatorAttr attr) -> std::optional<TypedAttr> {
-        // Check if it matches any of our getter functions, if so replace it
-        // with a reference to that parameter.
-        for (ParamOperatorAttr getter : node->getterFunctions) {
-          if (attr == getter) {
-            StringAttr tensorName = cast<StringAttr>(attr.getOperand(1));
-            auto itr = argNameToSpecParam.find(tensorName.strref());
-            if (itr != argNameToSpecParam.end())
-              return ParamDeclRefAttr::get(itr->second);
-          }
-        }
-        return std::nullopt;
-      });
-
-  // Apply the replacement on every op in the function.
-  walker.recursivelyReplaceElementsIn(cloned, /*replaceAttrs=*/true,
-                                      /*replaceLocs=*/true,
-                                      /*replaceTypes=*/true);
-
   node->hasBeenProcessed = true;
   node->specialization = cloned;
+
+  LLVM_DEBUG(llvm::dbgs() << "END specializeOnSpec for " << gen.getSymName()
+                          << "\n\n");
+
   return cloned;
 }
 
@@ -269,7 +444,8 @@ public:
       return;
     }
 
-    // Build a callgraph of all calls so we have something to traverse through.
+    // Build a callgraph of all calls so we have something to traverse
+    // through.
     CallGraph cg{symTab};
     cg.build(mod, symTab);
 
@@ -324,8 +500,8 @@ public:
 
         CallGraphNode *calleeNode = &cg.nodes.find(g2)->second;
         if (calleeNode->hasBeenProcessed) {
-          // If the caller has tensor arguments needing specs add those tensors
-          // to the set of tensor being tracked.
+          // If the caller has tensor arguments needing specs add those
+          // tensors to the set of tensor being tracked.
           llvm::BitVector &argsToSpec = calleeNode->argsNeedingSpec;
           for (size_t argIdx = 0, e = argsToSpec.size(); argIdx < e; ++argIdx) {
             if (argsToSpec[argIdx])
@@ -346,8 +522,8 @@ public:
       if (anyPendingDeps)
         continue;
 
-      // All the children have been scheduled so we are ready to specialize this
-      // one.
+      // All the children have been scheduled so we are ready to specialize
+      // this one.
       worklist.pop_back();
 
       // Add the needing spec bit mask if this node doesn't already have it.
@@ -368,8 +544,8 @@ public:
           node->argsNeedingSpec[idx] = true;
       }
 
-      // Check to see if there's any use of the special spec replacing intrinsic
-      // within this function.
+      // Check to see if there's any use of the special spec replacing
+      // intrinsic within this function.
       identifyGetterFunctions(node, symTab);
 
       // We can now safely confirm that this node has no tensors needing a
@@ -380,7 +556,7 @@ public:
       }
 
       // Update the arguments needing a spec.
-      GeneratorOp newGen = specializeOnSpec(node, specTemplate);
+      GeneratorOp newGen = specializeOnSpec(node, specTemplate, cg);
       symTab.insert(newGen);
 
       // Each new param is added after the existing params.
@@ -404,8 +580,8 @@ public:
         if (!calledFunc)
           return;
 
-        // We now have unreachable calls because we are dealing with the cloned
-        // calls.
+        // We now have unreachable calls because we are dealing with the
+        // cloned calls.
         auto itr = cg.nodes.find(calledFunc);
         if (itr == cg.nodes.end())
           return;
@@ -422,11 +598,14 @@ public:
           for (TypedAttr inParam : oldCall.getCallee().getParamValues())
             newParamBuffer.push_back(inParam);
 
-          // If we need a parameter and we have that parameter add it, otherwise
-          // add the none spec.
+          // If we need a parameter and we have that parameter add it,
+          // otherwise add the none spec.
           for (auto [i, val] : llvm::enumerate(oldCall->getOperands())) {
             if (calledFuncNode->argsNeedingSpec[i]) {
               auto itr = tensorsToSpecs.find(val);
+              LLVM_DEBUG(llvm::dbgs() << "Fixup call: add parameter for input #"
+                                      << i << " " << val << " (@"
+                                      << oldCall.getCalleeSymbol() << ").\n");
               if (itr == tensorsToSpecs.end())
                 newParamBuffer.push_back(specTemplate.getValue());
               else
