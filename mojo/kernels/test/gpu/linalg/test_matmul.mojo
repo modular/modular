@@ -400,6 +400,7 @@ def main():
                 test_ctx.a_device.tensor,
                 test_ctx.b_device.tensor,
                 ctx,
+                True,
             )
 
             var handle = UnsafePointer[cublasContext]()
@@ -433,6 +434,7 @@ def main():
                 StaticIntTuple[2](M, N),
                 ctx,
             )
+            _ = epilogue_host^
             _ = epilogue_device^
 
         print("===> test non trivial epilogue")
@@ -619,6 +621,28 @@ def main():
 
         test_matmul[DType.bfloat16, DimList(3072, 3072)](
             ctx, (1024, 3072, 3072)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 3072),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        print("=== test fp16 with generic M and epilogue")
+
+        test_matmul[DType.bfloat16, DimList(3072, 5120)](
+            ctx, (1000, 5120, 3072)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 5120),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 3072)](
+            ctx, (1000, 3072, 3072)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
