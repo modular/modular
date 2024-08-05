@@ -433,7 +433,7 @@ fn flash_attention_impl[
             # num warps in M and N, multipled by warp size.
             alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-            if seq_len == 1:
+            if seq_len == 1 and num_keys % BN == 0:
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask_rank,
@@ -962,12 +962,12 @@ fn mha_decoding[
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: Int,
-    num_keys: Int,
+    seq_len: Int,
 ):
     var batch_idx = BlockIdx.z()
-    var q_batch_offset = depth * num_heads * batch_idx
-    var kv_batch_offset = depth * (num_heads // group) * num_keys * batch_idx
-    var mask_batch_offset = batch_idx * num_keys * (
+    var q_batch_offset = depth * num_heads * seq_len * batch_idx
+    var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
+    var mask_batch_offset = batch_idx * seq_len * seq_len * (
         num_heads if mask_rank == 4 else 1
     )
 
@@ -990,85 +990,8 @@ fn mha_decoding[
         mask_ptr.offset(mask_batch_offset),
         output_ptr.offset(q_batch_offset),
         scale,
-        num_keys,
+        seq_len,
     )
-
-
-@always_inline
-fn scale_and_mask_helper[
-    p_type: DType,
-    p_layout: Layout,
-    mask_type: DType,
-    num_n_mmas: Int,
-    WN: Int,
-    MMA_N: Int,
-    simd_width: Int,
-](
-    p_reg_tile: LayoutTensor[
-        p_type, p_layout, address_space = AddressSpace.LOCAL
-    ],
-    mask_warp_ptr: UnsafePointer[Scalar[mask_type]],
-    scale: Float32,
-    num_keys: UInt,
-    lane: UInt,
-    warp: UInt,
-):
-    # Apply mask and scale to mma result. Only the first row (lane 0-3) has
-    # meaningful data, other fragments are zero. The mask is an 1D vector.
-    # The dimension of mask are assumed dynamic here so still using index calculation.
-    # TODO: check if the explicit index calculation can be avoided.
-
-    # For mma output, thread 0-3 are on the first row.
-    if lane >= 4:
-        return
-
-    # Use vector load for mask if the entire warp fit in valid context length.
-    # Also num_keys should be aligned for vector load.
-    if (warp + 1) * WN <= num_keys and num_keys % simd_width == 0:
-        # Vectorize by 2.
-        var p_reg_vec2 = p_reg_tile.vectorize[1, simd_width]()
-
-        @parameter
-        for n_mma in range(Int(num_n_mmas)):
-            var frag_offset = n_mma * MMA_N
-            var mask_frag_ptr = mask_warp_ptr + frag_offset
-
-            var frag_lane_col = int(lane * simd_width)
-
-            alias mask_align = alignof[SIMD[mask_type, simd_width]]()
-
-            var mask_vec = (mask_frag_ptr + frag_lane_col).load[
-                width=simd_width, alignment=mask_align
-            ]()
-
-            p_reg_vec2[n_mma, 0] = p_reg_vec2[n_mma, 0] * scale.cast[
-                p_type
-            ]() + rebind[p_reg_vec2.element_type](mask_vec.cast[p_type]())
-
-    # Use scalar load for mask and manually mask out padded elements.
-    else:
-        var warp_offset = warp * WN
-
-        @parameter
-        for n_mma in range(Int(num_n_mmas)):
-            # offset in fragment
-            var frag_offset = n_mma * MMA_N
-            # Current thread's offset mapped in num_keys dim
-            var key_offset = warp_offset + frag_offset
-            # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
-            var frag_lane_col = int(lane * simd_width)
-
-            var mask_frag_ptr = mask_warp_ptr + frag_offset
-
-            @parameter
-            for i in range(simd_width):
-                if key_offset + frag_lane_col + i < num_keys:
-                    p_reg_tile[n_mma, i] = (
-                        p_reg_tile[n_mma, i] * scale.cast[p_type]()
-                        + mask_frag_ptr[frag_lane_col + i].cast[p_type]()
-                    )
-                else:
-                    p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
 
 
 fn mha_decoding_single_batch[
@@ -1259,24 +1182,44 @@ fn mha_decoding_single_batch[
             q_smem_iter,
             k_smem_iter,
             depth // BK,
-            num_a_rows=None,
-            num_b_rows=min(Int(BN), Int(num_keys) - Int(kv_tile_start_row)),
         )
 
-        # Apply scale and mask
-        scale_and_mask_helper[
-            num_n_mmas=num_n_mmas,
-            WN=WN,
-            MMA_N=MMA_N,
-            simd_width=p_frag_simdwidth,
-        ](
-            p_reg_tile,
-            mask_warp_ptr,
-            scale,
-            num_keys,
-            lane,
-            warp_id,
-        )
+        # Vectorize by 2.
+        var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
+
+        # Apply mask and scale to mma result. Only the first row (lane 0-3) has
+        # meaningful data, other fragments are zero. The mask is an 1D vector.
+        # The dimension of mask are assumed dynamic here so still using index calculation.
+        # TODO: check if the explicit index calculation can be avoided.
+        if lane < 4:
+
+            @parameter
+            for m_mma in range(Int(num_m_mmas)):
+
+                @parameter
+                for n_mma in range(Int(num_n_mmas)):
+                    var frag_offset = m_mma * MMA_M * num_keys + n_mma * MMA_N
+                    var mask_frag_ptr = mask_warp_ptr + frag_offset
+
+                    var frag_lane_row = 0  # int(lane // (MMA_N // p_frag_simdwidth))
+                    var frag_lane_col = int(lane * p_frag_simdwidth % MMA_N)
+
+                    alias mask_align = alignof[
+                        SIMD[mask_type, p_frag_simdwidth]
+                    ]()
+
+                    var mask_vec = (
+                        mask_frag_ptr + frag_lane_row * num_keys + frag_lane_col
+                    ).load[width=p_frag_simdwidth, alignment=mask_align]()
+
+                    p_reg_vec2[n_mma * num_m_mmas + m_mma, 0] = p_reg_vec2[
+                        n_mma * num_m_mmas + m_mma, 0
+                    ] * scale.cast[accum_type]() + rebind[
+                        p_reg_vec2.element_type
+                    ](
+                        mask_vec.cast[accum_type]()
+                    )
+
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
 
@@ -1322,8 +1265,6 @@ fn mha_decoding_single_batch[
             p_smem_iter,
             v_smem_iter,
             BN // BK,
-            num_a_rows=None,
-            num_b_rows=min(Int(BN), Int(num_keys) - Int(kv_tile_start_row)),
         )
 
     # Apply softmax denumerator.
