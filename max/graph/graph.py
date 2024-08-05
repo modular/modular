@@ -188,7 +188,10 @@ class Graph:
     @classmethod
     @property
     def current(cls) -> Graph:
-        current = CURRENT_GRAPH.get()
+        try:
+            current = CURRENT_GRAPH.get()
+        except LookupError:
+            raise ValueError("No graph found.")
         assert current
         return current
 
@@ -295,7 +298,8 @@ class Graph:
         """
         if name in self.weights:
             raise ValueError(f"Weight '{name}' already exists in Graph {self}")
-        tensor_type = TensorType(dtype or DType.float32, shape or [1])
+        shape = [1] if shape is None else shape
+        tensor_type = TensorType(dtype or DType.float32, shape)
 
         # TODO: Allow file path to be set later.
         if filepath is None:

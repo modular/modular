@@ -52,3 +52,11 @@ def mlir_context() -> mlir.Context:
         ctx.append_dialect_registry(registry)
         ctx.load_all_available_dialects()
         yield ctx
+
+
+@pytest.fixture
+def testdata_directory() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    path = os.getenv("TESTDATA_DIRECTORY")
+    assert path is not None
+    return Path(path)

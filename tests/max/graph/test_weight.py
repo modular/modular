@@ -40,8 +40,6 @@ def test_add_weight() -> None:
             )
             assert "dense_resource<defaults> : tensor<1xf32>" in gen_mlir
 
-            # TODO: Check that the weight are properly loaded.
-
 
 def test_add_same_weight() -> None:
     """Tests adding weights to the graph."""

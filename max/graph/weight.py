@@ -21,6 +21,13 @@ class Weight:
     filepath: Union[PathLike, str, None]
     offset: Optional[int]
 
+    def __repr__(self):
+        return (
+            f"Weight(name='{self.name}',"
+            f" tensor_type='{self.value.tensor_type}',"
+            f" filepath='{self.filepath}', offset='{self.offset}')"
+        )
+
     def assign(
         self,
         filepath: Union[PathLike, str, None] = None,

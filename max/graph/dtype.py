@@ -31,6 +31,7 @@ class DType(Enum):
     float16 = "f16"
     float32 = "f32"
     float64 = "f64"
+    bfloat16 = "bf16"
 
     def __repr__(self) -> str:
         return self.name
