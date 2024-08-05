@@ -34,14 +34,13 @@ static LITSignatureType getSignatureFromDecl(ASTDecl *decl) {
     return nullptr;
   if (auto func = dyn_cast<LIT::FuncOp>(*decl))
     return func.getSignature();
-  if (auto pValue = decl->getIfPValue())
+  if (auto pValue = decl->getIfIRValue().getIfPValue())
     return dyn_cast_or_null<LITSignatureType>(pValue.getIfTypeValue().mlirType);
   return nullptr;
 }
 
 /// Return the index of the argument that corresponds to the given decl.
-static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
-                                             BlockArgument &arg) {
+static std::optional<size_t> getDeclArgIndex(ASTDecl &decl, BlockArgument arg) {
   // If this is a normal argument, we can just return the argument number.
   if (arg.getParentRegion())
     return arg.getArgNumber();
@@ -52,19 +51,17 @@ static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
   for (auto [name, decls] : decl.getParentDecl()->getDeclsInScope()) {
     if (decls.size() != 1)
       continue;
+
     // Check if the decl is the one we're looking for.
-    DeclIRValue childValue = decls.front()->getIRValue();
-    auto resIndex =
-        TypeSwitch<DeclIRValue, std::optional<size_t>>(childValue)
-            .Case<MLValue, SRValue, SBValue, MBValue, MBPValue>([&](Value val) {
-              if (val == arg)
-                return std::make_optional(argIndex);
-              ++argIndex;
-              return std::optional<size_t>();
-            })
-            .Default(std::optional<size_t>());
-    if (resIndex)
-      return *resIndex;
+    if (auto cv = decls.front()->getIfIRValue()) {
+      // Ignore parameters for our indexing.
+      if (decls.front()->getIfIRValue().getIfPValue())
+        continue;
+
+      if (cv.getMlirValue() == arg)
+        return argIndex;
+      ++argIndex;
+    }
   }
   return std::nullopt;
 }
@@ -72,32 +69,31 @@ static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
 /// If this decl corresponds to a not owned function argument, return its
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
-  DeclIRValue irValue = declRef->getIRValue();
-  return TypeSwitch<DeclIRValue, BlockArgument>(irValue)
-      .Case<SBValue, SRValue, MBValue, MLValue, MBPValue>([&](Value val) {
-        // Look through rebinds of arguments, which may happen for certain
-        // argument conventions.
-        if (auto rebind = val.getDefiningOp<RebindOp>())
-          val = rebind.getInput();
+  Value val = declRef->getIfIRValue().getMlirValue();
+  if (!val)
+    return {};
 
-        // Check if this is a block argument of a function.
-        if (auto bbArg = dyn_cast<BlockArgument>(Value(val))) {
-          if (isa_and_nonnull<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
-            return bbArg;
-          // If this is a block without a proper owner, this is generally a
-          // block argument for a function signature. These are detached from
-          // normal IR.
-          if (!bbArg.getOwner()->getParentOp())
-            return bbArg;
-        }
+  // Look through rebinds of arguments, which may happen for certain
+  // argument conventions.
+  if (auto rebind = val.getDefiningOp<RebindOp>())
+    val = rebind.getInput();
 
-        return BlockArgument();
-      })
-      .Default({});
+  // Check if this is a block argument of a function.
+  if (auto bbArg = dyn_cast<BlockArgument>(val)) {
+    if (isa_and_nonnull<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
+      return bbArg;
+    // If this is a block without a proper owner, this is generally a
+    // block argument for a function signature. These are detached from
+    // normal IR.
+    if (!bbArg.getOwner()->getParentOp())
+      return bbArg;
+  }
+
+  return {};
 }
 
 static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
-  if (auto val = dyn_cast_if_present<PValue>(declRef->getIRValue())) {
+  if (auto val = declRef->getIfIRValue().getIfPValue()) {
     if (auto paramRef = dyn_cast<ParamDeclRefAttr>(val.get()))
       return paramRef;
   }
@@ -107,10 +103,9 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// Return the defining Op from the IR encapsulated by this decl. It might be
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
-  return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
-      .Case<SBValue, SRValue, MBValue, MLValue, MBPValue>(
-          [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
-      .Default((Operation *)nullptr);
+  if (Value val = declRef->getIfIRValue().getMlirValue())
+    return val.getDefiningOp();
+  return nullptr;
 }
 
 Operation *MojoASTDeclRef::getIfOperation() const {
@@ -134,7 +129,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
         .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
-        .Case([&](LIT::FuncOp op) { return op.getSourceName(); })
+        .Case([](LIT::FuncOp op) { return op.getSourceName(); })
         .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName());
@@ -285,7 +280,7 @@ ResultType MojoASTDeclRef::getViewImpl() const {
   // Handle def argument shadows, the parser produces these as
   // DefArgumentWrapperDLValue so we need to dig through them to find the
   // underlying BlockArgument for the function.
-  if (auto lvalue = decl->getIfLValue()) {
+  if (auto lvalue = decl->getIfIRValue().getIfLValue()) {
     // Unresolved to mutable.
     if (auto dlvalue = lvalue.getIfDLValue()) {
       if (dlvalue->isDefArgument()) {

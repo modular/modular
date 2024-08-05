@@ -47,9 +47,7 @@ enum class PassingKind : uint32_t;
 /// This stores declaration references (e.g. vardecls, structdecls, funcdecls)
 /// as operations.  It stores RValues for parameters and SSA values as an
 /// RValue.
-using DeclIRValue =
-    SmartVariant<Operation *, PValue, SRValue, SBValue, MBValue, MRValue,
-                 MLValue, MBPValue, RCRef<BaseDLValue>>;
+using DeclIRValue = SmartVariant<Operation *, CValue>;
 
 class DeclResolver : public SharedStateUser {
 public:

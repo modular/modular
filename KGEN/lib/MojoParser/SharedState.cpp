@@ -686,7 +686,8 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
     do {
       ArrayRef<ASTDecl *> e = lookupInScope(*curSearchScope);
       if (!e.empty()) {
-        if (isa<StructDeclOp>(*curSearchScope) && !(*e.front()).getIfPValue()) {
+        if (isa<StructDeclOp>(*curSearchScope) &&
+            !(*e.front()).getIfIRValue().getIfPValue()) {
           // Skip struct bodies when searching up parent scopes, unless the
           // value is a parameter.
           if (skipped.empty())

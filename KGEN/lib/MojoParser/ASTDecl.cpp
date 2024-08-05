@@ -140,61 +140,27 @@ StringAttr ASTDecl::mangleParamName(const Twine &name) {
 
 void ASTDecl::dump() const {
   // The value is either an operation or a type of MLIR `Value`.
-  TypeSwitch<DeclIRValue>(getIRValue())
-      .Case<Operation *>([](Operation *op) {
-        // Print without verifying, since IR could be in an invalid state.
-        op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
-        llvm::errs() << "\n";
-      })
-      .Case<PValue, SRValue, MRValue, SBValue, MBValue, MLValue, MBPValue>(
-          [](auto v) { v.dump(); })
-      .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
+  if (auto *op = getIfOperation()) {
+    // Print without verifying, since IR could be in an invalid state.
+    op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
+    llvm::errs() << "\n";
+  } else if (auto cv = getIfIRValue()) {
+    cv.dump();
+  } else {
+    llvm::errs() << "<null decl>\n";
+  }
 }
 
 MLIRContext *ASTDecl::getContext() const {
   if (auto *op = getIfOperation())
     return op->getContext();
-  if (auto mv = dyn_cast<PValue>(irValue))
+
+  auto cv = getIfIRValue();
+  if (auto mv = cv.getIfPValue())
     return mv.get().getContext();
-  if (auto dr = dyn_cast<SRValue>(irValue))
-    return dr.getContext();
-  if (auto value = dyn_cast_or_null<MLValue>(irValue))
-    return value.getContext();
-  return cast<MRValue>(irValue).getContext();
-}
-
-/// If this is an RValue, return it otherwise return null.
-RValue ASTDecl::getIfRValue() const {
-  if (auto attr = dyn_cast_or_null<PValue>(irValue))
-    return attr;
-  if (auto value = dyn_cast_or_null<SRValue>(irValue))
-    return value;
-  if (auto value = dyn_cast_or_null<MRValue>(irValue))
-    return value;
-  return {};
-}
-
-/// If this is an BValue, return it otherwise return null.
-BValue ASTDecl::getIfBValue() const {
-  if (auto attr = dyn_cast_or_null<PValue>(irValue))
-    return attr;
-  if (auto value = dyn_cast_or_null<SBValue>(irValue))
-    return value;
-  if (auto value = dyn_cast_or_null<MBValue>(irValue))
-    return value;
-  if (auto value = dyn_cast_or_null<MBPValue>(irValue))
-    return value;
-  return {};
-}
-
-/// If this is a LValue, return it, otherwise return null.
-LValue ASTDecl::getIfLValue() const {
-  if (auto mlValue = dyn_cast_or_null<MLValue>(irValue))
-    return mlValue;
-
-  if (auto storage = dyn_cast_or_null<RCRef<BaseDLValue>>(irValue))
-    return DLValue(storage);
-  return {};
+  if (Value v = cv.getMlirValue())
+    return v.getContext();
+  llvm_unreachable("unknown IRValue");
 }
 
 std::optional<StringRef> ASTDecl::getNameIfOperation() const {

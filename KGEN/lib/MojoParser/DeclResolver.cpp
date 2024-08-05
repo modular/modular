@@ -108,16 +108,9 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
 
   // If this is a declaration which has a TypeCheckErrorType, then all
   // references to it are invalid.
-  if (auto rv = decl->getIfRValue()) {
-    if (rv.getType().isTypeCheckErrorType())
+  if (auto cv = decl->getIfIRValue())
+    if (cv.getRValueType().isTypeCheckErrorType())
       decl->setErroneous();
-  } else if (auto lv = decl->getIfLValue()) {
-    if (lv.getRValueType().isTypeCheckErrorType())
-      decl->setErroneous();
-  } else if (auto bv = decl->getIfBValue()) {
-    if (bv.getRValueType().isTypeCheckErrorType())
-      decl->setErroneous();
-  }
 
   return *decl;
 }

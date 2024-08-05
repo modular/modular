@@ -1176,7 +1176,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         MLValue instance = emitClosureInstance(shared, decl, decl.getLoc());
         if (!instance)
           return failure();
-        decl.irValue = instance;
+        decl.setIRValue(instance);
       } else {
         funcOp.setParamDeclAttr(
             ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
@@ -1316,18 +1316,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // Ref convention works with registers and def functions without any funny
     // business.
     if (convention == ArgConvention::Ref) {
-      // TODO: Use CValue::getMValueForRef when DeclIRValue goes away.
-      switch (cast<RefType>(bbArg.getType()).getMutabilityClass()) {
-      case LifetimeType::Mutable:
-        setDecl(MLValue(bbArg));
-        break;
-      case LifetimeType::Immutable:
-        setDecl(MBValue(bbArg));
-        break;
-      case LifetimeType::Parametric:
-        setDecl(MBPValue(bbArg));
-        break;
-      }
+      setDecl(CValue::getMValueForRef(bbArg));
       continue;
     }
 
@@ -1339,8 +1328,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         return setDecl(argBValue);
 
       // Insert the def argument wrapper to make it lazily mutable on demand.
-      setDecl(RCRef<DefArgumentWrapperDLValue>::create(
-          &argDecl, argBValue, argBValue.getRValueType(), argIdx));
+      setDecl(DLValue(RCRef<DefArgumentWrapperDLValue>::create(
+          &argDecl, argBValue, argBValue.getRValueType(), argIdx)));
     };
 
     // If this is an MValue argument whose underlying type could be a register
@@ -1422,12 +1411,10 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // Clear out any decls in the scope that reference IR in the body.
     for (auto &[name, decls] : decl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
-        TypeSwitch<DeclIRValue>(decl->getIRValue())
-            .Case<SRValue, SBValue, MBValue, MRValue, MLValue, MBPValue>(
-                [&](Value value) {
-                  if (!isa<mlir::BlockArgument>(value))
-                    decl->setIRValue(nullptr);
-                });
+        if (Value value = decl->getIfIRValue().getMlirValue()) {
+          if (!isa<mlir::BlockArgument>(value))
+            decl->setIRValue(nullptr);
+        }
       }
     }
 

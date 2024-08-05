@@ -1762,13 +1762,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // If the target value has no __exit__ method, we need it to be
       // live all the way across the suite, so add an extra use so it isn't
       // destroyed early.
-      Value ptrOrScalar;
       // We don't care about extending PValues if one ever happened.
-      if (enterResult.isMValue())
-        ptrOrScalar = enterResult.getMValueReference();
-      else if (enterResult.isSValue())
-        ptrOrScalar = enterResult.getSValueRegister();
-      if (ptrOrScalar)
+      if (Value ptrOrScalar = enterResult.getMlirValue())
         builder.create<OwnershipUseOp>(loc, ptrOrScalar);
     }
   };

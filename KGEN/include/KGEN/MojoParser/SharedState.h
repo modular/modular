@@ -64,9 +64,6 @@ public:
   bool isCopy() const { return kind == kCopy; }
   bool isRef() const { return kind == kRef; }
 
-  /// Get the underlying MLIR value.
-  Value getMlirValue() const;
-
 private:
   CValue value;
   Kind kind;

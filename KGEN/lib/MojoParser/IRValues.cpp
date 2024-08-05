@@ -251,6 +251,24 @@ Value VariantValueStorageBase::getSValueRegister() const {
   llvm_unreachable("invalid use of non-SValue");
 }
 
+/// Given an S*Value or M*Value, return the underlying register/reference.  If
+/// not, return a null Value.
+Value VariantValueStorageBase::getMlirValue() const {
+  if (auto lvalue = dyn_cast<MLValue>(storage))
+    return lvalue;
+  if (auto rvalue = dyn_cast<MRValue>(storage))
+    return rvalue;
+  if (auto bvalue = dyn_cast<MBValue>(storage))
+    return bvalue;
+  if (auto mbpvalue = dyn_cast<MBPValue>(storage))
+    return mbpvalue;
+  if (auto rvalue = dyn_cast<SRValue>(storage))
+    return rvalue;
+  if (auto bvalue = dyn_cast<SBValue>(storage))
+    return bvalue;
+  return Value();
+}
+
 void MRValue::check() const {
   assert(::isa<RefType>(Value::getType()) &&
          ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
