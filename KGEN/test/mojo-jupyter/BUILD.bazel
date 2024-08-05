@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "mojo-jupyter",
+    srcs = glob(["**/*.test"]),
+    custom_substitutions = {
+        "%mojo_jupyter_executor": "$(rlocationpath //KGEN/tools/mojo-jupyter-executor) --lldb-init-file ../../../utils/lit-lldb-init.in",
+    },
+    data = glob([
+        "*.ipynb",
+        "*.mojo",
+    ]) + [
+        "//:libpython",
+        "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
+        "//KGEN/tools/mojo-repl-entry-point",
+        "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
+        "//utils:lit-lldb-init.in",
+    ],
+    env = {
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
+    },
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//KGEN/tools/mojo-jupyter-executor",
+    ],
+)
