@@ -135,6 +135,18 @@ def test_execute_gpu(mo_model_path: Path):
     )
 
 
+@pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
+def test_gpu_fails_no_device_tensors(mo_model_path: Path):
+    """GPU execution must use DeviceTensor inputs."""
+    session = me.InferenceSession(device="cuda")
+    model = session.load(mo_model_path)
+    with pytest.raises(
+        RuntimeError,
+        match=r"model execution on GPUs only supports DeviceTensor inputs",
+    ):
+        model.execute(input=np.ones((5)))
+
+
 def test_custom_ops(
     mo_custom_ops_model_path: Path, custom_ops_package_path: Path
 ):
