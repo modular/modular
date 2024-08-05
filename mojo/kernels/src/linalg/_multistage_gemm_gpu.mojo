@@ -19,7 +19,7 @@ from gpu.memory import (
     dynamic_shared_memory,
 )
 from gpu.mma import ld_matrix, mma
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
+from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -109,8 +109,6 @@ fn multistage_mma[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, circular=_
     ],
     num_iters: Int,
-    num_a_rows: Optional[Int] = None,
-    num_b_rows: Optional[Int] = None,
 ):
     alias simd_size = simdwidthof[a_type]()
 
@@ -150,28 +148,15 @@ fn multistage_mma[
         if a_iter.address_space == AddressSpace.GENERIC:
             var a_smem_tile = a_smem_iter.next(stage).get()
 
-            if num_a_rows:
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_a_layout,
-                    swizzle=async_copy_a_swizzle,
-                    masked=True,
-                ](
-                    a_smem_tile.vectorize[1, simd_size](),
-                    a_iter.get()
-                    .bitcast[a_type, address_space = AddressSpace.GENERIC]()
-                    .vectorize[1, simd_size](),
-                    num_a_rows.value(),
-                )
-            else:
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_a_layout,
-                    swizzle=async_copy_a_swizzle,
-                ](
-                    a_smem_tile.vectorize[1, simd_size](),
-                    a_iter.get()
-                    .bitcast[a_type, address_space = AddressSpace.GENERIC]()
-                    .vectorize[1, simd_size](),
-                )
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_a_layout,
+                swizzle=async_copy_a_swizzle,
+            ](
+                a_smem_tile.vectorize[1, simd_size](),
+                a_iter.get()
+                .bitcast[a_type, address_space = AddressSpace.GENERIC]()
+                .vectorize[1, simd_size](),
+            )
 
             a_iter += 1
 
@@ -179,28 +164,14 @@ fn multistage_mma[
         if b_iter.address_space == AddressSpace.GENERIC:
             var b_smem_tile = b_smem_iter.next(stage).get()
 
-            if num_b_rows:
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_b_layout,
-                    swizzle=async_copy_b_swizzle,
-                    masked=True,
-                ](
-                    b_smem_tile.vectorize[1, simd_size](),
-                    b_iter.get()
-                    .bitcast[b_type, address_space = AddressSpace.GENERIC]()
-                    .vectorize[1, simd_size](),
-                    num_b_rows.value(),
-                )
-            else:
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_b_layout,
-                    swizzle=async_copy_b_swizzle,
-                ](
-                    b_smem_tile.vectorize[1, simd_size](),
-                    b_iter.get()
-                    .bitcast[b_type, address_space = AddressSpace.GENERIC]()
-                    .vectorize[1, simd_size](),
-                )
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
+            ](
+                b_smem_tile.vectorize[1, simd_size](),
+                b_iter.get()
+                .bitcast[b_type, address_space = AddressSpace.GENERIC]()
+                .vectorize[1, simd_size](),
+            )
 
             b_iter += 1
 
@@ -328,38 +299,17 @@ fn multistage_mma[
                                 num_pipeline_stages - 1
                             ).get()
 
-                            if num_b_rows:
-                                copy_dram_to_sram_async[
-                                    thread_layout=async_copy_b_layout,
-                                    swizzle=async_copy_b_swizzle,
-                                    masked=True,
-                                ](
-                                    b_smem_prefetch_tile.vectorize[
-                                        1, simd_size
-                                    ](),
-                                    b_iter.get()
-                                    .bitcast[
-                                        b_type,
-                                        address_space = AddressSpace.GENERIC,
-                                    ]()
-                                    .vectorize[1, simd_size](),
-                                    num_b_rows.value(),
-                                )
-                            else:
-                                copy_dram_to_sram_async[
-                                    thread_layout=async_copy_b_layout,
-                                    swizzle=async_copy_b_swizzle,
-                                ](
-                                    b_smem_prefetch_tile.vectorize[
-                                        1, simd_size
-                                    ](),
-                                    b_iter.get()
-                                    .bitcast[
-                                        b_type,
-                                        address_space = AddressSpace.GENERIC,
-                                    ]()
-                                    .vectorize[1, simd_size](),
-                                )
+                            copy_dram_to_sram_async[
+                                thread_layout=async_copy_b_layout,
+                                swizzle=async_copy_b_swizzle,
+                            ](
+                                b_smem_prefetch_tile.vectorize[1, simd_size](),
+                                b_iter.get()
+                                .bitcast[
+                                    b_type, address_space = AddressSpace.GENERIC
+                                ]()
+                                .vectorize[1, simd_size](),
+                            )
 
                             b_iter += 1
 
@@ -431,33 +381,17 @@ fn multistage_mma[
                             num_pipeline_stages - 1
                         ).get()
 
-                        if num_a_rows:
-                            copy_dram_to_sram_async[
-                                thread_layout=async_copy_a_layout,
-                                swizzle=async_copy_a_swizzle,
-                                masked=True,
-                            ](
-                                a_smem_prefetch_tile.vectorize[1, simd_size](),
-                                a_iter.get()
-                                .bitcast[
-                                    a_type, address_space = AddressSpace.GENERIC
-                                ]()
-                                .vectorize[1, simd_size](),
-                                num_a_rows.value(),
-                            )
-
-                        else:
-                            copy_dram_to_sram_async[
-                                thread_layout=async_copy_a_layout,
-                                swizzle=async_copy_a_swizzle,
-                            ](
-                                a_smem_prefetch_tile.vectorize[1, simd_size](),
-                                a_iter.get()
-                                .bitcast[
-                                    a_type, address_space = AddressSpace.GENERIC
-                                ]()
-                                .vectorize[1, simd_size](),
-                            )
+                        copy_dram_to_sram_async[
+                            thread_layout=async_copy_a_layout,
+                            swizzle=async_copy_a_swizzle,
+                        ](
+                            a_smem_prefetch_tile.vectorize[1, simd_size](),
+                            a_iter.get()
+                            .bitcast[
+                                a_type, address_space = AddressSpace.GENERIC
+                            ]()
+                            .vectorize[1, simd_size](),
+                        )
 
                         a_iter += 1
 
@@ -467,32 +401,17 @@ fn multistage_mma[
                             num_pipeline_stages - 1
                         ).get()
 
-                        if num_b_rows:
-                            copy_dram_to_sram_async[
-                                thread_layout=async_copy_b_layout,
-                                swizzle=async_copy_b_swizzle,
-                                masked=True,
-                            ](
-                                b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                b_iter.get()
-                                .bitcast[
-                                    b_type, address_space = AddressSpace.GENERIC
-                                ]()
-                                .vectorize[1, simd_size](),
-                                num_b_rows.value(),
-                            )
-                        else:
-                            copy_dram_to_sram_async[
-                                thread_layout=async_copy_b_layout,
-                                swizzle=async_copy_b_swizzle,
-                            ](
-                                b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                b_iter.get()
-                                .bitcast[
-                                    b_type, address_space = AddressSpace.GENERIC
-                                ]()
-                                .vectorize[1, simd_size](),
-                            )
+                        copy_dram_to_sram_async[
+                            thread_layout=async_copy_b_layout,
+                            swizzle=async_copy_b_swizzle,
+                        ](
+                            b_smem_prefetch_tile.vectorize[1, simd_size](),
+                            b_iter.get()
+                            .bitcast[
+                                b_type, address_space = AddressSpace.GENERIC
+                            ]()
+                            .vectorize[1, simd_size](),
+                        )
 
                         b_iter += 1
 
