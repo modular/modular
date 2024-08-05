@@ -1206,8 +1206,8 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from[
+        dst_coords_bound: Optional[StaticIntTuple[rank]] = None,
         src_coords_bound: Optional[StaticIntTuple[rank]] = None,
-        other_coords_bound: Optional[StaticIntTuple[rank]] = None,
     ](self, other: LayoutTensor):
         alias other_layout = other.layout
 
@@ -1229,52 +1229,62 @@ struct LayoutTensor[
             dst_element_size == src_element_size, "copy_from should move"
         ]()
 
-        alias has_copy_bounds = src_coords_bound or other_coords_bound
+        alias has_copy_bounds = dst_coords_bound or src_coords_bound
 
         @parameter
-        for i in range(dst_size):
-            var src_idx = other.__get_element_idx[i]()
-            var dst_idx = self.__get_element_idx[i]()
+        @always_inline
+        fn __is_in_bound[
+            rank: Int
+        ](coords: StaticIntTuple[rank], bounds: StaticIntTuple[rank]) -> Bool:
+            var in_bound = True
 
             @parameter
-            if has_copy_bounds:
-                constrained[
-                    self.element_size == 1 and other.element_size == 1,
-                    "Only supports scalar masked copies",
-                ]()
+            for dim in range(rank):
+                in_bound &= coords[dim] < bounds[dim]
+            return in_bound
 
-                @parameter
-                @always_inline
-                fn __is_in_bound[
-                    rank: Int
+        @parameter
+        @always_inline
+        fn __compute_element_bound[
+            element_layout: Layout
+        ](
+            coords: StaticIntTuple[rank], bounds: StaticIntTuple[rank]
+        ) -> StaticIntTuple[rank]:
+            var element_bound = StaticIntTuple[rank]()
+
+            @parameter
+            for dim in range(rank):
+                alias dim_size = to_int(element_layout.shape[dim])
+                element_bound[dim] = (
+                    min(dim_size, bounds[dim] - coords[dim]) if coords[dim]
+                    < bounds[dim] else 0
+                )
+            return element_bound
+
+        @parameter
+        @always_inline
+        fn __load_element[i: Int]() -> Element[dtype, other.element_layout]:
+            var src_idx = other.__get_element_idx[i]()
+
+            @parameter
+            if src_element_size != 1 and src_coords_bound.__bool__():
+                var element_bounds = __compute_element_bound[
+                    other.element_layout
                 ](
-                    coords: StaticIntTuple[rank], bounds: StaticIntTuple[rank]
-                ) -> Bool:
-                    var in_bound = True
+                    rebind[StaticIntTuple[rank]](other.element_coords[i]()),
+                    src_coords_bound.value(),
+                )
+                return Element[dtype, other.element_layout].masked_load[
+                    other.address_space
+                ](
+                    rebind[UnsafePointer[Scalar[dtype], other.address_space]](
+                        other.ptr
+                    ).offset(src_idx),
+                    element_bounds,
+                    other.runtime_element_layout,
+                )
 
-                    @parameter
-                    for dim in range(rank):
-                        in_bound &= coords[dim] < bounds[dim]
-                    return in_bound
-
-                @parameter
-                if src_coords_bound:
-                    if not __is_in_bound(
-                        self.element_coords[i](), src_coords_bound.value()
-                    ):
-                        continue
-
-                @parameter
-                if other_coords_bound:
-                    if not __is_in_bound(
-                        other.element_coords[i](),
-                        rebind[StaticIntTuple[other.rank]](
-                            other_coords_bound.value()
-                        ),
-                    ):
-                        continue
-
-            var src_element = Element[dtype, other.element_layout].load[
+            return Element[dtype, other.element_layout].load[
                 other.address_space
             ](
                 rebind[UnsafePointer[Scalar[dtype], other.address_space]](
@@ -1282,12 +1292,55 @@ struct LayoutTensor[
                 ).offset(src_idx),
                 other.runtime_element_layout,
             )
-            alias dst_element_type = Element[dtype, self.element_layout]
-            dst_element_type(
-                rebind[dst_element_type.element_data_type](
-                    src_element.element_data
-                )
-            ).store(self.ptr.offset(dst_idx))
+
+        @parameter
+        @always_inline
+        fn __store_element[
+            i: Int
+        ](src_element: Element[dtype, other.element_layout]):
+            var dst_idx = self.__get_element_idx[i]()
+
+            @parameter
+            if dst_element_size != 1 and dst_coords_bound.__bool__():
+                var element_bounds = __compute_element_bound[
+                    self.element_layout
+                ](self.element_coords[i](), dst_coords_bound.value())
+                Element[dtype, self.element_layout](
+                    rebind[
+                        Element[dtype, self.element_layout].element_data_type
+                    ](src_element.element_data)
+                ).masked_store(self.ptr.offset(dst_idx), element_bounds)
+            else:
+                Element[dtype, self.element_layout](
+                    rebind[
+                        Element[dtype, self.element_layout].element_data_type
+                    ](src_element.element_data)
+                ).store(self.ptr.offset(dst_idx))
+
+        @parameter
+        for i in range(dst_size):
+
+            @parameter
+            if has_copy_bounds:
+
+                @parameter
+                if src_coords_bound.__bool__() and dst_element_size == 1:
+                    if not __is_in_bound(
+                        self.element_coords[i](), dst_coords_bound.value()
+                    ):
+                        continue
+
+                @parameter
+                if dst_coords_bound.__bool__() and src_element_size == 1:
+                    if not __is_in_bound(
+                        other.element_coords[i](),
+                        rebind[StaticIntTuple[other.rank]](
+                            dst_coords_bound.value()
+                        ),
+                    ):
+                        continue
+
+            __store_element[i](__load_element[i]())
 
     # TODO: Remove when masked tensor is fixed (KERN-607)
     @always_inline

@@ -199,7 +199,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
             @parameter
             for i in range(elements):
-                if i >= element_bounds[1]:
+                if i >= element_bounds[0]:
                     break
                 var vec_i = ptr.load[width=size](
                     __get_offset[0, i](runtime_layout)
@@ -414,15 +414,14 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        ptr.store(
-                            __get_offset[i, j](self.runtime_layout),
+                        (ptr + __get_offset[i, j](self.runtime_layout)).store(
                             self.element_data[i + j * dim_0],
                         )
                 return
 
             @parameter
             for i in range(elements):
-                if i >= element_bounds[1]:
+                if i >= element_bounds[0]:
                     break
                 (ptr + __get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
