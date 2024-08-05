@@ -309,7 +309,8 @@ struct TestOverloading:
     pass
 
   fn test(self, a: Int, b: FloatDyn):
-    # expected-error @+1 {{cannot form a reference to overloaded declaration}}
+    # expected-note @below {{did you mean to call it?}}
+    # expected-error @below {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntFloat32
 
     # expected-error @+1 {{no matching function in call}}

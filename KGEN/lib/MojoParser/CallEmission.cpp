@@ -235,11 +235,18 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   if (isErroneous())
     return {};
 
-  size_t minConversions = bestFitness->getNumImplicitConversions() / 2;
-  auto diag = getShared().emitError(expr->getLoc(), "ambiguous reference to '")
-              << baseName << "', each candidate requires " << minConversions
-              << " implicit conversion" << plural(minConversions)
-              << ", disambiguate with an explicit cast" << expr->getRange();
+  // Otherwise, we couldn't use the parameters to resolve the overload set.
+  // We probably forgot to call it, which would provide arguments to resolve it.
+  auto diag = getShared().emitError(expr->getLoc());
+  diag << "cannot form a reference to overloaded declaration of '" << baseName
+       << "'" << expr->getRange();
+
+  if (size_t minConversions = bestFitness->getNumImplicitConversions() / 2)
+    diag << ", each candidate requires " << minConversions
+         << " implicit conversion" << plural(minConversions)
+         << ", disambiguate with an explicit cast" << expr->getRange();
+  else
+    diag.attachNote(expr->getLoc()) << "did you mean to call it?";
   for (ASTDecl *candidate : newFnDecls) {
     auto func = cast<LIT::FuncOp>(candidate);
     InflightDiag &note = diag.attachNote(candidate->getLoc());
@@ -640,6 +647,8 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
                   expr->getLoc(),
                   "cannot form a reference to overloaded declaration of '")
               << baseName << "'" << expr->getRange();
+  diag.attachNote(expr->getLoc()) << "did you mean to call it?";
+
   for (ASTDecl *candidate : fnDecls) {
     auto func = cast<LIT::FuncOp>(candidate);
     InflightDiag &note = diag.attachNote(candidate->getLoc());
