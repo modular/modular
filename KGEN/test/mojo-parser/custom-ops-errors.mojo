@@ -46,6 +46,7 @@ struct NoImplOp:
 
 # Two `impl` methods error
 
+# expected-note @below {{did you mean to call it?}}
 # expected-error @below {{cannot form a reference to overloaded declaration of 'impl'}}
 @op_implementation("custom.overloaded_impl")
 struct TwoImplsOp:
