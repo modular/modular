@@ -132,7 +132,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         return self._ptr[offset]
 
     fn _canonicalize_slices(
-        self, slices: VariadicListMem[Slice, _, _]
+        self, slices: VariadicListMem[Slice, _]
     ) -> InlineArray[Slice, rank]:
         var slice_array = InlineArray[Slice, rank](unsafe_uninitialized=True)
         for i in range(len(slices)):

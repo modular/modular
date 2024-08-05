@@ -233,7 +233,7 @@ def slice(
 @always_inline
 def slice(
     input: Symbol,
-    slices: VariadicListMem[Slice, _, _],
+    slices: VariadicListMem[Slice, _],
     out_dims: List[Dim] = List[Dim](),
     location: Optional[_SourceLocation] = None,
 ) -> Symbol:
