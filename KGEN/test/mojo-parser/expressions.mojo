@@ -1401,7 +1401,7 @@ fn dependent_callee[dtype: DType](storage: UnsafePointer[Scalar[dtype]],
 fn variadic_attr_caller(*inputs: Tuple[Int]):
    variadic_attr_callee[Int](inputs)
 fn variadic_attr_callee[key_type: CollectionElement](
-       inputs: VariadicListMem[Tuple[key_type], _, _]
+       inputs: VariadicListMem[Tuple[key_type], _]
     ):
   pass
 
