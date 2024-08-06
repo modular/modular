@@ -44,9 +44,13 @@ To save the quantized tensors to disk, use
 from .quantization_encoding import QuantizationEncoding
 from .encodings import (
     _BlockQ40 as BlockQ40,
+    _BlockQ4K as BlockQ4K,
+    _BlockQ5K as BlockQ5K,
+    _BlockQ6K as BlockQ6K,
     BFloat16Encoding,
     Float32Encoding,
     Q4_0Encoding,
     Q4_KEncoding,
+    Q5_KEncoding,
     Q6_KEncoding,
 )
