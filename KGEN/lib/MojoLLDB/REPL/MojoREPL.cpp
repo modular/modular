@@ -463,7 +463,7 @@ blank line. These expressions can define top-level
 variables, functions, structs, and other declarations, which
 are persisted across expressions. For example:
 
-  1> let my_var = "Welcome to Mojo!"
+  1> var my_var = "Welcome to Mojo!"
   2.
   2> print(my_var)
   3.
