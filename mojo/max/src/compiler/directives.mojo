@@ -19,17 +19,6 @@ fn elementwise():
     return
 
 
-@value
-@register_passable
-struct KernelSpec:
-    var target: StringLiteral
-    var single_thread_blocking_override: Bool
-
-    fn __init__(inout self):
-        self.target = "cpu"
-        self.single_thread_blocking_override = False
-
-
 @no_inline
 fn shapeof(tensor_name: StringLiteral) -> Optional[DimList]:
     return None
