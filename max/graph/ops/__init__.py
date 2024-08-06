@@ -19,10 +19,13 @@ convenience methods such as
 [`reshape()`](/max/api/python/graph/graph_value/GraphValue#reshape) and
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
+
 from .constant import constant, scalar
-from .casting import reshape, cast
+from .casting import reshape, cast, unsqueeze, squeeze, transpose, broadcast_to
+from .complex import as_interleaved_complex
+
 from .debug import print
 from .elementwise import *
 from .linalg import band_part, layer_norm, matmul
 from .reduction import mean
-from .slicing import select, slice_tensor
+from .slicing import select, slice_tensor, concat

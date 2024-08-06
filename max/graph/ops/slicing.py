@@ -10,14 +10,29 @@ from itertools import chain, repeat, starmap, tee
 
 import numpy as np
 from max import _graph, mlir
-from max.mlir.dialects import rmo
+from ..type import Dim
+from max.mlir.dialects import rmo, mo
 
 from .. import ops
 from .constant import scalar
 from ..graph import Graph
 from ..graph_value import GraphValue, ValueLike
-from ..type import Dim, ShapeLike, StaticDim, TensorType, dim
+from ..type import Dim, ShapeLike, StaticDim, TensorType, dim, DimLike
 from ..dtype import DType
+
+
+def concat(vals: Iterable[ValueLike], axis: int = 0):
+    vals = [GraphValue(v) for v in vals]
+
+    # Check if length of vals is greater than 1
+    if len(vals) < 1:
+        raise ValueError("Must provide at least one value to concat.")
+
+    # TODO: assert that all vals have the same rank
+
+    axis = mlir.IntegerAttr.get(mlir.IndexType.get(), axis)
+
+    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
 
 
 def select(cond: ValueLike, x: ValueLike, y: ValueLike):
