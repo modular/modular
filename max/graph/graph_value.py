@@ -76,33 +76,94 @@ class GraphValue:
             # Need to wrap it to make it iterable
             return ops.slice_tensor(self, [index])
 
-    def __add__(self, rhs: GraphValue) -> GraphValue:
-        """Element-wise addition.
+    def __eq__(self, rhs: any) -> GraphValue:
+        if isinstance(rhs, ValueLike):
+            return ops.equal(self, GraphValue(rhs))
+        else:
+            raise ValueError(f"can't compare GraphValue to {rhs}")
 
-        Args:
-            rhs: The right hand side operand.
+    def __neg__(self) -> GraphValue:
+        return ops.negate(self)
 
-        Returns:
-            The operation result.
-        """
-        return ops.add(self, rhs)
+    def __ne__(self, rhs: any) -> GraphValue:
+        if isinstance(rhs, ValueLike):
+            return ops.not_equal(self, GraphValue(rhs))
+        else:
+            raise ValueError(f"can't compare GraphValue to {rhs}")
 
-    def __matmul__(self, rhs: ValueLike) -> GraphValue:
-        """Matrix multiplication.
+    def __ge__(self, rhs: any) -> GraphValue:
+        if isinstance(rhs, ValueLike):
+            return ops.greater_equal(self, GraphValue(rhs))
+        else:
+            raise ValueError(f"can't compare GraphValue to {rhs}")
 
-        Args:
-            rhs: The right hand side operand.
+    def __gt__(self, rhs: any) -> GraphValue:
+        if isinstance(rhs, ValueLike):
+            return ops.greater(self, GraphValue(rhs))
+        else:
+            raise ValueError(f"can't compare GraphValue to {rhs}")
 
-        Returns:
-            The operation result.
-        """
-        return ops.matmul(self, GraphValue(rhs))
+    def __lt__(self, rhs: any) -> GraphValue:
+        return ops.logical_not(self >= rhs)
+
+    def __le__(self, rhs: any) -> GraphValue:
+        return ops.logical_not(self > rhs)
+
+    def __add__(self, rhs: ValueLike) -> GraphValue:
+        return ops.add(self, GraphValue(rhs))
+
+    def __radd__(self, lhs: ValueLike) -> GraphValue:
+        return ops.add(GraphValue(lhs), self)
+
+    def __sub__(self, rhs: ValueLike) -> GraphValue:
+        return ops.sub(self, GraphValue(rhs))
+
+    def __rsub__(self, lhs: ValueLike) -> GraphValue:
+        return ops.sub(GraphValue(lhs), self)
 
     def __mul__(self, rhs: ValueLike) -> GraphValue:
         return ops.mul(self, GraphValue(rhs))
 
+    def __rmul__(self, lhs: ValueLike) -> GraphValue:
+        return ops.mul(GraphValue(lhs), self)
+
+    def __truediv__(self, rhs: ValueLike) -> GraphValue:
+        return ops.div(self, GraphValue(rhs))
+
+    def __rtruediv__(self, lhs: ValueLike) -> GraphValue:
+        return ops.div(GraphValue(lhs), self)
+
+    def __floordiv__(self, rhs: ValueLike) -> GraphValue:
+        return ops.floor(ops.div(self, GraphValue(rhs)))
+
+    def __rfloordiv__(self, lhs: ValueLike) -> GraphValue:
+        return ops.floor(ops.div(GraphValue(lhs), self))
+
+    def __mod__(self, rhs: ValueLike) -> GraphValue:
+        return ops.mod(self, GraphValue(rhs))
+
+    def __rmod__(self, lhs: ValueLike) -> GraphValue:
+        return ops.mod(GraphValue(lhs), self)
+
+    def __divmod__(self, rhs: ValueLike) -> (GraphValue, GraphValue):
+        rhs = GraphValue(rhs)
+        return (self // rhs, self % rhs)
+
+    def __rdivmod__(self, lhs: ValueLike) -> (GraphValue, GraphValue):
+        lhs = GraphValue(lhs)
+        return (lhs // self, lhs % self)
+
+    def __matmul__(self, rhs: ValueLike) -> GraphValue:
+        return ops.matmul(self, GraphValue(rhs))
+
+    def __rmatmul__(self, lhs: ValueLike) -> GraphValue:
+        return ops.matmul(GraphValue(lhs), self)
+
     def __pow__(self, rhs: ValueLike) -> GraphValue:
         return ops.pow(self, GraphValue(rhs))
+
+    def __rpow__(self, lhs: ValueLike) -> GraphValue:
+        return ops.pow(GraphValue(lhs), self)
 
 
 ValueLike = Union[mlir.Value, GraphValue, np.ndarray]
