@@ -55,7 +55,7 @@ import builtin.
 }
 
 TEST(CompletionTest, testCompletionRelativeImport) {
-  Document doc = createDocumentFromInputFile("imports.mojo");
+  Document doc = createDocumentFromInputFileWithinPackage("imports.mojo");
 
   createTestClient()
       .open(doc)

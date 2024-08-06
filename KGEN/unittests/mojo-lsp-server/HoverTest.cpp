@@ -212,7 +212,7 @@ More docstring for SomeStruct.
 }
 
 TEST(HoverTest, testHoverAliasDecls) {
-  Document doc = createDocumentFromInputFile("aliases.mojo");
+  Document doc = createDocumentFromInputFileWithinPackage("aliases.mojo");
 
   lsp::Range rangeIntAlias = *doc.findFirstRange("IntAlias");
   lsp::Range rangeExplicitIntAlias = *doc.findFirstRange("ExplicitIntAlias");
@@ -442,7 +442,7 @@ fn main():
 }
 
 TEST(HoverTest, testHoverImport) {
-  Document doc = createDocumentFromInputFile("imports.mojo");
+  Document doc = createDocumentFromInputFileWithinPackage("imports.mojo");
 
   lsp::Range rangeBuiltin = *doc.findFirstRange("builtin");
   lsp::Range rangeString = *doc.findFirstRange("string");
@@ -525,7 +525,7 @@ struct StructWithAlias
 }
 
 TEST(HoverTest, testHoverExternalSymbol) {
-  Document doc = createDocumentFromInputFile("aliases.mojo");
+  Document doc = createDocumentFromInputFileWithinPackage("aliases.mojo");
 
   lsp::Range rangeLazy = *doc.findFirstRange("LAZY");
   lsp::Range rangeExternalAlias = *doc.findFirstRange("ExternalAlias");
@@ -724,7 +724,7 @@ fn main():
 }
 
 TEST(HoverTest, testStructAliasHoverAndDef) {
-  Document doc = createDocumentFromInputFile("aliases.mojo");
+  Document doc = createDocumentFromInputFileWithinPackage("aliases.mojo");
 
   lsp::Range rangeAlias = *doc.findFirstRange("AliasInStruct");
 

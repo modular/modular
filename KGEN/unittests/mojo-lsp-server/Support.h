@@ -20,6 +20,9 @@ LSPBatchClient createTestClient(bool attachDebugger = false);
 /// Create a document from a file located in the `/inputs` folder.
 Document createDocumentFromInputFile(StringRef fileName);
 
+/// Create a document from a file located in the `/inputs-with-package` folder.
+Document createDocumentFromInputFileWithinPackage(StringRef fileName);
+
 } // namespace M
 
 #endif // KGEN_UNITTESTS_MOJO_LSP_SERVER_SUPPORT_H
