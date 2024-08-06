@@ -412,21 +412,8 @@ struct MojoCallContextPtr:
         )
 
     @always_inline
-    fn get_stream(self) -> Stream:
-        """Get the cuda stream."""
-        var stream = external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream", self.ptr_type
-        ](
-            self.ptr,
-        )
-        if not stream:
-            abort("CUDA stream was not passed to MojoCallContext")
-        return Stream(stream)
-
-    @always_inline
     fn get_cuda_device(self) -> DeviceContext:
         """Get the device context passed in."""
-        var stream = self.get_stream()
         var ptr = external_call[
             "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice",
             UnsafePointer[
@@ -435,6 +422,18 @@ struct MojoCallContextPtr:
         ](
             self.ptr,
         )
+        var cuda_dll = ptr[][0].cuda_dll
+
+        var stream_handle = external_call[
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream", self.ptr_type
+        ](
+            self.ptr,
+        )
+        if not stream_handle:
+            abort("CUDA stream was not passed to MojoCallContext")
+
+        var stream = Stream(stream_handle, cuda_dll=cuda_dll)
+
         return DeviceContext(
             ptr[][1],
             ptr[][0],
