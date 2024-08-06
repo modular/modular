@@ -64,7 +64,7 @@ struct Context:
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
         self.cuda_function_cache = existing.cuda_function_cache
-        self.owner = True
+        self.owner = existing.owner
         existing.ctx = _ContextHandle()
         existing.cuda_dll = None
         existing.owner = False
