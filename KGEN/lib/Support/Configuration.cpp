@@ -60,6 +60,17 @@ void MojoConfig::getParserImportPaths(SmallVectorImpl<StringRef> &paths) {
 }
 
 //===----------------------------------------------------------------------===//
+// Compiled Mojo File Configurations
+
+StringRef MojoConfig::getMOGGLibPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".mogglib_path"));
+}
+
+StringRef MojoConfig::getMOGGPrimitivesLibPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".moggprimitiveslib_path"));
+}
+
+//===----------------------------------------------------------------------===//
 // LLDB Configurations
 
 StringRef MojoConfig::getLLDBPluginPath() {

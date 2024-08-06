@@ -44,6 +44,17 @@ public:
   void getParserImportPaths(SmallVectorImpl<StringRef> &paths);
 
   //===--------------------------------------------------------------------===//
+  // Compiled Mojo File Configurations
+  //===--------------------------------------------------------------------===//
+
+  /// Return the path to the compiled MOGG.mojo library within the mojo install.
+  StringRef getMOGGLibPath();
+
+  /// Return the path to the compiled MOGGPrimitives.mojo library within the
+  /// mojo install.
+  StringRef getMOGGPrimitivesLibPath();
+
+  //===--------------------------------------------------------------------===//
   // LLDB Configurations
   //===--------------------------------------------------------------------===//
 
