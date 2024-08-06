@@ -46,7 +46,7 @@ following example:
 ```shell
 Welcome to Mojo.
 Type :help for assistance.
-  1> let my_var = "Welcome to Mojo!"
+  1> var my_var = "Welcome to Mojo!"
   2.
   2> print(my_var)
   3.
@@ -162,7 +162,7 @@ be improved as we develop Mojo.
 ### Unable to redefine implicit variables
 
 Mojo provides support for defining implicit variables. These variables are
-defined by assigning to a name, not by using the `let` or `var`:
+defined by assigning to a name, not by using the `var`:
 
 ```mojo
 def foo():
@@ -207,9 +207,9 @@ type from the old expression.
 
 **Workaround:**
 
-This issue only applies to implicit variables. Those defined with `let` and
+This issue only applies to implicit variables. Those defined with
 `var` may be freely redefined as many times as desired. If an implicit variable
-needs to be overwritten, consider using `let` or `var` to introduce the variable
+needs to be overwritten, consider using `var` to introduce the variable
 for now.
 
 ### Variable lifetimes behave unexpectedly
