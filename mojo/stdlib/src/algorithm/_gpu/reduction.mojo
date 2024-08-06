@@ -115,7 +115,7 @@ fn block_reduce[
         for i in range(num_reductions):
             # bank conflict for sub 4 byte data elems
             shared.store[width=simd_width](
-                (Int(warp.value) * num_reductions + i) * simd_width,
+                (int(warp) * num_reductions + i) * simd_width,
                 warp_accum[i],
             )
 
@@ -296,7 +296,7 @@ fn reduce_kernel[
     # each block reduces a row, which requires no partial reductions
     for row_idx in range(BlockIdx.x(), UInt(num_rows.value), GridDim.x()):
         var row_coords = _get_nd_indices_from_flat_index[rank](
-            row_idx.value, shape, axis
+            int(row_idx), shape, axis
         )
 
         var row_accum = row_reduce[

@@ -1148,8 +1148,8 @@ fn _get_start_indices_of_nth_subvolume_uint[
     Returns:
         Constructed ND-index.
     """
-    return _get_start_indices_of_nth_subvolume[rank, Int(subvolume_rank.value)](
-        n.value, shape
+    return _get_start_indices_of_nth_subvolume[rank, int(subvolume_rank)](
+        int(n), shape
     )
 
 
