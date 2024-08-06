@@ -170,3 +170,32 @@ def test_slice_valid_ints(
 
         graph.output(out)
         graph._mlir_op.verify()
+
+
+@settings(deadline=None)
+@given(
+    input_type=...,
+    input_count=st.integers(min_value=1, max_value=100),
+    random=...,
+)
+def test_stack(input_type: TensorType, input_count: int, random: Random):
+    rank = len(input_type.shape)
+    if rank == 0:
+        axis = random.choice([0, -1])
+    else:
+        axis = random.randint(-rank, rank - 1)
+    with Graph(
+        "stack",
+        input_types=[input_type] * input_count,
+    ) as graph:
+        out = ops.stack(graph.inputs, axis)
+
+        target_shape = input_type.shape
+        if axis < 0:
+            axis += rank + 1
+        target_shape.insert(axis, dim(input_count))
+
+        assert out.shape == target_shape
+
+        graph.output(out)
+        graph._mlir_op.verify()

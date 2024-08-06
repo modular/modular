@@ -28,4 +28,4 @@ from .debug import print
 from .elementwise import *
 from .linalg import band_part, layer_norm, matmul
 from .reduction import mean
-from .slicing import select, slice_tensor, concat
+from .slicing import select, slice_tensor, concat, stack
