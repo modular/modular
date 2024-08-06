@@ -9,8 +9,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import AddressSpace
-from gpu.host import Context, Function, synchronize
-from gpu.host.memory import _malloc_managed
+from gpu.host import DeviceContext
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.mma import mma
 from gpu.sync import barrier
@@ -44,7 +43,7 @@ fn naive_matmul[
         )
 
 
-fn test_naive_matmul_kernel() raises:
+fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     print("=== test_naive_matmul_kernel")
     alias M = 8
     alias N = 8
@@ -74,8 +73,9 @@ fn test_naive_matmul_kernel() raises:
         layout_c, layout_a, layout_b, BM, BN
     ]
 
-    var kernel = Function[naive_matmul_kernel]()
-    kernel(
+    var kernel = ctx.compile_function[naive_matmul_kernel]()
+    ctx.enqueue_function(
+        kernel,
         mat_c.tensor,
         mat_a.tensor,
         mat_b.tensor,
@@ -83,7 +83,7 @@ fn test_naive_matmul_kernel() raises:
         block_dim=(BM, BN),
     )
 
-    synchronize()
+    ctx.synchronize()
     mat_c.tensor.print()
 
 
@@ -178,7 +178,7 @@ fn sram_blocked_matmul[
             dst_local_tile[m, n] = dst_register_tile[m, n]
 
 
-fn test_sram_blocked_matmul() raises:
+fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
     print("=== test_sram_blocked_matmul")
     alias M = 8
     alias N = 8
@@ -214,8 +214,9 @@ fn test_sram_blocked_matmul() raises:
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
     ]
 
-    var kernel = Function[sram_blocked_matmul_kernel]()
-    kernel(
+    var kernel = ctx.compile_function[sram_blocked_matmul_kernel]()
+    ctx.enqueue_function(
+        kernel,
         mat_c.tensor,
         mat_a.tensor,
         mat_b.tensor,
@@ -223,7 +224,7 @@ fn test_sram_blocked_matmul() raises:
         block_dim=(thread_layout.size()),
     )
 
-    synchronize()
+    ctx.synchronize()
     mat_c.tensor.print()
 
     _ = mat_a^
@@ -273,7 +274,7 @@ fn single_warp_mma_sync_m16n8k8[
     mat_c_mma[thread_x, thread_y, 1, 1] = vec_d[3]
 
 
-fn test_single_warp_tf32_m16n8k8_matmul() raises:
+fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     print("=== single_warp_tf32_m16n8k8_matmul")
     alias M = 16
     alias N = 8
@@ -321,8 +322,11 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
         layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
-    var kernel = Function[single_warp_mma_sync_m16n8k8_kernel_kernel,]()
-    kernel(
+    var kernel = ctx.compile_function[
+        single_warp_mma_sync_m16n8k8_kernel_kernel,
+    ]()
+    ctx.enqueue_function(
+        kernel,
         mat_c.tensor,
         mat_a.tensor,
         mat_b.tensor,
@@ -330,7 +334,7 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
         block_dim=(32),
     )
 
-    synchronize()
+    ctx.synchronize()
     mat_c.tensor.print()
 
     _ = mat_a^
@@ -430,7 +434,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     )
 
 
-fn test_sram_blocked_matmul_dynamic_nd_buffer() raises:
+fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     print("=== test_sram_blocked_matmul_dynamic_nd_buffer")
     alias M = 8
     alias N = 8
@@ -444,29 +448,44 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer() raises:
 
     alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
+    var mat_c_ptr = UnsafePointer[Float32].alloc(M * N)
+    var mat_a_ptr = UnsafePointer[Float32].alloc(M * K)
+    var mat_b_ptr = UnsafePointer[Float32].alloc(K * N)
+
+    for i in range(M * K):
+        mat_a_ptr[i] = i
+    for i in range(K * N):
+        mat_b_ptr[i] = i
+    for i in range(M * N):
+        mat_c_ptr[i] = 0
+
+    var mat_c_dev = ctx.create_buffer[DType.float32](M * N)
+    var mat_a_dev = ctx.create_buffer[DType.float32](M * K)
+    var mat_b_dev = ctx.create_buffer[DType.float32](K * N)
+
+    ctx.enqueue_copy_to_device(mat_c_dev, mat_c_ptr)
+    ctx.enqueue_copy_to_device(mat_a_dev, mat_a_ptr)
+    ctx.enqueue_copy_to_device(mat_b_dev, mat_b_ptr)
+
     var mat_c = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        _malloc_managed[Float32](M * N), dynamic_shape=Index(M, N)
+        mat_c_dev.ptr, dynamic_shape=Index(M, N)
     )
     var mat_a = NDBuffer[DType.float32, 2, DimList(M, K)](
-        _malloc_managed[Float32](M * K), dynamic_shape=Index(M, K)
+        mat_a_dev.ptr, dynamic_shape=Index(M, K)
     )
     var mat_b = NDBuffer[DType.float32, 2, DimList(K, N)](
-        _malloc_managed[Float32](K * N), dynamic_shape=Index(K, N)
+        mat_b_dev.ptr, dynamic_shape=Index(K, N)
     )
-
-    for i in range(mat_a.size()):
-        mat_a.data[i] = i
-    for i in range(mat_a.size()):
-        mat_b.data[i] = i
-    for i in range(mat_c.size()):
-        mat_c.data[i] = 0
 
     alias sram_blocked_matmul_dynamic_nd_buffer_kernel = sram_blocked_matmul_dynamic_nd_buffer[
         thread_layout, BM, BN, BK
     ]
 
-    var kernel = Function[sram_blocked_matmul_dynamic_nd_buffer_kernel]()
-    kernel(
+    var kernel = ctx.compile_function[
+        sram_blocked_matmul_dynamic_nd_buffer_kernel
+    ]()
+    ctx.enqueue_function(
+        kernel,
         mat_c,
         mat_a,
         mat_b,
@@ -474,15 +493,16 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer() raises:
         block_dim=(thread_layout.size()),
     )
 
-    synchronize()
+    ctx.enqueue_copy_from_device(mat_c_ptr, mat_c_dev)
+
     for m in range(M):
         for n in range(N):
-            print(mat_c[m, n], end=" ")
+            print(mat_c_ptr[m * N + n], end=" ")
         print("")
 
 
 fn main() raises:
-    with Context() as ctx:
+    with DeviceContext() as ctx:
         # CHECK: === test_naive_matmul_kernel
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
         # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
@@ -492,7 +512,7 @@ fn main() raises:
         # CHECK: 10080.0   10428.0   10776.0   11124.0   11472.0   11820.0   12168.0   12516.0
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
-        test_naive_matmul_kernel()
+        test_naive_matmul_kernel(ctx)
 
         # CHECK: === test_sram_blocked_matmul
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
@@ -503,7 +523,7 @@ fn main() raises:
         # CHECK: 10080.0   10428.0   10776.0   11124.0   11472.0   11820.0   12168.0   12516.0
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
-        test_sram_blocked_matmul()
+        test_sram_blocked_matmul(ctx)
 
         # CHECK: === single_warp_tf32_m16n8k8_matmul
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
@@ -522,7 +542,7 @@ fn main() raises:
         # CHECK: 24416.0   25276.0   26136.0   26996.0   27856.0   28716.0   29576.0   30436.0
         # CHECK: 26208.0   27132.0   28056.0   28980.0   29904.0   30828.0   31752.0   32676.0
         # CHECK: 28000.0   28988.0   29976.0   30964.0   31952.0   32940.0   33928.0   34916.0
-        test_single_warp_tf32_m16n8k8_matmul()
+        test_single_warp_tf32_m16n8k8_matmul(ctx)
 
         # CHECK: === test_sram_blocked_matmul_dynamic_nd_buffer
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
@@ -533,4 +553,4 @@ fn main() raises:
         # CHECK: 10080.0   10428.0   10776.0   11124.0   11472.0   11820.0   12168.0   12516.0
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
-        test_sram_blocked_matmul_dynamic_nd_buffer()
+        test_sram_blocked_matmul_dynamic_nd_buffer(ctx)

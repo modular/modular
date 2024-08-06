@@ -9,8 +9,6 @@
 from layout.layout_tensor import LayoutTensor, Layout
 from layout._utils import ManagedLayoutGPUTensor
 
-from gpu.host import Function
-from gpu.host.memory import _malloc_managed, _free
 from gpu.host.device_context import DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,
@@ -23,7 +21,7 @@ from builtin.io import _printf
 
 
 # CHECK-LABEL: test_copy_dram_to_sram_async
-def test_copy_dram_to_sram_async():
+def test_copy_dram_to_sram_async(ctx: DeviceContext):
     print("== test_copy_dram_to_sram_async")
     alias tensor_layout = Layout.row_major(4, 16)
     var tensor = ManagedLayoutGPUTensor[DType.float32, tensor_layout]()
@@ -55,11 +53,12 @@ def test_copy_dram_to_sram_async():
                 if sram_tensor[r, c] != r * 16 + col_offset + c:
                     flag[] = False
 
-    var copy_to_sram_test_launch = Function[
+    var copy_to_sram_test_launch = ctx.compile_function[
         copy_to_sram_test_kernel[tensor_layout]
     ]()
 
-    copy_to_sram_test_launch(
+    ctx.enqueue_function(
+        copy_to_sram_test_launch,
         tensor.tensor,
         UnsafePointer.address_of(check_state),
         grid_dim=(4),
@@ -69,7 +68,7 @@ def test_copy_dram_to_sram_async():
 
 
 # CHECK-LABEL: test_copy_from_async_masked_src
-def test_copy_from_async_masked_src():
+def test_copy_from_async_masked_src(ctx: DeviceContext):
     print("== test_copy_from_async_masked_src")
     alias tensor_layout = Layout.row_major(31, 32)
     var tensor = ManagedLayoutGPUTensor[DType.int32, tensor_layout]()
@@ -120,11 +119,12 @@ def test_copy_from_async_masked_src():
 
         barrier()
 
-    var copy_to_sram_test_launch = Function[
+    var copy_to_sram_test_launch = ctx.compile_function[
         copy_to_sram_masked_src_test_kernel[tensor_layout]
     ]()
 
-    copy_to_sram_test_launch(
+    ctx.enqueue_function(
+        copy_to_sram_test_launch,
         tensor.tensor,
         UnsafePointer.address_of(check_state),
         grid_dim=(2, 2, 1),
@@ -135,5 +135,5 @@ def test_copy_from_async_masked_src():
 
 def main():
     with DeviceContext() as ctx:
-        test_copy_dram_to_sram_async()
-        test_copy_from_async_masked_src()
+        test_copy_dram_to_sram_async(ctx)
+        test_copy_from_async_masked_src(ctx)
