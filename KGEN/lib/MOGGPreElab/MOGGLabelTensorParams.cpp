@@ -44,7 +44,7 @@ public:
         return;
 
       // Look through ref types to get underlying decl ref type if needed.
-      auto getAsStructType = [&](Type t) {
+      auto getAsStructType = [](Type t) {
         auto asLitRef = dyn_cast<LIT::RefType>(t);
         if (asLitRef)
           return dyn_cast<LIT::StructType>(asLitRef.getElementType());
@@ -52,7 +52,7 @@ public:
       };
 
       // Extract the used parameters from the lit type.
-      auto litTypeToParams = [&](LIT::StructType structType) {
+      auto litTypeToParams = [](LIT::StructType structType) {
         SmallVector<KGEN::ParamDeclRefAttr> attrs;
         for (TypedAttr param : structType.getParamValues()) {
           auto declRefAttr = dyn_cast<KGEN::ParamDeclRefAttr>(param);

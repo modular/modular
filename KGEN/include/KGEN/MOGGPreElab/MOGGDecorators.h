@@ -102,9 +102,12 @@ constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
 
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
-static constexpr StringLiteral kMOGGKernelSpecLabel = "mogg.spec";
 static constexpr StringLiteral kKernelTensorParameterAttrName =
     "mogg.tensor_params";
+static constexpr StringLiteral kMOGGSynchronousParameterName = "synchronous";
+static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
+static constexpr StringLiteral kMOGGTargetParameterName = "target";
+static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
 
 inline bool isExecuteFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);
