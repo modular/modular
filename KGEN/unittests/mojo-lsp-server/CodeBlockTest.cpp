@@ -91,7 +91,7 @@ fn function():
 }
 
 TEST(CodeBlockTest, testCodeBlockEndCompletion) {
-  Document doc = createDocumentFromInputFile("doc_strings.mojo");
+  Document doc = createDocumentFromInputFileWithinPackage("doc_strings.mojo");
 
   createTestClient()
       .open(doc)

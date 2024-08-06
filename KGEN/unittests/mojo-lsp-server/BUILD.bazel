@@ -17,7 +17,10 @@ modular_cc_test(
         ["*.cpp"],
         exclude = ["Support.cpp"],
     ),
-    data = glob(["inputs/*.mojo"]) + [
+    data = glob([
+        "inputs/*.mojo",
+        "inputs_with_package/*.mojo",
+    ]) + [
         "//KGEN/tools/mojo-lsp-server",
         "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
         "@crashpad//:modular-crashpad-handler",
