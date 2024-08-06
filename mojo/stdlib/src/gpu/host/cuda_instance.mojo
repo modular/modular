@@ -52,6 +52,16 @@ alias cuCtxCreate = _dylib_function[
     fn (UnsafePointer[_ContextHandle], Int32, _DeviceHandle) -> Result,
 ]
 
+alias cuCtxPushCurrent = _dylib_function[
+    "cuCtxPushCurrent_v2",
+    fn (_ContextHandle) -> Result,
+]
+
+alias cuCtxGetCurrent = _dylib_function[
+    "cuCtxGetCurrent",
+    fn (UnsafePointer[_ContextHandle]) -> Result,
+]
+
 alias cuCtxDestroy = _dylib_function[
     "cuCtxDestroy_v2", fn (_ContextHandle) -> Result
 ]
@@ -240,6 +250,8 @@ struct CudaDLL:
 
     # cuCtx
     var cuCtxCreate: cuCtxCreate.type
+    var cuCtxPushCurrent: cuCtxPushCurrent.type
+    var cuCtxGetCurrent: cuCtxGetCurrent.type
     var cuCtxDestroy: cuCtxDestroy.type
     var cuCtxSynchronize: cuCtxSynchronize.type
 
@@ -294,6 +306,8 @@ struct CudaDLL:
         self.cuDeviceGetName = cuDeviceGetName.load()
         self.cuDeviceTotalMem = cuDeviceTotalMem.load()
         self.cuCtxCreate = cuCtxCreate.load()
+        self.cuCtxPushCurrent = cuCtxPushCurrent.load()
+        self.cuCtxGetCurrent = cuCtxGetCurrent.load()
         self.cuCtxDestroy = cuCtxDestroy.load()
         self.cuCtxSynchronize = cuCtxSynchronize.load()
         self.cuEventCreate = cuEventCreate.load()
