@@ -225,9 +225,7 @@ class Graph:
                 results = op(*args, **kwargs)
             except Exception as e:
                 diags = "\n\t".join(diagnostics)
-                raise ValueError(
-                    f"Mlir Diagnostics:\n\t{diags}\nError:\n\t{e}\n"
-                )
+                raise ValueError(f"Mlir Diagnostics:\n\t{diags}\n") from e
             finally:
                 handle.detach()
 
